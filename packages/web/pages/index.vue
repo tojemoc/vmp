@@ -15,11 +15,20 @@
         </div>
       </div>
       
-      <div v-if="selectedUser" class="bg-white rounded-lg shadow p-6">
+      <div v-if="selectedUser" class="bg-white rounded-lg shadow p-6 space-y-4">
         <p class="mb-4">Selected user: <strong>{{ selectedUser }}</strong></p>
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium text-gray-700">Video ID</span>
+          <input
+            v-model.trim="videoId"
+            type="text"
+            placeholder="Enter video ID (e.g. test1)"
+            class="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+          />
+        </label>
         <NuxtLink 
-          :to="`/watch/test1?userId=${selectedUser}`"
-          class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
+          :to="watchLink"
+          class="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
         >
           Watch Demo Video
         </NuxtLink>
@@ -30,6 +39,7 @@
 
 <script setup lang="ts">
 const selectedUser = ref<string | null>(null)
+const videoId = ref('test1')
 
 const testUsers = [
   { id: 'user_free', name: 'Free User', type: 'Preview access only' },
@@ -40,4 +50,12 @@ const testUsers = [
 const selectUser = (userId: string) => {
   selectedUser.value = userId
 }
+
+const watchLink = computed(() => {
+  if (!selectedUser.value || !videoId.value) {
+    return '#'
+  }
+
+  return `/watch/${encodeURIComponent(videoId.value)}?userId=${encodeURIComponent(selectedUser.value)}`
+})
 </script>

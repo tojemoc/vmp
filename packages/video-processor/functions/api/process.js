@@ -23,12 +23,17 @@ export async function onRequestPost(context) {
     return json({ error: 'Uploaded source not found for videoId' }, 404);
   }
 
-  if (!source.size) {
+  const sourceObject = await env.VIDEO_BUCKET.get(source.key);
+  if (!sourceObject) {
+    return json({ error: 'Unable to read uploaded source object' }, 500);
+  }
+
+  const sourceBytes = new Uint8Array(await sourceObject.arrayBuffer());
+  if (!sourceBytes.byteLength) {
     return json({ error: 'Uploaded source file is empty' }, 400);
   }
 
-  const sourceSize = Number(source.size);
-  const segmentCount = Math.max(1, Math.ceil(sourceSize / TARGET_SEGMENT_SIZE_BYTES));
+  const segmentCount = Math.max(1, Math.ceil(sourceBytes.byteLength / TARGET_SEGMENT_SIZE_BYTES));
   const segmentsPrefix = `videos/${videoId}/processed/segments`;
   const playlistKey = `videos/${videoId}/processed/playlist.m3u8`;
   const metadataKey = `videos/${videoId}/metadata.json`;
@@ -37,13 +42,8 @@ export async function onRequestPost(context) {
   const segmentKeys = [];
   for (let index = 0; index < segmentCount; index += 1) {
     const start = index * TARGET_SEGMENT_SIZE_BYTES;
-    const length = Math.min(TARGET_SEGMENT_SIZE_BYTES, sourceSize - start);
-    const sourceChunk = await env.VIDEO_BUCKET.get(source.key, { range: { offset: start, length } });
-    if (!sourceChunk) {
-      return json({ error: `Unable to read source chunk ${index}` }, 500);
-    }
-
-    const segmentBytes = await sourceChunk.arrayBuffer();
+    const end = Math.min(sourceBytes.byteLength, start + TARGET_SEGMENT_SIZE_BYTES);
+    const segmentBytes = sourceBytes.slice(start, end);
     const segmentKey = `${segmentsPrefix}/segment_${String(index).padStart(4, '0')}.ts`;
 
     await env.VIDEO_BUCKET.put(segmentKey, segmentBytes, {

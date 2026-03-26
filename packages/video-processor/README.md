@@ -3,7 +3,7 @@
 Simple admin interface for:
 
 - Drag-and-drop video uploads into Cloudflare R2 using the [tus resumable upload protocol](https://tus.io/).
-- Triggering processing logic in Cloudflare Pages Functions that writes `.ts` segment objects and an HLS playlist.
+- Triggering processing placeholder logic in Cloudflare Pages Functions.
 - Applying visibility tags (`private`, `unlisted`, `public`).
 - Listing processed videos.
 
@@ -40,5 +40,3 @@ Set up an R2 bucket binding in `wrangler.toml`:
 - `videos/:videoId/processed/segments/segment_0000.ts` style segment objects
 - `videos/:videoId/processed/playlist.m3u8` referencing those segment keys
 - `videos/:videoId/metadata.json` including the generated `segmentKeys`
-
-Processing reads the source object from R2 in ranged chunks to avoid loading the entire source file into worker memory.
