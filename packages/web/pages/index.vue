@@ -18,7 +18,7 @@
       <div v-if="selectedUser" class="bg-white rounded-lg shadow p-6">
         <p class="mb-4">Selected user: <strong>{{ selectedUser }}</strong></p>
         <NuxtLink 
-          :to="`/watch/demo_video?userId=${selectedUser}`"
+          :to="`/watch/test1?userId=${selectedUser}`"
           class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
         >
           Watch Demo Video
