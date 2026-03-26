@@ -81,7 +81,7 @@ export async function onRequestPost(context) {
     visibility,
     processedAt,
     segmentDurationSeconds: SEGMENT_DURATION_SECONDS,
-    note: 'Segments are generated from uploaded bytes in fixed-size chunks with .ts naming for HLS-compatible key structure. Replace with ffmpeg transcoding for production-grade MPEG-TS output.'
+    note: 'Segments are generated from uploaded bytes in fixed-size chunks with .ts naming for key compatibility only. They are not guaranteed to be valid MPEG-TS. Use ffmpeg transcoding for production HLS output.'
   }, null, 2), {
     httpMetadata: { contentType: 'application/json' }
   });

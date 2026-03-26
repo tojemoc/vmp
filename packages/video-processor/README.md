@@ -33,6 +33,36 @@ Set up an R2 bucket binding in `wrangler.toml`:
 - `VIDEO_BUCKET`
 
 
+
+## ⚠️ About current `/api/process` output
+
+The Cloudflare Pages Function at `functions/api/process.js` currently slices source bytes into fixed-size chunks and stores them with a `.ts` extension. That shape is useful for testing object layout, but those files are **not guaranteed to be valid MPEG-TS segments** and can fail in strict HLS players.
+
+For production, transcode with `ffmpeg` and upload the generated playlist + segments:
+
+```bash
+# 1) Generate valid HLS assets locally
+./scripts/create-hls.sh ./input.mp4 ./tmp/hls
+
+# 2) Upload to your R2 bucket under videos/<videoId>/processed
+./scripts/upload-to-r2.sh ./tmp/hls <your-r2-bucket-binding-name> <videoId>
+```
+
+If you only need a preview rendition:
+
+```bash
+./scripts/create-preview.sh ./input.mp4 ./tmp/hls-preview 30
+./scripts/upload-to-r2.sh ./tmp/hls-preview <your-r2-bucket-binding-name> <videoId>
+```
+
+Windows Command Prompt equivalents are also available:
+
+```bat
+.\scripts\create-hls.bat .\input.mp4 .\tmp\hls
+.\scripts\create-preview.bat .\input.mp4 .\tmp\hls-preview 30
+.\scripts\upload-to-r2.bat .\tmp\hls <your-r2-bucket-binding-name> <videoId>
+```
+
 ## Processing output
 
 `POST /api/process` now emits:
