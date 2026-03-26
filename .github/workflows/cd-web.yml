@@ -36,4 +36,9 @@ jobs:
         run: npm run build --workspace @vmp/web
 
       - name: Deploy to Cloudflare Pages
-        run: npm run deploy --workspace @vmp/web
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/web
+          command: pages deploy dist/ --project-name ${{ secrets.CF_PAGES_PROJECT_NAME }} --branch main
