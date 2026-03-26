@@ -102,10 +102,10 @@
 </template>
 
 <script setup lang="ts">
-import 'video.js/dist/video-js.css'
-
-type VideoJsModule = typeof import('video.js')
-type VideoJsPlayer = ReturnType<VideoJsModule['default']>
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import { useRuntimeConfig } from '#app'
+import 'media-chrome'
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -120,17 +120,14 @@ const debugState = ref({
   lastEvent: '',
   lastError: ''
 })
-let player: VideoJsPlayer | null = null
 let manifestObjectUrl: string | null = null
 
 const videoId = route.params.videoId as string
-const userId = route.query.userId as string || 'user_free'
+const userId = (route.query.userId as string) || 'user_free'
 
 onMounted(async () => {
   try {
-    // Fetch video access data
     const response = await fetch(`${config.public.apiUrl}/api/video-access/${userId}/${videoId}`)
-
     if (!response.ok) {
       const errorBody = await response.text()
       throw new Error(`Failed to load video data (${response.status}): ${errorBody}`)
@@ -139,57 +136,38 @@ onMounted(async () => {
     videoData.value = await response.json()
     console.log('[watch] video-access response', videoData.value)
 
-    // Render video element before initializing the player
-    loading.value = false
-    await nextTick()
-
-    // Initialize Video.js and Media Chrome UI controls
-    await import('media-chrome')
-    const videojs = (await import('video.js')).default
+    const playlistUrl = await normalizePlaylistUrl(videoData.value.video.playlistUrl)
+    debugState.value.activeSource = playlistUrl
 
     if (videoElement.value) {
-      const playableSource = await normalizePlaylistUrl(videoData.value.video.playlistUrl)
-      debugState.value.activeSource = playableSource
-      console.log('[watch] initializing player with source', playableSource)
+      videoElement.value.src = playlistUrl
+      videoElement.value.setAttribute('playsinline', '')
+      videoElement.value.load()
 
-      player = videojs(videoElement.value, {
-        autoplay: false,
-        controls: false,
-        fluid: true,
-        preload: 'auto',
-        sources: [{ src: playableSource, type: 'application/x-mpegURL' }]
+      videoElement.value.addEventListener('loadedmetadata', () => {
+        debugState.value.lastEvent = 'loadedmetadata'
       })
 
-      player.ready(() => {
-        debugState.value.lastEvent = 'ready'
-        player?.addClass('vjs-big-play-centered')
-        console.log('[watch] Video.js ready')
-      })
-
-      attachDebugListeners(player, videoElement.value)
-
-      player.on('error', () => {
-        const mediaError = player?.error()
-        debugState.value.lastError = JSON.stringify(mediaError)
-        console.error('[watch] Video.js error:', mediaError)
+      videoElement.value.addEventListener('error', () => {
+        const mediaError = videoElement.value?.error
+        debugState.value.lastError = mediaError
+          ? `code=${mediaError.code}, message=${mediaError.message || 'n/a'}`
+          : 'unknown video element error'
+        console.error('[watch] native video error', mediaError)
         error.value = 'Video playback error. The current playlist may be invalid.'
       })
     } else {
-      debugState.value.lastError = 'Video element not mounted after loading state'
-      console.error('[watch] video element is unavailable after loading completed')
+      throw new Error('Video element is unavailable')
     }
   } catch (e: any) {
-    debugState.value.lastError = e.message
-    error.value = e.message
+    debugState.value.lastError = e?.message || String(e)
+    error.value = debugState.value.lastError
+  } finally {
     loading.value = false
   }
 })
 
 onUnmounted(() => {
-  if (player) {
-    player.dispose()
-  }
-
   if (manifestObjectUrl) {
     URL.revokeObjectURL(manifestObjectUrl)
   }
@@ -199,25 +177,20 @@ const handleTimeUpdate = (event: Event) => {
   const video = event.target as HTMLVideoElement
   const currentTime = video.currentTime
 
-  // Check if user is trying to watch premium content without access
-  if (!videoData.value.hasAccess && currentTime > videoData.value.video.previewDuration) {
+  if (!videoData.value?.hasAccess && currentTime > videoData.value?.video?.previewDuration) {
     video.currentTime = videoData.value.video.previewDuration
     video.pause()
     alert('Please upgrade to Premium to continue watching')
   }
+
+  debugState.value.lastEvent = 'timeupdate'
 }
 
 const seekToChapter = (startTime: number) => {
-  if (player) {
-    player.currentTime(startTime)
-    void player.play()
-    return
-  }
+  if (!videoElement.value) return
 
-  if (videoElement.value) {
-    videoElement.value.currentTime = startTime
-    void videoElement.value.play()
-  }
+  videoElement.value.currentTime = startTime
+  void videoElement.value.play()
 }
 
 const normalizePlaylistUrl = async (playlistUrl: string): Promise<string> => {
@@ -232,18 +205,13 @@ const normalizePlaylistUrl = async (playlistUrl: string): Promise<string> => {
 
     const manifest = await response.text()
     debugState.value.manifestFetchStatus = `ok (${manifest.length} chars)`
-    console.log('[watch] manifest preview', manifest.split('\n').slice(0, 8).join('\n'))
     const normalized = rewriteManifestSegmentUrls(manifest, playlistUrl)
+
     if (normalized === manifest) {
-      console.log('[watch] manifest does not require normalization')
       return playlistUrl
     }
 
-    manifestObjectUrl = URL.createObjectURL(
-      new Blob([normalized], { type: 'application/vnd.apple.mpegurl' })
-    )
-    console.log('[watch] normalized manifest generated', manifestObjectUrl)
-
+    manifestObjectUrl = URL.createObjectURL(new Blob([normalized], { type: 'application/vnd.apple.mpegurl' }))
     return manifestObjectUrl
   } catch (e) {
     debugState.value.manifestFetchStatus = 'manifest fetch threw'
@@ -257,58 +225,18 @@ const rewriteManifestSegmentUrls = (manifest: string, playlistUrl: string): stri
   const prefixToTrim = `${playlist.pathname.split('/').slice(1, -1).join('/')}/`
   const lines = manifest.split('\n')
 
-  const rewritten = lines.map((line) => {
-    const trimmed = line.trim()
-
-    if (!trimmed || trimmed.startsWith('#') || /^https?:\/\//i.test(trimmed)) {
-      return line
-    }
-
-    if (!trimmed.startsWith(prefixToTrim)) {
-      return line
-    }
-
-    return trimmed.slice(prefixToTrim.length)
-  })
-
-  return rewritten.join('\n')
-}
-
-const attachDebugListeners = (videoPlayer: VideoJsPlayer, element: HTMLVideoElement) => {
-  const playerEvents = [
-    'loadstart',
-    'loadedmetadata',
-    'loadeddata',
-    'canplay',
-    'canplaythrough',
-    'play',
-    'playing',
-    'pause',
-    'waiting',
-    'stalled',
-    'seeking',
-    'seeked',
-    'ended'
-  ] as const
-
-  playerEvents.forEach((eventName) => {
-    videoPlayer.on(eventName, () => {
-      debugState.value.lastEvent = eventName
-      console.log(`[watch] player event=${eventName}`, {
-        currentTime: videoPlayer.currentTime(),
-        readyState: element.readyState,
-        networkState: element.networkState
-      })
+  return lines
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#') || /^https?:\/\//i.test(trimmed)) {
+        return line
+      }
+      if (!trimmed.startsWith(prefixToTrim)) {
+        return line
+      }
+      return trimmed.slice(prefixToTrim.length)
     })
-  })
-
-  element.addEventListener('error', () => {
-    const mediaError = element.error
-    debugState.value.lastError = mediaError
-      ? `code=${mediaError.code}, message=${mediaError.message || 'n/a'}`
-      : 'unknown video element error'
-    console.error('[watch] native video error', mediaError)
-  })
+    .join('\n')
 }
 </script>
 
