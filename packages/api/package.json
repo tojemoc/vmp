@@ -11,7 +11,7 @@
     "db:seed": "wrangler d1 execute video-subscription-db --file=./migrations/0002_seed.sql"
   },
   "dependencies": {
-    "@vmp/shared": "workspace:*"
+    "@vmp/shared": "*"
   },
   "devDependencies": {
     "wrangler": "^3.94.0"

@@ -11,7 +11,7 @@
     "deploy": "nuxt build && wrangler pages deploy .output/public"
   },
   "dependencies": {
-    "@vmp/shared": "workspace:*",
+    "@vmp/shared": "*",
     "hls.js": "^1.5.16",
     "nuxt": "^4.4.2",
     "vue": "^3.5.13"

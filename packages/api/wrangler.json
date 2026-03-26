@@ -1,15 +1,20 @@
 {
-  "name": "vmp-api",
-  "main": "src/index.js",
-  "compatibility_date": "2024-08-14",
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "video-subscription-db",
-      "database_id": "YOUR_DATABASE_ID_HERE"
-    }
-  ],
-  "vars": {
-    "R2_BASE_URL": "https://your-r2-domain.com"
-  }
+	"name": "vmp-api",
+	"main": "src/index.js",
+	"compatibility_date": "2024-08-14",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "video-subscription-db",
+			"database_id": "YOUR_DATABASE_ID_HERE"
+		},
+		{
+			"binding": "video_subscription_db",
+			"database_name": "video-subscription-db",
+			"database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
+		}
+	],
+	"vars": {
+		"R2_BASE_URL": "https://your-r2-domain.com"
+	}
 }
