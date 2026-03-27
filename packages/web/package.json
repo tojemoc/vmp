@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",
-    "wrangler": "^3.94.0"
+    "wrangler": "^4.77.0"
   },
   "overrides": {
     "serialize-javascript": ">=7.0.3"
