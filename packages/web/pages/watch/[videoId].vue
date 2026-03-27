@@ -54,6 +54,7 @@
                 playsinline
                 preload="auto"
                 @timeupdate="handleTimeUpdate"
+                @seeking="handleSeeking"
               ></videojs-video>
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
@@ -259,19 +260,33 @@ onUnmounted(() => {
   teardownVideoListeners()
 })
 
+const enforcePreviewLimit = (video: HTMLVideoElement) => {
+  const previewDuration = videoData.value?.video?.previewDuration
+  if (videoData.value?.hasAccess || !previewDuration) {
+    return
+  }
+
+  if (video.currentTime <= previewDuration) {
+    return
+  }
+
+  video.currentTime = previewDuration
+  video.pause()
+  showPremiumOverlay.value = true
+
+  setTimeout(() => {
+    showPremiumOverlay.value = false
+  }, 5000)
+}
+
 const handleTimeUpdate = (event: Event) => {
   const video = event.target as HTMLVideoElement
-  const currentTime = video.currentTime
+  enforcePreviewLimit(video)
+}
 
-  if (!videoData.value?.hasAccess && currentTime > videoData.value?.video?.previewDuration) {
-    video.currentTime = videoData.value.video.previewDuration
-    video.pause()
-    showPremiumOverlay.value = true
-    
-    setTimeout(() => {
-      showPremiumOverlay.value = false
-    }, 5000)
-  }
+const handleSeeking = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  enforcePreviewLimit(video)
 }
 
 let handleLoadedMetadata: (() => void) | null = null
@@ -346,5 +361,8 @@ const teardownVideoListeners = () => {
 
 .watch-seekbar-wrap media-time-range {
   --media-range-track-background: rgba(255, 255, 255, 0.3);
+  --media-range-bar-color: #60a5fa;
+  --media-range-thumb-background: #ffffff;
+  --media-range-thumb-border: 2px solid #111827;
 }
 </style>
