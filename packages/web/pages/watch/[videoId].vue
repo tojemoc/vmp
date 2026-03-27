@@ -67,17 +67,9 @@
                 <media-seek-backward-button seek-offset="10"></media-seek-backward-button>
                 <media-seek-forward-button seek-offset="10"></media-seek-forward-button>
                 
-                <media-time-range
-                  v-if="videoData.hasAccess"
-                  class="flex-1 mx-2"
-                ></media-time-range>
-
-                <!-- Custom Preview Lock Rail (non-interactive visual only) -->
-                <div
-                  v-else
-                  class="flex-1 flex items-center px-2 relative"
-                >
-                  <div class="relative w-full h-1.5 bg-gray-600 rounded-full overflow-visible">
+                <!-- Custom Time Range with Lock Indicator -->
+                <div class="flex-1 flex items-center px-2 relative">
+                  <div class="relative w-full h-1.5 bg-gray-600 rounded-full overflow-visible group">
                     <!-- Preview section (green) -->
                     <div 
                       class="absolute left-0 top-0 h-full bg-green-500"
@@ -92,7 +84,8 @@
                     
                     <!-- Lock icon at division point -->
                     <div 
-                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.45)] z-20 pointer-events-none"
+                      v-if="!videoData.hasAccess"
+                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.45)] z-20"
                       :style="{ left: previewPercentage + '%' }"
                     >
                       <svg class="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 20 20">
@@ -361,4 +354,8 @@ const teardownVideoListeners = () => {
   padding: 8px 16px;
 }
 
+/* Hide default time range since we're using custom */
+.watch-media-control-bar media-time-range {
+  pointer-events: all;
+}
 </style>
