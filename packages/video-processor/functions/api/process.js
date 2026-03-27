@@ -155,6 +155,11 @@ function sanitizeVisibility(value) {
   return 'private';
 }
 
+function sanitizeProcessingMode(value) {
+  if (value === 'legacy-process') return value;
+  return 'register-existing-cmaf';
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
