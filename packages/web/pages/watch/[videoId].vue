@@ -67,21 +67,78 @@
                 <media-play-button></media-play-button>
                 <media-seek-backward-button seek-offset="10"></media-seek-backward-button>
                 <media-seek-forward-button seek-offset="10"></media-seek-forward-button>
-                
-                <!-- Functional seekbar with lock marker -->
-                <div class="flex-1 flex items-center px-2 relative watch-seekbar-wrap">
-                  <media-time-range class="w-full"></media-time-range>
-                  <div 
-                    v-if="!videoData.hasAccess"
-                    class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.45)] z-20 pointer-events-none"
-                    :style="{ left: previewPercentage + '%' }"
-                  >
-                    <svg class="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-                    </svg>
+
+                <!--
+                  Custom seekbar — replaces <media-time-range> for two reasons:
+                  
+                  1) SEEK RESTRICTION: By setting :max="seekMax" we prevent the range
+                     input from ever producing a value past the preview lock. No seek
+                     can reach locked territory in the first place, so no snap-back
+                     is needed.
+                  
+                  2) COLORS: <media-time-range> lives in its own shadow DOM. Vue's
+                     scoped styles add a `data-v-xxxx` attribute to elements it
+                     controls, but that attribute never lands on the shadow host, so
+                     the scoped CSS rule `.wrap media-time-range { --var }` never
+                     matches. CSS custom properties *do* cascade through shadow DOM
+                     boundaries, but only from an ancestor that Vue actually scopes.
+                     Rather than fight that, we own the markup and paint the three
+                     zones ourselves.
+                -->
+                <div class="watch-seekbar-wrap flex-1 flex items-center px-2 relative h-8">
+
+                  <!-- ── Visual track (pointer-events: none so the range input sits on top) -->
+                  <div class="relative w-full h-1.5 rounded-full pointer-events-none">
+
+                    <!-- Zone 1: base track -->
+                    <div class="absolute inset-0 rounded-full bg-white/20"></div>
+
+                    <!-- Zone 2: locked section (darker, right of lock) -->
+                    <div
+                      v-if="!videoData.hasAccess"
+                      class="absolute inset-y-0 rounded-r-full bg-white/5"
+                      :style="{ left: previewPercentage + '%' }"
+                    ></div>
+
+                    <!-- Zone 3: played progress (blue) -->
+                    <div
+                      class="absolute inset-y-0 left-0 rounded-full bg-blue-400"
+                      :style="{ width: progressPercentage + '%' }"
+                    ></div>
+
+                    <!-- Scrubber thumb dot (follows progress) -->
+                    <div
+                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow"
+                      :style="{ left: progressPercentage + '%' }"
+                    ></div>
+
+                    <!-- Lock marker pin at the preview boundary -->
+                    <div
+                      v-if="!videoData.hasAccess"
+                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.35)] z-10"
+                      :style="{ left: previewPercentage + '%' }"
+                    >
+                      <svg class="w-2.5 h-2.5 text-black" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
                   </div>
+
+                  <!-- ── Transparent range input overlaid on the visual track.
+                       :max="seekMax" is the key line — for non-premium users it is
+                       capped at previewDuration, so the thumb physically can't go
+                       past the lock. For premium users it equals fullDuration. -->
+                  <input
+                    type="range"
+                    class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    :min="0"
+                    :max="seekMax"
+                    :step="0.1"
+                    :value="currentTime"
+                    @input="handleSeekbarInput"
+                  />
                 </div>
-                
+
                 <media-time-display show-duration></media-time-display>
                 <media-mute-button></media-mute-button>
                 <media-volume-range></media-volume-range>
@@ -114,10 +171,7 @@
                 <span>Premium Access</span>
               </span>
               
-              <span 
-                v-else
-                class="flex items-center space-x-1"
-              >
+              <span v-else class="flex items-center space-x-1">
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                 </svg>
@@ -133,9 +187,7 @@
 
         <!-- Right Column: Recommendations -->
         <div class="space-y-4">
-          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">
-            Up Next
-          </h2>
+          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">Up Next</h2>
           
           <div class="space-y-3">
             <div 
@@ -209,16 +261,40 @@ const videoData = ref<any>(null)
 const recommendations = ref<any[]>([])
 const showPremiumOverlay = ref(false)
 
+// Tracks the video's current playback position so our custom seekbar
+// can stay in sync without relying on media-chrome's internal state.
+const currentTime = ref(0)
+
 const videoId = route.params.videoId as string
 const userId = (route.query.userId as string) || 'user_free'
 
+// ── Computed helpers ────────────────────────────────────────────────────────
+
+// How far along (0–100) the playhead is relative to the FULL duration.
+// Used to position the progress bar and the scrubber thumb dot.
+const progressPercentage = computed(() => {
+  const duration = videoData.value?.video?.fullDuration
+  if (!duration) return 0
+  return Math.min(100, (currentTime.value / duration) * 100)
+})
+
+// Where to draw the lock marker and begin the locked zone (0–100).
 const previewPercentage = computed(() => {
   if (!videoData.value) return 0
   return (videoData.value.video.previewDuration / videoData.value.video.fullDuration) * 100
 })
 
+// The maximum value the range input is allowed to reach.
+// This is the core of the seek-restriction fix — the browser enforces
+// the max attribute, so the thumb never physically crosses the lock.
+const seekMax = computed(() => {
+  if (!videoData.value) return 0
+  return videoData.value.hasAccess
+    ? videoData.value.video.fullDuration
+    : videoData.value.video.previewDuration
+})
+
 const videoDescription = computed(() => {
-  // This would come from the API, placeholder for now
   return videoData.value?.video?.description || 'No description available.'
 })
 
@@ -228,23 +304,61 @@ const formatDuration = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
+// ── Event handlers ───────────────────────────────────────────────────────────
+
+// Keep our reactive currentTime in sync with the video element.
+// Also run the hard enforcer as a safety net (e.g. if someone manually
+// edits the DOM or the video is seeked via keyboard).
+const handleTimeUpdate = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  currentTime.value = video.currentTime
+  enforcePreviewLimit(video)
+}
+
+const handleSeeking = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  enforcePreviewLimit(video)
+}
+
+// Called when the user drags our custom range input.
+// We update currentTime immediately for a responsive feel, then mirror
+// the value to the underlying video element.
+const handleSeekbarInput = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const newTime = Number(input.value)
+  currentTime.value = newTime
+  const video = videoElement.value
+  if (video) {
+    video.currentTime = newTime
+  }
+}
+
+const enforcePreviewLimit = (video: HTMLVideoElement) => {
+  const previewDuration = videoData.value?.video?.previewDuration
+  if (videoData.value?.hasAccess || !previewDuration) return
+  if (video.currentTime <= previewDuration) return
+
+  video.currentTime = previewDuration
+  video.pause()
+  showPremiumOverlay.value = true
+
+  setTimeout(() => {
+    showPremiumOverlay.value = false
+  }, 5000)
+}
+
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+
 onMounted(async () => {
   try {
-    // Load video data
     const videoResponse = await fetch(`${config.public.apiUrl}/api/video-access/${userId}/${videoId}`)
-    if (!videoResponse.ok) {
-      throw new Error('Failed to load video data')
-    }
+    if (!videoResponse.ok) throw new Error('Failed to load video data')
     videoData.value = await videoResponse.json()
     
-    // Load recommendations
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`)
     if (recsResponse.ok) {
       const data = await recsResponse.json()
-      // Filter out current video and take first 5
-      recommendations.value = (data.videos || [])
-        .filter((v: any) => v.id !== videoId)
-        .slice(0, 5)
+      recommendations.value = (data.videos || []).filter((v: any) => v.id !== videoId).slice(0, 5)
     }
     
     loading.value = false
@@ -260,43 +374,12 @@ onUnmounted(() => {
   teardownVideoListeners()
 })
 
-const enforcePreviewLimit = (video: HTMLVideoElement) => {
-  const previewDuration = videoData.value?.video?.previewDuration
-  if (videoData.value?.hasAccess || !previewDuration) {
-    return
-  }
-
-  if (video.currentTime <= previewDuration) {
-    return
-  }
-
-  video.currentTime = previewDuration
-  video.pause()
-  showPremiumOverlay.value = true
-
-  setTimeout(() => {
-    showPremiumOverlay.value = false
-  }, 5000)
-}
-
-const handleTimeUpdate = (event: Event) => {
-  const video = event.target as HTMLVideoElement
-  enforcePreviewLimit(video)
-}
-
-const handleSeeking = (event: Event) => {
-  const video = event.target as HTMLVideoElement
-  enforcePreviewLimit(video)
-}
-
 let handleLoadedMetadata: (() => void) | null = null
 let handleMediaError: (() => void) | null = null
 
 const initializeVideoElement = async (playlistUrl: string) => {
   const video = videoElement.value
-  if (!video) {
-    throw new Error('Video element is unavailable')
-  }
+  if (!video) throw new Error('Video element is unavailable')
 
   teardownVideoListeners()
 
@@ -329,7 +412,6 @@ const teardownVideoListeners = () => {
     video.removeEventListener('loadedmetadata', handleLoadedMetadata)
     handleLoadedMetadata = null
   }
-
   if (handleMediaError) {
     video.removeEventListener('error', handleMediaError)
     handleMediaError = null
@@ -341,7 +423,6 @@ const teardownVideoListeners = () => {
 .watch-media-controller {
   --media-control-background: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
   --media-control-color: #ffffff;
-  --media-range-track-background: transparent;
 }
 
 .watch-media-element {
@@ -355,14 +436,11 @@ const teardownVideoListeners = () => {
   padding: 8px 16px;
 }
 
-.watch-media-control-bar media-time-range {
-  pointer-events: all;
-}
-
-.watch-seekbar-wrap media-time-range {
-  --media-range-track-background: rgba(255, 255, 255, 0.3);
-  --media-range-bar-color: #60a5fa;
-  --media-range-thumb-background: #ffffff;
-  --media-range-thumb-border: 2px solid #111827;
+/* The range input is transparent — it overlays the visual track and captures
+   pointer events, while the visual divs underneath render the actual colors.
+   Reset browser-default margins so it sits flush over the track. */
+.watch-seekbar-input {
+  margin: 0;
+  padding: 0;
 }
 </style>
