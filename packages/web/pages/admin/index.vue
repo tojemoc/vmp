@@ -184,7 +184,7 @@ const saveMessageClass = ref('')
 const previewLockByVideoId = ref<Record<string, number>>({})
 const actualDurationByVideoId = ref<Record<string, number>>({})
 
-const videoProcessorAdminUrl = computed(() => config.public.videoProcessorAdminUrl || 'https://vmp-video-processor-admin.pages.dev')
+const videoProcessorAdminUrl = computed(() => config.public.videoProcessorAdminUrl || 'https://vmp-admin.tjm.sk')
 const componentTypes: BlockType[] = ['hero', 'featured_row', 'cta', 'text_split', 'video_grid']
 const layoutBlocks = ref<LayoutBlock[]>([])
 
