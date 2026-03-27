@@ -125,14 +125,15 @@
                   </div>
 
                   <!-- ── Transparent range input overlaid on the visual track.
-                       :max="seekMax" is the key line — for non-premium users it is
-                       capped at previewDuration, so the thumb physically can't go
-                       past the lock. For premium users it equals fullDuration. -->
+                       max is ALWAYS fullDuration — this makes the browser map
+                       click positions across the full bar correctly.
+                       We intercept locked-zone clicks ourselves in handleSeekbarInput
+                       rather than relying on the browser's built-in clamping. -->
                   <input
                     type="range"
                     class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     :min="0"
-                    :max="seekMax"
+                    :max="videoData.video.fullDuration"
                     :step="0.1"
                     :value="currentTime"
                     @input="handleSeekbarInput"
@@ -284,15 +285,7 @@ const previewPercentage = computed(() => {
   return (videoData.value.video.previewDuration / videoData.value.video.fullDuration) * 100
 })
 
-// The maximum value the range input is allowed to reach.
-// This is the core of the seek-restriction fix — the browser enforces
-// the max attribute, so the thumb never physically crosses the lock.
-const seekMax = computed(() => {
-  if (!videoData.value) return 0
-  return videoData.value.hasAccess
-    ? videoData.value.video.fullDuration
-    : videoData.value.video.previewDuration
-})
+// seekMax is intentionally removed — see handleSeekbarInput for the new approach.
 
 const videoDescription = computed(() => {
   return videoData.value?.video?.description || 'No description available.'
@@ -320,16 +313,46 @@ const handleSeeking = (event: Event) => {
   enforcePreviewLimit(video)
 }
 
-// Called when the user drags our custom range input.
-// We update currentTime immediately for a responsive feel, then mirror
-// the value to the underlying video element.
+// Called when the user clicks or drags our custom range input.
+//
+// The range max is always fullDuration, so the browser maps clicks correctly
+// across the whole bar. We then inspect the value ourselves:
+//
+//   • If the user clicked in the FREE zone (< previewDuration) → seek normally.
+//   • If the user clicked in the LOCKED zone (≥ previewDuration) and has no
+//     access → reject the seek, snap back to the lock boundary, show overlay.
+//
+// This is better than capping `max` at `previewDuration` because that caused
+// the browser to compress the coordinate space: a click at 80% of the bar
+// width would have resolved to 80% × previewDuration instead of 80% × fullDuration.
 const handleSeekbarInput = (event: Event) => {
   const input = event.target as HTMLInputElement
-  const newTime = Number(input.value)
-  currentTime.value = newTime
+  const requestedTime = Number(input.value)
+  const previewDuration = videoData.value?.video?.previewDuration
+
+  // Locked-zone click for a non-premium user.
+  if (!videoData.value?.hasAccess && previewDuration && requestedTime >= previewDuration) {
+    // Reset the range thumb back to the lock boundary so it doesn't
+    // visually jump past the lock pin.
+    input.value = String(previewDuration)
+    currentTime.value = previewDuration
+
+    const video = videoElement.value
+    if (video) {
+      video.currentTime = previewDuration
+      video.pause()
+    }
+
+    showPremiumOverlay.value = true
+    setTimeout(() => { showPremiumOverlay.value = false }, 5000)
+    return
+  }
+
+  // Normal seek within the accessible zone.
+  currentTime.value = requestedTime
   const video = videoElement.value
   if (video) {
-    video.currentTime = newTime
+    video.currentTime = requestedTime
   }
 }
 
