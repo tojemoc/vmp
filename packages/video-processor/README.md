@@ -40,6 +40,20 @@ Set up an R2 bucket binding in `wrangler.toml`:
 
 It validates packaged outputs in R2 and writes `videos/<videoId>/metadata.json` with packaging and rendition metadata. For production you should continue to generate HLS/DASH assets with `ffmpeg` (or your media pipeline) and upload those files under `videos/<videoId>/processed/`.
 
+
+For CMAF-first packaging (with optional DASH) and direct `rclone` upload to R2, use:
+
+```bash
+./scripts/cmaf-r2-upload.sh ./input.mp4 <videoId> <rclone-remote> [--with-dash]
+```
+
+PowerShell equivalent:
+
+```powershell
+./scripts/cmaf-r2-upload.ps1 -InputMp4 ./input.mp4 -VideoId <videoId> -RcloneRemote <rclone-remote> [-WithDash]
+```
+
+
 ## Processing output
 
 `POST /api/process` validates the presence of:
