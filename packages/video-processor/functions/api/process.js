@@ -1,6 +1,3 @@
-const SEGMENT_DURATION_SECONDS = 10;
-const TARGET_SEGMENT_SIZE_BYTES = 10 * 1024 * 1024;
-
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -15,104 +12,140 @@ export async function onRequestPost(context) {
 
   const videoId = body.videoId;
   const visibility = sanitizeVisibility(body.visibility);
+  const validateDash = Boolean(body.validateDash);
 
-  const list = await env.VIDEO_BUCKET.list({ prefix: `videos/${videoId}/source/`, limit: 1 });
-  const source = list.objects[0];
-
-  if (!source) {
-    return json({ error: 'Uploaded source not found for videoId' }, 404);
-  }
-
-  if (!source.size) {
-    return json({ error: 'Uploaded source file is empty' }, 400);
-  }
-
-  const sourceSize = Number(source.size);
-  const segmentCount = Math.max(1, Math.ceil(sourceSize / TARGET_SEGMENT_SIZE_BYTES));
-  const segmentsPrefix = `videos/${videoId}/processed/segments`;
-  const playlistKey = `videos/${videoId}/processed/playlist.m3u8`;
+  const hlsMasterKey = `videos/${videoId}/processed/hls/master.m3u8`;
+  const dashManifestKey = `videos/${videoId}/processed/dash/manifest.mpd`;
   const metadataKey = `videos/${videoId}/metadata.json`;
   const processedAt = new Date().toISOString();
 
-  const segmentKeys = [];
-  for (let index = 0; index < segmentCount; index += 1) {
-    const start = index * TARGET_SEGMENT_SIZE_BYTES;
-    const length = Math.min(TARGET_SEGMENT_SIZE_BYTES, sourceSize - start);
-    const sourceChunk = await env.VIDEO_BUCKET.get(source.key, { range: { offset: start, length } });
-    if (!sourceChunk) {
-      return json({ error: `Unable to read source chunk ${index}` }, 500);
-    }
-
-    const segmentBytes = await sourceChunk.arrayBuffer();
-    const segmentKey = `${segmentsPrefix}/segment_${String(index).padStart(4, '0')}.ts`;
-
-    await env.VIDEO_BUCKET.put(segmentKey, segmentBytes, {
-      httpMetadata: { contentType: 'video/mp2t' },
-      customMetadata: {
-        status: 'processed',
-        visibility,
-        processedAt,
-        videoId,
-        sourceKey: source.key,
-        segmentIndex: String(index)
-      }
-    });
-
-    segmentKeys.push(segmentKey);
+  const hlsMaster = await env.VIDEO_BUCKET.get(hlsMasterKey);
+  if (!hlsMaster) {
+    return json({ error: `Missing required HLS master playlist at ${hlsMasterKey}` }, 404);
   }
 
-  const playlistContent = buildPlaylist(segmentKeys, SEGMENT_DURATION_SECONDS);
+  const hlsMasterContent = await hlsMaster.text();
+  const { variants, audioGroups } = parseHlsMasterPlaylist(hlsMasterContent);
 
-  await env.VIDEO_BUCKET.put(playlistKey, playlistContent, {
-    httpMetadata: { contentType: 'application/vnd.apple.mpegurl' },
-    customMetadata: {
-      status: 'processed',
-      visibility,
-      processedAt
-    }
-  });
+  const dashManifest = await env.VIDEO_BUCKET.get(dashManifestKey);
+  if (validateDash && !dashManifest) {
+    return json({ error: `DASH validation requested but manifest not found at ${dashManifestKey}` }, 404);
+  }
 
-  await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify({
+  const resolvedDashManifestKey = dashManifest ? dashManifestKey : null;
+
+  const metadata = {
     videoId,
-    sourceKey: source.key,
-    playlistKey,
-    segmentKeys,
-    status: 'processed',
-    visibility,
+    packaging: 'cmaf',
+    hlsMasterKey,
+    dashManifestKey: resolvedDashManifestKey,
+    variants,
     processedAt,
-    segmentDurationSeconds: SEGMENT_DURATION_SECONDS,
-    note: 'Segments are generated from uploaded bytes in fixed-size chunks with .ts naming for key compatibility only. They are not guaranteed to be valid MPEG-TS. Use ffmpeg transcoding for production HLS output.'
-  }, null, 2), {
+    visibility,
+    status: 'processed'
+  };
+
+  if (audioGroups.length > 0) {
+    metadata.audioGroups = audioGroups;
+  }
+
+  await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
     httpMetadata: { contentType: 'application/json' }
   });
 
   return json({
     ok: true,
     videoId,
-    playlistKey,
-    segmentKeys,
+    packaging: metadata.packaging,
+    hlsMasterKey,
+    dashManifestKey: resolvedDashManifestKey,
+    variants,
+    audioGroups: audioGroups.length > 0 ? audioGroups : undefined,
     metadataKey,
     processedAt,
-    visibility
+    visibility,
+    status: metadata.status
   });
 }
 
-function buildPlaylist(segmentKeys, segmentDurationSeconds) {
-  const header = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:3',
-    `#EXT-X-TARGETDURATION:${segmentDurationSeconds}`,
-    '#EXT-X-MEDIA-SEQUENCE:0'
-  ];
+function parseHlsMasterPlaylist(content) {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  const lines = [...header];
-  for (const key of segmentKeys) {
-    lines.push(`#EXTINF:${segmentDurationSeconds.toFixed(1)},`);
-    lines.push(key);
+  const variants = [];
+  const audioGroups = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    if (line.startsWith('#EXT-X-MEDIA:')) {
+      const attributes = parseAttributeList(line.slice('#EXT-X-MEDIA:'.length));
+      if (attributes.TYPE === 'AUDIO') {
+        audioGroups.push({
+          type: attributes.TYPE,
+          groupId: attributes['GROUP-ID'] ?? null,
+          name: attributes.NAME ?? null,
+          language: attributes.LANGUAGE ?? null,
+          default: attributes.DEFAULT === 'YES',
+          autoselect: attributes.AUTOSELECT === 'YES',
+          channels: attributes.CHANNELS ?? null,
+          uri: attributes.URI ?? null
+        });
+      }
+      continue;
+    }
+
+    if (line.startsWith('#EXT-X-STREAM-INF:')) {
+      const attributes = parseAttributeList(line.slice('#EXT-X-STREAM-INF:'.length));
+      const nextLine = lines[i + 1];
+      const uri = nextLine && !nextLine.startsWith('#') ? nextLine : null;
+
+      variants.push({
+        uri,
+        bandwidth: toNumberOrNull(attributes.BANDWIDTH),
+        averageBandwidth: toNumberOrNull(attributes['AVERAGE-BANDWIDTH']),
+        codecs: attributes.CODECS ?? null,
+        resolution: attributes.RESOLUTION ?? null,
+        frameRate: toNumberOrNull(attributes['FRAME-RATE']),
+        audioGroupId: attributes.AUDIO ?? null,
+        subtitlesGroupId: attributes.SUBTITLES ?? null,
+        closedCaptions: attributes['CLOSED-CAPTIONS'] ?? null
+      });
+    }
   }
 
-  lines.push('#EXT-X-ENDLIST');
-  return lines.join('\n');
+  return { variants, audioGroups };
+}
+
+function parseAttributeList(rawAttributes) {
+  const attributes = {};
+  const regex = /([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/g;
+
+  for (const match of rawAttributes.matchAll(regex)) {
+    const key = match[1];
+    const value = match[2];
+    attributes[key] = stripQuotes(value);
+  }
+
+  return attributes;
+}
+
+function stripQuotes(value) {
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function toNumberOrNull(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
 }
 
 function sanitizeVisibility(value) {
