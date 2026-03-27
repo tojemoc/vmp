@@ -63,6 +63,20 @@ Windows Command Prompt equivalents are also available:
 .\scripts\upload-to-r2.bat .\tmp\hls <your-r2-bucket-binding-name> <videoId>
 ```
 
+
+For CMAF-first packaging (with optional DASH) and direct `rclone` upload to R2, use:
+
+```bash
+./scripts/cmaf-r2-upload.sh ./input.mp4 <videoId> <rclone-remote> [--with-dash]
+```
+
+PowerShell equivalent:
+
+```powershell
+./scripts/cmaf-r2-upload.ps1 -InputMp4 ./input.mp4 -VideoId <videoId> -RcloneRemote <rclone-remote> [-WithDash]
+```
+
+
 ## Processing output
 
 `POST /api/process` now emits:
