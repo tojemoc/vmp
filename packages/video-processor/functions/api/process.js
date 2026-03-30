@@ -1,105 +1,101 @@
-export async function onRequestPost(context) {
+export async function onRequest(context) {
   const { request, env } = context;
 
+  if (request.method === 'OPTIONS') {
+    return withCors(new Response(null, { status: 204 }), request);
+  }
+
+  if (request.method !== 'POST') {
+    return withCors(json({ error: 'Method not allowed' }, 405), request);
+  }
+
   if (!env.VIDEO_BUCKET) {
-    return json({ error: 'VIDEO_BUCKET binding is required' }, 500);
+    return withCors(json({ error: 'VIDEO_BUCKET binding is required' }, 500), request);
   }
 
-  const body = await request.json().catch(() => null);
-  if (!body?.videoId) {
-    return json({ error: 'videoId is required' }, 400);
+  try {
+    const body = await request.json().catch(() => null);
+    if (!body?.videoId) {
+      return withCors(json({ error: 'videoId is required' }, 400), request);
+    }
+
+    const videoId = body.videoId;
+    const visibility = sanitizeVisibility(body.visibility);
+    const validateDash = Boolean(body.validateDash);
+
+    const hlsMasterKey = `videos/${videoId}/processed/hls/master.m3u8`;
+    const dashManifestKey = `videos/${videoId}/processed/dash/manifest.mpd`;
+    const metadataKey = `videos/${videoId}/metadata.json`;
+    const processedAt = new Date().toISOString();
+
+    const existingMetadataObject = await env.VIDEO_BUCKET.get(metadataKey);
+    const existingMetadata = existingMetadataObject
+      ? await existingMetadataObject.json().catch(() => null)
+      : null;
+    const durationSeconds = toNumberOrNull(existingMetadata?.durationSeconds);
+
+    const hlsMaster = await env.VIDEO_BUCKET.get(hlsMasterKey);
+    if (!hlsMaster) {
+      return withCors(json({ error: `Missing required HLS master playlist at ${hlsMasterKey}` }, 404), request);
+    }
+
+    const hlsMasterContent = await hlsMaster.text();
+    const { variants, audioGroups } = parseHlsMasterPlaylist(hlsMasterContent);
+
+    const dashManifest = await env.VIDEO_BUCKET.get(dashManifestKey);
+    if (validateDash && !dashManifest) {
+      return withCors(json({ error: `DASH validation requested but manifest not found at ${dashManifestKey}` }, 404), request);
+    }
+
+    const resolvedDashManifestKey = dashManifest ? dashManifestKey : null;
+
+    const metadata = {
+      videoId,
+      packaging: 'cmaf',
+      hlsMasterKey,
+      dashManifestKey: resolvedDashManifestKey,
+      variants,
+      processedAt,
+      visibility,
+      status: 'processed'
+    };
+
+    if (durationSeconds !== null) metadata.durationSeconds = durationSeconds;
+    if (audioGroups.length > 0) metadata.audioGroups = audioGroups;
+
+    await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
+      httpMetadata: { contentType: 'application/json' }
+    });
+
+    const durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds });
+
+    return withCors(json({
+      ok: true,
+      videoId,
+      packaging: metadata.packaging,
+      hlsMasterKey,
+      dashManifestKey: resolvedDashManifestKey,
+      variants,
+      audioGroups: audioGroups.length > 0 ? audioGroups : undefined,
+      metadataKey,
+      processedAt,
+      visibility,
+      status: metadata.status,
+      durationSeconds,
+      durationSync
+    }), request);
+  } catch (error) {
+    console.error('Failed to process video metadata registration', error);
+    return withCors(json({ error: 'Failed to process video', details: String(error?.message || error) }, 500), request);
   }
-
-  const videoId = body.videoId;
-  const visibility = sanitizeVisibility(body.visibility);
-  const validateDash = Boolean(body.validateDash);
-
-  const hlsMasterKey = `videos/${videoId}/processed/hls/master.m3u8`;
-  const dashManifestKey = `videos/${videoId}/processed/dash/manifest.mpd`;
-  const metadataKey = `videos/${videoId}/metadata.json`;
-  const processedAt = new Date().toISOString();
-
-  const existingMetadataObject = await env.VIDEO_BUCKET.get(metadataKey);
-  const existingMetadata = existingMetadataObject
-    ? await existingMetadataObject.json().catch(() => null)
-    : null;
-  const durationSeconds = toNumberOrNull(existingMetadata?.durationSeconds);
-
-  const hlsMaster = await env.VIDEO_BUCKET.get(hlsMasterKey);
-  if (!hlsMaster) {
-    return json({ error: `Missing required HLS master playlist at ${hlsMasterKey}` }, 404);
-  }
-
-  const hlsMasterContent = await hlsMaster.text();
-  const { variants, audioGroups } = parseHlsMasterPlaylist(hlsMasterContent);
-
-  const dashManifest = await env.VIDEO_BUCKET.get(dashManifestKey);
-  if (validateDash && !dashManifest) {
-    return json({ error: `DASH validation requested but manifest not found at ${dashManifestKey}` }, 404);
-  }
-
-  const resolvedDashManifestKey = dashManifest ? dashManifestKey : null;
-
-  const metadata = {
-    videoId,
-    packaging: 'cmaf',
-    hlsMasterKey,
-    dashManifestKey: resolvedDashManifestKey,
-    variants,
-    processedAt,
-    visibility,
-    status: 'processed'
-  };
-
-  if (durationSeconds !== null) {
-    metadata.durationSeconds = durationSeconds;
-  }
-
-  if (audioGroups.length > 0) {
-    metadata.audioGroups = audioGroups;
-  }
-
-  await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
-    httpMetadata: { contentType: 'application/json' }
-  });
-
-  const durationSync = await syncVideoDurationToDb({
-    db: getVideoDatabaseBinding(env),
-    videoId,
-    durationSeconds
-  });
-
-  return json({
-    ok: true,
-    videoId,
-    packaging: metadata.packaging,
-    hlsMasterKey,
-    dashManifestKey: resolvedDashManifestKey,
-    variants,
-    audioGroups: audioGroups.length > 0 ? audioGroups : undefined,
-    metadataKey,
-    processedAt,
-    visibility,
-    status: metadata.status,
-    durationSeconds,
-    durationSync
-  });
 }
 
 async function syncVideoDurationToDb({ db, videoId, durationSeconds }) {
-  if (!db) {
-    return { updated: false, reason: 'missing-d1-binding' };
-  }
-
-  if (durationSeconds === null) {
-    return { updated: false, reason: 'missing-duration-seconds' };
-  }
+  if (!db) return { updated: false, reason: 'missing-d1-binding' };
+  if (durationSeconds === null) return { updated: false, reason: 'missing-duration-seconds' };
 
   const normalizedDuration = Math.round(durationSeconds);
-  const result = await db
-    .prepare('UPDATE videos SET full_duration = ? WHERE id = ?')
-    .bind(normalizedDuration, videoId)
-    .run();
+  const result = await db.prepare('UPDATE videos SET full_duration = ? WHERE id = ?').bind(normalizedDuration, videoId).run();
 
   return {
     updated: Number(result.meta?.changes || 0) > 0,
@@ -109,11 +105,7 @@ async function syncVideoDurationToDb({ db, videoId, durationSeconds }) {
 }
 
 function parseHlsMasterPlaylist(content) {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const variants = [];
   const audioGroups = [];
 
@@ -162,51 +154,44 @@ function parseHlsMasterPlaylist(content) {
 function parseAttributeList(rawAttributes) {
   const attributes = {};
   const regex = /([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/g;
-
-  for (const match of rawAttributes.matchAll(regex)) {
-    const key = match[1];
-    const value = match[2];
-    attributes[key] = stripQuotes(value);
-  }
-
+  for (const match of rawAttributes.matchAll(regex)) attributes[match[1]] = stripQuotes(match[2]);
   return attributes;
 }
 
 function stripQuotes(value) {
-  if (value.startsWith('"') && value.endsWith('"')) {
-    return value.slice(1, -1);
-  }
+  if (value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
   return value;
 }
 
 function toNumberOrNull(value) {
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-
+  if (value === undefined || value === null || value === '') return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
 
 function sanitizeVisibility(value) {
-  if (value === 'public' || value === 'unlisted') {
-    return value;
-  }
-  return 'private';
-}
-
-function sanitizeProcessingMode(value) {
-  if (value === 'legacy-process') return value;
-  return 'register-existing-cmaf';
+  return value === 'public' || value === 'unlisted' ? value : 'private';
 }
 
 function getVideoDatabaseBinding(env) {
   return env.video_subscription_db || env.VIDEO_SUBSCRIPTION_DB || env.DB || null;
 }
 
+function withCors(response, request) {
+  const headers = new Headers(response.headers);
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Vary', 'Origin');
+  } else {
+    headers.set('Access-Control-Allow-Origin', '*');
+  }
+  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json' }
-  });
+  return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 }
