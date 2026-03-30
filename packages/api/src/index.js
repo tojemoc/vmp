@@ -174,9 +174,11 @@ async function handleVideoAccess(request, env, corsHeaders) {
       : null
 
     const video = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(videoId).first()
-    const hasPremiumAccess = Boolean(subscription &&
+    const hasElevatedRole = ['editor', 'admin', 'super_admin'].includes(authUser?.role ?? '')
+    const hasPremiumSubscription = Boolean(subscription &&
       subscription.plan_type === 'premium' &&
       (subscription.expires_at === null || new Date(subscription.expires_at) > new Date()))
+    const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription
 
     const hasVideoMetadata = Boolean(video)
     const hasAccess = hasPremiumAccess || !hasVideoMetadata
@@ -249,19 +251,21 @@ async function handleVideoProxy(request, env, corsHeaders) {
 }
 
 async function handleAdminConfig(request, env, corsHeaders) {
+  const db = getDatabaseBinding(env)
+  await ensureAdminSettingsTable(db)
+
+  if (request.method === 'GET') {
+    const row = await db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first()
+    const value = safeJsonParse(row?.value, defaultHomepageConfig())
+    return jsonResponse({ config: value }, 200, corsHeaders)
+  }
+
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
   } catch (error) {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
 
-  const db = getDatabaseBinding(env)
-  await ensureAdminSettingsTable(db)
-  if (request.method === 'GET') {
-    const row = await db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first()
-    const value = safeJsonParse(row?.value, defaultHomepageConfig())
-    return jsonResponse({ config: value }, 200, corsHeaders)
-  }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const body = await request.json().catch(() => null)
   if (!body?.config || typeof body.config !== 'object') return jsonResponse({ error: 'config object is required' }, 400, corsHeaders)
@@ -416,12 +420,18 @@ function normalizeHomepageConfig(config) {
     layoutBlocks: Array.isArray(config.layoutBlocks)
       ? config.layoutBlocks.filter(b => b && typeof b === 'object').map(b => ({
           id:    typeof b.id    === 'string' ? b.id    : crypto.randomUUID(),
-          type:  typeof b.type  === 'string' ? b.type  : 'hero',
+          type:  normalizeLayoutBlockType(b.type),
           title: typeof b.title === 'string' ? b.title : '',
           body:  typeof b.body  === 'string' ? b.body  : '',
         }))
       : [],
   }
+}
+
+function normalizeLayoutBlockType(type) {
+  if (type === 'featured') return 'featured_row'
+  const allowedTypes = new Set(['hero', 'featured_row', 'cta', 'text_split', 'video_grid'])
+  return allowedTypes.has(type) ? type : 'hero'
 }
 
 async function canLoadEntrypoint(url) {
