@@ -438,6 +438,17 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
   const visibilityMap = { published: 'public', draft: 'private', archived: 'unlisted' }
   const newVisibility = visibilityMap[body.status]
 
+  // Guard: refuse to publish if the processed playlist is missing from R2.
+  if (body.status === 'published' && env.BUCKET) {
+    const exists = await env.BUCKET.head(`videos/${videoId}/processed/playlist.m3u8`)
+    if (!exists) {
+      return jsonResponse({
+        error: 'Cannot publish: processed media not found in R2. Upload and process the video first.',
+        code: 'r2_missing',
+      }, 422, corsHeaders)
+    }
+  }
+
   const db = getDatabaseBinding(env)
   try {
     if (body.status === 'published') {

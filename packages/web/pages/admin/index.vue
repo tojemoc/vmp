@@ -367,13 +367,18 @@ const getDefaultBlocks = (): LayoutBlock[] => ([
 ])
 
 const loadVideos = async () => {
-  const res  = await fetch(`${config.public.apiUrl}/api/admin/videos`, { headers: authHeader() })
-  const data = await res.json()
-  uploads.value = data.videos || []
-  for (const video of uploads.value) {
-    previewLockByVideoId.value[video.id] = video.preview_duration
+  videosLoading.value = true
+  try {
+    const res  = await fetch(`${config.public.apiUrl}/api/admin/videos`, { headers: authHeader() })
+    const data = await res.json()
+    uploads.value = data.videos || []
+    for (const video of uploads.value) {
+      previewLockByVideoId.value[video.id] = video.preview_duration
+    }
+    await hydrateActualDurations()
+  } finally {
+    videosLoading.value = false
   }
-  await hydrateActualDurations()
 }
 
 const loadConfig = async () => {
