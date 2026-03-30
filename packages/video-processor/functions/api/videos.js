@@ -1,8 +1,14 @@
+export async function onRequestOptions(context) {
+  const corsHeaders = buildCorsHeaders(context.request);
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
 export async function onRequestGet(context) {
-  const { env } = context;
+  const { env, request } = context;
+  const corsHeaders = buildCorsHeaders(request);
 
   if (!env.VIDEO_BUCKET) {
-    return json({ error: 'VIDEO_BUCKET binding is required' }, 500);
+    return json({ error: 'VIDEO_BUCKET binding is required' }, 500, corsHeaders);
   }
 
   const objects = await listAllVideoObjects(env.VIDEO_BUCKET);
@@ -12,12 +18,12 @@ export async function onRequestGet(context) {
     const videoId = getVideoIdFromKey(object.key);
     if (!videoId) continue;
 
-    const entry = byVideoId.get(videoId) ?? newVideoEntry(videoId);
-    hydrateVideoEntry(entry, object);
-    byVideoId.set(videoId, entry);
-  }
+      const entry = byVideoId.get(videoId) ?? newVideoEntry(videoId);
+      hydrateVideoEntry(entry, object);
+      byVideoId.set(videoId, entry);
+    }
 
-  await hydrateMetadata(byVideoId, env);
+    await hydrateMetadata(byVideoId, env);
 
   const entries = Array.from(byVideoId.values())
     .filter((entry) => entry.hasSource || entry.hasAnyProcessedArtifact)
@@ -167,8 +173,7 @@ function getPackagingStateFromMetadata(metadata, videoId) {
   const legacyPlaylistKey = `${processedPrefix}playlist.m3u8`;
   const variantMediaPattern = new RegExp(`^videos/${escapeRegExp(videoId)}/processed/[^/]+/.+(?:\\.m4s|\\.mp4)$`);
 
-  const allProcessedKeys = Array.from(collectStringValues(metadata))
-    .filter((value) => value.startsWith(processedPrefix));
+  const allProcessedKeys = Array.from(collectStringValues(metadata)).filter((value) => value.startsWith(processedPrefix));
 
   const keys = new Set(allProcessedKeys);
   const hasHlsMaster = keys.has(hlsMasterKey);
@@ -176,6 +181,108 @@ function getPackagingStateFromMetadata(metadata, videoId) {
   const hasLegacyPlaylist = keys.has(legacyPlaylistKey);
   const hasVariantMedia = allProcessedKeys.some((key) => variantMediaPattern.test(key));
 
+async function syncVideosTable(entries, env) {
+  const db = getVideoDatabaseBinding(env);
+  if (!db) return;
+
+  try {
+    const columnSet = await getVideosTableColumnSet(db);
+    if (!columnSet.size) return;
+
+    for (const entry of entries) {
+      await upsertVideoRow(db, entry, columnSet);
+    }
+
+    if (columnSet.has('managed_by_r2')) {
+      if (!entries.length) {
+        await db.prepare('DELETE FROM videos WHERE managed_by_r2 = 1').run();
+      } else {
+        const placeholders = entries.map(() => '?').join(',');
+        await db.prepare(`DELETE FROM videos WHERE managed_by_r2 = 1 AND id NOT IN (${placeholders})`)
+          .bind(...entries.map((entry) => entry.videoId))
+          .run();
+      }
+    }
+  } catch (error) {
+    console.error('Video D1 sync skipped due to error', error);
+  }
+}
+
+async function getVideosTableColumnSet(db) {
+  const result = await db.prepare('PRAGMA table_info(videos)').all();
+  const rows = Array.isArray(result?.results) ? result.results : [];
+  return new Set(rows.map((row) => row?.name).filter(Boolean));
+}
+
+async function upsertVideoRow(db, entry, columnSet) {
+  const sourceName = entry.sourceKey?.split('/').pop() || entry.videoId;
+  const inferredTitle = sourceName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || `Uploaded video ${entry.videoId}`;
+  const status = entry.needsProcessing ? 'uploaded' : 'processed';
+  const now = entry.updatedAt || new Date().toISOString();
+
+  const insertColumns = ['id', 'title', 'description', 'thumbnail_url', 'full_duration', 'preview_duration', 'upload_date', 'created_at'];
+  const insertValues = ['?', '?', "''", 'NULL', '0', '0', '?', "COALESCE((SELECT created_at FROM videos WHERE id = ?), ?)"];
+  const bindValues = [entry.videoId, inferredTitle, now, entry.videoId, now];
+
+  if (columnSet.has('source_key')) {
+    insertColumns.push('source_key');
+    insertValues.push('?');
+    bindValues.push(entry.sourceKey);
+  }
+  if (columnSet.has('visibility')) {
+    insertColumns.push('visibility');
+    insertValues.push('?');
+    bindValues.push(entry.visibility);
+  }
+  if (columnSet.has('status')) {
+    insertColumns.push('status');
+    insertValues.push('?');
+    bindValues.push(status);
+  }
+  if (columnSet.has('updated_at')) {
+    insertColumns.push('updated_at');
+    insertValues.push('?');
+    bindValues.push(now);
+  }
+  if (columnSet.has('processed_at')) {
+    insertColumns.push('processed_at');
+    insertValues.push(status === 'processed' ? '?' : 'NULL');
+    if (status === 'processed') bindValues.push(now);
+  }
+  if (columnSet.has('managed_by_r2')) {
+    insertColumns.push('managed_by_r2');
+    insertValues.push('1');
+  }
+
+  const updates = [
+    "title = CASE WHEN videos.title IS NULL OR videos.title = '' THEN excluded.title ELSE videos.title END",
+    'upload_date = excluded.upload_date'
+  ];
+
+  if (columnSet.has('source_key')) updates.push('source_key = excluded.source_key');
+  if (columnSet.has('visibility')) updates.push('visibility = excluded.visibility');
+  if (columnSet.has('status')) updates.push('status = excluded.status');
+  if (columnSet.has('updated_at')) updates.push('updated_at = excluded.updated_at');
+  if (columnSet.has('processed_at')) {
+    updates.push("processed_at = CASE WHEN excluded.status = 'processed' THEN COALESCE(videos.processed_at, excluded.processed_at) ELSE NULL END");
+  }
+  if (columnSet.has('managed_by_r2')) updates.push('managed_by_r2 = 1');
+
+  const sql = `
+    INSERT INTO videos (${insertColumns.join(', ')})
+    VALUES (${insertValues.join(', ')})
+    ON CONFLICT(id) DO UPDATE SET ${updates.join(',\n      ')}
+  `;
+
+  await db.prepare(sql).bind(...bindValues).run();
+}
+
+function getVideoDatabaseBinding(env) {
+  return env.video_subscription_db || env.VIDEO_SUBSCRIPTION_DB || env.DB || null;
+}
+
+function buildCorsHeaders(request) {
+  const origin = request.headers.get('Origin');
   return {
     hasHlsMaster,
     hasDashManifest,
@@ -271,9 +378,12 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' }
+    headers: {
+      'content-type': 'application/json',
+      ...extraHeaders
+    }
   });
 }
