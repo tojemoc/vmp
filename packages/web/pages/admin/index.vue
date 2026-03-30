@@ -171,6 +171,7 @@ interface LayoutBlock {
 }
 
 const config = useRuntimeConfig()
+const { authHeader } = useAuth()
 const loading = ref(true)
 const uploads = ref<Video[]>([])
 const pickerOpen = ref(false)
