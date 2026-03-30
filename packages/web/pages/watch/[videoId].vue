@@ -25,7 +25,7 @@
                 Free preview limit reached
               </h3>
               <p class="text-amber-800 dark:text-amber-300 mb-4">
-                You've watched {{ rateLimitCount }} free previews this hour. Sign in for unlimited previews — it's free.
+                You've watched {{ rateLimitCurrent }} of {{ rateLimitLimit }} free previews this hour. Sign in for unlimited previews — it's free.
               </p>
               <div class="flex items-center space-x-3">
                 <NuxtLink
@@ -274,7 +274,8 @@ const showPremiumOverlay  = ref(false)
 const currentTime         = ref(0)
 const rateLimited         = ref(false)
 const rateLimitRetryAfter = ref<number | null>(null)
-const rateLimitCount      = ref(0)
+const rateLimitCurrent    = ref(0)
+const rateLimitLimit      = ref(0)
 
 const videoId = route.params.videoId as string
 
@@ -363,11 +364,15 @@ onMounted(async () => {
 
     if (videoResponse.status === 429) {
       const data = await videoResponse.json().catch(() => ({}))
-      rateLimited.value = true
-      rateLimitRetryAfter.value = data.retryAfter ?? null
-      rateLimitCount.value = data.limit ?? data.current ?? 5
-      loading.value = false
-      return
+      if (data.error === 'rate_limit_exceeded' && data.loginPrompt === true) {
+        rateLimited.value = true
+        rateLimitRetryAfter.value = data.retryAfter ?? null
+        rateLimitCurrent.value = data.current ?? data.limit ?? 0
+        rateLimitLimit.value = data.limit ?? data.current ?? 0
+        loading.value = false
+        return
+      }
+      throw new Error('Too many requests. Please try again later.')
     }
 
     if (!videoResponse.ok) throw new Error('Failed to load video data')
