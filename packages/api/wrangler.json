@@ -18,7 +18,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "RATE_LIMIT_KV",
-			"id": "REPLACE_WITH_KV_NAMESPACE_ID"
+			"id": "96fab13ef30e42afaecedeee8e6875b9"
 		}
 	],
 	"vars": {
@@ -33,5 +33,5 @@
 			"enabled": true,
 			"invocation_logs": true
 		}
-	}	
+	}
 }
