@@ -3,33 +3,33 @@ const TUS_VERSION = '1.0.0';
 export async function onRequest(context) {
   const { request, env } = context;
 
-  if (!env.VIDEO_BUCKET) {
-    return json({ error: 'VIDEO_BUCKET binding is required' }, 500);
+  if (request.method === 'OPTIONS') {
+    return tusResponse(null, 204, {}, request);
   }
 
-  if (request.method === 'OPTIONS') {
-    return tusResponse(null, 204);
+  if (!env.VIDEO_BUCKET) {
+    return json({ error: 'VIDEO_BUCKET binding is required' }, 500, request);
   }
 
   if (request.method !== 'POST') {
-    return tusResponse(null, 405, { 'Allow': 'POST,OPTIONS' });
+    return tusResponse(null, 405, { Allow: 'POST,OPTIONS' }, request);
   }
 
   const tusVersion = request.headers.get('Tus-Resumable');
   if (tusVersion !== TUS_VERSION) {
-    return tusResponse(jsonString({ error: 'Missing or invalid Tus-Resumable header' }), 412);
+    return tusResponse(jsonString({ error: 'Missing or invalid Tus-Resumable header' }), 412, {}, request);
   }
 
   const uploadLength = Number(request.headers.get('Upload-Length'));
   if (!Number.isFinite(uploadLength) || uploadLength <= 0) {
-    return tusResponse(jsonString({ error: 'Upload-Length header is required and must be > 0' }), 400);
+    return tusResponse(jsonString({ error: 'Upload-Length header is required and must be > 0' }), 400, {}, request);
   }
 
   const metadata = parseUploadMetadata(request.headers.get('Upload-Metadata'));
   const fileName = sanitizeFileName(metadata.filename || 'upload.bin');
   const contentType = (metadata.filetype || 'application/octet-stream').toLowerCase();
   if (!contentType.startsWith('video/')) {
-    return tusResponse(jsonString({ error: 'Only video uploads are allowed' }), 400);
+    return tusResponse(jsonString({ error: 'Only video uploads are allowed' }), 400, {}, request);
   }
 
   const visibility = sanitizeVisibility(metadata.visibility);
@@ -65,10 +65,10 @@ export async function onRequest(context) {
   });
 
   return tusResponse(null, 201, {
-    'Location': `/api/uploads/${videoId}`,
+    Location: `/api/uploads/${videoId}`,
     'Upload-Offset': '0',
     'Upload-Length': String(uploadLength)
-  });
+  }, request);
 }
 
 function parseUploadMetadata(headerValue) {
@@ -97,27 +97,40 @@ function sanitizeFileName(name) {
 }
 
 function sanitizeVisibility(value) {
-  if (value === 'public' || value === 'unlisted') {
-    return value;
-  }
-  return 'private';
+  return value === 'public' || value === 'unlisted' ? value : 'private';
 }
 
-function tusResponse(body, status = 200, extraHeaders = {}) {
-  return new Response(body, {
+function tusResponse(body, status = 200, extraHeaders = {}, request) {
+  return withCors(new Response(body, {
     status,
     headers: {
       'Tus-Resumable': TUS_VERSION,
       ...extraHeaders
     }
-  });
+  }), request);
 }
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
+function json(data, status = 200, request) {
+  return withCors(new Response(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json' }
-  });
+  }), request);
+}
+
+function withCors(response, request) {
+  const headers = new Headers(response.headers);
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set('Vary', 'Origin');
+  } else {
+    headers.set('Access-Control-Allow-Origin', '*');
+  }
+  headers.set('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Tus-Resumable, Upload-Length, Upload-Offset, Upload-Metadata');
+  headers.set('Access-Control-Expose-Headers', 'Tus-Resumable, Upload-Offset, Upload-Length, Location, Upload-Complete, Upload-Result');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 function jsonString(data) {
