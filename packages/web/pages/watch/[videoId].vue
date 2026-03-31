@@ -342,7 +342,6 @@ const handleSeekbarInput = (event: Event) => {
     const video = videoElement.value
     if (video) { video.currentTime = previewDuration; video.pause() }
     showPremiumOverlay.value = true
-    setTimeout(() => { showPremiumOverlay.value = false }, 5000)
     return
   }
 
@@ -357,7 +356,6 @@ const enforcePreviewLimit = (video: HTMLVideoElement) => {
   video.currentTime = previewDuration
   video.pause()
   showPremiumOverlay.value = true
-  setTimeout(() => { showPremiumOverlay.value = false }, 5000)
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

@@ -21,6 +21,15 @@
 			"id": "96fab13ef30e42afaecedeee8e6875b9"
 		}
 	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SEGMENT_RATE_LIMITER",
+				"class_name": "SegmentRateLimiterDO",
+				"script_name": "vmp-api"
+			}
+		]
+	},
 	"vars": {
 		"R2_BASE_URL": "https://vmp-videos.tjm.sk",
 		"FRONTEND_URL": "https://vmp.tjm.sk",
@@ -29,6 +38,7 @@
 		"ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
 		"STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds"
 	},
+	"_comment_secrets": "Required secrets (set via 'wrangler secret put'): JWT_SECRET (for video token signing/verifying), STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY",
 	"observability": {
 		"logs": {
 			"enabled": true,
