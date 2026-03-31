@@ -53,16 +53,25 @@ export class SegmentRateLimiterDO {
     count += 1
     await this.state.storage.put(countKey, count)
 
-    // Schedule cleanup of old keys (after 2 minutes)
-    setTimeout(async () => {
-      await this.state.storage.delete(countKey)
-    }, 120000)
+    // Schedule cleanup of old keys (after 2 minutes) using alarm API
+    // Store the countKey so the alarm handler knows what to delete
+    await this.state.storage.put('pendingCleanupKey', countKey)
+    await this.state.storage.setAlarm(Date.now() + 120000)
 
     const exceeded = count > threshold
 
     return new Response(JSON.stringify({ count, threshold, exceeded }), {
       headers: { 'Content-Type': 'application/json' },
     })
+  }
+
+  async alarm() {
+    // Alarm handler - cleanup expired count keys
+    const countKey = await this.state.storage.get('pendingCleanupKey')
+    if (countKey) {
+      await this.state.storage.delete(countKey)
+      await this.state.storage.delete('pendingCleanupKey')
+    }
   }
 }
 
@@ -991,12 +1000,28 @@ async function verifyVideoToken(token, secret) {
   const payload = token.slice(0, dotIndex)
   const sigHex  = token.slice(dotIndex + 1)
 
+  // Validate sigHex before conversion
+  if (!sigHex || typeof sigHex !== 'string') {
+    throw new Error('Malformed video token signature')
+  }
+  if (sigHex.length === 0 || sigHex.length % 2 !== 0) {
+    throw new Error('Malformed video token signature')
+  }
+  if (!/^[0-9a-fA-F]+$/.test(sigHex)) {
+    throw new Error('Malformed video token signature')
+  }
+
   const key = await importVideoHmacKey(secret)
 
   // Constant-time verification
-  const sigBytes = new Uint8Array(sigHex.match(/../g).map(h => parseInt(h, 16)))
-  const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
-  if (!valid) throw new Error('Invalid video token signature')
+  try {
+    const sigBytes = new Uint8Array(sigHex.match(/../g).map(h => parseInt(h, 16)))
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
+    if (!valid) throw new Error('Invalid video token signature')
+  } catch (error) {
+    if (error.message === 'Invalid video token signature') throw error
+    throw new Error('Malformed video token signature')
+  }
 
   const decoded = b64urlDecode(payload)
   const parts   = decoded.split(':')
@@ -1043,9 +1068,19 @@ async function getAvgSegmentDuration(videoId, env) {
           const lines    = text.split('\n')
           const varLine  = lines.find(l => !l.startsWith('#') && l.trim().endsWith('.m3u8'))
           if (varLine) {
-            const varUrl = varLine.trim().startsWith('http')
-              ? varLine.trim()
-              : `${base}/videos/${videoId}/${varLine.trim()}`
+            const trimmedLine = varLine.trim()
+            let varUrl
+            if (trimmedLine.startsWith('http://') || trimmedLine.startsWith('https://')) {
+              // Full absolute URL
+              varUrl = trimmedLine
+            } else if (trimmedLine.startsWith('/')) {
+              // Absolute path - resolve against the base origin
+              const baseUrl = new URL(url)
+              varUrl = `${baseUrl.origin}${trimmedLine}`
+            } else {
+              // Relative path - resolve against videos/{videoId}/
+              varUrl = `${base}/videos/${videoId}/${trimmedLine}`
+            }
             const varRes = await fetch(varUrl)
             if (varRes.ok) manifest = await varRes.text()
           }
