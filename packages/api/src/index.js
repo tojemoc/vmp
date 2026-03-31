@@ -381,7 +381,13 @@ async function handlePreviewLocks(request, env, corsHeaders) {
     if (!lockEntry || typeof lockEntry.videoId !== 'string') continue
     const lockSeconds = Number.parseInt(lockEntry.previewDuration, 10)
     if (!Number.isFinite(lockSeconds) || lockSeconds < 0) continue
-    await db.prepare('UPDATE videos SET preview_duration = MIN(full_duration, ?) WHERE id = ?').bind(lockSeconds, lockEntry.videoId).run()
+    // When full_duration = 0 (unprocessed draft), MIN would clamp preview to 0.
+    // Treat 0 as "unknown duration" and store the requested value as-is.
+    await db.prepare(`
+      UPDATE videos
+      SET preview_duration = CASE WHEN full_duration = 0 THEN ? ELSE MIN(full_duration, ?) END
+      WHERE id = ?
+    `).bind(lockSeconds, lockSeconds, lockEntry.videoId).run()
   }
   return jsonResponse({ ok: true }, 200, corsHeaders)
 }
@@ -452,20 +458,24 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
   if (!videoId) return jsonResponse({ error: 'Missing videoId' }, 400, corsHeaders)
 
   const body = await request.json().catch(() => null)
+  if (!body) return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+
   const allowedStatuses = ['draft', 'published', 'archived']
-  if (!body || !allowedStatuses.includes(body.status)) {
+  const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status')
+  const hasTitle  = Object.prototype.hasOwnProperty.call(body, 'title')
+
+  if (!hasStatus && !hasTitle) {
+    return jsonResponse({ error: 'At least one of status or title must be provided' }, 400, corsHeaders)
+  }
+  if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
+    return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
+  }
+  if (hasStatus && !allowedStatuses.includes(body.status)) {
     return jsonResponse({ error: 'status must be one of: draft, published, archived' }, 400, corsHeaders)
   }
 
-  // Map publish_status to visibility so both stay in sync:
-  //   published  → visibility=public  (appears on homepage)
-  //   draft      → visibility=private (hidden from homepage)
-  //   archived   → visibility=unlisted (hidden but URL still works for editors)
-  const visibilityMap = { published: 'public', draft: 'private', archived: 'unlisted' }
-  const newVisibility = visibilityMap[body.status]
-
   // Guard: refuse to publish if the processed playlist is missing from R2.
-  if (body.status === 'published' && env.BUCKET) {
+  if (hasStatus && body.status === 'published' && env.BUCKET) {
     const exists = await hasProcessedPlaybackArtifact(env.BUCKET, videoId)
     if (!exists) {
       return jsonResponse({
@@ -475,27 +485,41 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
     }
   }
 
+  // Map publish_status to visibility so both stay in sync:
+  //   published  → visibility=public  (appears on homepage)
+  //   draft      → visibility=private (hidden from homepage)
+  //   archived   → visibility=unlisted (hidden but URL still works for editors)
+  const visibilityMap = { published: 'public', draft: 'private', archived: 'unlisted' }
+
   const db = getDatabaseBinding(env)
   try {
-    if (body.status === 'published') {
-      // Stamp published_at only on first publish; preserve it on re-publish
-      await db.prepare(`
-        UPDATE videos
-        SET publish_status = 'published',
-            visibility = 'public',
-            published_at = COALESCE(published_at, CURRENT_TIMESTAMP),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).bind(videoId).run()
-    } else {
-      await db.prepare(`
-        UPDATE videos
-        SET publish_status = ?,
-            visibility = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).bind(body.status, newVisibility, videoId).run()
+    if (hasTitle) {
+      await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(body.title.trim(), videoId).run()
     }
+
+    if (hasStatus) {
+      if (body.status === 'published') {
+        // Stamp published_at only on first publish; preserve it on re-publish
+        await db.prepare(`
+          UPDATE videos
+          SET publish_status = 'published',
+              visibility = 'public',
+              published_at = COALESCE(published_at, CURRENT_TIMESTAMP),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(videoId).run()
+      } else {
+        await db.prepare(`
+          UPDATE videos
+          SET publish_status = ?,
+              visibility = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(body.status, visibilityMap[body.status], videoId).run()
+      }
+    }
+
     const video = await db.prepare(`
       SELECT id, title, visibility, status, publish_status, published_at, updated_at
       FROM videos WHERE id = ?

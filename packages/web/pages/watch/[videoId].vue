@@ -133,7 +133,7 @@
                     type="range"
                     class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     :min="0"
-                    :max="videoData.video.fullDuration"
+                    :max="effectiveFullDuration"
                     :step="0.1"
                     :value="currentTime"
                     @input="handleSeekbarInput"
@@ -159,7 +159,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span>{{ formatDuration(videoData.video.fullDuration) }}</span>
+                <span>{{ effectiveFullDuration ? formatDuration(effectiveFullDuration) : '--' }}</span>
               </span>
 
               <span
@@ -176,7 +176,7 @@
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                 </svg>
-                <span>Preview Only ({{ formatDuration(videoData.video.previewDuration) }})</span>
+                <span>Preview Only ({{ videoData.video.previewDuration ? formatDuration(videoData.video.previewDuration) : '--' }})</span>
               </span>
             </div>
 
@@ -206,10 +206,10 @@
                       class="w-full h-full object-cover"
                     />
                     <div class="absolute bottom-1 right-1 bg-black bg-opacity-80 text-white text-xs px-1.5 py-0.5 rounded">
-                      {{ formatDuration(rec.full_duration) }}
+                      {{ rec.full_duration ? formatDuration(rec.full_duration) : '--' }}
                     </div>
                     <div
-                      v-if="rec.preview_duration < rec.full_duration"
+                      v-if="rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0"
                       class="absolute top-1 left-1 bg-yellow-500 text-black text-xs font-semibold px-1.5 py-0.5 rounded"
                     >
                       PRO
@@ -240,6 +240,7 @@ import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
 import 'videojs-video-element'
+import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -279,17 +280,26 @@ const rateLimitLimit      = ref(0)
 
 const videoId = route.params.videoId as string
 
+// Resolved actual duration (from HLS playlist parsing) when D1 returns 0
+const resolvedFullDuration = ref(0)
+
+const effectiveFullDuration = computed(() =>
+  resolvedFullDuration.value || videoData.value?.video?.fullDuration || 0
+)
+
 // ── Computed helpers ─────────────────────────────────────────────────────────
 
 const progressPercentage = computed(() => {
-  const duration = videoData.value?.video?.fullDuration
+  const duration = effectiveFullDuration.value
   if (!duration) return 0
   return Math.min(100, (currentTime.value / duration) * 100)
 })
 
 const previewPercentage = computed(() => {
   if (!videoData.value) return 0
-  return (videoData.value.video.previewDuration / videoData.value.video.fullDuration) * 100
+  const full = effectiveFullDuration.value
+  if (!full) return 0
+  return (Math.min(videoData.value.video.previewDuration, full) / full) * 100
 })
 
 const videoDescription = computed(() =>
@@ -377,6 +387,16 @@ onMounted(async () => {
 
     if (!videoResponse.ok) throw new Error('Failed to load video data')
     videoData.value = await videoResponse.json()
+
+    // If D1 has no duration stored yet (new draft auto-registered from R2),
+    // parse the HLS playlist to get the real duration.
+    if (!videoData.value?.video?.fullDuration) {
+      const playlistUrl = videoData.value?.video?.playlistUrl
+      if (playlistUrl) {
+        const resolved = await resolvePlaylistDuration(playlistUrl)
+        if (resolved) resolvedFullDuration.value = resolved
+      }
+    }
 
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`)
     if (recsResponse.ok) {

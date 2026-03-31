@@ -148,7 +148,29 @@
                       </div>
                     </td>
                     <td class="py-3 pr-4 max-w-[12rem]">
-                      <p class="font-medium text-gray-900 dark:text-white line-clamp-2">{{ video.title }}</p>
+                      <div v-if="editingTitle?.id === video.id" class="flex items-center gap-1">
+                        <input
+                          ref="titleInputEl"
+                          v-model="editingTitle.value"
+                          type="text"
+                          class="flex-1 min-w-0 px-2 py-1 text-sm rounded border border-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          @keydown.enter="saveTitleEdit(video)"
+                          @keydown.escape="editingTitle = null"
+                          @blur="saveTitleEdit(video)"
+                        />
+                      </div>
+                      <div v-else class="group/title flex items-center gap-1">
+                        <p class="font-medium text-gray-900 dark:text-white line-clamp-2">{{ video.title }}</p>
+                        <button
+                          class="opacity-0 group-hover/title:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity"
+                          title="Rename"
+                          @click="startTitleEdit(video)"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      </div>
                       <p class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ video.id }}</p>
                     </td>
                     <td class="py-3 pr-4">
@@ -239,6 +261,8 @@
 </template>
 
 <script setup lang="ts">
+import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
+
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
 // The middleware checks auth + role before this component ever mounts.
@@ -282,6 +306,8 @@ const previewLockByVideoId = ref<Record<string, number>>({})
 const actualDurationByVideoId = ref<Record<string, number>>({})
 const statusUpdating = ref<Record<string, boolean>>({})
 const activeVideoTab = ref<'all' | 'locks'>('all')
+const editingTitle = ref<{ id: string; value: string } | null>(null)
+const titleInputEl = ref<HTMLInputElement | null>(null)
 const videoTabs = [
   { id: 'all' as const, label: 'All videos' },
   { id: 'locks' as const, label: 'Preview locks' },
@@ -311,27 +337,6 @@ const swapFeatured = (video: Video) => {
 
 const formatDate      = (raw: string) => new Date(raw).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 const getActualDuration = (video: Video) => actualDurationByVideoId.value[video.id] ?? video.full_duration
-
-const resolvePlaylistDuration = async (playlistUrl: string, depth = 0): Promise<number | null> => {
-  if (!playlistUrl || depth > 2) return null
-  const res = await fetch(playlistUrl)
-  if (!res.ok) return null
-  const text  = await res.text()
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const extInfLines = lines.filter(l => l.startsWith('#EXTINF:'))
-  if (extInfLines.length > 0) {
-    const total = extInfLines.reduce((sum, l) => {
-      const n = Number.parseFloat(l.slice('#EXTINF:'.length))
-      return Number.isFinite(n) ? sum + n : sum
-    }, 0)
-    return Number.isFinite(total) ? Math.round(total) : null
-  }
-  const idx = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'))
-  if (idx >= 0 && lines[idx + 1]) {
-    return resolvePlaylistDuration(new URL(lines[idx + 1], playlistUrl).toString(), depth + 1)
-  }
-  return null
-}
 
 const hydrateActualDurations = async () => {
   const durations = await Promise.all(uploads.value.map(async (video) => {
@@ -452,6 +457,41 @@ function formatSeconds(total: number): string {
   return h > 0
     ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
     : `${m}:${String(s).padStart(2, '0')}`
+}
+
+async function startTitleEdit(video: Video) {
+  editingTitle.value = { id: video.id, value: video.title }
+  await nextTick()
+  titleInputEl.value?.focus()
+  titleInputEl.value?.select()
+}
+
+async function saveTitleEdit(video: Video) {
+  const editing = editingTitle.value
+  if (!editing || editing.id !== video.id) return
+  const newTitle = editing.value.trim()
+  editingTitle.value = null
+  if (!newTitle || newTitle === video.title) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ title: newTitle }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], title: newTitle }
+    // Keep the featured grid in sync so header cards show the new title immediately
+    featuredSlots.value = featuredSlots.value.map(slot =>
+      slot?.id === video.id ? { ...slot, title: newTitle } : slot
+    )
+  } catch (e: any) {
+    saveMessage.value = `Failed to rename: ${e.message}`
+    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
 }
 
 async function updateVideoStatus(video: Video, newStatus: 'draft' | 'published' | 'archived') {
