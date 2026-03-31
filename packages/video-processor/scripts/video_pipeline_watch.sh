@@ -153,12 +153,35 @@ for i in {1..5}; do
     fi
 
     # Verify the full segmented artifact set is present on R2
-    REMOTE=$(rclone lsf "${R2_BUCKET}:/videos/${VIDEO_ID}" 2>/dev/null)
+    # Retry rclone lsf to handle transient failures
+    REMOTE=""
+    for lsf_attempt in {1..3}; do
+        if REMOTE=$(rclone lsf "${R2_BUCKET}:/videos/${VIDEO_ID}" 2>/dev/null); then
+            break
+        else
+            log "⚠️ rclone lsf attempt $lsf_attempt failed"
+            [ "$lsf_attempt" -lt 3 ] && sleep 2
+        fi
+    done
+
+    if [ -z "$REMOTE" ]; then
+        log "⚠️ Upload attempt $i failed (rclone lsf exhausted)"
+        sleep 3
+        continue
+    fi
+
     MISSING=""
 
     for required in master.m3u8 manifest.mpd init_1080.mp4 init_720.mp4 init_480.mp4; do
         echo "$REMOTE" | grep -qx "$required" || MISSING="$MISSING $required"
     done
+
+    # Check for audio artifacts if audio was present
+    if [ "$HAS_AUDIO" -gt 0 ]; then
+        echo "$REMOTE" | grep -qx "init_audio.mp4" || MISSING="$MISSING init_audio.mp4"
+        audio_seg_cnt=$(echo "$REMOTE" | grep -c "^seg_audio_" 2>/dev/null || echo 0)
+        [ "$audio_seg_cnt" -gt 0 ] || MISSING="$MISSING seg_audio_*.m4s(none)"
+    fi
 
     for res in 1080 720 480; do
         cnt=$(echo "$REMOTE" | grep -c "^seg_${res}_" 2>/dev/null || echo 0)
