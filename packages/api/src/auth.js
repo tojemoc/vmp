@@ -771,9 +771,11 @@ export async function handleTotpVerify(request, env, corsHeaders) {
     const kvKey = `2fa_verify:${ip}:${minuteBucket}`
     const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
     if (current >= 10) {
+      const rlHeaders = buildResponseHeaders(corsHeaders)
+      rlHeaders.set('Retry-After', '60')
       return new Response(
         JSON.stringify({ error: 'Too many attempts. Please wait a minute.', code: 'rate_limit_exceeded' }),
-        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '60', ...corsHeaders } }
+        { status: 429, headers: rlHeaders }
       )
     }
     await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: 120 })
