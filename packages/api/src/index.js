@@ -759,23 +759,30 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
   // can be propagated to variant playlist requests.
   const manifestDir = objectPath.includes('/') ? objectPath.slice(0, objectPath.lastIndexOf('/') + 1) : ''
 
+  // Resolve segment paths relative to this manifest's directory so that bare
+  // filenames (e.g. "seg_1080_1.m4s", "init_1080.mp4") emitted by shaka-packager
+  // are routed through the proxy with the vt token intact.
+  function proxySegmentPath(path, query) {
+    return rewriteSegmentPath(path, query, manifestDir)
+  }
+
   // Helper to rewrite URLs in HLS tag attributes
   function rewriteTagAttributes(line, query) {
     // Handle #EXT-X-MAP:URI="..."
     line = line.replace(/(#EXT-X-MAP:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match, prefix, url, suffix) => {
-      return prefix + rewriteSegmentPath(url, query) + suffix
+      return prefix + proxySegmentPath(url, query) + suffix
     })
     // Handle #EXT-X-KEY:URI="..."
     line = line.replace(/(#EXT-X-KEY:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match, prefix, url, suffix) => {
-      return prefix + rewriteSegmentPath(url, query) + suffix
+      return prefix + proxySegmentPath(url, query) + suffix
     })
     // Handle #EXT-X-MEDIA:URI="..."
     line = line.replace(/(#EXT-X-MEDIA:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match, prefix, url, suffix) => {
-      return prefix + rewriteSegmentPath(url, query) + suffix
+      return prefix + proxySegmentPath(url, query) + suffix
     })
     // Handle #EXT-X-I-FRAME-STREAM-INF:URI="..."
     line = line.replace(/(#EXT-X-I-FRAME-STREAM-INF:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match, prefix, url, suffix) => {
-      return prefix + rewriteSegmentPath(url, query) + suffix
+      return prefix + proxySegmentPath(url, query) + suffix
     })
     return line
   }
@@ -794,7 +801,7 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
         continue
       }
       if (elapsed >= previewUntilSeconds) break
-      out.push(rewriteSegmentPath(t, buildExtraQuery(true)))
+      out.push(proxySegmentPath(t, buildExtraQuery(true)))
       elapsed += pending ?? 0
       pending = null
     }
@@ -818,7 +825,7 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
         return rewriteSegmentPath(absolutePath, buildExtraQuery(hasPreviewLimit))
       }
     }
-    return rewriteSegmentPath(t, buildExtraQuery(isMasterPlaylist && hasPreviewLimit))
+    return proxySegmentPath(t, buildExtraQuery(isMasterPlaylist && hasPreviewLimit))
   }).join('\n')
 }
 
@@ -831,7 +838,7 @@ function rewriteDashManifestForProxy(mpdManifest, vt = null) {
   return r.replace(/\b(initialization|media|sourceURL)=["']([^"']+)["']/gi, (_, attr, value) => `${attr}="${rewriteSegmentPath(value, query)}"`)
 }
 
-function rewriteSegmentPath(path, query) {
+function rewriteSegmentPath(path, query, baseDir = '') {
   let proxied
   if (/^https?:\/\//i.test(path)) {
     const u = new URL(path)
@@ -840,6 +847,11 @@ function rewriteSegmentPath(path, query) {
     proxied = `/api/video-proxy${path}`
   } else if (/^(videos|preview|full)\//i.test(path)) {
     proxied = `/api/video-proxy/${path}`
+  } else if (baseDir) {
+    // Bare relative filename (e.g. "seg_1080_1.m4s", "init_1080.mp4") —
+    // resolve against the manifest's directory so the proxy prefix and vt
+    // token are preserved for every segment/init request.
+    proxied = `/api/video-proxy/${baseDir}${path}`
   } else {
     return path
   }
