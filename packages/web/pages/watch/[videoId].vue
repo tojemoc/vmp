@@ -81,8 +81,12 @@
             <div
               v-if="buffering"
               class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+              role="status"
+              aria-live="polite"
+              aria-label="Video is buffering"
             >
-              <div class="w-14 h-14 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+              <div class="w-14 h-14 border-4 border-white/20 border-t-white rounded-full animate-spin" aria-hidden="true"></div>
+              <span class="sr-only">Video is buffering</span>
             </div>
 
             <!-- Video Player -->
