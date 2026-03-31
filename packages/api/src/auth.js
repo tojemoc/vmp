@@ -353,12 +353,16 @@ export async function handleVerifyMagicLink(request, env, corsHeaders) {
     return authJson({ error: 'Sign-in link has expired. Request a new one.' }, 401, corsHeaders)
   }
 
-  // Mark as used before issuing tokens — prevents a race condition where the
-  // same token is verified twice in parallel before the first write completes.
-  await db
-    .prepare('UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?')
+  // Atomically mark the token used — the WHERE guard ensures only one concurrent
+  // request succeeds.  Zero changes means another request beat us to it.
+  const consumeResult = await db
+    .prepare('UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL')
     .bind(record.id)
     .run()
+
+  if (!consumeResult.meta.changes) {
+    return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
+  }
 
   const user = {
     id:           record.user_id,
@@ -724,10 +728,17 @@ export async function handleTotpConfirm(request, env, corsHeaders) {
   const encryptedSecret = await encryptTotpSecret(secret, totpKey)
   const db = getDb(env)
 
-  await db
-    .prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?')
+  // Guard: only write if 2FA is not already enabled — prevents any bearer token
+  // from silently reseeding an existing authenticator enrollment.
+  const enableResult = await db
+    .prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 1
+              WHERE id = ? AND COALESCE(totp_enabled, 0) = 0`)
     .bind(encryptedSecret, user.sub)
     .run()
+
+  if (!enableResult.meta.changes) {
+    return authJson({ error: '2FA is already enabled for this account.', code: 'totp_already_enabled' }, 409, corsHeaders)
+  }
 
   // Revoke all existing refresh tokens — sessions minted before 2FA enrollment
   // must re-authenticate with the TOTP factor on next login.
@@ -895,6 +906,7 @@ function getDb(env) {
 function buildResponseHeaders(corsHeaders) {
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
+  headers.set('Cache-Control', 'no-store')   // never cache auth responses (tokens, secrets)
   for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
   return headers
 }
@@ -902,6 +914,6 @@ function buildResponseHeaders(corsHeaders) {
 function authJson(data, status, corsHeaders) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...corsHeaders },
   })
 }
