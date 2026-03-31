@@ -774,6 +774,10 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
     })
     // Handle #EXT-X-KEY:URI="..."
     line = line.replace(/(#EXT-X-KEY:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match, prefix, url, suffix) => {
+      // Preserve custom-scheme URIs (skd://, data:, etc.) - only rewrite scheme-less paths
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
+        return prefix + url + suffix
+      }
       return prefix + proxySegmentPath(url, query) + suffix
     })
     // Handle #EXT-X-MEDIA:URI="..."
@@ -839,6 +843,10 @@ function rewriteDashManifestForProxy(mpdManifest, vt = null) {
 }
 
 function rewriteSegmentPath(path, query, baseDir = '') {
+  // Preserve custom-scheme URIs (skd://, data:, etc.) - only rewrite scheme-less paths
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path) && !/^https?:\/\//i.test(path)) {
+    return path
+  }
   let proxied
   if (/^https?:\/\//i.test(path)) {
     const u = new URL(path)
