@@ -14,22 +14,6 @@
         <!-- Right side -->
         <div class="flex items-center gap-4">
 
-          <!-- Nav links (only shown when logged in as editor+) -->
-          <nav v-if="canEditContent" class="hidden sm:flex items-center gap-5 text-sm font-medium">
-            <NuxtLink
-              to="/"
-              class="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Homepage
-            </NuxtLink>
-            <NuxtLink
-              to="/admin"
-              class="text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Admin
-            </NuxtLink>
-          </nav>
-
           <!-- Unauthenticated -->
           <NuxtLink
             v-if="!isLoggedIn"
@@ -102,6 +86,17 @@
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     Admin console
+                  </NuxtLink>
+
+                  <NuxtLink
+                    to="/account"
+                    class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    @click="dropdownOpen = false"
+                  >
+                    <svg class="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Account
                   </NuxtLink>
 
                   <button

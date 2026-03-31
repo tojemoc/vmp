@@ -257,8 +257,19 @@ async function handleVideoAccess(request, env, corsHeaders) {
     const requestedProtocol = normalizeProtocolOption(url.searchParams.get('protocol')) ?? 'hls'
     const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId, hasPremiumAccess: true, protocol: requestedProtocol })
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0
-    const playlistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration, requestedProtocol)
+    const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration, requestedProtocol)
     const fullDuration = video?.full_duration ?? previewDuration
+
+    // Sign the playlist URL with a short-lived video token so the proxy can
+    // authenticate every subsequent manifest and segment request.
+    const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
+    let playlistUrl = basePlaylistUrl
+    if (env.JWT_SECRET) {
+      const vt = await signVideoToken(effectiveUserId, videoId, env.JWT_SECRET)
+      playlistUrl = basePlaylistUrl.includes('?')
+        ? `${basePlaylistUrl}&vt=${vt}`
+        : `${basePlaylistUrl}?vt=${vt}`
+    }
 
     const response = {
       userId: userId ?? null,
@@ -292,15 +303,67 @@ async function handleVideoProxy(request, env, corsHeaders) {
   if (!objectPath) return jsonResponse({ error: 'Missing proxied object path' }, 400, corsHeaders)
   const allowedPrefix = ['videos/', 'preview/', 'full/']
   if (!allowedPrefix.some(p => objectPath.startsWith(p))) return jsonResponse({ error: 'Unsupported proxied path' }, 400, corsHeaders)
+
+  // ── Step 4a: Validate the signed video token ──────────────────────────────
+  // Every proxy request must carry a valid short-lived HMAC token issued by
+  // handleVideoAccess.  This prevents direct enumeration / bulk downloading of
+  // R2 segment URLs without going through the access-control layer.
+  if (env.JWT_SECRET) {
+    const vtParam = requestUrl.searchParams.get('vt')
+    if (!vtParam) {
+      return new Response(JSON.stringify({ error: 'Missing video token' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+    try {
+      await verifyVideoToken(vtParam, env.JWT_SECRET)
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid or expired video token' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+  }
+
+  // Extract videoId from path (videos/{id}/... or preview/{id}/... or full/{id}/...)
+  const pathParts = objectPath.split('/')
+  const proxyVideoId = pathParts[1] ?? ''
+
+  // Strip vt from the upstream URL — R2 doesn't need it
   const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
   const upstreamHeaders = new Headers()
   const rangeHeader = request.headers.get('Range')
   if (rangeHeader) upstreamHeaders.set('Range', rangeHeader)
+
+  // vt to propagate to rewritten manifest/segment URLs
+  const vtForRewrite = requestUrl.searchParams.get('vt') ?? null
+
+  const isSegment = objectPath.endsWith('.ts') || objectPath.endsWith('.m4s')
+
+  // ── Step 4c: Segment count rate limiting ─────────────────────────────────
+  if (isSegment && env.RATE_LIMIT_KV) {
+    let authUser = null
+    try { authUser = await requireAuth(request, env) } catch { /* anonymous */ }
+    const identifier = authUser?.sub ?? request.headers.get('CF-Connecting-IP') ?? 'unknown'
+    const avgDur = await getAvgSegmentDuration(proxyVideoId, env)
+    const limited = await checkSegmentRateLimit(identifier, proxyVideoId, avgDur, env)
+    if (limited) {
+      return new Response(JSON.stringify({ error: 'Too many segment requests. Slow down.' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '30', ...corsHeaders },
+      })
+    }
+  }
+
+  // ── Step 4b: Real-time throttling for .ts/.m4s segments ──────────────────
+  const segFetchStart = isSegment ? Date.now() : 0
   const upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
+
   const manifestType = getManifestType(objectPath, upstreamResponse, requestedProtocol)
   if (manifestType === 'hls') {
     const manifest = await upstreamResponse.text()
-    const rewrittenManifest = rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objectPath)
+    const rewrittenManifest = rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objectPath, vtForRewrite)
     const headers = new Headers(upstreamResponse.headers)
     headers.set('Content-Type', 'application/vnd.apple.mpegurl')
     headers.delete('Content-Length')
@@ -317,6 +380,19 @@ async function handleVideoProxy(request, env, corsHeaders) {
     for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
     return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
   }
+
+  // Segment response — apply real-time throttle
+  if (isSegment && segFetchStart > 0) {
+    const elapsed = Date.now() - segFetchStart
+    const avgDur  = await getAvgSegmentDuration(proxyVideoId, env)
+    if (avgDur) {
+      const targetMs = avgDur * 1000
+      if (elapsed < targetMs) {
+        await new Promise(r => setTimeout(r, targetMs - elapsed))
+      }
+    }
+  }
+
   const headers = new Headers(upstreamResponse.headers)
   for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
   return new Response(upstreamResponse.body, { status: upstreamResponse.status, headers })
@@ -591,12 +667,20 @@ function getManifestType(objectPath, upstreamResponse, requestedProtocol) {
   return requestedProtocol
 }
 
-function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objectPath = '') {
+function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objectPath = '', vt = null) {
   const lines = manifest.split('\n')
   const hasPreviewLimit = typeof previewUntilSeconds === 'number' && previewUntilSeconds > 0
   const isMediaPlaylist = lines.some(l => l.trim().startsWith('#EXTINF:'))
   const isMasterPlaylist = lines.some(l => l.trim().startsWith('#EXT-X-STREAM-INF'))
   const previewQuery = hasPreviewLimit ? `previewUntil=${Math.floor(previewUntilSeconds)}` : null
+
+  // Build extra query params to append to every URL: vt (required) + previewUntil (optional)
+  function buildExtraQuery(includePreview) {
+    const parts = []
+    if (includePreview && previewQuery) parts.push(previewQuery)
+    if (vt) parts.push(`vt=${vt}`)
+    return parts.length ? parts.join('&') : null
+  }
 
   // Base directory of the manifest in the proxy URL space, e.g. "videos/abc/".
   // Used to resolve relative paths in master playlists so that previewUntil
@@ -614,7 +698,7 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
         continue
       }
       if (elapsed >= previewUntilSeconds) break
-      out.push(rewriteSegmentPath(t, previewQuery))
+      out.push(rewriteSegmentPath(t, buildExtraQuery(true)))
       elapsed += pending ?? 0
       pending = null
     }
@@ -624,17 +708,17 @@ function rewriteManifestForProxyWithPreview(manifest, previewUntilSeconds, objec
   return lines.map(line => {
     const t = line.trim()
     if (!t || t.startsWith('#')) return line
-    if (isMasterPlaylist && hasPreviewLimit) {
+    if (isMasterPlaylist) {
       // For relative paths in master playlists we must resolve them to an
       // absolute proxy path so the previewUntil param is carried through to
       // the variant playlist request (hls.js fetches the URL verbatim).
       const isRelative = !/^https?:\/\//i.test(t) && !t.startsWith('/')
       if (isRelative && manifestDir) {
         const absolutePath = `${manifestDir}${t}`
-        return rewriteSegmentPath(absolutePath, previewQuery)
+        return rewriteSegmentPath(absolutePath, buildExtraQuery(hasPreviewLimit))
       }
     }
-    return rewriteSegmentPath(t, isMasterPlaylist && hasPreviewLimit ? previewQuery : null)
+    return rewriteSegmentPath(t, buildExtraQuery(isMasterPlaylist && hasPreviewLimit))
   }).join('\n')
 }
 
@@ -762,4 +846,167 @@ function jsonResponse(data, status = 200, corsHeaders = {}) {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   })
+}
+
+// ─── Video token helpers (Step 4a) ────────────────────────────────────────────
+//
+// Short-lived HMAC-SHA-256 tokens that authenticate every HLS playlist and
+// segment request through the proxy.  Without a valid token the proxy returns
+// 403, so enumeration and bulk downloading of segments requires knowing the
+// JWT_SECRET.
+//
+// Token format:  base64url(payload) + "." + hex(HMAC-SHA256(base64url(payload)))
+// where payload = "<userId>:<videoId>:<unixExpires>"
+
+async function importVideoHmacKey(secret) {
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify'],
+  )
+}
+
+function b64urlEncode(str) {
+  return btoa(str)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
+}
+
+function b64urlDecode(b64url) {
+  const padded = b64url.replace(/-/g, '+').replace(/_/g, '/')
+    + '=='.slice(0, (4 - (b64url.length % 4)) % 4)
+  return atob(padded)
+}
+
+async function signVideoToken(userId, videoId, secret) {
+  const expires = Math.floor(Date.now() / 1000) + 7200 // 2 hours
+  const payload = b64urlEncode(`${userId}:${videoId}:${expires}`)
+  const key = await importVideoHmacKey(secret)
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+  const sigHex = Array.from(new Uint8Array(sig), b => b.toString(16).padStart(2, '0')).join('')
+  return `${payload}.${sigHex}`
+}
+
+async function verifyVideoToken(token, secret) {
+  if (!token || typeof token !== 'string') throw new Error('Missing video token')
+  const dotIndex = token.lastIndexOf('.')
+  if (dotIndex < 1) throw new Error('Malformed video token')
+
+  const payload = token.slice(0, dotIndex)
+  const sigHex  = token.slice(dotIndex + 1)
+
+  const key = await importVideoHmacKey(secret)
+
+  // Constant-time verification
+  const sigBytes = new Uint8Array(sigHex.match(/../g).map(h => parseInt(h, 16)))
+  const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
+  if (!valid) throw new Error('Invalid video token signature')
+
+  const decoded = b64urlDecode(payload)
+  const parts   = decoded.split(':')
+  if (parts.length < 3) throw new Error('Malformed video token payload')
+
+  const userId  = parts[0]
+  const videoId = parts[1]
+  const expires = parseInt(parts[2], 10)
+
+  if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired')
+
+  return { userId, videoId, expires }
+}
+
+// ─── Segment duration helpers (Step 4b) ──────────────────────────────────────
+//
+// We cache the average HLS segment duration per videoId in KV so we can
+// throttle .ts responses to roughly real-time speed.
+
+async function getAvgSegmentDuration(videoId, env) {
+  if (!env.RATE_LIMIT_KV) return null
+
+  // Check KV cache first (1-hour TTL)
+  const cached = await env.RATE_LIMIT_KV.get(`manifest:${videoId}`, 'json')
+  if (cached?.avg && typeof cached.avg === 'number') return cached.avg
+
+  // Try to fetch one of the known playlist paths from R2
+  const base = env.R2_BASE_URL
+  const candidates = [
+    `${base}/videos/${videoId}/master.m3u8`,
+    `${base}/videos/${videoId}/processed/hls/master.m3u8`,
+    `${base}/videos/${videoId}/processed/playlist.m3u8`,
+  ]
+
+  let manifest = null
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        const text = await res.text()
+        // For master playlists, follow the first variant
+        if (text.includes('#EXT-X-STREAM-INF')) {
+          const lines    = text.split('\n')
+          const varLine  = lines.find(l => !l.startsWith('#') && l.trim().endsWith('.m3u8'))
+          if (varLine) {
+            const varUrl = varLine.trim().startsWith('http')
+              ? varLine.trim()
+              : `${base}/videos/${videoId}/${varLine.trim()}`
+            const varRes = await fetch(varUrl)
+            if (varRes.ok) manifest = await varRes.text()
+          }
+        } else {
+          manifest = text
+        }
+        break
+      }
+    } catch { /* try next */ }
+  }
+
+  if (!manifest) return null
+
+  // Parse #EXTINF durations from media playlist
+  const durations = []
+  for (const line of manifest.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('#EXTINF:')) {
+      const dur = parseFloat(t.slice('#EXTINF:'.length))
+      if (dur > 0) durations.push(dur)
+    }
+  }
+  if (!durations.length) return null
+
+  const avg = durations.reduce((a, b) => a + b, 0) / durations.length
+  await env.RATE_LIMIT_KV.put(`manifest:${videoId}`, JSON.stringify({ avg }), { expirationTtl: 3600 })
+  return avg
+}
+
+// ─── Segment count rate limiting (Step 4c) ────────────────────────────────────
+//
+// Allows up to 3× real-time segment requests per minute per user per video.
+// Exceeding the threshold bans that user+video pair for 30 seconds.
+
+async function checkSegmentRateLimit(identifier, videoId, avgSegDur, env) {
+  if (!env.RATE_LIMIT_KV) return false
+
+  // Check active ban
+  const banKey = `segban:${identifier}:${videoId}`
+  const banned = await env.RATE_LIMIT_KV.get(banKey)
+  if (banned) return true
+
+  const segDur    = avgSegDur ?? 6 // default 6-second segments
+  const threshold = Math.ceil(60 / segDur) * 3
+
+  const minute   = Math.floor(Date.now() / 60000)
+  const countKey = `segcount:${identifier}:${videoId}:${minute}`
+  const raw      = await env.RATE_LIMIT_KV.get(countKey)
+  const count    = (parseInt(raw ?? '0', 10) || 0) + 1
+  await env.RATE_LIMIT_KV.put(countKey, String(count), { expirationTtl: 90 })
+
+  if (count > threshold) {
+    await env.RATE_LIMIT_KV.put(banKey, '1', { expirationTtl: 30 })
+    return true
+  }
+
+  return false
 }
