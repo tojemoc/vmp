@@ -14,12 +14,13 @@
 
       <!-- Duration Badge -->
       <div class="absolute bottom-2 right-2 bg-black bg-opacity-80 text-white text-xs px-2 py-1 rounded">
-        {{ formatDuration(video.full_duration) }}
+        {{ video.full_duration ? formatDuration(video.full_duration) : '--' }}
       </div>
 
-      <!-- Premium Badge -->
+      <!-- Premium Badge — show when preview is explicitly shorter than full, or when
+           full_duration is unknown (0) but a non-zero preview_duration is set -->
       <div
-        v-if="video.preview_duration < video.full_duration"
+        v-if="video.full_duration > 0 ? video.preview_duration < video.full_duration : video.preview_duration > 0"
         class="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-semibold px-2 py-1 rounded"
       >
         PREMIUM
