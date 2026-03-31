@@ -261,6 +261,8 @@
 </template>
 
 <script setup lang="ts">
+import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
+
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
 // The middleware checks auth + role before this component ever mounts.
@@ -335,27 +337,6 @@ const swapFeatured = (video: Video) => {
 
 const formatDate      = (raw: string) => new Date(raw).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 const getActualDuration = (video: Video) => actualDurationByVideoId.value[video.id] ?? video.full_duration
-
-const resolvePlaylistDuration = async (playlistUrl: string, depth = 0): Promise<number | null> => {
-  if (!playlistUrl || depth > 2) return null
-  const res = await fetch(playlistUrl)
-  if (!res.ok) return null
-  const text  = await res.text()
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const extInfLines = lines.filter(l => l.startsWith('#EXTINF:'))
-  if (extInfLines.length > 0) {
-    const total = extInfLines.reduce((sum, l) => {
-      const n = Number.parseFloat(l.slice('#EXTINF:'.length))
-      return Number.isFinite(n) ? sum + n : sum
-    }, 0)
-    return Number.isFinite(total) ? Math.round(total) : null
-  }
-  const idx = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'))
-  if (idx >= 0 && lines[idx + 1]) {
-    return resolvePlaylistDuration(new URL(lines[idx + 1], playlistUrl).toString(), depth + 1)
-  }
-  return null
-}
 
 const hydrateActualDurations = async () => {
   const durations = await Promise.all(uploads.value.map(async (video) => {
@@ -503,6 +484,10 @@ async function saveTitleEdit(video: Video) {
     }
     const idx = uploads.value.findIndex(v => v.id === video.id)
     if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], title: newTitle }
+    // Keep the featured grid in sync so header cards show the new title immediately
+    featuredSlots.value = featuredSlots.value.map(slot =>
+      slot?.id === video.id ? { ...slot, title: newTitle } : slot
+    )
   } catch (e: any) {
     saveMessage.value = `Failed to rename: ${e.message}`
     saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'

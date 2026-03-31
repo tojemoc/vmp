@@ -461,17 +461,17 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
   if (!body) return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
 
   const allowedStatuses = ['draft', 'published', 'archived']
-  const hasStatus = body.status !== undefined
-  const hasTitle  = typeof body.title === 'string'
+  const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status')
+  const hasTitle  = Object.prototype.hasOwnProperty.call(body, 'title')
 
   if (!hasStatus && !hasTitle) {
     return jsonResponse({ error: 'At least one of status or title must be provided' }, 400, corsHeaders)
   }
+  if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
+    return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
+  }
   if (hasStatus && !allowedStatuses.includes(body.status)) {
     return jsonResponse({ error: 'status must be one of: draft, published, archived' }, 400, corsHeaders)
-  }
-  if (hasTitle && body.title.trim().length === 0) {
-    return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
   }
 
   // Guard: refuse to publish if the processed playlist is missing from R2.

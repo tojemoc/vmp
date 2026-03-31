@@ -240,6 +240,7 @@ import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
 import 'videojs-video-element'
+import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -298,7 +299,7 @@ const previewPercentage = computed(() => {
   if (!videoData.value) return 0
   const full = effectiveFullDuration.value
   if (!full) return 0
-  return (videoData.value.video.previewDuration / full) * 100
+  return (Math.min(videoData.value.video.previewDuration, full) / full) * 100
 })
 
 const videoDescription = computed(() =>
@@ -309,32 +310,6 @@ const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-// Parse a (possibly master → variant) HLS playlist to sum #EXTINF durations.
-// Mirrors the same logic used in the admin panel's hydrateActualDurations.
-const resolvePlaylistDuration = async (playlistUrl: string, depth = 0): Promise<number | null> => {
-  if (!playlistUrl || depth > 2) return null
-  try {
-    const res = await fetch(playlistUrl)
-    if (!res.ok) return null
-    const text = await res.text()
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-    const extInfLines = lines.filter(l => l.startsWith('#EXTINF:'))
-    if (extInfLines.length > 0) {
-      const total = extInfLines.reduce((sum, l) => {
-        const n = Number.parseFloat(l.slice('#EXTINF:'.length))
-        return Number.isFinite(n) ? sum + n : sum
-      }, 0)
-      return Number.isFinite(total) && total > 0 ? Math.round(total) : null
-    }
-    // Master playlist — follow first variant
-    const idx = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'))
-    if (idx >= 0 && lines[idx + 1]) {
-      return resolvePlaylistDuration(new URL(lines[idx + 1], playlistUrl).toString(), depth + 1)
-    }
-  } catch { /* silent — duration stays 0 */ }
-  return null
 }
 
 const formatRetryAfter = (seconds: number) => {
