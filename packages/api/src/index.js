@@ -16,6 +16,13 @@ import {
   requireRole,
 } from './auth.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
+import {
+  handleGetPricing,
+  handleCheckout,
+  handleWebhook,
+  handleGetSubscription,
+  handlePortal,
+} from './stripe.js'
 
 export default {
   async fetch(request, env, ctx) {
@@ -86,6 +93,21 @@ export default {
     }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
       return handleAdminVideoUpdate(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
+      return handleGetPricing(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/checkout' && request.method === 'POST') {
+      return handleCheckout(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
+      return handleWebhook(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
+      return handleGetSubscription(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
+      return handlePortal(request, env, corsHeaders)
     }
     if (url.pathname === '/api/health') {
       return jsonResponse({ status: 'healthy' }, 200, corsHeaders)
@@ -216,20 +238,18 @@ async function handleVideoAccess(request, env, corsHeaders) {
 
     const subscription = userId
       ? await db.prepare(`
-        SELECT s.*, u.email
-        FROM subscriptions s
-        JOIN users u ON u.id = s.user_id
-        WHERE s.user_id = ? AND s.status = 'active'
-        ORDER BY s.created_at DESC
-        LIMIT 1
-      `).bind(userId).first()
+          SELECT * FROM subscriptions
+          WHERE user_id = ? AND status = 'active'
+            AND (current_period_end IS NULL OR current_period_end > CURRENT_TIMESTAMP)
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).bind(userId).first()
       : null
 
     const video = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(videoId).first()
     const hasElevatedRole = ['editor', 'admin', 'super_admin'].includes(authUser?.role ?? '')
-    const hasPremiumSubscription = Boolean(subscription &&
-      subscription.plan_type === 'premium' &&
-      (subscription.expires_at === null || new Date(subscription.expires_at) > new Date()))
+    // Any active monthly/yearly/club subscription grants full access
+    const hasPremiumSubscription = Boolean(subscription)
     const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription
 
     const hasVideoMetadata = Boolean(video)

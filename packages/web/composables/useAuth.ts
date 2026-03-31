@@ -29,10 +29,21 @@ export interface AuthUser {
   role:  Role
 }
 
+export interface SubscriptionData {
+  id:               string
+  planType:         string   // 'monthly' | 'yearly' | 'club'
+  status:           string   // 'active' | 'cancelled' | 'past_due' | 'trialing'
+  stripeCustomerId: string | null
+  currentPeriodEnd: string | null
+  createdAt:        string
+  updatedAt:        string
+}
+
 // Module-level state — shared across all useAuth() calls in the same tab.
 // This is the idiomatic Nuxt 4 / Composition API singleton pattern.
 const user         = ref<AuthUser | null>(null)
 const accessToken  = ref<string | null>(null)
+const subscription = ref<SubscriptionData | null>(null)
 const initialised  = ref(false)
 let   refreshTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -80,6 +91,7 @@ export function useAuth() {
   function clearSession() {
     user.value = null
     accessToken.value = null
+    subscription.value = null
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null }
   }
 
@@ -172,6 +184,28 @@ export function useAuth() {
   }
 
   /**
+   * GET /api/account/subscription
+   * Fetches the user's current subscription and stores it in module-level state.
+   * Called lazily (from account page or after checkout) rather than on every boot
+   * to avoid an extra round-trip for users who are just browsing.
+   */
+  async function fetchSubscription(): Promise<void> {
+    if (!accessToken.value) return
+    try {
+      const res = await fetch(`${apiUrl}/api/account/subscription`, {
+        headers:     authHeader(),
+        credentials: 'include',
+      })
+      if (res.ok) {
+        const data = await res.json()
+        subscription.value = data.subscription ?? null
+      }
+    } catch {
+      // Silent — subscription state defaults to null (free-tier experience)
+    }
+  }
+
+  /**
    * initialise() should be called once, in a plugin or app.vue onMounted.
    * It silently tries to restore the session from the refresh cookie.
    */
@@ -183,21 +217,28 @@ export function useAuth() {
 
   return {
     // State
-    user:        readonly(user),
-    accessToken: readonly(accessToken),
-    initialised: readonly(initialised),
+    user:         readonly(user),
+    accessToken:  readonly(accessToken),
+    subscription: readonly(subscription),
+    initialised:  readonly(initialised),
 
     // Methods
     signIn,
     verify,
     refreshSession,
+    fetchSubscription,
     logout,
     authHeader,
     initialise,
 
-    // Role helpers
+    // Role / subscription helpers
     isLoggedIn:     computed(() => user.value !== null),
-    isPremium:      computed(() => user.value !== null),  // will reflect subscription when payments land
+    isPremium:      computed(() => {
+      if (!subscription.value) return false
+      if (subscription.value.status !== 'active' && subscription.value.status !== 'trialing') return false
+      if (!subscription.value.currentPeriodEnd) return true
+      return new Date(subscription.value.currentPeriodEnd) > new Date()
+    }),
     canEditContent: computed(() => ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? '')),
     isAdmin:        computed(() => ['admin', 'super_admin'].includes(user.value?.role ?? '')),
   }
