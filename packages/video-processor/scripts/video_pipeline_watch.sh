@@ -111,6 +111,7 @@ process_video() {
             "input=$TMP_DIR/480p.mp4,stream=video,init_segment=$TMP_DIR/init_480.mp4,segment_template=$TMP_DIR/seg_480_\$Number\$.m4s"
             --segment_duration 2
             --fragment_duration 2
+            --generate_static_live_mpd
             --mpd_output "$TMP_DIR/manifest.mpd"
             --hls_master_playlist_output "$TMP_DIR/master.m3u8"
         )
@@ -134,54 +135,52 @@ process_video() {
 # ------------------------
 # UPLOAD (retry + verify)
 # ------------------------
-log "ðŸš€ Uploading to R2"
+log "🚀 Uploading to R2"
 
 UPLOAD_OK=false
 
 for i in {1..5}; do
-    if rclone copy "$TMP_DIR" "${R2_BUCKET}:/videos/${VIDEO_ID}" \
+    if ! rclone copy "$TMP_DIR" "${R2_BUCKET}:/videos/${VIDEO_ID}" \
         --exclude "1080p.mp4" \
         --exclude "720p.mp4" \
         --exclude "480p.mp4" \
         --ignore-existing \
         --transfers 8 \
         --checkers 16; then
+        log "⚠️ Upload attempt $i failed (rclone error)"
+        sleep 3
+        continue
+    fi
+
+    # Verify the full segmented artifact set is present on R2
+    REMOTE=$(rclone lsf "${R2_BUCKET}:/videos/${VIDEO_ID}" 2>/dev/null)
+    MISSING=""
+
+    for required in master.m3u8 manifest.mpd init_1080.mp4 init_720.mp4 init_480.mp4; do
+        echo "$REMOTE" | grep -qx "$required" || MISSING="$MISSING $required"
+    done
+
+    for res in 1080 720 480; do
+        cnt=$(echo "$REMOTE" | grep -c "^seg_${res}_" 2>/dev/null || echo 0)
+        [ "$cnt" -gt 0 ] || MISSING="$MISSING seg_${res}_*.m4s(none)"
+    done
+
+    if [ -z "$MISSING" ]; then
         UPLOAD_OK=true
         break
     else
-        log "âš ï¸ Upload failed (attempt $i)"
+        log "⚠️ Upload attempt $i incomplete — missing:$MISSING"
         sleep 3
     fi
 done
 
 if [ "$UPLOAD_OK" = false ]; then
-    log "âŒ Upload failed permanently â€” will retry later"
+    log "❌ Upload failed permanently — will retry later"
     rm -f "$LOCK"
     return
 fi
 
-log "ðŸ” Verifying upload..."
-
-VERIFY_OK=false
-
-for i in {1..5}; do
-    if rclone ls "${R2_BUCKET}:/videos/${VIDEO_ID}" | grep -q "master.m3u8"; then
-        VERIFY_OK=true
-        break
-    else
-        log "âš ï¸ Verification failed (attempt $i)"
-        sleep 2
-    fi
-done
-
-if [ "$VERIFY_OK" = false ]; then
-    log "âŒ Upload verification failed â€” will retry later"
-    rm -f "$LOCK"
-    return
-fi
-
-log "âœ… Upload verified"
-
+log "✅ Upload verified"
 # ------------------------
 # CLEANUP
 # ------------------------
