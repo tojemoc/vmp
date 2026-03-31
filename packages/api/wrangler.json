@@ -22,14 +22,19 @@
 		}
 	],
 	"durable_objects": {
-		"bindings": [
-			{
-				"name": "SEGMENT_RATE_LIMITER",
-				"class_name": "SegmentRateLimiterDO",
-				"script_name": "vmp-api"
-			}
-		]
-	},
+	    "bindings": [
+	      {
+	        "name": "SEGMENT_RATE_LIMITER",
+	        "class_name": "SegmentRateLimiterDO"
+	      }
+	    ]
+	  },
+	  "migrations": [
+	    {
+	      "tag": "v1",
+	      "new_classes": ["SegmentRateLimiterDO"]
+	    }
+	  ],
 	"vars": {
 		"R2_BASE_URL": "https://vmp-videos.tjm.sk",
 		"FRONTEND_URL": "https://vmp.tjm.sk",
