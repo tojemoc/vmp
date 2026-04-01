@@ -99,6 +99,54 @@
         </NuxtLink>
       </div>
 
+      <!-- Security / 2FA card -->
+      <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">Two-factor authentication</h2>
+        </div>
+
+        <!-- 2FA enabled -->
+        <div v-if="user?.totpRequired && user?.totpEnabled" class="flex items-center gap-3">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            Enabled
+          </span>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Your account is protected with an authenticator app.</p>
+        </div>
+
+        <!-- 2FA required but not yet set up -->
+        <div v-else-if="user?.totpRequired && !user?.totpEnabled">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+              Setup required
+            </span>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Your role requires 2FA to access the admin area.</p>
+          </div>
+          <NuxtLink
+            to="/auth/2fa/setup?redirect=/account"
+            class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Set up two-factor authentication
+          </NuxtLink>
+        </div>
+
+        <!-- 2FA not required for this role -->
+        <div v-else>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Two-factor authentication is not required for your account role.</p>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
