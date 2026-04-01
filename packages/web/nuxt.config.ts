@@ -49,9 +49,10 @@ export default defineNuxtConfig({
       background_color: '#0f172a',
       display: 'standalone',
       icons: [
-        { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png' },
-        // purpose 'any maskable' satisfies Chrome's installability requirement
-        { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+        { src: '/icons/pwa-192.png',          sizes: '192x192', type: 'image/png' },
+        { src: '/icons/pwa-512.png',          sizes: '512x512', type: 'image/png', purpose: 'any' },
+        // Separate maskable entry required by Chrome's installability audit
+        { src: '/icons/pwa-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
     },
     workbox: {
@@ -61,10 +62,9 @@ export default defineNuxtConfig({
     client: {
       installPrompt: true,
     },
-    // Enable service worker in dev so you can test installation without a prod build
     devOptions: {
       enabled: true,
-      type: 'module',
+      type: 'classic',  // 'module' breaks Workbox's importScripts() — must be 'classic'
     },
   },
 })
