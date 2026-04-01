@@ -232,7 +232,6 @@
         </div>
       </section>
 
-      <AdminUploaderPanel />
     </main>
 
     <div v-if="pickerOpen" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4" @click.self="closePicker">

@@ -1,15 +1,15 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
-  
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode'],
-  
+
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt'],
+
   colorMode: {
     preference: 'system', // default value of $colorMode.preference
     fallback: 'dark', // fallback value if not system preference found
     classSuffix: '', // use just 'dark' and 'light' classes
   },
-  
+
   vite: {
     optimizeDeps: {
       include: [
@@ -24,11 +24,9 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiUrl: process.env.API_URL || 'https://vmp-api.tjm.sk',
-      videoProcessorAdminUrl: process.env.VIDEO_PROCESSOR_ADMIN_URL || 'https://vmp-admin.tjm.sk',
-      videoProcessorApiUrl: process.env.VIDEO_PROCESSOR_API_URL || process.env.VIDEO_PROCESSOR_ADMIN_URL || 'https://vmp-admin.tjm.sk'
     }
   },
-  
+
   app: {
     head: {
       title: 'Video Monetization Platform',
@@ -38,5 +36,28 @@ export default defineNuxtConfig({
         { name: 'description', content: 'Premium video content platform' }
       ]
     }
-  }
+  },
+
+  pwa: {
+    registerType: 'autoUpdate',
+    manifest: {
+      name: 'VMP',
+      short_name: 'VMP',
+      description: 'Premium video content',
+      theme_color: '#0f172a',
+      background_color: '#0f172a',
+      display: 'standalone',
+      icons: [
+        { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png' },
+      ],
+    },
+    workbox: {
+      navigateFallback: '/',
+      globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
+    },
+    client: {
+      installPrompt: true,
+    },
+  },
 })

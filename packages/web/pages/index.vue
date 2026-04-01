@@ -2,6 +2,42 @@
   <div class="min-h-screen bg-gray-50 dark:bg-gray-950">
     <AppHeader />
 
+    <!-- PWA install prompt banner -->
+    <Transition
+      enter-active-class="transition-all duration-300 ease-out"
+      enter-from-class="opacity-0 -translate-y-2"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition-all duration-200 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 -translate-y-2"
+    >
+      <div
+        v-if="showPwaBanner"
+        class="bg-blue-600 text-white px-4 py-2.5"
+      >
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          <p class="text-sm font-medium">Install the VMP app for quick access to your videos.</p>
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              class="px-3 py-1 text-xs font-semibold bg-white text-blue-700 rounded-md hover:bg-blue-50 transition-colors"
+              @click="installPwa"
+            >
+              Install
+            </button>
+            <button
+              class="p-1 rounded-md hover:bg-blue-500 transition-colors"
+              aria-label="Dismiss"
+              @click="dismissPwaBanner"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- Hero Section -->
       <div class="mb-12">
@@ -100,6 +136,20 @@
 </template>
 
 <script setup lang="ts">
+// ── PWA install banner ────────────────────────────────────────────────────────
+const { $pwa } = useNuxtApp()
+const pwaBannerDismissed = ref(false)
+const showPwaBanner = computed(
+  () => import.meta.client && !pwaBannerDismissed.value && !!($pwa as any)?.showInstallPrompt,
+)
+function installPwa() {
+  ;($pwa as any)?.install?.()
+  pwaBannerDismissed.value = true
+}
+function dismissPwaBanner() {
+  pwaBannerDismissed.value = true
+}
+
 interface LayoutBlock {
   id: string
   type: 'hero' | 'featured_row' | 'cta' | 'text_split' | 'video_grid'

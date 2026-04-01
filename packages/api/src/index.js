@@ -19,6 +19,7 @@ import {
   requireRole,
 } from './auth.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
+import { sendPushToAllSubscribers } from './webpush.js'
 import {
   handleGetPricing,
   handleCheckout,
@@ -155,7 +156,7 @@ export default {
       return handleAdminVideosList(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
-      return handleAdminVideoUpdate(request, env, corsHeaders)
+      return handleAdminVideoUpdate(request, env, ctx, corsHeaders)
     }
     if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
       return handleGetPricing(request, env, corsHeaders)
@@ -171,6 +172,16 @@ export default {
     }
     if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
       return handlePortal(request, env, corsHeaders)
+    }
+    // ── Push notification routes ──────────────────────────────────────────────
+    if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
+      return handleGetVapidPublicKey(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
+      return handlePushSubscribe(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/push/subscribe' && request.method === 'DELETE') {
+      return handlePushUnsubscribe(request, env, corsHeaders)
     }
     if (url.pathname === '/api/health') {
       return jsonResponse({ status: 'healthy' }, 200, corsHeaders)
@@ -618,7 +629,7 @@ async function handleAdminVideosList(request, env, corsHeaders) {
   }
 }
 
-async function handleAdminVideoUpdate(request, env, corsHeaders) {
+async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
   } catch {
@@ -698,10 +709,79 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
       FROM videos WHERE id = ?
     `).bind(videoId).first()
     if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+
+    // Fire push notifications asynchronously when a video is published
+    if (hasStatus && body.status === 'published') {
+      ctx.waitUntil(sendPushToAllSubscribers(video.title || videoId, videoId, env, db))
+    }
+
     return jsonResponse({ ok: true, video }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
     return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+  }
+}
+
+// ─── Push notification handlers ───────────────────────────────────────────────
+
+function handleGetVapidPublicKey(request, env, corsHeaders) {
+  if (!env.VAPID_PUBLIC_KEY) {
+    return jsonResponse({ error: 'VAPID not configured' }, 503, corsHeaders)
+  }
+  return jsonResponse({ publicKey: env.VAPID_PUBLIC_KEY }, 200, corsHeaders)
+}
+
+async function handlePushSubscribe(request, env, corsHeaders) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
+    return jsonResponse({ error: 'Invalid push subscription object' }, 400, corsHeaders)
+  }
+
+  const db = getDatabaseBinding(env)
+  const id = crypto.randomUUID()
+  try {
+    await db.prepare(`
+      INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id,
+        p256dh = excluded.p256dh, auth = excluded.auth
+    `).bind(id, user.sub, body.endpoint, body.keys.p256dh, body.keys.auth).run()
+    return jsonResponse({ ok: true }, 201, corsHeaders)
+  } catch (error) {
+    console.error('Push subscribe error:', error)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
+async function handlePushUnsubscribe(request, env, corsHeaders) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body?.endpoint) {
+    return jsonResponse({ error: 'endpoint is required' }, 400, corsHeaders)
+  }
+
+  const db = getDatabaseBinding(env)
+  try {
+    await db.prepare(
+      'DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?',
+    ).bind(body.endpoint, user.sub).run()
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  } catch (error) {
+    console.error('Push unsubscribe error:', error)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
   }
 }
 
