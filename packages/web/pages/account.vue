@@ -111,8 +111,8 @@
           <h2 class="text-base font-semibold text-gray-900 dark:text-white">Two-factor authentication</h2>
         </div>
 
-        <!-- 2FA enabled -->
-        <div v-if="user?.totpRequired && user?.totpEnabled" class="flex items-center gap-3">
+        <!-- 2FA enabled (show regardless of whether it is required for this role) -->
+        <div v-if="user?.totpEnabled" class="flex items-center gap-3">
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
@@ -123,7 +123,7 @@
         </div>
 
         <!-- 2FA required but not yet set up -->
-        <div v-else-if="user?.totpRequired && !user?.totpEnabled">
+        <div v-else-if="user?.totpRequired">
           <div class="flex items-center gap-3 mb-4">
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
