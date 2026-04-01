@@ -15,6 +15,7 @@ import { useAuth } from '~/composables/useAuth'
 const isSubscribed = ref(false)
 const permission = ref<NotificationPermission>('default')
 const _initialised = ref(false)
+let _watcherRegistered = false
 
 export function usePushNotifications() {
   const { authHeader, isLoggedIn, user } = useAuth()
@@ -53,36 +54,41 @@ export function usePushNotifications() {
    * Called on first mount and whenever the signed-in user changes.
    */
   async function _reconcile() {
-    if (!isSupported.value) return
-    permission.value = Notification.permission
+    try {
+      if (!isSupported.value) return
+      permission.value = Notification.permission
 
-    const sub = await _getCurrentSubscription()
-    if (!sub) {
-      isSubscribed.value = false
-      return
-    }
-
-    // If the user is logged in, re-POST the existing subscription so the server
-    // associates it with the correct account (handles same-device login switch).
-    if (isLoggedIn.value) {
-      const subJson = sub.toJSON()
-      const res = await fetch(`${apiUrl}/api/push/subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader() },
-        body: JSON.stringify({
-          endpoint: subJson.endpoint,
-          keys: { p256dh: subJson.keys?.p256dh, auth: subJson.keys?.auth },
-        }),
-      }).catch(() => null)
-
-      if (res && res.ok) {
-        isSubscribed.value = true
+      const sub = await _getCurrentSubscription()
+      if (!sub) {
+        isSubscribed.value = false
         return
       }
-    }
 
-    // Not logged in, or server re-association failed — browser has a subscription
-    isSubscribed.value = true
+      // If the user is logged in, re-POST the existing subscription so the server
+      // associates it with the correct account (handles same-device login switch).
+      if (isLoggedIn.value) {
+        const subJson = sub.toJSON()
+        const res = await fetch(`${apiUrl}/api/push/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({
+            endpoint: subJson.endpoint,
+            keys: { p256dh: subJson.keys?.p256dh, auth: subJson.keys?.auth },
+          }),
+        }).catch(() => null)
+
+        if (res && res.ok) {
+          isSubscribed.value = true
+          return
+        }
+      }
+
+      // Not logged in, or server re-association failed — browser has a subscription
+      isSubscribed.value = true
+    } catch (err) {
+      console.warn('Push reconciliation failed:', err)
+      // Leave isSubscribed unchanged on error
+    }
   }
 
   /** Request push permission and register with the backend */
@@ -174,8 +180,10 @@ export function usePushNotifications() {
     _reconcile()
   }
 
-  // Re-reconcile whenever the signed-in user changes (login / logout / account switch)
-  if (import.meta.client) {
+  // Re-reconcile whenever the signed-in user changes (login / logout / account switch).
+  // Guard with _watcherRegistered so only one watcher is created across all composable calls.
+  if (import.meta.client && !_watcherRegistered) {
+    _watcherRegistered = true
     watch(() => user.value?.id, (newId, oldId) => {
       if (newId !== oldId) {
         // User changed (including first login) — reset then reconcile

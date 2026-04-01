@@ -250,6 +250,7 @@ async function hkdfExtract(salt, ikm) {
  * T(1) = HMAC-SHA-256(key=prk, data=info || 0x01), output first `length` bytes.
  */
 async function hkdfExpand(prk, info, length) {
+  if (length > 32) throw new RangeError('hkdfExpand: length must be ≤ 32 (single SHA-256 round)')
   const key = await crypto.subtle.importKey(
     'raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   )
@@ -303,10 +304,15 @@ export async function sendPushNotification(subscription, payload, env) {
     ).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
     const errBody = await response.text().catch(() => '')
     console.error(`Push delivery failed [endpoint:${endpointHash}]: ${response.status} ${errBody.slice(0, 120)}`)
-    // 410 Gone / 404 = subscription expired; caller removes the row
     if (response.status === 410 || response.status === 404) {
+      // Subscription expired — caller cleans up the row
       throw Object.assign(new Error('Push subscription expired'), { code: 'subscription_gone' })
     }
+    // All other non-ok responses (429, 500, …) are propagated so the caller knows
+    throw Object.assign(
+      new Error(`Push delivery failed: ${response.status}`),
+      { code: 'push_failed', endpointHash },
+    )
   }
 }
 
