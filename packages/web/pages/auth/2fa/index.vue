@@ -1,4 +1,4 @@
-<!-- packages/web/pages/auth/2fa.vue -->
+<!-- packages/web/pages/auth/2fa/index.vue -->
 <!--
   TOTP verification page — second step of login for editor/admin/super_admin.
   URL: /auth/2fa?pending=<pendingToken>&redirect=<path>
