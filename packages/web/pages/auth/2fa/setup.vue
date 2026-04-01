@@ -125,9 +125,18 @@ const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
 const route  = useRoute()
 
+// Mirrors the backend's normalizeRedirectPath: must start with a single slash,
+// no protocol-relative paths (//evil.com), max 1024 chars.
+function safeRedirect(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const t = value.trim()
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback
+  return t
+}
+
 // Where to go after setup completes.  Falls back to /admin if not specified.
 const postSetupRedirect = computed(() =>
-  (route.query.redirect as string) || '/admin'
+  safeRedirect(route.query.redirect, '/admin')
 )
 
 type State = 'loading' | 'loadError' | 'setup' | 'done'
@@ -159,7 +168,9 @@ async function loadSetup() {
     // Session missing or expired — send back to login rather than showing a
     // confusing generic error.  Preserve the redirect so they come back here.
     if (res.status === 401) {
-      await navigateTo(`/login?redirect=${encodeURIComponent('/auth/2fa/setup' + (route.query.redirect ? `?redirect=${encodeURIComponent(route.query.redirect as string)}` : ''))}`)
+      const inner = safeRedirect(route.query.redirect, '')
+      const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
+      await navigateTo(`/login?redirect=${encodeURIComponent(setupPath)}`)
       return
     }
 
@@ -192,9 +203,10 @@ async function confirm() {
 
   try {
     const res = await fetch(`${apiUrl}/api/auth/2fa/confirm`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body:    JSON.stringify({ secret: secret.value, code: confirmCode.value }),
+      method:      'POST',
+      credentials: 'include',   // required so the browser stores the new Set-Cookie
+      headers:     { 'Content-Type': 'application/json', ...authHeader() },
+      body:        JSON.stringify({ secret: secret.value, code: confirmCode.value }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Confirmation failed')
