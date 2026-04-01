@@ -93,7 +93,6 @@ function fillRect(buf, size, x0, y0, x1, y1, r, g, b) {
 
 // Anti-aliased circle fill
 function fillCircle(buf, size, cx, cy, radius, r, g, b, bgR, bgG, bgB) {
-  const r2 = radius * radius
   for (let y = Math.floor(cy - radius - 1); y <= Math.ceil(cy + radius + 1); y++) {
     for (let x = Math.floor(cx - radius - 1); x <= Math.ceil(cx + radius + 1); x++) {
       const dx = x - cx, dy = y - cy
