@@ -985,10 +985,14 @@ function authJson(data, status, corsHeaders) {
 function shouldRequireTotpEnrollment(user, env) {
   if (!ROLES_REQUIRING_2FA.includes(user.role)) return false
   const rawCutoff = env.TOTP_ENFORCE_CREATED_AFTER
-  if (!rawCutoff) return false
+  if (!rawCutoff) return true   // no cutoff configured → enforce for all eligible roles
+
+  const isIsoDate      = /^\d{4}-\d{2}-\d{2}$/.test(rawCutoff)
+  const isIsoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(rawCutoff)
+  if (!isIsoDate && !isIsoTimestamp) return true  // non-ISO string → fail-safe, enforce
 
   const cutoffTs = Date.parse(rawCutoff)
-  if (!Number.isFinite(cutoffTs)) return false
+  if (!Number.isFinite(cutoffTs)) return true  // unparseable → fail-safe, enforce
 
   const createdAtTs = Date.parse(user.created_at || '')
   if (!Number.isFinite(createdAtTs)) return true
