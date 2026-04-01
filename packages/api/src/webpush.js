@@ -34,7 +34,8 @@ function concatBuffers(...bufs) {
   const out = new Uint8Array(total)
   let offset = 0
   for (const buf of bufs) {
-    out.set(new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer), offset)
+    // Use the typed array view directly so byteOffset/byteLength are respected
+    out.set(buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf, offset)
     offset += buf.byteLength
   }
   return out
@@ -296,9 +297,13 @@ export async function sendPushNotification(subscription, payload, env) {
   })
 
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    console.error(`Push delivery failed for ${endpoint}: ${response.status} ${body}`)
-    // 410 Gone = subscription expired; caller may clean up the row
+    // Hash the endpoint before logging — it's a device-scoped token and shouldn't appear in logs
+    const endpointHash = Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint))),
+    ).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
+    const errBody = await response.text().catch(() => '')
+    console.error(`Push delivery failed [endpoint:${endpointHash}]: ${response.status} ${errBody.slice(0, 120)}`)
+    // 410 Gone / 404 = subscription expired; caller removes the row
     if (response.status === 410 || response.status === 404) {
       throw Object.assign(new Error('Push subscription expired'), { code: 'subscription_gone' })
     }
@@ -331,24 +336,28 @@ export async function sendPushToAllSubscribers(videoTitle, videoId, env, db) {
   }
 
   const staleEndpoints = []
+  const batchSize = 50
 
-  await Promise.allSettled(
-    subscriptions.map(async (sub) => {
-      try {
-        await sendPushNotification(sub, payload, env)
-      } catch (err) {
-        if (err.code === 'subscription_gone') {
-          staleEndpoints.push(sub.endpoint)
-        } else {
-          console.error('Push error:', err)
+  for (let i = 0; i < subscriptions.length; i += batchSize) {
+    await Promise.allSettled(
+      subscriptions.slice(i, i + batchSize).map(async (sub) => {
+        try {
+          await sendPushNotification(sub, payload, env)
+        } catch (err) {
+          if (err.code === 'subscription_gone') {
+            staleEndpoints.push(sub.endpoint)
+          } else {
+            console.error('Push error:', err)
+          }
         }
-      }
-    }),
-  )
+      }),
+    )
+  }
 
-  // Clean up expired subscriptions
-  for (const endpoint of staleEndpoints) {
-    await db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?')
-      .bind(endpoint).run().catch(e => console.error('Cleanup error:', e))
+  // Batch-delete expired subscriptions in one query
+  if (staleEndpoints.length > 0) {
+    const placeholders = staleEndpoints.map(() => '?').join(',')
+    await db.prepare(`DELETE FROM push_subscriptions WHERE endpoint IN (${placeholders})`)
+      .bind(...staleEndpoints).run().catch(e => console.error('Cleanup error:', e))
   }
 }

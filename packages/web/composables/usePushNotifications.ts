@@ -81,8 +81,8 @@ export function usePushNotifications() {
       }
     }
 
-    // Not logged in, or server re-association failed — reflect browser state only
-    isSubscribed.value = sub !== null
+    // Not logged in, or server re-association failed — browser has a subscription
+    isSubscribed.value = true
   }
 
   /** Request push permission and register with the backend */
@@ -110,28 +110,33 @@ export function usePushNotifications() {
 
     // Reuse any existing subscription rather than creating a duplicate
     const existingSubscription = await reg.pushManager.getSubscription()
-    const pushSubscription = existingSubscription ?? await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: _urlB64ToUint8Array(vapidPublicKey),
-    })
+    let pushSubscription: PushSubscription | null = existingSubscription
+    try {
+      pushSubscription = existingSubscription ?? await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _urlB64ToUint8Array(vapidPublicKey),
+      })
 
-    const subJson = pushSubscription.toJSON()
-    const res = await fetch(`${apiUrl}/api/push/subscribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        endpoint: subJson.endpoint,
-        keys: {
-          p256dh: subJson.keys?.p256dh,
-          auth: subJson.keys?.auth,
-        },
-      }),
-    })
+      const subJson = pushSubscription.toJSON()
+      const res = await fetch(`${apiUrl}/api/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          endpoint: subJson.endpoint,
+          keys: {
+            p256dh: subJson.keys?.p256dh,
+            auth: subJson.keys?.auth,
+          },
+        }),
+      })
 
-    if (!res.ok) {
-      console.error('Failed to save push subscription:', await res.text())
-      // Roll back the browser subscription if we created it (don't roll back a pre-existing one)
-      if (!existingSubscription) {
+      if (!res.ok) {
+        throw new Error(await res.text().catch(() => 'Server error'))
+      }
+    } catch (error) {
+      console.error('Failed to save push subscription:', error)
+      // Roll back a newly created browser subscription; leave pre-existing ones alone
+      if (!existingSubscription && pushSubscription) {
         await pushSubscription.unsubscribe().catch(() => {})
       }
       await _reconcile()
@@ -171,11 +176,11 @@ export function usePushNotifications() {
 
   // Re-reconcile whenever the signed-in user changes (login / logout / account switch)
   if (import.meta.client) {
-    watch(() => user.value?.id, (_newId, oldId) => {
-      if (oldId !== undefined) {
-        // User changed — reset first so the bell doesn't flicker with stale state
+    watch(() => user.value?.id, (newId, oldId) => {
+      if (newId !== oldId) {
+        // User changed (including first login) — reset then reconcile
         isSubscribed.value = false
-        _reconcile()
+        void _reconcile()
       }
     })
   }
