@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@nuxtjs/color-mode": "^4.0.0",
+    "@vite-pwa/nuxt": "^0.10.6",
     "@vmp/shared": "*",
     "media-chrome": "^4.18.3",
     "nuxt": "^4.4.2",

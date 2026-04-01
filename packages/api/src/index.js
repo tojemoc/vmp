@@ -19,6 +19,7 @@ import {
   requireRole,
 } from './auth.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
+import { sendPushToAllSubscribers } from './webpush.js'
 import {
   handleGetPricing,
   handleCheckout,
@@ -155,7 +156,7 @@ export default {
       return handleAdminVideosList(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
-      return handleAdminVideoUpdate(request, env, corsHeaders)
+      return handleAdminVideoUpdate(request, env, ctx, corsHeaders)
     }
     if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
       return handleGetPricing(request, env, corsHeaders)
@@ -171,6 +172,16 @@ export default {
     }
     if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
       return handlePortal(request, env, corsHeaders)
+    }
+    // ── Push notification routes ──────────────────────────────────────────────
+    if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
+      return handleGetVapidPublicKey(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
+      return handlePushSubscribe(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/push/subscribe' && request.method === 'DELETE') {
+      return handlePushUnsubscribe(request, env, corsHeaders)
     }
     if (url.pathname === '/api/health') {
       return jsonResponse({ status: 'healthy' }, 200, corsHeaders)
@@ -618,7 +629,7 @@ async function handleAdminVideosList(request, env, corsHeaders) {
   }
 }
 
-async function handleAdminVideoUpdate(request, env, corsHeaders) {
+async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
   } catch {
@@ -665,23 +676,29 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
   const visibilityMap = { published: 'public', draft: 'private', archived: 'unlisted' }
 
   const db = getDatabaseBinding(env)
+
   try {
     if (hasTitle) {
       await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
         .bind(body.title.trim(), videoId).run()
     }
 
+    let transitionedToPublished = false
     if (hasStatus) {
       if (body.status === 'published') {
-        // Stamp published_at only on first publish; preserve it on re-publish
-        await db.prepare(`
+        // Atomic transition: the WHERE clause ensures we only update (and fire push)
+        // when the row was NOT already published, eliminating the TOCTOU race.
+        const result = await db.prepare(`
           UPDATE videos
           SET publish_status = 'published',
               visibility = 'public',
               published_at = COALESCE(published_at, CURRENT_TIMESTAMP),
               updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
+          WHERE id = ? AND publish_status != 'published'
         `).bind(videoId).run()
+        transitionedToPublished = (result.meta?.changes ?? result.changes ?? 0) > 0
+        // If the row was already published, still run a no-op update to get consistent
+        // state for the SELECT below — this is a read guard, not a second write
       } else {
         await db.prepare(`
           UPDATE videos
@@ -698,10 +715,144 @@ async function handleAdminVideoUpdate(request, env, corsHeaders) {
       FROM videos WHERE id = ?
     `).bind(videoId).first()
     if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+
+    // Fire push only when the UPDATE itself confirmed the transition (atomic guard)
+    if (transitionedToPublished) {
+      ctx.waitUntil(sendPushToAllSubscribers(video.title || videoId, videoId, env, db))
+    }
+
     return jsonResponse({ ok: true, video }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
     return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+  }
+}
+
+// ─── Push notification helpers ────────────────────────────────────────────────
+
+/**
+ * Returns true if the hostname should be blocked as a push endpoint target.
+ * Prevents SSRF by rejecting localhost, loopback, link-local, and RFC-1918 ranges.
+ */
+function isPrivateHost(hostname) {
+  // Reject .local mDNS, localhost, and empty hostnames
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.local')) return true
+
+  // Normalise: strip IPv6 brackets, lowercase
+  const h = hostname.replace(/^\[|]$/g, '').toLowerCase()
+
+  // ── IPv4 ──────────────────────────────────────────────────────────────────
+  const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (ipv4) return isPrivateIPv4Octets(Number(ipv4[1]), Number(ipv4[2]))
+
+  // ── IPv6 ──────────────────────────────────────────────────────────────────
+  if (h === '::1') return true                          // loopback
+  if (h.startsWith('fe80:')) return true                // link-local fe80::/10
+  if (h.startsWith('fc') || h.startsWith('fd')) return true // ULA fc00::/7
+
+  // IPv4-mapped IPv6 — ::ffff:x.x.x.x  (covers ::ffff:127.0.0.1 etc.)
+  const mapped = h.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+    ?? h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+  if (mapped) {
+    if (mapped.length === 5) {
+      // Dotted-decimal form
+      return isPrivateIPv4Octets(Number(mapped[1]), Number(mapped[2]))
+    }
+    // Hex-word form: convert each 16-bit word to two octets
+    const a = parseInt(mapped[1], 16)
+    return isPrivateIPv4Octets(a >> 8, a & 0xff)
+  }
+
+  return false
+}
+
+function isPrivateIPv4Octets(a, b) {
+  if (a === 10) return true                               // 10.0.0.0/8
+  if (a === 127) return true                              // 127.0.0.0/8 loopback
+  if (a === 172 && b >= 16 && b <= 31) return true       // 172.16.0.0/12
+  if (a === 192 && b === 168) return true                 // 192.168.0.0/16
+  if (a === 169 && b === 254) return true                 // 169.254.0.0/16 link-local
+  if (a === 0) return true                                // 0.0.0.0/8
+  return false
+}
+
+// ─── Push notification handlers ───────────────────────────────────────────────
+
+function handleGetVapidPublicKey(request, env, corsHeaders) {
+  const publicKey = env.VAPID_PUBLIC_KEY?.trim()
+  const privateKey = env.VAPID_PRIVATE_KEY?.trim()
+  if (!publicKey || publicKey.startsWith('REPLACE_WITH_') || !privateKey) {
+    return jsonResponse({ error: 'VAPID not configured' }, 503, corsHeaders)
+  }
+  return jsonResponse({ publicKey }, 200, corsHeaders)
+}
+
+async function handlePushSubscribe(request, env, corsHeaders) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (
+    typeof body?.endpoint !== 'string' ||
+    typeof body?.keys?.p256dh !== 'string' ||
+    typeof body?.keys?.auth !== 'string'
+  ) {
+    return jsonResponse({ error: 'Invalid push subscription object' }, 400, corsHeaders)
+  }
+
+  // Validate endpoint to prevent SSRF: must be https and not a private/local host
+  let endpointUrl
+  try {
+    endpointUrl = new URL(body.endpoint)
+  } catch {
+    return jsonResponse({ error: 'Invalid push endpoint' }, 400, corsHeaders)
+  }
+  if (endpointUrl.protocol !== 'https:' || isPrivateHost(endpointUrl.hostname)) {
+    return jsonResponse({ error: 'Invalid push endpoint' }, 400, corsHeaders)
+  }
+
+  const db = getDatabaseBinding(env)
+  const id = crypto.randomUUID()
+  try {
+    await db.prepare(`
+      INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id,
+        p256dh = excluded.p256dh, auth = excluded.auth
+    `).bind(id, user.sub, body.endpoint, body.keys.p256dh, body.keys.auth).run()
+    return jsonResponse({ ok: true }, 201, corsHeaders)
+  } catch (error) {
+    console.error('Push subscribe error:', error)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
+async function handlePushUnsubscribe(request, env, corsHeaders) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body?.endpoint) {
+    return jsonResponse({ error: 'endpoint is required' }, 400, corsHeaders)
+  }
+
+  const db = getDatabaseBinding(env)
+  try {
+    await db.prepare(
+      'DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?',
+    ).bind(body.endpoint, user.sub).run()
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  } catch (error) {
+    console.error('Push unsubscribe error:', error)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
   }
 }
 

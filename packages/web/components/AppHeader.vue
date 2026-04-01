@@ -23,8 +23,33 @@
             Sign in
           </NuxtLink>
 
+          <!-- Push notification bell (logged-in only) -->
+          <button
+            v-if="isLoggedIn && pushSupported"
+            type="button"
+            class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            :title="pushBellTitle"
+            :aria-label="pushBellTitle"
+            :aria-pressed="pushSubscribed"
+            @click="handleBellClick"
+          >
+            <!-- Bell off (permission denied) -->
+            <svg v-if="pushPermission === 'denied'" class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17H9m2.343-11.657A4 4 0 0112 5a4 4 0 014 4v2.586l1.707 1.707A1 1 0 0117 15H7a1 1 0 01-.707-1.707L8 11.586V9a4 4 0 014-4 3.978 3.978 0 01.343.343M3 3l18 18" />
+            </svg>
+            <!-- Bell filled (subscribed) -->
+            <svg v-else-if="pushSubscribed" class="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2a7 7 0 00-7 7v4.586l-1.707 1.707A1 1 0 004 17h16a1 1 0 00.707-1.707L19 13.586V9a7 7 0 00-7-7zm0 20a2 2 0 001.995-1.85L14 20h-4l.005.15A2 2 0 0012 22z" />
+            </svg>
+            <!-- Bell outline (not subscribed) -->
+            <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17H9m2-12a4 4 0 014 4v4.586l1.707 1.707A1 1 0 0117 17H7a1 1 0 01-.707-1.707L8 13.586V9a4 4 0 014-4z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5a4 4 0 00-4 4" />
+            </svg>
+          </button>
+
           <!-- Authenticated — user chip with dropdown -->
-          <div v-else class="relative" ref="dropdownRef">
+          <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
             <button
               class="flex items-center gap-2.5 pl-1 pr-3 py-1 rounded-full border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
               @click="dropdownOpen = !dropdownOpen"
@@ -121,6 +146,22 @@
 
 <script setup lang="ts">
 const { user, isLoggedIn, canEditContent, logout } = useAuth()
+const { isSupported: pushSupported, permission: pushPermission, isSubscribed: pushSubscribed, subscribe: pushSubscribe, unsubscribe: pushUnsubscribe } = usePushNotifications()
+
+const pushBellTitle = computed(() => {
+  if (pushPermission.value === 'denied') return 'Notifications blocked by browser'
+  if (pushSubscribed.value) return 'Notifications on — click to disable'
+  return 'Click to enable new video notifications'
+})
+
+async function handleBellClick() {
+  if (pushPermission.value === 'denied') return
+  if (pushSubscribed.value) {
+    await pushUnsubscribe()
+  } else {
+    await pushSubscribe()
+  }
+}
 const router = useRouter()
 
 const dropdownOpen = ref(false)
