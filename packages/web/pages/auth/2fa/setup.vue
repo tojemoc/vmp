@@ -114,15 +114,30 @@
 </template>
 
 <script setup lang="ts">
-import { navigateTo } from '#app'
+import { navigateTo, useRoute } from '#app'
 import QRCode from 'qrcode'
 
 // Do NOT use the admin middleware here — it would cause a redirect loop
 // because it redirects to this page when totpEnabled is false.
 // Instead, guard manually: must be logged in with an editor+ role.
-const { user, canEditContent, authHeader, markTotpEnabled } = useAuth()
+const { user, canEditContent, authHeader, markTotpEnabled, applyNewSession } = useAuth()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
+const route  = useRoute()
+
+// Mirrors the backend's normalizeRedirectPath: must start with a single slash,
+// no protocol-relative paths (//evil.com), max 1024 chars.
+function safeRedirect(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const t = value.trim()
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback
+  return t
+}
+
+// Where to go after setup completes.  Falls back to /admin if not specified.
+const postSetupRedirect = computed(() =>
+  safeRedirect(route.query.redirect, '/admin')
+)
 
 type State = 'loading' | 'loadError' | 'setup' | 'done'
 const state        = ref<State>('loading')
@@ -149,6 +164,16 @@ async function loadSetup() {
   try {
     const res  = await fetch(`${apiUrl}/api/auth/2fa/setup`, { headers: authHeader() })
     const data = await res.json()
+
+    // Session missing or expired — send back to login rather than showing a
+    // confusing generic error.  Preserve the redirect so they come back here.
+    if (res.status === 401) {
+      const inner = safeRedirect(route.query.redirect, '')
+      const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
+      await navigateTo(`/login?redirect=${encodeURIComponent(setupPath)}`)
+      return
+    }
+
     if (!res.ok) throw new Error(data.error || 'Failed to load setup')
 
     secret.value     = data.secret
@@ -178,19 +203,26 @@ async function confirm() {
 
   try {
     const res = await fetch(`${apiUrl}/api/auth/2fa/confirm`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body:    JSON.stringify({ secret: secret.value, code: confirmCode.value }),
+      method:      'POST',
+      credentials: 'include',   // required so the browser stores the new Set-Cookie
+      headers:     { 'Content-Type': 'application/json', ...authHeader() },
+      body:        JSON.stringify({ secret: secret.value, code: confirmCode.value }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Confirmation failed')
 
-    // Mark totpEnabled in in-memory auth state so the middleware won't redirect again
-    markTotpEnabled()
+    // The server now returns a fresh access token + refresh cookie reflecting
+    // totpEnabled = true, so the user stays logged in without a re-login step.
+    if (data.accessToken && data.user) {
+      applyNewSession(data.accessToken, data.user)
+    } else {
+      // Older server that only returned { ok } — fall back to in-memory flag.
+      markTotpEnabled()
+    }
     state.value = 'done'
 
-    // Brief success flash before navigating
-    redirectTimer = setTimeout(() => navigateTo('/admin'), 1500)
+    // Brief success flash before navigating to wherever they were originally headed.
+    redirectTimer = setTimeout(() => navigateTo(postSetupRedirect.value), 1500)
   } catch (err: any) {
     confirmError.value = err.message || 'Invalid code. Please try again.'
     confirmCode.value  = ''

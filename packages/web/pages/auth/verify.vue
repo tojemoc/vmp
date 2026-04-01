@@ -43,7 +43,15 @@
 import { useRoute, navigateTo } from '#app'
 
 const route = useRoute()
-const { verify } = useAuth()
+const { verify, canEditContent } = useAuth()
+
+// Must start with a single slash; rejects //evil.com and external URLs.
+function safeRedirect(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const t = value.trim()
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback
+  return t
+}
 
 type State = 'verifying' | 'error'
 const state = ref<State>('verifying')
@@ -59,7 +67,7 @@ onMounted(async () => {
   }
 
   try {
-    const redirect = (route.query.redirect as string) || '/'
+    const redirect = safeRedirect(route.query.redirect, '/')
     const result = await verify(token)
 
     // Editor/admin/super_admin users with 2FA enabled get a pending token —
@@ -67,6 +75,17 @@ onMounted(async () => {
     if ('requiresTwoFactor' in result) {
       await navigateTo(
         `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`
+      )
+      return
+    }
+
+    // Editor/admin/super_admin users who have not yet enrolled in 2FA must do so
+    // before they can access any privileged pages.  Redirect them to setup now
+    // (inline, same navigation) rather than waiting for the admin middleware to
+    // catch them only if they happen to visit /admin.
+    if (canEditContent.value && !result.totpEnabled) {
+      await navigateTo(
+        `/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`
       )
       return
     }
