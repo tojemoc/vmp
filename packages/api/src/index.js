@@ -27,6 +27,7 @@ import {
   handleGetSubscription,
   handlePortal,
 } from './stripe.js'
+import { isAdministrativeRole } from './roles.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 //
@@ -967,12 +968,6 @@ function isPrivateIPv4Octets(a, b) {
   if (a === 169 && b === 254) return true                 // 169.254.0.0/16 link-local
   if (a === 0) return true                                // 0.0.0.0/8
   return false
-}
-
-export function isAdministrativeRole(role) {
-  if (!role || typeof role !== 'string') return false
-  const ADMIN_ROLES = ['super_admin', 'admin', 'editor', 'analyst', 'moderator']
-  return ADMIN_ROLES.includes(role)
 }
 
 // ─── Push notification handlers ───────────────────────────────────────────────

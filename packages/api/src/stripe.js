@@ -16,7 +16,7 @@
  */
 
 import { requireAuth } from './auth.js'
-import { isAdministrativeRole } from './index.js'
+import { isAdministrativeRole } from './roles.js'
 
 // ─── Stripe API helpers ───────────────────────────────────────────────────────
 
