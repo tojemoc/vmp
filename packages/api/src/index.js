@@ -764,47 +764,55 @@ async function handleAdminVideoDelete(request, env, corsHeaders) {
   if (!videoId) return jsonResponse({ error: 'Missing videoId' }, 400, corsHeaders)
 
   const db = getDatabaseBinding(env)
+  // Guard: ensure admin_settings exists on fresh/migration-lagged deployments
+  // before the homepage cleanup query below tries to read from it.
+  await ensureAdminSettingsTable(db)
+
   const video = await db.prepare(`SELECT id FROM videos WHERE id = ?`).bind(videoId).first()
   if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
 
-  // Delete all R2 objects under videos/{videoId}/ (paginated)
-  let deletedR2Objects = 0
-  if (env.BUCKET) {
-    let cursor
-    do {
-      const listed = await env.BUCKET.list({ prefix: `videos/${videoId}/`, cursor })
-      const keys = listed.objects.map(obj => obj.key)
-      if (keys.length > 0) {
-        await Promise.all(keys.map(key => env.BUCKET.delete(key)))
-        deletedR2Objects += keys.length
-      }
-      cursor = listed.truncated ? listed.cursor : undefined
-    } while (cursor)
-  }
-
-  // Evict the deleted ID from the persisted homepage featured-slots config so
-  // a subsequent page load doesn't rehydrate a stale or empty featured card.
-  const homepageRow = await db.prepare(
-    'SELECT value FROM admin_settings WHERE key = ? LIMIT 1'
-  ).bind('homepage').first()
-  if (homepageRow?.value) {
-    const homepage = safeJsonParse(homepageRow.value, defaultHomepageConfig())
-    const before = Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : []
-    const after  = before.filter(id => id !== videoId)
-    if (after.length !== before.length) {
-      homepage.featuredVideoIds = after
-      await db.prepare(`
-        INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-      `).bind('homepage', JSON.stringify(homepage)).run()
+  try {
+    // Delete all R2 objects under videos/{videoId}/ (paginated)
+    let deletedR2Objects = 0
+    if (env.BUCKET) {
+      let cursor
+      do {
+        const listed = await env.BUCKET.list({ prefix: `videos/${videoId}/`, cursor })
+        const keys = listed.objects.map(obj => obj.key)
+        if (keys.length > 0) {
+          await Promise.all(keys.map(key => env.BUCKET.delete(key)))
+          deletedR2Objects += keys.length
+        }
+        cursor = listed.truncated ? listed.cursor : undefined
+      } while (cursor)
     }
+
+    // Evict the deleted ID from the persisted homepage featured-slots config so
+    // a subsequent page load doesn't rehydrate a stale or empty featured card.
+    const homepageRow = await db.prepare(
+      'SELECT value FROM admin_settings WHERE key = ? LIMIT 1'
+    ).bind('homepage').first()
+    if (homepageRow?.value) {
+      const homepage = safeJsonParse(homepageRow.value, defaultHomepageConfig())
+      const before = Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : []
+      const after  = before.filter(id => id !== videoId)
+      if (after.length !== before.length) {
+        homepage.featuredVideoIds = after
+        await db.prepare(`
+          INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        `).bind('homepage', JSON.stringify(homepage)).run()
+      }
+    }
+
+    // Delete the D1 row
+    await db.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId).run()
+
+    return jsonResponse({ ok: true, deletedR2Objects }, 200, corsHeaders)
+  } catch (error) {
+    console.error(`handleAdminVideoDelete [videoId:${videoId}]:`, error)
+    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
   }
-
-  // Delete the D1 row
-  await db.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId).run()
-
-  return jsonResponse({ ok: true, deletedR2Objects }, 200, corsHeaders)
-}
 
 async function handleAdminVideoNotify(request, env, ctx, corsHeaders) {
   try {
