@@ -334,9 +334,13 @@ async function handleVideoAccess(request, env, corsHeaders) {
 
     const hasVideoMetadata = Boolean(video)
     const hasAccess = hasPremiumAccess || !hasVideoMetadata
-    const requestedProtocol = normalizeProtocolOption(url.searchParams.get('protocol')) ?? 'hls'
-    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId, protocol: requestedProtocol })
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0
+    // If preview is locked (non-premium + previewDuration > 0), force HLS since DASH doesn't support preview limits
+    let requestedProtocol = normalizeProtocolOption(url.searchParams.get('protocol')) ?? 'hls'
+    if (!hasPremiumAccess && previewDuration > 0 && requestedProtocol === 'dash') {
+      requestedProtocol = 'hls'
+    }
+    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId, protocol: requestedProtocol })
     const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration, requestedProtocol)
     const fullDuration = video?.full_duration ?? previewDuration
 
@@ -381,14 +385,28 @@ async function handleVideoProxy(request, env, corsHeaders) {
   const previewUntil = Number.parseFloat(requestUrl.searchParams.get('previewUntil') ?? '')
   const previewUntilSeconds = Number.isFinite(previewUntil) && previewUntil > 0 ? previewUntil : null
   if (!objectPath) return jsonResponse({ error: 'Missing proxied object path' }, 400, corsHeaders)
-  if (!objectPath.startsWith('videos/')) return jsonResponse({ error: 'Unsupported proxied path' }, 400, corsHeaders)
 
-  // Reject dot-segment traversal before touching the WHATWG URL API.
-  // new URL() normalises "videos/a/../../videos/b/f.ts" → "/videos/b/f.ts",
-  // which would pass the startsWith check above but resolve to a different video.
-  // Decoding catches percent-encoded forms like %2e%2e.
-  const rawSegments = objectPath.split('/')
-  for (const seg of rawSegments) {
+  // Normalize the path to resolve any dot-segments, leading slashes, etc.
+  // This prevents rewritten URLs from rewriteSegmentPath() that produce root-relative
+  // or dot-containing paths from bypassing the subtree check.
+  let normalizedPath
+  try {
+    // Use WHATWG URL to normalize the path (resolves dots and removes leading slash)
+    const tempUrl = new URL(objectPath, 'http://dummy')
+    normalizedPath = tempUrl.pathname.replace(/^\/+/, '') // strip leading slashes
+  } catch {
+    return jsonResponse({ error: 'Unsupported proxied path' }, 400, corsHeaders)
+  }
+
+  // Enforce that the normalized path is within the videos/ subtree
+  if (!normalizedPath.startsWith('videos/')) {
+    return jsonResponse({ error: 'Unsupported proxied path' }, 400, corsHeaders)
+  }
+
+  // Reject dot-segment traversal in the normalized path
+  // Decoding catches percent-encoded forms like %2e%2e
+  const pathSegments = normalizedPath.split('/')
+  for (const seg of pathSegments) {
     let decoded
     try { decoded = decodeURIComponent(seg) } catch {
       return jsonResponse({ error: 'Unsupported proxied path' }, 400, corsHeaders)
