@@ -327,7 +327,8 @@ async function handleVideoAccess(request, env, corsHeaders) {
       : null
 
     const video = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(videoId).first()
-    const hasElevatedRole = ['editor', 'admin', 'super_admin'].includes(authUser?.role ?? '')
+    // Treat all non-viewer staff roles as premium-equivalent entitlements.
+    const hasElevatedRole = isAdministrativeRole(authUser?.role)
     // Any active monthly/yearly/club subscription grants full access
     const hasPremiumSubscription = Boolean(subscription)
     const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription
@@ -966,6 +967,11 @@ function isPrivateIPv4Octets(a, b) {
   if (a === 169 && b === 254) return true                 // 169.254.0.0/16 link-local
   if (a === 0) return true                                // 0.0.0.0/8
   return false
+}
+
+function isAdministrativeRole(role) {
+  if (!role || typeof role !== 'string') return false
+  return role !== 'viewer'
 }
 
 // ─── Push notification handlers ───────────────────────────────────────────────
