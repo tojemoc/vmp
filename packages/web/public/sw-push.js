@@ -51,7 +51,7 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil((async () => {
     // Parse target URL to handle both paths and absolute URLs
-    let targetPath = '/'
+    let targetPath
     let targetFullUrl = targetUrl
     try {
       const parsed = new URL(targetUrl, self.location.origin)
