@@ -5,7 +5,7 @@
 import { ROLES } from './auth.js'
 
 // Derive administrative roles from the canonical ROLES list (excluding 'viewer'),
-// plus defensive aliases used in some deployments/docs.
+// plus defensive aliases used in some deployments/docs
 const ADMINISTRATIVE_ROLES = new Set([
   ...ROLES.filter(r => r !== 'viewer'),
   'owner',

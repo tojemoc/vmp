@@ -5,27 +5,6 @@
  * surfaced if the SW handles the "push" event and shows a notification.
  */
 
-function sanitizeTargetUrl(rawUrl) {
-  if (typeof rawUrl !== 'string') return '/'
-
-  // Allow only root-relative paths with a single leading slash.
-  if (rawUrl.startsWith('/') && rawUrl[1] !== '/') {
-    return rawUrl
-  }
-
-  // Allow absolute URLs only when they are same-origin.
-  try {
-    const parsed = new URL(rawUrl)
-    if (parsed.origin === self.location.origin) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`
-    }
-  } catch {
-    // Invalid URL, fall through to '/'.
-  }
-
-  return '/'
-}
-
 self.addEventListener('push', (event) => {
   let data = {}
   try {
@@ -38,7 +17,23 @@ self.addEventListener('push', (event) => {
     ? data.title
     : 'New update'
   const body = typeof data.body === 'string' ? data.body : ''
-  const targetUrl = sanitizeTargetUrl(data.url)
+
+  // Accept same-origin absolute URLs or relative paths
+  let targetUrl = '/'
+  if (typeof data.url === 'string') {
+    if (data.url.startsWith('/')) {
+      targetUrl = data.url
+    } else {
+      try {
+        const url = new URL(data.url)
+        if (url.origin === self.location.origin) {
+          targetUrl = data.url
+        }
+      } catch {
+        // Invalid URL, fallback to '/'
+      }
+    }
+  }
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -52,20 +47,33 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetPath = sanitizeTargetUrl(event.notification?.data?.url)
+  const targetUrl = event.notification?.data?.url || '/'
 
   event.waitUntil((async () => {
+    // Parse target URL to handle both paths and absolute URLs
+    let targetPath
+    let targetFullUrl = targetUrl
+    try {
+      const parsed = new URL(targetUrl, self.location.origin)
+      targetPath = parsed.pathname
+      targetFullUrl = parsed.href
+    } catch {
+      targetPath = targetUrl
+    }
+
     const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of clientList) {
       try {
         const currentUrl = new URL(client.url)
-        if (currentUrl.pathname === new URL(targetPath, self.location.origin).pathname) {
+        // Match if the pathname matches (handles both path and absolute URL targets)
+        if (currentUrl.pathname === targetPath) {
           await client.focus()
           return
         }
       } catch {}
     }
 
-    await self.clients.openWindow(targetPath)
+    // Open with the full URL for absolute URLs, or path for relative
+    await self.clients.openWindow(targetFullUrl)
   })())
 })

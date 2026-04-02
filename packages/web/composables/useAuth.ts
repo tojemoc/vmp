@@ -295,7 +295,7 @@ export function useAuth() {
     // Role / subscription helpers
     isLoggedIn:     computed(() => user.value !== null),
     isPremium:      computed(() => {
-      if (typeof user.value?.role === 'string' && PREMIUM_ROLE_SET.has(user.value.role)) return true
+      if (user.value?.role && user.value.role !== 'viewer') return true
       if (!subscription.value) return false
       if (subscription.value.status !== 'active' && subscription.value.status !== 'trialing') return false
       if (!subscription.value.currentPeriodEnd) return true
