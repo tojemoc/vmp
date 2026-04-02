@@ -435,7 +435,7 @@ const fetchVideoAccess = async () => {
 }
 
 watch(isLoggedIn, async (loggedIn, wasLoggedIn) => {
-  if (!loggedIn || wasLoggedIn || loading.value || !videoData.value || reloadInFlight) return
+  if (!loggedIn || wasLoggedIn || loading.value || (!videoData.value && !rateLimited.value) || reloadInFlight) return
 
   reloadInFlight = true
   try {
