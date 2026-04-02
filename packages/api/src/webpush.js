@@ -314,7 +314,22 @@ export async function sendPushNotification(subscription, payload, env) {
     // Compatibility fallback for browsers routed through FCM endpoints that
     // reject the RFC 8292 "vapid t=...,k=..." Authorization syntax.
     if (!response.ok && (response.status === 400 || response.status === 401 || response.status === 403)) {
+      const endpointHost = endpointUrl.host
+      const originalStatus = response.status
+      console.log(JSON.stringify({
+        event: 'webpush_auth_fallback_attempted',
+        originalStatus,
+        endpointHost,
+      }))
       response = await send(webPushAuthHeader)
+      const fallbackSuccess = response.ok
+      console.log(JSON.stringify({
+        event: 'webpush_auth_fallback_result',
+        originalStatus,
+        endpointHost,
+        success: fallbackSuccess,
+        finalStatus: response.status,
+      }))
     }
   } catch (err) {
     throw Object.assign(
