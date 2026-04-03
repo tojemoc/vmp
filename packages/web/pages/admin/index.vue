@@ -12,7 +12,7 @@
   editor, admin, or super_admin.
 -->
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950">
+  <div class="min-h-screen overflow-x-hidden bg-gray-50 dark:bg-gray-950">
     <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -127,8 +127,8 @@
             <div v-else-if="!chronologicallySortedUploads.length" class="text-sm text-gray-500 dark:text-gray-400 py-4">
               No videos found. Upload via rclone — they'll appear here as drafts.
             </div>
-            <div v-else class="overflow-x-auto">
-              <table class="w-full text-sm">
+            <div v-else class="w-full overflow-x-auto">
+              <table class="min-w-[920px] w-full text-sm">
                 <thead>
                   <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                     <th class="pb-2 pr-4 font-medium w-16">Thumb</th>
@@ -160,8 +160,8 @@
                           @blur="saveTitleEdit(video)"
                         />
                       </div>
-                      <div v-else class="group/title flex items-center gap-1">
-                        <p class="font-medium text-gray-900 dark:text-white line-clamp-2">{{ video.title }}</p>
+                      <div v-else class="group/title flex min-w-0 items-center gap-1">
+                        <p class="min-w-0 font-medium text-gray-900 dark:text-white line-clamp-2 break-words">{{ video.title }}</p>
                         <button
                           class="opacity-0 group-hover/title:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity"
                           title="Rename"
@@ -192,13 +192,13 @@
                       <!-- Published + already notified -->
                       <div
                         v-if="video.publish_status === 'published' && video.push_notified_at"
-                        class="flex items-center gap-1.5 text-green-600 dark:text-green-400"
+                        class="flex min-w-0 items-center gap-1.5 text-green-600 dark:text-green-400"
                         :title="`Sent ${formatDate(video.push_notified_at)}`"
                       >
                         <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a2 2 0 002-2H8a2 2 0 002 2z" />
                         </svg>
-                        <span class="text-xs whitespace-nowrap">{{ formatDate(video.push_notified_at) }}</span>
+                        <span class="min-w-0 text-xs whitespace-nowrap truncate">{{ formatDate(video.push_notified_at) }}</span>
                       </div>
                       <!-- Published but not yet notified -->
                       <button
