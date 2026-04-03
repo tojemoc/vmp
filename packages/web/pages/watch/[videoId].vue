@@ -89,10 +89,25 @@
               <span class="sr-only">Video is buffering</span>
             </div>
 
+            <button
+              v-if="autoplayBlocked"
+              type="button"
+              class="absolute inset-0 z-20 flex items-center justify-center"
+              aria-label="Play video"
+              @click="handleAutoplayOverlayClick"
+            >
+              <span class="w-20 h-20 rounded-full bg-black/70 border-2 border-white/70 text-white flex items-center justify-center shadow-xl">
+                <svg class="w-10 h-10 ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </span>
+            </button>
+
             <!-- Video Player -->
             <media-controller
               id="watch-media-controller"
               class="watch-media-controller block w-full aspect-video relative"
+              @pointerdown="handleUserPlaybackInteraction"
             >
               <videojs-video
                 ref="videoElement"
@@ -266,6 +281,8 @@ const { isLoggedIn, authHeader } = useAuth()
 type MediaLikeElement = HTMLElement & {
   src: string
   currentTime: number
+  muted: boolean
+  readyState: number
   pause: () => void
   play: () => Promise<void>
   load: () => void
@@ -286,6 +303,9 @@ const rateLimited         = ref(false)
 const rateLimitRetryAfter = ref<number | null>(null)
 const rateLimitCurrent    = ref(0)
 const rateLimitLimit      = ref(0)
+const autoplayBlocked     = ref(false)
+const autoplayMuting      = ref(false)
+const autoplayPlayError   = ref(false)
 
 const videoId = route.params.videoId as string
 
@@ -399,6 +419,7 @@ let handleWaiting:        (() => void) | null = null
 let handlePlaying:        (() => void) | null = null
 let handleCanPlay:        (() => void) | null = null
 let reloadInFlight = false
+let currentAbortController: AbortController | null = null
 
 const fetchVideoAccess = async () => {
   const videoResponse = await fetch(
@@ -515,11 +536,174 @@ const initializeVideoElement = async (playlistUrl: string) => {
   video.addEventListener('canplay', handleCanPlay)
 
   buffering.value = true
+  autoplayBlocked.value = false
+  autoplayMuting.value = true
+  video.muted = true
   video.setAttribute('src', playlistUrl)
-  video.setAttribute('playsinline', '')
   video.setAttribute('preload', 'auto')
   video.load()
+
+  // Check if video is already ready to avoid hanging on canplay
+  if (video.readyState >= 3) { // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
+    // Already ready, no need to wait
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const onCanPlay = () => {
+        video.removeEventListener('canplay', onCanPlay)
+        video.removeEventListener('error', onError)
+        video.removeEventListener('abort', onAbort)
+        resolve()
+      }
+      const onError = () => {
+        video.removeEventListener('canplay', onCanPlay)
+        video.removeEventListener('error', onError)
+        video.removeEventListener('abort', onAbort)
+        reject(new Error('Media failed to load'))
+      }
+      const onAbort = () => {
+        video.removeEventListener('canplay', onCanPlay)
+        video.removeEventListener('error', onError)
+        video.removeEventListener('abort', onAbort)
+        reject(new Error('Media load aborted'))
+      }
+      video.addEventListener('canplay', onCanPlay)
+      video.addEventListener('error', onError)
+      video.addEventListener('abort', onAbort)
+    })
+  }
+
+  try {
+    await video.play()
+    autoplayPlayError.value = false
+  } catch (e: any) {
+    buffering.value = false
+    // Check if error is due to autoplay policy
+    if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') {
+      autoplayBlocked.value = true
+    } else {
+      // Media/network error
+      autoplayPlayError.value = true
+      console.error('Video playback error:', e)
+    }
+  }
 }
+
+const handleAutoplayOverlayClick = async () => {
+  const video = videoElement.value
+  if (!video) return
+
+  try {
+    video.muted = false
+    await video.play()
+    autoplayBlocked.value = false
+    autoplayMuting.value = false
+    autoplayPlayError.value = false
+  } catch (e: any) {
+    // Check if error is due to autoplay policy
+    if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') {
+      autoplayBlocked.value = true
+      autoplayMuting.value = true
+    } else {
+      // Media/network error
+      autoplayBlocked.value = false
+      autoplayPlayError.value = true
+      console.error('Video playback error:', e)
+    }
+  }
+}
+
+const handleUserPlaybackInteraction = (event: PointerEvent) => {
+  if (!autoplayMuting.value) return
+
+  // Check if the click originated on or inside the media-mute-button
+  const target = event.target as HTMLElement
+  const path = event.composedPath?.() || []
+  const isOnMuteButton = target.closest?.('media-mute-button') ||
+                        path.some((el: EventTarget) => (el as HTMLElement).tagName === 'MEDIA-MUTE-BUTTON')
+
+  if (isOnMuteButton) return
+
+  const video = videoElement.value
+  if (!video) return
+  video.muted = false
+  autoplayMuting.value = false
+}
+
+watch(
+  () => route.params.videoId,
+  async (newVideoId, oldVideoId, onCleanup) => {
+    if (newVideoId === oldVideoId) return
+
+    // Abort any previous request
+    if (currentAbortController) {
+      currentAbortController.abort()
+    }
+
+    // Create new abort controller for this invocation
+    const abortController = new AbortController()
+    currentAbortController = abortController
+
+    // Register cleanup to abort this request if a new one starts
+    onCleanup(() => {
+      if (currentAbortController === abortController) {
+        abortController.abort()
+        currentAbortController = null
+      }
+    })
+
+    // Reset flags
+    autoplayBlocked.value = false
+    autoplayMuting.value = false
+    buffering.value = false
+    autoplayPlayError.value = false
+    showPremiumOverlay.value = false
+    currentTime.value = 0
+    loading.value = true
+    error.value = null
+
+    try {
+      await fetchVideoAccess()
+
+      // Check if aborted before continuing
+      if (abortController.signal.aborted) return
+
+      const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, {
+        signal: abortController.signal
+      })
+
+      // Check if aborted after fetch
+      if (abortController.signal.aborted) return
+
+      if (recsResponse.ok) {
+        const data = await recsResponse.json()
+        // Check if aborted before applying results
+        if (abortController.signal.aborted) return
+        recommendations.value = (data.videos || []).filter((v: any) => v.id !== newVideoId).slice(0, 5)
+      }
+
+      // Check if aborted before updating state
+      if (abortController.signal.aborted) return
+
+      loading.value = false
+      await nextTick()
+
+      // Check if aborted before initializing video
+      if (abortController.signal.aborted) return
+
+      const playlistUrl = videoData.value?.video?.playlistUrl
+      if (playlistUrl && !rateLimited.value) {
+        error.value = null
+        await initializeVideoElement(playlistUrl)
+      }
+    } catch (e: any) {
+      // Ignore abort errors
+      if (e.name === 'AbortError' || abortController.signal.aborted) return
+
+      error.value = e.message
+      loading.value = false
+    }
+  }
+)
 
 function teardownVideoListeners() {
   const video = videoElement.value
