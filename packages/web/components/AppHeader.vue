@@ -4,15 +4,16 @@
       <div class="flex items-center justify-between h-16">
 
         <!-- Logo -->
-        <NuxtLink to="/" class="flex items-center space-x-2 shrink-0">
-          <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg"></div>
-          <span class="text-xl font-bold text-gray-900 dark:text-white">
+        <NuxtLink to="/" class="flex min-w-0 items-center space-x-2 shrink">
+          <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shrink-0"></div>
+          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden">VMP</span>
+          <span class="hidden sm:block text-xl font-bold text-gray-900 dark:text-white max-w-[12rem] md:max-w-none truncate">
             Video Monetization Platform
           </span>
         </NuxtLink>
 
         <!-- Right side -->
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 sm:gap-4">
 
           <!-- Unauthenticated -->
           <NuxtLink
@@ -51,7 +52,7 @@
           <!-- Authenticated — user chip with dropdown -->
           <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
             <button
-              class="flex items-center gap-2.5 pl-1 pr-3 py-1 rounded-full border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
+              class="flex min-w-0 items-center gap-2 pl-1 pr-2 sm:pr-3 py-1 rounded-full border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
               @click="dropdownOpen = !dropdownOpen"
             >
               <!-- Avatar -->
@@ -60,12 +61,12 @@
               </div>
 
               <!-- Email (hidden on small screens) -->
-              <span class="hidden sm:block text-sm text-gray-700 dark:text-gray-300 max-w-[140px] truncate">
+              <span class="hidden sm:block min-w-0 text-sm text-gray-700 dark:text-gray-300 max-w-[120px] md:max-w-[140px] truncate">
                 {{ user?.email }}
               </span>
 
               <!-- Role badge -->
-              <span :class="['hidden sm:block text-xs font-semibold px-1.5 py-0.5 rounded', roleBadgeClass]">
+              <span :class="['hidden sm:block max-w-[80px] truncate text-xs font-semibold px-1.5 py-0.5 rounded', roleBadgeClass]">
                 {{ roleLabel }}
               </span>
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950">
+  <div class="min-h-screen overflow-x-hidden bg-gray-50 dark:bg-gray-950">
     <AppHeader />
 
     <div class="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-6">
