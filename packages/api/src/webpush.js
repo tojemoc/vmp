@@ -277,6 +277,7 @@ export async function sendPushNotification(subscription, payload, env) {
 
   // Audience = origin of the push service endpoint
   const endpointUrl = new URL(endpoint)
+  const endpointHost = endpointUrl.host
   const audience = `${endpointUrl.protocol}//${endpointUrl.host}`
   const subject = `mailto:${env.SENDER_EMAIL || 'noreply@example.com'}`
 
@@ -314,7 +315,6 @@ export async function sendPushNotification(subscription, payload, env) {
     // Compatibility fallback for browsers routed through FCM endpoints that
     // reject the RFC 8292 "vapid t=...,k=..." Authorization syntax.
     if (!response.ok && (response.status === 400 || response.status === 401 || response.status === 403)) {
-      const endpointHost = endpointUrl.host
       const originalStatus = response.status
       console.log(JSON.stringify({
         event: 'webpush_auth_fallback_attempted',
@@ -332,29 +332,45 @@ export async function sendPushNotification(subscription, payload, env) {
       }))
     }
   } catch (err) {
+    console.error(JSON.stringify({
+      event: 'webpush_delivery_failed',
+      endpointHost,
+      statusClass: 'network_error',
+      reason: err?.name === 'AbortError' ? 'timeout_or_abort' : 'fetch_error',
+      message: err?.message || 'unknown fetch error',
+    }))
     throw Object.assign(
       new Error(`Push fetch error: ${err.message}`),
-      { code: 'push_failed' },
+      { code: 'push_failed', statusClass: 'network_error', endpointHost },
     )
   }
 
   if (!response.ok) {
-    // Hash the endpoint before logging — it's a device-scoped token and shouldn't appear in logs
-    const endpointHash = Array.from(
-      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint))),
-    ).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')
     const errBody = await response.text().catch(() => '')
-    console.error(`Push delivery failed [endpoint:${endpointHash}]: ${response.status} ${errBody.slice(0, 120)}`)
+    const statusClass = `${Math.floor(response.status / 100)}xx`
+    const responseSnippet = errBody.slice(0, 200)
+    console.error(JSON.stringify({
+      event: 'webpush_delivery_failed',
+      endpointHost,
+      status: response.status,
+      statusClass,
+      responseSnippet,
+    }))
     if (response.status === 410 || response.status === 404) {
       // Subscription expired — caller cleans up the row
-      throw Object.assign(new Error('Push subscription expired'), { code: 'subscription_gone' })
+      throw Object.assign(
+        new Error('Push subscription expired'),
+        { code: 'subscription_gone', status: response.status, statusClass, responseSnippet, endpointHost },
+      )
     }
     // All other non-ok responses (429, 500, …) are propagated so the caller knows
     throw Object.assign(
       new Error(`Push delivery failed: ${response.status}`),
-      { code: 'push_failed', endpointHash },
+      { code: 'push_failed', status: response.status, statusClass, responseSnippet, endpointHost },
     )
   }
+
+  return { ok: true, status: response.status, statusClass: `${Math.floor(response.status / 100)}xx`, endpointHost }
 }
 
 /**

@@ -14,6 +14,7 @@ import { useAuth } from '~/composables/useAuth'
 // Module-level singleton state so all components share the same subscription status
 const isSubscribed = ref(false)
 const permission = ref<NotificationPermission>('default')
+const pushError = ref<string | null>(null)
 const _initialised = ref(false)
 let _watcherRegistered = false
 
@@ -93,6 +94,7 @@ export function usePushNotifications() {
 
   /** Request push permission and register with the backend */
   async function subscribe(): Promise<void> {
+    pushError.value = null
     if (!isSupported.value) return
     if (!isLoggedIn.value) {
       navigateTo('/login')
@@ -102,13 +104,17 @@ export function usePushNotifications() {
     // Request notification permission
     const perm = await Notification.requestPermission()
     permission.value = perm
-    if (perm !== 'granted') return
+    if (perm !== 'granted') {
+      pushError.value = 'Browser notifications were blocked. Enable notifications in your browser settings and try again.'
+      return
+    }
 
     let vapidPublicKey: string
     try {
       vapidPublicKey = await _getVapidPublicKey()
     } catch (e) {
       console.error('Could not fetch VAPID key:', e)
+      pushError.value = 'Push service is not configured right now. Please try again later.'
       return
     }
 
@@ -141,6 +147,9 @@ export function usePushNotifications() {
       }
     } catch (error) {
       console.error('Failed to save push subscription:', error)
+      pushError.value = error instanceof Error
+        ? `Failed to enable notifications: ${error.message}`
+        : 'Failed to enable notifications. Please try again.'
       // Roll back a newly created browser subscription; leave pre-existing ones alone
       if (!existingSubscription && pushSubscription) {
         await pushSubscription.unsubscribe().catch(() => {})
@@ -150,10 +159,12 @@ export function usePushNotifications() {
     }
 
     isSubscribed.value = true
+    pushError.value = null
   }
 
   /** Unsubscribe from push notifications */
   async function unsubscribe(): Promise<void> {
+    pushError.value = null
     const pushSub = await _getCurrentSubscription()
     if (!pushSub) {
       isSubscribed.value = false
@@ -168,7 +179,10 @@ export function usePushNotifications() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({ endpoint }),
-      }).catch(e => console.error('Failed to delete push subscription on server:', e))
+      }).catch((e) => {
+        console.error('Failed to delete push subscription on server:', e)
+        pushError.value = 'Notifications were disabled in this browser, but we could not sync this change to the server.'
+      })
     }
 
     isSubscribed.value = false
@@ -197,6 +211,7 @@ export function usePushNotifications() {
     isSupported,
     permission: readonly(permission),
     isSubscribed: readonly(isSubscribed),
+    pushError: readonly(pushError),
     subscribe,
     unsubscribe,
   }
