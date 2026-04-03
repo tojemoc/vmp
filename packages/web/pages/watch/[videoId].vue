@@ -164,7 +164,9 @@
                     :max="effectiveFullDuration"
                     :step="0.1"
                     :value="currentTime"
+                    @input.capture="handleUserPlaybackInteraction"
                     @input="handleSeekbarInput"
+                    @keydown.capture="handleUserPlaybackInteraction"
                   />
                 </div>
 
@@ -514,15 +516,21 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     })
     ensureCurrent()
 
-    const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, {
-      signal: options.signal
-    })
-    ensureCurrent()
-
-    if (recsResponse.ok) {
-      const recommendationsData = await recsResponse.json()
+    recommendations.value = []
+    try {
+      const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, {
+        signal: options.signal
+      })
       ensureCurrent()
-      recommendations.value = (recommendationsData.videos || []).filter((v: any) => v.id !== targetVideoId).slice(0, 5)
+
+      if (recsResponse.ok) {
+        const recommendationsData = await recsResponse.json()
+        ensureCurrent()
+        recommendations.value = (recommendationsData.videos || []).filter((v: any) => v.id !== targetVideoId).slice(0, 5)
+      }
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) throw e
+      // Recommendation fetch is best-effort; keep list empty on failure.
     }
 
     ensureCurrent()
@@ -533,7 +541,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     const playlistUrl = videoData.value?.video?.playlistUrl
     if (playlistUrl && !rateLimited.value) {
       error.value = null
-      await initializeVideoElement(playlistUrl, guard)
+      await initializeVideoElement(playlistUrl, guard, options.signal)
       ensureCurrent()
     }
   } catch (e: any) {
@@ -564,23 +572,30 @@ watch(isLoggedIn, async (loggedIn, wasLoggedIn, onCleanup) => {
 
 const initializeVideoElement = async (
   playlistUrl: string,
-  isCurrentInvocation: () => boolean = () => true
+  isCurrentInvocation: () => boolean = () => true,
+  signal?: AbortSignal
 ) => {
-  if (!isCurrentInvocation()) return
+  const ensureActive = () => {
+    if (signal?.aborted || !isCurrentInvocation()) {
+      throw new DOMException('Request aborted', 'AbortError')
+    }
+  }
+
+  ensureActive()
 
   // Wait for the custom element to be fully upgraded before touching it.
   // Setting src before this resolves causes "this.api is undefined" inside
   // the videojs-video element because its internal Video.js instance isn't
   // created until connectedCallback runs.
   await customElements.whenDefined('videojs-video')
-  if (!isCurrentInvocation()) return
+  ensureActive()
 
   const video = videoElement.value
   if (!video) throw new Error('Video element is unavailable')
-  if (!isCurrentInvocation()) return
+  ensureActive()
 
   teardownVideoListeners()
-  if (!isCurrentInvocation()) return
+  ensureActive()
 
   handleLoadedMetadata = () => { console.log('Video metadata loaded') }
   handleMediaError = () => {
@@ -596,12 +611,12 @@ const initializeVideoElement = async (
   video.addEventListener('waiting', handleWaiting)
   video.addEventListener('playing', handlePlaying)
   video.addEventListener('canplay', handleCanPlay)
-  if (!isCurrentInvocation()) return
+  ensureActive()
 
   buffering.value = true
   autoplayBlocked.value = false
   autoplayMuting.value = true
-  if (!isCurrentInvocation()) return
+  ensureActive()
   video.muted = true
   video.setAttribute('src', playlistUrl)
   video.setAttribute('preload', 'auto')
@@ -612,37 +627,42 @@ const initializeVideoElement = async (
     // Already ready, no need to wait
   } else {
     await new Promise<void>((resolve, reject) => {
-      const onCanPlay = () => {
+      const cleanup = () => {
         video.removeEventListener('canplay', onCanPlay)
         video.removeEventListener('error', onError)
         video.removeEventListener('abort', onAbort)
+        signal?.removeEventListener('abort', onSignalAbort)
+      }
+      const onCanPlay = () => {
+        cleanup()
         resolve()
       }
       const onError = () => {
-        video.removeEventListener('canplay', onCanPlay)
-        video.removeEventListener('error', onError)
-        video.removeEventListener('abort', onAbort)
+        cleanup()
         reject(new Error('Media failed to load'))
       }
       const onAbort = () => {
-        video.removeEventListener('canplay', onCanPlay)
-        video.removeEventListener('error', onError)
-        video.removeEventListener('abort', onAbort)
+        cleanup()
         reject(new Error('Media load aborted'))
+      }
+      const onSignalAbort = () => {
+        cleanup()
+        reject(new DOMException('Request aborted', 'AbortError'))
       }
       video.addEventListener('canplay', onCanPlay)
       video.addEventListener('error', onError)
       video.addEventListener('abort', onAbort)
+      signal?.addEventListener('abort', onSignalAbort, { once: true })
     })
   }
-  if (!isCurrentInvocation()) return
+  ensureActive()
 
   try {
     await video.play()
-    if (!isCurrentInvocation()) return
+    ensureActive()
     autoplayPlayError.value = false
   } catch (e: any) {
-    if (!isCurrentInvocation()) return
+    if (e?.name === 'AbortError' || signal?.aborted || !isCurrentInvocation()) throw e
     buffering.value = false
     // Check if error is due to autoplay policy
     if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') {
