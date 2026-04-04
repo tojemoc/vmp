@@ -74,24 +74,6 @@
                   </NuxtLink>
 
                   <NuxtLink
-                    v-if="canUseQuickActions"
-                    to="/admin?tab=videos&quick=publish-queue"
-                    class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    @click="dropdownOpen = false"
-                  >
-                    Publish queue
-                  </NuxtLink>
-
-                  <NuxtLink
-                    v-if="canUseQuickActions"
-                    to="/admin?tab=videos&quick=pending-drafts"
-                    class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    @click="dropdownOpen = false"
-                  >
-                    Pending drafts
-                  </NuxtLink>
-
-                  <NuxtLink
                     to="/account"
                     class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     @click="dropdownOpen = false"
@@ -147,8 +129,6 @@ const dropdownRef  = ref<HTMLElement | null>(null)
 const pushToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
 let pushToastTimer: ReturnType<typeof setTimeout> | null = null
 
-const canUseQuickActions = computed(() => ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? ''))
-
 const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error')
 
 const pushBellTitle = computed(() => {
@@ -170,25 +150,31 @@ async function handleBellClick() {
     dropdownOpen.value = false
     return
   }
-  if (pushSubscribed.value) {
-    const before = pushSubscribed.value
-    await pushUnsubscribe()
-    if (pushError.value) {
-      showPushToast('error', pushError.value)
-      clearPushError()
-    } else if (before && !pushSubscribed.value) {
-      showPushToast('success', 'Notifications turned off.')
+  try {
+    if (pushSubscribed.value) {
+      const before = pushSubscribed.value
+      await pushUnsubscribe()
+      if (pushError.value) {
+        showPushToast('error', pushError.value)
+        clearPushError()
+      } else if (before && !pushSubscribed.value) {
+        showPushToast('success', 'Notifications turned off.')
+      }
+    } else {
+      const before = pushSubscribed.value
+      await pushSubscribe()
+      if (!before && pushSubscribed.value) showPushToast('success', 'Notifications enabled.')
+      else if (pushError.value) {
+        showPushToast('error', pushError.value)
+        clearPushError()
+      }
     }
-  } else {
-    const before = pushSubscribed.value
-    await pushSubscribe()
-    if (!before && pushSubscribed.value) showPushToast('success', 'Notifications enabled.')
-    else if (pushError.value) {
-      showPushToast('error', pushError.value)
-      clearPushError()
-    }
+  } catch (err: any) {
+    showPushToast('error', pushError.value || err.message)
+    clearPushError()
+  } finally {
+    dropdownOpen.value = false
   }
-  dropdownOpen.value = false
 }
 
 onMounted(() => {

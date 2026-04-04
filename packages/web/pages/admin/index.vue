@@ -55,7 +55,6 @@
           @click="setAdminTab(tab.id)"
         >{{ tab.label }}</button>
       </div>
-      <p v-if="activeAdminQuick" class="text-xs text-gray-500 dark:text-gray-400">Quick view: {{ activeAdminQuick }}</p>
 
       <section class="space-y-8">
         <div v-if="activeAdminTab === 'homepage'" id="homepage-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
@@ -405,7 +404,6 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const activeVideoTab = ref<'all' | 'locks'>('all')
 const activeAdminTab = ref<'videos' | 'homepage' | 'notifications' | 'system'>('videos')
-const activeAdminQuick = ref<string | null>(null)
 const adminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'homepage' as const, label: 'Homepage' },
@@ -768,8 +766,6 @@ watch(() => route.query, (query) => {
   if (tab && ['videos', 'homepage', 'notifications', 'system'].includes(String(tab))) {
     activeAdminTab.value = tab as any
   }
-  const quick = query.quick
-  activeAdminQuick.value = quick ? String(quick) : null
 }, { immediate: true })
 
 watch(() => confirmModal.value.open, async (open) => {
