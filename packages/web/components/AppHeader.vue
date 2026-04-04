@@ -115,8 +115,8 @@
 
     <div v-if="pushToast || pushError" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-3">
       <div
-        role="alert"
-        aria-live="assertive"
+        :role="isError ? 'alert' : 'status'"
+        :aria-live="isError ? 'assertive' : 'polite'"
         aria-atomic="true"
         class="rounded-lg border px-3 py-2 text-sm"
         :class="pushToast?.type === 'success'
@@ -148,6 +148,8 @@ const pushToast = ref<{ type: 'success' | 'error'; message: string } | null>(nul
 let pushToastTimer: ReturnType<typeof setTimeout> | null = null
 
 const canUseQuickActions = computed(() => ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? ''))
+
+const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error')
 
 const pushBellTitle = computed(() => {
   if (pushPermission.value === 'denied') return 'Notifications blocked by browser'
