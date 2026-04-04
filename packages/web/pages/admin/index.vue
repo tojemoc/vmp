@@ -43,7 +43,7 @@
       </div>
 
       <div class="flex gap-2 border-b border-gray-200 dark:border-gray-800">
-        <button v-for="tab in adminTabs" :key="tab.id" class="px-4 py-2 text-sm font-medium -mb-px border-b-2" :class="activeAdminTab===tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400'" @click="activeAdminTab = tab.id">{{ tab.label }}</button>
+        <button v-for="tab in adminTabs" :key="tab.id" class="px-4 py-2 text-sm font-medium -mb-px border-b-2" :class="activeAdminTab===tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400'" @click="setAdminTab(tab.id)">{{ tab.label }}</button>
       </div>
 
       <section class="space-y-8">
@@ -299,12 +299,20 @@
     </div>
 
     <div v-if="confirmModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="confirmModal.open = false">
-      <div class="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ confirmModal.action === 'trash' ? 'Permanently delete video?' : 'Archive video?' }}</h3>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ confirmModal.impactText }}</p>
+      <div
+        ref="confirmDialogRef"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmModalTitle"
+        aria-describedby="confirmModalDesc"
+        tabindex="-1"
+        class="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
+      >
+        <h3 id="confirmModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ confirmModal.action === 'trash' ? 'Permanently delete video?' : 'Archive video?' }}</h3>
+        <p id="confirmModalDesc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ confirmModal.impactText }}</p>
         <div class="flex justify-end gap-2">
-          <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="confirmModal.open = false">Cancel</button>
-          <button class="px-3 py-2 rounded text-sm text-white" :class="confirmModal.action === 'trash' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'" @click="runConfirmedAction">Confirm</button>
+          <button type="button" aria-label="Cancel destructive action" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="confirmModal.open = false">Cancel</button>
+          <button type="button" aria-label="Confirm destructive action" class="px-3 py-2 rounded text-sm text-white" :class="confirmModal.action === 'trash' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'" @click="runConfirmedAction">Confirm</button>
         </div>
       </div>
     </div>
@@ -367,6 +375,8 @@ interface LayoutBlock {
 
 const config = useRuntimeConfig()
 const { authHeader } = useAuth()
+const router = useRouter()
+const route = useRoute()
 const loading = ref(true)
 const videosLoading = ref(false)
 const uploads = ref<Video[]>([])
@@ -673,10 +683,15 @@ async function trashVideo(video: Video) {
 type Toast = { id: number; type: 'success' | 'error'; message: string }
 const toasts = ref<Toast[]>([])
 let toastId = 0
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
 function showToast(type: Toast['type'], message: string) {
   const id = ++toastId
   toasts.value.push({ id, type, message })
-  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id) }, 3200)
+  const timer = setTimeout(() => {
+    toasts.value = toasts.value.filter(t => t.id !== id)
+    toastTimers.delete(id)
+  }, 3200)
+  toastTimers.set(id, timer)
 }
 
 const confirmModal = ref<{ open: boolean; action: 'trash' | 'archive' | null; video: Video | null; impactText: string }>({
@@ -705,12 +720,62 @@ async function runConfirmedAction() {
   else await updateVideoStatus(current.video, 'archived')
 }
 
-onMounted(async () => {
-  const route = useRoute()
-  const qTab = route.query.tab
-  if (qTab && ['videos', 'homepage', 'notifications', 'system'].includes(String(qTab))) {
-    activeAdminTab.value = qTab as any
+const confirmDialogRef = ref<HTMLElement | null>(null)
+const lastFocusedEl = ref<HTMLElement | null>(null)
+
+function setAdminTab(tab: 'videos' | 'homepage' | 'notifications' | 'system') {
+  router.replace({ query: { ...route.query, tab } })
+}
+
+function onConfirmModalKeydown(e: KeyboardEvent) {
+  if (!confirmModal.value.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    confirmModal.value.open = false
+    return
   }
+  if (e.key !== 'Tab' || !confirmDialogRef.value) return
+  const focusable = confirmDialogRef.value.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement as HTMLElement | null
+  if (e.shiftKey && active === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+watch(() => route.query.tab, (tab) => {
+  if (tab && ['videos', 'homepage', 'notifications', 'system'].includes(String(tab))) {
+    activeAdminTab.value = tab as any
+  }
+}, { immediate: true })
+
+watch(() => confirmModal.value.open, async (open) => {
+  if (open) {
+    lastFocusedEl.value = document.activeElement as HTMLElement | null
+    await nextTick()
+    confirmDialogRef.value?.focus()
+    window.addEventListener('keydown', onConfirmModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onConfirmModalKeydown)
+    lastFocusedEl.value?.focus()
+  }
+})
+
+onMounted(async () => {
   await reloadAll()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onConfirmModalKeydown)
+  for (const timer of toastTimers.values()) clearTimeout(timer)
+  toastTimers.clear()
 })
 </script>

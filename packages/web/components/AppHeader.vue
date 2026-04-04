@@ -24,6 +24,8 @@
               class="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
               title="Open account menu"
               aria-label="Open account menu"
+              :aria-expanded="dropdownOpen"
+              aria-controls="account-menu"
               @click="dropdownOpen = !dropdownOpen"
             >
               <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,7 +42,10 @@
               leave-to-class="opacity-0 scale-95 -translate-y-1"
             >
               <div
-                v-if="dropdownOpen"
+                id="account-menu"
+                v-show="dropdownOpen"
+                role="menu"
+                :aria-hidden="(!dropdownOpen).toString()"
                 class="absolute right-0 top-full mt-2 w-64 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden z-50"
               >
                 <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
@@ -157,7 +162,11 @@ function showPushToast(type: 'success' | 'error', message: string) {
 }
 
 async function handleBellClick() {
-  if (pushPermission.value === 'denied') return
+  if (pushPermission.value === 'denied') {
+    showPushToast('error', pushError.value || 'Notifications are blocked in your browser settings.')
+    dropdownOpen.value = false
+    return
+  }
   if (pushSubscribed.value) {
     const before = pushSubscribed.value
     await pushUnsubscribe()
