@@ -42,12 +42,23 @@
         {{ saveMessage }}
       </div>
 
-      <div class="flex gap-2 border-b border-gray-200 dark:border-gray-800">
-        <button v-for="tab in adminTabs" :key="tab.id" class="px-4 py-2 text-sm font-medium -mb-px border-b-2" :class="activeAdminTab===tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400'" @click="setAdminTab(tab.id)">{{ tab.label }}</button>
+      <div role="tablist" aria-label="Admin sections" class="flex gap-2 border-b border-gray-200 dark:border-gray-800">
+        <button
+          v-for="tab in adminTabs"
+          :key="tab.id"
+          role="tab"
+          :aria-selected="activeAdminTab === tab.id"
+          :aria-controls="`${tab.id}-panel`"
+          :tabindex="activeAdminTab === tab.id ? 0 : -1"
+          class="px-4 py-2 text-sm font-medium -mb-px border-b-2"
+          :class="activeAdminTab===tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400'"
+          @click="setAdminTab(tab.id)"
+        >{{ tab.label }}</button>
       </div>
+      <p v-if="activeAdminQuick" class="text-xs text-gray-500 dark:text-gray-400">Quick view: {{ activeAdminQuick }}</p>
 
       <section class="space-y-8">
-        <div v-if="activeAdminTab === 'homepage'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <div v-if="activeAdminTab === 'homepage'" id="homepage-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Featured videos</h2>
             <p class="text-sm text-gray-600 dark:text-gray-400">Click a slot to replace</p>
@@ -105,7 +116,7 @@
         </div>
 
         <!-- Video Management — tabbed panel -->
-        <div v-if="activeAdminTab === 'videos'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <div v-if="activeAdminTab === 'videos'" id="videos-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Video management</h2>
 
           <!-- Tab bar -->
@@ -276,7 +287,7 @@
         </div>
 
 
-        <div v-if="activeAdminTab === 'notifications'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
+        <div v-if="activeAdminTab === 'notifications'" id="notifications-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Notifications</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">Published videos without a push are listed below.</p>
           <div v-for="video in chronologicallySortedUploads.filter(v => v.publish_status === 'published' && !v.push_notified_at)" :key="`notify-${video.id}`" class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
@@ -285,7 +296,7 @@
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'system'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
+        <div v-if="activeAdminTab === 'system'" id="system-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">System</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">Operational controls and refresh actions.</p>
           <button class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm" @click="reloadAll">Reload data</button>
@@ -295,7 +306,7 @@
     </main>
 
     <div class="fixed top-20 right-4 z-50 space-y-2">
-      <div v-for="toast in toasts" :key="toast.id" class="rounded-lg border px-3 py-2 text-sm shadow" :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'">{{ toast.message }}</div>
+      <div v-for="toast in toasts" :key="toast.id" role="status" aria-live="polite" aria-atomic="true" class="rounded-lg border px-3 py-2 text-sm shadow" :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'">{{ toast.message }}</div>
     </div>
 
     <div v-if="confirmModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="confirmModal.open = false">
@@ -394,6 +405,7 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const activeVideoTab = ref<'all' | 'locks'>('all')
 const activeAdminTab = ref<'videos' | 'homepage' | 'notifications' | 'system'>('videos')
+const activeAdminQuick = ref<string | null>(null)
 const adminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'homepage' as const, label: 'Homepage' },
@@ -642,7 +654,7 @@ async function sendNotification(video: Video) {
     const { push_notified_at } = await res.json()
     const idx = uploads.value.findIndex(v => v.id === video.id)
     if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], push_notified_at }
-    showToast('success', `Notification sent for ${video.title}.`)
+    showToast('success', `Notification queued for ${video.title}.`)
   } catch (e: any) {
     saveMessage.value = `Failed to send notification for "${video.title}": ${e.message}`
     showToast('error', `Failed to notify ${video.title}: ${e.message}`)
@@ -751,10 +763,13 @@ function onConfirmModalKeydown(e: KeyboardEvent) {
   }
 }
 
-watch(() => route.query.tab, (tab) => {
+watch(() => route.query, (query) => {
+  const tab = query.tab
   if (tab && ['videos', 'homepage', 'notifications', 'system'].includes(String(tab))) {
     activeAdminTab.value = tab as any
   }
+  const quick = query.quick
+  activeAdminQuick.value = quick ? String(quick) : null
 }, { immediate: true })
 
 watch(() => confirmModal.value.open, async (open) => {

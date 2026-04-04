@@ -44,7 +44,6 @@
               <div
                 id="account-menu"
                 v-show="dropdownOpen"
-                role="menu"
                 :aria-hidden="(!dropdownOpen).toString()"
                 class="absolute right-0 top-full mt-2 w-64 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden z-50"
               >
