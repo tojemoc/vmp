@@ -236,6 +236,44 @@
                         </button>
                       </div>
                       <p class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ video.id }}</p>
+                      <!-- Vanity slug editor -->
+                      <div class="mt-0.5 group/slug flex items-center gap-1 min-w-0">
+                        <div v-if="editingSlug?.id === video.id" class="flex items-center gap-1 w-full">
+                          <input
+                            ref="slugInputEl"
+                            v-model="editingSlug.value"
+                            type="text"
+                            placeholder="e.g. my-video"
+                            class="w-full px-1 py-0.5 text-xs rounded border border-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono"
+                            @keydown.enter="saveSlugEdit(video)"
+                            @keydown.escape="editingSlug = null"
+                            @blur="saveSlugEdit(video)"
+                          />
+                        </div>
+                        <template v-else>
+                          <span class="text-xs truncate font-mono" :class="video.slug ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-600'">{{ video.slug || '—' }}</span>
+                          <button
+                            class="opacity-0 group-hover/slug:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity flex-shrink-0"
+                            title="Edit slug"
+                            @click="startSlugEdit(video)"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <a
+                            v-if="video.slug"
+                            :href="`/watch/${video.slug}`"
+                            target="_blank"
+                            class="opacity-0 group-hover/slug:opacity-100 p-0.5 text-gray-400 hover:text-blue-500 transition-opacity flex-shrink-0"
+                            title="Open watch page"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                          </a>
+                        </template>
+                      </div>
                       <div class="mt-1 flex flex-wrap gap-1">
                         <span v-if="video.r2_exists === false" class="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-2 py-0.5 text-[10px] font-semibold">⚠ R2 missing</span>
                         <span v-if="video.publish_status === 'draft'" class="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 text-[10px] font-semibold">📝 Draft</span>
@@ -292,6 +330,12 @@
                           :disabled="statusUpdating[video.id]"
                           @click="openConfirmModal(video, 'archive')"
                         >Archive</button>
+                        <button
+                          v-if="video.publish_status === 'published'"
+                          class="px-2 py-1 text-xs rounded bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                          title="Swap this published video with a draft"
+                          @click="openSwapModal(video)"
+                        >Swap</button>
                         <button
                           class="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50"
                           :disabled="trashing[video.id] || statusUpdating[video.id]"
@@ -364,6 +408,75 @@
       </div>
     </div>
 
+    <!-- Swap modal -->
+    <div v-if="swapModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="swapModal.open = false">
+      <div class="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 max-h-[90vh] flex flex-col">
+        <!-- Step 0: pick a draft -->
+        <template v-if="swapModal.step === 0">
+          <div class="flex items-center justify-between mb-3 flex-shrink-0">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Swap out «{{ swapModal.sourceVideo?.title }}»</h3>
+              <p class="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Select a draft video to replace it. The draft will be published and inherit all settings.</p>
+            </div>
+            <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline ml-4 flex-shrink-0" @click="swapModal.open = false">Close</button>
+          </div>
+          <div class="overflow-y-auto space-y-2 flex-1">
+            <div v-if="!draftVideos.length" class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">No draft videos available.</div>
+            <button
+              v-for="draft in draftVideos"
+              :key="draft.id"
+              class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors flex items-center gap-3"
+              @click="selectSwapTarget(draft)"
+            >
+              <div class="w-24 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 flex-shrink-0">
+                <img v-if="draft.thumbnail_url" :src="sizeUrl(draft.thumbnail_url, 'small')" :alt="draft.title" class="w-full h-full object-cover" />
+              </div>
+              <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white line-clamp-1">{{ draft.title }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ formatSeconds(getActualDuration(draft)) }} · uploaded {{ formatDate(draft.upload_date) }}</p>
+              </div>
+            </button>
+          </div>
+        </template>
+
+        <!-- Step 1: confirm -->
+        <template v-else-if="swapModal.step === 1">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Confirm swap</h3>
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="rounded-lg border border-red-200 dark:border-red-900 p-3">
+              <p class="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-2">Retiring</p>
+              <div class="aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
+                <img v-if="swapModal.sourceVideo?.thumbnail_url" :src="sizeUrl(swapModal.sourceVideo.thumbnail_url, 'medium')" class="w-full h-full object-cover" alt="" />
+              </div>
+              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">{{ swapModal.sourceVideo?.title }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Will become «OLD - {{ swapModal.sourceVideo?.title }}» (draft)</p>
+            </div>
+            <div class="rounded-lg border border-green-200 dark:border-green-900 p-3">
+              <p class="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide mb-2">Publishing</p>
+              <div class="aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
+                <img v-if="swapTargetVideo?.thumbnail_url" :src="sizeUrl(swapTargetVideo.thumbnail_url, 'medium')" class="w-full h-full object-cover" alt="" />
+              </div>
+              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">{{ swapTargetVideo?.title }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Will publish at /watch/{{ swapModal.sourceVideo?.slug ?? swapModal.sourceVideo?.id }}</p>
+            </div>
+          </div>
+          <p class="text-sm text-amber-600 dark:text-amber-400 mb-4">⚠ This cannot be undone. Title, slug, thumbnail, dates, and preview lock transfer to the new video.</p>
+          <div class="flex justify-end gap-2">
+            <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="swapModal.step = 0">Back</button>
+            <button class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold" @click="executeSwap">Confirm Swap</button>
+          </div>
+        </template>
+
+        <!-- Step 2: in progress -->
+        <template v-else>
+          <div class="flex flex-col items-center justify-center py-12 gap-3">
+            <div class="w-8 h-8 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin"></div>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Swapping videos…</p>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div v-if="pickerOpen" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4" @click.self="closePicker">
       <div class="w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
         <div class="flex items-center justify-between mb-4">
@@ -410,6 +523,7 @@ interface Video {
   preview_duration: number
   publish_status: 'draft' | 'published' | 'archived' | null
   r2_exists: boolean | null
+  slug?: string | null
 }
 
 type BlockType = 'hero' | 'featured_row' | 'cta' | 'text_split' | 'video_grid'
@@ -450,6 +564,14 @@ const adminTabs = [
 ]
 const editingTitle = ref<{ id: string; value: string } | null>(null)
 const titleInputEl = ref<HTMLInputElement | null>(null)
+const editingSlug  = ref<{ id: string; value: string } | null>(null)
+const slugInputEl  = ref<HTMLInputElement | null>(null)
+const swapModal = ref<{
+  open: boolean
+  step: number  // 0=pick, 1=confirm, 2=loading
+  sourceVideo: Video | null
+  targetId: string | null
+}>({ open: false, step: 0, sourceVideo: null, targetId: null })
 const videoTabs = [
   { id: 'all' as const, label: 'All videos' },
   { id: 'locks' as const, label: 'Preview locks' },
@@ -461,6 +583,9 @@ const layoutBlocks = ref<LayoutBlock[]>([])
 const chronologicallySortedUploads = computed(() =>
   [...uploads.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
 )
+
+const draftVideos      = computed(() => chronologicallySortedUploads.value.filter(v => v.publish_status === 'draft'))
+const swapTargetVideo  = computed(() => uploads.value.find(v => v.id === swapModal.value.targetId) ?? null)
 
 const featuredVideos = computed(() =>
   featuredSlots.value.length ? featuredSlots.value : [...chronologicallySortedUploads.value.slice(0, 4)]
@@ -803,6 +928,71 @@ async function runConfirmedAction() {
   confirmModal.value.open = false
   if (current.action === 'trash') await trashVideo(current.video)
   else await updateVideoStatus(current.video, 'archived')
+}
+
+async function startSlugEdit(video: Video) {
+  editingSlug.value = { id: video.id, value: video.slug ?? '' }
+  await nextTick()
+  slugInputEl.value?.focus()
+  slugInputEl.value?.select()
+}
+
+async function saveSlugEdit(video: Video) {
+  const editing = editingSlug.value
+  if (!editing || editing.id !== video.id) return
+  const newSlug = editing.value.trim() || null
+  editingSlug.value = null
+  if (newSlug === (video.slug ?? null)) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ slug: newSlug }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], slug: newSlug }
+    showToast('success', newSlug ? `Slug set: /watch/${newSlug}` : 'Slug cleared.')
+  } catch (e: any) {
+    showToast('error', `Failed to update slug: ${e.message}`)
+  }
+}
+
+function openSwapModal(video: Video) {
+  swapModal.value = { open: true, step: 0, sourceVideo: video, targetId: null }
+}
+
+function selectSwapTarget(draft: Video) {
+  swapModal.value.targetId = draft.id
+  swapModal.value.step = 1
+}
+
+async function executeSwap() {
+  if (!swapModal.value.sourceVideo || !swapModal.value.targetId) return
+  swapModal.value.step = 2
+  try {
+    const res = await fetch(
+      `${config.public.apiUrl}/api/admin/videos/${swapModal.value.sourceVideo.id}/swap`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ swapWithId: swapModal.value.targetId }),
+      }
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    swapModal.value.open = false
+    showToast('success', 'Swap complete — video list updated.')
+    await loadVideos()
+  } catch (e: any) {
+    showToast('error', `Swap failed: ${e.message}`)
+    swapModal.value.step = 1
+  }
 }
 
 const confirmDialogRef = ref<HTMLElement | null>(null)

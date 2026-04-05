@@ -1,6 +1,6 @@
 <template>
   <NuxtLink
-    :to="`/watch/${video.id}`"
+    :to="`/watch/${video.slug ?? video.id}`"
     class="group block"
   >
     <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
@@ -49,6 +49,7 @@ interface Video {
   full_duration: number
   preview_duration: number
   upload_date: string
+  slug?: string | null
 }
 
 const props = defineProps<{ video: Video }>()

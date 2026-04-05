@@ -8,7 +8,8 @@
     "build": "nuxi build --preset=cloudflare_pages",
     "generate": "nuxi generate",
     "preview": "nuxi preview",
-    "deploy": "nuxi build --preset=cloudflare_pages && wrangler pages deploy dist/"
+    "deploy": "nuxi build --preset=cloudflare_pages && wrangler pages deploy dist/",
+    "gen:icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "@nuxtjs/color-mode": "^4.0.0",
