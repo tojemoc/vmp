@@ -101,7 +101,8 @@ async function resizeImage(sourceBuffer, sourceMime, targetWidth, targetHeight, 
 export async function handleThumbnailUpload(request, env, corsHeaders) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
-  } catch {
+  } catch (err) {
+    console.warn('[thumbnails] requireRole failed:', err?.message)
     return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
   }
 
@@ -128,7 +129,8 @@ export async function handleThumbnailUpload(request, env, corsHeaders) {
   let formData
   try {
     formData = await request.formData()
-  } catch {
+  } catch (err) {
+    console.warn('[thumbnails] FormData parse failed:', err?.message)
     return jsonResponse({ error: 'Invalid multipart form data.' }, 400, corsHeaders)
   }
 
@@ -240,7 +242,8 @@ export async function handleThumbnailUpload(request, env, corsHeaders) {
 export async function handleThumbnailDelete(request, env, corsHeaders) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
-  } catch {
+  } catch (err) {
+    console.warn('[thumbnails] requireRole failed:', err?.message)
     return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
   }
 
