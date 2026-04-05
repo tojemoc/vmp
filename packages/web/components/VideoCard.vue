@@ -6,7 +6,7 @@
     <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
       <img
         v-if="video.thumbnail_url"
-        :src="video.thumbnail_url"
+        :src="sizedUrl('medium')"
         :alt="video.title"
         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
       />
@@ -38,6 +38,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useThumbnail } from '~/composables/useThumbnail'
+
 interface Video {
   id: string
   title: string
@@ -48,7 +51,9 @@ interface Video {
   upload_date: string
 }
 
-defineProps<{ video: Video }>()
+const props = defineProps<{ video: Video }>()
+
+const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
 
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)

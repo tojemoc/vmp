@@ -157,10 +157,59 @@
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                   <tr v-for="video in chronologicallySortedUploads" :key="video.id">
                     <td class="py-3 pr-4">
-                      <div class="w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 relative">
-                        <img v-if="video.thumbnail_url" :src="video.thumbnail_url" :alt="video.title" class="w-full h-full object-cover" />
+                      <label
+                        :for="`thumb-input-${video.id}`"
+                        class="relative block w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800
+                               cursor-pointer ring-2 ring-transparent hover:ring-blue-500 transition-all group"
+                        :title="video.thumbnail_url ? 'Replace thumbnail' : 'Upload thumbnail'"
+                      >
+                        <!-- Existing thumbnail -->
+                        <img
+                          v-if="video.thumbnail_url"
+                          :src="sizeUrl(video.thumbnail_url, 'small')"
+                          :alt="video.title"
+                          class="w-full h-full object-cover"
+                        />
+                        <!-- Placeholder with upload icon -->
+                        <div
+                          v-else
+                          class="w-full h-full flex items-center justify-center text-gray-400 group-hover:text-blue-500 transition-colors"
+                        >
+                          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775
+                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095" />
+                          </svg>
+                        </div>
+                        <!-- Hover replace overlay (only when thumbnail exists) -->
+                        <div
+                          v-if="video.thumbnail_url"
+                          class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all
+                                 flex items-center justify-center opacity-0 group-hover:opacity-100"
+                        >
+                          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775
+                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095" />
+                          </svg>
+                        </div>
+                        <!-- Uploading spinner overlay -->
+                        <div
+                          v-if="uploadingFor === video.id"
+                          class="absolute inset-0 bg-black/60 flex items-center justify-center"
+                        >
+                          <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        </div>
+                        <!-- R2 missing warning -->
                         <span v-if="video.r2_exists === false" class="absolute inset-0 flex items-center justify-center bg-red-900/60 text-white text-xs">⚠</span>
-                      </div>
+                      </label>
+                      <input
+                        :id="`thumb-input-${video.id}`"
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        class="sr-only"
+                        @change="(e) => handleThumbnailSelect(e, video)"
+                      />
                     </td>
                     <td class="py-3 pr-4 max-w-[12rem]">
                       <div v-if="editingTitle?.id === video.id" class="flex items-center gap-1">
@@ -342,6 +391,7 @@
 
 <script setup lang="ts">
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
+import { sizeUrl } from '~/composables/useThumbnail'
 
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
@@ -389,6 +439,7 @@ const actualDurationByVideoId = ref<Record<string, number>>({})
 const statusUpdating = ref<Record<string, boolean>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
+const uploadingFor = ref<string | null>(null)
 const activeVideoTab = ref<'all' | 'locks'>('all')
 const activeAdminTab = ref<'videos' | 'homepage' | 'notifications' | 'system'>('videos')
 const adminTabs = [
@@ -673,6 +724,46 @@ async function trashVideo(video: Video) {
 }
 
 
+
+async function handleThumbnailSelect(event: Event, video: Video) {
+  const input = event.target as HTMLInputElement
+  const file  = input.files?.[0]
+  if (!file) return
+
+  // 10 MB client-side guard (the API also enforces this).
+  if (file.size > 10 * 1024 * 1024) {
+    alert('Image must be under 10 MB')
+    input.value = ''
+    return
+  }
+
+  uploadingFor.value = video.id
+  try {
+    const formData = new FormData()
+    formData.append('thumbnail', file)
+
+    // Do NOT set Content-Type manually — the browser sets it with the correct
+    // multipart boundary when FormData is the body.
+    const res = await fetch(
+      `${config.public.apiUrl}/api/admin/videos/${video.id}/thumbnail`,
+      { method: 'POST', headers: { ...authHeader() }, body: formData },
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Upload failed' }))
+      throw new Error(err.error || 'Upload failed')
+    }
+    const data = await res.json()
+    // Update the local record so the UI reflects the new thumbnail without a full reload.
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], thumbnail_url: data.thumbnails.large }
+    showToast('success', `Thumbnail updated for ${video.title}.`)
+  } catch (err: any) {
+    showToast('error', `Thumbnail upload failed: ${err.message}`)
+  } finally {
+    uploadingFor.value = null
+    input.value = '' // reset so the same file can be re-selected
+  }
+}
 
 type Toast = { id: number; type: 'success' | 'error'; message: string }
 const toasts = ref<Toast[]>([])
