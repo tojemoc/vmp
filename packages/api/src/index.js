@@ -978,9 +978,15 @@ function isPrivateHost(hostname) {
   if (ipv4) return isPrivateIPv4Octets(Number(ipv4[1]), Number(ipv4[2]))
 
   // ── IPv6 ──────────────────────────────────────────────────────────────────
-  if (h === '::1') return true                          // loopback
-  if (h.startsWith('fe80:')) return true                // link-local fe80::/10
-  if (h.startsWith('fc') || h.startsWith('fd')) return true // ULA fc00::/7
+  // Only apply IPv6 checks when the hostname contains ':' (IPv6 addresses always do).
+  // Without this guard, domain names like `fcm.googleapis.com` (Chrome's push
+  // service) would be falsely flagged as ULA fc00::/7 addresses because they
+  // start with "fc".
+  if (h.includes(':')) {
+    if (h === '::1') return true                          // loopback
+    if (h.startsWith('fe80:')) return true                // link-local fe80::/10
+    if (h.startsWith('fc') || h.startsWith('fd')) return true // ULA fc00::/7
+  }
 
   // IPv4-mapped IPv6 — ::ffff:x.x.x.x  (covers ::ffff:127.0.0.1 etc.)
   const mapped = h.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
