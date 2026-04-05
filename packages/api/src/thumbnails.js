@@ -158,63 +158,68 @@ export async function handleThumbnailUpload(request, env, corsHeaders) {
   const { ext: origExt, contentType: origContentType } = extensionForMime(file.type)
   const origKey = `thumbnails/${videoId}/original.${origExt}`
 
-  // Track which R2 keys we write so we can clean them up if the D1 UPDATE fails.
-  const writtenKeys = []
-
-  // Store the original with its actual MIME type / extension.
-  await env.BUCKET.put(origKey, sourceBuffer, { httpMetadata: { contentType: origContentType } })
-  writtenKeys.push(origKey)
-
-  const thumbUrls = {
-    original: `${r2BaseUrl}/${origKey}`,
+  // Detect Canvas API availability once before the loop.
+  // Only when the APIs are absent do we fall back to storing original bytes for
+  // the sized variants.  Errors thrown by a present createImageBitmap (e.g. a
+  // corrupt or mislabeled image) are NOT capability failures — they propagate to
+  // the outer try/catch which cleans up any partial R2 writes.
+  const canResize = typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function'
+  if (!canResize) {
+    console.warn('[thumbnails] OffscreenCanvas/createImageBitmap unavailable — storing original bytes for all size variants.')
   }
 
-  // Resize to each size variant.  If resizing is unavailable, fall back to
-  // storing the original bytes for all variants — the upload still succeeds.
-  let resizingSupported = true
-  for (const { key, width, height, quality } of SIZES) {
-    let blob
-    try {
-      blob = await resizeImage(sourceBuffer, file.type, width, height, quality)
-    } catch (err) {
-      // Known limitation: OffscreenCanvas / createImageBitmap not available in
-      // this Worker runtime.  All size variants will be stored as the original.
-      console.warn(
-        `[thumbnails] resizeImage failed (${err?.message}). ` +
-        'Storing original bytes for all size variants.',
+  // Track which R2 keys we write so we can clean them up on any failure.
+  const writtenKeys = []
+  const thumbUrls   = {}
+
+  try {
+    // Store the original with its actual MIME type / extension.
+    await env.BUCKET.put(origKey, sourceBuffer, { httpMetadata: { contentType: origContentType } })
+    writtenKeys.push(origKey)
+    thumbUrls.original = `${r2BaseUrl}/${origKey}`
+
+    // Resize to each size variant.
+    // When the Canvas API is unavailable the original bytes are stored instead
+    // (fallback), preserving the source MIME type in httpMetadata.
+    // When the Canvas API IS present but throws (decode error, corrupt image),
+    // the error propagates out of this try block so partial writes are cleaned up.
+    for (const { key, width, height, quality } of SIZES) {
+      let blob
+      if (canResize) {
+        blob = await resizeImage(sourceBuffer, file.type, width, height, quality)
+      } else {
+        blob = new Blob([sourceBuffer], { type: file.type })
+      }
+
+      const variantKey = `thumbnails/${videoId}/${key}.jpg`
+      await env.BUCKET.put(
+        variantKey,
+        await blob.arrayBuffer(),
+        // Use the blob's actual MIME type so the fallback (PNG source) is served
+        // with the correct Content-Type header, not a hardcoded image/jpeg.
+        { httpMetadata: { contentType: blob.type || 'image/jpeg' } },
       )
-      resizingSupported = false
-      blob = new Blob([sourceBuffer], { type: file.type })
+      writtenKeys.push(variantKey)
+      thumbUrls[key] = `${r2BaseUrl}/${variantKey}`
     }
 
-    const variantKey = `thumbnails/${videoId}/${key}.jpg`
-    await env.BUCKET.put(
-      variantKey,
-      await blob.arrayBuffer(),
-      { httpMetadata: { contentType: 'image/jpeg' } },
-    )
-    writtenKeys.push(variantKey)
-    thumbUrls[key] = `${r2BaseUrl}/${variantKey}`
-  }
+    // Update D1 to point at the large variant.
+    // Guard against zero affected rows (race: video deleted between SELECT and UPDATE).
+    const result = await db
+      .prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ?')
+      .bind(thumbUrls.large, videoId)
+      .run()
 
-  if (!resizingSupported) {
-    console.warn('[thumbnails] All variants stored as original — image resizing unavailable in this runtime.')
-  }
-
-  // Update D1 to point at the large variant.
-  // Guard against zero affected rows (e.g. a race where the video was deleted
-  // between the SELECT above and this UPDATE).  If the update touches no rows,
-  // clean up all R2 objects we just wrote to avoid orphans.
-  const result = await db
-    .prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ?')
-    .bind(thumbUrls.large, videoId)
-    .run()
-
-  const rowsChanged = result.meta?.changes ?? result.changes ?? 0
-  if (rowsChanged === 0) {
-    // Best-effort cleanup — do not let a cleanup failure mask the real error.
+    const rowsChanged = result.meta?.changes ?? result.changes ?? 0
+    if (rowsChanged === 0) {
+      await Promise.allSettled(writtenKeys.map(k => env.BUCKET.delete(k)))
+      return jsonResponse({ error: 'Video not found or could not be updated.' }, 404, corsHeaders)
+    }
+  } catch (err) {
+    // Best-effort cleanup of any R2 objects written before the failure.
     await Promise.allSettled(writtenKeys.map(k => env.BUCKET.delete(k)))
-    return jsonResponse({ error: 'Video not found or could not be updated.' }, 404, corsHeaders)
+    console.error('[thumbnails] Upload failed, R2 cleanup attempted:', err)
+    return jsonResponse({ error: 'Failed to process thumbnail.' }, 500, corsHeaders)
   }
 
   return jsonResponse({ ok: true, thumbnails: thumbUrls }, 200, corsHeaders)
