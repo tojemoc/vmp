@@ -226,7 +226,7 @@
               :key="rec.id"
               class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden hover:border-gray-300 dark:hover:border-gray-700 transition-colors cursor-pointer"
             >
-              <NuxtLink :to="`/watch/${rec.id}`" class="block">
+              <NuxtLink :to="`/watch/${rec.slug ?? rec.id}`" class="block">
                 <div class="flex space-x-3 p-3">
                   <div class="relative w-40 h-24 flex-shrink-0 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
                     <img

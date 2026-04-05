@@ -168,6 +168,9 @@ export default {
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/notify$/) && request.method === 'POST') {
       return handleAdminVideoNotify(request, env, ctx, corsHeaders)
     }
+    if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) && request.method === 'POST') {
+      return handleVideoSwap(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/admin/push/test' && request.method === 'POST') {
       return handleAdminPushTest(request, env, corsHeaders)
     }
@@ -248,10 +251,10 @@ async function handleVideosList(request, env, corsHeaders) {
     }
 
     const query = isEditor
-      ? `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status
+      ? `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status, slug
          FROM videos
          ORDER BY upload_date DESC`
-      : `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status
+      : `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status, slug
          FROM videos
          WHERE publish_status = 'published'
          ORDER BY upload_date DESC`
@@ -352,9 +355,20 @@ async function handleVideoAccess(request, env, corsHeaders) {
         `).bind(userId).first()
       : null
 
-    const video = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(videoId).first()
+    // Resolve by ID first, then by vanity slug so /watch/<slug> works transparently.
+    const video = await resolveVideoByIdOrSlug(db, videoId)
+    // Use the canonical database ID for all downstream operations (R2 paths, token signing).
+    const resolvedVideoId = video?.id ?? videoId
+
     // Treat all non-viewer staff roles as premium-equivalent entitlements.
     const hasElevatedRole = isAdministrativeRole(authUser?.role)
+
+    // Reject unpublished videos for non-staff so drafts/archived videos can't
+    // receive signed playlist tokens via a slug or ID they happen to know.
+    if (video && video.publish_status !== 'published' && !hasElevatedRole) {
+      return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+    }
+
     // Any active monthly/yearly/club subscription grants full access
     const hasPremiumSubscription = Boolean(subscription)
     const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription
@@ -362,7 +376,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
     const hasVideoMetadata = Boolean(video)
     const hasAccess = hasPremiumAccess || !hasVideoMetadata
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0
-    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId })
+    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: resolvedVideoId })
     const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
     const fullDuration = video?.full_duration ?? previewDuration
 
@@ -371,7 +385,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
     const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
     let playlistUrl = basePlaylistUrl
     if (env.JWT_SECRET) {
-      const vt = await signVideoToken(effectiveUserId, videoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
+      const vt = await signVideoToken(effectiveUserId, resolvedVideoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
       playlistUrl = basePlaylistUrl.includes('?')
         ? `${basePlaylistUrl}&vt=${vt}`
         : `${basePlaylistUrl}?vt=${vt}`
@@ -379,7 +393,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
 
     const response = {
       userId: userId ?? null,
-      videoId,
+      videoId: resolvedVideoId,
       hasAccess,
       subscription: {
         planType: subscription ? subscription.plan_type : 'free',
@@ -655,7 +669,7 @@ async function handleAdminVideosList(request, env, corsHeaders) {
     let videos
     videos = await db.prepare(`
       SELECT id, title, description, thumbnail_url, full_duration, preview_duration,
-             upload_date, status, publish_status, published_at, updated_at
+             upload_date, status, publish_status, published_at, updated_at, slug
       FROM videos
       ORDER BY upload_date DESC
     `).all()
@@ -694,15 +708,19 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   const allowedStatuses = ['draft', 'published', 'archived']
   const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status')
   const hasTitle  = Object.prototype.hasOwnProperty.call(body, 'title')
+  const hasSlug   = Object.prototype.hasOwnProperty.call(body, 'slug')
 
-  if (!hasStatus && !hasTitle) {
-    return jsonResponse({ error: 'At least one of status or title must be provided' }, 400, corsHeaders)
+  if (!hasStatus && !hasTitle && !hasSlug) {
+    return jsonResponse({ error: 'At least one of status, title, or slug must be provided' }, 400, corsHeaders)
   }
   if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
     return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
   }
   if (hasStatus && !allowedStatuses.includes(body.status)) {
     return jsonResponse({ error: 'status must be one of: draft, published, archived' }, 400, corsHeaders)
+  }
+  if (hasSlug && body.slug !== null && (typeof body.slug !== 'string' || !isValidSlug(body.slug))) {
+    return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens (e.g. my-video-title), or null to clear it' }, 400, corsHeaders)
   }
 
   // Guard: refuse to publish if the processed playlist is missing from R2.
@@ -718,10 +736,38 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
 
   const db = getDatabaseBinding(env)
 
+  // Guard: reject a slug that equals another video's id — resolveVideoByIdOrSlug
+  // resolves by id before slug, so the slug would become permanently shadowed.
+  if (hasSlug && body.slug !== null) {
+    const idCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
+    ).bind(body.slug, videoId).first()
+    if (idCollision) {
+      return jsonResponse({ error: 'Slug conflicts with an existing video ID' }, 409, corsHeaders)
+    }
+  }
+
   try {
-    if (hasTitle) {
-      await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-        .bind(body.title.trim(), videoId).run()
+    // When both title and slug are supplied, write them atomically so a slug
+    // constraint violation cannot leave the title committed but the slug not.
+    if (hasTitle || hasSlug) {
+      try {
+        if (hasTitle && hasSlug) {
+          await db.prepare(`UPDATE videos SET title = ?, slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), body.slug ?? null, videoId).run()
+        } else if (hasTitle) {
+          await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), videoId).run()
+        } else {
+          await db.prepare(`UPDATE videos SET slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.slug ?? null, videoId).run()
+        }
+      } catch (err) {
+        if (err?.message?.includes('UNIQUE')) {
+          return jsonResponse({ error: 'Slug already in use by another video' }, 409, corsHeaders)
+        }
+        throw err
+      }
     }
 
     let transitionedToPublished = false
@@ -750,7 +796,7 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
     }
 
     const video = await db.prepare(`
-      SELECT id, title, status, publish_status, published_at, updated_at
+      SELECT id, title, status, publish_status, published_at, updated_at, slug
       FROM videos WHERE id = ?
     `).bind(videoId).first()
     if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
@@ -896,6 +942,161 @@ async function handleAdminVideoNotify(request, env, ctx, corsHeaders) {
   )
 
   return jsonResponse({ ok: true, push_enqueued_at: responseTimestamp }, 200, corsHeaders)
+}
+
+async function handleVideoSwap(request, env, corsHeaders) {
+  try {
+    await requireRole(request, env, 'editor', 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const url = new URL(request.url)
+  const pathParts = url.pathname.split('/').filter(Boolean)
+  // /api/admin/videos/{publishedId}/swap → index 3 is the published video ID
+  const publishedId = pathParts[3]
+  if (!publishedId) return jsonResponse({ error: 'Missing video id' }, 400, corsHeaders)
+
+  const body = await request.json().catch(() => null)
+  if (!body?.swapWithId || typeof body.swapWithId !== 'string') {
+    return jsonResponse({ error: 'swapWithId (draft video id) is required' }, 400, corsHeaders)
+  }
+  const draftId = body.swapWithId.trim()
+  if (draftId === publishedId) {
+    return jsonResponse({ error: 'Cannot swap a video with itself' }, 400, corsHeaders)
+  }
+
+  const db = getDatabaseBinding(env)
+
+  const [oldVideo, newVideo] = await Promise.all([
+    db.prepare('SELECT * FROM videos WHERE id = ?').bind(publishedId).first(),
+    db.prepare('SELECT * FROM videos WHERE id = ?').bind(draftId).first(),
+  ])
+
+  if (!oldVideo) return jsonResponse({ error: 'Published video not found' }, 404, corsHeaders)
+  if (!newVideo) return jsonResponse({ error: 'Draft video not found' }, 404, corsHeaders)
+  if (oldVideo.publish_status !== 'published') {
+    return jsonResponse({ error: 'Source video must be published' }, 422, corsHeaders)
+  }
+  if (newVideo.publish_status !== 'draft') {
+    return jsonResponse({ error: 'Target video must be a draft' }, 422, corsHeaders)
+  }
+  if (env.BUCKET) {
+    const exists = await hasProcessedPlaybackArtifact(env.BUCKET, draftId)
+    if (!exists) {
+      return jsonResponse({
+        error: 'Cannot swap: processed media not found in R2. Upload and process the target draft first.',
+        code: 'r2_missing',
+      }, 422, corsHeaders)
+    }
+  }
+
+  // Cap the preview lock to the new video's actual duration (which may differ).
+  const cappedPreviewDuration = newVideo.full_duration > 0
+    ? Math.min(oldVideo.preview_duration ?? 0, newVideo.full_duration)
+    : (oldVideo.preview_duration ?? 0)
+
+  // Promote the draft and retire the old video atomically via D1 batch so both
+  // updates succeed or both fail — no half-swapped state.
+  // thumbnail_url starts as the old video's URL; upgraded below after the copy succeeds.
+  const promoteStmt = db.prepare(`
+    UPDATE videos SET
+      title            = ?,
+      description      = ?,
+      thumbnail_url    = ?,
+      slug             = ?,
+      upload_date      = ?,
+      preview_duration = ?,
+      publish_status   = 'published',
+      published_at     = CURRENT_TIMESTAMP,
+      updated_at       = CURRENT_TIMESTAMP
+    WHERE id = ? AND publish_status = 'draft'
+  `).bind(
+    oldVideo.title,
+    oldVideo.description ?? null,
+    oldVideo.thumbnail_url ?? null,
+    oldVideo.slug ?? null,
+    oldVideo.upload_date,
+    cappedPreviewDuration,
+    draftId,
+  )
+
+  const retireStmt = db.prepare(`
+    UPDATE videos SET
+      title          = 'OLD - ' || title,
+      thumbnail_url  = NULL,
+      slug           = NULL,
+      publish_status = 'draft',
+      published_at   = NULL,
+      updated_at     = CURRENT_TIMESTAMP
+    WHERE id = ? AND publish_status = 'published'
+  `).bind(publishedId)
+
+  // Retire must run first to clear the slug before the draft claims it — otherwise
+  // D1 raises a UNIQUE constraint violation on the partial index on videos.slug.
+  // The WHERE predicates ensure concurrent requests can't both succeed.
+  const [retireResult, promoteResult] = await db.batch([retireStmt, promoteStmt])
+  if ((retireResult.meta?.changes ?? 0) === 0 || (promoteResult.meta?.changes ?? 0) === 0) {
+    return jsonResponse({ error: 'Swap failed: video status changed concurrently, please retry' }, 409, corsHeaders)
+  }
+
+  // Copy thumbnails only after the swap has committed so a failed swap never
+  // overwrites the draft's existing thumbnail assets.
+  if (env.BUCKET && oldVideo.thumbnail_url) {
+    const thumbnailFiles = ['original.jpg', 'large.jpg', 'medium.jpg', 'small.jpg']
+    const copyResults = await Promise.allSettled(thumbnailFiles.map(async (file) => {
+      const srcKey = `thumbnails/${publishedId}/${file}`
+      const dstKey = `thumbnails/${draftId}/${file}`
+      const obj = await env.BUCKET.get(srcKey)
+      if (obj) {
+        await env.BUCKET.put(dstKey, obj.body, { httpMetadata: obj.httpMetadata })
+        return true
+      }
+      return false
+    }))
+    const failures = copyResults.filter(r => r.status === 'rejected')
+    if (failures.length) {
+      console.warn(`Thumbnail copy: ${failures.length}/${thumbnailFiles.length} failed for swap ${publishedId} -> ${draftId}`)
+    }
+    // Upgrade the thumbnail URL on the newly promoted row only if large.jpg was
+    // actually written; the initial value set in the batch was oldVideo.thumbnail_url.
+    const largeCopyOk = copyResults[1]?.status === 'fulfilled' && copyResults[1].value === true
+    if (env.R2_BASE_URL && largeCopyOk) {
+      await db.prepare(`UPDATE videos SET thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(`${env.R2_BASE_URL}/thumbnails/${draftId}/large.jpg`, draftId).run()
+    }
+  }
+
+  // Update homepage featured slots: replace old ID with new ID so the page
+  // doesn't silently show a stale/empty featured card after the swap.
+  // Best-effort: the swap itself already committed — don't let this fail the response.
+  try {
+    await ensureAdminSettingsTable(db)
+    const homepageRow = await db.prepare(
+      'SELECT value FROM admin_settings WHERE key = ? LIMIT 1'
+    ).bind('homepage').first()
+    if (homepageRow?.value) {
+      const homepage = safeJsonParse(homepageRow.value, defaultHomepageConfig())
+      const before = Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : []
+      const after  = before.map(id => id === publishedId ? draftId : id)
+      if (after.some((id, i) => id !== before[i])) {
+        homepage.featuredVideoIds = after
+        await db.prepare(`
+          INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        `).bind('homepage', JSON.stringify(homepage)).run()
+      }
+    }
+  } catch (err) {
+    console.warn('Homepage featured-slot update failed after swap (non-fatal):', err?.message)
+  }
+
+  const [published, retired] = await Promise.all([
+    db.prepare('SELECT id, title, publish_status, slug, thumbnail_url FROM videos WHERE id = ?').bind(draftId).first(),
+    db.prepare('SELECT id, title, publish_status, slug, thumbnail_url FROM videos WHERE id = ?').bind(publishedId).first(),
+  ])
+
+  return jsonResponse({ ok: true, published, retired }, 200, corsHeaders)
 }
 
 async function handleAdminPushTest(request, env, corsHeaders) {
@@ -1249,6 +1450,19 @@ function normalizeVideoId(input) {
   const t = (input ?? '').trim()
   const m = t.match(/^videos\/([^/]+)\/processed\/playlist\.m3u8$/i)
   return m ? m[1] : t
+}
+
+// Resolve a video row by ID first, then by vanity slug.
+// Returns the D1 row or null.
+async function resolveVideoByIdOrSlug(db, idOrSlug) {
+  const byId = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(idOrSlug).first()
+  if (byId) return byId
+  return db.prepare('SELECT * FROM videos WHERE slug = ?').bind(idOrSlug).first()
+}
+
+// Validate a vanity slug format: lowercase alphanumeric words separated by hyphens.
+function isValidSlug(slug) {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
 }
 
 async function resolveMediaEntrypointUrl({ env, videoId }) {

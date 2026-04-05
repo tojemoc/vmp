@@ -40,7 +40,7 @@ process_video() {
 
     # smarter stale lock detection
     if [ -f "$LOCK" ]; then
-        if ! pgrep -f "$VIDEO_ID" > /dev/null; then
+        if ! pgrep -f "process_video.*$VIDEO_ID" > /dev/null; then
             log "âš ï¸ Stale lock detected for $VIDEO_ID â€” recovering"
             rm -f "$LOCK"
         else
@@ -210,9 +210,62 @@ log "ðŸŽ‰ Finished $VIDEO_ID"
 }
 
 # ------------------------
+# GARBAGE COLLECTION
+# ------------------------
+# Removes leftover tmp dirs and inbox files from previous runs:
+#   - Dirs with a .done file (upload succeeded but cleanup didn't finish)
+#   - Orphaned dirs with no matching inbox file and no active lock
+garbage_collect() {
+    log "🗑️  Garbage collecting stale pipeline directories..."
+    local had_any=false
+
+    for dir in "$TMP_DIR_BASE"/*/; do
+        [ -d "$dir" ] || continue
+        had_any=true
+        local VIDEO_ID
+        VIDEO_ID=$(basename "$dir")
+        local LOCK="$dir/.lock"
+        local DONE="$dir/.done"
+
+        # Clear stale locks using the same heuristic as process_video():
+        # if a lock exists but no process is running for this VIDEO_ID, the job crashed.
+        if [ -f "$LOCK" ] && ! pgrep -f "process_video.*$VIDEO_ID" > /dev/null; then
+            log "🗑️  GC: removing stale lock for $VIDEO_ID"
+            rm -f "$LOCK"
+        fi
+
+        # Check if a corresponding inbox file still exists (any supported extension)
+        local inbox_exists=false
+        for ext in mp4 mkv mov; do
+            [ -f "$INBOX_DIR/${VIDEO_ID}.${ext}" ] && { inbox_exists=true; break; }
+        done
+
+        if [ -f "$DONE" ]; then
+            # Upload completed but cleanup was interrupted — safe to remove now
+            log "🗑️  GC: removing completed tmp dir for $VIDEO_ID"
+            for ext in mp4 mkv mov; do
+                rm -f "$INBOX_DIR/${VIDEO_ID}.${ext}"
+            done
+            rm -rf "$dir"
+        elif [ "$inbox_exists" = false ] && [ ! -f "$LOCK" ]; then
+            # No inbox file, no active lock, no done marker — orphaned partial job
+            log "🗑️  GC: removing orphaned tmp dir for $VIDEO_ID"
+            rm -rf "$dir"
+        fi
+        # Dirs with an active .lock (currently processing) are left untouched
+    done
+
+    if [ "$had_any" = false ]; then
+        log "🗑️  GC: nothing to clean up"
+    fi
+}
+
+# ------------------------
 # RESUME EXISTING JOBS
 # ------------------------
-log "ðŸ” Resuming existing jobs..."
+garbage_collect
+
+log "🔍 Resuming existing jobs..."
 
 for f in "$INBOX_DIR"/*; do
     [ -f "$f" ] || continue
@@ -227,7 +280,9 @@ done
 # ------------------------
 # WATCH NEW FILES
 # ------------------------
-log "ðŸŽ¬ Watching for new uploads..."
+garbage_collect
+
+log "🎬 Watching for new uploads..."
 
 inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while read FILE; do
     [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
