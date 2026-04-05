@@ -28,6 +28,7 @@ import {
   handlePortal,
 } from './stripe.js'
 import { isAdministrativeRole } from './roles.js'
+import { handleThumbnailUpload, handleThumbnailDelete } from './thumbnails.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
@@ -151,6 +152,12 @@ export default {
     }
     if (url.pathname === '/api/admin/videos') {
       return handleAdminVideosList(request, env, corsHeaders)
+    }
+    if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) && request.method === 'POST') {
+      return handleThumbnailUpload(request, env, corsHeaders)
+    }
+    if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) && request.method === 'DELETE') {
+      return handleThumbnailDelete(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
       return handleAdminVideoUpdate(request, env, ctx, corsHeaders)

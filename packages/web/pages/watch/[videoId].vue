@@ -231,7 +231,7 @@
                   <div class="relative w-40 h-24 flex-shrink-0 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
                     <img
                       v-if="rec.thumbnail_url"
-                      :src="rec.thumbnail_url"
+                      :src="sizeUrl(rec.thumbnail_url, 'small')"
                       :alt="rec.title"
                       class="w-full h-full object-cover"
                     />
@@ -271,6 +271,7 @@ import { useRuntimeConfig } from '#app'
 import 'media-chrome'
 import 'videojs-video-element'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
+import { sizeUrl } from '~/composables/useThumbnail'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
