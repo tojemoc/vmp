@@ -737,15 +737,20 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   const db = getDatabaseBinding(env)
 
   try {
-    if (hasTitle) {
-      await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-        .bind(body.title.trim(), videoId).run()
-    }
-
-    if (hasSlug) {
+    // When both title and slug are supplied, write them atomically so a slug
+    // constraint violation cannot leave the title committed but the slug not.
+    if (hasTitle || hasSlug) {
       try {
-        await db.prepare(`UPDATE videos SET slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-          .bind(body.slug ?? null, videoId).run()
+        if (hasTitle && hasSlug) {
+          await db.prepare(`UPDATE videos SET title = ?, slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), body.slug ?? null, videoId).run()
+        } else if (hasTitle) {
+          await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), videoId).run()
+        } else {
+          await db.prepare(`UPDATE videos SET slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.slug ?? null, videoId).run()
+        }
       } catch (err) {
         if (err?.message?.includes('UNIQUE')) {
           return jsonResponse({ error: 'Slug already in use by another video' }, 409, corsHeaders)
@@ -999,7 +1004,10 @@ async function handleVideoSwap(request, env, corsHeaders) {
     if (failures.length) {
       console.warn(`Thumbnail copy: ${failures.length}/${thumbnailFiles.length} failed for swap ${publishedId} -> ${draftId}`)
     }
-    if (env.R2_BASE_URL) {
+    // Only point the promoted row at the new R2 key if large.jpg was actually
+    // written; otherwise fall back to the old URL so we never reference a missing object.
+    const largeCopyOk = copyResults[1]?.status === 'fulfilled' && copyResults[1].value === true
+    if (env.R2_BASE_URL && largeCopyOk) {
       newThumbnailUrl = `${env.R2_BASE_URL}/thumbnails/${draftId}/large.jpg`
     } else {
       newThumbnailUrl = oldVideo.thumbnail_url
@@ -1019,7 +1027,7 @@ async function handleVideoSwap(request, env, corsHeaders) {
       publish_status   = 'published',
       published_at     = CURRENT_TIMESTAMP,
       updated_at       = CURRENT_TIMESTAMP
-    WHERE id = ?
+    WHERE id = ? AND publish_status = 'draft'
   `).bind(
     oldVideo.title,
     oldVideo.description ?? null,
@@ -1038,12 +1046,16 @@ async function handleVideoSwap(request, env, corsHeaders) {
       publish_status = 'draft',
       published_at   = NULL,
       updated_at     = CURRENT_TIMESTAMP
-    WHERE id = ?
+    WHERE id = ? AND publish_status = 'published'
   `).bind(publishedId)
 
   // Retire must run first to clear the slug before the draft claims it — otherwise
   // D1 raises a UNIQUE constraint violation on the partial index on videos.slug.
-  await db.batch([retireStmt, promoteStmt])
+  // The WHERE predicates ensure concurrent requests can't both succeed.
+  const [retireResult, promoteResult] = await db.batch([retireStmt, promoteStmt])
+  if ((retireResult.meta?.changes ?? 0) === 0 || (promoteResult.meta?.changes ?? 0) === 0) {
+    return jsonResponse({ error: 'Swap failed: video status changed concurrently, please retry' }, 409, corsHeaders)
+  }
 
   // Update homepage featured slots: replace old ID with new ID so the page
   // doesn't silently show a stale/empty featured card after the swap.

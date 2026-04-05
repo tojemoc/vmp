@@ -591,7 +591,7 @@ const chronologicallySortedUploads = computed(() =>
   [...uploads.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
 )
 
-const draftVideos      = computed(() => chronologicallySortedUploads.value.filter(v => v.publish_status === 'draft'))
+const draftVideos      = computed(() => chronologicallySortedUploads.value.filter(v => v.publish_status === 'draft' && v.r2_exists !== false))
 const swapTargetVideo  = computed(() => uploads.value.find(v => v.id === swapModal.value.targetId) ?? null)
 
 const featuredVideos = computed(() =>
