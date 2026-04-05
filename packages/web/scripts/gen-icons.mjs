@@ -2,7 +2,7 @@
  * gen-icons.mjs
  * Generates PWA icons (play-button triangle on dark background) as PNG files.
  * Pure Node.js — no external dependencies required.
- * Usage: node scripts/gen-icons.mjs
+ * Usage: node scripts/gen-icons.mjs   (from packages/web/)
  */
 
 import { deflateSync } from 'node:zlib'
@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const OUT_DIR = join(__dirname, '../packages/web/public/icons')
+const OUT_DIR = join(__dirname, '../public/icons')
 
 mkdirSync(OUT_DIR, { recursive: true })
 
