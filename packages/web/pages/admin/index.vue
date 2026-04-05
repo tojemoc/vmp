@@ -410,7 +410,14 @@
 
     <!-- Swap modal -->
     <div v-if="swapModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="swapModal.open = false">
-      <div class="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 max-h-[90vh] flex flex-col">
+      <div
+        ref="swapDialogRef"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Swap video"
+        tabindex="-1"
+        class="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 max-h-[90vh] flex flex-col"
+      >
         <!-- Step 0: pick a draft -->
         <template v-if="swapModal.step === 0">
           <div class="flex items-center justify-between mb-3 flex-shrink-0">
@@ -996,7 +1003,8 @@ async function executeSwap() {
 }
 
 const confirmDialogRef = ref<HTMLElement | null>(null)
-const lastFocusedEl = ref<HTMLElement | null>(null)
+const swapDialogRef    = ref<HTMLElement | null>(null)
+const lastFocusedEl    = ref<HTMLElement | null>(null)
 
 function setAdminTab(tab: 'videos' | 'homepage' | 'notifications' | 'system') {
   router.replace({ query: { ...route.query, tab } })
@@ -1045,12 +1053,49 @@ watch(() => confirmModal.value.open, async (open) => {
   }
 })
 
+function onSwapModalKeydown(e: KeyboardEvent) {
+  if (!swapModal.value.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    swapModal.value.open = false
+    return
+  }
+  if (e.key !== 'Tab' || !swapDialogRef.value) return
+  const focusable = swapDialogRef.value.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement as HTMLElement | null
+  if (e.shiftKey && active === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+watch(() => swapModal.value.open, async (open) => {
+  if (open) {
+    lastFocusedEl.value = document.activeElement as HTMLElement | null
+    await nextTick()
+    swapDialogRef.value?.focus()
+    window.addEventListener('keydown', onSwapModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onSwapModalKeydown)
+    lastFocusedEl.value?.focus()
+  }
+})
+
 onMounted(async () => {
   await reloadAll()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onConfirmModalKeydown)
+  window.removeEventListener('keydown', onSwapModalKeydown)
   for (const timer of toastTimers.values()) clearTimeout(timer)
   toastTimers.clear()
 })

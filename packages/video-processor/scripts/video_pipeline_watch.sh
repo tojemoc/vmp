@@ -227,6 +227,13 @@ garbage_collect() {
         local LOCK="$dir/.lock"
         local DONE="$dir/.done"
 
+        # Clear stale locks using the same heuristic as process_video():
+        # if a lock exists but no process is running for this VIDEO_ID, the job crashed.
+        if [ -f "$LOCK" ] && ! pgrep -f "$VIDEO_ID" > /dev/null; then
+            log "🗑️  GC: removing stale lock for $VIDEO_ID"
+            rm -f "$LOCK"
+        fi
+
         # Check if a corresponding inbox file still exists (any supported extension)
         local inbox_exists=false
         for ext in mp4 mkv mov; do

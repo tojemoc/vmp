@@ -969,14 +969,20 @@ async function handleVideoSwap(request, env, corsHeaders) {
   let newThumbnailUrl = null
   if (env.BUCKET && oldVideo.thumbnail_url) {
     const thumbnailFiles = ['original.jpg', 'large.jpg', 'medium.jpg', 'small.jpg']
-    await Promise.all(thumbnailFiles.map(async (file) => {
+    const copyResults = await Promise.allSettled(thumbnailFiles.map(async (file) => {
       const srcKey = `thumbnails/${publishedId}/${file}`
       const dstKey = `thumbnails/${draftId}/${file}`
       const obj = await env.BUCKET.get(srcKey)
       if (obj) {
         await env.BUCKET.put(dstKey, obj.body, { httpMetadata: obj.httpMetadata })
+        return true
       }
+      return false
     }))
+    const failures = copyResults.filter(r => r.status === 'rejected')
+    if (failures.length) {
+      console.warn(`Thumbnail copy: ${failures.length}/${thumbnailFiles.length} failed for swap ${publishedId} -> ${draftId}`)
+    }
     if (env.R2_BASE_URL) {
       newThumbnailUrl = `${env.R2_BASE_URL}/thumbnails/${draftId}/large.jpg`
     } else {
@@ -984,8 +990,9 @@ async function handleVideoSwap(request, env, corsHeaders) {
     }
   }
 
-  // Promote the draft: give it the published video's full identity.
-  await db.prepare(`
+  // Promote the draft and retire the old video atomically via D1 batch so both
+  // updates succeed or both fail — no half-swapped state.
+  const promoteStmt = db.prepare(`
     UPDATE videos SET
       title            = ?,
       description      = ?,
@@ -1005,10 +1012,9 @@ async function handleVideoSwap(request, env, corsHeaders) {
     oldVideo.upload_date,
     cappedPreviewDuration,
     draftId,
-  ).run()
+  )
 
-  // Retire the old published video: prefix title, clear slug, set to draft.
-  await db.prepare(`
+  const retireStmt = db.prepare(`
     UPDATE videos SET
       title          = 'OLD - ' || title,
       thumbnail_url  = NULL,
@@ -1017,7 +1023,9 @@ async function handleVideoSwap(request, env, corsHeaders) {
       published_at   = NULL,
       updated_at     = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).bind(publishedId).run()
+  `).bind(publishedId)
+
+  await db.batch([promoteStmt, retireStmt])
 
   // Update homepage featured slots: replace old ID with new ID so the page
   // doesn't silently show a stale/empty featured card after the swap.
