@@ -631,7 +631,6 @@ const initializeVideoElement = async (
       const cleanup = () => {
         video.removeEventListener('canplay', onCanPlay)
         video.removeEventListener('error', onError)
-        video.removeEventListener('abort', onAbort)
         signal?.removeEventListener('abort', onSignalAbort)
       }
       const onCanPlay = () => {
@@ -642,17 +641,12 @@ const initializeVideoElement = async (
         cleanup()
         reject(new Error('Media failed to load'))
       }
-      const onAbort = () => {
-        cleanup()
-        reject(new Error('Media load aborted'))
-      }
       const onSignalAbort = () => {
         cleanup()
         reject(new DOMException('Request aborted', 'AbortError'))
       }
       video.addEventListener('canplay', onCanPlay)
       video.addEventListener('error', onError)
-      video.addEventListener('abort', onAbort)
       signal?.addEventListener('abort', onSignalAbort, { once: true })
     })
   }
