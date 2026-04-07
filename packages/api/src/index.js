@@ -402,7 +402,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
       if (resolved && resolved > 0) {
         fullDuration = resolved
         // Best-effort: backfill D1 so list endpoints and cards stop showing "--".
-        if (video && video.full_duration === 0) {
+        if (video && (video.full_duration == null || video.full_duration === 0)) {
           try {
             await db.prepare(
               `UPDATE videos
@@ -413,7 +413,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
                      ELSE MIN(preview_duration, ?)
                    END,
                    updated_at = CURRENT_TIMESTAMP
-               WHERE id = ? AND status = 'processed'`
+               WHERE (full_duration IS NULL OR full_duration = 0) AND id = ? AND status = 'processed'`
             ).bind(fullDuration, fullDuration, resolvedVideoId).run()
           } catch (e) {
             console.warn(`Duration backfill failed for ${resolvedVideoId}:`, e?.message ?? e)
@@ -1374,14 +1374,18 @@ async function resolveVideoDurationSeconds(videoId, env) {
   const kv = env.RATE_LIMIT_KV
   const cacheKey = kv ? `duration:${videoId}` : null
   if (kv && cacheKey) {
-    const cached = await kv.get(cacheKey)
-    // Three states:
-    // - missing key => attempt resolve
-    // - sentinel "-1" => treat as unresolvable (short TTL) and return null immediately
-    // - positive integer => duration seconds
-    if (cached === '-1') return null
-    const n = cached ? Number.parseInt(cached, 10) : NaN
-    if (Number.isFinite(n) && n > 0) return n
+    try {
+      const cached = await kv.get(cacheKey)
+      // Three states:
+      // - missing key => attempt resolve
+      // - sentinel "-1" => treat as unresolvable (short TTL) and return null immediately
+      // - positive integer => duration seconds
+      if (cached === '-1') return null
+      const n = cached ? Number.parseInt(cached, 10) : NaN
+      if (Number.isFinite(n) && n > 0) return n
+    } catch {
+      // Treat KV read failure as a cache miss - proceed with resolution
+    }
   }
 
   const candidates = buildEntrypointCandidates(env.R2_BASE_URL, videoId)
@@ -1392,7 +1396,11 @@ async function resolveVideoDurationSeconds(videoId, env) {
 
     if (result.kind === 'ok' && result.duration && result.duration > 0) {
       if (kv && cacheKey) {
-        await kv.put(cacheKey, String(result.duration), { expirationTtl: 86400 }) // 24h
+        try {
+          await kv.put(cacheKey, String(result.duration), { expirationTtl: 86400 }) // 24h
+        } catch {
+          // Ignore KV write failures - duration resolution still succeeded
+        }
       }
       return result.duration
     }
@@ -1409,7 +1417,11 @@ async function resolveVideoDurationSeconds(videoId, env) {
   // Only write -1 for definitive not_found, not for transient errors
   if (lastResult && lastResult.kind === 'not_found') {
     if (kv && cacheKey) {
-      await kv.put(cacheKey, '-1', { expirationTtl: 300 }) // 5 minutes
+      try {
+        await kv.put(cacheKey, '-1', { expirationTtl: 300 }) // 5 minutes
+      } catch {
+        // Ignore KV write failures - not_found result is still valid
+      }
     }
   }
   return null
