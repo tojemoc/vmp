@@ -394,7 +394,10 @@ async function handleVideoAccess(request, env, corsHeaders) {
     // Unify duration logic with the frontend: if D1 has 0/unknown duration,
     // attempt to resolve from the HLS playlist stored in R2.
     let fullDuration = video?.full_duration ?? previewDuration
-    if ((!fullDuration || fullDuration === 0) && env.R2_BASE_URL) {
+    // Avoid racing the video-processor duration sync while a video is still in the
+    // "uploaded" (not yet processed) state.
+    const isProcessingInFlight = Boolean(video && video.status && video.status !== 'processed')
+    if ((!fullDuration || fullDuration === 0) && env.R2_BASE_URL && !isProcessingInFlight) {
       const resolved = await resolveVideoDurationSeconds(resolvedVideoId, env)
       if (resolved && resolved > 0) {
         fullDuration = resolved
@@ -410,7 +413,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
                      ELSE MIN(preview_duration, ?)
                    END,
                    updated_at = CURRENT_TIMESTAMP
-               WHERE id = ?`
+               WHERE id = ? AND status = 'processed'`
             ).bind(fullDuration, fullDuration, resolvedVideoId).run()
           } catch (e) {
             console.warn(`Duration backfill failed for ${resolvedVideoId}:`, e?.message ?? e)
@@ -1372,6 +1375,11 @@ async function resolveVideoDurationSeconds(videoId, env) {
   const cacheKey = kv ? `duration:${videoId}` : null
   if (kv && cacheKey) {
     const cached = await kv.get(cacheKey)
+    // Three states:
+    // - missing key => attempt resolve
+    // - sentinel "-1" => treat as unresolvable (short TTL) and return null immediately
+    // - positive integer => duration seconds
+    if (cached === '-1') return null
     const n = cached ? Number.parseInt(cached, 10) : NaN
     if (Number.isFinite(n) && n > 0) return n
   }
@@ -1387,13 +1395,32 @@ async function resolveVideoDurationSeconds(videoId, env) {
     }
   }
 
+  // Negative caching: avoid re-fetching missing/broken manifests on every request.
+  // Only set when KV exists; keep TTL short to allow newly processed uploads to recover.
+  if (kv && cacheKey) {
+    await kv.put(cacheKey, '-1', { expirationTtl: 300 }) // 5 minutes
+  }
   return null
 }
 
 async function resolvePlaylistDurationFromUrl(url, depth = 0) {
   if (!url || depth > 2) return null
   try {
-    const res = await fetch(url)
+    // Avoid indefinite hangs on upstream fetch (network stalls, origin issues).
+    // Prefer AbortSignal.timeout when available; otherwise use AbortController.
+    const timeoutMs = 5000
+    let controller = null
+    let timer = null
+    let signal = undefined
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(timeoutMs)
+    } else if (typeof AbortController !== 'undefined') {
+      controller = new AbortController()
+      signal = controller.signal
+      timer = setTimeout(() => controller.abort(), timeoutMs)
+    }
+
+    const res = await fetch(url, signal ? { signal } : undefined)
     if (!res.ok) return null
     const text = await res.text()
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
@@ -1417,6 +1444,8 @@ async function resolvePlaylistDurationFromUrl(url, depth = 0) {
     }
   } catch {
     // Silent: callers treat null as "unknown"
+  } finally {
+    if (timer) clearTimeout(timer)
   }
   return null
 }
