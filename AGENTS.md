@@ -26,7 +26,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 
 ### Roles
 
-```
+```text
 super_admin  — full permissions including promoting/demoting other admins
 admin        — everything except editing super_admin accounts
 editor       — video CRUD, change visibility/status
@@ -115,14 +115,16 @@ Steps 1–7 are complete. Work continues from step 8.
 - `GET /api/feed/:userId/:token` — validates token + active subscription, returns RSS 2.0 with iTunes podcast tags for all published videos.
 - Account page section with copyable RSS URL and instructions.
 
-## Cursor Cloud specific instructions
+## Cursor Cloud-specific instructions
 
 ### Running services locally
 
 **API** (`packages/api`):
-```
+
+```bash
 npm run dev --workspace=@vmp/api   # runs wrangler dev on port 8787
 ```
+
 - Wrangler emulates D1, R2, KV, and Durable Objects locally — no external services needed.
 - Local secrets must be in `packages/api/.dev.vars` (not committed). Required:
   - `JWT_SECRET` — any string >= 32 chars
@@ -130,22 +132,27 @@ npm run dev --workspace=@vmp/api   # runs wrangler dev on port 8787
 - Without `BREVO_API_KEY`, magic-link URLs are logged to the wrangler console prefixed `[DEV]`.
 
 **Web frontend** (`packages/web`):
-```
+
+```bash
 API_URL=http://localhost:8787 npm run dev --workspace=@vmp/web   # Nuxt dev on port 3000
 ```
+
 - Set `API_URL` to point to the local API; otherwise it defaults to the production URL.
 
 ### Database setup
 
 Before the API can serve data, apply all D1 migrations in order:
-```
+
+```bash
 cd packages/api
 for f in $(ls -1 migrations/*.sql | sort); do
   npx wrangler d1 execute video-subscription-db --local --file="$f"
 done
 ```
+
 Seed videos default to `publish_status = 'draft'`. To make them visible on the public homepage:
-```
+
+```bash
 npx wrangler d1 execute video-subscription-db --local \
   --command="UPDATE videos SET publish_status = 'published', published_at = CURRENT_TIMESTAMP WHERE publish_status = 'draft';"
 ```
@@ -158,7 +165,7 @@ npx wrangler d1 execute video-subscription-db --local \
 
 ### Build
 
-```
+```bash
 npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Pages preset)
 ```
 
@@ -170,7 +177,7 @@ npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Pages p
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
 
-```
+```text
 JWT_SECRET              — 32+ random chars
 BREVO_API_KEY           — from brevo.com
 STRIPE_SECRET_KEY       — from stripe.com dashboard
