@@ -886,9 +886,19 @@ async function handleThumbnailSelect(event: Event, video: Video) {
     }
     const data = await res.json()
     // Update the local record so the UI reflects the new thumbnail without a full reload.
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], thumbnail_url: data.thumbnails.large }
-    showToast('success', `Thumbnail updated for ${video.title}.`)
+    // Add a cache-busting query param so fresh uploads are visible immediately even if
+    // the underlying object key stays the same.
+    if (data?.thumbnails?.large) {
+      const cacheBustedUrl = `${data.thumbnails.large}?t=${Date.now()}`
+      const idx = uploads.value.findIndex(v => v.id === video.id)
+      if (idx !== -1) {
+        uploads.value[idx] = { ...uploads.value[idx], thumbnail_url: cacheBustedUrl }
+      }
+      showToast('success', `Thumbnail updated for ${video.title}.`)
+    } else {
+      // If the API response is missing a thumbnail URL, keep the existing thumbnail as-is.
+      showToast('error', 'Thumbnail upload succeeded but API did not return a thumbnail URL.')
+    }
   } catch (err: any) {
     showToast('error', `Thumbnail upload failed: ${err.message}`)
   } finally {
