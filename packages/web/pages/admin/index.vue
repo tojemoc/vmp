@@ -376,6 +376,123 @@
           </div>
         </div>
 
+        <div v-if="activeAdminTab === 'newsletter'" id="newsletter-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
+          <div>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Newsletter</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Sync paying subscribers to a Brevo list (via Stripe webhooks) and send campaigns to that list.
+            </p>
+          </div>
+
+          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.
+          </div>
+
+          <template v-else>
+            <div v-if="newsletterMessage" class="rounded-lg border px-4 py-3 text-sm" :class="newsletterMessageClass">{{ newsletterMessage }}</div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="brevo-list-id">Brevo subscriber list ID</label>
+                <input
+                  id="brevo-list-id"
+                  v-model="newsletterListId"
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="e.g. 12"
+                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                />
+                <p class="text-xs text-gray-500 dark:text-gray-400">Create a list in Brevo Contacts and paste its numeric ID.</p>
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="brevo-sender-email">Campaign sender email</label>
+                <input
+                  id="brevo-sender-email"
+                  v-model="newsletterSenderEmail"
+                  type="email"
+                  autocomplete="email"
+                  placeholder="verified sender in Brevo"
+                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                />
+                <label class="block text-sm font-medium text-gray-900 dark:text-white mt-3" for="brevo-sender-name">Sender display name (optional)</label>
+                <input
+                  id="brevo-sender-name"
+                  v-model="newsletterSenderName"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="e.g. Your Channel"
+                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                :disabled="newsletterSaving"
+                @click="saveNewsletterSettings"
+              >
+                {{ newsletterSaving ? 'Saving…' : 'Save newsletter settings' }}
+              </button>
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Compose campaign</h3>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="newsletter-subject">Subject</label>
+                <input
+                  id="newsletter-subject"
+                  v-model="newsletterSubject"
+                  type="text"
+                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  placeholder="Email subject line"
+                />
+              </div>
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="newsletter-body">HTML body</label>
+                <textarea
+                  id="newsletter-body"
+                  v-model="newsletterHtml"
+                  rows="12"
+                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm"
+                  placeholder="<p>Hello …</p>"
+                />
+              </div>
+              <div class="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">Preview</p>
+                  <div
+                    v-if="newsletterHtml.trim()"
+                    class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 p-4 min-h-[12rem] prose prose-sm dark:prose-invert max-w-none overflow-auto"
+                    v-html="newsletterHtml"
+                  />
+                  <div
+                    v-else
+                    class="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 p-4 min-h-[12rem] flex items-center justify-center text-sm text-gray-400"
+                  >
+                    Preview appears here.
+                  </div>
+                </div>
+                <div class="flex flex-col justify-end gap-2">
+                  <button
+                    type="button"
+                    class="w-full sm:w-auto px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
+                    :disabled="newsletterSending"
+                    @click="sendNewsletterCampaign"
+                  >
+                    {{ newsletterSending ? 'Sending…' : 'Send to subscriber list' }}
+                  </button>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    Creates a campaign in Brevo and sends it immediately to the configured list. Ensure your API key has marketing permissions and credits.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
         <div v-if="activeAdminTab === 'system'" id="system-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">System</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">Operational controls and refresh actions.</p>
@@ -542,7 +659,7 @@ interface LayoutBlock {
 }
 
 const config = useRuntimeConfig()
-const { authHeader } = useAuth()
+const { authHeader, isAdmin } = useAuth()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(true)
@@ -562,11 +679,12 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
 const activeVideoTab = ref<'all' | 'locks'>('all')
-const activeAdminTab = ref<'videos' | 'homepage' | 'notifications' | 'system'>('videos')
+const activeAdminTab = ref<'videos' | 'homepage' | 'notifications' | 'newsletter' | 'system'>('videos')
 const adminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'homepage' as const, label: 'Homepage' },
   { id: 'notifications' as const, label: 'Notifications' },
+  { id: 'newsletter' as const, label: 'Newsletter' },
   { id: 'system' as const, label: 'System' },
 ]
 const editingTitle = ref<{ id: string; value: string } | null>(null)
@@ -586,6 +704,16 @@ const videoTabs = [
 
 const componentTypes: BlockType[] = ['hero', 'featured_row', 'cta', 'text_split', 'video_grid']
 const layoutBlocks = ref<LayoutBlock[]>([])
+
+const newsletterListId = ref('')
+const newsletterSenderEmail = ref('')
+const newsletterSenderName = ref('')
+const newsletterSubject = ref('')
+const newsletterHtml = ref('')
+const newsletterSaving = ref(false)
+const newsletterSending = ref(false)
+const newsletterMessage = ref('')
+const newsletterMessageClass = ref('')
 
 const chronologicallySortedUploads = computed(() =>
   [...uploads.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
@@ -695,6 +823,89 @@ const loadConfig = async () => {
   featuredSlots.value = nextSlots
 }
 
+const loadNewsletterSettings = async () => {
+  if (!isAdmin.value) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, { headers: authHeader() })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    newsletterListId.value = data.brevoSubscriberListId != null ? String(data.brevoSubscriberListId) : ''
+    newsletterSenderEmail.value = data.brevoCampaignSenderEmail ?? ''
+    newsletterSenderName.value = data.brevoCampaignSenderName ?? ''
+  } catch (e: any) {
+    newsletterMessage.value = `Could not load newsletter settings: ${e.message}`
+    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const saveNewsletterSettings = async () => {
+  if (!isAdmin.value) return
+  newsletterSaving.value = true
+  newsletterMessage.value = ''
+  try {
+    const raw = newsletterListId.value.trim()
+    let brevoSubscriberListId: number | '' = ''
+    if (raw) {
+      const n = Number.parseInt(raw, 10)
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new Error('Subscriber list ID must be a positive integer or empty')
+      }
+      brevoSubscriberListId = n
+    }
+    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        brevoSubscriberListId,
+        brevoCampaignSenderEmail: newsletterSenderEmail.value.trim(),
+        brevoCampaignSenderName: newsletterSenderName.value.trim(),
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    newsletterMessage.value = 'Newsletter settings saved.'
+    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+    await loadNewsletterSettings()
+  } catch (e: any) {
+    newsletterMessage.value = e.message || 'Failed to save settings'
+    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    newsletterSaving.value = false
+  }
+}
+
+const sendNewsletterCampaign = async () => {
+  if (!isAdmin.value) return
+  newsletterSending.value = true
+  newsletterMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        subject: newsletterSubject.value.trim(),
+        htmlBody: newsletterHtml.value,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    newsletterMessage.value = data.campaignId != null
+      ? `Campaign scheduled (Brevo campaign id ${data.campaignId}).`
+      : 'Campaign sent.'
+    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+  } catch (e: any) {
+    newsletterMessage.value = e.message || 'Send failed'
+    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    newsletterSending.value = false
+  }
+}
+
 const saveAll = async () => {
   saving.value      = true
   saveMessage.value = ''
@@ -728,7 +939,11 @@ const saveAll = async () => {
 
 const reloadAll = async () => {
   loading.value = true
-  try { await loadVideos(); await loadConfig() }
+  try {
+    await loadVideos()
+    await loadConfig()
+    await loadNewsletterSettings()
+  }
   finally { loading.value = false }
 }
 
@@ -1016,7 +1231,7 @@ const confirmDialogRef = ref<HTMLElement | null>(null)
 const swapDialogRef    = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
-function setAdminTab(tab: 'videos' | 'homepage' | 'notifications' | 'system') {
+function setAdminTab(tab: 'videos' | 'homepage' | 'notifications' | 'newsletter' | 'system') {
   router.replace({ query: { ...route.query, tab } })
 }
 
@@ -1046,7 +1261,7 @@ function onConfirmModalKeydown(e: KeyboardEvent) {
 
 watch(() => route.query, (query) => {
   const tab = query.tab
-  if (tab && ['videos', 'homepage', 'notifications', 'system'].includes(String(tab))) {
+  if (tab && ['videos', 'homepage', 'notifications', 'newsletter', 'system'].includes(String(tab))) {
     activeAdminTab.value = tab as any
   }
 }, { immediate: true })

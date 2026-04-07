@@ -17,6 +17,10 @@
 
 import { requireAuth } from './auth.js'
 import { isAdministrativeRole } from './roles.js'
+import {
+  removeSubscriberFromNewsletter,
+  syncNewsletterForStripeSubscription,
+} from './brevo.js'
 
 // ─── Stripe API helpers ───────────────────────────────────────────────────────
 
@@ -325,6 +329,7 @@ export async function handleWebhook(request, env, corsHeaders) {
         const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
         if (stripeSub.id) {
           await upsertSubscription(db, userId, stripeSub)
+          await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
         }
         break
       }
@@ -337,28 +342,56 @@ export async function handleWebhook(request, env, corsHeaders) {
         ).bind(stripeSub.id).first()
         if (existing) {
           await upsertSubscription(db, existing.user_id, stripeSub)
+          await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+        }
+        break
+      }
+
+      case 'invoice.paid': {
+        const invoice = event.data.object
+        if (!invoice.subscription) break
+        const stripeSub = await stripeGet(`/subscriptions/${invoice.subscription}`, env)
+        if (!stripeSub.id) break
+        const existing = await db.prepare(
+          'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
+        ).bind(stripeSub.id).first()
+        if (existing) {
+          await upsertSubscription(db, existing.user_id, stripeSub)
+          await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
         }
         break
       }
 
       case 'customer.subscription.deleted': {
         const stripeSub = event.data.object
+        const row = await db.prepare(
+          'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
+        ).bind(stripeSub.id).first()
         await db.prepare(`
           UPDATE subscriptions
           SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
           WHERE stripe_subscription_id = ?
         `).bind(stripeSub.id).run()
+        if (row?.user_id) {
+          await removeSubscriberFromNewsletter(db, row.user_id, env)
+        }
         break
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object
         if (invoice.subscription) {
+          const existing = await db.prepare(
+            'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
+          ).bind(invoice.subscription).first()
           await db.prepare(`
             UPDATE subscriptions
             SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
             WHERE stripe_subscription_id = ?
           `).bind(invoice.subscription).run()
+          if (existing?.user_id) {
+            await removeSubscriberFromNewsletter(db, existing.user_id, env)
+          }
         }
         break
       }
