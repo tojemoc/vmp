@@ -329,7 +329,14 @@ export async function handleWebhook(request, env, corsHeaders) {
         const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
         if (stripeSub.id) {
           await upsertSubscription(db, userId, stripeSub)
-          await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
+          try {
+            await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
+          } catch (brevoErr) {
+            console.error(
+              '[stripe webhook] syncNewsletterForStripeSubscription failed',
+              { fn: 'syncNewsletterForStripeSubscription', userId, stripeStatus: stripeSub.status, err: brevoErr },
+            )
+          }
         }
         break
       }
@@ -342,7 +349,14 @@ export async function handleWebhook(request, env, corsHeaders) {
         ).bind(stripeSub.id).first()
         if (existing) {
           await upsertSubscription(db, existing.user_id, stripeSub)
-          await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+          try {
+            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+          } catch (brevoErr) {
+            console.error(
+              '[stripe webhook] syncNewsletterForStripeSubscription failed',
+              { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
+            )
+          }
         }
         break
       }
@@ -357,7 +371,14 @@ export async function handleWebhook(request, env, corsHeaders) {
         ).bind(stripeSub.id).first()
         if (existing) {
           await upsertSubscription(db, existing.user_id, stripeSub)
-          await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+          try {
+            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+          } catch (brevoErr) {
+            console.error(
+              '[stripe webhook] syncNewsletterForStripeSubscription failed',
+              { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
+            )
+          }
         }
         break
       }
@@ -373,7 +394,14 @@ export async function handleWebhook(request, env, corsHeaders) {
           WHERE stripe_subscription_id = ?
         `).bind(stripeSub.id).run()
         if (row?.user_id) {
-          await removeSubscriberFromNewsletter(db, row.user_id, env)
+          try {
+            await removeSubscriberFromNewsletter(db, row.user_id, env)
+          } catch (brevoErr) {
+            console.error(
+              '[stripe webhook] removeSubscriberFromNewsletter failed',
+              { fn: 'removeSubscriberFromNewsletter', userId: row.user_id, err: brevoErr },
+            )
+          }
         }
         break
       }
@@ -390,7 +418,14 @@ export async function handleWebhook(request, env, corsHeaders) {
             WHERE stripe_subscription_id = ?
           `).bind(invoice.subscription).run()
           if (existing?.user_id) {
-            await removeSubscriberFromNewsletter(db, existing.user_id, env)
+            try {
+              await removeSubscriberFromNewsletter(db, existing.user_id, env)
+            } catch (brevoErr) {
+              console.error(
+                '[stripe webhook] removeSubscriberFromNewsletter failed',
+                { fn: 'removeSubscriberFromNewsletter', userId: existing.user_id, err: brevoErr },
+              )
+            }
           }
         }
         break

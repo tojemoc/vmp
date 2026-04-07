@@ -463,10 +463,13 @@
               <div class="grid gap-4 lg:grid-cols-2">
                 <div>
                   <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">Preview</p>
-                  <div
+                  <iframe
                     v-if="newsletterHtml.trim()"
-                    class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 p-4 min-h-[12rem] prose prose-sm dark:prose-invert max-w-none overflow-auto"
-                    v-html="newsletterHtml"
+                    title="Newsletter HTML preview"
+                    class="w-full min-h-[12rem] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950"
+                    sandbox=""
+                    referrerpolicy="no-referrer"
+                    :srcdoc="newsletterPreviewSrcdoc"
                   />
                   <div
                     v-else
@@ -714,6 +717,18 @@ const newsletterSaving = ref(false)
 const newsletterSending = ref(false)
 const newsletterMessage = ref('')
 const newsletterMessageClass = ref('')
+/** Stable per send attempt until success — retries reuse the same key for server idempotency. */
+const newsletterSendDedupeKey = ref<string | null>(null)
+
+/** Sandboxed document for preview — avoids v-html XSS in the admin app. */
+const newsletterPreviewSrcdoc = computed(() => {
+  const bodyHtml = newsletterHtml.value
+  if (!bodyHtml.trim()) return ''
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
+    body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#111;background:#fff}
+    @media (prefers-color-scheme: dark){ body{color:#e5e5e5;background:#0a0a0a} }
+  </style></head><body>${bodyHtml}</body></html>`
+})
 
 const chronologicallySortedUploads = computed(() =>
   [...uploads.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
@@ -849,8 +864,11 @@ const saveNewsletterSettings = async () => {
     const raw = newsletterListId.value.trim()
     let brevoSubscriberListId: number | '' = ''
     if (raw) {
+      if (!/^\d+$/.test(raw)) {
+        throw new Error('Subscriber list ID must be a positive integer or empty')
+      }
       const n = Number.parseInt(raw, 10)
-      if (!Number.isFinite(n) || n <= 0) {
+      if (!Number.isInteger(n) || n <= 0) {
         throw new Error('Subscriber list ID must be a positive integer or empty')
       }
       brevoSubscriberListId = n
@@ -884,19 +902,26 @@ const sendNewsletterCampaign = async () => {
   newsletterSending.value = true
   newsletterMessage.value = ''
   try {
+    if (!newsletterSendDedupeKey.value) {
+      newsletterSendDedupeKey.value = crypto.randomUUID()
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
         subject: newsletterSubject.value.trim(),
         htmlBody: newsletterHtml.value,
+        dedupeKey: newsletterSendDedupeKey.value,
       }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    newsletterMessage.value = data.campaignId != null
-      ? `Campaign scheduled (Brevo campaign id ${data.campaignId}).`
-      : 'Campaign sent.'
+    newsletterSendDedupeKey.value = null
+    newsletterMessage.value = data.idempotent
+      ? `Already sent (Brevo campaign id ${data.campaignId}).`
+      : (data.campaignId != null
+        ? `Campaign scheduled (Brevo campaign id ${data.campaignId}).`
+        : 'Campaign sent.')
     newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
   } catch (e: any) {
     newsletterMessage.value = e.message || 'Send failed'
