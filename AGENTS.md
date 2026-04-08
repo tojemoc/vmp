@@ -114,6 +114,8 @@ Steps 1–7 are complete. Work continues from step 8.
 - Per-user stable RSS token: `HMAC-SHA256(RSS_SECRET, 'rss:' + userId)`.
 - `GET /api/feed/:userId/:token` — validates token + active subscription, returns RSS 2.0 with iTunes podcast tags for all published videos.
 - Account page section with copyable RSS URL and instructions.
+- Public listing feed: `GET /api/feed/public` — stable URL for directory submission; always serves **preview-only** enclosures.
+- Account helper: `GET /api/account/rss` (auth required) — returns `{ publicUrl, personalUrl }` for copy/paste into podcast apps.
 
 ## Cursor Cloud-specific instructions
 
@@ -184,4 +186,5 @@ STRIPE_SECRET_KEY       — from stripe.com dashboard
 STRIPE_WEBHOOK_SECRET   — from stripe webhook registration
 TOTP_ENCRYPTION_KEY     — AES-256-GCM encryption key for TOTP secrets
 VAPID_PRIVATE_KEY       — generated with web-push generate-vapid-keys
+RSS_SECRET              — 32+ random chars (signs per-user RSS feed tokens)
 ```
