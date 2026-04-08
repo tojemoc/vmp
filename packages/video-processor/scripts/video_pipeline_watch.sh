@@ -11,15 +11,49 @@ MP3_ONLY="${MP3_ONLY:-0}"
 MAX_JOBS=2
 
 mkdir -p "$TMP_DIR_BASE"
+SLOT_DIR="$TMP_DIR_BASE/.slots"
+SLOT_LOCK="$TMP_DIR_BASE/.slots.lock"
+mkdir -p "$SLOT_DIR"
+touch "$SLOT_LOCK"
 
 log() {
     echo "$(date '+%F %T') $*"
 }
 
 wait_for_slot() {
-    while [ "$(jobs -r | wc -l)" -ge "$MAX_JOBS" ]; do
+    local holder_pid="${1:-$BASHPID}"
+    while true; do
+        if flock -x "$SLOT_LOCK" bash -s -- "$SLOT_DIR" "$MAX_JOBS" "$holder_pid" <<'EOF'
+set -euo pipefail
+slot_dir="$1"
+max_jobs="$2"
+holder_pid="$3"
+
+mkdir -p "$slot_dir"
+
+for token in "$slot_dir"/*.pid; do
+    [ -f "$token" ] || continue
+    pid="$(basename "$token" .pid)"
+    kill -0 "$pid" 2>/dev/null || rm -f "$token"
+done
+
+current_jobs=$(ls -1 "$slot_dir"/*.pid 2>/dev/null | wc -l)
+if [ "$current_jobs" -lt "$max_jobs" ]; then
+    printf "%s\n" "$holder_pid" > "$slot_dir/$holder_pid.pid"
+    exit 0
+fi
+exit 1
+EOF
+        then
+            return
+        fi
         sleep 1
     done
+}
+
+release_slot() {
+    local holder_pid="${1:-$BASHPID}"
+    rm -f "$SLOT_DIR/$holder_pid.pid"
 }
 
 has_remote_file() {
@@ -52,7 +86,7 @@ find_remote_source_key() {
     local video_id="$1"
     local key
     key=$(rclone lsf "${R2_BUCKET}:/videos/${video_id}/source" 2>/dev/null | \
-        grep -E '\.(mp4|mkv|mov)$' | head -n 1 || true)
+        grep -Ei '\.(mp4|mkv|mov)$' | head -n 1 || true)
     [ -n "$key" ] || return 1
     printf "%s\n" "$key"
 }
@@ -104,9 +138,10 @@ process_video() {
     fi
 
     touch "$LOCK"
+    wait_for_slot "$BASHPID"
 
     # always release lock on ANY error
-    trap 'log "âŒ Error occurred for '"$VIDEO_ID"' â€” releasing lock"; rm -f "$LOCK"' ERR
+    trap 'log "âŒ Error occurred for '"$VIDEO_ID"' â€” releasing lock"; rm -f "$LOCK"; release_slot "$BASHPID"' ERR
 
     log "ðŸ“¥ Processing $VIDEO_ID"
 
@@ -218,15 +253,23 @@ process_video() {
             [ "$HAS_AUDIO" -gt 0 ] && \
                 SHAKA_CMD+=("input=$TMP_DIR/1080p.mp4,stream=audio,init_segment=$TMP_DIR/init_audio.mp4,segment_template=$TMP_DIR/seg_audio_\$Number\$.m4s")
 
+            shaka_ok=false
             for i in {1..3}; do
                 if "${SHAKA_CMD[@]}"; then
                     log "âœ… Packaging done"
+                    shaka_ok=true
                     break
                 else
                     log "âš ï¸ Shaka failed (attempt $i)"
                     sleep 2
                 fi
             done
+            if [ "$shaka_ok" != true ]; then
+                log "❌ Packaging failed after 3 attempts for $VIDEO_ID"
+                rm -f "$LOCK"
+                release_slot "$BASHPID"
+                return 1
+            fi
         else
             log "â© Skipping packaging (already done)"
         fi
@@ -294,6 +337,7 @@ done
 if [ "$UPLOAD_OK" = false ]; then
     log "❌ Upload failed permanently — will retry later"
     rm -f "$LOCK"
+    release_slot "$BASHPID"
     return
 fi
 
@@ -311,6 +355,7 @@ rm -f "$INPUT_PATH"
 rm -rf "$TMP_DIR"
 
 rm -f "$LOCK"
+release_slot "$BASHPID"
 
 log "ðŸŽ‰ Finished $VIDEO_ID"
 }
@@ -337,7 +382,6 @@ enqueue_backfill_jobs_from_r2() {
         fi
 
         local INPUT_PATH="$INBOX_DIR/${VIDEO_ID}.mp4"
-        wait_for_slot
         process_video "$VIDEO_ID" "$INPUT_PATH" &
     done <<< "$prefixes"
 }
@@ -406,7 +450,6 @@ for f in "$INBOX_DIR"/*; do
     [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
     VIDEO_ID="${FILE%.*}"
 
-    wait_for_slot
     process_video "$VIDEO_ID" "$f" &
 done
 
@@ -423,7 +466,6 @@ inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while read FILE; do
     [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
     VIDEO_ID="${FILE%.*}"
 
-    wait_for_slot
     process_video "$VIDEO_ID" "$INBOX_DIR/$FILE" &
 done
 
