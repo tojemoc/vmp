@@ -84,10 +84,23 @@ function buildRssXml({ channel, items }) {
 }
  
 async function listPublishedVideos(db) {
+  // Support both old (visibility-based) and new (publish_status-based) schemas.
+  // Some local dev D1 states may not have the newer publish_status column yet.
+  try {
+    const byPublishStatus = await db.prepare(`
+      SELECT id, title, description, full_duration, preview_duration, published_at
+      FROM videos
+      WHERE publish_status = 'published'
+      ORDER BY datetime(published_at) DESC, datetime(upload_date) DESC
+    `).all()
+    return byPublishStatus.results || []
+  } catch {
+    // Fall back to the legacy visibility column.
+  }
   const rows = await db.prepare(`
     SELECT id, title, description, full_duration, preview_duration, published_at
     FROM videos
-    WHERE publish_status = 'published'
+    WHERE visibility = 'public'
     ORDER BY datetime(published_at) DESC, datetime(upload_date) DESC
   `).all()
   return rows.results || []
