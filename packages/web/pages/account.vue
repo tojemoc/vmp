@@ -130,7 +130,7 @@
                 {{ copiedWhich === 'personal' ? 'Copied' : 'Copy' }}
               </button>
             </div>
-            <p v-if="copyError && copiedWhich === 'personal'" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
+            <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
           </div>
         </template>
       </div>
@@ -303,7 +303,6 @@ async function copyText(value: string, which: 'personal') {
       if (copiedWhich.value === which) copiedWhich.value = null
     }, 1200)
   } catch {
-    copiedWhich.value = which
     copyError.value = 'Could not copy to clipboard. You can copy manually from the field.'
   }
 }

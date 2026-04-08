@@ -6,6 +6,7 @@ TMP_DIR_BASE="/mnt/tmp/video_pipeline"
 R2_BUCKET="vmp-videos"
 MP3_NAME="podcast.mp3"
 BACKFILL_FROM_R2="${BACKFILL_FROM_R2:-1}"
+MP3_ONLY="${MP3_ONLY:-0}"
 
 MAX_JOBS=2
 
@@ -25,6 +26,26 @@ has_remote_file() {
     local video_id="$1"
     local file_name="$2"
     rclone lsf "${R2_BUCKET}:/videos/${video_id}" 2>/dev/null | grep -qx "$file_name"
+}
+
+has_remote_hls_complete() {
+    local video_id="$1"
+    local remote
+    if ! remote=$(rclone lsf "${R2_BUCKET}:/videos/${video_id}" 2>/dev/null); then
+        return 1
+    fi
+
+    for required in master.m3u8 manifest.mpd init_1080.mp4 init_720.mp4 init_480.mp4; do
+        echo "$remote" | rg -x "$required" >/dev/null || return 1
+    done
+
+    for res in 1080 720 480; do
+        local cnt
+        cnt=$(echo "$remote" | rg -c "^seg_${res}_" || true)
+        [ "${cnt:-0}" -gt 0 ] || return 1
+    done
+
+    return 0
 }
 
 find_remote_source_key() {
@@ -109,35 +130,50 @@ process_video() {
 
     log "âœ… Upload complete"
 
-    HAS_AUDIO=$(ffprobe -v error -select_streams a \
-        -show_entries stream=index -of csv=p=0 "$INPUT_PATH" 2>/dev/null | wc -l || echo 0)
+    HAS_AUDIO=$({
+        ffprobe -v error -select_streams a \
+            -show_entries stream=index -of csv=p=0 "$INPUT_PATH" 2>/dev/null || true
+    } | wc -l)
     HAS_AUDIO=${HAS_AUDIO:-0}
+
+    should_process_video="1"
+    if [ "$MP3_ONLY" = "1" ] || has_remote_hls_complete "$VIDEO_ID"; then
+        should_process_video="0"
+    fi
 
     # ------------------------
     # ENCODING (only missing)
     # ------------------------
-    need_encode=false
-    for r in 1080p.mp4 720p.mp4 480p.mp4; do
-        [ -f "$TMP_DIR/$r" ] || need_encode=true
-    done
+    if [ "$should_process_video" = "1" ]; then
+        need_encode=false
+        for r in 1080p.mp4 720p.mp4 480p.mp4; do
+            [ -f "$TMP_DIR/$r" ] || need_encode=true
+        done
 
-    if [ "$need_encode" = true ]; then
-        log "ðŸš€ Encoding missing renditions"
+        if [ "$need_encode" = true ]; then
+            log "ðŸš€ Encoding missing renditions"
 
-        ffmpeg -hide_banner -y -i "$INPUT_PATH" \
-        -filter_complex "\
-        [0:v]split=3[v1][v2][v3]; \
-        [v1]scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2[v1out]; \
-        [v2]scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2[v2out]; \
-        [v3]scale=854:480:force_original_aspect_ratio=decrease:force_divisible_by=2[v3out]" \
-        \
-        -map "[v1out]" -map 0:a? -c:v:0 libx264 -b:v:0 5M -preset fast -c:a:0 aac -b:a:0 128k "$TMP_DIR/1080p.mp4" \
-        -map "[v2out]" -map 0:a? -c:v:1 libx264 -b:v:1 3M -preset fast -c:a:1 aac -b:a:1 128k "$TMP_DIR/720p.mp4" \
-        -map "[v3out]" -map 0:a? -c:v:2 libx264 -b:v:2 1.5M -preset fast -c:a:2 aac -b:a:2 96k "$TMP_DIR/480p.mp4"
+            ffmpeg -hide_banner -y -i "$INPUT_PATH" \
+            -filter_complex "\
+            [0:v]split=3[v1][v2][v3]; \
+            [v1]scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2[v1out]; \
+            [v2]scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2[v2out]; \
+            [v3]scale=854:480:force_original_aspect_ratio=decrease:force_divisible_by=2[v3out]" \
+            \
+            -map "[v1out]" -map 0:a? -c:v:0 libx264 -b:v:0 5M -preset fast -c:a:0 aac -b:a:0 128k "$TMP_DIR/1080p.mp4" \
+            -map "[v2out]" -map 0:a? -c:v:1 libx264 -b:v:1 3M -preset fast -c:a:1 aac -b:a:1 128k "$TMP_DIR/720p.mp4" \
+            -map "[v3out]" -map 0:a? -c:v:2 libx264 -b:v:2 1.5M -preset fast -c:a:2 aac -b:a:2 96k "$TMP_DIR/480p.mp4"
 
-        log "âœ… Encoding done"
+            log "âœ… Encoding done"
+        else
+            log "â© Skipping encoding (already done)"
+        fi
     else
-        log "â© Skipping encoding (already done)"
+        if [ "$MP3_ONLY" = "1" ]; then
+            log "⏩ MP3_ONLY=1 — skipping video encoding and packaging"
+        else
+            log "⏩ Remote HLS already complete for $VIDEO_ID — skipping video encoding and packaging"
+        fi
     fi
 
     # ------------------------
@@ -164,34 +200,36 @@ process_video() {
     # ------------------------
     # SHAKA (only if needed)
     # ------------------------
-    if [ ! -f "$TMP_DIR/master.m3u8" ]; then
-        log "ðŸš€ Packaging with Shaka"
+    if [ "$should_process_video" = "1" ]; then
+        if [ ! -f "$TMP_DIR/master.m3u8" ]; then
+            log "ðŸš€ Packaging with Shaka"
 
-        SHAKA_CMD=(shaka-packager
-            "input=$TMP_DIR/1080p.mp4,stream=video,init_segment=$TMP_DIR/init_1080.mp4,segment_template=$TMP_DIR/seg_1080_\$Number\$.m4s"
-            "input=$TMP_DIR/720p.mp4,stream=video,init_segment=$TMP_DIR/init_720.mp4,segment_template=$TMP_DIR/seg_720_\$Number\$.m4s"
-            "input=$TMP_DIR/480p.mp4,stream=video,init_segment=$TMP_DIR/init_480.mp4,segment_template=$TMP_DIR/seg_480_\$Number\$.m4s"
-            --segment_duration 2
-            --fragment_duration 2
-            --generate_static_live_mpd
-            --mpd_output "$TMP_DIR/manifest.mpd"
-            --hls_master_playlist_output "$TMP_DIR/master.m3u8"
-        )
+            SHAKA_CMD=(shaka-packager
+                "input=$TMP_DIR/1080p.mp4,stream=video,init_segment=$TMP_DIR/init_1080.mp4,segment_template=$TMP_DIR/seg_1080_\$Number\$.m4s"
+                "input=$TMP_DIR/720p.mp4,stream=video,init_segment=$TMP_DIR/init_720.mp4,segment_template=$TMP_DIR/seg_720_\$Number\$.m4s"
+                "input=$TMP_DIR/480p.mp4,stream=video,init_segment=$TMP_DIR/init_480.mp4,segment_template=$TMP_DIR/seg_480_\$Number\$.m4s"
+                --segment_duration 2
+                --fragment_duration 2
+                --generate_static_live_mpd
+                --mpd_output "$TMP_DIR/manifest.mpd"
+                --hls_master_playlist_output "$TMP_DIR/master.m3u8"
+            )
 
-        [ "$HAS_AUDIO" -gt 0 ] && \
-            SHAKA_CMD+=("input=$TMP_DIR/1080p.mp4,stream=audio,init_segment=$TMP_DIR/init_audio.mp4,segment_template=$TMP_DIR/seg_audio_\$Number\$.m4s")
+            [ "$HAS_AUDIO" -gt 0 ] && \
+                SHAKA_CMD+=("input=$TMP_DIR/1080p.mp4,stream=audio,init_segment=$TMP_DIR/init_audio.mp4,segment_template=$TMP_DIR/seg_audio_\$Number\$.m4s")
 
-        for i in {1..3}; do
-            if "${SHAKA_CMD[@]}"; then
-                log "âœ… Packaging done"
-                break
-            else
-                log "âš ï¸ Shaka failed (attempt $i)"
-                sleep 2
-            fi
-        done
-    else
-        log "â© Skipping packaging (already done)"
+            for i in {1..3}; do
+                if "${SHAKA_CMD[@]}"; then
+                    log "âœ… Packaging done"
+                    break
+                else
+                    log "âš ï¸ Shaka failed (attempt $i)"
+                    sleep 2
+                fi
+            done
+        else
+            log "â© Skipping packaging (already done)"
+        fi
     fi
 
 # ------------------------
@@ -222,22 +260,27 @@ for i in {1..5}; do
     fi
     MISSING=""
 
-    for required in master.m3u8 manifest.mpd init_1080.mp4 init_720.mp4 init_480.mp4; do
-        echo "$REMOTE" | grep -qx "$required" || MISSING="$MISSING $required"
-    done
+    if [ "$should_process_video" = "1" ]; then
+        for required in master.m3u8 manifest.mpd init_1080.mp4 init_720.mp4 init_480.mp4; do
+            echo "$REMOTE" | rg -x "$required" >/dev/null || MISSING="$MISSING $required"
+        done
 
-    # Check for audio artifacts if audio was present
-    if [ "$HAS_AUDIO" -gt 0 ]; then
-        echo "$REMOTE" | grep -qx "init_audio.mp4" || MISSING="$MISSING init_audio.mp4"
-        audio_seg_cnt=$(echo "$REMOTE" | grep -c "^seg_audio_" 2>/dev/null || echo 0)
-        [ "$audio_seg_cnt" -gt 0 ] || MISSING="$MISSING seg_audio_*.m4s(none)"
-        echo "$REMOTE" | grep -qx "$MP3_NAME" || MISSING="$MISSING $MP3_NAME"
+        # Check for audio artifacts if audio was present
+        if [ "$HAS_AUDIO" -gt 0 ]; then
+            echo "$REMOTE" | rg -x "init_audio.mp4" >/dev/null || MISSING="$MISSING init_audio.mp4"
+            audio_seg_cnt=$(echo "$REMOTE" | rg -c "^seg_audio_" || true)
+            [ "${audio_seg_cnt:-0}" -gt 0 ] || MISSING="$MISSING seg_audio_*.m4s(none)"
+        fi
+
+        for res in 1080 720 480; do
+            cnt=$(echo "$REMOTE" | rg -c "^seg_${res}_" || true)
+            [ "${cnt:-0}" -gt 0 ] || MISSING="$MISSING seg_${res}_*.m4s(none)"
+        done
     fi
 
-    for res in 1080 720 480; do
-        cnt=$(echo "$REMOTE" | grep -c "^seg_${res}_" 2>/dev/null || echo 0)
-        [ "$cnt" -gt 0 ] || MISSING="$MISSING seg_${res}_*.m4s(none)"
-    done
+    if [ "$HAS_AUDIO" -gt 0 ]; then
+        echo "$REMOTE" | rg -x "$MP3_NAME" >/dev/null || MISSING="$MISSING $MP3_NAME"
+    fi
 
     if [ -z "$MISSING" ]; then
         UPLOAD_OK=true
@@ -367,14 +410,14 @@ for f in "$INBOX_DIR"/*; do
     process_video "$VIDEO_ID" "$f" &
 done
 
-enqueue_backfill_jobs_from_r2
-
 # ------------------------
 # WATCH NEW FILES
 # ------------------------
 garbage_collect
 
 log "🎬 Watching for new uploads..."
+
+enqueue_backfill_jobs_from_r2 &
 
 inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while read FILE; do
     [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
