@@ -507,7 +507,7 @@ log "🎬 Watching for new uploads..."
 
 enqueue_backfill_jobs_from_r2 &
 
-inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while read FILE; do
+inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while IFS= read -r FILE; do
     FILE_LOWER="${FILE,,}"
     [[ "$FILE_LOWER" =~ \.(mp4|mkv|mov)$ ]] || continue
     VIDEO_ID="${FILE%.*}"
