@@ -322,6 +322,6 @@ export async function handlePersonalFeed(request, env, corsHeaders) {
 
   const xml = buildRssXml({ channel, items })
   await recordFeedPoll(db, { endpoint: 'feed_user', userId })
-  return feedResponse(xml, corsHeaders, 'private, max-age=300')
+  return feedResponse(xml, corsHeaders, 'private, max-age=300, stale-while-revalidate=60')
 }
 
