@@ -153,6 +153,9 @@ process_video() {
     if [ ! -f "$INPUT_PATH" ]; then
         if ! ensure_input_from_r2 "$VIDEO_ID" "$INPUT_PATH"; then
             rm -f "$LOCK"
+            rm -f "$BACKFILL_STAGING_DIR/${VIDEO_ID}.mp4"
+            release_slot "$BASHPID"
+            garbage_collect
             return
         fi
     fi
@@ -186,7 +189,16 @@ process_video() {
     if [ "$should_process_video" = "1" ]; then
         need_encode=false
         for r in 1080p.mp4 720p.mp4 480p.mp4; do
-            [ -f "$TMP_DIR/$r" ] || need_encode=true
+            if [ -f "$TMP_DIR/$r" ]; then
+                # Validate existing artifact
+                if ! ffprobe -v error -show_streams "$TMP_DIR/$r" >/dev/null 2>&1; then
+                    log "⚠️ Existing $r is corrupt, will re-encode"
+                    rm -f "$TMP_DIR/$r"
+                    need_encode=true
+                fi
+            else
+                need_encode=true
+            fi
         done
 
         if [ "$need_encode" = true ]; then
@@ -199,9 +211,14 @@ process_video() {
             [v2]scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2[v2out]; \
             [v3]scale=854:480:force_original_aspect_ratio=decrease:force_divisible_by=2[v3out]" \
             \
-            -map "[v1out]" -map 0:a? -c:v:0 libx264 -b:v:0 5M -preset fast -c:a:0 aac -b:a:0 128k "$TMP_DIR/1080p.mp4" \
-            -map "[v2out]" -map 0:a? -c:v:1 libx264 -b:v:1 3M -preset fast -c:a:1 aac -b:a:1 128k "$TMP_DIR/720p.mp4" \
-            -map "[v3out]" -map 0:a? -c:v:2 libx264 -b:v:2 1.5M -preset fast -c:a:2 aac -b:a:2 96k "$TMP_DIR/480p.mp4"
+            -map "[v1out]" -map 0:a? -c:v:0 libx264 -b:v:0 5M -preset fast -c:a:0 aac -b:a:0 128k "$TMP_DIR/1080p.mp4.tmp.$$" \
+            -map "[v2out]" -map 0:a? -c:v:1 libx264 -b:v:1 3M -preset fast -c:a:1 aac -b:a:1 128k "$TMP_DIR/720p.mp4.tmp.$$" \
+            -map "[v3out]" -map 0:a? -c:v:2 libx264 -b:v:2 1.5M -preset fast -c:a:2 aac -b:a:2 96k "$TMP_DIR/480p.mp4.tmp.$$"
+
+            # Move temp files to final location only after successful encoding
+            mv "$TMP_DIR/1080p.mp4.tmp.$$" "$TMP_DIR/1080p.mp4"
+            mv "$TMP_DIR/720p.mp4.tmp.$$" "$TMP_DIR/720p.mp4"
+            mv "$TMP_DIR/480p.mp4.tmp.$$" "$TMP_DIR/480p.mp4"
 
             log "âœ… Encoding done"
         else
@@ -219,7 +236,15 @@ process_video() {
     # PODCAST MP3 (only missing)
     # ------------------------
     need_mp3=true
-    if [ -f "$TMP_DIR/$MP3_NAME" ] || has_remote_file "$VIDEO_ID" "$MP3_NAME"; then
+    if [ -f "$TMP_DIR/$MP3_NAME" ]; then
+        # Validate existing MP3
+        if [ -s "$TMP_DIR/$MP3_NAME" ] && ffprobe -v error -show_streams "$TMP_DIR/$MP3_NAME" >/dev/null 2>&1; then
+            need_mp3=false
+        else
+            log "⚠️ Existing $MP3_NAME is invalid, will re-encode"
+            rm -f "$TMP_DIR/$MP3_NAME"
+        fi
+    elif has_remote_file "$VIDEO_ID" "$MP3_NAME"; then
         need_mp3=false
     fi
 
@@ -227,7 +252,8 @@ process_video() {
         if [ "$HAS_AUDIO" -gt 0 ]; then
             log "🎧 Encoding podcast MP3"
             ffmpeg -hide_banner -y -i "$INPUT_PATH" \
-                -vn -map 0:a:0 -c:a libmp3lame -b:a 192k "$TMP_DIR/$MP3_NAME"
+                -vn -map 0:a:0 -c:a libmp3lame -b:a 192k "$TMP_DIR/$MP3_NAME.tmp.$$"
+            mv "$TMP_DIR/$MP3_NAME.tmp.$$" "$TMP_DIR/$MP3_NAME"
             log "✅ MP3 encoding done"
         else
             log "⚠️ No audio stream for $VIDEO_ID — skipping MP3 generation"
@@ -240,7 +266,18 @@ process_video() {
     # SHAKA (only if needed)
     # ------------------------
     if [ "$should_process_video" = "1" ]; then
-        if [ ! -f "$TMP_DIR/master.m3u8" ]; then
+        need_package=true
+        if [ -f "$TMP_DIR/master.m3u8" ]; then
+            # Validate existing manifests
+            if [ -s "$TMP_DIR/master.m3u8" ] && [ -s "$TMP_DIR/manifest.mpd" ]; then
+                need_package=false
+            else
+                log "⚠️ Existing manifests are invalid, will re-package"
+                rm -f "$TMP_DIR/master.m3u8" "$TMP_DIR/manifest.mpd"
+            fi
+        fi
+
+        if [ "$need_package" = true ]; then
             log "ðŸš€ Packaging with Shaka"
 
             SHAKA_CMD=(shaka-packager
@@ -272,7 +309,7 @@ process_video() {
                 log "❌ Packaging failed after 3 attempts for $VIDEO_ID"
                 rm -f "$LOCK"
                 release_slot "$BASHPID"
-                return 1
+                return
             fi
         else
             log "â© Skipping packaging (already done)"
@@ -386,7 +423,10 @@ enqueue_backfill_jobs_from_r2() {
         fi
 
         local INPUT_PATH="$BACKFILL_STAGING_DIR/${VIDEO_ID}.mp4"
-        process_video "$VIDEO_ID" "$INPUT_PATH"
+        # Call process_video but don't let its failure abort the loop
+        process_video "$VIDEO_ID" "$INPUT_PATH" || {
+            log "⚠️ Backfill processing failed for $VIDEO_ID, continuing scan"
+        }
     done <<< "$prefixes"
 }
 
@@ -451,7 +491,8 @@ log "🔍 Resuming existing jobs..."
 for f in "$INBOX_DIR"/*; do
     [ -f "$f" ] || continue
     FILE=$(basename "$f")
-    [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
+    FILE_LOWER="${FILE,,}"
+    [[ "$FILE_LOWER" =~ \.(mp4|mkv|mov)$ ]] || continue
     VIDEO_ID="${FILE%.*}"
 
     process_video "$VIDEO_ID" "$f" &
@@ -467,7 +508,8 @@ log "🎬 Watching for new uploads..."
 enqueue_backfill_jobs_from_r2 &
 
 inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while read FILE; do
-    [[ "$FILE" =~ \.(mp4|mkv|mov)$ ]] || continue
+    FILE_LOWER="${FILE,,}"
+    [[ "$FILE_LOWER" =~ \.(mp4|mkv|mov)$ ]] || continue
     VIDEO_ID="${FILE%.*}"
 
     process_video "$VIDEO_ID" "$INBOX_DIR/$FILE" &
