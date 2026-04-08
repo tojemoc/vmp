@@ -28,8 +28,11 @@ import {
   handlePortal,
 } from './stripe.js'
 import { isAdministrativeRole } from './roles.js'
+import { resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
 import { handleThumbnailUpload, handleThumbnailDelete } from './thumbnails.js'
 import { handleAdminNewsletterSend, handleAdminNewsletterSettings } from './brevo.js'
+import { signVideoToken, verifyVideoToken } from './videoTokens.js'
+import { handlePublicFeed, handlePersonalFeed } from './feed.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
@@ -135,6 +138,12 @@ export default {
     // ── Existing routes ───────────────────────────────────────────────────────
     if (url.pathname === '/api/videos') {
       return handleVideosList(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/feed/public') {
+      return handlePublicFeed(request, env, corsHeaders)
+    }
+    if (url.pathname.match(/^\/api\/feed\/[^/]+\/[^/]+$/)) {
+      return handlePersonalFeed(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/video-access/')) {
       return handleVideoAccess(request, env, corsHeaders)
@@ -1641,32 +1650,6 @@ function isValidSlug(slug) {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
 }
 
-async function resolveMediaEntrypointUrl({ env, videoId }) {
-  const base = env.R2_BASE_URL
-  const candidates = buildEntrypointCandidates(base, videoId)
-  for (const c of candidates) { if (await canLoadEntrypoint(c)) return c }
-  return candidates[0]
-}
-
-function buildEntrypointCandidates(base, videoId) {
-  // All videos live under videos/{id}/.  Flat layout (rclone output directly
-  // under videos/{id}/) is checked first; processed/ subdirectory is kept for
-  // older uploads that went through the video-processor pipeline.
-  return [
-    `${base}/videos/${videoId}/master.m3u8`,
-    `${base}/videos/${videoId}/processed/hls/master.m3u8`,
-    `${base}/videos/${videoId}/processed/playlist.m3u8`,
-  ]
-}
-
-function buildProxyPlaylistUrl(request, playlistUrl, previewUntilSeconds) {
-  const origin = new URL(request.url).origin
-  const upstream = new URL(playlistUrl)
-  const u = new URL(`${origin}/api/video-proxy${upstream.pathname}`)
-  if (previewUntilSeconds && previewUntilSeconds > 0) u.searchParams.set('previewUntil', String(Math.floor(previewUntilSeconds)))
-  return u.toString()
-}
-
 async function ensureAdminSettingsTable(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS admin_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run()
 }
@@ -1715,94 +1698,6 @@ function jsonResponse(data, status = 200, corsHeaders = {}) {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   })
-}
-
-// ─── Video token helpers (Step 4a) ────────────────────────────────────────────
-//
-// Short-lived HMAC-SHA-256 tokens that authenticate every HLS playlist and
-// segment request through the proxy.  Without a valid token the proxy returns
-// 403, so enumeration and bulk downloading of segments requires knowing the
-// JWT_SECRET.
-//
-// Token format:  base64url(payload) + "." + hex(HMAC-SHA256(base64url(payload)))
-// where payload = "<userId>:<videoId>:<unixExpires>"
-
-async function importVideoHmacKey(secret) {
-  return crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  )
-}
-
-function b64urlEncode(str) {
-  return btoa(str)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
-}
-
-function b64urlDecode(b64url) {
-  const padded = b64url.replace(/-/g, '+').replace(/_/g, '/')
-    + '=='.slice(0, (4 - (b64url.length % 4)) % 4)
-  return atob(padded)
-}
-
-async function signVideoToken(userId, videoId, secret, previewUntil = null) {
-  const expires = Math.floor(Date.now() / 1000) + 7200 // 2 hours
-  const previewUntilStr = previewUntil !== null ? String(previewUntil) : ''
-  const payload = b64urlEncode(`${userId}:${videoId}:${expires}:${previewUntilStr}`)
-  const key = await importVideoHmacKey(secret)
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
-  const sigHex = Array.from(new Uint8Array(sig), b => b.toString(16).padStart(2, '0')).join('')
-  return `${payload}.${sigHex}`
-}
-
-async function verifyVideoToken(token, secret) {
-  if (!token || typeof token !== 'string') throw new Error('Missing video token')
-  const dotIndex = token.lastIndexOf('.')
-  if (dotIndex < 1) throw new Error('Malformed video token')
-
-  const payload = token.slice(0, dotIndex)
-  const sigHex  = token.slice(dotIndex + 1)
-
-  // Validate sigHex before conversion
-  if (!sigHex || typeof sigHex !== 'string') {
-    throw new Error('Malformed video token signature')
-  }
-  if (sigHex.length === 0 || sigHex.length % 2 !== 0) {
-    throw new Error('Malformed video token signature')
-  }
-  if (!/^[0-9a-fA-F]+$/.test(sigHex)) {
-    throw new Error('Malformed video token signature')
-  }
-
-  const key = await importVideoHmacKey(secret)
-
-  // Constant-time verification
-  try {
-    const sigBytes = new Uint8Array(sigHex.match(/../g).map(h => parseInt(h, 16)))
-    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
-    if (!valid) throw new Error('Invalid video token signature')
-  } catch (error) {
-    if (error.message === 'Invalid video token signature') throw error
-    throw new Error('Malformed video token signature')
-  }
-
-  const decoded = b64urlDecode(payload)
-  const parts   = decoded.split(':')
-  if (parts.length < 3) throw new Error('Malformed video token payload')
-
-  const userId  = parts[0]
-  const videoId = parts[1]
-  const expires = parseInt(parts[2], 10)
-  const previewUntil = parts[3] ? (parts[3] !== '' ? parseFloat(parts[3]) : null) : null
-
-  if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired')
-
-  return { userId, videoId, expires, previewUntil }
 }
 
 // ─── Segment duration helpers (Step 4b) ──────────────────────────────────────
