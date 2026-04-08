@@ -13,7 +13,9 @@ MAX_JOBS=2
 mkdir -p "$TMP_DIR_BASE"
 SLOT_DIR="$TMP_DIR_BASE/.slots"
 SLOT_LOCK="$TMP_DIR_BASE/.slots.lock"
+BACKFILL_STAGING_DIR="$TMP_DIR_BASE/.backfill_staging"
 mkdir -p "$SLOT_DIR"
+mkdir -p "$BACKFILL_STAGING_DIR"
 touch "$SLOT_LOCK"
 
 log() {
@@ -30,14 +32,16 @@ max_jobs="$2"
 holder_pid="$3"
 
 mkdir -p "$slot_dir"
+shopt -s nullglob
+files=( "$slot_dir"/*.pid )
 
-for token in "$slot_dir"/*.pid; do
-    [ -f "$token" ] || continue
+for token in "${files[@]}"; do
     pid="$(basename "$token" .pid)"
     kill -0 "$pid" 2>/dev/null || rm -f "$token"
 done
 
-current_jobs=$(ls -1 "$slot_dir"/*.pid 2>/dev/null | wc -l)
+files=( "$slot_dir"/*.pid )
+current_jobs=${#files[@]}
 if [ "$current_jobs" -lt "$max_jobs" ]; then
     printf "%s\n" "$holder_pid" > "$slot_dir/$holder_pid.pid"
     exit 0
@@ -381,8 +385,8 @@ enqueue_backfill_jobs_from_r2() {
             continue
         fi
 
-        local INPUT_PATH="$INBOX_DIR/${VIDEO_ID}.mp4"
-        process_video "$VIDEO_ID" "$INPUT_PATH" &
+        local INPUT_PATH="$BACKFILL_STAGING_DIR/${VIDEO_ID}.mp4"
+        process_video "$VIDEO_ID" "$INPUT_PATH"
     done <<< "$prefixes"
 }
 
