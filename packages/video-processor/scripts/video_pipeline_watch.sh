@@ -4,6 +4,8 @@ set -euo pipefail
 INBOX_DIR="/mnt/videos/inbox"
 TMP_DIR_BASE="/mnt/tmp/video_pipeline"
 R2_BUCKET="vmp-videos"
+MP3_NAME="podcast.mp3"
+BACKFILL_FROM_R2="${BACKFILL_FROM_R2:-1}"
 
 MAX_JOBS=2
 
@@ -17,6 +19,37 @@ wait_for_slot() {
     while [ "$(jobs -r | wc -l)" -ge "$MAX_JOBS" ]; do
         sleep 1
     done
+}
+
+has_remote_file() {
+    local video_id="$1"
+    local file_name="$2"
+    rclone lsf "${R2_BUCKET}:/videos/${video_id}" 2>/dev/null | grep -qx "$file_name"
+}
+
+find_remote_source_key() {
+    local video_id="$1"
+    local key
+    key=$(rclone lsf "${R2_BUCKET}:/videos/${video_id}/source" 2>/dev/null | \
+        grep -E '\.(mp4|mkv|mov)$' | head -n 1 || true)
+    [ -n "$key" ] || return 1
+    printf "%s\n" "$key"
+}
+
+ensure_input_from_r2() {
+    local video_id="$1"
+    local input_path="$2"
+    local src_key
+
+    src_key=$(find_remote_source_key "$video_id" || true)
+    if [ -z "$src_key" ]; then
+        log "❌ $video_id has no source file in R2 (videos/$video_id/source/)"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$input_path")"
+    log "☁️  Downloading source from R2 for $video_id ($src_key)"
+    rclone copyto "${R2_BUCKET}:/videos/${video_id}/source/${src_key}" "$input_path"
 }
 
 # ------------------------
@@ -56,10 +89,18 @@ process_video() {
 
     log "ðŸ“¥ Processing $VIDEO_ID"
 
+    # pull source from R2 if inbox file is missing (backfill mode)
+    if [ ! -f "$INPUT_PATH" ]; then
+        if ! ensure_input_from_r2 "$VIDEO_ID" "$INPUT_PATH"; then
+            rm -f "$LOCK"
+            return
+        fi
+    fi
+
     # wait for upload completion
     PREV=-1
     while true; do
-        [ ! -f "$INPUT_PATH" ] && { log "âŒ Missing input"; rm -f "$LOCK"; return; }
+        [ ! -f "$INPUT_PATH" ] && { log "❌ Missing input"; rm -f "$LOCK"; return; }
         CUR=$(stat -c%s "$INPUT_PATH")
         [[ "$CUR" -eq "$PREV" ]] && break
         PREV=$CUR
@@ -67,6 +108,10 @@ process_video() {
     done
 
     log "âœ… Upload complete"
+
+    HAS_AUDIO=$(ffprobe -v error -select_streams a \
+        -show_entries stream=index -of csv=p=0 "$INPUT_PATH" 2>/dev/null | wc -l || echo 0)
+    HAS_AUDIO=${HAS_AUDIO:-0}
 
     # ------------------------
     # ENCODING (only missing)
@@ -96,14 +141,31 @@ process_video() {
     fi
 
     # ------------------------
+    # PODCAST MP3 (only missing)
+    # ------------------------
+    need_mp3=true
+    if [ -f "$TMP_DIR/$MP3_NAME" ] || has_remote_file "$VIDEO_ID" "$MP3_NAME"; then
+        need_mp3=false
+    fi
+
+    if [ "$need_mp3" = true ]; then
+        if [ "$HAS_AUDIO" -gt 0 ]; then
+            log "🎧 Encoding podcast MP3"
+            ffmpeg -hide_banner -y -i "$INPUT_PATH" \
+                -vn -map 0:a:0 -c:a libmp3lame -b:a 192k "$TMP_DIR/$MP3_NAME"
+            log "✅ MP3 encoding done"
+        else
+            log "⚠️ No audio stream for $VIDEO_ID — skipping MP3 generation"
+        fi
+    else
+        log "⏩ Skipping MP3 encoding (already exists)"
+    fi
+
+    # ------------------------
     # SHAKA (only if needed)
     # ------------------------
     if [ ! -f "$TMP_DIR/master.m3u8" ]; then
         log "ðŸš€ Packaging with Shaka"
-
-        HAS_AUDIO=$(ffprobe -v error -select_streams a \
-            -show_entries stream=index -of csv=p=0 "$INPUT_PATH" 2>/dev/null | wc -l || echo 0)
-        HAS_AUDIO=${HAS_AUDIO:-0}
 
         SHAKA_CMD=(shaka-packager
             "input=$TMP_DIR/1080p.mp4,stream=video,init_segment=$TMP_DIR/init_1080.mp4,segment_template=$TMP_DIR/seg_1080_\$Number\$.m4s"
@@ -169,6 +231,7 @@ for i in {1..5}; do
         echo "$REMOTE" | grep -qx "init_audio.mp4" || MISSING="$MISSING init_audio.mp4"
         audio_seg_cnt=$(echo "$REMOTE" | grep -c "^seg_audio_" 2>/dev/null || echo 0)
         [ "$audio_seg_cnt" -gt 0 ] || MISSING="$MISSING seg_audio_*.m4s(none)"
+        echo "$REMOTE" | grep -qx "$MP3_NAME" || MISSING="$MISSING $MP3_NAME"
     fi
 
     for res in 1080 720 480; do
@@ -207,6 +270,33 @@ rm -rf "$TMP_DIR"
 rm -f "$LOCK"
 
 log "ðŸŽ‰ Finished $VIDEO_ID"
+}
+
+enqueue_backfill_jobs_from_r2() {
+    [ "$BACKFILL_FROM_R2" = "1" ] || return
+
+    log "☁️  Scanning R2 for videos missing $MP3_NAME"
+    local prefixes
+    if ! prefixes=$(rclone lsf "${R2_BUCKET}:/videos" 2>/dev/null); then
+        log "⚠️ Could not list R2 videos prefix; skipping backfill scan"
+        return
+    fi
+
+    while IFS= read -r prefix; do
+        [ -n "$prefix" ] || continue
+        [[ "$prefix" =~ /$ ]] || continue
+        local VIDEO_ID
+        VIDEO_ID="${prefix%/}"
+        [ -n "$VIDEO_ID" ] || continue
+
+        if has_remote_file "$VIDEO_ID" "$MP3_NAME"; then
+            continue
+        fi
+
+        local INPUT_PATH="$INBOX_DIR/${VIDEO_ID}.mp4"
+        wait_for_slot
+        process_video "$VIDEO_ID" "$INPUT_PATH" &
+    done <<< "$prefixes"
 }
 
 # ------------------------
@@ -276,6 +366,8 @@ for f in "$INBOX_DIR"/*; do
     wait_for_slot
     process_video "$VIDEO_ID" "$f" &
 done
+
+enqueue_backfill_jobs_from_r2
 
 # ------------------------
 # WATCH NEW FILES
