@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:create": "wrangler d1 execute video-subscription-db --file=./migrations/0001_initial.sql",
-    "db:seed": "wrangler d1 execute video-subscription-db --file=./migrations/0002_seed.sql"
+    "db:create": "wrangler d1 execute video-subscription-db --file=./migrations/0001_canonical_schema.sql",
+    "db:seed": "wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql",
+    "db:reset": "npm run db:create && npm run db:seed"
   },
   "dependencies": {
     "@vmp/shared": "*"

@@ -31,9 +31,18 @@ import { isAdministrativeRole } from './roles.js'
 import { buildEntrypointCandidates, resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
 import { handleThumbnailUpload, handleThumbnailDelete } from './thumbnails.js'
 import { handleAdminNewsletterSend, handleAdminNewsletterSettings } from './brevo.js'
+import { handleAdminNewsletterCampaigns, handleAdminNewsletterTemplates, handleAdminNewsletterSync } from './brevo.js'
 import { signVideoToken, verifyVideoToken } from './videoTokens.js'
 import { handlePublicFeed, handlePersonalFeed } from './feed.js'
 import { handleGetAccountRss } from './rssAccount.js'
+import {
+  handleHomepageContent,
+  handlePillsPublic,
+  handlePillsUpdate,
+  handleAdminUsers,
+  handleAdminAnalytics,
+  logSegmentEvent,
+} from './adminExtras.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
@@ -150,7 +159,7 @@ export default {
       return handleVideoAccess(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/video-proxy/')) {
-      return handleVideoProxy(request, env, corsHeaders)
+      return handleVideoProxy(request, env, corsHeaders, ctx)
     }
     if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
       return handleBootstrap(request, env, corsHeaders)
@@ -190,6 +199,30 @@ export default {
     }
     if (url.pathname === '/api/admin/newsletter/send' && request.method === 'POST') {
       return handleAdminNewsletterSend(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/newsletter/campaigns' && request.method === 'GET') {
+      return handleAdminNewsletterCampaigns(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/newsletter/templates' && (request.method === 'GET' || request.method === 'POST')) {
+      return handleAdminNewsletterTemplates(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/newsletter/sync' && request.method === 'POST') {
+      return handleAdminNewsletterSync(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/homepage/content' && (request.method === 'GET' || request.method === 'PATCH')) {
+      return handleHomepageContent(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/users' && (request.method === 'GET' || request.method === 'PATCH')) {
+      return handleAdminUsers(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/analytics' && request.method === 'GET') {
+      return handleAdminAnalytics(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pills' && request.method === 'GET') {
+      return handlePillsPublic(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pills/update' && request.method === 'POST') {
+      return handlePillsUpdate(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
       return handleGetPricing(request, env, corsHeaders)
@@ -475,7 +508,7 @@ async function handleVideoAccess(request, env, corsHeaders) {
   }
 }
 
-async function handleVideoProxy(request, env, corsHeaders) {
+async function handleVideoProxy(request, env, corsHeaders, ctx) {
   const requestUrl = new URL(request.url)
   const proxyPrefix = '/api/video-proxy/'
   const objectPath = requestUrl.pathname.slice(proxyPrefix.length)
@@ -592,6 +625,24 @@ async function handleVideoProxy(request, env, corsHeaders) {
   }
 
   const upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
+
+  if (isSegment) {
+    const referer = request.headers.get('referer') || ''
+    let sourceHost = null
+    try { sourceHost = referer ? (new URL(referer)).host : null } catch {}
+    const segmentMatch = normalizedPath.match(/(\d+)(?:\.\w+)?$/)
+    const positionSeconds = segmentMatch ? Number(segmentMatch[1]) : null
+    ctx?.waitUntil?.(logSegmentEvent(env, {
+      videoId: proxyVideoId,
+      userId: tokenClaims?.userId || null,
+      requestPath: normalizedPath,
+      eventType: 'segment',
+      positionSeconds,
+      referer,
+      sourceHost,
+      ipHash: request.headers.get('CF-Connecting-IP') || null,
+    }))
+  }
 
   const manifestType = getManifestType(objectPath, upstreamResponse)
   if (manifestType === 'hls') {
