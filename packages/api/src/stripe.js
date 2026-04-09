@@ -17,6 +17,7 @@
 
 import { requireAuth } from './auth.js'
 import { isAdministrativeRole } from './roles.js'
+import { getSetting } from './settingsStore.js'
 import {
   removeSubscriberFromNewsletter,
   syncNewsletterForStripeSubscription,
@@ -135,20 +136,15 @@ function getDb(env) {
   return db
 }
 
-async function getAdminSetting(db, key) {
-  const row = await db.prepare('SELECT value FROM admin_settings WHERE key = ?').bind(key).first()
-  return row?.value ?? null
-}
-
 /**
  * Resolve plan_type ('monthly'|'yearly'|'club') from a Stripe price ID
  * by comparing against the price IDs stored in admin_settings.
  */
-async function resolvePlanType(db, stripePriceId) {
+async function resolvePlanType(db, stripePriceId, env) {
   const keys = ['stripe_price_monthly', 'stripe_price_yearly', 'stripe_price_club']
   const planNames = ['monthly', 'yearly', 'club']
   for (let i = 0; i < keys.length; i++) {
-    const stored = await getAdminSetting(db, keys[i])
+    const stored = await getSetting(env, keys[i], { ttlSeconds: 300 })
     if (stored && stored === stripePriceId) return planNames[i]
   }
   return 'monthly' // fallback
@@ -158,9 +154,9 @@ async function resolvePlanType(db, stripePriceId) {
  * Upsert a subscription row in D1 from a Stripe subscription object.
  * Uses ON CONFLICT(stripe_subscription_id) so repeated webhook deliveries are idempotent.
  */
-async function upsertSubscription(db, userId, stripeSub) {
+async function upsertSubscription(db, userId, stripeSub, env) {
   const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null
-  const planType = priceId ? await resolvePlanType(db, priceId) : 'monthly'
+  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly'
   const status = normalizeStripeStatus(stripeSub.status)
   const currentPeriodEnd = stripeSub.current_period_end
     ? new Date(stripeSub.current_period_end * 1000).toISOString()
@@ -213,9 +209,9 @@ export async function handleGetPricing(request, env, corsHeaders) {
   try {
     const db = getDb(env)
     const [monthly, yearly, club] = await Promise.all([
-      getAdminSetting(db, 'monthly_price_eur'),
-      getAdminSetting(db, 'yearly_price_eur'),
-      getAdminSetting(db, 'club_price_eur'),
+      getSetting(env, 'monthly_price_eur', { ttlSeconds: 300 }),
+      getSetting(env, 'yearly_price_eur', { ttlSeconds: 300 }),
+      getSetting(env, 'club_price_eur', { ttlSeconds: 300 }),
     ])
     return jsonResponse({
       monthly: Number(monthly ?? 6.90),
@@ -264,7 +260,7 @@ export async function handleCheckout(request, env, corsHeaders) {
       }, 409, corsHeaders)
     }
 
-    const priceId = await getAdminSetting(db, `stripe_price_${body.planType}`)
+    const priceId = await getSetting(env, `stripe_price_${body.planType}`, { ttlSeconds: 300 })
     if (!priceId) {
       return jsonResponse({
         error: 'Stripe prices not yet configured. Ask an admin to set stripe_price_* in admin_settings.',
@@ -328,7 +324,7 @@ export async function handleWebhook(request, env, corsHeaders) {
         // Fetch the full subscription object to get current_period_end and plan
         const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
         if (stripeSub.id) {
-          await upsertSubscription(db, userId, stripeSub)
+          await upsertSubscription(db, userId, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
           } catch (brevoErr) {
@@ -348,7 +344,7 @@ export async function handleWebhook(request, env, corsHeaders) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub)
+          await upsertSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
@@ -370,7 +366,7 @@ export async function handleWebhook(request, env, corsHeaders) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub)
+          await upsertSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
