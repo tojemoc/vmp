@@ -13,7 +13,7 @@ on:
 jobs:
   deploy-staging:
     if: startsWith(github.ref, 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,7 +36,7 @@ jobs:
         run: npx wrangler pages deploy packages/web/dist --project-name ${{ secrets.CF_PAGES_PROJECT_NAME }} --branch main
   deploy-production:
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
