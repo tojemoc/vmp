@@ -45,7 +45,7 @@ Note: the deploy workflow reads these exact `CLOUDFLARE_*_STAGING/PROD` secret n
 
 Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 
-1) Freeze auto deploys
+1) Freeze auto-deploys
 
 - Confirm only `.github/workflows/deploy.yml` auto-deploys from `main`/tags.
 - Keep `cd-api.yml`, `cd-web.yml`, and `cd-video-processor.yml` manual-only.
