@@ -425,7 +425,7 @@
                   <option value="asc">asc</option>
                 </select>
                 <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" @click="updateCategory(category)">Save</button>
-                <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium" @click="deleteCategory(category)">Delete</button>
+                <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium" @click="confirmDeleteCategory(category)">Delete</button>
               </div>
             </div>
           </template>
@@ -1082,6 +1082,12 @@ const deleteCategory = async (category: Category) => {
   } catch (e: any) {
     showToast('error', `Failed to delete category: ${e.message}`)
   }
+}
+
+const confirmDeleteCategory = async (category: Category) => {
+  const confirmed = window.confirm(`Delete category "${category.name}"? This action cannot be undone.`)
+  if (!confirmed) return
+  await deleteCategory(category)
 }
 
 const loadConfig = async () => {

@@ -846,7 +846,11 @@ async function handleAdminCategories(request, env, corsHeaders) {
     try {
       const result = await db.prepare(`UPDATE video_categories SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
       const changes = result.meta?.changes ?? result.changes ?? 0
-      if (!changes) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+      if (!changes) {
+        const existing = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
+        if (!existing) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+        return jsonResponse({ ok: true, updated: false }, 200, corsHeaders)
+      }
       return jsonResponse({ ok: true }, 200, corsHeaders)
     } catch (err) {
       if (err?.message?.includes('UNIQUE')) {
