@@ -32,7 +32,7 @@ jobs:
       
       - run: npm run build --workspace=@vmp/web
         env:
-          API_URL: https://api-staging.example.com
+          API_URL: https://vmp-api.tjm.sk
       
       - name: Deploy API (staging)
         env:
