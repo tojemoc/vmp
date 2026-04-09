@@ -158,6 +158,9 @@ export default {
     if (url.pathname === '/api/admin/config') {
       return handleAdminConfig(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/categories' && ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) {
+      return handleAdminCategories(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/admin/preview-locks') {
       return handlePreviewLocks(request, env, corsHeaders)
     }
@@ -271,13 +274,17 @@ async function handleVideosList(request, env, corsHeaders) {
     }
 
     const query = isEditor
-      ? `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status, slug
-         FROM videos
-         ORDER BY upload_date DESC`
-      : `SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date, publish_status, slug
-         FROM videos
-         WHERE publish_status = 'published'
-         ORDER BY upload_date DESC`
+      ? `SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration, v.upload_date, v.publish_status, v.slug,
+                vca.category_id
+         FROM videos v
+         LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+         ORDER BY v.upload_date DESC`
+      : `SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration, v.upload_date, v.publish_status, v.slug,
+                vca.category_id
+         FROM videos v
+         LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+         WHERE v.publish_status = 'published'
+         ORDER BY v.upload_date DESC`
 
     const videos = await db.prepare(query).all()
 
@@ -698,6 +705,138 @@ async function handlePreviewLocks(request, env, corsHeaders) {
   return jsonResponse({ ok: true }, 200, corsHeaders)
 }
 
+async function handleAdminCategories(request, env, corsHeaders) {
+  const method = request.method
+  const db = getDatabaseBinding(env)
+
+  if (method === 'GET') {
+    try {
+      await requireRole(request, env, 'editor', 'admin', 'super_admin')
+    } catch {
+      return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    }
+    const rows = await db.prepare(`
+      SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, COUNT(vca.video_id) AS video_count
+      FROM video_categories vc
+      LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
+      GROUP BY vc.id
+      ORDER BY vc.sort_order ASC, vc.name ASC
+    `).all()
+    return jsonResponse({ categories: rows?.results ?? [] }, 200, corsHeaders)
+  }
+
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object') {
+    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+  }
+
+  if (method === 'POST') {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    const slug = typeof body.slug === 'string' ? body.slug.trim() : ''
+    const sortOrder = Number.isInteger(body.sortOrder) ? body.sortOrder : 0
+    const direction = body.direction === 'asc' ? 'asc' : 'desc'
+    if (!name) return jsonResponse({ error: 'name is required' }, 400, corsHeaders)
+    if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+    try {
+      await db.prepare(`
+        INSERT INTO video_categories (id, slug, name, sort_order, direction)
+        VALUES (?, ?, ?, ?, ?)
+      `).bind(crypto.randomUUID(), slug, name, sortOrder, direction).run()
+      return jsonResponse({ ok: true }, 201, corsHeaders)
+    } catch (err) {
+      if (err?.message?.includes('UNIQUE')) {
+        return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
+      }
+      throw err
+    }
+  }
+
+  if (method === 'PATCH') {
+    const id = typeof body.id === 'string' ? body.id.trim() : ''
+    if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+    const updates = []
+    const values = []
+    if (typeof body.name === 'string') {
+      const name = body.name.trim()
+      if (!name) return jsonResponse({ error: 'name must not be empty' }, 400, corsHeaders)
+      updates.push('name = ?')
+      values.push(name)
+    }
+    if (typeof body.slug === 'string') {
+      const slug = body.slug.trim()
+      if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+      updates.push('slug = ?')
+      values.push(slug)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'sortOrder')) {
+      if (!Number.isInteger(body.sortOrder)) return jsonResponse({ error: 'sortOrder must be an integer' }, 400, corsHeaders)
+      updates.push('sort_order = ?')
+      values.push(body.sortOrder)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'direction')) {
+      if (!['asc', 'desc'].includes(body.direction)) return jsonResponse({ error: 'direction must be asc or desc' }, 400, corsHeaders)
+      updates.push('direction = ?')
+      values.push(body.direction)
+    }
+    if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
+    values.push(id)
+    try {
+      const result = await db.prepare(`UPDATE video_categories SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+      const changes = result.meta?.changes ?? result.changes ?? 0
+      if (!changes) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+      return jsonResponse({ ok: true }, 200, corsHeaders)
+    } catch (err) {
+      if (err?.message?.includes('UNIQUE')) {
+        return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
+      }
+      throw err
+    }
+  }
+
+  if (method === 'DELETE') {
+    const id = typeof body.id === 'string' ? body.id.trim() : ''
+    const reassignToCategoryId = typeof body.reassignToCategoryId === 'string' && body.reassignToCategoryId.trim()
+      ? body.reassignToCategoryId.trim()
+      : null
+    if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+
+    const category = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
+    if (!category) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+
+    if (reassignToCategoryId) {
+      if (reassignToCategoryId === id) return jsonResponse({ error: 'reassignToCategoryId must be different from deleted category' }, 400, corsHeaders)
+      const reassignCategory = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(reassignToCategoryId).first()
+      if (!reassignCategory) return jsonResponse({ error: 'Reassignment category not found' }, 404, corsHeaders)
+      await db.prepare(`
+        UPDATE video_category_assignments
+        SET category_id = ?
+        WHERE category_id = ?
+      `).bind(reassignToCategoryId, id).run()
+    } else {
+      const assignedCountRow = await db.prepare(`
+        SELECT COUNT(*) AS c
+        FROM video_category_assignments
+        WHERE category_id = ?
+      `).bind(id).first()
+      const assignedCount = Number(assignedCountRow?.c ?? 0)
+      if (assignedCount > 0) {
+        return jsonResponse({ error: 'Category has assigned videos. Reassign them before deletion.' }, 409, corsHeaders)
+      }
+    }
+
+    await db.prepare('DELETE FROM video_categories WHERE id = ?').bind(id).run()
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+}
+
 async function handleAdminVideosList(request, env, corsHeaders) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
@@ -730,10 +869,12 @@ async function handleAdminVideosList(request, env, corsHeaders) {
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     let videos
     videos = await db.prepare(`
-      SELECT id, title, description, thumbnail_url, full_duration, preview_duration,
-             upload_date, status, publish_status, published_at, updated_at, slug
-      FROM videos
-      ORDER BY upload_date DESC
+      SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
+             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug,
+             vca.category_id
+      FROM videos v
+      LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+      ORDER BY v.upload_date DESC
     `).all()
 
     // ── 3. Annotate each row with r2_exists ──────────────────────────────────
@@ -771,9 +912,10 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   const hasStatus = Object.prototype.hasOwnProperty.call(body, 'status')
   const hasTitle  = Object.prototype.hasOwnProperty.call(body, 'title')
   const hasSlug   = Object.prototype.hasOwnProperty.call(body, 'slug')
+  const hasCategoryId = Object.prototype.hasOwnProperty.call(body, 'categoryId')
 
-  if (!hasStatus && !hasTitle && !hasSlug) {
-    return jsonResponse({ error: 'At least one of status, title, or slug must be provided' }, 400, corsHeaders)
+  if (!hasStatus && !hasTitle && !hasSlug && !hasCategoryId) {
+    return jsonResponse({ error: 'At least one of status, title, slug, or categoryId must be provided' }, 400, corsHeaders)
   }
   if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
     return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
@@ -832,6 +974,25 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
       }
     }
 
+    if (hasCategoryId) {
+      if (body.categoryId === null) {
+        await db.prepare(`DELETE FROM video_category_assignments WHERE video_id = ?`).bind(videoId).run()
+      } else if (typeof body.categoryId === 'string' && body.categoryId.trim()) {
+        const categoryId = body.categoryId.trim()
+        const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
+        if (!category) {
+          return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+        }
+        await db.prepare(`
+          INSERT INTO video_category_assignments (video_id, category_id, assigned_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(video_id) DO UPDATE SET category_id = excluded.category_id, assigned_at = CURRENT_TIMESTAMP
+        `).bind(videoId, categoryId).run()
+      } else {
+        return jsonResponse({ error: 'categoryId must be a string or null' }, 400, corsHeaders)
+      }
+    }
+
     let transitionedToPublished = false
     if (hasStatus) {
       if (body.status === 'published') {
@@ -858,8 +1019,10 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
     }
 
     const video = await db.prepare(`
-      SELECT id, title, status, publish_status, published_at, updated_at, slug
-      FROM videos WHERE id = ?
+      SELECT v.id, v.title, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id
+      FROM videos v
+      LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+      WHERE v.id = ?
     `).bind(videoId).first()
     if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
 
