@@ -277,7 +277,7 @@ function buildCorsHeaders(request, env) {
     return {
       'Access-Control-Allow-Origin':      requestOrigin,
       'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Expose-Headers':    'Accept-Ranges, Content-Length, Content-Range, Content-Type',
+      'Access-Control-Expose-Headers':    'Accept-Ranges, Content-Length, Content-Range, Content-Type, x-d1-bookmark',
       'Vary':                              'Origin',
     }
   }
@@ -285,7 +285,7 @@ function buildCorsHeaders(request, env) {
   // Public CORS — no credentials, matches any origin (e.g. curl, public consumers)
   return {
     'Access-Control-Allow-Origin':   '*',
-    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Type',
+    'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Type, x-d1-bookmark',
   }
 }
 

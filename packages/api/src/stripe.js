@@ -154,9 +154,9 @@ async function resolvePlanType(db, stripePriceId, env) {
  * Upsert a subscription row in D1 from a Stripe subscription object.
  * Uses ON CONFLICT(stripe_subscription_id) so repeated webhook deliveries are idempotent.
  */
-async function upsertSubscription(db, userId, stripeSub) {
+async function upsertSubscription(db, userId, stripeSub, env) {
   const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null
-  const planType = priceId ? await resolvePlanType(db, priceId, this?.env ?? {}) : 'monthly'
+  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly'
   const status = normalizeStripeStatus(stripeSub.status)
   const currentPeriodEnd = stripeSub.current_period_end
     ? new Date(stripeSub.current_period_end * 1000).toISOString()
@@ -324,7 +324,7 @@ export async function handleWebhook(request, env, corsHeaders) {
         // Fetch the full subscription object to get current_period_end and plan
         const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
         if (stripeSub.id) {
-          await upsertSubscription(db, userId, stripeSub)
+          await upsertSubscription(db, userId, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
           } catch (brevoErr) {
@@ -344,7 +344,7 @@ export async function handleWebhook(request, env, corsHeaders) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub)
+          await upsertSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
@@ -366,7 +366,7 @@ export async function handleWebhook(request, env, corsHeaders) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub)
+          await upsertSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
