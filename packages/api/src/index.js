@@ -763,139 +763,148 @@ async function handlePreviewLocks(request, env, corsHeaders) {
 }
 
 async function handleAdminCategories(request, env, corsHeaders) {
-  const method = request.method
-  const db = getDatabaseBinding(env)
+  try {
+    const method = request.method
+    const db = getDatabaseBinding(env)
 
-  if (method === 'GET') {
+    if (method === 'GET') {
+      try {
+        await requireRole(request, env, 'editor', 'admin', 'super_admin')
+      } catch {
+        return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+      }
+      const rows = await db.prepare(`
+        SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, COUNT(vca.video_id) AS video_count
+        FROM video_categories vc
+        LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
+        GROUP BY vc.id
+        ORDER BY vc.sort_order ASC, vc.name ASC
+      `).all()
+      return jsonResponse({ categories: rows?.results ?? [] }, 200, corsHeaders)
+    }
+
     try {
-      await requireRole(request, env, 'editor', 'admin', 'super_admin')
+      await requireRole(request, env, 'admin', 'super_admin')
     } catch {
       return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
     }
-    const rows = await db.prepare(`
-      SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, COUNT(vca.video_id) AS video_count
-      FROM video_categories vc
-      LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
-      GROUP BY vc.id
-      ORDER BY vc.sort_order ASC, vc.name ASC
-    `).all()
-    return jsonResponse({ categories: rows?.results ?? [] }, 200, corsHeaders)
-  }
 
-  try {
-    await requireRole(request, env, 'admin', 'super_admin')
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
-  }
-
-  const body = await request.json().catch(() => null)
-  if (!body || typeof body !== 'object') {
-    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
-  }
-
-  if (method === 'POST') {
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
-    const slug = typeof body.slug === 'string' ? body.slug.trim() : ''
-    const sortOrder = Number.isInteger(body.sortOrder) ? body.sortOrder : 0
-    const direction = body.direction === 'asc' ? 'asc' : 'desc'
-    if (!name) return jsonResponse({ error: 'name is required' }, 400, corsHeaders)
-    if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
-    try {
-      await db.prepare(`
-        INSERT INTO video_categories (id, slug, name, sort_order, direction)
-        VALUES (?, ?, ?, ?, ?)
-      `).bind(crypto.randomUUID(), slug, name, sortOrder, direction).run()
-      return jsonResponse({ ok: true }, 201, corsHeaders)
-    } catch (err) {
-      if (err?.message?.includes('UNIQUE')) {
-        return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
-      }
-      throw err
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
     }
-  }
 
-  if (method === 'PATCH') {
-    const id = typeof body.id === 'string' ? body.id.trim() : ''
-    if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
-    const updates = []
-    const values = []
-    if (typeof body.name === 'string') {
-      const name = body.name.trim()
-      if (!name) return jsonResponse({ error: 'name must not be empty' }, 400, corsHeaders)
-      updates.push('name = ?')
-      values.push(name)
-    }
-    if (typeof body.slug === 'string') {
-      const slug = body.slug.trim()
+    if (method === 'POST') {
+      const name = typeof body.name === 'string' ? body.name.trim() : ''
+      const slug = typeof body.slug === 'string' ? body.slug.trim() : ''
+      const sortOrder = Number.isInteger(body.sortOrder) ? body.sortOrder : 0
+      const direction = body.direction === 'asc' ? 'asc' : 'desc'
+      if (!name) return jsonResponse({ error: 'name is required' }, 400, corsHeaders)
       if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
-      updates.push('slug = ?')
-      values.push(slug)
+      try {
+        await db.prepare(`
+          INSERT INTO video_categories (id, slug, name, sort_order, direction)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), slug, name, sortOrder, direction).run()
+        return jsonResponse({ ok: true }, 201, corsHeaders)
+      } catch (err) {
+        if (err?.message?.includes('UNIQUE')) {
+          return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
+        }
+        throw err
+      }
     }
-    if (Object.prototype.hasOwnProperty.call(body, 'sortOrder')) {
-      if (!Number.isInteger(body.sortOrder)) return jsonResponse({ error: 'sortOrder must be an integer' }, 400, corsHeaders)
-      updates.push('sort_order = ?')
-      values.push(body.sortOrder)
+
+    if (method === 'PATCH') {
+      const id = typeof body.id === 'string' ? body.id.trim() : ''
+      if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+      const updates = []
+      const values = []
+      if (typeof body.name === 'string') {
+        const name = body.name.trim()
+        if (!name) return jsonResponse({ error: 'name must not be empty' }, 400, corsHeaders)
+        updates.push('name = ?')
+        values.push(name)
+      }
+      if (typeof body.slug === 'string') {
+        const slug = body.slug.trim()
+        if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+        updates.push('slug = ?')
+        values.push(slug)
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'sortOrder')) {
+        if (!Number.isInteger(body.sortOrder)) return jsonResponse({ error: 'sortOrder must be an integer' }, 400, corsHeaders)
+        updates.push('sort_order = ?')
+        values.push(body.sortOrder)
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'direction')) {
+        if (!['asc', 'desc'].includes(body.direction)) return jsonResponse({ error: 'direction must be asc or desc' }, 400, corsHeaders)
+        updates.push('direction = ?')
+        values.push(body.direction)
+      }
+      if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
+      values.push(id)
+      try {
+        const result = await db.prepare(`UPDATE video_categories SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+        const changes = result.meta?.changes ?? result.changes ?? 0
+        if (!changes) {
+          const existing = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
+          if (!existing) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+          return jsonResponse({ ok: true, updated: false }, 200, corsHeaders)
+        }
+        return jsonResponse({ ok: true }, 200, corsHeaders)
+      } catch (err) {
+        if (err?.message?.includes('UNIQUE')) {
+          return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
+        }
+        throw err
+      }
     }
-    if (Object.prototype.hasOwnProperty.call(body, 'direction')) {
-      if (!['asc', 'desc'].includes(body.direction)) return jsonResponse({ error: 'direction must be asc or desc' }, 400, corsHeaders)
-      updates.push('direction = ?')
-      values.push(body.direction)
-    }
-    if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
-    values.push(id)
-    try {
-      const result = await db.prepare(`UPDATE video_categories SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
-      const changes = result.meta?.changes ?? result.changes ?? 0
+
+    if (method === 'DELETE') {
+      const id = typeof body.id === 'string' ? body.id.trim() : ''
+      const reassignToCategoryId = typeof body.reassignToCategoryId === 'string' && body.reassignToCategoryId.trim()
+        ? body.reassignToCategoryId.trim()
+        : null
+      if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+
+      const category = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
+      if (!category) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+
+      if (reassignToCategoryId) {
+        if (reassignToCategoryId === id) return jsonResponse({ error: 'reassignToCategoryId must be different from deleted category' }, 400, corsHeaders)
+        const reassignCategory = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(reassignToCategoryId).first()
+        if (!reassignCategory) return jsonResponse({ error: 'Reassignment category not found' }, 404, corsHeaders)
+        await db.prepare(`
+          UPDATE video_category_assignments
+          SET category_id = ?
+          WHERE category_id = ?
+        `).bind(reassignToCategoryId, id).run()
+        await db.prepare('DELETE FROM video_categories WHERE id = ?').bind(id).run()
+        return jsonResponse({ ok: true }, 200, corsHeaders)
+      }
+
+      const deleteResult = await db.prepare(`
+        DELETE FROM video_categories
+        WHERE id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM video_category_assignments WHERE category_id = ?
+          )
+      `).bind(id, id).run()
+      const changes = deleteResult.meta?.changes ?? deleteResult.changes ?? 0
       if (!changes) {
-        const existing = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
-        if (!existing) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
-        return jsonResponse({ ok: true, updated: false }, 200, corsHeaders)
-      }
-      return jsonResponse({ ok: true }, 200, corsHeaders)
-    } catch (err) {
-      if (err?.message?.includes('UNIQUE')) {
-        return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
-      }
-      throw err
-    }
-  }
-
-  if (method === 'DELETE') {
-    const id = typeof body.id === 'string' ? body.id.trim() : ''
-    const reassignToCategoryId = typeof body.reassignToCategoryId === 'string' && body.reassignToCategoryId.trim()
-      ? body.reassignToCategoryId.trim()
-      : null
-    if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
-
-    const category = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(id).first()
-    if (!category) return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
-
-    if (reassignToCategoryId) {
-      if (reassignToCategoryId === id) return jsonResponse({ error: 'reassignToCategoryId must be different from deleted category' }, 400, corsHeaders)
-      const reassignCategory = await db.prepare('SELECT id FROM video_categories WHERE id = ?').bind(reassignToCategoryId).first()
-      if (!reassignCategory) return jsonResponse({ error: 'Reassignment category not found' }, 404, corsHeaders)
-      await db.prepare(`
-        UPDATE video_category_assignments
-        SET category_id = ?
-        WHERE category_id = ?
-      `).bind(reassignToCategoryId, id).run()
-    } else {
-      const assignedCountRow = await db.prepare(`
-        SELECT COUNT(*) AS c
-        FROM video_category_assignments
-        WHERE category_id = ?
-      `).bind(id).first()
-      const assignedCount = Number(assignedCountRow?.c ?? 0)
-      if (assignedCount > 0) {
         return jsonResponse({ error: 'Category has assigned videos. Reassign them before deletion.' }, 409, corsHeaders)
       }
+      return jsonResponse({ ok: true }, 200, corsHeaders)
     }
 
-    await db.prepare('DELETE FROM video_categories WHERE id = ?').bind(id).run()
-    return jsonResponse({ ok: true }, 200, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  } catch (err) {
+    return jsonResponse({
+      error: err?.message || 'Internal Server Error',
+      code: err?.code || 'internal_error',
+    }, 500, corsHeaders)
   }
-
-  return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
 }
 
 async function handleAdminVideosList(request, env, corsHeaders) {
@@ -1000,6 +1009,8 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
   }
 
   const db = getDatabaseBinding(env)
+  const videoExists = await db.prepare('SELECT 1 FROM videos WHERE id = ?').bind(videoId).first()
+  if (!videoExists) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
 
   // Guard: reject a slug that equals another video's id — resolveVideoByIdOrSlug
   // resolves by id before slug, so the slug would become permanently shadowed.

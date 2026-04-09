@@ -997,6 +997,7 @@ const loadCategories = async () => {
 }
 
 const updateVideoCategory = async (video: Video, nextCategoryId: string) => {
+  const previousCategoryId = video.category_id ?? null
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
       method: 'PATCH',
@@ -1013,6 +1014,8 @@ const updateVideoCategory = async (video: Video, nextCategoryId: string) => {
     showToast('success', `Category updated for ${video.title}.`)
     await loadCategories()
   } catch (e: any) {
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) uploads.value[idx] = { ...uploads.value[idx], category_id: previousCategoryId }
     showToast('error', `Failed to update category: ${e.message}`)
   }
 }
@@ -1062,6 +1065,7 @@ const updateCategory = async (category: Category) => {
     showToast('success', 'Category updated.')
     await loadCategories()
   } catch (e: any) {
+    await loadCategories()
     showToast('error', `Failed to update category: ${e.message}`)
   }
 }
