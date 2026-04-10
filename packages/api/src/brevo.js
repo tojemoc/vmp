@@ -507,20 +507,34 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     }, 200, corsHeaders)
   }
 
-  const inflight = Number(row?.in_flight) === 1
-  const existingCampaignId = row?.campaign_id != null ? Number(row.campaign_id) : null
+  await releaseStaleNewsletterSendClaim(db, dedupeKey)
+  row = await db.prepare(
+    'SELECT campaign_id, sent_at, in_flight FROM brevo_newsletter_sends WHERE dedupe_key = ? LIMIT 1',
+  ).bind(dedupeKey).first()
 
-  if (inflight && (!Number.isFinite(existingCampaignId) || existingCampaignId <= 0)) {
-    newsletterLog('send_conflict_inflight', { correlationId, dedupeKeyLen: dedupeKey.length })
+  if (isNewsletterSendFinished(row)) {
+    newsletterLog('send_idempotent_after_stale', { correlationId, campaignId: Number(row.campaign_id) })
     return jsonResponse({
-      error: 'Another send for this dedupe key is in progress. Retry shortly.',
-      code: 'newsletter_send_in_progress',
-    }, 409, corsHeaders)
+      ok: true,
+      campaignId: Number(row.campaign_id),
+      idempotent: true,
+    }, 200, corsHeaders)
+  }
+
+  let inflight = Number(row?.in_flight) === 1
+  let existingCampaignId = row?.campaign_id != null ? Number(row.campaign_id) : null
+
+  if (inflight && Number.isFinite(existingCampaignId) && existingCampaignId > 0) {
+    newsletterLog('send_idempotent_campaign_held', { correlationId, campaignId: existingCampaignId })
+    return jsonResponse({
+      ok: true,
+      campaignId: existingCampaignId,
+      idempotent: true,
+    }, 200, corsHeaders)
   }
 
   let claimHeld = false
   if (!inflight) {
-    await releaseStaleNewsletterSendClaim(db, dedupeKey)
     claimHeld = await tryAcquireNewsletterSendClaim(db, dedupeKey)
     if (!claimHeld) {
       row = await db.prepare(
@@ -533,15 +547,34 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
           idempotent: true,
         }, 200, corsHeaders)
       }
+      const cid = row?.campaign_id != null ? Number(row.campaign_id) : null
+      if (Number.isFinite(cid) && cid > 0 && !row?.sent_at) {
+        newsletterLog('send_idempotent_campaign_race', { correlationId, campaignId: cid })
+        return jsonResponse({
+          ok: true,
+          campaignId: cid,
+          idempotent: true,
+        }, 200, corsHeaders)
+      }
       newsletterLog('send_conflict_after_claim', { correlationId, dedupeKeyLen: dedupeKey.length })
       return jsonResponse({
         error: 'Another send for this dedupe key is in progress. Retry shortly.',
         code: 'newsletter_send_in_progress',
       }, 409, corsHeaders)
     }
+  } else {
+    newsletterLog('send_conflict_inflight', { correlationId, dedupeKeyLen: dedupeKey.length })
+    return jsonResponse({
+      error: 'Another send for this dedupe key is in progress. Retry shortly.',
+      code: 'newsletter_send_in_progress',
+    }, 409, corsHeaders)
   }
 
   let campaignId = existingCampaignId != null && Number.isFinite(existingCampaignId) ? existingCampaignId : null
+
+  const releaseIfHeld = async () => {
+    if (claimHeld) await releaseNewsletterSendClaim(db, dedupeKey)
+  }
 
   try {
     if (campaignId == null || !Number.isFinite(campaignId)) {
@@ -555,7 +588,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
         })
         const status = createRes.status === 504 ? 504 : (createRes.status >= 400 && createRes.status < 600 ? createRes.status : 502)
         const msg = typeof err.message === 'string' ? err.message : 'Failed to create email campaign'
-        await releaseNewsletterSendClaim(db, dedupeKey)
+        await releaseIfHeld()
         return jsonResponse({
           error: msg,
           code: createRes.status === 504 ? 'brevo_timeout' : 'brevo_campaign_error',
@@ -568,7 +601,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
       const newId = created?.id
       if (newId == null || !Number.isFinite(Number(newId))) {
         newsletterLog('send_create_unexpected_body', { correlationId })
-        await releaseNewsletterSendClaim(db, dedupeKey)
+        await releaseIfHeld()
         return jsonResponse({ error: 'Unexpected response creating campaign', code: 'brevo_campaign_error' }, 502, corsHeaders)
       }
 
@@ -581,7 +614,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
           'SELECT campaign_id, sent_at, in_flight FROM brevo_newsletter_sends WHERE dedupe_key = ? LIMIT 1',
         ).bind(dedupeKey).first()
         if (isNewsletterSendFinished(row)) {
-          await releaseNewsletterSendClaim(db, dedupeKey)
+          await releaseIfHeld()
           return jsonResponse({
             ok: true,
             campaignId: Number(row.campaign_id),
@@ -598,7 +631,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
       'SELECT campaign_id, sent_at, in_flight FROM brevo_newsletter_sends WHERE dedupe_key = ? LIMIT 1',
     ).bind(dedupeKey).first()
     if (isNewsletterSendFinished(row)) {
-      await releaseNewsletterSendClaim(db, dedupeKey)
+      await releaseIfHeld()
       return jsonResponse({
         ok: true,
         campaignId: Number(row.campaign_id),
@@ -617,7 +650,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
       })
       const status = sendRes.status === 504 ? 504 : (sendRes.status >= 400 && sendRes.status < 600 ? sendRes.status : 502)
       const msg = typeof err.message === 'string' ? err.message : 'Campaign created but send failed'
-      await releaseNewsletterSendClaim(db, dedupeKey)
+      await releaseIfHeld()
       return jsonResponse({
         error: msg,
         code: sendRes.status === 504 ? 'brevo_timeout' : 'brevo_send_failed',
@@ -635,7 +668,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     newsletterLog('send_complete', { correlationId, campaignId: Number(campaignId) })
     return jsonResponse({ ok: true, campaignId: Number(campaignId) }, 200, corsHeaders)
   } catch (e) {
-    await releaseNewsletterSendClaim(db, dedupeKey)
+    await releaseIfHeld()
     throw e
   }
 }

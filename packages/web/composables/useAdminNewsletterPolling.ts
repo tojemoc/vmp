@@ -18,7 +18,8 @@ export function useAdminNewsletterPolling(options: {
   const pollAttempt = ref(0)
 
   let timer: ReturnType<typeof setTimeout> | null = null
-  let cancelled = false
+  /** Incremented on every stop/start so in-flight async from an older run is ignored. */
+  let pollGeneration = 0
 
   const baseMs = () => {
     const raw = pollIntervalMs.value
@@ -27,41 +28,42 @@ export function useAdminNewsletterPolling(options: {
     return n
   }
 
-  const schedule = (delay: number) => {
+  const schedule = (delay: number, generation: number) => {
+    if (generation !== pollGeneration) return
     if (timer != null) clearTimeout(timer)
     timer = setTimeout(() => {
-      void tick()
+      void tick(generation)
     }, delay)
   }
 
-  const tick = async () => {
-    if (cancelled || !isActive.value || !isAdmin.value) return
+  const tick = async (generation: number) => {
+    if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
     try {
       await loadCampaigns()
-      if (cancelled || !isActive.value || !isAdmin.value) return
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
       lastCampaignsError.value = null
       lastCampaignsOkAt.value = new Date().toISOString()
       pollAttempt.value = 0
-      if (cancelled || !isActive.value || !isAdmin.value) return
-      schedule(baseMs())
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
+      schedule(baseMs(), generation)
     } catch (e: unknown) {
-      if (cancelled || !isActive.value || !isAdmin.value) return
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
       const msg = e instanceof Error ? e.message : String(e)
       lastCampaignsError.value = msg
       pollAttempt.value += 1
       const backoff = Math.min(300_000, baseMs() * 2 ** Math.min(pollAttempt.value, 4))
-      if (cancelled || !isActive.value || !isAdmin.value) return
-      schedule(backoff)
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
+      schedule(backoff, generation)
     }
   }
 
   const start = () => {
-    cancelled = false
-    void tick()
+    const g = ++pollGeneration
+    void tick(g)
   }
 
   const stop = () => {
-    cancelled = true
+    pollGeneration += 1
     if (timer != null) {
       clearTimeout(timer)
       timer = null
