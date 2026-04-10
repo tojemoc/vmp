@@ -299,9 +299,12 @@ async function releaseStaleNewsletterSendClaim(db, dedupeKey) {
     WHERE dedupe_key = ?
       AND sent_at IS NULL
       AND in_flight = 1
-      AND campaign_id IS NULL
       AND (claim_acquired_at IS NULL OR claim_acquired_at = '')
       AND datetime('now') > datetime(created_at, ?)
+      AND (
+        campaign_id IS NULL
+        OR (campaign_id IS NOT NULL AND (claim_acquired_at IS NULL OR claim_acquired_at = ''))
+      )
   `).bind(dedupeKey, mod).run()
 }
 
@@ -817,7 +820,15 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     newsletterLog('send_complete', { correlationId, campaignId: Number(campaignId) })
     return jsonResponse({ ok: true, campaignId: Number(campaignId) }, 200, corsHeaders)
   } catch (e) {
-    await releaseIfHeld()
+    if (claimHeld) {
+      const r = await loadSendRow()
+      const persistedCid = r?.campaign_id != null ? Number(r.campaign_id) : null
+      const hasPersistedCampaign =
+        (campaignId != null && Number.isFinite(campaignId))
+        || (persistedCid != null && Number.isFinite(persistedCid) && persistedCid > 0)
+      if (hasPersistedCampaign) await releaseAfterSendNowFail()
+      else await releaseIfHeld()
+    }
     throw e
   }
 }
