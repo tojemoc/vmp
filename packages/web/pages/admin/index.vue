@@ -1841,10 +1841,9 @@ function onConfirmModalKeydown(e: KeyboardEvent) {
 }
 
 watch(() => route.query, (query) => {
-  const tab = query.tab
-  if (tab && ['videos', 'categories', 'homepage', 'pills', 'notifications', 'newsletter', 'users', 'analytics', 'system'].includes(String(tab))) {
-    activeAdminTab.value = tab as any
-  }
+  const requested = typeof query.tab === 'string' ? query.tab : ''
+  const allowed = new Set(adminTabs.value.map((t) => t.id))
+  activeAdminTab.value = requested && allowed.has(requested as any) ? (requested as any) : 'videos'
 }, { immediate: true })
 
 watch(() => confirmModal.value.open, async (open) => {

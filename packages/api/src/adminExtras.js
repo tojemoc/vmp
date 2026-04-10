@@ -1,6 +1,9 @@
 import { requireAuth, requireRole } from './auth.js'
 import { getSetting, setSetting, setSettings } from './settingsStore.js'
 
+const PILLS_KEY_HASH_PREFIX = 'pbkdf2-sha256'
+const PILLS_KEY_HASH_ITERATIONS = 120000
+
 function getDb(env) {
   const db = env.DB || env.video_subscription_db
   if (!db) throw new Error('D1 binding not found')
@@ -56,8 +59,8 @@ export async function handlePillsPublic(request, env, corsHeaders) {
 export async function handlePillsUpdate(request, env, corsHeaders) {
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDb(env)
-  const rateLimit = await checkPillsUpdateRateLimit(request, env)
-  if (rateLimit.limited) {
+  const preAuthRateLimit = await checkPillsUpdateRateLimit(request, env, { phase: 'ip' })
+  if (preAuthRateLimit.limited) {
     return new Response(JSON.stringify({
       error: 'Too many pills update requests',
       code: 'rate_limited',
@@ -65,17 +68,34 @@ export async function handlePillsUpdate(request, env, corsHeaders) {
       status: 429,
       headers: {
         'Content-Type': 'application/json',
-        'Retry-After': String(rateLimit.retryAfterSeconds),
+        'Retry-After': String(preAuthRateLimit.retryAfterSeconds),
         ...corsHeaders,
       },
     })
   }
-  const storedKey = await getSetting(env, 'pills_api_key')
-  const envKey = typeof env.PILLS_API_KEY === 'string' ? env.PILLS_API_KEY.trim() : ''
-  const expected = envKey || (typeof storedKey === 'string' ? storedKey.trim() : '')
+
+  const expectedHash = await getActivePillsApiKeyHash(env)
   const provided = request.headers.get('x-api-key') || ''
-  if (!expected || provided !== expected) {
+  const keyValid = expectedHash
+    ? await verifyPillsApiKeyValue(provided, expectedHash)
+    : false
+  if (!keyValid) {
     return jsonResponse({ error: 'Unauthorized', code: 'invalid_api_key' }, 401, corsHeaders)
+  }
+  const keyFingerprint = getPillsKeyFingerprint(expectedHash)
+  const postAuthRateLimit = await checkPillsUpdateRateLimit(request, env, { phase: 'key', keyFingerprint })
+  if (postAuthRateLimit.limited) {
+    return new Response(JSON.stringify({
+      error: 'Too many pills update requests',
+      code: 'rate_limited',
+    }, null, 2), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': String(postAuthRateLimit.retryAfterSeconds),
+        ...corsHeaders,
+      },
+    })
   }
   const body = await request.json().catch(() => null)
   if (!Array.isArray(body?.pills)) return jsonResponse({ error: 'pills[] is required' }, 400, corsHeaders)
@@ -111,7 +131,7 @@ export async function handlePillsUpdate(request, env, corsHeaders) {
   return jsonResponse({ ok: true, updated: statements.length }, 200, corsHeaders)
 }
 
-async function checkPillsUpdateRateLimit(request, env) {
+async function checkPillsUpdateRateLimit(request, env, options = {}) {
   const kv = env.RATE_LIMIT_KV || null
   if (!kv) return { limited: false, retryAfterSeconds: 0 }
 
@@ -125,8 +145,11 @@ async function checkPillsUpdateRateLimit(request, env) {
   }
   const minute = Math.floor(Date.now() / 60000)
   const sourceIp = extractClientIp(request)
-  const apiKey = request.headers.get('x-api-key') || 'missing'
-  const rateKey = `pillsupd:${sourceIp}:${apiKey.slice(0, 12)}:${minute}`
+  const phase = options.phase === 'key' ? 'key' : 'ip'
+  const keyFingerprint = typeof options.keyFingerprint === 'string' ? options.keyFingerprint : 'unknown'
+  const rateKey = phase === 'ip'
+    ? `pillsupd:${sourceIp}:${minute}`
+    : `pillsupd:${sourceIp}:${keyFingerprint}:${minute}`
   const current = Number.parseInt((await kv.get(rateKey)) ?? '0', 10) || 0
   const next = current + 1
   await kv.put(rateKey, String(next), { expirationTtl: 75 })
@@ -244,14 +267,14 @@ export async function handleAdminPillsSettings(request, env, corsHeaders) {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   const envKey = typeof env.PILLS_API_KEY === 'string' ? env.PILLS_API_KEY.trim() : ''
-  const stored = (await getSetting(env, 'pills_api_key')) ?? ''
-  const active = envKey || String(stored)
+  const activeHash = await getActivePillsApiKeyHash(env)
+  const active = envKey || activeHash
 
   if (request.method === 'GET') {
     return jsonResponse({
       hasKey: Boolean(active),
       managedByEnv: Boolean(envKey),
-      maskedKey: active ? `••••••••${active.slice(-4)}` : '',
+      maskedKey: active ? buildMaskedKey(active, Boolean(envKey)) : '',
     }, 200, corsHeaders)
   }
   if (request.method !== 'PATCH') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
@@ -261,8 +284,9 @@ export async function handleAdminPillsSettings(request, env, corsHeaders) {
   const body = await request.json().catch(() => null)
   const nextKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : ''
   if (!nextKey) return jsonResponse({ error: 'apiKey is required' }, 400, corsHeaders)
-  await setSetting(env, 'pills_api_key', nextKey)
-  return jsonResponse({ ok: true, hasKey: true, maskedKey: `••••••••${nextKey.slice(-4)}` }, 200, corsHeaders)
+  const nextHash = await hashPillsApiKey(nextKey)
+  await setSetting(env, 'pills_api_key', nextHash)
+  return jsonResponse({ ok: true, hasKey: true, maskedKey: buildMaskedKey(nextHash, false) }, 200, corsHeaders)
 }
 
 export async function handleCategoryVideosBySlug(request, env, corsHeaders) {
@@ -282,6 +306,7 @@ export async function handleCategoryVideosBySlug(request, env, corsHeaders) {
   `).bind(slug).first()
   if (!category) return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
 
+  const sortDirection = category.direction === 'asc' ? 'ASC' : 'DESC'
   const [rows, total] = await Promise.all([
     db.prepare(`
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration, v.upload_date, v.publish_status, v.slug,
@@ -290,7 +315,7 @@ export async function handleCategoryVideosBySlug(request, env, corsHeaders) {
       INNER JOIN video_category_assignments vca ON vca.video_id = v.id
       INNER JOIN video_categories vc ON vc.id = vca.category_id
       WHERE vc.slug = ? AND v.publish_status = 'published'
-      ORDER BY datetime(v.upload_date) DESC
+      ORDER BY datetime(v.upload_date) ${sortDirection}
       LIMIT ? OFFSET ?
     `).bind(slug, pageSize, offset).all(),
     db.prepare(`
@@ -316,10 +341,107 @@ export async function handleCategoryVideosBySlug(request, env, corsHeaders) {
 
 export async function ensurePillsApiKeySetting(env) {
   const envKey = typeof env.PILLS_API_KEY === 'string' ? env.PILLS_API_KEY.trim() : ''
-  if (!envKey) return
-  const stored = await getSetting(env, 'pills_api_key')
-  if ((stored ?? '').trim() === envKey) return
-  await setSetting(env, 'pills_api_key', envKey)
+  if (!envKey) {
+    await normalizeStoredPillsApiKeyHash(env)
+    return
+  }
+  const envHash = await hashPillsApiKey(envKey)
+  const stored = (await getSetting(env, 'pills_api_key')) ?? ''
+  if (String(stored).trim() === envHash) return
+  await setSetting(env, 'pills_api_key', envHash)
+}
+
+async function getActivePillsApiKeyHash(env) {
+  const envKey = typeof env.PILLS_API_KEY === 'string' ? env.PILLS_API_KEY.trim() : ''
+  if (envKey) return hashPillsApiKey(envKey)
+  const normalizedStored = await normalizeStoredPillsApiKeyHash(env)
+  return normalizedStored || ''
+}
+
+async function normalizeStoredPillsApiKeyHash(env) {
+  const stored = (await getSetting(env, 'pills_api_key')) ?? ''
+  const normalized = String(stored).trim()
+  if (!normalized) return ''
+  if (isHashedPillsApiKey(normalized)) return normalized
+  const rehashed = await hashPillsApiKey(normalized)
+  await setSetting(env, 'pills_api_key', rehashed)
+  return rehashed
+}
+
+function isHashedPillsApiKey(value) {
+  return typeof value === 'string' && value.startsWith(`${PILLS_KEY_HASH_PREFIX}$`)
+}
+
+async function hashPillsApiKey(rawKey) {
+  const normalized = typeof rawKey === 'string' ? rawKey.trim() : ''
+  if (!normalized) return ''
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16))
+  const derived = await derivePbkdf2Sha256(normalized, saltBytes, PILLS_KEY_HASH_ITERATIONS)
+  return `${PILLS_KEY_HASH_PREFIX}$${PILLS_KEY_HASH_ITERATIONS}$${bytesToHex(saltBytes)}$${bytesToHex(new Uint8Array(derived))}`
+}
+
+export async function hashPillsApiKeyValue(rawKey) {
+  return hashPillsApiKey(rawKey)
+}
+
+async function verifyPillsApiKeyValue(rawCandidate, storedHash) {
+  const candidate = typeof rawCandidate === 'string' ? rawCandidate.trim() : ''
+  if (!candidate || !storedHash) return false
+  if (!isHashedPillsApiKey(storedHash)) return false
+  const parts = storedHash.split('$')
+  if (parts.length !== 4) return false
+  const iterations = Number.parseInt(parts[1], 10)
+  if (!Number.isFinite(iterations) || iterations <= 0) return false
+  const salt = hexToBytes(parts[2])
+  const expected = hexToBytes(parts[3])
+  const derived = new Uint8Array(await derivePbkdf2Sha256(candidate, salt, iterations))
+  return timingSafeEqual(derived, expected)
+}
+
+async function derivePbkdf2Sha256(value, saltBytes, iterations) {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(value),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  )
+  return crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations },
+    keyMaterial,
+    256,
+  )
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function hexToBytes(hex) {
+  if (!hex || hex.length % 2 !== 0) return new Uint8Array(0)
+  const out = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  }
+  return out
+}
+
+function timingSafeEqual(a, b) {
+  if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array)) return false
+  if (a.length !== b.length) return false
+  let mismatch = 0
+  for (let i = 0; i < a.length; i += 1) mismatch |= (a[i] ^ b[i])
+  return mismatch === 0
+}
+
+function getPillsKeyFingerprint(keyHash) {
+  if (!keyHash || typeof keyHash !== 'string') return 'unknown'
+  return keyHash.slice(-12)
+}
+
+function buildMaskedKey(keyValue, isRaw) {
+  const suffix = isRaw ? keyValue.slice(-4) : keyValue.slice(-4)
+  return `••••••••${suffix}`
 }
 
 export async function handleAdminUsers(request, env, corsHeaders) {

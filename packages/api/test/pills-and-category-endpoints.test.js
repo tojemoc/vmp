@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { handlePillsPublic, handlePillsUpdate, handleCategoryVideosBySlug } from '../src/adminExtras.js'
+import { handlePillsPublic, handlePillsUpdate, handleCategoryVideosBySlug, hashPillsApiKeyValue } from '../src/adminExtras.js'
 
 class FakeKV {
   constructor() {
@@ -16,7 +16,8 @@ class FakeKV {
 
 class FakeDb {
   constructor() {
-    this.settings = new Map([['pills_api_key', 'secret-key'], ['pills_update_rate_limit_per_minute', '2']])
+    this.settings = new Map([['pills_update_rate_limit_per_minute', '2']])
+    this.hashedPillsKey = null
     this.pills = []
     this.categories = [{ id: 'cat-1', slug: 'fitness', name: 'Fitness', sort_order: 0, direction: 'desc' }]
     this.videos = [
@@ -68,6 +69,11 @@ class FakeDb {
       },
       async run() {
         if (sql.includes('INSERT INTO pills_updates_audit')) return { meta: { changes: 1 } }
+        if (sql.includes('INSERT INTO admin_settings') && sql.includes('pills_api_key')) {
+          const [, value] = this.args
+          db.settings.set('pills_api_key', value)
+          return { meta: { changes: 1 } }
+        }
         if (sql.includes('INSERT INTO pills (id, label, value, color, sort_order, updated_at)')) {
           const [id, label, value, color, sortOrder] = this.args
           const idx = db.pills.findIndex((p) => p.id === id)
@@ -87,12 +93,15 @@ class FakeDb {
 
 function envWithDb() {
   const DB = new FakeDb()
+  const hashForTests = `${hashPillsApiKeyValue('secret-key')}`
+  DB.settings.set('pills_api_key', hashForTests)
   return { DB, RATE_LIMIT_KV: new FakeKV() }
 }
 
 describe('pills update endpoint', () => {
   it('returns 401 when API key is missing', async () => {
     const env = envWithDb()
+    env.DB.settings.set('pills_api_key', await hashPillsApiKeyValue('secret-key'))
     const req = new Request('http://localhost/api/pills/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,6 +113,7 @@ describe('pills update endpoint', () => {
 
   it('returns 429 when rate-limited and succeeds otherwise', async () => {
     const env = envWithDb()
+    env.DB.settings.set('pills_api_key', await hashPillsApiKeyValue('secret-key'))
     const req = () => new Request('http://localhost/api/pills/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': 'secret-key', 'x-forwarded-for': '1.2.3.4' },
@@ -121,6 +131,7 @@ describe('pills update endpoint', () => {
 
   it('persists pills and exposes them on /api/pills', async () => {
     const env = envWithDb()
+    env.DB.settings.set('pills_api_key', await hashPillsApiKeyValue('secret-key'))
     const updateReq = new Request('http://localhost/api/pills/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': 'secret-key', 'x-forwarded-for': '5.6.7.8' },
