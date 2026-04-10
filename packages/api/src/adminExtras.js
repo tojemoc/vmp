@@ -24,27 +24,43 @@ export async function handleHomepageContent(request, env, corsHeaders) {
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
-  const db = getDb(env)
-  if (request.method === 'GET') {
-    const [title, subtitle] = await Promise.all([
-      getSetting(env, 'homepage_hero_title'),
-      getSetting(env, 'homepage_hero_subtitle'),
+  try {
+    const db = getDb(env)
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS admin_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+
+    if (request.method === 'GET') {
+      const [title, subtitle] = await Promise.all([
+        getSetting(env, 'homepage_hero_title'),
+        getSetting(env, 'homepage_hero_subtitle'),
+      ])
+      return jsonResponse({
+        title: title ?? 'Discover Premium Video Content',
+        subtitle: subtitle ?? 'Watch free previews or unlock full access with a premium subscription',
+      }, 200, corsHeaders)
+    }
+    if (request.method !== 'PATCH') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    const body = await request.json().catch(() => null)
+    const title = typeof body?.title === 'string' ? body.title.trim() : ''
+    const subtitle = typeof body?.subtitle === 'string' ? body.subtitle.trim() : ''
+    if (!title || !subtitle) return jsonResponse({ error: 'title and subtitle are required' }, 400, corsHeaders)
+    await setSettings(env, [
+      ['homepage_hero_title', title],
+      ['homepage_hero_subtitle', subtitle],
     ])
+    return jsonResponse({ ok: true, title, subtitle }, 200, corsHeaders)
+  } catch (error) {
     return jsonResponse({
-      title: title ?? 'Discover Premium Video Content',
-      subtitle: subtitle ?? 'Watch free previews or unlock full access with a premium subscription',
-    }, 200, corsHeaders)
+      error: 'Internal server error',
+      code: 'internal_error',
+      details: error?.message || 'Unknown error',
+    }, 500, corsHeaders)
   }
-  if (request.method !== 'PATCH') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
-  const body = await request.json().catch(() => null)
-  const title = typeof body?.title === 'string' ? body.title.trim() : ''
-  const subtitle = typeof body?.subtitle === 'string' ? body.subtitle.trim() : ''
-  if (!title || !subtitle) return jsonResponse({ error: 'title and subtitle are required' }, 400, corsHeaders)
-  await setSettings(env, [
-    ['homepage_hero_title', title],
-    ['homepage_hero_subtitle', subtitle],
-  ])
-  return jsonResponse({ ok: true, title, subtitle }, 200, corsHeaders)
 }
 
 export async function handlePillsPublic(request, env, corsHeaders) {
