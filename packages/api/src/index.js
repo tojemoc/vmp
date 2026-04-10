@@ -49,6 +49,7 @@ import {
 } from './adminExtras.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
+import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
@@ -1953,10 +1954,6 @@ async function resolveVideoByIdOrSlug(db, idOrSlug) {
 // Validate a vanity slug format: lowercase alphanumeric words separated by hyphens.
 function isValidSlug(slug) {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
-}
-
-async function ensureAdminSettingsTable(db) {
-  await db.prepare(`CREATE TABLE IF NOT EXISTS admin_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).run()
 }
 
 function safeJsonParse(v, fallback) {
