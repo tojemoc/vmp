@@ -361,22 +361,20 @@ async function brevoCampaignLooksSent(campaignId, env) {
 }
 
 /**
- * If send was requested and Brevo shows the campaign sent, persist sent_at (recovery path).
+ * If Brevo reports the campaign as sent, persist sent_at (recovery; do not clear campaign_id first).
  */
 async function persistSentAtIfBrevoDelivered(db, dedupeKey, row, env) {
-  if (!row?.sent_at && Number(row?.send_requested) === 1) {
-    const cid = row.campaign_id != null ? Number(row.campaign_id) : null
-    if (Number.isFinite(cid) && cid > 0 && (await brevoCampaignLooksSent(cid, env))) {
-      const sentAt = new Date().toISOString()
-      await db.prepare(`
-        UPDATE brevo_newsletter_sends
-        SET sent_at = ?, in_flight = 0, claim_acquired_at = NULL
-        WHERE dedupe_key = ? AND sent_at IS NULL
-      `).bind(sentAt, dedupeKey).run()
-      return true
-    }
-  }
-  return false
+  if (row?.sent_at) return false
+  const cid = row?.campaign_id != null ? Number(row.campaign_id) : null
+  if (!Number.isFinite(cid) || cid <= 0) return false
+  if (!(await brevoCampaignLooksSent(cid, env))) return false
+  const sentAt = new Date().toISOString()
+  await db.prepare(`
+    UPDATE brevo_newsletter_sends
+    SET sent_at = ?, in_flight = 0, claim_acquired_at = NULL, send_requested = 1
+    WHERE dedupe_key = ? AND sent_at IS NULL
+  `).bind(sentAt, dedupeKey).run()
+  return true
 }
 
 function jsonResponse(data, status = 200, corsHeaders = {}) {
@@ -583,41 +581,21 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     }, 200, corsHeaders)
   }
 
-  const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
-  const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
-  if (!Number.isFinite(listId) || listId <= 0) {
-    return jsonResponse({
-      error: 'Configure brevoSubscriberListId in newsletter settings first',
-      code: 'list_not_configured',
-    }, 422, corsHeaders)
-  }
-
-  const senderEmailRaw = await getAdminSetting(db, 'brevo_campaign_sender_email')
-  const senderEmail = senderEmailRaw ? String(senderEmailRaw).trim().toLowerCase() : ''
-  if (!senderEmail || !EMAIL_RE.test(senderEmail)) {
-    return jsonResponse({
-      error: 'Configure a verified brevoCampaignSenderEmail in newsletter settings',
-      code: 'sender_not_configured',
-    }, 422, corsHeaders)
-  }
-
-  const senderNameRaw = await getAdminSetting(db, 'brevo_campaign_sender_name')
-  const senderName = senderNameRaw ? String(senderNameRaw).trim() : ''
-
-  const campaignPayload = {
-    name: `VMP Newsletter ${new Date().toISOString()}`,
-    subject,
-    type: 'classic',
-    sender: senderName ? { email: senderEmail, name: senderName } : { email: senderEmail },
-    htmlContent: htmlBody,
-    recipients: { listIds: [listId] },
-  }
-
   await db.prepare('INSERT OR IGNORE INTO brevo_newsletter_sends (dedupe_key) VALUES (?)').bind(dedupeKey).run()
   row = await loadSendRow()
 
   if (isNewsletterSendFinished(row)) {
     newsletterLog('send_idempotent_race', { correlationId, campaignId: Number(row.campaign_id) })
+    return jsonResponse({
+      ok: true,
+      campaignId: Number(row.campaign_id),
+      idempotent: true,
+    }, 200, corsHeaders)
+  }
+
+  if (await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env)) {
+    row = await loadSendRow()
+    newsletterLog('send_idempotent_brevo_status', { correlationId, campaignId: Number(row.campaign_id) })
     return jsonResponse({
       ok: true,
       campaignId: Number(row.campaign_id),
@@ -639,7 +617,7 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
 
   if (await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env)) {
     row = await loadSendRow()
-    newsletterLog('send_idempotent_brevo_status', { correlationId, campaignId: Number(row.campaign_id) })
+    newsletterLog('send_idempotent_brevo_after_stale', { correlationId, campaignId: Number(row.campaign_id) })
     return jsonResponse({
       ok: true,
       campaignId: Number(row.campaign_id),
@@ -738,6 +716,36 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     }, 409, corsHeaders)
   }
 
+  const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
+  const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
+  if (!Number.isFinite(listId) || listId <= 0) {
+    return jsonResponse({
+      error: 'Configure brevoSubscriberListId in newsletter settings first',
+      code: 'list_not_configured',
+    }, 422, corsHeaders)
+  }
+
+  const senderEmailRaw = await getAdminSetting(db, 'brevo_campaign_sender_email')
+  const senderEmail = senderEmailRaw ? String(senderEmailRaw).trim().toLowerCase() : ''
+  if (!senderEmail || !EMAIL_RE.test(senderEmail)) {
+    return jsonResponse({
+      error: 'Configure a verified brevoCampaignSenderEmail in newsletter settings',
+      code: 'sender_not_configured',
+    }, 422, corsHeaders)
+  }
+
+  const senderNameRaw = await getAdminSetting(db, 'brevo_campaign_sender_name')
+  const senderName = senderNameRaw ? String(senderNameRaw).trim() : ''
+
+  const campaignPayload = {
+    name: `VMP Newsletter ${new Date().toISOString()}`,
+    subject,
+    type: 'classic',
+    sender: senderName ? { email: senderEmail, name: senderName } : { email: senderEmail },
+    htmlContent: htmlBody,
+    recipients: { listIds: [listId] },
+  }
+
   await db.prepare(`
     UPDATE brevo_newsletter_sends SET send_requested = 1 WHERE dedupe_key = ? AND sent_at IS NULL
   `).bind(dedupeKey).run()
@@ -780,6 +788,8 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
         await releaseIfHeld()
         return jsonResponse({ error: 'Unexpected response creating campaign', code: 'brevo_campaign_error' }, 502, corsHeaders)
       }
+
+      campaignId = Number(newId)
 
       const persisted = await persistCampaignIdForDedupeKey(db, dedupeKey, newId, correlationId)
       if (!persisted.ok) {
