@@ -266,14 +266,6 @@ async function tryAcquireNewsletterSendClaim(db, dedupeKey) {
   return n > 0
 }
 
-async function releaseNewsletterSendClaim(db, dedupeKey) {
-  await db.prepare(`
-    UPDATE brevo_newsletter_sends
-    SET in_flight = 0, claim_acquired_at = NULL
-    WHERE dedupe_key = ? AND sent_at IS NULL
-  `).bind(dedupeKey).run()
-}
-
 /**
  * Recover abandoned locks using claim_acquired_at (not created_at, which does not move on reclaim).
  * Clears partial state so a new attempt can run send_requested → create → sendNow.
@@ -822,15 +814,13 @@ export async function handleAdminNewsletterSend(request, env, corsHeaders) {
     newsletterLog('send_complete', { correlationId, campaignId: Number(campaignId) })
     return jsonResponse({ ok: true, campaignId: Number(campaignId) }, 200, corsHeaders)
   } catch (e) {
-    if (claimHeld) {
-      const r = await loadSendRow()
-      const persistedCid = r?.campaign_id != null ? Number(r.campaign_id) : null
-      const hasPersistedCampaign =
-        (campaignId != null && Number.isFinite(campaignId))
-        || (persistedCid != null && Number.isFinite(persistedCid) && persistedCid > 0)
-      if (hasPersistedCampaign) await releaseAfterSendNowFail()
-      else await releaseIfHeld()
-    }
+    const r = await loadSendRow()
+    const persistedCid = r?.campaign_id != null ? Number(r.campaign_id) : null
+    const hasPersistedCampaign =
+      (campaignId != null && Number.isFinite(campaignId))
+      || (persistedCid != null && Number.isFinite(persistedCid) && persistedCid > 0)
+    if (hasPersistedCampaign) await releaseAfterSendNowFail()
+    else await releaseIfHeld()
     throw e
   }
 }
