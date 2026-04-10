@@ -45,6 +45,7 @@ import {
   logSegmentEvent,
 } from './adminExtras.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
+import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
@@ -151,6 +152,9 @@ export default {
     // ── Existing routes ───────────────────────────────────────────────────────
     if (url.pathname === '/api/videos') {
       return handleVideosList(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/homepage/placement' && request.method === 'GET') {
+      return handleHomepagePlacement(request, env, corsHeaders)
     }
     if (url.pathname === '/api/feed/public') {
       return handlePublicFeed(request, env, corsHeaders)
@@ -295,6 +299,37 @@ function parseAllowedOrigins(envValue) {
 }
 
 // ─── Existing handler implementations (unchanged) ─────────────────────────────
+
+async function handleHomepagePlacement(request, env, corsHeaders) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  try {
+    const db = getDatabaseBinding(env)
+    await ensureAdminSettingsTable(db)
+    const [videoRows, catRows, homepageRow] = await Promise.all([
+      db.prepare(`
+        SELECT v.id, v.published_at, v.upload_date, vca.category_id
+        FROM videos v
+        LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+        WHERE v.publish_status = 'published'
+      `).all(),
+      db.prepare(`
+        SELECT id, slug, name, sort_order, direction
+        FROM video_categories
+      `).all(),
+      db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
+    ])
+    const homepage = normalizeHomepagePlacementConfig(safeJsonParse(homepageRow?.value, defaultHomepageConfig()))
+    const placement = placeHomepageVideos({
+      videos: videoRows.results || [],
+      categories: catRows.results || [],
+      homepage,
+    })
+    return jsonResponse(placement, 200, corsHeaders)
+  } catch (error) {
+    console.error('handleHomepagePlacement:', error)
+    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+  }
+}
 
 async function handleVideosList(request, env, corsHeaders) {
   try {
@@ -1031,7 +1066,7 @@ async function handleAdminVideoUpdate(request, env, ctx, corsHeaders) {
       validatedCategoryId = body.categoryId.trim()
       const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(validatedCategoryId).first()
       if (!category) {
-        return jsonResponse({ error: 'Category not found' }, 404, corsHeaders)
+        return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
       }
     } else {
       return jsonResponse({ error: 'categoryId must be a string or null' }, 400, corsHeaders)
@@ -1919,19 +1954,15 @@ function safeJsonParse(v, fallback) {
 
 function defaultHomepageConfig() {
   return {
-    featuredVideoIds: [],
+    ...normalizeHomepagePlacementConfig(null),
     layoutBlocks: [],
-    featuredMode: 'latest',
-    featuredVideoId: null,
   }
 }
 
 function normalizeHomepageConfig(config) {
   return {
-    featuredVideoIds: Array.isArray(config.featuredVideoIds)
-      ? config.featuredVideoIds.filter(id => typeof id === 'string').slice(0, 4)
-      : [],
-    layoutBlocks: Array.isArray(config.layoutBlocks)
+    ...normalizeHomepagePlacementConfig(config),
+    layoutBlocks: Array.isArray(config?.layoutBlocks)
       ? config.layoutBlocks.filter(b => b && typeof b === 'object').map(b => ({
           id:    typeof b.id    === 'string' ? b.id    : crypto.randomUUID(),
           type:  normalizeLayoutBlockType(b.type),
@@ -1939,8 +1970,6 @@ function normalizeHomepageConfig(config) {
           body:  typeof b.body  === 'string' ? b.body  : '',
         }))
       : [],
-    featuredMode: config?.featuredMode === 'specific' ? 'specific' : 'latest',
-    featuredVideoId: typeof config?.featuredVideoId === 'string' ? config.featuredVideoId : null,
   }
 }
 

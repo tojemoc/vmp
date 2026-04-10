@@ -253,41 +253,38 @@ const sortedByUpload = computed(() =>
   [...videos.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
 )
 
+type PlacementResponse = {
+  featured: Array<{ id: string }>
+  recentGrid: Array<{ id: string } | null>
+  categoryBlocks: Array<{
+    category: VideoCategory
+    visible: Array<{ id: string }>
+    overflow: Array<{ id: string }>
+  }>
+}
+
+const placement = ref<PlacementResponse | null>(null)
+
 const featuredVideos = computed(() => {
-  const latest = sortedByUpload.value[0]
-  if (featuredMode.value === 'specific' && featuredVideoId.value) {
-    const pinned = videoById.value.get(featuredVideoId.value)
-    return pinned ? [pinned] : (latest ? [latest] : [])
-  }
-  if (featuredVideoIds.value.length) {
-    const configured = featuredVideoIds.value
-      .map(id => videoById.value.get(id))
-      .filter(Boolean)
-      .slice(0, 1)
-    if (configured.length) return configured
-  }
-  return latest ? [latest] : []
+  const ids = placement.value?.featured?.map(v => v.id) ?? []
+  return ids.map(id => videoById.value.get(id)).filter(Boolean)
 })
 
 const recentTwoByTwoVideos = computed(() => {
-  const featuredId = featuredVideos.value[0]?.id
-  return sortedByUpload.value
-    .filter(v => v.id !== featuredId && !v.category_id)
-    .slice(0, 4)
+  const ids = (placement.value?.recentGrid ?? [])
+    .map(v => v?.id ?? null)
+    .filter((v): v is string => typeof v === 'string')
+  return ids.map(id => videoById.value.get(id)).filter(Boolean)
 })
 
 const categorySections = computed(() =>
-  categories.value.map((category) => {
-    const vids = videos.value
-      .filter(v => v.category_id === category.id)
-      .sort((a, b) => {
-        const cmp = new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime()
-        return category.direction === 'asc' ? -cmp : cmp
-      })
+  (placement.value?.categoryBlocks ?? []).map((block) => {
+    const visible = block.visible.map(v => videoById.value.get(v.id)).filter(Boolean)
+    const overflowCount = block.overflow.length
     return {
-      category,
-      visible: vids.slice(0, 3),
-      overflowCount: Math.max(0, vids.length - 3),
+      category: block.category,
+      visible,
+      overflowCount,
     }
   }).filter(section => section.visible.length > 0)
 )
@@ -313,12 +310,19 @@ const loadCategories = async () => {
   categories.value = Array.isArray(data?.categories) ? data.categories : []
 }
 
+const loadPlacement = async () => {
+  const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
+  if (!res.ok) return
+  placement.value = await res.json()
+}
+
 onMounted(async () => {
   try {
     const [videosRes] = await Promise.all([
       fetch(`${config.public.apiUrl}/api/videos`),
       loadAdminConfig(),
       loadCategories(),
+      loadPlacement(),
     ])
     if (!videosRes.ok) throw new Error('Failed to load videos')
     const data = await videosRes.json()
