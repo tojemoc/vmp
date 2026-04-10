@@ -1,4 +1,5 @@
 import { requireAuth, requireRole } from './auth.js'
+import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import { getSetting, setSetting, setSettings } from './settingsStore.js'
 
 const PILLS_KEY_HASH_PREFIX = 'sha256'
@@ -26,13 +27,7 @@ export async function handleHomepageContent(request, env, corsHeaders) {
   }
   try {
     const db = getDb(env)
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS admin_settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `).run()
+    await ensureAdminSettingsTable(db)
 
     if (request.method === 'GET') {
       const [title, subtitle] = await Promise.all([
@@ -55,11 +50,8 @@ export async function handleHomepageContent(request, env, corsHeaders) {
     ])
     return jsonResponse({ ok: true, title, subtitle }, 200, corsHeaders)
   } catch (error) {
-    return jsonResponse({
-      error: 'Internal server error',
-      code: 'internal_error',
-      details: error?.message || 'Unknown error',
-    }, 500, corsHeaders)
+    console.error('handleHomepageContent:', error)
+    return jsonResponse({ error: 'Internal server error', code: 'internal_error' }, 500, corsHeaders)
   }
 }
 
