@@ -80,6 +80,7 @@ has_remote_hls_complete() {
     # DASH manifest is optional in some newer pipelines; accept if present or absent.
 
     for res in 1080 720 480; do
+        echo "$basenames" | grep -qx "init_${res}.mp4" || return 1
         local cnt
         cnt=$(echo "$basenames" | grep -c "^seg_${res}_" || true)
         [ "${cnt:-0}" -gt 0 ] || return 1
@@ -333,7 +334,7 @@ for i in {1..5}; do
         --ignore-existing \
         --transfers 8 \
         --checkers 16; then
-        log "⚠️ Upload attempt $i failed (rclone error)"
+        log "⚠️ [$VIDEO_ID] Upload attempt $i failed (rclone error)"
         sleep 3
         continue
     fi
