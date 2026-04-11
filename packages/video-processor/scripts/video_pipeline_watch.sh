@@ -82,7 +82,7 @@ has_remote_hls_complete() {
     for res in 1080 720 480; do
         echo "$basenames" | grep -qx "init_${res}.mp4" || return 1
         local cnt
-        cnt=$(echo "$basenames" | grep -c "^seg_${res}_" || true)
+        cnt=$(echo "$basenames" | grep -c "^seg_${res}_.*\\.m4s$" || true)
         [ "${cnt:-0}" -gt 0 ] || return 1
     done
 
@@ -358,12 +358,12 @@ for i in {1..5}; do
         # Check for audio artifacts if audio was present
         if [ "$HAS_AUDIO" -gt 0 ]; then
             echo "$REMOTE_BASENAMES" | grep -qx "init_audio.mp4" || MISSING="$MISSING init_audio.mp4"
-            audio_seg_cnt=$(echo "$REMOTE_BASENAMES" | grep -c "^seg_audio_" || true)
+            audio_seg_cnt=$(echo "$REMOTE_BASENAMES" | grep -c "^seg_audio_.*\\.m4s$" || true)
             [ "${audio_seg_cnt:-0}" -gt 0 ] || MISSING="$MISSING seg_audio_*.m4s(none)"
         fi
 
         for res in 1080 720 480; do
-            cnt=$(echo "$REMOTE_BASENAMES" | grep -c "^seg_${res}_" || true)
+            cnt=$(echo "$REMOTE_BASENAMES" | grep -c "^seg_${res}_.*\\.m4s$" || true)
             [ "${cnt:-0}" -gt 0 ] || MISSING="$MISSING seg_${res}_*.m4s(none)"
         done
     fi
