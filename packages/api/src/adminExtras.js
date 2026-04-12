@@ -18,8 +18,8 @@ function getDb(env) {
   return db
 }
 
-async function writeAdminAuditLog(db, { actorUserId, actionType, targetUserId, detail }) {
-  await db.prepare(`
+function buildAdminAuditLogStatement(db, { actorUserId, actionType, targetUserId, detail }) {
+  return db.prepare(`
     INSERT INTO admin_audit_logs (id, actor_user_id, action_type, target_user_id, detail_json, created_at)
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
@@ -28,7 +28,7 @@ async function writeAdminAuditLog(db, { actorUserId, actionType, targetUserId, d
     actionType,
     targetUserId,
     JSON.stringify(detail ?? {}),
-  ).run()
+  )
 }
 
 function jsonResponse(data, status = 200, corsHeaders = {}) {
@@ -587,7 +587,25 @@ export async function handleAdminUsers(request, env, corsHeaders) {
   const actorUserId = actor.sub
   const actorRole = typeof actor.role === 'string' ? actor.role : 'viewer'
 
-  if (typeof body?.role === 'string') {
+  const wantsRole = typeof body?.role === 'string'
+  const wantsSubscription = typeof body?.subscriptionStatus === 'string'
+  if (wantsRole && wantsSubscription) {
+    return jsonResponse({
+      error: 'Send only one of role or subscriptionStatus per request',
+      code: 'single_field_patch',
+    }, 400, corsHeaders)
+  }
+
+  const latest = wantsSubscription
+    ? await db.prepare(`
+      SELECT id, status FROM subscriptions
+      WHERE user_id = ?
+      ORDER BY datetime(COALESCE(updated_at, created_at)) DESC, datetime(created_at) DESC
+      LIMIT 1
+    `).bind(userId).first()
+    : null
+
+  if (wantsRole) {
     const newRole = body.role
     const matrix = evaluateRoleChange({
       actorRole,
@@ -609,23 +627,28 @@ export async function handleAdminUsers(request, env, corsHeaders) {
     if (!isValidRoleName(newRole)) {
       return jsonResponse({ error: 'Invalid role', code: 'invalid_role' }, 400, corsHeaders)
     }
-    if (newRole !== target.role) {
-      await db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(newRole, userId).run()
-      await writeAdminAuditLog(db, {
+    if (newRole === target.role) {
+      return jsonResponse({ ok: true }, 200, corsHeaders)
+    }
+    const statements = [
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(newRole, userId),
+      buildAdminAuditLogStatement(db, {
         actorUserId,
         actionType: 'user_role_change',
         targetUserId: userId,
         detail: { from: target.role, to: newRole },
-      })
+      }),
+    ]
+    try {
+      await db.batch(statements)
+    } catch (e) {
+      console.error('handleAdminUsers batch (role):', e)
+      return jsonResponse({ error: 'Update failed', code: 'transaction_failed' }, 500, corsHeaders)
     }
+    return jsonResponse({ ok: true }, 200, corsHeaders)
   }
-  if (typeof body?.subscriptionStatus === 'string') {
-    const latest = await db.prepare(`
-      SELECT id, status FROM subscriptions
-      WHERE user_id = ?
-      ORDER BY datetime(COALESCE(updated_at, created_at)) DESC, datetime(created_at) DESC
-      LIMIT 1
-    `).bind(userId).first()
+
+  if (wantsSubscription) {
     const prevStatus = latest?.status ?? null
     const transition = evaluateSubscriptionStatusChange(prevStatus, body.subscriptionStatus)
     if (!transition.ok) {
@@ -635,31 +658,49 @@ export async function handleAdminUsers(request, env, corsHeaders) {
       if (!latest?.id) {
         return jsonResponse({ error: 'User has no subscription to cancel', code: 'no_subscription' }, 400, corsHeaders)
       }
-      await db.prepare(`
-        UPDATE subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).bind(latest.id).run()
-      await writeAdminAuditLog(db, {
-        actorUserId,
-        actionType: 'subscription_status_change',
-        targetUserId: userId,
-        detail: { from: prevStatus ?? 'none', to: 'cancelled' },
-      })
-    } else {
-      if (!latest?.id) {
-        return jsonResponse({ error: 'User has no subscription row to update', code: 'no_subscription' }, 400, corsHeaders)
+      const statements = [
+        db.prepare(`
+          UPDATE subscriptions SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).bind(latest.id),
+        buildAdminAuditLogStatement(db, {
+          actorUserId,
+          actionType: 'subscription_status_change',
+          targetUserId: userId,
+          detail: { from: prevStatus ?? 'none', to: 'cancelled' },
+        }),
+      ]
+      try {
+        await db.batch(statements)
+      } catch (e) {
+        console.error('handleAdminUsers batch (subscription cancel):', e)
+        return jsonResponse({ error: 'Update failed', code: 'transaction_failed' }, 500, corsHeaders)
       }
-      await db.prepare(`
+      return jsonResponse({ ok: true }, 200, corsHeaders)
+    }
+    if (!latest?.id) {
+      return jsonResponse({ error: 'User has no subscription row to update', code: 'no_subscription' }, 400, corsHeaders)
+    }
+    const statements = [
+      db.prepare(`
         UPDATE subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).bind(transition.next, latest.id).run()
-      await writeAdminAuditLog(db, {
+      `).bind(transition.next, latest.id),
+      buildAdminAuditLogStatement(db, {
         actorUserId,
         actionType: 'subscription_status_change',
         targetUserId: userId,
         detail: { from: prevStatus ?? 'none', to: transition.next },
-      })
+      }),
+    ]
+    try {
+      await db.batch(statements)
+    } catch (e) {
+      console.error('handleAdminUsers batch (subscription):', e)
+      return jsonResponse({ error: 'Update failed', code: 'transaction_failed' }, 500, corsHeaders)
     }
+    return jsonResponse({ ok: true }, 200, corsHeaders)
   }
-  return jsonResponse({ ok: true }, 200, corsHeaders)
+
+  return jsonResponse({ error: 'role or subscriptionStatus is required' }, 400, corsHeaders)
 }
 
 export async function handleAdminAnalytics(request, env, corsHeaders) {

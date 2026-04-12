@@ -765,7 +765,7 @@
                 <label class="sr-only" :for="`role-${u.id}`">Role for {{ u.email }}</label>
                 <select
                   :id="`role-${u.id}`"
-                  :value="u.role"
+                  :value="adminUserRoleSelectValue(u)"
                   :disabled="user?.role !== 'super_admin' && u.role === 'super_admin'"
                   :title="user?.role !== 'super_admin' && u.role === 'super_admin' ? 'Only a super admin may change this account' : ''"
                   class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white disabled:opacity-50"
@@ -783,7 +783,7 @@
                 <label class="sr-only" :for="`sub-${u.id}`">Subscription for {{ u.email }}</label>
                 <select
                   :id="`sub-${u.id}`"
-                  :value="u.subscription_status || 'none'"
+                  :value="adminUserSubscriptionSelectValue(u)"
                   :disabled="user?.role !== 'super_admin' && u.role === 'super_admin'"
                   class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white disabled:opacity-50"
                   @change="(e) => onUserSubscriptionSelect(u, (e.target as HTMLSelectElement).value)"
@@ -856,7 +856,7 @@
       <div v-for="toast in toasts" :key="toast.id" role="status" aria-live="polite" aria-atomic="true" class="rounded-lg border px-3 py-2 text-sm shadow" :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'">{{ toast.message }}</div>
     </div>
 
-    <div v-if="confirmModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeConfirmModal">
+    <div v-if="confirmModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="onConfirmCancel">
       <div
         ref="confirmDialogRef"
         role="dialog"
@@ -869,7 +869,7 @@
         <h3 id="confirmModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ confirmModalTitle }}</h3>
         <p id="confirmModalDesc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ confirmModal.impactText }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" aria-label="Cancel" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeConfirmModal">Cancel</button>
+          <button type="button" aria-label="Cancel" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="onConfirmCancel">Cancel</button>
           <button
             type="button"
             aria-label="Confirm"
@@ -1028,6 +1028,9 @@ interface AdminUserRow {
   created_at?: string
   plan_type?: string | null
   current_period_end?: string | null
+  /** Optimistic / pending select value; cleared after successful reload */
+  uiRole?: string
+  uiSubscription?: string
 }
 
 type BlockType = 'hero' | 'featured_row' | 'cta' | 'text_split' | 'video_grid'
@@ -1585,7 +1588,11 @@ const loadUsers = async () => {
     if (!res.ok) return
     const data = await res.json()
     if (reqId !== usersLoadRequestId) return
-    users.value = (data.users || []) as AdminUserRow[]
+    users.value = ((data.users || []) as AdminUserRow[]).map((row) => ({
+      ...row,
+      uiRole: undefined,
+      uiSubscription: undefined,
+    }))
     usersTotal.value = Number(data.total) || 0
     usersTotalPages.value = Math.max(1, Number(data.totalPages) || 1)
   }
@@ -1604,6 +1611,20 @@ watch(usersSearchInput, () => {
   }, 350)
 })
 
+function adminUserRoleSelectValue(u: AdminUserRow): string {
+  return u.uiRole ?? u.role
+}
+
+function adminUserSubscriptionSelectValue(u: AdminUserRow): string {
+  return u.uiSubscription ?? (u.subscription_status || 'none')
+}
+
+function patchUserRowById(userId: string, patch: Partial<AdminUserRow>) {
+  const i = users.value.findIndex((x) => x.id === userId)
+  if (i === -1) return
+  users.value[i] = { ...users.value[i], ...patch }
+}
+
 const updateUser = async (userId: string, patch: Record<string, string>) => {
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/users`, {
@@ -1617,33 +1638,42 @@ const updateUser = async (userId: string, patch: Record<string, string>) => {
     }
     await loadUsers()
     showToast('success', 'User updated.')
+    return true
   } catch (error: any) {
     console.error('Failed to update user', error)
     showToast('error', `Failed to update user: ${error.message || 'unknown error'}`)
+    return false
   }
 }
 
 function onUserRoleSelect(u: AdminUserRow, newRole: string) {
-  if (newRole === u.role) return
-  if (isSensitiveRoleChange(u.role, newRole)) {
+  const serverRole = u.role
+  if (newRole === serverRole) return
+  if (isSensitiveRoleChange(serverRole, newRole)) {
+    patchUserRowById(u.id, { uiRole: newRole })
     openConfirmModal({
       mode: 'user_role',
       userId: u.id,
       email: u.email,
-      prevRole: u.role,
+      prevRole: serverRole,
       nextRole: newRole,
       prevSubscription: u.subscription_status || 'none',
       nextSubscription: u.subscription_status || 'none',
-      impactText: `Change role for ${u.email} from ${u.role} to ${newRole}? This affects API access immediately.`,
+      impactText: `Change role for ${u.email} from ${serverRole} to ${newRole}? This affects API access immediately.`,
     })
     return
   }
-  void updateUser(u.id, { role: newRole })
+  patchUserRowById(u.id, { uiRole: newRole })
+  void (async () => {
+    const ok = await updateUser(u.id, { role: newRole })
+    if (!ok) patchUserRowById(u.id, { uiRole: undefined })
+  })()
 }
 
 function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
   const prev = u.subscription_status || 'none'
   if (next === prev) return
+  patchUserRowById(u.id, { uiSubscription: next })
   openConfirmModal({
     mode: 'user_subscription',
     userId: u.id,
@@ -2151,11 +2181,19 @@ const confirmModalConfirmClass = computed(() => {
 })
 
 function closeConfirmModal() {
-  const was = confirmModal.value
-  const refreshUsers =
-    was.open && (was.mode === 'user_role' || was.mode === 'user_subscription')
   confirmModal.value = { open: false }
-  if (refreshUsers && activeAdminTab.value === 'users') void loadUsers()
+}
+
+/** Cancel user confirm: revert optimistic select; resync list from server. */
+function onConfirmCancel() {
+  const was = confirmModal.value
+  if (was.open && (was.mode === 'user_role' || was.mode === 'user_subscription')) {
+    patchUserRowById(was.userId, { uiRole: undefined, uiSubscription: undefined })
+  }
+  closeConfirmModal()
+  if (was.open && (was.mode === 'user_role' || was.mode === 'user_subscription') && activeAdminTab.value === 'users') {
+    void loadUsers()
+  }
 }
 
 function openConfirmModal(video: Video, action: 'trash' | 'archive'): void
@@ -2213,17 +2251,22 @@ function openConfirmModal(
 async function runConfirmedAction() {
   const current = confirmModal.value
   if (!current.open) return
-  closeConfirmModal()
   if (current.mode === 'video') {
+    closeConfirmModal()
     if (current.action === 'trash') await trashVideo(current.video)
     else await updateVideoStatus(current.video, 'archived')
     return
   }
-  if (current.mode === 'user_role') {
-    await updateUser(current.userId, { role: current.nextRole })
-    return
+  const snap = { ...current }
+  closeConfirmModal()
+  const patch = snap.mode === 'user_role'
+    ? { role: snap.nextRole }
+    : { subscriptionStatus: snap.nextSubscription }
+  const ok = await updateUser(snap.userId, patch)
+  if (!ok) {
+    patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })
+    if (activeAdminTab.value === 'users') void loadUsers()
   }
-  await updateUser(current.userId, { subscriptionStatus: current.nextSubscription })
 }
 
 async function startSlugEdit(video: Video) {
@@ -2303,7 +2346,9 @@ function onConfirmModalKeydown(e: KeyboardEvent) {
   if (!confirmModal.value.open) return
   if (e.key === 'Escape') {
     e.preventDefault()
-    closeConfirmModal()
+    const m = confirmModal.value
+    if (m.open && (m.mode === 'user_role' || m.mode === 'user_subscription')) onConfirmCancel()
+    else closeConfirmModal()
     return
   }
   if (e.key !== 'Tab' || !confirmDialogRef.value) return
