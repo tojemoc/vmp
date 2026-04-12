@@ -8,7 +8,9 @@ export const ASSIGNABLE_ROLES = [
   'super_admin',
 ]
 
-const ROLE_RANK = {
+type AssignableRole = typeof ASSIGNABLE_ROLES[number]
+
+const ROLE_RANK: Record<AssignableRole, number> = {
   viewer: 0,
   moderator: 1,
   analyst: 2,
@@ -17,15 +19,15 @@ const ROLE_RANK = {
   super_admin: 5,
 }
 
-export function isValidRoleName(role: any) {
-  return typeof role === 'string' && ASSIGNABLE_ROLES.includes(role)
+export function isValidRoleName(role: unknown): role is AssignableRole {
+  return typeof role === 'string' && ASSIGNABLE_ROLES.includes(role as AssignableRole)
 }
 
 /**
  * Whether `actorRole` may set a user to `newRole` at all (ignores target's current role).
  * super_admin is assignable only by super_admin.
  */
-export function canActorAssignRole(actorRole: any, newRole: any) {
+export function canActorAssignRole(actorRole: unknown, newRole: unknown) {
   if (!isValidRoleName(newRole)) return false
   if (newRole === 'super_admin') return actorRole === 'super_admin'
   return actorRole === 'admin' || actorRole === 'super_admin'
@@ -71,9 +73,8 @@ export function evaluateSelfRoleChange({
   newRole
 }: any) {
   if (actorUserId !== targetUserId) return { ok: true }
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+  if (!isValidRoleName(actorRole) || !isValidRoleName(newRole)) return { ok: true }
   const before = ROLE_RANK[actorRole]
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   const after = ROLE_RANK[newRole]
   if (typeof before !== 'number' || typeof after !== 'number') return { ok: true }
   if (after < before) {

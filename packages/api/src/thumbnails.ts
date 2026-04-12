@@ -33,6 +33,14 @@ const SIZES = [
   { key: 'small',  width:  320, height: 180, quality: 80 },
 ]
 
+interface ThumbUrls {
+  original?: string
+  large?: string
+  medium?: string
+  small?: string
+  [key: string]: string | undefined
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: any, status: any, corsHeaders: any) {
@@ -109,8 +117,7 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
   const url   = new URL(request.url)
   const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
   if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
-  const videoId = decodeURIComponent(match[1])
+  const videoId = decodeURIComponent(match[1]!)
 
   // ── Verify the video exists in D1 before doing any work ──────────────────
   // This check must happen before reading the request body so we fail fast
@@ -174,13 +181,12 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
 
   // Track which R2 keys we write so we can clean them up on any failure.
   const writtenKeys = []
-  const thumbUrls   = {}
+  const thumbUrls: ThumbUrls = {}
 
   try {
     // Store the original with its actual MIME type / extension.
     await env.BUCKET.put(origKey, sourceBuffer, { httpMetadata: { contentType: origContentType } })
     writtenKeys.push(origKey)
-    // @ts-expect-error TS(2339): Property 'original' does not exist on type '{}'.
     thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`
 
     // Resize to each size variant.
@@ -205,7 +211,6 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
         { httpMetadata: { contentType: blob.type || 'image/jpeg' } },
       )
       writtenKeys.push(variantKey)
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`
     }
 
@@ -213,7 +218,6 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
     // Guard against zero affected rows (race: video deleted between SELECT and UPDATE).
     const result = await db
       .prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ?')
-      // @ts-expect-error TS(2339): Property 'large' does not exist on type '{}'.
       .bind(thumbUrls.large, videoId)
       .run()
 
@@ -254,8 +258,7 @@ export async function handleThumbnailDelete(request: any, env: any, corsHeaders:
   const url   = new URL(request.url)
   const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
   if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
-  const videoId = decodeURIComponent(match[1])
+  const videoId = decodeURIComponent(match[1]!)
 
   const db = getDb(env)
 

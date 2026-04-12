@@ -44,7 +44,7 @@ describe('isNewsletterSendFinished', () => {
 })
 
 describe('fetchBrevoEmailCampaignsWithRetry', () => {
-  let originalFetch: any
+  let originalFetch: typeof globalThis.fetch
 
   beforeEach(() => {
     originalFetch = globalThis.fetch

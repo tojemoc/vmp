@@ -8,8 +8,9 @@ import {
   isValidRoleName,
 } from './adminUserPolicy.js'
 
-const PILLS_KEY_HASH_PREFIX = 'sha256'
-const PILLS_KEY_HASH_LEGACY_PREFIX = 'pbkdf2-sha256'
+const PILLS_KEY_HASH_PREFIX = 'pbkdf2'
+const PILLS_KEY_HASH_LEGACY_PREFIX = 'sha256'
+const PILLS_KEY_HASH_PREVIOUS_PBKDF2_PREFIX = 'pbkdf2-sha256'
 const PILLS_KEY_HASH_ITERATIONS = 120000
 
 function getDb(env: any) {
@@ -170,7 +171,12 @@ export async function handlePillsUpdate(request: any, env: any, corsHeaders: any
   return jsonResponse({ ok: true, updated: statements.length }, 200, corsHeaders)
 }
 
-async function checkPillsUpdateRateLimit(request: any, env: any, options = {}) {
+interface PillsRateLimitOptions {
+  phase?: 'ip' | 'key'
+  keyFingerprint?: string
+}
+
+async function checkPillsUpdateRateLimit(request: any, env: any, options: PillsRateLimitOptions = {}) {
   const kv = env.RATE_LIMIT_KV || null
   if (!kv) return { limited: false, retryAfterSeconds: 0 }
 
@@ -184,9 +190,7 @@ async function checkPillsUpdateRateLimit(request: any, env: any, options = {}) {
   }
   const minute = Math.floor(Date.now() / 60000)
   const sourceIp = extractClientIp(request)
-  // @ts-expect-error TS(2339): Property 'phase' does not exist on type '{}'.
   const phase = options.phase === 'key' ? 'key' : 'ip'
-  // @ts-expect-error TS(2339): Property 'keyFingerprint' does not exist on type '... Remove this comment to see the full error message
   const keyFingerprint = typeof options.keyFingerprint === 'string' ? options.keyFingerprint : 'unknown'
   const rateKey = phase === 'ip'
     ? `pillsupd:${sourceIp}:${minute}`
@@ -391,15 +395,21 @@ export async function ensurePillsApiKeySetting(env: any) {
     await normalizeStoredPillsApiKeyHash(env)
     return
   }
+  const stored = String((await getSetting(env, 'pills_api_key')) ?? '').trim()
+  if (stored && await verifyPillsApiKeyValue(envKey, stored)) return
   const envHash = await hashPillsApiKey(envKey)
-  const stored = (await getSetting(env, 'pills_api_key')) ?? ''
-  if (String(stored).trim() === envHash) return
   await setSetting(env, 'pills_api_key', envHash)
 }
 
 async function getActivePillsApiKeyHash(env: any) {
   const envKey = typeof env.PILLS_API_KEY === 'string' ? env.PILLS_API_KEY.trim() : ''
-  if (envKey) return hashPillsApiKey(envKey)
+  if (envKey) {
+    const stored = String((await getSetting(env, 'pills_api_key')) ?? '').trim()
+    if (stored && await verifyPillsApiKeyValue(envKey, stored)) return stored
+    const envHash = await hashPillsApiKey(envKey)
+    await setSetting(env, 'pills_api_key', envHash)
+    return envHash
+  }
   const normalizedStored = await normalizeStoredPillsApiKeyHash(env)
   return normalizedStored || ''
 }
@@ -419,14 +429,16 @@ function isHashedPillsApiKey(value: any) {
     && (
       value.startsWith(`${PILLS_KEY_HASH_PREFIX}$`)
       || value.startsWith(`${PILLS_KEY_HASH_LEGACY_PREFIX}$`)
+      || value.startsWith(`${PILLS_KEY_HASH_PREVIOUS_PBKDF2_PREFIX}$`)
     )
 }
 
 async function hashPillsApiKey(rawKey: any) {
   const normalized = typeof rawKey === 'string' ? rawKey.trim() : ''
   if (!normalized) return ''
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized))
-  return `${PILLS_KEY_HASH_PREFIX}$${bytesToHex(new Uint8Array(digest))}`
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const derived = new Uint8Array(await derivePbkdf2Sha256(normalized, salt, PILLS_KEY_HASH_ITERATIONS))
+  return `${PILLS_KEY_HASH_PREFIX}$${PILLS_KEY_HASH_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(derived)}`
 }
 
 export async function hashPillsApiKeyValue(rawKey: any) {
@@ -437,10 +449,23 @@ async function verifyPillsApiKeyValue(rawCandidate: any, storedHash: any) {
   const candidate = typeof rawCandidate === 'string' ? rawCandidate.trim() : ''
   if (!candidate || !storedHash) return false
   if (storedHash.startsWith(`${PILLS_KEY_HASH_PREFIX}$`)) {
-    const expected = await hashPillsApiKey(candidate)
-    return timingSafeEqual(new TextEncoder().encode(expected), new TextEncoder().encode(storedHash))
+    const parts = storedHash.split('$')
+    if (parts.length !== 4) return false
+    const iterations = Number.parseInt(parts[1], 10)
+    if (!Number.isFinite(iterations) || iterations <= 0) return false
+    const salt = base64ToBytes(parts[2])
+    const expected = base64ToBytes(parts[3])
+    const derived = new Uint8Array(await derivePbkdf2Sha256(candidate, salt, iterations))
+    return timingSafeEqual(derived, expected)
   }
-  if (!storedHash.startsWith(`${PILLS_KEY_HASH_LEGACY_PREFIX}$`)) return false
+  if (storedHash.startsWith(`${PILLS_KEY_HASH_LEGACY_PREFIX}$`)) {
+    const [, expectedHex] = storedHash.split('$')
+    if (!expectedHex) return false
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(candidate))
+    const expected = bytesToHex(new Uint8Array(digest))
+    return timingSafeEqual(new TextEncoder().encode(expected), new TextEncoder().encode(expectedHex))
+  }
+  if (!storedHash.startsWith(`${PILLS_KEY_HASH_PREVIOUS_PBKDF2_PREFIX}$`)) return false
   const parts = storedHash.split('$')
   if (parts.length !== 4) return false
   const iterations = Number.parseInt(parts[1], 10)
@@ -449,6 +474,19 @@ async function verifyPillsApiKeyValue(rawCandidate: any, storedHash: any) {
   const expected = hexToBytes(parts[3])
   const derived = new Uint8Array(await derivePbkdf2Sha256(candidate, salt, iterations))
   return timingSafeEqual(derived, expected)
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let str = ''
+  for (const b of bytes) str += String.fromCharCode(b)
+  return btoa(str)
+}
+
+function base64ToBytes(value: string) {
+  const decoded = atob(value)
+  const bytes = new Uint8Array(decoded.length)
+  for (let i = 0; i < decoded.length; i += 1) bytes[i] = decoded.charCodeAt(i)
+  return bytes
 }
 
 async function derivePbkdf2Sha256(value: any, saltBytes: any, iterations: any) {
@@ -466,8 +504,7 @@ async function derivePbkdf2Sha256(value: any, saltBytes: any, iterations: any) {
   )
 }
 
-function bytesToHex(bytes: any) {
-  // @ts-expect-error TS(2571): Object is of type 'unknown'.
+function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -484,8 +521,7 @@ function timingSafeEqual(a: any, b: any) {
   if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array)) return false
   if (a.length !== b.length) return false
   let mismatch = 0
-  // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-  for (let i = 0; i < a.length; i += 1) mismatch |= (a[i] ^ b[i])
+  for (let i = 0; i < a.length; i += 1) mismatch |= (a[i]! ^ b[i]!)
   return mismatch === 0
 }
 

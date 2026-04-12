@@ -39,7 +39,7 @@ sw.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const targetUrl = event.notification?.data?.url || '/';
     event.waitUntil((async () => {
-        let targetPath = targetUrl;
+        let targetPath;
         let targetFullUrl = targetUrl;
         try {
             const parsed = new URL(targetUrl, sw.location.origin);

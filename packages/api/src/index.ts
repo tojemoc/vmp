@@ -56,22 +56,42 @@ import {
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
+import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
+
+type CorsHeaders = Record<string, string>
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function getErrorField(error: unknown, key: string): unknown {
+  if (typeof error !== 'object' || error === null) return undefined
+  return (error as Record<string, unknown>)[key]
+}
+
+interface SegmentRateLimitBody {
+  identifier?: string
+  videoId?: string
+  avgSegDur?: number | null
+}
 
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
 // Used conditionally: only active when env.SEGMENT_RATE_LIMITER is present.
 
 export class SegmentRateLimiterDO {
-  env: any;
-  state: any;
-  constructor(state: any, env: any) {
+  env: Record<string, unknown>
+  state: DurableObjectState
+  constructor(state: DurableObjectState, env: Record<string, unknown>) {
     this.state = state
     this.env = env
   }
 
-  async fetch(request: any) {
-    const body = await request.json()
-    const { identifier, videoId, avgSegDur } = body
+  async fetch(request: Request): Promise<Response> {
+    const body = await request.json() as SegmentRateLimitBody
+    const identifier = body.identifier ?? 'unknown'
+    const videoId = body.videoId ?? 'unknown'
+    const avgSegDur = body.avgSegDur ?? null
 
     const segDur = avgSegDur ?? 6 // default 6-second segments
     const threshold = Math.ceil(60 / segDur) * 3
@@ -80,7 +100,7 @@ export class SegmentRateLimiterDO {
     const countKey = `${identifier}:${videoId}:${minute}`
 
     // Atomically increment the count
-    let count = (await this.state.storage.get(countKey)) || 0
+    let count = Number((await this.state.storage.get<number>(countKey)) ?? 0)
     count += 1
     await this.state.storage.put(countKey, count)
 
@@ -96,9 +116,9 @@ export class SegmentRateLimiterDO {
     })
   }
 
-  async alarm() {
+  async alarm(): Promise<void> {
     // Alarm handler - cleanup expired count keys
-    const countKey = await this.state.storage.get('pendingCleanupKey')
+    const countKey = await this.state.storage.get<string>('pendingCleanupKey')
     if (countKey) {
       await this.state.storage.delete(countKey)
       await this.state.storage.delete('pendingCleanupKey')
@@ -107,7 +127,7 @@ export class SegmentRateLimiterDO {
 }
 
 export default {
-  async fetch(request: any, env: any, ctx: any) {
+  async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
     await maybeSyncPillsApiKey(env)
 
@@ -354,8 +374,7 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
     return jsonResponse(placement, 200, corsHeaders)
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -410,8 +429,7 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
     return response
   } catch (error) {
     console.error('Error:', error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -551,8 +569,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
                WHERE id = ? AND status = 'processed'`
             ).bind(fullDuration, fullDuration, resolvedVideoId).run()
           } catch (e) {
-            // @ts-expect-error TS(2571): Object is of type 'unknown'.
-            console.warn(`Duration backfill failed for ${resolvedVideoId}:`, e?.message ?? e)
+            console.warn(`Duration backfill failed for ${resolvedVideoId}:`, getErrorMessage(e))
           }
         }
       }
@@ -587,8 +604,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
     return jsonResponse(response, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -691,7 +707,7 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   // vt to propagate to rewritten manifest/segment URLs
   const vtForRewrite = requestUrl.searchParams.get('vt') ?? null
 
-  const isSegment = objectPath.endsWith('.js') || objectPath.endsWith('.m4s')
+  const isSegment = objectPath.endsWith('.m4s')
 
   // ── Step 4c: Segment count rate limiting ─────────────────────────────────
   if (isSegment && env.RATE_LIMIT_KV) {
@@ -735,18 +751,15 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   const manifestType = getManifestType(objectPath, upstreamResponse)
   if (manifestType === 'hls') {
     const manifest = await upstreamResponse.text()
-    // @ts-expect-error TS(2345): Argument of type 'string | null' is not assignable... Remove this comment to see the full error message
     const rewrittenManifest = rewriteManifestForProxyWithPreview(manifest, effectivePreviewUntil, objectPath, vtForRewrite)
     const headers = new Headers(upstreamResponse.headers)
     headers.set('Content-Type', 'application/vnd.apple.mpegurl')
     headers.delete('Content-Length')
-    // @ts-expect-error TS(2345): Argument of type 'unknown' is not assignable to pa... Remove this comment to see the full error message
-    for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
+    for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
     return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
   }
   const headers = new Headers(upstreamResponse.headers)
-  // @ts-expect-error TS(2345): Argument of type 'unknown' is not assignable to pa... Remove this comment to see the full error message
-  for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v)
+  for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
   return new Response(upstreamResponse.body, { status: upstreamResponse.status, headers })
 }
 
@@ -886,8 +899,7 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         `).bind(crypto.randomUUID(), slug, name, sortOrder, direction).run()
         return jsonResponse({ ok: true }, 201, corsHeaders)
       } catch (err) {
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        if (err?.message?.includes('UNIQUE')) {
+        if (getErrorMessage(err).includes('UNIQUE')) {
           return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
         }
         throw err
@@ -933,8 +945,7 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         }
         return jsonResponse({ ok: true }, 200, corsHeaders)
       } catch (err) {
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        if (err?.message?.includes('UNIQUE')) {
+        if (getErrorMessage(err).includes('UNIQUE')) {
           return jsonResponse({ error: 'Category slug already exists' }, 409, corsHeaders)
         }
         throw err
@@ -983,11 +994,10 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
 
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   } catch (err) {
+    const codeField = getErrorField(err, 'code')
     return jsonResponse({
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      error: err?.message || 'Internal Server Error',
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      code: err?.code || 'internal_error',
+      error: getErrorMessage(err) || 'Internal Server Error',
+      code: typeof codeField === 'string' ? codeField : 'internal_error',
     }, 500, corsHeaders)
   }
 }
@@ -1044,8 +1054,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
     return jsonResponse({ videos: annotated }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -1139,8 +1148,7 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
             .bind(body.slug ?? null, videoId).run()
         }
       } catch (err) {
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        if (err?.message?.includes('UNIQUE')) {
+        if (getErrorMessage(err).includes('UNIQUE')) {
           return jsonResponse({ error: 'Slug already in use by another video' }, 409, corsHeaders)
         }
         throw err
@@ -1208,8 +1216,7 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     return jsonResponse({ ok: true, video }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -1276,8 +1283,7 @@ async function handleAdminVideoDelete(request: any, env: any, corsHeaders: any) 
     return jsonResponse({ ok: true, deletedR2Objects }, 200, corsHeaders)
   } catch (error) {
     console.error(`handleAdminVideoDelete [videoId:${videoId}]:`, error)
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    return jsonResponse({ error: 'Internal server error', details: error.message }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error', details: getErrorMessage(error) }, 500, corsHeaders)
   }
 }
 
@@ -1482,8 +1488,7 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
       }
     }
   } catch (err) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    console.warn('Homepage featured-slot update failed after swap (non-fatal):', err?.message)
+    console.warn('Homepage featured-slot update failed after swap (non-fatal):', getErrorMessage(err))
   }
 
   const [published, retired] = await Promise.all([
@@ -1540,21 +1545,20 @@ async function handleAdminPushTest(request: any, env: any, corsHeaders: any) {
       },
     }, 200, corsHeaders)
   } catch (error) {
+    const code = getErrorField(error, 'code')
+    const status = getErrorField(error, 'status')
+    const statusClass = getErrorField(error, 'statusClass')
+    const responseSnippet = getErrorField(error, 'responseSnippet')
     return jsonResponse({
       ok: false,
       endpointHost,
       subscriptionCreatedAt: subscription.created_at || null,
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      error: error.message || 'Push test failed',
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      code: error.code || 'push_failed',
+      error: getErrorMessage(error) || 'Push test failed',
+      code: typeof code === 'string' ? code : 'push_failed',
       delivery: {
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        status: error.status ?? null,
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        statusClass: error.statusClass ?? null,
-        // @ts-expect-error TS(2571): Object is of type 'unknown'.
-        responseSnippet: error.responseSnippet ?? null,
+        status: typeof status === 'number' ? status : null,
+        statusClass: typeof statusClass === 'string' ? statusClass : null,
+        responseSnippet: typeof responseSnippet === 'string' ? responseSnippet : null,
       },
     }, 502, corsHeaders)
   }
@@ -1834,8 +1838,9 @@ async function resolvePlaylistDurationFromUrl(url: any, depth = 0) {
     // Master playlist: follow first variant
     const idx = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'))
     if (idx >= 0 && lines[idx + 1]) {
-      // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
-      const nextUrl = new URL(lines[idx + 1], url).toString()
+      const variantPath = lines[idx + 1]
+      if (!variantPath) return { duration: null, kind: 'not_found' }
+      const nextUrl = new URL(variantPath, url).toString()
       return resolvePlaylistDurationFromUrl(nextUrl, depth + 1)
     }
   } catch (error) {
@@ -1856,7 +1861,7 @@ function getManifestType(objectPath: any, upstreamResponse: any) {
   return null
 }
 
-function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: any, objectPath = '', vt = null) {
+function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: any, objectPath = '', vt: string | null = null) {
   const lines = manifest.split('\n')
   const hasPreviewLimit = typeof previewUntilSeconds === 'number' && previewUntilSeconds > 0
   const isMediaPlaylist = lines.some((l: any) => l.trim().startsWith('#EXTINF:'))

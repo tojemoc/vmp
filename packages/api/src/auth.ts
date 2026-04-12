@@ -177,7 +177,10 @@ async function upsertUser(email: any, db: any) {
   return { id, email, role: 'viewer' }
 }
 
-async function createMagicLinkToken(email: any, db: any) {
+async function createMagicLinkToken(request: any, email: any, db: any, env: any) {
+  const throttled = await isMagicLinkRateLimited(request, env, email)
+  if (throttled) return null
+
   const user = await upsertUser(email, db)
 
   // Cancel any outstanding unused tokens — one active link per user at a time.
@@ -272,8 +275,29 @@ function clearRefreshCookie() {
 
 function getRefreshTokenFromCookie(request: any) {
   const cookie = request.headers.get('Cookie') || ''
-  const match  = cookie.match(/refresh_token=([^;]+)/)
+  const match  = cookie.match(/(?:^|;\s*)refresh_token=([^;]+)/)
   return match ? match[1].trim() : null
+}
+
+async function isMagicLinkRateLimited(request: any, env: any, email: any) {
+  const kv = env.RATE_LIMIT_KV
+  if (!kv) return false
+  try {
+    const normalizedEmail = String(email || '').toLowerCase().trim()
+    const ip = request.headers.get('CF-Connecting-IP')?.trim() || 'unknown'
+    const minuteBucket = Math.floor(Date.now() / 60000)
+    const fingerprint = await hashToken(`${normalizedEmail}:${ip}:${minuteBucket}`)
+    const key = `auth:magic-link:${fingerprint}`
+    const currentRaw = await kv.get(key)
+    const current = Number.parseInt(currentRaw ?? '0', 10)
+    const count = Number.isFinite(current) ? current : 0
+    if (count >= 5) return true
+    await kv.put(key, String(count + 1), { expirationTtl: 120 })
+    return false
+  } catch {
+    // Rate limiting is best effort; never break auth because KV is unavailable.
+    return false
+  }
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
@@ -301,7 +325,11 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   const db = getDb(env)
 
   try {
-    const { token } = await createMagicLinkToken(email, db)
+    const tokenResult = await createMagicLinkToken(request, email, db, env)
+    if (!tokenResult) {
+      return authJson({ ok: true, message: 'If that address is valid, a sign-in link is on its way.' }, 200, corsHeaders)
+    }
+    const { token } = tokenResult
     const frontendUrl = (env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')
     const verifyUrl = new URL(`${frontendUrl}/auth/verify`)
     verifyUrl.searchParams.set('token', token)

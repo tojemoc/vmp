@@ -41,6 +41,10 @@ function concatBuffers(...bufs: any[]) {
   return out
 }
 
+function isError(value: unknown): value is Error {
+  return value instanceof Error
+}
+
 // ─── VAPID JWT (ES256) ────────────────────────────────────────────────────────
 
 async function importVapidPrivateKey(b64urlPrivate: any, b64urlPublic: any) {
@@ -368,18 +372,16 @@ export async function sendPushNotification(subscription: any, payload: any, env:
       }))
     }
   } catch (err) {
+    const e = isError(err) ? err : new Error(String(err))
     console.error(JSON.stringify({
       event: 'webpush_delivery_failed',
       endpointHost,
       statusClass: 'network_error',
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      reason: err?.name === 'AbortError' ? 'timeout_or_abort' : 'fetch_error',
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      message: err?.message || 'unknown fetch error',
+      reason: e.name === 'AbortError' ? 'timeout_or_abort' : 'fetch_error',
+      message: e.message || 'unknown fetch error',
     }))
     throw Object.assign(
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      new Error(`Push fetch error: ${err.message}`),
+      new Error(`Push fetch error: ${e.message}`),
       { code: 'push_failed', statusClass: 'network_error', endpointHost },
     )
   }
@@ -453,8 +455,8 @@ export async function sendPushToAllSubscribers(videoTitle: any, videoId: any, en
         try {
           await sendPushNotification(sub, payload, env)
         } catch (err) {
-          // @ts-expect-error TS(2571): Object is of type 'unknown'.
-          if (err.code === 'subscription_gone') {
+          const e = err as { code?: string }
+          if (e.code === 'subscription_gone') {
             staleEndpoints.push(sub.endpoint)
             stale++
             return

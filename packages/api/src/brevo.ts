@@ -177,6 +177,10 @@ export async function syncPayingSubscriberToNewsletter(db: any, userId: any, env
 }
 
 async function syncAllEligibleSubscribers(db: any, env: any) {
+  const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
+  const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
+  if (!Number.isFinite(listId) || listId <= 0) return 0
+
   const rows = await db.prepare(`
     SELECT u.id
     FROM users u
@@ -196,6 +200,53 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
     await syncPayingSubscriberToNewsletter(db, userId, env)
     synced += 1
   }
+
+  const eligibleEmails = new Set<string>()
+  if (userIds.length) {
+    const placeholders = userIds.map(() => '?').join(',')
+    const eligibleRows = await db.prepare(
+      `SELECT email FROM users WHERE id IN (${placeholders})`,
+    ).bind(...userIds).all()
+    for (const row of eligibleRows?.results ?? []) {
+      const email = typeof row?.email === 'string' ? row.email.trim().toLowerCase() : ''
+      if (email) eligibleEmails.add(email)
+    }
+  }
+
+  const remoteEmails = new Set<string>()
+  let offset = 0
+  const pageLimit = 500
+  while (true) {
+    const pageRes = await brevoFetch(`/contacts/lists/${listId}/contacts?limit=${pageLimit}&offset=${offset}`, { method: 'GET' }, env)
+    if (!pageRes.ok) break
+    const page = await pageRes.json().catch(() => ({}))
+    const contacts = Array.isArray(page?.contacts) ? page.contacts : []
+    for (const contact of contacts) {
+      const email = typeof contact?.email === 'string' ? contact.email.trim().toLowerCase() : ''
+      if (email) remoteEmails.add(email)
+    }
+    if (contacts.length < pageLimit) break
+    offset += contacts.length
+  }
+
+  for (const email of remoteEmails) {
+    if (eligibleEmails.has(email)) continue
+    const row = await db.prepare('SELECT id FROM users WHERE lower(email) = ? LIMIT 1').bind(email).first()
+    if (row?.id) {
+      await removeSubscriberFromNewsletter(db, row.id, env)
+      continue
+    }
+    const res = await brevoFetch(
+      `/contacts/lists/${listId}/contacts/remove`,
+      { method: 'POST', body: JSON.stringify({ emails: [email] }) },
+      env,
+    )
+    if (!res.ok && res.status !== 404) {
+      const err = await res.json().catch(() => ({}))
+      newsletterLog('remove_stale_email_failed', { status: res.status, code: err?.code })
+    }
+  }
+
   return synced
 }
 

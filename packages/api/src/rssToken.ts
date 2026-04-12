@@ -4,12 +4,11 @@
  * Shared HMAC helper for stable per-user RSS feed tokens.
  */
 
-function hexFromBytes(bytes: any) {
-  // @ts-expect-error TS(2571): Object is of type 'unknown'.
+function hexFromBytes(bytes: ArrayLike<number>): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function importRssHmacKey(secret: any) {
+async function importRssHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -19,7 +18,7 @@ async function importRssHmacKey(secret: any) {
   )
 }
 
-export async function computeRssTokenHex(rssSecret: any, userId: any) {
+export async function computeRssTokenHex(rssSecret: string, userId: string): Promise<string> {
   const key = await importRssHmacKey(rssSecret)
   const msg = new TextEncoder().encode(`rss:${userId}`)
   const sig = await crypto.subtle.sign('HMAC', key, msg)

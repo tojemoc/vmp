@@ -112,9 +112,8 @@ describe('placeHomepageVideos matrix', () => {
       homepage: { ...homepage, featuredMode: 'specific', featuredVideoId: 'v1', featuredVideoIds: [] },
     })
     const block = out.categoryBlocks[0]
-    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
+    assert.ok(block, 'expected first category block to exist')
     assert.deepEqual(block.visible.map(v => v.id), ['v2', 'v3', 'v4'])
-    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     assert.deepEqual(block.overflow.map(v => v.id), [])
   })
 

@@ -43,6 +43,10 @@ function secondsToItunesDuration(seconds: any) {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
   return `${m}:${String(sec).padStart(2, '0')}`
 }
+
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err)
+}
  
 function buildRssXml({
   channel,
@@ -239,10 +243,10 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
     applySessionBookmark(response.headers, session)
     if (cache) await cache.put(feedCacheKey(request, { v: 1 }), response.clone())
     return response
-  } catch (err) {
+  } catch (err: unknown) {
+    const message = getErrorMessage(err)
     return new Response(
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      JSON.stringify({ error: err?.message || 'Internal error', code: 'internal_error' }),
+      JSON.stringify({ error: message || 'Internal error', code: 'internal_error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     )
   }
@@ -372,10 +376,10 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
     applySessionBookmark(response.headers, session)
     if (cache) await cache.put(feedCacheKey(request, { v: 1, uid: userId, premium: hasPremiumAccess ? 1 : 0 }), response.clone())
     return response
-  } catch (err) {
+  } catch (err: unknown) {
+    const message = getErrorMessage(err)
     return new Response(
-      // @ts-expect-error TS(2571): Object is of type 'unknown'.
-      JSON.stringify({ error: err?.message || 'Internal error', code: 'internal_error' }),
+      JSON.stringify({ error: message || 'Internal error', code: 'internal_error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     )
   }

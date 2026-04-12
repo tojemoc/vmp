@@ -186,8 +186,8 @@ async function upsertSubscription(db: any, userId: any, stripeSub: any, env: any
 }
 
 /** Map Stripe subscription statuses to our internal values. */
-function normalizeStripeStatus(stripeStatus: any) {
-  const map = {
+function normalizeStripeStatus(stripeStatus: string): 'active' | 'trialing' | 'past_due' | 'cancelled' {
+  const statusMap: Record<string, 'active' | 'trialing' | 'past_due' | 'cancelled'> = {
     active: 'active',
     trialing: 'trialing',
     past_due: 'past_due',
@@ -198,8 +198,7 @@ function normalizeStripeStatus(stripeStatus: any) {
     incomplete_expired: 'cancelled',
     paused: 'cancelled',
   }
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-  return map[stripeStatus] ?? 'cancelled'
+  return statusMap[stripeStatus] ?? 'cancelled'
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────

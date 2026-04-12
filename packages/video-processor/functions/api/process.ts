@@ -53,11 +53,9 @@ export async function onRequest(context: any) {
     // Derive duration by summing #EXTINF from the first variant media playlist
     // when metadata.json has no durationSeconds (e.g. shell-script uploads)
     if (durationSeconds === null && variants.length > 0) {
-      // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-      const firstUri = variants[0].uri;
+      const firstUri = variants[0]?.uri;
       if (firstUri) {
-        // @ts-expect-error TS(2531): Object is possibly 'null'.
-        const masterDir = hlsMasterKey.slice(0, hlsMasterKey.lastIndexOf('/') + 1);
+        const masterDir = hlsMasterKey!.slice(0, hlsMasterKey!.lastIndexOf('/') + 1);
         const variantKey = firstUri.startsWith('videos/') ? firstUri : `${masterDir}${firstUri}`;
         const variantObj = await env.VIDEO_BUCKET.get(variantKey);
         if (variantObj) {
@@ -90,7 +88,18 @@ export async function onRequest(context: any) {
 
     const resolvedDashManifestKey = dashManifestKey ?? null;
 
-    const metadata = {
+    const metadata: {
+      videoId: string
+      packaging: 'cmaf'
+      hlsMasterKey: string | null
+      dashManifestKey: string | null
+      variants: Variant[]
+      processedAt: string
+      visibility: 'private' | 'unlisted' | 'public'
+      status: 'processed'
+      durationSeconds?: number
+      audioGroups?: AudioGroup[]
+    } = {
       videoId,
       packaging: 'cmaf',
       hlsMasterKey,
@@ -101,9 +110,7 @@ export async function onRequest(context: any) {
       status: 'processed'
     };
 
-    // @ts-expect-error TS(2339): Property 'durationSeconds' does not exist on type ... Remove this comment to see the full error message
     if (durationSeconds !== null) metadata.durationSeconds = durationSeconds;
-    // @ts-expect-error TS(2339): Property 'audioGroups' does not exist on type '{ v... Remove this comment to see the full error message
     if (audioGroups.length > 0) metadata.audioGroups = audioGroups;
 
     await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
@@ -151,34 +158,48 @@ async function syncVideoDurationToDb({
   };
 }
 
-function parseHlsMasterPlaylist(content: any) {
+interface AudioGroup {
+  type: string | null
+  groupId: string | null
+  name: string | null
+  language: string | null
+  default: boolean
+  autoselect: boolean
+  channels: string | null
+  uri: string | null
+}
+
+interface Variant {
+  uri: string | null
+  bandwidth: number | null
+  averageBandwidth: number | null
+  codecs: string | null
+  resolution: string | null
+  frameRate: number | null
+  audioGroupId: string | null
+  subtitlesGroupId: string | null
+  closedCaptions: string | null
+}
+
+function parseHlsMasterPlaylist(content: string): { variants: Variant[]; audioGroups: AudioGroup[] } {
   const lines = content.split(/\r?\n/).map((line: any) => line.trim()).filter(Boolean);
-  const variants = [];
-  const audioGroups = [];
+  const variants: Variant[] = [];
+  const audioGroups: AudioGroup[] = [];
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
 
     if (line.startsWith('#EXT-X-MEDIA:')) {
       const attributes = parseAttributeList(line.slice('#EXT-X-MEDIA:'.length));
-      // @ts-expect-error TS(2339): Property 'TYPE' does not exist on type '{}'.
       if (attributes.TYPE === 'AUDIO') {
         audioGroups.push({
-          // @ts-expect-error TS(2339): Property 'TYPE' does not exist on type '{}'.
           type: attributes.TYPE,
-          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           groupId: attributes['GROUP-ID'] ?? null,
-          // @ts-expect-error TS(2339): Property 'NAME' does not exist on type '{}'.
           name: attributes.NAME ?? null,
-          // @ts-expect-error TS(2339): Property 'LANGUAGE' does not exist on type '{}'.
           language: attributes.LANGUAGE ?? null,
-          // @ts-expect-error TS(2339): Property 'DEFAULT' does not exist on type '{}'.
           default: attributes.DEFAULT === 'YES',
-          // @ts-expect-error TS(2339): Property 'AUTOSELECT' does not exist on type '{}'.
           autoselect: attributes.AUTOSELECT === 'YES',
-          // @ts-expect-error TS(2339): Property 'CHANNELS' does not exist on type '{}'.
           channels: attributes.CHANNELS ?? null,
-          // @ts-expect-error TS(2339): Property 'URI' does not exist on type '{}'.
           uri: attributes.URI ?? null
         });
       }
@@ -192,21 +213,13 @@ function parseHlsMasterPlaylist(content: any) {
 
       variants.push({
         uri,
-        // @ts-expect-error TS(2339): Property 'BANDWIDTH' does not exist on type '{}'.
         bandwidth: toNumberOrNull(attributes.BANDWIDTH),
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         averageBandwidth: toNumberOrNull(attributes['AVERAGE-BANDWIDTH']),
-        // @ts-expect-error TS(2339): Property 'CODECS' does not exist on type '{}'.
         codecs: attributes.CODECS ?? null,
-        // @ts-expect-error TS(2339): Property 'RESOLUTION' does not exist on type '{}'.
         resolution: attributes.RESOLUTION ?? null,
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         frameRate: toNumberOrNull(attributes['FRAME-RATE']),
-        // @ts-expect-error TS(2339): Property 'AUDIO' does not exist on type '{}'.
         audioGroupId: attributes.AUDIO ?? null,
-        // @ts-expect-error TS(2339): Property 'SUBTITLES' does not exist on type '{}'.
         subtitlesGroupId: attributes.SUBTITLES ?? null,
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         closedCaptions: attributes['CLOSED-CAPTIONS'] ?? null
       });
     }
@@ -215,11 +228,15 @@ function parseHlsMasterPlaylist(content: any) {
   return { variants, audioGroups };
 }
 
-function parseAttributeList(rawAttributes: any) {
-  const attributes = {};
+function parseAttributeList(rawAttributes: string): Record<string, string> {
+  const attributes: Record<string, string> = {};
   const regex = /([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/g;
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-  for (const match of rawAttributes.matchAll(regex)) attributes[match[1]] = stripQuotes(match[2]);
+  for (const match of rawAttributes.matchAll(regex)) {
+    const key = match[1]
+    const rawValue = match[2]
+    if (!key || rawValue === undefined) continue
+    attributes[key] = stripQuotes(rawValue)
+  }
   return attributes;
 }
 

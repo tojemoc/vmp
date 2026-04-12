@@ -27,25 +27,42 @@
  *   categories in order.
  */
 
-/**
- * @typedef {{ id: string }} VideoRef
- * @typedef {{ id: string, published_at?: string | null, upload_date?: string | null, category_id?: string | null }} PublishedVideoInput
- * @typedef {{ id: string, slug: string, name: string, sort_order: number, direction: 'asc' | 'desc' }} CategoryInput
- * @typedef {{ featuredMode?: 'latest' | 'specific', featuredVideoId?: string | null, featuredVideoIds?: string[] }} HomepageConfigInput
- */
+type VideoRef = { id: string }
+type PublishedVideoInput = {
+  id: string
+  published_at?: string | null
+  upload_date?: string | null
+  category_id?: string | null
+}
+type CategoryInput = {
+  id: string
+  slug: string
+  name: string
+  sort_order: number
+  direction: 'asc' | 'desc'
+}
+interface HomepageConfigInput {
+  featuredMode?: unknown
+  featuredVideoId?: unknown
+  featuredVideoIds?: unknown
+}
+interface NormalizedHomepagePlacementConfig {
+  featuredMode: 'latest' | 'specific'
+  featuredVideoId: string | null
+  featuredVideoIds: string[]
+}
 
 /**
  * Subset of persisted `admin_settings.homepage` JSON used by placement only.
  * @param {unknown} config
- * @returns {HomepageConfigInput}
  */
-export function normalizeHomepagePlacementConfig(config: any) {
-  const c = config && typeof config === 'object' ? /** @type {Record<string, unknown>} */ (config) : {}
+export function normalizeHomepagePlacementConfig(config: unknown): NormalizedHomepagePlacementConfig {
+  const c: HomepageConfigInput = config && typeof config === 'object' ? config as HomepageConfigInput : {}
   return {
     featuredMode: c.featuredMode === 'specific' ? 'specific' : 'latest',
     featuredVideoId: typeof c.featuredVideoId === 'string' ? c.featuredVideoId : null,
     featuredVideoIds: Array.isArray(c.featuredVideoIds)
-      ? c.featuredVideoIds.filter((id: any) => typeof id === 'string').slice(0, 4)
+      ? c.featuredVideoIds.filter((id): id is string => typeof id === 'string').slice(0, 4)
       : [],
   };
 }
@@ -108,7 +125,9 @@ function refFor(id: any, byId: any) {
 export function placeHomepageVideos(input: any) {
   const rawVideos = Array.isArray(input.videos) ? input.videos : []
   const categories = Array.isArray(input.categories) ? [...input.categories] : []
-  const homepage = input.homepage && typeof input.homepage === 'object' ? input.homepage : {}
+  const homepage: NormalizedHomepagePlacementConfig = input.homepage && typeof input.homepage === 'object'
+    ? input.homepage
+    : normalizeHomepagePlacementConfig(null)
 
   const byId = new Map()
   for (const v of rawVideos) {

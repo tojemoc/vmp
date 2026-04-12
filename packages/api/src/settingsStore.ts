@@ -21,8 +21,13 @@ function kvKey(key: any) {
   return `settings:${key}`
 }
 
-export async function getSetting(env: any, key: any, options = {}) {
-  // @ts-expect-error TS(2339): Property 'ttlSeconds' does not exist on type '{}'.
+export interface SettingsOptions {
+  ttlSeconds?: number
+  defaultValue?: any
+  bypassKv?: boolean
+}
+
+export async function getSetting(env: any, key: any, options: SettingsOptions = {}) {
   const { ttlSeconds = 300, defaultValue = null, bypassKv = false } = options
   const db = getDb(env)
   const kv = getSettingsKv(env)
@@ -58,13 +63,12 @@ export async function getSetting(env: any, key: any, options = {}) {
   return value
 }
 
-export async function getSettings(env: any, keys: any, options = {}) {
+export async function getSettings(env: any, keys: any, options: SettingsOptions = {}) {
   const entries = await Promise.all(keys.map(async (k: any) => [k, await getSetting(env, k, options)]))
   return Object.fromEntries(entries)
 }
 
-export async function setSetting(env: any, key: any, value: any, options = {}) {
-  // @ts-expect-error TS(2339): Property 'ttlSeconds' does not exist on type '{}'.
+export async function setSetting(env: any, key: any, value: any, options: SettingsOptions = {}) {
   const { ttlSeconds = 300 } = options
   const db = getDb(env)
   const kv = getSettingsKv(env)
@@ -84,8 +88,7 @@ export async function setSetting(env: any, key: any, value: any, options = {}) {
   }
 }
 
-export async function setSettings(env: any, entries: any, options = {}) {
-  // @ts-expect-error TS(2339): Property 'ttlSeconds' does not exist on type '{}'.
+export async function setSettings(env: any, entries: any, options: SettingsOptions = {}) {
   const { ttlSeconds = 300 } = options
   const db = getDb(env)
   const kv = getSettingsKv(env)

@@ -6,7 +6,7 @@ const sw = globalThis as unknown as ServiceWorkerGlobalScope & typeof globalThis
  * Required for Chrome/Android + installed PWAs where push payloads are only
  * surfaced if the SW handles the "push" event and shows a notification.
  */
-sw.addEventListener('push', (event: any) => {
+sw.addEventListener('push', (event: PushEvent) => {
   let data: Record<string, unknown> = {}
   try {
     data = event.data ? (event.data.json() as Record<string, unknown>) : {}
@@ -45,12 +45,12 @@ sw.addEventListener('push', (event: any) => {
   )
 })
 
-sw.addEventListener('notificationclick', (event: any) => {
+sw.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close()
   const targetUrl = (event.notification?.data as { url?: string } | undefined)?.url || '/'
 
   event.waitUntil((async () => {
-    let targetPath = targetUrl
+    let targetPath: string
     let targetFullUrl = targetUrl
     try {
       const parsed = new URL(targetUrl, sw.location.origin)

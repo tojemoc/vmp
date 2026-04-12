@@ -56,8 +56,11 @@ async function listAllVideoObjects(bucket: any) {
   let cursor = undefined;
 
   do {
-    // @ts-expect-error TS(7022): 'result' implicitly has type 'any' because it does... Remove this comment to see the full error message
-    const result = await bucket.list({ prefix: 'videos/', limit: 1000, cursor });
+    const result: {
+      objects: Array<{ key: string; uploaded: string }>
+      truncated?: boolean
+      cursor?: string
+    } = await bucket.list({ prefix: 'videos/', limit: 1000, cursor });
     objects.push(...result.objects);
     cursor = result.truncated ? result.cursor : undefined;
   } while (cursor);
@@ -186,7 +189,6 @@ function getPackagingStateFromMetadata(metadata: any, videoId: any) {
   const variantMediaPattern = new RegExp(`^videos/${escapeRegExp(videoId)}/processed/[^/]+/.+(?:\\.m4s|\\.mp4)$`);
 
   const allStringValues = Array.from(collectStringValues(metadata));
-  // @ts-expect-error TS(2571): Object is of type 'unknown'.
   const allProcessedKeys = allStringValues.filter((v) => v.startsWith(processedPrefix));
   const keys = new Set(allProcessedKeys);
 
@@ -198,7 +200,6 @@ function getPackagingStateFromMetadata(metadata: any, videoId: any) {
     hasHlsMaster: keys.has(hlsMasterKey) || allStringValues.includes(flatHlsMasterKey),
     hasDashManifest: keys.has(dashManifestKey) || allStringValues.includes(flatDashManifestKey),
     hasLegacyPlaylist: keys.has(legacyPlaylistKey),
-    // @ts-expect-error TS(2345): Argument of type 'unknown' is not assignable to pa... Remove this comment to see the full error message
     hasVariantMedia: allProcessedKeys.some((key) => variantMediaPattern.test(key))
   };
 }
@@ -317,8 +318,7 @@ function buildCorsHeaders(request: any) {
   };
 }
 
-// @ts-expect-error TS(7023): 'collectStringValues' implicitly has return type '... Remove this comment to see the full error message
-function* collectStringValues(value: any) {
+function* collectStringValues(value: unknown): Generator<string, void, unknown> {
   if (typeof value === 'string') { yield value; return; }
   if (Array.isArray(value)) {
     for (const item of value) yield* collectStringValues(item);

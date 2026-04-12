@@ -32,9 +32,18 @@ async function importVideoHmacKey(secret: any) {
   )
 }
 
-export async function signVideoToken(userId: any, videoId: any, secret: any, previewUntil = null, opts = {}) {
-  // @ts-expect-error TS(2339): Property 'ttlSeconds' does not exist on type '{}'.
-  const ttlSeconds = Number.isFinite(opts?.ttlSeconds) ? Math.max(60, Math.floor(opts.ttlSeconds)) : 7200
+interface SignVideoTokenOptions {
+  ttlSeconds?: number
+}
+
+export async function signVideoToken(
+  userId: any,
+  videoId: any,
+  secret: any,
+  previewUntil = null,
+  opts: SignVideoTokenOptions = {},
+) {
+  const ttlSeconds = Number.isFinite(opts.ttlSeconds) ? Math.max(60, Math.floor(opts.ttlSeconds as number)) : 7200
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds
   const previewUntilStr = previewUntil !== null ? String(previewUntil) : ''
   const payload = b64urlEncode(`${userId}:${videoId}:${expires}:${previewUntilStr}`)
@@ -64,13 +73,11 @@ export async function verifyVideoToken(token: any, secret: any) {
 
   const key = await importVideoHmacKey(secret)
   try {
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
-    const sigBytes = new Uint8Array(sigHex.match(/../g).map(h => parseInt(h, 16)))
+    const sigBytes = new Uint8Array(sigHex.match(/../g)!.map(h => parseInt(h, 16)))
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
     if (!valid) throw new Error('Invalid video token signature')
-  } catch (error) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    if (error.message === 'Invalid video token signature') throw error
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === 'Invalid video token signature') throw error
     throw new Error('Malformed video token signature')
   }
 
@@ -78,10 +85,12 @@ export async function verifyVideoToken(token: any, secret: any) {
   const parts   = decoded.split(':')
   if (parts.length < 3) throw new Error('Malformed video token payload')
 
-  const userId  = parts[0]
+  const userId = parts[0]
   const videoId = parts[1]
-  // @ts-expect-error TS(2345): Argument of type 'string | undefined' is not assig... Remove this comment to see the full error message
-  const expires = parseInt(parts[2], 10)
+  const expiresRaw = parts[2]
+  if (!userId || !videoId || !expiresRaw) throw new Error('Malformed video token payload')
+  const expires = parseInt(expiresRaw, 10)
+  if (!Number.isFinite(expires)) throw new Error('Malformed video token payload')
   const previewUntil = parts[3] ? (parts[3] !== '' ? parseFloat(parts[3]) : null) : null
 
   if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired')
