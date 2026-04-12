@@ -47,6 +47,10 @@ function secondsToItunesDuration(seconds: any) {
 function getErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err)
 }
+
+function cdataSafe(text: unknown): string {
+  return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>')
+}
  
 function buildRssXml({
   channel,
@@ -65,7 +69,7 @@ function buildRssXml({
     ...items.map((item: any) => [
       '<item>',
       `<title>${xmlEscape(item.title)}</title>`,
-      `<description><![CDATA[${item.description ?? ''}]]></description>`,
+      `<description><![CDATA[${cdataSafe(item.description)}]]></description>`,
       `<guid isPermaLink="false">${xmlEscape(item.guid)}</guid>`,
       `<pubDate>${xmlEscape(item.pubDate)}</pubDate>`,
       `<enclosure url="${xmlEscape(item.enclosureUrl)}" type="${xmlEscape(item.enclosureType)}" />`,
@@ -245,8 +249,9 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
     return response
   } catch (err: unknown) {
     const message = getErrorMessage(err)
+    console.error('[feed] handlePublicFeed failed:', message)
     return new Response(
-      JSON.stringify({ error: message || 'Internal error', code: 'internal_error' }),
+      JSON.stringify({ error: 'Internal error', code: 'internal_error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     )
   }
@@ -378,8 +383,9 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
     return response
   } catch (err: unknown) {
     const message = getErrorMessage(err)
+    console.error('[feed] handlePersonalFeed failed:', message)
     return new Response(
-      JSON.stringify({ error: message || 'Internal error', code: 'internal_error' }),
+      JSON.stringify({ error: 'Internal error', code: 'internal_error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     )
   }

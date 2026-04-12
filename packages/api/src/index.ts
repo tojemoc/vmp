@@ -104,9 +104,14 @@ export class SegmentRateLimiterDO {
     count += 1
     await this.state.storage.put(countKey, count)
 
-    // Schedule cleanup of old keys (after 2 minutes) using alarm API
-    // Store the countKey so the alarm handler knows what to delete
-    await this.state.storage.put('pendingCleanupKey', countKey)
+    // Schedule cleanup of old keys (after 2 minutes) using alarm API.
+    // Keep a set of pending keys instead of a single slot to avoid overwriting
+    // when multiple requests hit before alarm() runs.
+    const pending = (await this.state.storage.get<string[]>('pendingCleanupKeys')) ?? []
+    if (!pending.includes(countKey)) {
+      pending.push(countKey)
+      await this.state.storage.put('pendingCleanupKeys', pending)
+    }
     await this.state.storage.setAlarm(Date.now() + 120000)
 
     const exceeded = count > threshold
@@ -117,11 +122,11 @@ export class SegmentRateLimiterDO {
   }
 
   async alarm(): Promise<void> {
-    // Alarm handler - cleanup expired count keys
-    const countKey = await this.state.storage.get<string>('pendingCleanupKey')
-    if (countKey) {
-      await this.state.storage.delete(countKey)
-      await this.state.storage.delete('pendingCleanupKey')
+    // Alarm handler - cleanup all pending count keys accumulated since last run.
+    const countKeys = (await this.state.storage.get<string[]>('pendingCleanupKeys')) ?? []
+    if (countKeys.length) {
+      await Promise.all(countKeys.map((key) => this.state.storage.delete(key)))
+      await this.state.storage.delete('pendingCleanupKeys')
     }
   }
 }
@@ -2097,18 +2102,7 @@ async function getAvgSegmentDuration(videoId: any, env: any) {
           const varLine  = lines.find(l => !l.startsWith('#') && l.trim().endsWith('.m3u8'))
           if (varLine) {
             const trimmedLine = varLine.trim()
-            let varUrl
-            if (trimmedLine.startsWith('http://') || trimmedLine.startsWith('https://')) {
-              // Full absolute URL
-              varUrl = trimmedLine
-            } else if (trimmedLine.startsWith('/')) {
-              // Absolute path - resolve against the base origin
-              const baseUrl = new URL(url)
-              varUrl = `${baseUrl.origin}${trimmedLine}`
-            } else {
-              // Relative path - resolve against videos/{videoId}/
-              varUrl = `${base}/videos/${videoId}/${trimmedLine}`
-            }
+            const varUrl = new URL(trimmedLine, url).toString()
             const varRes = await fetch(varUrl)
             if (varRes.ok) manifest = await varRes.text()
           }

@@ -6,10 +6,12 @@ import {
   tusResponse,
   json,
   jsonString,
+  type UploadSession,
   TUS_UPLOAD_ALLOW_METHODS,
 } from './_utils.js'
+import type { RequestContext } from '../_types.js'
 
-export async function onRequest(context: any) {
+export async function onRequest(context: RequestContext) {
   const { request, env } = context
 
   if (request.method === 'OPTIONS') {
@@ -29,8 +31,12 @@ export async function onRequest(context: any) {
     return tusResponse(jsonString({ error: 'Missing or invalid Tus-Resumable header' }), 412, {}, request, TUS_UPLOAD_ALLOW_METHODS)
   }
 
-  const uploadLength = Number(request.headers.get('Upload-Length'))
-  if (!Number.isFinite(uploadLength) || uploadLength <= 0) {
+  const uploadLengthRaw = request.headers.get('Upload-Length')
+  if (!uploadLengthRaw || !/^\d+$/.test(uploadLengthRaw)) {
+    return tusResponse(jsonString({ error: 'Upload-Length header is required and must be > 0' }), 400, {}, request, TUS_UPLOAD_ALLOW_METHODS)
+  }
+  const uploadLength = Number(uploadLengthRaw)
+  if (!Number.isSafeInteger(uploadLength) || uploadLength <= 0) {
     return tusResponse(jsonString({ error: 'Upload-Length header is required and must be > 0' }), 400, {}, request, TUS_UPLOAD_ALLOW_METHODS)
   }
 
@@ -67,7 +73,7 @@ export async function onRequest(context: any) {
     fileName,
     contentType,
     createdAt: new Date().toISOString(),
-  }
+  } satisfies UploadSession
 
   await env.VIDEO_BUCKET.put(sessionKey, JSON.stringify(session), {
     httpMetadata: { contentType: 'application/json' },

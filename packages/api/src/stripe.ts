@@ -55,22 +55,46 @@ function encodeStripeBody(obj: any, prefix = '') {
 }
 
 async function stripePost(path: any, body: any, env: any) {
-  const res = await fetch(`https://api.stripe.com/v1${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: encodeStripeBody(body),
-  })
-  return res.json()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const res = await fetch(`https://api.stripe.com/v1${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: encodeStripeBody(body),
+      signal: controller.signal,
+    })
+    return res.json()
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { error: { message: 'Stripe request timed out', code: 'stripe_timeout', status: 504 } }
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function stripeGet(path: any, env: any) {
-  const res = await fetch(`https://api.stripe.com/v1${path}`, {
-    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
-  })
-  return res.json()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const res = await fetch(`https://api.stripe.com/v1${path}`, {
+      headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
+      signal: controller.signal,
+    })
+    return res.json()
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { error: { message: 'Stripe request timed out', code: 'stripe_timeout', status: 504 } }
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 // ─── Webhook verification ─────────────────────────────────────────────────────
@@ -215,10 +239,16 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       getSetting(env, 'yearly_price_eur', { ttlSeconds: 300 }),
       getSetting(env, 'club_price_eur', { ttlSeconds: 300 }),
     ])
+    if (monthly == null || yearly == null || club == null) {
+      return jsonResponse({
+        error: 'Pricing is not configured in admin_settings.',
+        code: 'pricing_not_configured',
+      }, 500, corsHeaders)
+    }
     return jsonResponse({
-      monthly: Number(monthly ?? 6.90),
-      yearly:  Number(yearly  ?? 74.90),
-      club:    Number(club    ?? 109.00),
+      monthly: Number(monthly),
+      yearly:  Number(yearly),
+      club:    Number(club),
     }, 200, corsHeaders)
   } catch (err) {
     console.error('handleGetPricing error:', err)

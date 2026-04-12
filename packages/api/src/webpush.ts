@@ -1,5 +1,5 @@
 /**
- * packages/api/src/webpush.js
+ * packages/api/src/webpush.ts
  *
  * Web Push notification delivery using SubtleCrypto only (no npm libraries).
  *

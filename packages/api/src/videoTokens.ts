@@ -9,20 +9,20 @@
  * where payload = "<userId>:<videoId>:<unixExpires>:<previewUntilSecondsOrEmpty>"
  */
  
-function b64urlEncode(str: any) {
+function b64urlEncode(str: string): string {
   return btoa(str)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
 }
 
-function b64urlDecode(b64url: any) {
+function b64urlDecode(b64url: string): string {
   const padded = b64url.replace(/-/g, '+').replace(/_/g, '/')
     + '=='.slice(0, (4 - (b64url.length % 4)) % 4)
   return atob(padded)
 }
 
-async function importVideoHmacKey(secret: any) {
+async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -37,9 +37,9 @@ interface SignVideoTokenOptions {
 }
 
 export async function signVideoToken(
-  userId: any,
-  videoId: any,
-  secret: any,
+  userId: string,
+  videoId: string,
+  secret: string,
   previewUntil = null,
   opts: SignVideoTokenOptions = {},
 ) {
@@ -53,7 +53,7 @@ export async function signVideoToken(
   return `${payload}.${sigHex}`
 }
 
-export async function verifyVideoToken(token: any, secret: any) {
+export async function verifyVideoToken(token: string, secret: string) {
   if (!token || typeof token !== 'string') throw new Error('Missing video token')
   const dotIndex = token.lastIndexOf('.')
   if (dotIndex < 1) throw new Error('Malformed video token')

@@ -1092,7 +1092,13 @@ export async function handleAdminNewsletterSync(request: any, env: any, corsHead
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDb(env)
   newsletterLog('manual_sync_begin', { correlationId })
-  const synced = await syncAllEligibleSubscribers(db, env)
-  newsletterLog('manual_sync_complete', { correlationId, synced })
-  return jsonResponse({ ok: true, synced }, 200, corsHeaders)
+  try {
+    const synced = await syncAllEligibleSubscribers(db, env)
+    newsletterLog('manual_sync_complete', { correlationId, synced })
+    return jsonResponse({ ok: true, synced }, 200, corsHeaders)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    newsletterLog('manual_sync_failed', { correlationId, error: message })
+    return jsonResponse({ error: message || 'sync_failed', code: 'newsletter_sync_failed' }, 500, corsHeaders)
+  }
 }

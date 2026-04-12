@@ -1,27 +1,50 @@
-export async function onRequest(context: any) {
-  const { request, env } = context;
+import type { D1Database, ExecutionContext, R2Bucket } from '@cloudflare/workers-types'
+import type { RequestContext } from './_types.js'
+
+interface ProcessEnv {
+  VIDEO_BUCKET: R2Bucket
+  video_subscription_db?: D1Database
+  VIDEO_SUBSCRIPTION_DB?: D1Database
+  DB?: D1Database
+  PROCESS_API_TOKEN?: string
+}
+
+type Visibility = 'private' | 'unlisted' | 'public'
+
+export async function onRequest(context: RequestContext<ProcessEnv>) {
+  const { request, env } = context
 
   if (request.method === 'OPTIONS') {
-    return withCors(new Response(null, { status: 204 }), request);
+    return withCors(new Response(null, { status: 204 }), request)
+  }
+
+  // Gate writes behind a static bearer token configured per deployment.
+  const expectedToken = env.PROCESS_API_TOKEN?.trim()
+  if (expectedToken) {
+    const authHeader = request.headers.get('Authorization') || ''
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+    if (!bearer || bearer !== expectedToken) {
+      return withCors(json({ error: 'Unauthorized' }, 401), request)
+    }
   }
 
   if (request.method !== 'POST') {
-    return withCors(json({ error: 'Method not allowed' }, 405), request);
+    return withCors(json({ error: 'Method not allowed' }, 405), request)
   }
 
   if (!env.VIDEO_BUCKET) {
-    return withCors(json({ error: 'VIDEO_BUCKET binding is required' }, 500), request);
+    return withCors(json({ error: 'VIDEO_BUCKET binding is required' }, 500), request)
   }
 
   try {
     const body = await request.json().catch(() => null);
     if (!body?.videoId) {
-      return withCors(json({ error: 'videoId is required' }, 400), request);
+      return withCors(json({ error: 'videoId is required' }, 400), request)
     }
 
-    const videoId = body.videoId;
-    const visibility = sanitizeVisibility(body.visibility);
-    const validateDash = Boolean(body.validateDash);
+    const videoId = body.videoId
+    const visibility = sanitizeVisibility(body.visibility)
+    const validateDash = Boolean(body.validateDash)
 
     const metadataKey = `videos/${videoId}/metadata.json`;
     const processedAt = new Date().toISOString();
@@ -44,7 +67,7 @@ export async function onRequest(context: any) {
       if (obj) { hlsMasterKey = candidate; hlsMaster = obj; break; }
     }
     if (!hlsMaster) {
-      return withCors(json({ error: `Missing required HLS master playlist. Tried: ${hlsMasterCandidates.join(', ')}` }, 404), request);
+      return withCors(json({ error: `Missing required HLS master playlist. Tried: ${hlsMasterCandidates.join(', ')}` }, 404), request)
     }
 
     const hlsMasterContent = await hlsMaster.text();
@@ -61,11 +84,11 @@ export async function onRequest(context: any) {
         if (variantObj) {
           const text = await variantObj.text();
           const total = text.split('\n')
-            .filter((l: any) => l.trim().startsWith('#EXTINF:'))
-            .reduce((s: any, l: any) => {
-              const n = Number.parseFloat(l.trim().slice('#EXTINF:'.length));
-              return Number.isFinite(n) ? s + n : s;
-            }, 0);
+            .filter((l: string) => l.trim().startsWith('#EXTINF:'))
+            .reduce((s: number, l: string) => {
+              const n = Number.parseFloat(l.trim().slice('#EXTINF:'.length))
+              return Number.isFinite(n) ? s + n : s
+            }, 0)
           if (total > 0) durationSeconds = total;
         }
       }
@@ -83,7 +106,7 @@ export async function onRequest(context: any) {
     }
     const dashManifest = dashManifestKey ? true : null;
     if (validateDash && !dashManifest) {
-      return withCors(json({ error: `DASH validation requested but manifest not found. Tried: ${dashManifestCandidates.join(', ')}` }, 404), request);
+      return withCors(json({ error: `DASH validation requested but manifest not found. Tried: ${dashManifestCandidates.join(', ')}` }, 404), request)
     }
 
     const resolvedDashManifestKey = dashManifestKey ?? null;
@@ -108,16 +131,16 @@ export async function onRequest(context: any) {
       processedAt,
       visibility,
       status: 'processed'
-    };
+    }
 
-    if (durationSeconds !== null) metadata.durationSeconds = durationSeconds;
-    if (audioGroups.length > 0) metadata.audioGroups = audioGroups;
+    if (durationSeconds !== null) metadata.durationSeconds = durationSeconds
+    if (audioGroups.length > 0) metadata.audioGroups = audioGroups
 
     await env.VIDEO_BUCKET.put(metadataKey, JSON.stringify(metadata, null, 2), {
       httpMetadata: { contentType: 'application/json' }
-    });
+    })
 
-    const durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds });
+    const durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds })
 
     return withCors(json({
       ok: true,
@@ -133,10 +156,10 @@ export async function onRequest(context: any) {
       status: metadata.status,
       durationSeconds,
       durationSync
-    }), request);
+    }), request)
   } catch (error) {
-    console.error('Failed to process video metadata registration', error);
-    return withCors(json({ error: 'Failed to process video' }, 500), request);
+    console.error('Failed to process video metadata registration', error)
+    return withCors(json({ error: 'Failed to process video' }, 500), request)
   }
 }
 
@@ -144,18 +167,22 @@ async function syncVideoDurationToDb({
   db,
   videoId,
   durationSeconds
-}: any) {
-  if (!db) return { updated: false, reason: 'missing-d1-binding' };
-  if (durationSeconds === null) return { updated: false, reason: 'missing-duration-seconds' };
+}: {
+  db: D1Database | null
+  videoId: string
+  durationSeconds: number | null
+}) {
+  if (!db) return { updated: false, reason: 'missing-d1-binding' }
+  if (durationSeconds === null) return { updated: false, reason: 'missing-duration-seconds' }
 
-  const normalizedDuration = Math.round(durationSeconds);
-  const result = await db.prepare('UPDATE videos SET full_duration = ? WHERE id = ?').bind(normalizedDuration, videoId).run();
+  const normalizedDuration = Math.round(durationSeconds)
+  const result = await db.prepare('UPDATE videos SET full_duration = ? WHERE id = ?').bind(normalizedDuration, videoId).run()
 
   return {
     updated: Number(result.meta?.changes || 0) > 0,
     changes: Number(result.meta?.changes || 0),
     durationSeconds: normalizedDuration
-  };
+  }
 }
 
 interface AudioGroup {
@@ -182,15 +209,15 @@ interface Variant {
 }
 
 function parseHlsMasterPlaylist(content: string): { variants: Variant[]; audioGroups: AudioGroup[] } {
-  const lines = content.split(/\r?\n/).map((line: any) => line.trim()).filter(Boolean);
-  const variants: Variant[] = [];
-  const audioGroups: AudioGroup[] = [];
+  const lines = content.split(/\r?\n/).map((line: string) => line.trim()).filter(Boolean)
+  const variants: Variant[] = []
+  const audioGroups: AudioGroup[] = []
 
   for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
+    const line = lines[i]
 
     if (line.startsWith('#EXT-X-MEDIA:')) {
-      const attributes = parseAttributeList(line.slice('#EXT-X-MEDIA:'.length));
+      const attributes = parseAttributeList(line.slice('#EXT-X-MEDIA:'.length))
       if (attributes.TYPE === 'AUDIO') {
         audioGroups.push({
           type: attributes.TYPE,
@@ -201,15 +228,15 @@ function parseHlsMasterPlaylist(content: string): { variants: Variant[]; audioGr
           autoselect: attributes.AUTOSELECT === 'YES',
           channels: attributes.CHANNELS ?? null,
           uri: attributes.URI ?? null
-        });
+        })
       }
-      continue;
+      continue
     }
 
     if (line.startsWith('#EXT-X-STREAM-INF:')) {
-      const attributes = parseAttributeList(line.slice('#EXT-X-STREAM-INF:'.length));
-      const nextLine = lines[i + 1];
-      const uri = nextLine && !nextLine.startsWith('#') ? nextLine : null;
+      const attributes = parseAttributeList(line.slice('#EXT-X-STREAM-INF:'.length))
+      const nextLine = lines[i + 1]
+      const uri = nextLine && !nextLine.startsWith('#') ? nextLine : null
 
       variants.push({
         uri,
@@ -221,59 +248,67 @@ function parseHlsMasterPlaylist(content: string): { variants: Variant[]; audioGr
         audioGroupId: attributes.AUDIO ?? null,
         subtitlesGroupId: attributes.SUBTITLES ?? null,
         closedCaptions: attributes['CLOSED-CAPTIONS'] ?? null
-      });
+      })
     }
   }
 
-  return { variants, audioGroups };
+  return { variants, audioGroups }
 }
 
 function parseAttributeList(rawAttributes: string): Record<string, string> {
-  const attributes: Record<string, string> = {};
-  const regex = /([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/g;
+  const attributes: Record<string, string> = {}
+  const regex = /([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/g
   for (const match of rawAttributes.matchAll(regex)) {
     const key = match[1]
     const rawValue = match[2]
     if (!key || rawValue === undefined) continue
     attributes[key] = stripQuotes(rawValue)
   }
-  return attributes;
+  return attributes
 }
 
-function stripQuotes(value: any) {
-  if (value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
-  return value;
+function stripQuotes(value: string): string {
+  if (value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1)
+  return value
 }
 
-function toNumberOrNull(value: any) {
-  if (value === undefined || value === null || value === '') return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
+function toNumberOrNull(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
 }
 
-function sanitizeVisibility(value: any) {
-  return value === 'public' || value === 'unlisted' ? value : 'private';
+function sanitizeVisibility(value: unknown): Visibility {
+  return value === 'public' || value === 'unlisted' ? value : 'private'
 }
 
-function getVideoDatabaseBinding(env: any) {
-  return env.video_subscription_db || env.VIDEO_SUBSCRIPTION_DB || env.DB || null;
+function getVideoDatabaseBinding(env: ProcessEnv): D1Database | null {
+  return env.video_subscription_db || env.VIDEO_SUBSCRIPTION_DB || env.DB || null
 }
 
-function withCors(response: any, request: any) {
-  const headers = new Headers(response.headers);
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-    headers.set('Vary', 'Origin');
+const PROCESS_ALLOWED_ORIGINS = new Set<string>([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://vmp-web.pages.dev',
+])
+
+function withCors(response: Response, request: Request): Response {
+  const headers = new Headers(response.headers)
+  const origin = request.headers.get('Origin')
+  const isAllowed = Boolean(origin && PROCESS_ALLOWED_ORIGINS.has(origin))
+  if (isAllowed && origin) {
+    headers.set('Access-Control-Allow-Origin', origin)
+    headers.set('Access-Control-Allow-Credentials', 'true')
+    headers.set('Vary', 'Origin')
   } else {
-    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Origin', '*')
+    headers.delete('Access-Control-Allow-Credentials')
   }
-  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }

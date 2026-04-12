@@ -22,6 +22,7 @@
  */
 
 import { requireRole } from './auth.js'
+import type { D1Database, R2Bucket } from '@cloudflare/workers-types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -41,16 +42,23 @@ interface ThumbUrls {
   [key: string]: string | undefined
 }
 
+interface Env {
+  DB?: D1Database
+  video_subscription_db?: D1Database
+  BUCKET: R2Bucket
+  R2_BASE_URL?: string
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function jsonResponse(body: any, status: any, corsHeaders: any) {
+function jsonResponse(body: unknown | Record<string, unknown>, status: number, corsHeaders: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   })
 }
 
-function getDb(env: any) {
+function getDb(env: Env) {
   const db = env.DB || env.video_subscription_db
   if (!db) throw new Error('Database binding not configured')
   return db
@@ -61,7 +69,7 @@ function getDb(env: any) {
  * Falls back to '.img' / 'application/octet-stream' for anything unexpected
  * (the MIME validation gate above should prevent this path in practice).
  */
-function extensionForMime(mimeType: any) {
+function extensionForMime(mimeType: string) {
   if (mimeType === 'image/jpeg') return { ext: 'jpg', contentType: 'image/jpeg' }
   if (mimeType === 'image/png')  return { ext: 'png', contentType: 'image/png' }
   return { ext: 'img', contentType: 'application/octet-stream' }
@@ -81,7 +89,7 @@ function extensionForMime(mimeType: any) {
  * @param {number}      quality  — integer 0–100; divided by 100 for the Canvas API
  * @returns {Promise<Blob>}
  */
-async function resizeImage(sourceBuffer: any, sourceMime: any, targetWidth: any, targetHeight: any, quality: any) {
+async function resizeImage(sourceBuffer: ArrayBuffer, sourceMime: string, targetWidth: number, targetHeight: number, quality: number) {
   const blob   = new Blob([sourceBuffer], { type: sourceMime })
   const bitmap = await createImageBitmap(blob, {
     resizeWidth:   targetWidth,
@@ -107,7 +115,7 @@ async function resizeImage(sourceBuffer: any, sourceMime: any, targetWidth: any,
  * Returns:
  *   { ok: true, thumbnails: { original, large, medium, small } }
  */
-export async function handleThumbnailUpload(request: any, env: any, corsHeaders: any) {
+export async function handleThumbnailUpload(request: Request, env: Env, corsHeaders: HeadersInit) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
   } catch {
@@ -117,7 +125,12 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
   const url   = new URL(request.url)
   const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
   if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  const videoId = decodeURIComponent(match[1]!)
+  let videoId: string
+  try {
+    videoId = decodeURIComponent(match[1]!)
+  } catch {
+    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders)
+  }
 
   // ── Verify the video exists in D1 before doing any work ──────────────────
   // This check must happen before reading the request body so we fail fast
@@ -248,7 +261,7 @@ export async function handleThumbnailUpload(request: any, env: any, corsHeaders:
  *
  * Returns: { ok: true }
  */
-export async function handleThumbnailDelete(request: any, env: any, corsHeaders: any) {
+export async function handleThumbnailDelete(request: Request, env: Env, corsHeaders: HeadersInit) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin')
   } catch {
@@ -258,7 +271,12 @@ export async function handleThumbnailDelete(request: any, env: any, corsHeaders:
   const url   = new URL(request.url)
   const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
   if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  const videoId = decodeURIComponent(match[1]!)
+  let videoId: string
+  try {
+    videoId = decodeURIComponent(match[1]!)
+  } catch {
+    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders)
+  }
 
   const db = getDb(env)
 

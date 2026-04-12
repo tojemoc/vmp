@@ -15,7 +15,7 @@ const ADMINISTRATIVE_ROLES = new Set([
 
 export function isAdministrativeRole(role: unknown) {
   if (typeof role !== 'string') return false
-  const normalized = (role as string).trim().toLowerCase()
+  const normalized = role.trim().toLowerCase()
   if (!normalized || normalized === 'viewer') return false
   return ADMINISTRATIVE_ROLES.has(normalized)
 }

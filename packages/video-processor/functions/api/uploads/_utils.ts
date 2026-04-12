@@ -1,6 +1,11 @@
 export const TUS_VERSION = '1.0.0'
 export const TUS_UPLOAD_ALLOW_METHODS = 'POST,OPTIONS'
 export const TUS_CHUNK_ALLOW_METHODS = 'HEAD,PATCH,OPTIONS'
+const ALLOWED_ORIGINS = new Set<string>([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://vmp-web.pages.dev',
+])
 
 export interface UploadSessionPart {
   partNumber: number
@@ -54,12 +59,21 @@ export function sanitizeVisibility(value: string | undefined): 'public' | 'unlis
 export function withCors(response: Response, request: Request, allowMethods: string): Response {
   const headers = new Headers(response.headers)
   const origin = request.headers.get('Origin')
-  if (origin) {
+  const isAllowedOrigin = Boolean(origin && ALLOWED_ORIGINS.has(origin))
+  if (isAllowedOrigin && origin) {
     headers.set('Access-Control-Allow-Origin', origin)
     headers.set('Access-Control-Allow-Credentials', 'true')
-    headers.set('Vary', 'Origin')
   } else {
     headers.set('Access-Control-Allow-Origin', '*')
+    headers.delete('Access-Control-Allow-Credentials')
+  }
+  if (origin) {
+    const varyHeader = headers.get('Vary')
+    const varyValues = varyHeader
+      ? varyHeader.split(',').map((value) => value.trim()).filter(Boolean)
+      : []
+    if (!varyValues.includes('Origin')) varyValues.push('Origin')
+    headers.set('Vary', varyValues.join(', '))
   }
   headers.set('Access-Control-Allow-Methods', allowMethods)
   headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Tus-Resumable, Upload-Length, Upload-Offset, Upload-Metadata')

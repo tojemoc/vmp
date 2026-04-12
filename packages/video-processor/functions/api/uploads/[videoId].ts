@@ -1,8 +1,18 @@
-import { json, tusResponse, TUS_CHUNK_ALLOW_METHODS, type UploadSession } from './_utils.js'
+import type { R2Bucket } from '@cloudflare/workers-types'
+import type { RequestContext, WorkerEnv } from '../_types.js'
+import { json, jsonString, tusResponse, TUS_CHUNK_ALLOW_METHODS, type UploadSession } from './_utils.js'
 
 const TUS_VERSION = '1.0.0'
 
-export async function onRequest(context: any) {
+interface UploadChunkEnv extends WorkerEnv {
+  VIDEO_BUCKET: R2Bucket
+}
+
+interface UploadChunkContext extends RequestContext<UploadChunkEnv> {
+  params?: Record<string, string>
+}
+
+export async function onRequest(context: UploadChunkContext) {
   const { request, env, params } = context
 
   if (request.method === 'OPTIONS') {
@@ -13,7 +23,7 @@ export async function onRequest(context: any) {
     return json({ error: 'VIDEO_BUCKET binding is required' }, 500, request, TUS_CHUNK_ALLOW_METHODS)
   }
 
-  const videoId = params.videoId
+  const videoId = params?.videoId
   if (!videoId) {
     return tusResponse(null, 400, {}, request, TUS_CHUNK_ALLOW_METHODS)
   }
@@ -35,7 +45,9 @@ export async function onRequest(context: any) {
       return tusResponse(null, 412, {}, request, TUS_CHUNK_ALLOW_METHODS)
     }
 
-    const session = await readSession(env, sessionKey)
+    const sessionObject = await env.VIDEO_BUCKET.get(sessionKey)
+    if (!sessionObject) return tusResponse(null, 404, {}, request, TUS_CHUNK_ALLOW_METHODS)
+    const session = await sessionObject.json<UploadSession>()
     if (!session) return tusResponse(null, 404, {}, request, TUS_CHUNK_ALLOW_METHODS)
 
     const requestedOffset = Number(request.headers.get('Upload-Offset'))
@@ -61,7 +73,7 @@ export async function onRequest(context: any) {
 
     if (session.offset === session.uploadLength) {
       await multipart.complete(session.parts.map(({ partNumber, etag }) => ({ partNumber, etag })))
-      await env.VIDEO_BUCKET.delete(sessionKey)
+      await env.VIDEO_BUCKET.delete(sessionKey, { onlyIf: { etagMatches: sessionObject.etag } })
 
       return tusResponse(null, 204, {
         'Upload-Offset': String(session.offset),
@@ -76,9 +88,15 @@ export async function onRequest(context: any) {
       }, request, TUS_CHUNK_ALLOW_METHODS)
     }
 
-    await env.VIDEO_BUCKET.put(sessionKey, JSON.stringify(session), {
+    const persisted = await env.VIDEO_BUCKET.put(sessionKey, JSON.stringify(session), {
+      onlyIf: { etagMatches: sessionObject.etag },
       httpMetadata: { contentType: 'application/json' }
     })
+    if (!persisted) {
+      return tusResponse(jsonString({ error: 'Upload session changed concurrently, retry with latest Upload-Offset' }), 409, {
+        'Upload-Offset': String(session.offset - chunk.byteLength),
+      }, request, TUS_CHUNK_ALLOW_METHODS)
+    }
 
     return tusResponse(null, 204, { 'Upload-Offset': String(session.offset) }, request, TUS_CHUNK_ALLOW_METHODS)
   }
@@ -86,7 +104,7 @@ export async function onRequest(context: any) {
   return tusResponse(null, 405, { Allow: 'HEAD,PATCH,OPTIONS' }, request, TUS_CHUNK_ALLOW_METHODS)
 }
 
-async function readSession(env: any, key: string): Promise<UploadSession | null> {
+async function readSession(env: UploadChunkEnv, key: string): Promise<UploadSession | null> {
   const obj = await env.VIDEO_BUCKET.get(key)
   if (!obj) return null
   return obj.json() as Promise<UploadSession>
