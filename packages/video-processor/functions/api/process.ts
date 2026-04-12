@@ -27,7 +27,25 @@ export async function onRequest(context: RequestContext<ProcessEnv>) {
   if (expectedToken) {
     const authHeader = request.headers.get('Authorization') || ''
     const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
-    if (!bearer || bearer !== expectedToken) {
+    if (!bearer) {
+      return withCors(json({ error: 'Unauthorized' }, 401), request, env)
+    }
+
+    // Constant-time comparison to prevent timing attacks
+    const encoder = new TextEncoder()
+    const expectedBytes = encoder.encode(expectedToken)
+    const bearerBytes = encoder.encode(bearer)
+
+    if (expectedBytes.length !== bearerBytes.length) {
+      return withCors(json({ error: 'Unauthorized' }, 401), request, env)
+    }
+
+    let mismatch = 0
+    for (let i = 0; i < expectedBytes.length; i++) {
+      mismatch |= expectedBytes[i]! ^ bearerBytes[i]!
+    }
+
+    if (mismatch !== 0) {
       return withCors(json({ error: 'Unauthorized' }, 401), request, env)
     }
   }

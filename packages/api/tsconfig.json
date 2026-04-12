@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "lib": ["ES2022", "DOM", "WebWorker"],
-    "types": ["node"],
+    "types": ["node", "@cloudflare/workers-types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,

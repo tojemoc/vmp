@@ -764,8 +764,8 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
       recipients: { listIds: [listId] },
     }
   } catch (configErr) {
-    // @ts-expect-error TS(2571): Object is of type 'unknown'.
-    newsletterLog('send_config_error', { correlationId, message: String(configErr?.message ?? configErr) })
+    const message = configErr instanceof Error ? configErr.message : String(configErr)
+    newsletterLog('send_config_error', { correlationId, message })
     return jsonResponse({ error: 'Failed to load newsletter configuration', code: 'config_error' }, 500, corsHeaders)
   }
 

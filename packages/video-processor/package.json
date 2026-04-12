@@ -9,5 +9,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dev": "wrangler pages dev public --compatibility-date=2025-01-01",
     "deploy": "wrangler pages deploy public --project-name vmp-video-processor-admin --branch main"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260402.0",
+    "@types/node": "^24.7.2"
   }
 }

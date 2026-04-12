@@ -52,32 +52,45 @@ export async function onRequest(context: RequestContext) {
   const sourceKey = `videos/${videoId}/source/${fileName}`
   const sessionKey = `videos/${videoId}/upload-session.json`
 
-  const multipartUpload = await env.VIDEO_BUCKET.createMultipartUpload(sourceKey, {
-    httpMetadata: { contentType },
-    customMetadata: {
-      status: 'uploading',
+  let multipartUpload
+  try {
+    multipartUpload = await env.VIDEO_BUCKET.createMultipartUpload(sourceKey, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        status: 'uploading',
+        visibility,
+        uploadedAt: new Date().toISOString(),
+      },
+    })
+
+    const session = {
+      videoId,
+      sourceKey,
+      uploadId: multipartUpload.uploadId,
+      uploadLength,
+      offset: 0,
+      partNumber: 1,
+      parts: [],
       visibility,
-      uploadedAt: new Date().toISOString(),
-    },
-  })
+      fileName,
+      contentType,
+      createdAt: new Date().toISOString(),
+    } satisfies UploadSession
 
-  const session = {
-    videoId,
-    sourceKey,
-    uploadId: multipartUpload.uploadId,
-    uploadLength,
-    offset: 0,
-    partNumber: 1,
-    parts: [],
-    visibility,
-    fileName,
-    contentType,
-    createdAt: new Date().toISOString(),
-  } satisfies UploadSession
-
-  await env.VIDEO_BUCKET.put(sessionKey, JSON.stringify(session), {
-    httpMetadata: { contentType: 'application/json' },
-  })
+    await env.VIDEO_BUCKET.put(sessionKey, JSON.stringify(session), {
+      httpMetadata: { contentType: 'application/json' },
+    })
+  } catch (error) {
+    console.error('R2 operation failed:', error)
+    if (multipartUpload) {
+      try {
+        await multipartUpload.abort()
+      } catch (abortError) {
+        console.error('Failed to abort multipart upload:', abortError)
+      }
+    }
+    return tusResponse(jsonString({ error: 'Failed to initialize upload' }), 500, {}, request, TUS_UPLOAD_ALLOW_METHODS, env)
+  }
 
   return tusResponse(null, 201, {
     Location: `/api/uploads/${videoId}`,

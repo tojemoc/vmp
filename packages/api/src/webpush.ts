@@ -15,6 +15,8 @@
  *   SENDER_EMAIL       — used as the VAPID subject (mailto: URI)
  */
 
+import type { D1Database } from '@cloudflare/workers-types'
+
 // ─── Encoding helpers ─────────────────────────────────────────────────────────
 
 function b64urlToUint8(b64url: string): Uint8Array {
@@ -439,13 +441,6 @@ export async function sendPushNotification(subscription: PushSubscription, paylo
   }
 
   return { ok: true, status: response.status, statusClass: `${Math.floor(response.status / 100)}xx`, endpointHost }
-}
-
-interface D1Database {
-  prepare(query: string): {
-    all(): Promise<{ results?: any[] }>
-    bind(...values: any[]): { run(): Promise<any> }
-  }
 }
 
 /**

@@ -181,7 +181,6 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
 
     const { session } = getReadSession(env, request)
     const db = getDb(env)
-    // @ts-expect-error TS(2339): Property 'default' does not exist on type 'CacheSt... Remove this comment to see the full error message
     const cache = caches?.default
     const publicPollMeta = { endpoint: 'feed_public', userId: 'public' }
     if (cache) {
@@ -291,7 +290,6 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       })
     }
 
-    // @ts-expect-error TS(2339): Property 'default' does not exist on type 'CacheSt... Remove this comment to see the full error message
     const cache = caches?.default
     const expectedToken = await computeRssTokenHex(rssSecret, userId)
     if (!constantTimeEqual(expectedToken, token)) {
