@@ -149,18 +149,18 @@ export async function syncNewsletterForStripeSubscription(db: any, userId: any, 
 
 /**
  * Add or update a user in the Brevo subscriber list (paying subscribers).
- * No-op if API key or list id is missing.
+ * Returns true if the remote API call succeeded, false otherwise.
  */
-export async function syncPayingSubscriberToNewsletter(db: any, userId: any, env: any) {
-  if (!env.BREVO_API_KEY) return
+export async function syncPayingSubscriberToNewsletter(db: any, userId: any, env: any): Promise<boolean> {
+  if (!env.BREVO_API_KEY) return false
 
   const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
   const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
-  if (!Number.isFinite(listId) || listId <= 0) return
+  if (!Number.isFinite(listId) || listId <= 0) return false
 
   const row = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first()
   const email = row?.email ? String(row.email).trim().toLowerCase() : ''
-  if (!email || !EMAIL_RE.test(email)) return
+  if (!email || !EMAIL_RE.test(email)) return false
 
   const body = {
     email,
@@ -173,13 +173,21 @@ export async function syncPayingSubscriberToNewsletter(db: any, userId: any, env
     const err = await res.json().catch(() => ({}))
     const userIdHash = await hashUserId(userId)
     newsletterLog('sync_contact_failed', { userIdHash, status: res.status, code: err?.code })
+    return false
   }
+  return true
 }
 
 async function syncAllEligibleSubscribers(db: any, env: any) {
+  if (!env.BREVO_API_KEY) {
+    throw new Error('BREVO_API_KEY is not configured')
+  }
+
   const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
   const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
-  if (!Number.isFinite(listId) || listId <= 0) return 0
+  if (!Number.isFinite(listId) || listId <= 0) {
+    throw new Error('Brevo subscriber list ID is not configured or invalid')
+  }
 
   const rows = await db.prepare(`
     SELECT u.id
@@ -195,17 +203,33 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
   `).all()
 
   const userIds = (rows?.results ?? []).map((r: any) => r.id).filter(Boolean)
+
+  const payingSubscriberRows = await db.prepare(`
+    SELECT u.id
+    FROM users u
+    LEFT JOIN subscriptions s
+      ON s.user_id = u.id
+      AND s.status IN ('active', 'trialing')
+      AND (s.current_period_end IS NULL OR datetime(s.current_period_end) > CURRENT_TIMESTAMP)
+    WHERE s.user_id IS NOT NULL
+    GROUP BY u.id
+  `).all()
+
+  const payingSubscriberIds = (payingSubscriberRows?.results ?? []).map((r: any) => r.id).filter(Boolean)
+
   let synced = 0
   for (const userId of userIds) {
-    await syncPayingSubscriberToNewsletter(db, userId, env)
-    synced += 1
+    const success = await syncPayingSubscriberToNewsletter(db, userId, env)
+    if (success) {
+      synced += 1
+    }
   }
 
   const eligibleEmails = new Set<string>()
-  if (userIds.length) {
+  if (payingSubscriberIds.length) {
     const BATCH_SIZE = 500
-    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-      const chunk = userIds.slice(i, i + BATCH_SIZE)
+    for (let i = 0; i < payingSubscriberIds.length; i += BATCH_SIZE) {
+      const chunk = payingSubscriberIds.slice(i, i + BATCH_SIZE)
       const placeholders = chunk.map(() => '?').join(',')
       const eligibleRows = await db.prepare(
         `SELECT email FROM users WHERE id IN (${placeholders})`,
@@ -1110,6 +1134,8 @@ export async function handleAdminNewsletterSync(request: any, env: any, corsHead
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
     newsletterLog('manual_sync_failed', { correlationId, error: message })
-    return jsonResponse({ error: message || 'sync_failed', code: 'newsletter_sync_failed' }, 500, corsHeaders)
+    const isConfigError = message.includes('not configured') || message.includes('invalid')
+    const status = isConfigError ? 422 : 500
+    return jsonResponse({ ok: false, error: message || 'sync_failed', code: 'newsletter_sync_failed' }, status, corsHeaders)
   }
 }

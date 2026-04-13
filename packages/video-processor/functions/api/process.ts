@@ -162,7 +162,14 @@ export async function onRequest(context: RequestContext<ProcessEnv>) {
       httpMetadata: { contentType: 'application/json' }
     })
 
-    const durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds })
+    let durationSync
+    try {
+      durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds })
+    } catch (syncError) {
+      console.error('Failed to sync video duration to database', syncError)
+      const errorMessage = syncError instanceof Error ? syncError.message : String(syncError)
+      durationSync = { success: false, error: errorMessage, updated: false }
+    }
 
     return withCors(json({
       ok: true,
@@ -329,10 +336,10 @@ function withCors(response: Response, request: Request, env: ProcessEnv): Respon
   const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS)
   const allowSet = new Set<string>(allowedOrigins.length ? allowedOrigins : DEFAULT_ALLOWED_ORIGINS)
   const isAllowed = Boolean(origin && allowSet.has(origin))
+  headers.set('Vary', 'Origin')
   if (isAllowed && origin) {
     headers.set('Access-Control-Allow-Origin', origin)
     headers.set('Access-Control-Allow-Credentials', 'true')
-    headers.set('Vary', 'Origin')
   } else {
     headers.set('Access-Control-Allow-Origin', '*')
     headers.delete('Access-Control-Allow-Credentials')
