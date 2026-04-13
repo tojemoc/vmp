@@ -120,27 +120,11 @@
           <textarea v-model="homepageHeroSubtitle" rows="2" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"></textarea>
         </div>
 
-        <!-- Video Management — tabbed panel -->
+        <!-- Video Management -->
         <div v-if="activeAdminTab === 'videos'" id="videos-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Video management</h2>
-
-          <!-- Tab bar -->
-          <div class="flex gap-1 mb-5 border-b border-gray-200 dark:border-gray-700">
-            <button
-              v-for="tab in videoTabs"
-              :key="tab.id"
-              class="px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors"
-              :class="activeVideoTab === tab.id
-                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
-              @click="activeVideoTab = tab.id"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-
-          <!-- All videos -->
-          <div v-if="activeVideoTab === 'all'">
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set preview lock per video: 0s means premium-only access, while matching full duration unlocks the full video.</p>
+          <div>
             <div v-if="videosLoading" class="space-y-3">
               <div v-for="n in 4" :key="n" class="h-14 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
             </div>
@@ -156,6 +140,8 @@
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Status</th>
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Category</th>
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Duration</th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Preview lock</th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Views</th>
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Uploaded</th>
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Notifications</th>
                     <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 font-medium">Actions</th>
@@ -309,6 +295,21 @@
                     <td class="py-3 pr-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                       {{ formatSeconds(getActualDuration(video)) }}
                     </td>
+                    <td class="py-3 pr-4">
+                      <div class="flex items-center gap-2">
+                        <input
+                          v-model.number="previewLockByVideoId[video.id]"
+                          type="number"
+                          min="0"
+                          :max="getActualDuration(video)"
+                          class="w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                        />
+                        <button class="text-xs text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap" @click="previewLockByVideoId[video.id] = getActualDuration(video)">Unlock full</button>
+                      </div>
+                    </td>
+                    <td class="py-3 pr-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {{ Number(video.total_views || 0).toLocaleString() }}
+                    </td>
                     <td class="py-3 pr-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                       {{ formatDate(video.upload_date) }}
                     </td>
@@ -369,20 +370,6 @@
             </div>
           </div>
 
-          <!-- Preview locks -->
-          <div v-else-if="activeVideoTab === 'locks'">
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set where free previews lock for each video (seconds).</p>
-            <div class="space-y-3 max-h-[32rem] overflow-auto pr-1">
-              <div v-for="video in chronologicallySortedUploads" :key="video.id" class="grid grid-cols-[1fr_auto_auto] gap-3 items-center p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div>
-                  <p class="font-medium text-gray-900 dark:text-white">{{ video.title }}</p>
-                  <p class="text-xs text-gray-600 dark:text-gray-400">{{ video.id }} · full {{ getActualDuration(video) }}s</p>
-                </div>
-                <input v-model.number="previewLockByVideoId[video.id]" type="number" min="0" :max="getActualDuration(video)" class="w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100" />
-                <button class="text-xs text-gray-600 dark:text-gray-300 hover:underline" @click="previewLockByVideoId[video.id] = getActualDuration(video)">Unlock full</button>
-              </div>
-            </div>
-          </div>
         </div>
 
 
@@ -1011,6 +998,7 @@ interface Video {
   r2_exists: boolean | null
   slug?: string | null
   category_id?: string | null
+  total_views?: number
 }
 
 interface Category {
@@ -1064,7 +1052,6 @@ const statusUpdating = ref<Record<string, boolean>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
-const activeVideoTab = ref<'all' | 'locks'>('all')
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
@@ -1090,11 +1077,6 @@ const swapModal = ref<{
   sourceVideo: Video | null
   targetId: string | null
 }>({ open: false, step: 0, sourceVideo: null, targetId: null })
-const videoTabs = [
-  { id: 'all' as const, label: 'All videos' },
-  { id: 'locks' as const, label: 'Preview locks' },
-]
-
 const componentTypes: BlockType[] = ['hero', 'featured_row', 'cta', 'text_split', 'video_grid']
 const layoutBlocks = ref<LayoutBlock[]>([])
 

@@ -29,7 +29,9 @@ export function buildProxyPlaylistUrl(request: any, playlistUrl: any, previewUnt
   const origin = new URL(request.url).origin
   const upstream = new URL(playlistUrl)
   const u = new URL(`${origin}/api/video-proxy${upstream.pathname}`)
-  if (previewUntilSeconds && previewUntilSeconds > 0) u.searchParams.set('previewUntil', String(Math.floor(previewUntilSeconds)))
+  if (typeof previewUntilSeconds === 'number' && previewUntilSeconds >= 0) {
+    u.searchParams.set('previewUntil', String(Math.floor(previewUntilSeconds)))
+  }
   return u.toString()
 }
 
