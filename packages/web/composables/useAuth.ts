@@ -63,6 +63,7 @@ export function useAuth() {
   function parseJwtPayload(token: string): Record<string, unknown> | null {
     try {
       const payloadB64 = token.split('.')[1]
+      if (!payloadB64) return null
       const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/') +
         '=='.slice(0, (4 - (payloadB64.length % 4)) % 4)
       return JSON.parse(atob(padded))

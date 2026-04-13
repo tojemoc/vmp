@@ -618,7 +618,7 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   const proxyPrefix = '/api/video-proxy/'
   const objectPath = requestUrl.pathname.slice(proxyPrefix.length)
   const previewUntil = Number.parseFloat(requestUrl.searchParams.get('previewUntil') ?? '')
-  const previewUntilSeconds = Number.isFinite(previewUntil) && previewUntil > 0 ? previewUntil : null
+  const previewUntilSeconds = Number.isFinite(previewUntil) && previewUntil >= 0 ? previewUntil : null
   if (!objectPath) return jsonResponse({ error: 'Missing proxied object path' }, 400, corsHeaders)
 
   // This platform is HLS-only. Explicitly reject DASH manifest requests (.mpd)
@@ -1042,11 +1042,27 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     let videos
     videos = await db.prepare(`
+      WITH view_counts AS (
+        SELECT
+          video_id,
+          COUNT(DISTINCT COALESCE(
+            session_key,
+            CASE
+              WHEN user_id IS NOT NULL THEN 'u:' || user_id
+              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
+              ELSE 'path:' || request_path
+            END
+          )) AS total_views
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+        GROUP BY video_id
+      )
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug,
-             vca.category_id
+             vca.category_id, COALESCE(vc.total_views, 0) AS total_views
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+      LEFT JOIN view_counts vc ON vc.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()
 
@@ -1871,7 +1887,7 @@ function getManifestType(objectPath: any, upstreamResponse: any) {
 
 function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: any, objectPath = '', vt: string | null = null) {
   const lines = manifest.split('\n')
-  const hasPreviewLimit = typeof previewUntilSeconds === 'number' && previewUntilSeconds > 0
+  const hasPreviewLimit = typeof previewUntilSeconds === 'number' && previewUntilSeconds >= 0
   const isMediaPlaylist = lines.some((l: any) => l.trim().startsWith('#EXTINF:'))
   const isMasterPlaylist = lines.some((l: any) => l.trim().startsWith('#EXT-X-STREAM-INF'))
   const previewQuery = hasPreviewLimit ? `previewUntil=${Math.floor(previewUntilSeconds)}` : null

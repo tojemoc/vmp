@@ -141,9 +141,10 @@ export function usePushNotifications() {
 
     async function doSubscribe(): Promise<void> {
       if (!pushSubscription) {
+        const applicationServerKey = _urlB64ToUint8Array(vapidPublicKey)
         pushSubscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: _urlB64ToUint8Array(vapidPublicKey),
+          applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
         })
       }
 

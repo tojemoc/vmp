@@ -28,9 +28,10 @@ export async function resolvePlaylistDuration(
 
     // Master playlist — follow first variant stream
     const idx = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'))
-    if (idx >= 0 && lines[idx + 1]) {
+    const nextLine = lines[idx + 1]
+    if (idx >= 0 && nextLine) {
       return resolvePlaylistDuration(
-        new URL(lines[idx + 1], playlistUrl).toString(),
+        new URL(nextLine, playlistUrl).toString(),
         depth + 1,
       )
     }

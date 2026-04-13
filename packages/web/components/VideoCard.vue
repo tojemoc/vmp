@@ -1,6 +1,6 @@
 <template>
   <NuxtLink
-    :to="`/watch/${video.slug ?? video.id}`"
+    :to="`/watch/${video.slug || video.id}`"
     class="group block"
   >
     <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
