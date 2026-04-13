@@ -9,9 +9,17 @@ import {
   type UploadSession,
   TUS_UPLOAD_ALLOW_METHODS,
 } from './_utils.js'
-import type { RequestContext } from '../_types.js'
+import type { R2Bucket } from '@cloudflare/workers-types'
+import type { RequestContext, WorkerEnv } from '../_types.js'
 
-export async function onRequest(context: RequestContext) {
+const DEFAULT_MAX_UPLOAD_LENGTH = 10 * 1024 * 1024 * 1024 // 10 GiB
+
+interface UploadsEnv extends WorkerEnv {
+  VIDEO_BUCKET: R2Bucket
+  MAX_UPLOAD_LENGTH?: string | number
+}
+
+export async function onRequest(context: RequestContext<UploadsEnv>) {
   const { request, env } = context
 
   if (request.method === 'OPTIONS') {
@@ -38,6 +46,16 @@ export async function onRequest(context: RequestContext) {
   const uploadLength = Number(uploadLengthRaw)
   if (!Number.isSafeInteger(uploadLength) || uploadLength <= 0) {
     return tusResponse(jsonString({ error: 'Upload-Length header is required and must be > 0' }), 400, {}, request, TUS_UPLOAD_ALLOW_METHODS, env)
+  }
+  const maxUploadLength = resolveMaxUploadLength(env.MAX_UPLOAD_LENGTH)
+  if (uploadLength > maxUploadLength) {
+    return tusResponse(
+      jsonString({ error: `Upload-Length exceeds maximum allowed size (${maxUploadLength} bytes)` }),
+      413,
+      {},
+      request,
+      TUS_UPLOAD_ALLOW_METHODS,
+    )
   }
 
   const metadata = parseUploadMetadata(request.headers.get('Upload-Metadata'))
@@ -97,4 +115,13 @@ export async function onRequest(context: RequestContext) {
     'Upload-Offset': '0',
     'Upload-Length': String(uploadLength),
   }, request, TUS_UPLOAD_ALLOW_METHODS, env)
+}
+
+function resolveMaxUploadLength(raw: string | number | undefined): number {
+  if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0) return raw
+  if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+    const parsed = Number(raw.trim())
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed
+  }
+  return DEFAULT_MAX_UPLOAD_LENGTH
 }

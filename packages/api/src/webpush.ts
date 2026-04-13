@@ -452,22 +452,42 @@ export async function sendPushToAllSubscribers(videoTitle: string, videoId: stri
     throw Object.assign(new Error('VAPID keys not configured'), { code: 'vapid_not_configured' })
   }
 
-  let subscriptions
+  interface StoredPushSubscription {
+    endpoint: string
+    p256dh: string
+    auth: string
+  }
+  const isStoredPushSubscription = (item: unknown): item is StoredPushSubscription => {
+    if (!item || typeof item !== 'object') return false
+    const candidate = item as Record<string, unknown>
+    return (
+      typeof candidate.endpoint === 'string'
+      && typeof candidate.p256dh === 'string'
+      && typeof candidate.auth === 'string'
+    )
+  }
+
+  let subscriptions: StoredPushSubscription[] = []
   try {
     const result = await db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions').all()
-    subscriptions = result.results || []
+    const rawSubscriptions: unknown[] = Array.isArray(result.results) ? result.results : []
+    subscriptions = rawSubscriptions.filter(isStoredPushSubscription)
   } catch (err) {
     console.error('Failed to fetch push subscriptions:', err)
     return { attempted: 0, succeeded: 0, failed: 0, stale: 0 }
   }
 
+  const frontendBaseUrl = typeof env.FRONTEND_URL === 'string'
+    ? env.FRONTEND_URL.trim().replace(/\/+$/, '')
+    : ''
+  const watchPath = `/watch/${encodeURIComponent(String(videoId))}`
   const payload = {
     title: 'New video published',
     body: videoTitle,
-    url: `${env.FRONTEND_URL}/watch/${videoId}`,
+    url: frontendBaseUrl ? `${frontendBaseUrl}${watchPath}` : '/',
   }
 
-  const staleEndpoints: any = []
+  const staleEndpoints: string[] = []
   const batchSize = 50
   let succeeded = 0
   let failed = 0
@@ -475,7 +495,7 @@ export async function sendPushToAllSubscribers(videoTitle: string, videoId: stri
 
   for (let i = 0; i < subscriptions.length; i += batchSize) {
     const results = await Promise.allSettled(
-      subscriptions.slice(i, i + batchSize).map(async (sub: any) => {
+      subscriptions.slice(i, i + batchSize).map(async (sub: StoredPushSubscription) => {
         try {
           await sendPushNotification(sub, payload, env)
         } catch (err) {
@@ -499,7 +519,7 @@ export async function sendPushToAllSubscribers(videoTitle: string, videoId: stri
   if (staleEndpoints.length > 0) {
     const placeholders = staleEndpoints.map(() => '?').join(',')
     await db.prepare(`DELETE FROM push_subscriptions WHERE endpoint IN (${placeholders})`)
-      .bind(...staleEndpoints).run().catch((e: any) => console.error('Cleanup error:', e))
+      .bind(...staleEndpoints).run().catch((e: unknown) => console.error('Cleanup error:', e))
   }
 
   return { attempted: subscriptions.length, succeeded, failed, stale }

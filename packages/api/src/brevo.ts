@@ -189,40 +189,18 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
     throw new Error('Brevo subscriber list ID is not configured or invalid')
   }
 
-  const rows = await db.prepare(`
-    SELECT u.id
-    FROM users u
-    LEFT JOIN subscriptions s
-      ON s.user_id = u.id
-      AND s.status IN ('active', 'trialing')
-      AND (s.current_period_end IS NULL OR datetime(s.current_period_end) > CURRENT_TIMESTAMP)
-    GROUP BY u.id
-    HAVING
-      MAX(CASE WHEN s.user_id IS NOT NULL THEN 1 ELSE 0 END) = 1
-      OR u.role IN ('super_admin', 'admin', 'editor', 'analyst', 'moderator')
-  `).all()
-
-  const userIds = (rows?.results ?? []).map((r: any) => r.id).filter(Boolean)
-
   const payingSubscriberRows = await db.prepare(`
-    SELECT u.id
-    FROM users u
-    LEFT JOIN subscriptions s
-      ON s.user_id = u.id
-      AND s.status IN ('active', 'trialing')
+    SELECT DISTINCT s.user_id AS id
+    FROM subscriptions s
+    WHERE s.status IN ('active', 'trialing')
       AND (s.current_period_end IS NULL OR datetime(s.current_period_end) > CURRENT_TIMESTAMP)
-    WHERE s.user_id IS NOT NULL
-    GROUP BY u.id
   `).all()
 
   const payingSubscriberIds = (payingSubscriberRows?.results ?? []).map((r: any) => r.id).filter(Boolean)
-
   let synced = 0
-  for (const userId of userIds) {
+  for (const userId of payingSubscriberIds) {
     const success = await syncPayingSubscriberToNewsletter(db, userId, env)
-    if (success) {
-      synced += 1
-    }
+    if (success) synced += 1
   }
 
   const eligibleEmails = new Set<string>()

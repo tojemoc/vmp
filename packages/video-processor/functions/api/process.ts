@@ -8,12 +8,15 @@ interface ProcessEnv {
   DB?: D1Database
   PROCESS_API_TOKEN?: string
   ALLOWED_ORIGINS?: string
+  // Explicit local-only escape hatch for dev environments without PROCESS_API_TOKEN.
+  LOCAL_DEV_ALLOW_UNAUTH_PROCESS_API?: string | boolean
 }
 
 type Visibility = 'private' | 'unlisted' | 'public'
 interface ExistingMetadata {
   durationSeconds?: unknown
 }
+const VIDEO_ID_RE = /^[A-Za-z0-9_-]+$/
 
 export async function onRequest(context: RequestContext<ProcessEnv>) {
   const { request, env } = context
@@ -24,6 +27,10 @@ export async function onRequest(context: RequestContext<ProcessEnv>) {
 
   // Gate writes behind a static bearer token configured per deployment.
   const expectedToken = env.PROCESS_API_TOKEN?.trim()
+  const allowUnauthenticatedLocalDev = envFlagEnabled(env.LOCAL_DEV_ALLOW_UNAUTH_PROCESS_API)
+  if (!expectedToken && !allowUnauthenticatedLocalDev) {
+    return withCors(json({ error: 'Unauthorized' }, 401), request)
+  }
   if (expectedToken) {
     const authHeader = request.headers.get('Authorization') || ''
     const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
@@ -59,14 +66,35 @@ export async function onRequest(context: RequestContext<ProcessEnv>) {
   }
 
   try {
-    const body = await request.json().catch(() => null);
-    if (!body?.videoId) {
-      return withCors(json({ error: 'videoId is required' }, 400), request, env)
+    const bodyRaw = await request.json().catch(() => null)
+    if (!bodyRaw || typeof bodyRaw !== 'object' || Array.isArray(bodyRaw)) {
+      return withCors(json({ error: 'Invalid JSON body' }, 400), request, env)
+    }
+    const body = bodyRaw as Record<string, unknown>
+
+    const videoId = typeof body.videoId === 'string' ? body.videoId.trim() : ''
+    if (!videoId || !VIDEO_ID_RE.test(videoId)) {
+      return withCors(json({ error: 'videoId must be a non-empty alphanumeric identifier' }, 400), request, env)
     }
 
-    const videoId = body.videoId
+    if (body.visibility !== undefined && typeof body.visibility !== 'string') {
+      return withCors(json({ error: 'visibility must be a string when provided' }, 400), request, env)
+    }
+
     const visibility = sanitizeVisibility(body.visibility)
-    const validateDash = Boolean(body.validateDash)
+    let validateDash = false
+    if (body.validateDash !== undefined) {
+      const rawValidateDash = body.validateDash
+      if (typeof rawValidateDash === 'boolean') {
+        validateDash = rawValidateDash
+      } else if (rawValidateDash === 'true') {
+        validateDash = true
+      } else if (rawValidateDash === 'false') {
+        validateDash = false
+      } else {
+        return withCors(json({ error: 'validateDash must be a boolean or "true"/"false"' }, 400), request, env)
+      }
+    }
 
     const metadataKey = `videos/${videoId}/metadata.json`;
     const processedAt = new Date().toISOString();
@@ -162,13 +190,24 @@ export async function onRequest(context: RequestContext<ProcessEnv>) {
       httpMetadata: { contentType: 'application/json' }
     })
 
-    let durationSync
+    let durationSync: {
+      success: boolean
+      updated: boolean
+      changes?: number
+      durationSeconds?: number
+      reason?: string
+      error?: string
+    }
     try {
-      durationSync = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds })
-    } catch (syncError) {
-      console.error('Failed to sync video duration to database', syncError)
-      const errorMessage = syncError instanceof Error ? syncError.message : String(syncError)
-      durationSync = { success: false, error: errorMessage, updated: false }
+      const syncResult = await syncVideoDurationToDb({ db: getVideoDatabaseBinding(env), videoId, durationSeconds })
+      durationSync = { success: true, ...syncResult }
+    } catch (syncError: unknown) {
+      console.error('Failed to sync video duration to DB', syncError)
+      durationSync = {
+        success: false,
+        updated: false,
+        error: 'VIDEO_DURATION_SYNC_ERROR',
+      }
     }
 
     return withCors(json({
@@ -310,6 +349,13 @@ function toNumberOrNull(value: unknown): number | null {
 
 function sanitizeVisibility(value: unknown): Visibility {
   return value === 'public' || value === 'unlisted' ? value : 'private'
+}
+
+function envFlagEnabled(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'true' || normalized === '1' || normalized === 'yes'
 }
 
 function getVideoDatabaseBinding(env: ProcessEnv): D1Database | null {
