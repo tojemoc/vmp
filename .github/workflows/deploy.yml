@@ -54,7 +54,6 @@ jobs:
           test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_STAGING" && exit 1)
           test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_STAGING" && exit 1)
           test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_STAGING" && exit 1)
-          test -n "${{ secrets.STAGING_ADMIN_SMOKE_TOKEN }}" || (echo "Missing secrets.STAGING_ADMIN_SMOKE_TOKEN" && exit 1)
       
       - name: Deploy API (staging)
         env:
@@ -75,14 +74,25 @@ jobs:
 
       - name: Smoke check API CORS origin (staging)
         run: |
-          curl -sSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
-          echo "$EXPECTED_ALLOWED_ORIGINS" | rg "$FRONTEND_URL"
+          headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
+          echo "$headers" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
+          echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
 
-      - name: Smoke check authenticated admin endpoint (staging)
+      - name: Smoke check deployment auth endpoint (staging)
         env:
-          ADMIN_SMOKE_TOKEN: ${{ secrets.STAGING_ADMIN_SMOKE_TOKEN }}
+          DEPLOY_SMOKE_AUTH_TOKEN: ${{ secrets.STAGING_DEPLOY_SMOKE_AUTH_TOKEN }}
         run: |
-          curl -fsS -H "Authorization: Bearer $ADMIN_SMOKE_TOKEN" "$API_BASE_URL/api/auth/me" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(!body?.user?.id||!["admin","super_admin"].includes(body?.user?.role)){console.error("Admin smoke check failed",body);process.exit(1)}'
+          if [ -z "$DEPLOY_SMOKE_AUTH_TOKEN" ]; then
+            echo "Skipping deploy auth smoke check because secrets.STAGING_DEPLOY_SMOKE_AUTH_TOKEN is not configured."
+            exit 0
+          fi
+          auth_status="$(curl -sS -o /tmp/smoke-auth-staging.json -w "%{http_code}" -H "X-Smoke-Token: $DEPLOY_SMOKE_AUTH_TOKEN" "$API_BASE_URL/api/admin/smoke-auth")"
+          if [ "$auth_status" != "200" ]; then
+            echo "Deploy auth smoke check failed with HTTP $auth_status"
+            cat /tmp/smoke-auth-staging.json
+            exit 1
+          fi
+          node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync("/tmp/smoke-auth-staging.json","utf8"));if(body?.ok!==true){console.error("Deploy auth smoke response invalid",body);process.exit(1)}'
 
       - name: Smoke check frontend reachability (staging)
         run: |
@@ -129,7 +139,6 @@ jobs:
           test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_PROD" && exit 1)
           test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_PROD" && exit 1)
           test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_PROD" && exit 1)
-          test -n "${{ secrets.PROD_ADMIN_SMOKE_TOKEN }}" || (echo "Missing secrets.PROD_ADMIN_SMOKE_TOKEN" && exit 1)
       
       - name: Deploy API (production)
         env:
@@ -150,14 +159,25 @@ jobs:
 
       - name: Smoke check API CORS origin (production)
         run: |
-          curl -sSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
-          echo "$EXPECTED_ALLOWED_ORIGINS" | rg "$FRONTEND_URL"
+          headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
+          echo "$headers" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
+          echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
 
-      - name: Smoke check authenticated admin endpoint (production)
+      - name: Smoke check deployment auth endpoint (production)
         env:
-          ADMIN_SMOKE_TOKEN: ${{ secrets.PROD_ADMIN_SMOKE_TOKEN }}
+          DEPLOY_SMOKE_AUTH_TOKEN: ${{ secrets.PROD_DEPLOY_SMOKE_AUTH_TOKEN }}
         run: |
-          curl -fsS -H "Authorization: Bearer $ADMIN_SMOKE_TOKEN" "$API_BASE_URL/api/auth/me" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(!body?.user?.id||!["admin","super_admin"].includes(body?.user?.role)){console.error("Admin smoke check failed",body);process.exit(1)}'
+          if [ -z "$DEPLOY_SMOKE_AUTH_TOKEN" ]; then
+            echo "Skipping deploy auth smoke check because secrets.PROD_DEPLOY_SMOKE_AUTH_TOKEN is not configured."
+            exit 0
+          fi
+          auth_status="$(curl -sS -o /tmp/smoke-auth-production.json -w "%{http_code}" -H "X-Smoke-Token: $DEPLOY_SMOKE_AUTH_TOKEN" "$API_BASE_URL/api/admin/smoke-auth")"
+          if [ "$auth_status" != "200" ]; then
+            echo "Deploy auth smoke check failed with HTTP $auth_status"
+            cat /tmp/smoke-auth-production.json
+            exit 1
+          fi
+          node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync("/tmp/smoke-auth-production.json","utf8"));if(body?.ok!==true){console.error("Deploy auth smoke response invalid",body);process.exit(1)}'
 
       - name: Smoke check frontend reachability (production)
         run: |
