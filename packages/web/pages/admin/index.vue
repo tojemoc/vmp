@@ -853,7 +853,7 @@
             <button
               type="button"
               class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
-              :disabled="analyticsExporting || analyticsLoading"
+              :disabled="!!analyticsExporting || analyticsLoading"
               @click="exportAnalytics('views')"
             >
               {{ analyticsExporting === 'views' ? 'Exporting…' : 'Export views CSV' }}
@@ -861,7 +861,7 @@
             <button
               type="button"
               class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
-              :disabled="analyticsExporting || analyticsLoading"
+              :disabled="!!analyticsExporting || analyticsLoading"
               @click="exportAnalytics('subscriptions')"
             >
               {{ analyticsExporting === 'subscriptions' ? 'Exporting…' : 'Export subs CSV' }}
@@ -869,7 +869,7 @@
             <button
               type="button"
               class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
-              :disabled="analyticsExporting || analyticsLoading"
+              :disabled="!!analyticsExporting || analyticsLoading"
               @click="exportAnalytics('retention')"
             >
               {{ analyticsExporting === 'retention' ? 'Exporting…' : 'Export retention CSV' }}
@@ -1195,7 +1195,8 @@ interface AnalyticsResponse {
   }
   trafficSources?: Array<{ source: string, unique_sessions?: number, hits?: number }>
   retention?: Array<{ video_id: string, bucket_start_percent: number, viewers: number }>
-  subscriptions?: {
+  subscriptions?: Array<{ status: string, count: number }>
+  subscriptionOverview?: {
     statusBreakdown?: Array<{ status: string, count: number }>
     trends?: AnalyticsSeriesPoint[]
   }
@@ -1319,7 +1320,8 @@ const analytics = ref<AnalyticsResponse>({
   views: { totalUniqueSessions: 0, series: [] },
   trafficSources: [],
   retention: [],
-  subscriptions: { statusBreakdown: [], trends: [] },
+  subscriptions: [],
+  subscriptionOverview: { statusBreakdown: [], trends: [] },
   cashflow: { currency: 'EUR', activeMrrEstimateEur: 0, trend: [] },
   subscriptionsLegacy: [],
 })
@@ -1327,7 +1329,7 @@ const analytics = ref<AnalyticsResponse>({
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
 
 const analyticsStatusRows = computed(() => {
-  if (Array.isArray(analytics.value.subscriptions?.statusBreakdown)) return analytics.value.subscriptions?.statusBreakdown ?? []
+  if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
   if (Array.isArray(analytics.value.subscriptionsLegacy)) return analytics.value.subscriptionsLegacy
   if (Array.isArray(analytics.value.subscriptions)) return analytics.value.subscriptions
   return []
@@ -1383,7 +1385,7 @@ const analyticsRetentionChartRows = computed(() => {
 })
 
 const analyticsSubscriptionTrendRows = computed(() =>
-  (analytics.value.subscriptions?.trends ?? []).map((row) => ({
+  (analytics.value.subscriptionOverview?.trends ?? []).map((row) => ({
     bucket: String(row.bucket),
     newSubscriptions: Number(row.newSubscriptions || 0),
     churnedSubscriptions: Number(row.churnedSubscriptions || 0),
@@ -2001,7 +2003,7 @@ const loadAnalytics = async () => {
 
 const exportAnalytics = async (dataset: AnalyticsDataset) => {
   if (!isAdmin.value || analyticsExporting.value) return
-  analyticsExporting.value = true
+  analyticsExporting.value = dataset
   analyticsError.value = ''
   try {
     const params = new URLSearchParams({
@@ -2028,7 +2030,7 @@ const exportAnalytics = async (dataset: AnalyticsDataset) => {
   } catch (error: any) {
     analyticsError.value = error?.message || 'Export failed'
   } finally {
-    analyticsExporting.value = false
+    analyticsExporting.value = null
   }
 }
 

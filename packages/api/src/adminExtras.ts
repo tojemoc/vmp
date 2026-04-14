@@ -1194,7 +1194,7 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
   }
   if (dataset === 'subscriptions') {
     rows.push('bucket,new_subscriptions,churned_subscriptions,expiring_subscriptions')
-    for (const row of (snapshot.subscriptions?.trends ?? [])) {
+    for (const row of (snapshot.subscriptionOverview?.trends ?? [])) {
       rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.newSubscriptions)},${escapeCsvCell(row.churnedSubscriptions)},${escapeCsvCell(row.expiringSubscriptions)}`)
     }
     return rows.join('\n')
