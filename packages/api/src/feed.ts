@@ -82,7 +82,12 @@ function buildSquareCoverImageUrl(imageUrl: unknown) {
 
 function buildFeedFaviconUrl(request: any, env: any) {
   const requestOrigin = new URL(request.url).origin
-  const frontendOrigin = (env.FRONTEND_URL || requestOrigin).replace(/\/+$/, '')
+  const rawOrigin = String(env.FRONTEND_URL || requestOrigin)
+  let frontendOrigin = rawOrigin
+  while (frontendOrigin.length > 0 && frontendOrigin.endsWith('/')) {
+    frontendOrigin = frontendOrigin.slice(0, -1)
+  }
+  if (!frontendOrigin) frontendOrigin = requestOrigin
   return `${frontendOrigin}/favicon.ico`
 }
  
