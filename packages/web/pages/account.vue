@@ -47,6 +47,9 @@
             <p class="text-lg font-semibold text-gray-900 dark:text-white capitalize">
               {{ planDisplayName(subscription.planType) }}
             </p>
+            <p v-if="subscription.provider" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Provider: {{ paymentProviderLabel(subscription.provider) }}
+            </p>
           </div>
           <span
             class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
@@ -75,6 +78,13 @@
           </button>
           <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
         </div>
+      </div>
+
+      <div
+        v-if="gocardlessCompletionError"
+        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
+      >
+        {{ gocardlessCompletionError }}
       </div>
 
       <!-- No subscription -->
@@ -202,7 +212,8 @@ if (!isLoggedIn.value) {
 const loadingSub        = ref(true)
 const openingPortal     = ref(false)
 const portalError       = ref<string | null>(null)
-const showWelcomeBanner = ref(route.query.subscribed === '1')
+const showWelcomeBanner = ref(route.query.subscribed === '1' || route.query.gocardless_complete === '1')
+const gocardlessCompletionError = ref<string | null>(null)
 const loadingRss        = ref(true)
 const rssError          = ref<string | null>(null)
 const copyError         = ref<string | null>(null)
@@ -210,6 +221,8 @@ const rssPersonalUrl    = ref('')
 const copiedWhich       = ref<'personal' | null>(null)
 
 onMounted(async () => {
+  await maybeCompleteGoCardlessCheckout()
+
   if (showWelcomeBanner.value) {
     // After a Stripe checkout redirect the webhook may not have fired yet.
     // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
@@ -234,6 +247,12 @@ function planDisplayName(planType: string): string {
     club:    'Klubové predplatné',
   }
   return names[planType] ?? planType
+}
+
+function paymentProviderLabel(provider: string): string {
+  if (provider === 'gocardless') return 'GoCardless'
+  if (provider === 'stripe') return 'Stripe'
+  return provider
 }
 
 function statusBadgeClass(status: string): string {
@@ -269,6 +288,42 @@ async function openPortal() {
     portalError.value = 'Network error. Please try again.'
   } finally {
     openingPortal.value = false
+  }
+}
+
+async function maybeCompleteGoCardlessCheckout() {
+  const redirectFlowId = typeof route.query.gocardless_redirect_flow_id === 'string'
+    ? route.query.gocardless_redirect_flow_id
+    : ''
+  const checkoutToken = typeof route.query.gocardless_checkout_token === 'string'
+    ? route.query.gocardless_checkout_token
+    : ''
+  if (!redirectFlowId || !checkoutToken) return
+
+  let completed = false
+  try {
+    const res = await fetch(`${apiUrl}/api/payments/gocardless/complete`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ redirectFlowId, checkoutToken }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      gocardlessCompletionError.value = data.error ?? 'Could not finalize GoCardless checkout.'
+      return
+    }
+    showWelcomeBanner.value = true
+    completed = true
+  } catch {
+    gocardlessCompletionError.value = 'Network error while finalizing GoCardless checkout.'
+  } finally {
+    const nextQuery = { ...route.query }
+    delete nextQuery.gocardless_redirect_flow_id
+    delete nextQuery.gocardless_checkout_token
+    if (completed) nextQuery.gocardless_complete = '1'
+    else delete nextQuery.gocardless_complete
+    await navigateTo({ path: '/account', query: nextQuery }, { replace: true })
   }
 }
 

@@ -1,18 +1,5 @@
 /**
- * packages/api/src/stripe.js
- *
- * Stripe Payments integration for VMP.
- *
- * All Stripe API calls use fetch() with application/x-www-form-urlencoded bodies —
- * the Stripe Node.js SDK does not run in Cloudflare Workers.
- * Webhook signatures are verified with SubtleCrypto HMAC-SHA256 (no library needed).
- *
- * Exported route handlers:
- *   GET  /api/account/pricing      — public; returns plan prices from admin_settings
- *   POST /api/payments/checkout    — protected; creates a Stripe Checkout Session
- *   POST /api/payments/webhook     — Stripe calls this; verifies signature, handles events
- *   GET  /api/account/subscription — protected; returns current subscription for the user
- *   POST /api/payments/portal      — protected; creates a Stripe Customer Portal session
+ * Provider-agnostic payments orchestration (Stripe + GoCardless).
  */
 
 import { requireAuth } from './auth.js'
@@ -22,6 +9,13 @@ import {
   removeSubscriberFromNewsletter,
   syncNewsletterForStripeSubscription,
 } from './brevo.js'
+
+type PlanType = 'monthly' | 'yearly' | 'club'
+type PaymentProvider = 'stripe' | 'gocardless'
+type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
+
+const VALID_PLANS: PlanType[] = ['monthly', 'yearly', 'club']
+const PROVIDER_ORDER: PaymentProvider[] = ['stripe', 'gocardless']
 
 // ─── Stripe API helpers ───────────────────────────────────────────────────────
 
@@ -101,6 +95,44 @@ async function stripeGet(path: any, env: any): Promise<any> {
   }
 }
 
+// ─── GoCardless API helpers ───────────────────────────────────────────────────
+
+async function gocardlessFetch(path: string, method: string, payload: unknown, env: any): Promise<any> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const res = await fetch(`https://api.gocardless.com${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${env.GOCARDLESS_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+        'GoCardless-Version': '2015-07-06',
+      },
+      body: payload == null ? null : JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    const json = await res.json().catch(() => ({}))
+    return { ok: res.ok, status: res.status, data: json }
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const err = new Error('GoCardless request timed out')
+      Object.assign(err, { status: 504, code: 'gocardless_timeout' })
+      throw err
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function gocardlessPost(path: string, payload: unknown, env: any): Promise<any> {
+  return gocardlessFetch(path, 'POST', payload, env)
+}
+
+async function gocardlessGet(path: string, env: any): Promise<any> {
+  return gocardlessFetch(path, 'GET', null, env)
+}
+
 // ─── Webhook verification ─────────────────────────────────────────────────────
 
 /**
@@ -158,6 +190,30 @@ async function verifyStripeWebhook(rawBody: any, sigHeader: any, secret: any) {
   return false
 }
 
+function constantTimeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
+
+async function verifyGoCardlessWebhook(rawBody: string, sigHeader: string, secret: string) {
+  if (!sigHeader || !secret) return false
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const bytes = new Uint8Array(digest)
+  const expectedHex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')
+  const expectedBase64 = btoa(String.fromCharCode(...bytes))
+  const candidate = sigHeader.trim()
+  return constantTimeEqual(candidate, expectedHex) || constantTimeEqual(candidate, expectedBase64)
+}
+
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function getDb(env: any) {
@@ -180,11 +236,65 @@ async function resolvePlanType(db: any, stripePriceId: any, env: any) {
   return 'monthly' // fallback
 }
 
-/**
- * Upsert a subscription row in D1 from a Stripe subscription object.
- * Uses ON CONFLICT(stripe_subscription_id) so repeated webhook deliveries are idempotent.
- */
-async function upsertSubscription(db: any, userId: any, stripeSub: any, env: any) {
+function normalizePlanType(planType: string): PlanType {
+  if (planType === 'yearly' || planType === 'club') return planType
+  return 'monthly'
+}
+
+async function upsertSubscriptionRow(
+  db: any,
+  params: {
+    userId: string
+    planType: PlanType
+    status: SubscriptionStatus
+    provider: PaymentProvider
+    providerSubscriptionId: string | null
+    providerCustomerId: string | null
+    stripeSubscriptionId?: string | null
+    stripeCustomerId?: string | null
+    currentPeriodEnd?: string | null
+  },
+) {
+  await db.prepare(`
+    INSERT INTO subscriptions
+      (
+        id,
+        user_id,
+        plan_type,
+        status,
+        provider,
+        provider_subscription_id,
+        provider_customer_id,
+        stripe_subscription_id,
+        stripe_customer_id,
+        current_period_end,
+        updated_at
+      )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
+      user_id                  = excluded.user_id,
+      status                   = excluded.status,
+      plan_type                = excluded.plan_type,
+      provider_customer_id     = excluded.provider_customer_id,
+      stripe_subscription_id   = excluded.stripe_subscription_id,
+      stripe_customer_id       = excluded.stripe_customer_id,
+      current_period_end       = excluded.current_period_end,
+      updated_at               = CURRENT_TIMESTAMP
+  `).bind(
+    crypto.randomUUID(),
+    params.userId,
+    params.planType,
+    params.status,
+    params.provider,
+    params.providerSubscriptionId,
+    params.providerCustomerId,
+    params.stripeSubscriptionId ?? null,
+    params.stripeCustomerId ?? null,
+    params.currentPeriodEnd ?? null,
+  ).run()
+}
+
+async function upsertStripeSubscription(db: any, userId: string, stripeSub: any, env: any) {
   const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null
   const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly'
   const status = normalizeStripeStatus(stripeSub.status)
@@ -192,30 +302,22 @@ async function upsertSubscription(db: any, userId: any, stripeSub: any, env: any
     ? new Date(stripeSub.current_period_end * 1000).toISOString()
     : null
 
-  await db.prepare(`
-    INSERT INTO subscriptions
-      (id, user_id, plan_type, status, stripe_subscription_id, stripe_customer_id, current_period_end, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(stripe_subscription_id) DO UPDATE SET
-      status             = excluded.status,
-      plan_type          = excluded.plan_type,
-      current_period_end = excluded.current_period_end,
-      stripe_customer_id = excluded.stripe_customer_id,
-      updated_at         = CURRENT_TIMESTAMP
-  `).bind(
-    crypto.randomUUID(),
+  await upsertSubscriptionRow(db, {
     userId,
-    planType,
+    planType: normalizePlanType(planType),
     status,
-    stripeSub.id,
-    stripeSub.customer ?? null,
+    provider: 'stripe',
+    providerSubscriptionId: stripeSub.id ?? null,
+    providerCustomerId: stripeSub.customer ?? null,
+    stripeSubscriptionId: stripeSub.id ?? null,
+    stripeCustomerId: stripeSub.customer ?? null,
     currentPeriodEnd,
-  ).run()
+  })
 }
 
 /** Map Stripe subscription statuses to our internal values. */
-function normalizeStripeStatus(stripeStatus: string): 'active' | 'trialing' | 'past_due' | 'cancelled' {
-  const statusMap: Record<string, 'active' | 'trialing' | 'past_due' | 'cancelled'> = {
+export function normalizeStripeStatus(stripeStatus: string): SubscriptionStatus {
+  const statusMap: Record<string, SubscriptionStatus> = {
     active: 'active',
     trialing: 'trialing',
     past_due: 'past_due',
@@ -229,6 +331,59 @@ function normalizeStripeStatus(stripeStatus: string): 'active' | 'trialing' | 'p
   return statusMap[stripeStatus] ?? 'cancelled'
 }
 
+export function normalizeGoCardlessStatus(status: string): SubscriptionStatus {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  const statusMap: Record<string, SubscriptionStatus> = {
+    active: 'active',
+    customer_approval_granted: 'active',
+    pending_customer_approval: 'trialing',
+    submitted: 'trialing',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    finished: 'cancelled',
+    failed: 'past_due',
+    late_failure_settled: 'past_due',
+  }
+  return statusMap[normalized] ?? 'cancelled'
+}
+
+async function getEnabledProviders(env: any): Promise<PaymentProvider[]> {
+  const raw = String(await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' }) ?? 'stripe')
+  const configured = raw
+    .split(',')
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
+
+  const available = configured.filter((provider) => {
+    if (provider === 'stripe') return Boolean(env.STRIPE_SECRET_KEY)
+    return Boolean(env.GOCARDLESS_ACCESS_TOKEN && env.GOCARDLESS_CREDITOR_ID)
+  })
+  if (available.length > 0) return available
+  return Boolean(env.STRIPE_SECRET_KEY) ? ['stripe'] : []
+}
+
+async function getPricingSettings(env: any) {
+  const [monthly, yearly, club] = await Promise.all([
+    getSetting(env, 'monthly_price_eur', { ttlSeconds: 300 }),
+    getSetting(env, 'yearly_price_eur', { ttlSeconds: 300 }),
+    getSetting(env, 'club_price_eur', { ttlSeconds: 300 }),
+  ])
+  return {
+    monthly: monthly == null ? null : Number(monthly),
+    yearly: yearly == null ? null : Number(yearly),
+    club: club == null ? null : Number(club),
+  }
+}
+
+function getGoCardlessInterval(planType: PlanType): { interval: number, intervalUnit: 'monthly' | 'yearly' } {
+  if (planType === 'monthly') return { interval: 1, intervalUnit: 'monthly' }
+  return { interval: 1, intervalUnit: 'yearly' }
+}
+
+function moneyToMinorUnits(amount: number) {
+  return Math.max(0, Math.round(amount * 100))
+}
+
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 /**
@@ -237,24 +392,22 @@ function normalizeStripeStatus(stripeStatus: string): 'active' | 'trialing' | 'p
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const db = getDb(env)
-    const [monthly, yearly, club] = await Promise.all([
-      getSetting(env, 'monthly_price_eur', { ttlSeconds: 300 }),
-      getSetting(env, 'yearly_price_eur', { ttlSeconds: 300 }),
-      getSetting(env, 'club_price_eur', { ttlSeconds: 300 }),
-    ])
-    if (monthly == null || yearly == null || club == null) {
+    const pricing = await getPricingSettings(env)
+    const enabledProviders = await getEnabledProviders(env)
+    if (pricing.monthly == null || pricing.yearly == null || pricing.club == null) {
       return jsonResponse({
         monthly: null,
         yearly: null,
         club: null,
         pricing_not_configured: true,
+        enabledProviders,
       }, 200, corsHeaders)
     }
     return jsonResponse({
-      monthly: Number(monthly),
-      yearly:  Number(yearly),
-      club:    Number(club),
+      monthly: pricing.monthly,
+      yearly: pricing.yearly,
+      club: pricing.club,
+      enabledProviders,
     }, 200, corsHeaders)
   } catch (err) {
     console.error('handleGetPricing error:', err)
@@ -276,13 +429,25 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   }
 
   const body = await request.json().catch(() => null)
-  const validPlans = ['monthly', 'yearly', 'club']
-  if (!body?.planType || !validPlans.includes(body.planType)) {
+  if (!body?.planType || !VALID_PLANS.includes(body.planType)) {
     return jsonResponse({ error: 'planType must be one of: monthly, yearly, club' }, 400, corsHeaders)
   }
+  const planType = normalizePlanType(body.planType)
 
   try {
     const db = getDb(env)
+    const enabledProviders = await getEnabledProviders(env)
+    const selectedProvider = String(body?.provider ?? '').trim().toLowerCase() as PaymentProvider
+    const provider: PaymentProvider = selectedProvider && PROVIDER_ORDER.includes(selectedProvider)
+      ? selectedProvider
+      : (enabledProviders[0] ?? 'stripe')
+
+    if (!enabledProviders.includes(provider)) {
+      return jsonResponse({
+        error: 'Requested payment provider is not enabled.',
+        code: 'provider_not_enabled',
+      }, 400, corsHeaders)
+    }
 
     // Guard: don't create a new checkout session if the user already has an
     // active or trialing subscription. Return a 409 pointing them to the portal.
@@ -298,30 +463,75 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 409, corsHeaders)
     }
 
-    const priceId = await getSetting(env, `stripe_price_${body.planType}`, { ttlSeconds: 300 })
-    if (!priceId) {
-      return jsonResponse({
-        error: 'Stripe prices not yet configured. Ask an admin to set stripe_price_* in admin_settings.',
-        code: 'prices_not_configured',
-      }, 503, corsHeaders)
+    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000'
+    if (provider === 'stripe') {
+      const priceId = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 })
+      if (!priceId) {
+        return jsonResponse({
+          error: 'Stripe prices not yet configured. Ask an admin to set stripe_price_* in admin_settings.',
+          code: 'prices_not_configured',
+        }, 503, corsHeaders)
+      }
+
+      const session = await stripePost('/checkout/sessions', {
+        mode: 'subscription',
+        line_items: [{ price: priceId, quantity: 1 }],
+        customer_email: user.email,
+        metadata: { userId: user.sub, provider: 'stripe', planType },
+        success_url: `${frontendUrl}/account?subscribed=1`,
+        cancel_url: frontendUrl,
+      }, env)
+
+      if (session.error || !session.url) {
+        console.error('Stripe checkout session error:', session.error)
+        return jsonResponse({ error: 'Failed to create checkout session' }, 502, corsHeaders)
+      }
+
+      return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
     }
 
-    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000'
-    const session = await stripePost('/checkout/sessions', {
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: user.email,
-      metadata: { userId: user.sub },
-      success_url: `${frontendUrl}/account?subscribed=1`,
-      cancel_url: frontendUrl,
+    const checkoutToken = crypto.randomUUID()
+    const sessionToken = crypto.randomUUID().replaceAll('-', '')
+    const checkoutSessionId = crypto.randomUUID()
+    await db.prepare(`
+      INSERT INTO payment_checkout_sessions
+        (id, user_id, provider, plan_type, checkout_token, session_token, status, updated_at)
+      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken).run()
+
+    const flowResponse = await gocardlessPost('/redirect_flows', {
+      redirect_flows: {
+        description: `VMP ${planType} subscription`,
+        session_token: sessionToken,
+        success_redirect_url: `${frontendUrl}/account?gocardless_redirect_flow_id={redirect_flow_id}&gocardless_checkout_token=${checkoutToken}`,
+        prefilled_customer: { email: user.email },
+        metadata: {
+          userId: user.sub,
+          planType,
+          checkoutToken,
+        },
+        links: {
+          creditor: env.GOCARDLESS_CREDITOR_ID,
+        },
+      },
     }, env)
 
-    if (session.error || !session.url) {
-      console.error('Stripe checkout session error:', session.error)
-      return jsonResponse({ error: 'Failed to create checkout session' }, 502, corsHeaders)
+    const redirectFlow = flowResponse?.data?.redirect_flows
+    if (!flowResponse.ok || !redirectFlow?.id || !redirectFlow?.redirect_url) {
+      console.error('GoCardless redirect flow error:', flowResponse?.data)
+      return jsonResponse({ error: 'Failed to create GoCardless checkout flow' }, 502, corsHeaders)
     }
 
-    return jsonResponse({ checkoutUrl: session.url }, 200, corsHeaders)
+    await db.prepare(`
+      UPDATE payment_checkout_sessions
+      SET provider_checkout_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(redirectFlow.id, checkoutSessionId).run()
+
+    return jsonResponse({
+      checkoutUrl: redirectFlow.redirect_url,
+      provider,
+    }, 200, corsHeaders)
   } catch (err) {
     console.error('handleCheckout error:', err)
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
@@ -362,7 +572,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
         // Fetch the full subscription object to get current_period_end and plan
         const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
         if (stripeSub.id) {
-          await upsertSubscription(db, userId, stripeSub, env)
+          await upsertStripeSubscription(db, userId, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
           } catch (brevoErr) {
@@ -382,7 +592,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub, env)
+          await upsertStripeSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
@@ -404,7 +614,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
           'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
         ).bind(stripeSub.id).first()
         if (existing) {
-          await upsertSubscription(db, existing.user_id, stripeSub, env)
+          await upsertStripeSubscription(db, existing.user_id, stripeSub, env)
           try {
             await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
           } catch (brevoErr) {
@@ -479,6 +689,197 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
 }
 
 /**
+ * POST /api/payments/webhook/gocardless — NO auth (GoCardless calls this directly)
+ */
+export async function handleGoCardlessWebhook(request: any, env: any, corsHeaders: any) {
+  const rawBody = await request.text()
+  const signature = request.headers.get('Webhook-Signature') ?? ''
+  const valid = await verifyGoCardlessWebhook(rawBody, signature, String(env.GOCARDLESS_WEBHOOK_SECRET ?? ''))
+  if (!valid) {
+    return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders)
+  }
+
+  let payload: any
+  try {
+    payload = JSON.parse(rawBody)
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders)
+  }
+
+  const events = Array.isArray(payload?.events) ? payload.events : []
+  if (events.length === 0) return jsonResponse({ ok: true }, 200, corsHeaders)
+
+  try {
+    const db = getDb(env)
+    for (const event of events) {
+      const resourceType = String(event?.resource_type ?? '')
+      const action = String(event?.action ?? '')
+      const subscriptionId = String(event?.links?.subscription ?? '').trim()
+      if (resourceType !== 'subscriptions' || !subscriptionId) continue
+
+      const existing = await db.prepare(`
+        SELECT user_id, plan_type
+        FROM subscriptions
+        WHERE provider = 'gocardless' AND provider_subscription_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).bind(subscriptionId).first()
+      if (!existing?.user_id) continue
+
+      const subResponse = await gocardlessGet(`/subscriptions/${subscriptionId}`, env)
+      const gocardlessSub = subResponse?.data?.subscriptions
+      const status = normalizeGoCardlessStatus(gocardlessSub?.status || action)
+      const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
+        ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
+        : null
+      const planType = normalizePlanType(String(existing.plan_type || gocardlessSub?.metadata?.planType || 'monthly'))
+      const customerId = String(gocardlessSub?.links?.customer ?? gocardlessSub?.links?.mandate ?? '')
+
+      await upsertSubscriptionRow(db, {
+        userId: existing.user_id,
+        planType,
+        status,
+        provider: 'gocardless',
+        providerSubscriptionId: subscriptionId,
+        providerCustomerId: customerId || null,
+        currentPeriodEnd,
+      })
+      if (status === 'active' || status === 'trialing') {
+        await syncNewsletterForStripeSubscription(db, existing.user_id, 'active', env)
+      } else if (status === 'cancelled' || status === 'past_due') {
+        await removeSubscriberFromNewsletter(db, existing.user_id, env)
+      }
+    }
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  } catch (err) {
+    console.error('handleGoCardlessWebhook error:', err)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
+/**
+ * POST /api/payments/gocardless/complete — protected
+ * Completes a redirect flow after bank authorization and creates the recurring subscription.
+ */
+export async function handleGoCardlessComplete(request: any, env: any, corsHeaders: any) {
+  let user: any
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  const redirectFlowId = String(body?.redirectFlowId ?? '').trim()
+  const checkoutToken = String(body?.checkoutToken ?? '').trim()
+  if (!redirectFlowId || !checkoutToken) {
+    return jsonResponse({ error: 'redirectFlowId and checkoutToken are required' }, 400, corsHeaders)
+  }
+
+  try {
+    const db = getDb(env)
+    const checkoutSession = await db.prepare(`
+      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status
+      FROM payment_checkout_sessions
+      WHERE provider = 'gocardless'
+        AND user_id = ?
+        AND checkout_token = ?
+        AND provider_checkout_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).bind(user.sub, checkoutToken, redirectFlowId).first()
+
+    if (!checkoutSession || checkoutSession.status === 'completed') {
+      return jsonResponse({ error: 'Checkout session not found or already completed' }, 404, corsHeaders)
+    }
+
+    const completeResponse = await gocardlessPost(
+      `/redirect_flows/${redirectFlowId}/actions/complete`,
+      { data: { session_token: checkoutSession.session_token } },
+      env,
+    )
+    const redirectFlow = completeResponse?.data?.redirect_flows
+    if (!completeResponse.ok || !redirectFlow?.links?.mandate) {
+      console.error('GoCardless complete flow error:', completeResponse?.data)
+      return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+    }
+
+    const pricing = await getPricingSettings(env)
+    const planType = normalizePlanType(String(checkoutSession.plan_type || 'monthly'))
+    const amountEur = pricing[planType]
+    if (amountEur == null || !Number.isFinite(amountEur)) {
+      return jsonResponse({ error: 'Pricing is not configured for selected plan' }, 503, corsHeaders)
+    }
+
+    const interval = getGoCardlessInterval(planType)
+    const currencyRaw = await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' })
+    const currency = String(currencyRaw || 'EUR').toUpperCase()
+    const planNameRaw = await getSetting(env, `gocardless_plan_${planType}`, { defaultValue: `VMP ${planType}` })
+    const planName = String(planNameRaw || `VMP ${planType}`)
+    const subscriptionResponse = await gocardlessPost('/subscriptions', {
+      subscriptions: {
+        amount: moneyToMinorUnits(amountEur),
+        currency,
+        name: planName,
+        interval: interval.interval,
+        interval_unit: interval.intervalUnit,
+        day_of_month: 1,
+        links: {
+          mandate: redirectFlow.links.mandate,
+        },
+        metadata: {
+          userId: user.sub,
+          planType,
+          checkoutToken,
+        },
+      },
+    }, env)
+    const gocardlessSub = subscriptionResponse?.data?.subscriptions
+    if (!subscriptionResponse.ok || !gocardlessSub?.id) {
+      console.error('GoCardless create subscription error:', subscriptionResponse?.data)
+      return jsonResponse({ error: 'Failed to create GoCardless subscription' }, 502, corsHeaders)
+    }
+
+    const status = normalizeGoCardlessStatus(String(gocardlessSub.status ?? 'pending_customer_approval'))
+    const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
+      ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
+      : null
+    const providerCustomerId = String(gocardlessSub?.links?.customer ?? redirectFlow?.links?.customer ?? redirectFlow?.links?.mandate ?? '')
+    await upsertSubscriptionRow(db, {
+      userId: user.sub,
+      planType,
+      status,
+      provider: 'gocardless',
+      providerSubscriptionId: gocardlessSub.id,
+      providerCustomerId: providerCustomerId || null,
+      currentPeriodEnd,
+    })
+    if (status === 'active' || status === 'trialing') {
+      await syncNewsletterForStripeSubscription(db, user.sub, 'active', env)
+    }
+
+    await db.prepare(`
+      UPDATE payment_checkout_sessions
+      SET status = 'completed',
+          provider_subscription_id = ?,
+          completed_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(gocardlessSub.id, checkoutSession.id).run()
+
+    return jsonResponse({
+      ok: true,
+      provider: 'gocardless',
+      subscriptionStatus: status,
+      subscriptionId: gocardlessSub.id,
+    }, 200, corsHeaders)
+  } catch (err) {
+    console.error('handleGoCardlessComplete error:', err)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
+/**
  * GET /api/account/subscription — protected
  * Returns the most recent subscription row for the authenticated user.
  */
@@ -499,6 +900,8 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
           id:                  `role:${user.role}`,
           planType:            'staff',
           status:              'active',
+          provider:            'staff',
+          providerCustomerId:  null,
           stripeCustomerId:    null,
           currentPeriodEnd:    null,
           createdAt:           now,
@@ -508,7 +911,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
     }
 
     const sub = await db.prepare(`
-      SELECT id, user_id, plan_type, status, stripe_customer_id,
+      SELECT id, user_id, plan_type, status, provider, provider_customer_id, stripe_customer_id,
              current_period_end, created_at, updated_at
       FROM subscriptions
       WHERE user_id = ?
@@ -525,6 +928,8 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
         id:                  sub.id,
         planType:            sub.plan_type,
         status:              sub.status,
+        provider:            sub.provider ?? 'stripe',
+        providerCustomerId:  sub.provider_customer_id ?? null,
         stripeCustomerId:    sub.stripe_customer_id,
         currentPeriodEnd:    sub.current_period_end,
         createdAt:           sub.created_at,
@@ -553,11 +958,22 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
   try {
     const db = getDb(env)
     const sub = await db.prepare(`
-      SELECT stripe_customer_id FROM subscriptions
-      WHERE user_id = ? AND stripe_customer_id IS NOT NULL
+      SELECT provider, stripe_customer_id FROM subscriptions
+      WHERE user_id = ?
       ORDER BY created_at DESC LIMIT 1
     `).bind(user.sub).first()
 
+    if (!sub) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders)
+    }
+    if ((sub.provider ?? 'stripe') !== 'stripe') {
+      const manageUrl = String(await getSetting(env, 'gocardless_manage_subscription_url', { defaultValue: '' }) ?? '').trim()
+      if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders)
+      return jsonResponse({
+        error: 'Customer portal is not available for this payment provider.',
+        code: 'portal_not_supported',
+      }, 409, corsHeaders)
+    }
     if (!sub?.stripe_customer_id) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders)
     }

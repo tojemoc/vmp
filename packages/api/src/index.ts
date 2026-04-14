@@ -24,6 +24,8 @@ import {
   handleGetPricing,
   handleCheckout,
   handleWebhook,
+  handleGoCardlessWebhook,
+  handleGoCardlessComplete,
   handleGetSubscription,
   handlePortal,
 } from './stripe.js'
@@ -310,6 +312,9 @@ export default {
     if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
       return handleWebhook(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/payments/webhook/gocardless' && request.method === 'POST') {
+      return handleGoCardlessWebhook(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)
     }
@@ -318,6 +323,9 @@ export default {
     }
     if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
       return handlePortal(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/gocardless/complete' && request.method === 'POST') {
+      return handleGoCardlessComplete(request, env, corsHeaders)
     }
     // ── Push notification routes ──────────────────────────────────────────────
     if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {

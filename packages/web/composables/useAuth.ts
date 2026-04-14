@@ -35,6 +35,8 @@ export interface SubscriptionData {
   id:               string
   planType:         string   // 'monthly' | 'yearly' | 'club'
   status:           string   // 'active' | 'cancelled' | 'past_due' | 'trialing'
+  provider?:        string | null
+  providerCustomerId?: string | null
   stripeCustomerId: string | null
   currentPeriodEnd: string | null
   createdAt:        string
