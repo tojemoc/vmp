@@ -14,9 +14,6 @@ type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'gocardless'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
-const VALID_PLANS: PlanType[] = ['monthly', 'yearly', 'club']
-const PROVIDER_ORDER: PaymentProvider[] = ['stripe', 'gocardless']
-
 // ─── Stripe API helpers ───────────────────────────────────────────────────────
 
 /**
@@ -359,6 +356,24 @@ export function normalizeGoCardlessStatus(status: string): SubscriptionStatus {
   return statusMap[normalized] ?? 'cancelled'
 }
 
+async function getAllowedPlans(env: any): Promise<PlanType[]> {
+  const raw = String(await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' }) ?? 'monthly,yearly,club')
+  const plans = raw
+    .split(',')
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string): v is PlanType => v === 'monthly' || v === 'yearly' || v === 'club')
+  return plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
+}
+
+async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
+  const raw = String(await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,gocardless' }) ?? 'stripe,gocardless')
+  const providers = raw
+    .split(',')
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
+  return providers.length > 0 ? providers : ['stripe', 'gocardless']
+}
+
 async function getEnabledProviders(env: any): Promise<PaymentProvider[]> {
   const raw = String(await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' }) ?? 'stripe')
   const configured = raw
@@ -441,16 +456,18 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   }
 
   const body = await request.json().catch(() => null)
-  if (!body?.planType || !VALID_PLANS.includes(body.planType)) {
-    return jsonResponse({ error: 'planType must be one of: monthly, yearly, club' }, 400, corsHeaders)
+  const allowedPlans = await getAllowedPlans(env)
+  if (!body?.planType || !allowedPlans.includes(body.planType)) {
+    return jsonResponse({ error: `planType must be one of: ${allowedPlans.join(', ')}` }, 400, corsHeaders)
   }
   const planType = normalizePlanType(body.planType)
 
   try {
     const db = getDb(env)
     const enabledProviders = await getEnabledProviders(env)
+    const providerOrder = await getPaymentProviderOrder(env)
     const selectedProvider = String(body?.provider ?? '').trim().toLowerCase() as PaymentProvider
-    const provider: PaymentProvider = selectedProvider && PROVIDER_ORDER.includes(selectedProvider)
+    const provider: PaymentProvider = selectedProvider && providerOrder.includes(selectedProvider)
       ? selectedProvider
       : (enabledProviders[0] ?? 'stripe')
 
@@ -739,8 +756,13 @@ export async function handleGoCardlessWebhook(request: any, env: any, corsHeader
       if (!existing?.user_id) continue
 
       const subResponse = await gocardlessGet(`/subscriptions/${subscriptionId}`, env)
-      const gocardlessSub = subResponse?.data?.subscriptions
-      const status = normalizeGoCardlessStatus(gocardlessSub?.status || action)
+      if (!subResponse?.ok || !subResponse?.data?.subscriptions) {
+        console.error('GoCardless webhook: failed to fetch subscription', { subscriptionId, response: subResponse })
+        return jsonResponse({ error: 'Failed to fetch subscription from GoCardless' }, 500, corsHeaders)
+      }
+
+      const gocardlessSub = subResponse.data.subscriptions
+      const status = normalizeGoCardlessStatus(gocardlessSub?.status)
       const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
         ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
         : null
@@ -846,7 +868,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
           checkoutToken,
         },
       },
-    }, env)
+    }, env, { 'Idempotency-Key': checkoutToken })
     const gocardlessSub = subscriptionResponse?.data?.subscriptions
     if (!subscriptionResponse.ok || !gocardlessSub?.id) {
       console.error('GoCardless create subscription error:', subscriptionResponse?.data)
