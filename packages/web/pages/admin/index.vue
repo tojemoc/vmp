@@ -814,21 +814,148 @@
 
         <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Views, retention, traffic source, and subscription status snapshots.</p>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <p class="text-xs text-gray-500 dark:text-gray-400">Total segment views</p>
-              <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ analytics.totalViews }}</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Retention curves, views over time, traffic sources, subscription trends, and cashflow estimates.</p>
+          <div class="flex flex-wrap gap-2 items-end">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Range</label>
+              <select
+                v-model="analyticsRange"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                @change="loadAnalytics"
+              >
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="180d">Last 180 days</option>
+                <option value="365d">Last 365 days</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Granularity</label>
+              <select
+                v-model="analyticsGranularity"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                @change="loadAnalytics"
+              >
+                <option value="day">Daily</option>
+                <option value="week">Weekly</option>
+                <option value="month">Monthly</option>
+              </select>
+            </div>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white disabled:opacity-50"
+              :disabled="analyticsLoading"
+              @click="loadAnalytics"
+            >
+              {{ analyticsLoading ? 'Refreshing…' : 'Refresh' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('views')"
+            >
+              {{ analyticsExporting === 'views' ? 'Exporting…' : 'Export views CSV' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('subscriptions')"
+            >
+              {{ analyticsExporting === 'subscriptions' ? 'Exporting…' : 'Export subs CSV' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('retention')"
+            >
+              {{ analyticsExporting === 'retention' ? 'Exporting…' : 'Export retention CSV' }}
+            </button>
+          </div>
+          <p v-if="analyticsError" class="text-sm text-red-600 dark:text-red-400">{{ analyticsError }}</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" v-for="item in analyticsKpiCards" :key="item.key">
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.label }}</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ item.value }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ item.help }}</p>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic sources</h3>
-              <p v-for="src in analytics.trafficSources" :key="src.source" class="text-sm text-gray-700 dark:text-gray-200">{{ src.source }}: {{ src.hits }}</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views over time</h3>
+              <div class="space-y-2">
+                <div v-for="row in analyticsViewsSeriesChartRows" :key="`v-${row.bucket}`" class="space-y-1">
+                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                    <span>{{ row.bucket }}</span>
+                    <span>{{ row.value }}</span>
+                  </div>
+                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
+                    <div class="h-2 rounded bg-blue-500" :style="{ width: `${row.percent}%` }"></div>
+                  </div>
+                </div>
+                <p v-if="!analyticsViewsSeriesChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
+              </div>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Subscriptions</h3>
-              <p v-for="row in analytics.subscriptions" :key="row.status" class="text-sm text-gray-700 dark:text-gray-200">{{ row.status }}: {{ row.count }}</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic source split</h3>
+              <div class="space-y-2">
+                <div v-for="row in analyticsTrafficChartRows" :key="`s-${row.source}`" class="space-y-1">
+                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                    <span>{{ row.source }}</span>
+                    <span>{{ row.value }}</span>
+                  </div>
+                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
+                    <div class="h-2 rounded bg-emerald-500" :style="{ width: `${row.percent}%` }"></div>
+                  </div>
+                </div>
+                <p v-if="!analyticsTrafficChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No source events for selected range.</p>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Retention curve (top buckets)</h3>
+              <div class="space-y-2">
+                <div v-for="row in analyticsRetentionChartRows" :key="`r-${row.videoId}-${row.bucket}`" class="space-y-1">
+                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                    <span>{{ row.videoId }} · {{ row.bucket }}%</span>
+                    <span>{{ row.value }}</span>
+                  </div>
+                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
+                    <div class="h-2 rounded bg-purple-500" :style="{ width: `${row.percent}%` }"></div>
+                  </div>
+                </div>
+                <p v-if="!analyticsRetentionChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No retention samples in selected range.</p>
+              </div>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Subscription trends</h3>
+              <div class="space-y-2">
+                <div v-for="row in analyticsSubscriptionTrendRows" :key="`st-${row.bucket}`" class="rounded border border-gray-100 dark:border-gray-800 p-2">
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ row.bucket }}</p>
+                  <p class="text-sm text-gray-700 dark:text-gray-200">New: {{ row.newSubscriptions }} · Churn: {{ row.churnedSubscriptions }} · Expiring: {{ row.expiringSubscriptions }}</p>
+                </div>
+                <p v-if="!analyticsSubscriptionTrendRows.length" class="text-sm text-gray-500 dark:text-gray-400">No subscription trend buckets in selected range.</p>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Subscription status breakdown</h3>
+              <p v-for="row in analyticsStatusRows" :key="`ss-${row.status}`" class="text-sm text-gray-700 dark:text-gray-200">{{ row.status }}: {{ row.count }}</p>
+              <p v-if="!analyticsStatusRows.length" class="text-sm text-gray-500 dark:text-gray-400">No active subscription rows found.</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Cashflow trend (EUR est.)</h3>
+              <div class="space-y-1">
+                <p v-for="row in analyticsCashflowRows" :key="`cf-${row.bucket}`" class="text-sm text-gray-700 dark:text-gray-200">
+                  {{ row.bucket }} · New €{{ row.estimatedNewRevenueEur.toFixed(2) }} · Net €{{ row.estimatedNetNewEur.toFixed(2) }}
+                </p>
+              </div>
+              <p v-if="!analyticsCashflowRows.length" class="text-sm text-gray-500 dark:text-gray-400">No cashflow buckets for selected range.</p>
             </div>
           </div>
         </div>
@@ -1032,6 +1159,57 @@ interface LayoutBlock {
   body: string
 }
 
+type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d'
+type AnalyticsGranularity = 'day' | 'week' | 'month'
+type AnalyticsDataset = 'all' | 'overview' | 'views' | 'retention' | 'sources' | 'subscriptions' | 'cashflow'
+
+interface AnalyticsSeriesPoint {
+  bucket: string
+  uniqueSessions?: number
+  newSubscriptions?: number
+  churnedSubscriptions?: number
+  expiringSubscriptions?: number
+  estimatedNewRevenueEur?: number
+  estimatedNetNewEur?: number
+}
+
+interface AnalyticsResponse {
+  meta?: {
+    range?: AnalyticsRange
+    granularity?: AnalyticsGranularity
+    generatedAt?: string
+    startAt?: string
+    endAt?: string
+  }
+  kpis?: {
+    totalUniqueViews?: number
+    averageRetentionPercent?: number
+    activeSubscribers?: number
+    churnRatePercent?: number
+    estimatedActiveMrrEur?: number
+  }
+  definitions?: Record<string, string>
+  views?: {
+    totalUniqueSessions?: number
+    series?: AnalyticsSeriesPoint[]
+  }
+  trafficSources?: Array<{ source: string, unique_sessions?: number, hits?: number }>
+  retention?: Array<{ video_id: string, bucket_start_percent: number, viewers: number }>
+  subscriptions?: Array<{ status: string, count: number }>
+  subscriptionOverview?: {
+    statusBreakdown?: Array<{ status: string, count: number }>
+    trends?: AnalyticsSeriesPoint[]
+  }
+  cashflow?: {
+    currency?: string
+    activeMrrEstimateEur?: number
+    trend?: AnalyticsSeriesPoint[]
+  }
+  // Legacy fallbacks kept while API transitions.
+  totalViews?: number
+  subscriptionsLegacy?: Array<{ status: string, count: number }>
+}
+
 const config = useRuntimeConfig()
 const { authHeader, isAdmin, user } = useAuth()
 const router = useRouter()
@@ -1134,11 +1312,99 @@ const adminPills = ref<Array<{ id: string; label: string; value: number; color: 
 const newPill = ref({ label: '', value: 0, color: '#2563eb' })
 const pillsApiKey = ref('')
 const pillsApiKeyMeta = ref<{ hasKey: boolean; managedByEnv: boolean; maskedKey: string }>({ hasKey: false, managedByEnv: false, maskedKey: '' })
-const analytics = ref<{ totalViews: number; trafficSources: any[]; retention: any[]; subscriptions: any[] }>({
-  totalViews: 0,
+const analyticsRange = ref<AnalyticsRange>('30d')
+const analyticsGranularity = ref<AnalyticsGranularity>('day')
+const analyticsLoading = ref(false)
+const analyticsError = ref('')
+const analytics = ref<AnalyticsResponse>({
+  views: { totalUniqueSessions: 0, series: [] },
   trafficSources: [],
   retention: [],
   subscriptions: [],
+  subscriptionOverview: { statusBreakdown: [], trends: [] },
+  cashflow: { currency: 'EUR', activeMrrEstimateEur: 0, trend: [] },
+  subscriptionsLegacy: [],
+})
+
+const analyticsExporting = ref<AnalyticsDataset | null>(null)
+
+const analyticsStatusRows = computed(() => {
+  if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
+  if (Array.isArray(analytics.value.subscriptionsLegacy)) return analytics.value.subscriptionsLegacy
+  if (Array.isArray(analytics.value.subscriptions)) return analytics.value.subscriptions
+  return []
+})
+
+function formatMetricValue(key: string, value: number | undefined) {
+  const numeric = Number(value ?? 0)
+  if (key === 'estimatedActiveMrrEur') return `€${numeric.toFixed(2)}`
+  if (key.toLowerCase().includes('percent') || key === 'churnRatePercent') return `${numeric.toFixed(2)}%`
+  return String(Math.round(numeric))
+}
+
+const analyticsKpiCards = computed(() => {
+  const kpis = analytics.value.kpis ?? {}
+  const defs = analytics.value.definitions ?? {}
+  return [
+    { key: 'totalUniqueViews', label: 'Unique views', value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews), help: defs.totalUniqueViews || 'Distinct sessions in selected range.' },
+    { key: 'averageRetentionPercent', label: 'Avg retention', value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent), help: defs.averageRetentionPercent || 'Weighted midpoint of retention buckets.' },
+    { key: 'activeSubscribers', label: 'Active subscribers', value: formatMetricValue('activeSubscribers', kpis.activeSubscribers), help: defs.activeSubscribers || 'Latest active/trialing subscription rows.' },
+    { key: 'churnRatePercent', label: 'Churn rate', value: formatMetricValue('churnRatePercent', kpis.churnRatePercent), help: defs.churnRatePercent || 'Churned divided by new subscriptions.' },
+    { key: 'estimatedActiveMrrEur', label: 'Estimated MRR', value: formatMetricValue('estimatedActiveMrrEur', kpis.estimatedActiveMrrEur), help: defs.estimatedActiveMrrEur || 'Estimated monthly recurring revenue.' },
+  ]
+})
+
+function normalizeChartRows(values: number[]) {
+  const max = values.length ? Math.max(...values) : 0
+  return { max: max > 0 ? max : 1 }
+}
+
+const analyticsViewsSeriesChartRows = computed(() => {
+  const rows = (analytics.value.views?.series ?? []).map((row) => ({ bucket: String(row.bucket), value: Number(row.uniqueSessions || 0) }))
+  const norm = normalizeChartRows(rows.map((row) => row.value))
+  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
+})
+
+const analyticsTrafficChartRows = computed(() => {
+  const rows = (analytics.value.trafficSources ?? []).map((row) => ({
+    source: row.source,
+    value: Number(row.unique_sessions ?? row.hits ?? 0),
+  }))
+  const norm = normalizeChartRows(rows.map((row) => row.value))
+  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
+})
+
+const analyticsRetentionChartRows = computed(() => {
+  const rows = (analytics.value.retention ?? []).map((row) => ({
+    videoId: row.video_id,
+    bucket: Number(row.bucket_start_percent || 0),
+    value: Number(row.viewers || 0),
+  }))
+  const norm = normalizeChartRows(rows.map((row) => row.value))
+  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
+})
+
+const analyticsSubscriptionTrendRows = computed(() =>
+  (analytics.value.subscriptionOverview?.trends ?? []).map((row) => ({
+    bucket: String(row.bucket),
+    newSubscriptions: Number(row.newSubscriptions || 0),
+    churnedSubscriptions: Number(row.churnedSubscriptions || 0),
+    expiringSubscriptions: Number(row.expiringSubscriptions || 0),
+  })),
+)
+
+const analyticsCashflowRows = computed(() =>
+  (analytics.value.cashflow?.trend ?? []).map((row) => ({
+    bucket: String(row.bucket),
+    estimatedNewRevenueEur: Number(row.estimatedNewRevenueEur || 0),
+    estimatedNetNewEur: Number(row.estimatedNetNewEur || 0),
+  })),
+)
+
+watch([analyticsRange, analyticsGranularity], () => {
+  if (activeAdminTab.value === 'analytics') {
+    void loadAnalytics()
+  }
 })
 /** Stable per send attempt until success — retries reuse the same key for server idempotency. */
 const newsletterSendDedupeKey = ref<string | null>(null)
@@ -1713,9 +1979,59 @@ function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
 
 const loadAnalytics = async () => {
   if (!isAdmin.value) return
-  const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, { headers: authHeader() })
-  if (!res.ok) return
-  analytics.value = await res.json()
+  analyticsLoading.value = true
+  analyticsError.value = ''
+  try {
+    const params = new URLSearchParams({
+      range: analyticsRange.value,
+      granularity: analyticsGranularity.value,
+      dataset: 'all',
+      format: 'json',
+    })
+    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, { headers: authHeader() })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    analytics.value = data
+    analyticsRange.value = data?.meta?.range || analyticsRange.value
+    analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
+  } catch (error: any) {
+    analyticsError.value = error?.message || 'Failed to load analytics'
+  } finally {
+    analyticsLoading.value = false
+  }
+}
+
+const exportAnalytics = async (dataset: AnalyticsDataset) => {
+  if (!isAdmin.value || analyticsExporting.value) return
+  analyticsExporting.value = dataset
+  analyticsError.value = ''
+  try {
+    const params = new URLSearchParams({
+      range: analyticsRange.value,
+      granularity: analyticsGranularity.value,
+      dataset,
+      format: 'csv',
+    })
+    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, { headers: authHeader() })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const content = await res.text()
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
+    const href = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = href
+    link.download = `analytics_${dataset}_${analyticsRange.value}_${analyticsGranularity.value}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(href)
+  } catch (error: any) {
+    analyticsError.value = error?.message || 'Export failed'
+  } finally {
+    analyticsExporting.value = null
+  }
 }
 
 const loadAdminPills = async () => {
