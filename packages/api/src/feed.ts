@@ -53,12 +53,13 @@ function cdataSafe(text: unknown): string {
   return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>')
 }
 
-function inferEnclosureContentType(enclosureUrl: string) {
+function inferEnclosureContentType(enclosureUrl: unknown) {
   const pathname = (() => {
+    const normalizedUrl = String(enclosureUrl ?? '')
     try {
-      return new URL(enclosureUrl).pathname.toLowerCase()
+      return new URL(normalizedUrl).pathname.toLowerCase()
     } catch {
-      return String(enclosureUrl || '').toLowerCase()
+      return normalizedUrl.toLowerCase()
     }
   })()
   if (pathname.endsWith('.mp3')) return 'audio/mpeg'
