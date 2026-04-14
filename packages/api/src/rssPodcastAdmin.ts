@@ -170,18 +170,35 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     }
 
     const rawBody = JSON.stringify(payload)
-    const signature = await hmacSha256Hex(secret, rawBody)
     const ts = String(Math.floor(Date.now() / 1000))
+    const signature = await hmacSha256Hex(secret, `${ts}.${rawBody}`)
 
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-VMP-Signature': `sha256=${signature}`,
-        'X-VMP-Timestamp': ts,
-      },
-      body: rawBody,
-    })
+    const controller = new AbortController()
+    const timeoutMs = 10000 // 10 seconds
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+    let res: Response
+    try {
+      res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-VMP-Signature': `sha256=${signature}`,
+          'X-VMP-Timestamp': ts,
+        },
+        body: rawBody,
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+    } catch (err) {
+      clearTimeout(timeoutId)
+      const isAbort = err instanceof Error && err.name === 'AbortError'
+      return jsonResponse({
+        error: isAbort ? 'Webhook request timed out' : 'Webhook request failed',
+        code: isAbort ? 'webhook_timeout' : 'webhook_error',
+        detail: err instanceof Error ? err.message : String(err),
+      }, 502, corsHeaders)
+    }
 
     const text = await res.text().catch(() => '')
     if (!res.ok) {

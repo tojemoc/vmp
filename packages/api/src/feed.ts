@@ -215,10 +215,15 @@ async function buildRssEnclosureForVideo({
   }
 
   let itunesDurationStr: string
-  if (isMp3 && hasPreviewCap) {
+  const mediaDuration = v.full_duration ?? v.preview_duration ?? 0
+  const isTruncatedPreview = hasPreviewCap
+    && typeof previewUntilSeconds === 'number'
+    && previewUntilSeconds > 0
+    && previewUntilSeconds < mediaDuration
+  if (isTruncatedPreview) {
     itunesDurationStr = secondsToItunesDuration(previewUntilSeconds)
   } else {
-    itunesDurationStr = secondsToItunesDuration(v.full_duration ?? v.preview_duration ?? 0)
+    itunesDurationStr = secondsToItunesDuration(mediaDuration)
   }
 
   return {
@@ -346,8 +351,9 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
     for (const v of videos) {
       const videoId = v.id
       if (!videoId) continue
-      const previewDuration = v.preview_duration ?? v.full_duration ?? 0
-      const previewUntil = previewDuration && previewDuration > 0 ? previewDuration : null
+      const previewDuration = v.preview_duration ?? 0
+      if (!previewDuration || previewDuration <= 0) continue
+      const previewUntil = previewDuration
       items.push(await buildRssEnclosureForVideo({
         request,
         env,
@@ -468,17 +474,28 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       const videoId = v.id
       if (!videoId) continue
 
-      const previewDuration = v.preview_duration ?? v.full_duration ?? 0
-      const previewUntil = hasPremiumAccess ? null : (previewDuration && previewDuration > 0 ? previewDuration : null)
-
-      items.push(await buildRssEnclosureForVideo({
-        request,
-        env,
-        videoId,
-        vtUserId: userId,
-        previewUntilSeconds: previewUntil,
-        v,
-      }))
+      if (!hasPremiumAccess) {
+        const previewDuration = v.preview_duration ?? 0
+        if (!previewDuration || previewDuration <= 0) continue
+        const previewUntil = previewDuration
+        items.push(await buildRssEnclosureForVideo({
+          request,
+          env,
+          videoId,
+          vtUserId: userId,
+          previewUntilSeconds: previewUntil,
+          v,
+        }))
+      } else {
+        items.push(await buildRssEnclosureForVideo({
+          request,
+          env,
+          videoId,
+          vtUserId: userId,
+          previewUntilSeconds: null,
+          v,
+        }))
+      }
     }
 
     const xml = buildRssXml({ channel, items })

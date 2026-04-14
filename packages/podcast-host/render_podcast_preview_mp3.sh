@@ -35,7 +35,7 @@ if [ ! -s "$LOCAL_IN" ]; then
 fi
 
 echo "Encoding first ${PREVIEW_SEC}s to ${MP3_OUT}"
-ffmpeg -hide_banner -y -i "$LOCAL_IN" -t "$PREVIEW_SEC" -vn -c:a copy -f mp3 "$LOCAL_OUT"
+ffmpeg -hide_banner -y -i "$LOCAL_IN" -t "$PREVIEW_SEC" -vn -c:a libmp3lame -q:a 2 -f mp3 "$LOCAL_OUT"
 
 REMOTE_OUT="${R2_BUCKET}:/videos/${VIDEO_ID}/${MP3_OUT}"
 echo "Uploading ${REMOTE_OUT}"
