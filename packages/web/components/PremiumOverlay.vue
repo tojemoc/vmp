@@ -76,6 +76,25 @@
         {{ checkoutError }}
       </p>
 
+      <div v-if="isLoggedIn && availableProviders.length > 1" class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-3 text-left">
+        <p class="text-xs uppercase tracking-wide text-gray-400 mb-2">Payment method</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label
+            v-for="provider in availableProviders"
+            :key="provider"
+            class="inline-flex items-center gap-2 text-sm text-gray-200"
+          >
+            <input
+              v-model="selectedProvider"
+              type="radio"
+              :value="provider"
+              class="accent-blue-500"
+            >
+            <span>{{ providerLabel(provider) }}</span>
+          </label>
+        </div>
+      </div>
+
       <!-- CTA -->
       <button
         class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold py-3 px-6 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -88,7 +107,7 @@
       </button>
 
       <p v-if="isLoggedIn" class="text-xs text-gray-500 mt-3">
-        Secure checkout via Stripe. Cancel any time.
+        {{ providerBlurb }}
       </p>
       <p v-else class="text-sm text-gray-400 mt-3">
         Already subscribed?
@@ -109,11 +128,14 @@ const apiUrl      = config.public.apiUrl as string
 const { isLoggedIn, authHeader } = useAuth()
 
 interface Prices { monthly: number; yearly: number; club: number }
+type PaymentProvider = 'stripe' | 'gocardless'
 
 const prices        = ref<Prices>({ monthly: 6.90, yearly: 74.90, club: 109.00 })
 const loadingPrices = ref(false)
 const priceError    = ref(false)
 const selectedPlan  = ref<'monthly' | 'yearly' | 'club'>('monthly')
+const availableProviders = ref<PaymentProvider[]>(['stripe'])
+const selectedProvider = ref<PaymentProvider>('stripe')
 const checkingOut   = ref(false)
 const checkoutError = ref<string | null>(null)
 
@@ -127,6 +149,16 @@ function formatPrice(amount: number | undefined): string {
   return `€${amount.toFixed(2)}`
 }
 
+function providerLabel(provider: PaymentProvider) {
+  return provider === 'gocardless' ? 'GoCardless (bank debit)' : 'Stripe (card)'
+}
+
+const providerBlurb = computed(() =>
+  selectedProvider.value === 'gocardless'
+    ? 'Bank debit checkout via GoCardless. Clearing can take a few business days.'
+    : 'Secure checkout via Stripe. Cancel any time.'
+)
+
 async function loadPrices() {
   loadingPrices.value = true
   priceError.value = false
@@ -134,7 +166,22 @@ async function loadPrices() {
     const res = await fetch(`${apiUrl}/api/account/pricing`)
     if (res.ok) {
       const data = await res.json()
-      prices.value = data
+      if (data?.pricing_not_configured) {
+        priceError.value = true
+        return
+      }
+      prices.value = {
+        monthly: Number(data.monthly),
+        yearly: Number(data.yearly),
+        club: Number(data.club),
+      }
+      const providers = Array.isArray(data.enabledProviders)
+        ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless')
+        : []
+      availableProviders.value = providers.length ? providers : ['stripe']
+      if (!availableProviders.value.includes(selectedProvider.value)) {
+        selectedProvider.value = availableProviders.value[0] ?? 'stripe'
+      }
     } else {
       priceError.value = true
     }
@@ -157,7 +204,7 @@ async function handleSubscribe() {
       method:      'POST',
       credentials: 'include',
       headers:     { 'Content-Type': 'application/json', ...authHeader() },
-      body:        JSON.stringify({ planType: selectedPlan.value }),
+      body:        JSON.stringify({ planType: selectedPlan.value, provider: selectedProvider.value }),
     })
     const data = await res.json()
     if (!res.ok || !data.checkoutUrl) {
