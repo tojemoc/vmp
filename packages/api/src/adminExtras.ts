@@ -768,8 +768,24 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  const url = new URL(request.url)
+  const parsed = parseAnalyticsQuery(url)
+  if (parsed.error) {
+    return jsonResponse({ error: parsed.error, code: 'invalid_query' }, 400, corsHeaders)
+  }
   const db = getDb(env)
-  const analytics = await buildSegmentAnalyticsSnapshot(db)
+  const analytics = await buildSegmentAnalyticsSnapshotWithOptions(db, env, parsed.options)
+  if (parsed.options.format === 'csv') {
+    const csv = buildAnalyticsCsvExport(analytics, parsed.options.dataset)
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="analytics-${parsed.options.dataset}-${Date.now()}.csv"`,
+        ...corsHeaders,
+      },
+    })
+  }
   return jsonResponse(analytics, 200, corsHeaders)
 }
 
@@ -787,23 +803,114 @@ function canonicalSessionExpression() {
 }
 
 export async function buildSegmentAnalyticsSnapshot(db: any) {
+  return buildSegmentAnalyticsSnapshotWithOptions(db, null, {
+    range: '30d',
+    granularity: 'day',
+    dataset: 'all',
+    format: 'json',
+  })
+}
+
+type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d'
+type AnalyticsGranularity = 'day' | 'week' | 'month'
+type AnalyticsDataset = 'all' | 'overview' | 'views' | 'retention' | 'sources' | 'subscriptions' | 'cashflow'
+type AnalyticsFormat = 'json' | 'csv'
+
+interface AnalyticsQueryOptions {
+  range: AnalyticsRange
+  granularity: AnalyticsGranularity
+  dataset: AnalyticsDataset
+  format: AnalyticsFormat
+}
+
+function parseAnalyticsQuery(url: URL): { options: AnalyticsQueryOptions, error?: string } {
+  const range = (url.searchParams.get('range') || '30d') as AnalyticsRange
+  const granularity = (url.searchParams.get('granularity') || 'day') as AnalyticsGranularity
+  const dataset = (url.searchParams.get('dataset') || 'all') as AnalyticsDataset
+  const format = (url.searchParams.get('format') || 'json') as AnalyticsFormat
+
+  const ranges: AnalyticsRange[] = ['7d', '30d', '90d', '180d', '365d']
+  const granularities: AnalyticsGranularity[] = ['day', 'week', 'month']
+  const datasets: AnalyticsDataset[] = ['all', 'overview', 'views', 'retention', 'sources', 'subscriptions', 'cashflow']
+  const formats: AnalyticsFormat[] = ['json', 'csv']
+
+  if (!ranges.includes(range)) return { options: fallbackAnalyticsOptions(), error: 'range must be one of 7d, 30d, 90d, 180d, 365d' }
+  if (!granularities.includes(granularity)) return { options: fallbackAnalyticsOptions(), error: 'granularity must be one of day, week, month' }
+  if (!datasets.includes(dataset)) return { options: fallbackAnalyticsOptions(), error: 'dataset must be one of all, overview, views, retention, sources, subscriptions, cashflow' }
+  if (!formats.includes(format)) return { options: fallbackAnalyticsOptions(), error: 'format must be json or csv' }
+  if (format === 'csv' && dataset === 'all') {
+    return { options: fallbackAnalyticsOptions(), error: 'dataset must be specified when format=csv' }
+  }
+  return { options: { range, granularity, dataset, format } }
+}
+
+function fallbackAnalyticsOptions(): AnalyticsQueryOptions {
+  return {
+    range: '30d',
+    granularity: 'day',
+    dataset: 'all',
+    format: 'json',
+  }
+}
+
+function daysForRange(range: AnalyticsRange) {
+  if (range === '7d') return 7
+  if (range === '90d') return 90
+  if (range === '180d') return 180
+  if (range === '365d') return 365
+  return 30
+}
+
+function bucketExpr(column: string, granularity: AnalyticsGranularity) {
+  if (granularity === 'week') return `strftime('%Y-W%W', datetime(${column}))`
+  if (granularity === 'month') return `strftime('%Y-%m', datetime(${column}))`
+  return `date(datetime(${column}))`
+}
+
+function parseNumericSetting(raw: unknown, fallbackValue: number) {
+  const next = Number(raw)
+  return Number.isFinite(next) && next >= 0 ? next : fallbackValue
+}
+
+export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any, options: AnalyticsQueryOptions) {
   const sessionExpr = canonicalSessionExpression()
-  const [views, sourceRows, retentionRows, subsRows] = await Promise.all([
+  const now = new Date()
+  const days = daysForRange(options.range)
+  const startAt = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString()
+  const bucketByCreated = bucketExpr('created_at', options.granularity)
+  const bucketByUpdated = bucketExpr('updated_at', options.granularity)
+  const bucketByPeriodEnd = bucketExpr('current_period_end', options.granularity)
+
+  const [monthlyPriceRaw, yearlyPriceRaw, clubPriceRaw] = env
+    ? await Promise.all([
+      getSetting(env, 'monthly_price_eur'),
+      getSetting(env, 'yearly_price_eur'),
+      getSetting(env, 'club_price_eur'),
+    ])
+    : [null, null, null]
+  const monthlyPriceEur = parseNumericSetting(monthlyPriceRaw, 0)
+  const yearlyPriceEur = parseNumericSetting(yearlyPriceRaw, 0)
+  const clubPriceEur = parseNumericSetting(clubPriceRaw, 0)
+
+  const [views, sourceRows, retentionRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
       SELECT COUNT(DISTINCT ${sessionExpr}) AS total
       FROM video_segment_events
       WHERE event_type = 'segment'
-    `).first(),
+        AND datetime(created_at) >= datetime(?)
+    `).bind(startAt).first(),
     db.prepare(`
       SELECT
         COALESCE(source_category, 'direct') AS source,
+        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions,
         COUNT(DISTINCT ${sessionExpr}) AS hits
       FROM video_segment_events
       WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
       GROUP BY source
-      ORDER BY hits DESC
+      ORDER BY unique_sessions DESC
       LIMIT 12
-    `).all(),
+    `).bind(startAt).all(),
     db.prepare(`
       WITH events AS (
         SELECT
@@ -817,6 +924,7 @@ export async function buildSegmentAnalyticsSnapshot(db: any) {
           END AS playback_seconds
         FROM video_segment_events e
         WHERE e.event_type = 'segment'
+          AND datetime(e.created_at) >= datetime(?)
       ),
       normalized AS (
         SELECT
@@ -849,20 +957,260 @@ export async function buildSegmentAnalyticsSnapshot(db: any) {
       GROUP BY video_id, bucket_start_percent
       ORDER BY viewers DESC, video_id ASC, bucket_start_percent ASC
       LIMIT 120
+    `).bind(startAt).all(),
+    db.prepare(`
+      WITH latest_subscription AS (
+        SELECT s.*
+        FROM subscriptions s
+        INNER JOIN (
+          SELECT user_id, MAX(datetime(COALESCE(updated_at, created_at))) AS latest_change
+          FROM subscriptions
+          GROUP BY user_id
+        ) latest ON latest.user_id = s.user_id AND datetime(COALESCE(s.updated_at, s.created_at)) = latest.latest_change
+      )
+      SELECT COALESCE(status, 'none') AS status, COUNT(*) AS count
+      FROM latest_subscription
+      GROUP BY status
+      ORDER BY count DESC, status ASC
     `).all(),
     db.prepare(`
-      SELECT status, COUNT(*) AS count
+      SELECT
+        ${bucketByCreated} AS bucket,
+        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions
+      FROM video_segment_events
+      WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `).bind(startAt).all(),
+    db.prepare(`
+      SELECT
+        ${bucketByCreated} AS bucket,
+        COUNT(*) AS new_subscriptions
       FROM subscriptions
-      GROUP BY status
+      WHERE datetime(created_at) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `).bind(startAt).all(),
+    db.prepare(`
+      SELECT
+        ${bucketByUpdated} AS bucket,
+        COUNT(*) AS churned_subscriptions
+      FROM subscriptions
+      WHERE datetime(updated_at) >= datetime(?)
+        AND status IN ('cancelled', 'unpaid')
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `).bind(startAt).all(),
+    db.prepare(`
+      SELECT
+        ${bucketByPeriodEnd} AS bucket,
+        COUNT(*) AS expiring_subscriptions
+      FROM subscriptions
+      WHERE current_period_end IS NOT NULL
+        AND datetime(current_period_end) >= datetime(?)
+        AND datetime(current_period_end) <= datetime(?)
+        AND status IN ('active', 'trialing', 'past_due')
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `).bind(startAt, now.toISOString()).all(),
+    db.prepare(`
+      WITH latest_subscription AS (
+        SELECT s.*
+        FROM subscriptions s
+        INNER JOIN (
+          SELECT user_id, MAX(datetime(COALESCE(updated_at, created_at))) AS latest_change
+          FROM subscriptions
+          GROUP BY user_id
+        ) latest ON latest.user_id = s.user_id AND datetime(COALESCE(s.updated_at, s.created_at)) = latest.latest_change
+      )
+      SELECT plan_type, COUNT(*) AS active_count
+      FROM latest_subscription
+      WHERE status IN ('active', 'trialing')
+      GROUP BY plan_type
     `).all(),
   ])
 
+  const viewSeries = Array.isArray(viewsSeriesRows?.results)
+    ? viewsSeriesRows.results.map((row: any) => ({
+      bucket: String(row.bucket),
+      uniqueSessions: Number(row.unique_sessions || 0),
+    }))
+    : []
+
+  const subscriptionTrendsMap = new Map<string, { bucket: string, newSubscriptions: number, churnedSubscriptions: number, expiringSubscriptions: number }>()
+  for (const row of (subscriptionNewRows?.results ?? [])) {
+    const bucket = String(row.bucket)
+    subscriptionTrendsMap.set(bucket, {
+      bucket,
+      newSubscriptions: Number(row.new_subscriptions || 0),
+      churnedSubscriptions: 0,
+      expiringSubscriptions: 0,
+    })
+  }
+  for (const row of (subscriptionChurnRows?.results ?? [])) {
+    const bucket = String(row.bucket)
+    const current = subscriptionTrendsMap.get(bucket) || {
+      bucket,
+      newSubscriptions: 0,
+      churnedSubscriptions: 0,
+      expiringSubscriptions: 0,
+    }
+    current.churnedSubscriptions = Number(row.churned_subscriptions || 0)
+    subscriptionTrendsMap.set(bucket, current)
+  }
+  for (const row of (subscriptionExpiringRows?.results ?? [])) {
+    const bucket = String(row.bucket)
+    const current = subscriptionTrendsMap.get(bucket) || {
+      bucket,
+      newSubscriptions: 0,
+      churnedSubscriptions: 0,
+      expiringSubscriptions: 0,
+    }
+    current.expiringSubscriptions = Number(row.expiring_subscriptions || 0)
+    subscriptionTrendsMap.set(bucket, current)
+  }
+  const subscriptionTrends = Array.from(subscriptionTrendsMap.values()).sort((a, b) => a.bucket.localeCompare(b.bucket))
+
+  const monthlyPriceByPlan: Record<'monthly' | 'yearly' | 'club', number> = {
+    monthly: monthlyPriceEur,
+    yearly: yearlyPriceEur > 0 ? yearlyPriceEur / 12 : 0,
+    club: clubPriceEur,
+  }
+
+  const activeMrrEstimateEur = (planBreakdownRows?.results ?? []).reduce((sum: number, row: any) => {
+    const rawPlan = typeof row.plan_type === 'string' ? row.plan_type : 'monthly'
+    const plan: keyof typeof monthlyPriceByPlan = rawPlan === 'yearly' || rawPlan === 'club' ? rawPlan : 'monthly'
+    const price = monthlyPriceByPlan[plan] ?? 0
+    return sum + (Number(row.active_count || 0) * price)
+  }, 0)
+
+  const monthlyBasePrice = monthlyPriceByPlan.monthly
+  const cashflowTrend = subscriptionTrends.map((row) => {
+    const estimatedNewRevenueEur = row.newSubscriptions * monthlyBasePrice
+    return {
+      bucket: row.bucket,
+      estimatedNewRevenueEur: Number(estimatedNewRevenueEur.toFixed(2)),
+      estimatedNetNewEur: Number((estimatedNewRevenueEur - (row.churnedSubscriptions * monthlyBasePrice)).toFixed(2)),
+    }
+  })
+
+  const totalViews = Number(views?.total || 0)
+  const totalNewSubscriptions = subscriptionTrends.reduce((sum, row) => sum + row.newSubscriptions, 0)
+  const totalChurnedSubscriptions = subscriptionTrends.reduce((sum, row) => sum + row.churnedSubscriptions, 0)
+  const churnRate = totalNewSubscriptions > 0 ? Number(((totalChurnedSubscriptions / totalNewSubscriptions) * 100).toFixed(2)) : 0
+  const averageRetentionPercent = (() => {
+    const rows = retentionRows?.results ?? []
+    if (!rows.length) return 0
+    const weighted = rows.reduce((sum: number, row: any) => {
+      const bucket = Number(row.bucket_start_percent || 0)
+      const viewers = Number(row.viewers || 0)
+      return sum + ((bucket + 10) * viewers)
+    }, 0)
+    const viewersTotal = rows.reduce((sum: number, row: any) => sum + Number(row.viewers || 0), 0)
+    if (!viewersTotal) return 0
+    return Number((weighted / viewersTotal).toFixed(2))
+  })()
+
+  const kpis = {
+    totalUniqueViews: totalViews,
+    averageRetentionPercent,
+    activeSubscribers: Number((planBreakdownRows?.results ?? []).reduce((sum: number, row: any) => sum + Number(row.active_count || 0), 0)),
+    churnRatePercent: churnRate,
+    estimatedActiveMrrEur: Number(activeMrrEstimateEur.toFixed(2)),
+  }
+
+  const definitions = {
+    totalUniqueViews: 'Distinct session keys with at least one segment request in selected range.',
+    averageRetentionPercent: 'Weighted midpoint of 10% retention buckets based on session viewers.',
+    activeSubscribers: 'Users whose latest subscription status is active or trialing.',
+    churnRatePercent: 'Churned subscriptions divided by new subscriptions in selected range.',
+    estimatedActiveMrrEur: 'Approximate monthly recurring revenue from active/trialing users using admin configured prices.',
+  }
+
   return {
-    totalViews: Number(views?.total || 0),
+    meta: {
+      range: options.range,
+      granularity: options.granularity,
+      dataset: options.dataset,
+      startAt,
+      endAt: now.toISOString(),
+      generatedAt: now.toISOString(),
+    },
+    kpis,
+    definitions,
+    views: {
+      totalUniqueSessions: totalViews,
+      series: viewSeries,
+    },
     trafficSources: sourceRows?.results ?? [],
     retention: retentionRows?.results ?? [],
-    subscriptions: subsRows?.results ?? [],
+    subscriptionOverview: {
+      statusBreakdown: subsStatusRows?.results ?? [],
+      trends: subscriptionTrends,
+    },
+    cashflow: {
+      currency: 'EUR',
+      activeMrrEstimateEur: Number(activeMrrEstimateEur.toFixed(2)),
+      trend: cashflowTrend,
+      planMonthlyPriceEur: monthlyPriceByPlan,
+    },
+    // Backward-compatible summary fields used by existing clients/tests.
+    totalViews,
+    subscriptionsLegacy: subsStatusRows?.results ?? [],
+    subscriptions: subsStatusRows?.results ?? [],
   }
+}
+
+function escapeCsvCell(value: unknown) {
+  if (value == null) return ''
+  const text = String(value)
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
+  const rows: string[] = []
+  if (dataset === 'views') {
+    rows.push('bucket,unique_sessions')
+    for (const row of (snapshot.views?.series ?? [])) {
+      rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.uniqueSessions)}`)
+    }
+    return rows.join('\n')
+  }
+  if (dataset === 'retention') {
+    rows.push('video_id,bucket_start_percent,viewers')
+    for (const row of (snapshot.retention ?? [])) {
+      rows.push(`${escapeCsvCell(row.video_id)},${escapeCsvCell(row.bucket_start_percent)},${escapeCsvCell(row.viewers)}`)
+    }
+    return rows.join('\n')
+  }
+  if (dataset === 'sources') {
+    rows.push('source,unique_sessions')
+    for (const row of (snapshot.trafficSources ?? [])) {
+      rows.push(`${escapeCsvCell(row.source)},${escapeCsvCell(row.unique_sessions)}`)
+    }
+    return rows.join('\n')
+  }
+  if (dataset === 'subscriptions') {
+    rows.push('bucket,new_subscriptions,churned_subscriptions,expiring_subscriptions')
+    for (const row of (snapshot.subscriptions?.trends ?? [])) {
+      rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.newSubscriptions)},${escapeCsvCell(row.churnedSubscriptions)},${escapeCsvCell(row.expiringSubscriptions)}`)
+    }
+    return rows.join('\n')
+  }
+  if (dataset === 'cashflow') {
+    rows.push('bucket,estimated_new_revenue_eur,estimated_net_new_eur')
+    for (const row of (snapshot.cashflow?.trend ?? [])) {
+      rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.estimatedNewRevenueEur)},${escapeCsvCell(row.estimatedNetNewEur)}`)
+    }
+    return rows.join('\n')
+  }
+  rows.push('kpi,value,definition')
+  for (const key of Object.keys(snapshot.kpis ?? {})) {
+    rows.push(`${escapeCsvCell(key)},${escapeCsvCell(snapshot.kpis[key])},${escapeCsvCell(snapshot.definitions?.[key] ?? '')}`)
+  }
+  return rows.join('\n')
 }
 
 function normalizeSourceHost(rawHost: any) {

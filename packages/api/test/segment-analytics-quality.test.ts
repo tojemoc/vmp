@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildSegmentAnalyticsSnapshot,
+  buildSegmentAnalyticsSnapshotWithOptions,
   buildSegmentSessionKey,
   classifySegmentSource,
   derivePlaybackPositionSeconds,
@@ -42,6 +43,33 @@ describe('segment playback + session derivation', () => {
 })
 
 describe('segment analytics persistence + snapshot', () => {
+  function buildDbStub(resultsByMatch: Array<{ match: string, response: any }>) {
+    return {
+      prepare(sql: string) {
+        const matched = resultsByMatch.find((item) => sql.includes(item.match))
+        return {
+          bind() {
+            return this
+          },
+          async first() {
+            if (!matched) return null
+            if (matched.response && Object.prototype.hasOwnProperty.call(matched.response, 'first')) {
+              return matched.response.first
+            }
+            return null
+          },
+          async all() {
+            if (!matched) return { results: [] }
+            if (matched.response && Object.prototype.hasOwnProperty.call(matched.response, 'all')) {
+              return matched.response.all
+            }
+            return { results: [] }
+          },
+        }
+      },
+    }
+  }
+
   it('writes canonical source/session/position fields on event log', async () => {
     const captured: { sql: string; args: any[] }[] = []
     const env = {
@@ -83,35 +111,58 @@ describe('segment analytics persistence + snapshot', () => {
   })
 
   it('builds analytics snapshot from session-based aggregations', async () => {
-    const executedSql: string[] = []
-    const db = {
-      prepare(sql: string) {
-        executedSql.push(sql)
-        return {
-          async first() {
-            if (sql.includes('AS total')) return { total: 4 }
-            return null
-          },
-          async all() {
-            if (sql.includes('COALESCE(source_category')) {
-              return { results: [{ source: 'search', hits: 3 }, { source: 'direct', hits: 1 }] }
-            }
-            if (sql.includes('WITH events AS')) {
-              return { results: [{ video_id: 'video-1', bucket_start_percent: 20, viewers: 2 }] }
-            }
-            if (sql.includes('FROM subscriptions')) {
-              return { results: [{ status: 'active', count: 5 }] }
-            }
-            return { results: [] }
-          },
-        }
-      },
-    }
+    const db = buildDbStub([
+      { match: 'AS total', response: { first: { total: 4 } } },
+      { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'search', unique_sessions: 3 }, { source: 'direct', unique_sessions: 1 }] } } },
+      { match: 'WITH events AS', response: { all: { results: [{ video_id: 'video-1', bucket_start_percent: 20, viewers: 2 }] } } },
+      { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 5 }] } } },
+      { match: 'SELECT plan_type, COUNT(*) AS active_count', response: { all: { results: [{ plan_type: 'monthly', active_count: 5 }] } } },
+    ])
     const snapshot = await buildSegmentAnalyticsSnapshot(db)
     assert.equal(snapshot.totalViews, 4)
     assert.equal(snapshot.trafficSources[0].source, 'search')
     assert.equal(snapshot.retention[0].bucket_start_percent, 20)
-    assert.equal(snapshot.subscriptions[0].status, 'active')
-    assert.ok(executedSql.some((sql) => sql.includes('COUNT(DISTINCT')))
+    assert.equal(snapshot.subscriptionsLegacy[0].status, 'active')
+  })
+
+  it('builds analytics snapshot with time-series options and overview sections', async () => {
+    const db = buildDbStub([
+      { match: 'AS total', response: { first: { total: 9 } } },
+      { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'social', unique_sessions: 5 }] } } },
+      { match: 'WITH events AS', response: { all: { results: [{ video_id: 'video-1', bucket_start_percent: 30, viewers: 4 }] } } },
+      { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 8 }] } } },
+      { match: 'COUNT(DISTINCT', response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 3 }] } } },
+      { match: 'AS new_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', new_subscriptions: 2 }] } } },
+      { match: 'AS churned_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', churned_subscriptions: 1 }] } } },
+      { match: 'AS expiring_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', expiring_subscriptions: 1 }] } } },
+      { match: 'SELECT plan_type, COUNT(*) AS active_count', response: { all: { results: [{ plan_type: 'monthly', active_count: 6 }] } } },
+    ])
+    const settings = new Map<string, string>([
+      ['monthly_price_eur', '12'],
+      ['yearly_price_eur', '120'],
+      ['club_price_eur', '30'],
+    ])
+    const env = {
+      DB: db,
+      SETTINGS_KV: {
+        async get(key: string) {
+          if (!key.startsWith('settings:')) return null
+          return settings.get(key.slice('settings:'.length)) ?? null
+        },
+        async put() {},
+      },
+    }
+    const snapshot = await buildSegmentAnalyticsSnapshotWithOptions(db, env, {
+      range: '30d',
+      granularity: 'day',
+      dataset: 'all',
+      format: 'json',
+    })
+    assert.equal(snapshot.kpis.totalUniqueViews, 9)
+    assert.equal(snapshot.trafficSources[0].source, 'social')
+    assert.equal(snapshot.views.series[0].bucket, '2026-04-01')
+    assert.equal(snapshot.subscriptionOverview.statusBreakdown[0].status, 'active')
+    assert.equal(snapshot.subscriptionOverview.trends[0].newSubscriptions, 2)
+    assert.equal(snapshot.cashflow.trend[0].estimatedNetNewEur, 12)
   })
 })
