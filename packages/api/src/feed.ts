@@ -3,8 +3,9 @@
  *
  * RSS / Podcast feed endpoints (Step 9).
  *
- * Note: enclosures point at HLS master playlists proxied through /api/video-proxy.
- * We rely on `vt` tokens (HMAC, short-lived) for access control and preview truncation.
+ * Note: enclosures prefer `podcast.mp3` when available, then fall back to HLS playlists,
+ * all proxied through /api/video-proxy. We rely on `vt` tokens (HMAC, short-lived)
+ * for access control and preview truncation.
  */
  
 import { isAdministrativeRole } from './roles.js'
@@ -50,6 +51,19 @@ function getErrorMessage(err: unknown) {
 
 function cdataSafe(text: unknown): string {
   return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>')
+}
+
+function inferEnclosureContentType(enclosureUrl: string) {
+  const pathname = (() => {
+    try {
+      return new URL(enclosureUrl).pathname.toLowerCase()
+    } catch {
+      return String(enclosureUrl || '').toLowerCase()
+    }
+  })()
+  if (pathname.endsWith('.mp3')) return 'audio/mpeg'
+  if (pathname.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl'
+  return 'application/octet-stream'
 }
  
 function buildRssXml({
@@ -218,7 +232,7 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
       const videoId = v.id
       if (!videoId) continue
       const previewDuration = v.preview_duration ?? v.full_duration ?? 0
-      const entrypointUrl = await resolveMediaEntrypointUrl({ env, videoId })
+      const entrypointUrl = await resolveMediaEntrypointUrl({ env, videoId, preferPodcast: true })
       const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, previewDuration && previewDuration > 0 ? previewDuration : null)
 
       let enclosureUrl = basePlaylistUrl
@@ -239,7 +253,7 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
         guid: videoId,
         pubDate: toRfc2822Date(v.published_at),
         enclosureUrl,
-        enclosureType: 'application/vnd.apple.mpegurl',
+        enclosureType: inferEnclosureContentType(entrypointUrl),
         itunesDuration: secondsToItunesDuration(v.full_duration ?? previewDuration ?? 0),
       })
     }
@@ -351,7 +365,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       const previewDuration = v.preview_duration ?? v.full_duration ?? 0
       const previewUntil = hasPremiumAccess ? null : (previewDuration && previewDuration > 0 ? previewDuration : null)
 
-      const entrypointUrl = await resolveMediaEntrypointUrl({ env, videoId })
+      const entrypointUrl = await resolveMediaEntrypointUrl({ env, videoId, preferPodcast: true })
       const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, previewUntil && previewUntil > 0 ? previewUntil : null)
 
       let enclosureUrl = basePlaylistUrl
@@ -372,7 +386,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
         guid: videoId,
         pubDate: toRfc2822Date(v.published_at),
         enclosureUrl,
-        enclosureType: 'application/vnd.apple.mpegurl',
+        enclosureType: inferEnclosureContentType(entrypointUrl),
         itunesDuration: secondsToItunesDuration(v.full_duration ?? previewDuration ?? 0),
       })
     }
