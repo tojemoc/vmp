@@ -97,7 +97,13 @@ async function stripeGet(path: any, env: any): Promise<any> {
 
 // ─── GoCardless API helpers ───────────────────────────────────────────────────
 
-async function gocardlessFetch(path: string, method: string, payload: unknown, env: any): Promise<any> {
+async function gocardlessFetch(
+  path: string,
+  method: string,
+  payload: unknown,
+  env: any,
+  extraHeaders?: Record<string, string>,
+): Promise<any> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 10_000)
   try {
@@ -107,6 +113,7 @@ async function gocardlessFetch(path: string, method: string, payload: unknown, e
         Authorization: `Bearer ${env.GOCARDLESS_ACCESS_TOKEN}`,
         'Content-Type': 'application/json',
         'GoCardless-Version': '2015-07-06',
+        ...(extraHeaders ?? {}),
       },
       body: payload == null ? null : JSON.stringify(payload),
       signal: controller.signal,
@@ -125,8 +132,13 @@ async function gocardlessFetch(path: string, method: string, payload: unknown, e
   }
 }
 
-async function gocardlessPost(path: string, payload: unknown, env: any): Promise<any> {
-  return gocardlessFetch(path, 'POST', payload, env)
+async function gocardlessPost(
+  path: string,
+  payload: unknown,
+  env: any,
+  extraHeaders?: Record<string, string>,
+): Promise<any> {
+  return gocardlessFetch(path, 'POST', payload, env, extraHeaders)
 }
 
 async function gocardlessGet(path: string, env: any): Promise<any> {
@@ -503,7 +515,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       redirect_flows: {
         description: `VMP ${planType} subscription`,
         session_token: sessionToken,
-        success_redirect_url: `${frontendUrl}/account?gocardless_redirect_flow_id={redirect_flow_id}&gocardless_checkout_token=${checkoutToken}`,
+        success_redirect_url: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
         prefilled_customer: { email: user.email },
         metadata: {
           userId: user.sub,
@@ -797,6 +809,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
       `/redirect_flows/${redirectFlowId}/actions/complete`,
       { data: { session_token: checkoutSession.session_token } },
       env,
+      { 'Idempotency-Key': `gocardless-complete:${checkoutToken}` },
     )
     const redirectFlow = completeResponse?.data?.redirect_flows
     if (!completeResponse.ok || !redirectFlow?.links?.mandate) {
