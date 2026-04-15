@@ -38,8 +38,20 @@ emit_pipeline_event() {
 }
 r2_root() {
     if [ -n "$RCLONE_REMOTE" ]; then
-        if [ -n "$R2_BUCKET_NAME" ]; then
-            printf "%s:%s" "$RCLONE_REMOTE" "$R2_BUCKET_NAME"
+        local bucket="$R2_BUCKET_NAME"
+        # Defensive fallback: if split bucket var is missing in runtime env,
+        # reuse legacy R2_BUCKET semantics so destination doesn't degrade to
+        # remote:/videos/... (which makes "videos" look like the bucket).
+        if [ -z "$bucket" ] && [ -n "$R2_BUCKET" ]; then
+            if [[ "$R2_BUCKET" == *:* ]]; then
+                bucket="${R2_BUCKET#*:}"
+                bucket="${bucket%%/*}"
+            else
+                bucket="$R2_BUCKET"
+            fi
+        fi
+        if [ -n "$bucket" ]; then
+            printf "%s:%s" "$RCLONE_REMOTE" "$bucket"
         else
             printf "%s:" "$RCLONE_REMOTE"
         fi

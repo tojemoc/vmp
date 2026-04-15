@@ -26,8 +26,14 @@ trap cleanup EXIT
 
 r2_root() {
   if [ -n "$RCLONE_REMOTE" ]; then
-    if [ -n "$R2_BUCKET_NAME" ]; then
-      printf "%s:%s" "$RCLONE_REMOTE" "$R2_BUCKET_NAME"
+    local bucket_name="$R2_BUCKET_NAME"
+    # Backward-compatible fallback: if split env vars are partially configured,
+    # derive bucket from legacy R2_BUCKET=<remote>:<bucket> when possible.
+    if [ -z "$bucket_name" ] && [[ "$R2_BUCKET" == *:* ]]; then
+      bucket_name="${R2_BUCKET#*:}"
+    fi
+    if [ -n "$bucket_name" ]; then
+      printf "%s:%s" "$RCLONE_REMOTE" "$bucket_name"
     else
       printf "%s:" "$RCLONE_REMOTE"
     fi
