@@ -193,10 +193,10 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     } catch (err) {
       clearTimeout(timeoutId)
       const isAbort = err instanceof Error && err.name === 'AbortError'
+      console.error('Webhook request error:', err)
       return jsonResponse({
         error: isAbort ? 'Webhook request timed out' : 'Webhook request failed',
         code: isAbort ? 'webhook_timeout' : 'webhook_error',
-        detail: err instanceof Error ? err.message : String(err),
       }, 502, corsHeaders)
     }
 
