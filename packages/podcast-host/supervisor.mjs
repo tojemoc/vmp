@@ -39,8 +39,16 @@ const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
 const previewConcurrency = Math.max(1, Number.parseInt(process.env.VMP_PREVIEW_CONCURRENCY || '1', 10) || 1)
 const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
 
-/** @type {{ id: string, type: string, videoId?: string, status: string, detail?: string, startedAt?: string, finishedAt?: string }[]} */
+/** @type {{ id: string, type: string, videoId?: string, status: string, detail?: string, source?: string, stage?: string, startedAt?: string, updatedAt?: string, finishedAt?: string }[]} */
 const jobs = []
+/** @type {Map<string, { id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt?: string }>} */
+const pipelineActiveJobs = new Map()
+/** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
+const pipelineSuccessfulJobs = []
+const MAX_PIPELINE_SUCCESS_JOBS = 400
+/** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
+const failedPipelineJobs = []
+const MAX_PIPELINE_FAILED_JOBS = 200
 /** @type {string[]} */
 const logLines = []
 const MAX_LOG = 400
@@ -51,6 +59,80 @@ function pushLog(line) {
   console.log(s)
   logLines.push(s)
   while (logLines.length > MAX_LOG) logLines.shift()
+}
+
+function stageLabel(stage) {
+  const labels = {
+    detected: 'Detected in watchfolder',
+    deduped: 'Already processing',
+    wait_upload_complete: 'Waiting for file settle',
+    probe: 'Probe source',
+    encode: 'Re-encoding renditions',
+    podcast_mp3: 'Encoding podcast MP3',
+    package_hls: 'Packaging HLS',
+    upload_assets: 'Uploading assets to R2',
+    preview_wait: 'Waiting preview lock',
+    preview_render: 'Encoding preview MP3',
+    preview_upload: 'Uploading preview MP3',
+    cleanup: 'Cleanup',
+    done: 'Done',
+    failed: 'Failed',
+  }
+  return labels[stage] || stage
+}
+
+function upsertPipelineJob(event) {
+  const now = new Date().toISOString()
+  const existing = pipelineActiveJobs.get(event.videoId)
+  const startedAt = existing?.startedAt || now
+  const row = {
+    id: existing?.id || crypto.randomUUID(),
+    type: 'pipeline',
+    videoId: event.videoId,
+    source: existing?.source || event.source || 'watchfolder',
+    stage: event.stage,
+    status: event.status,
+    detail: event.detail,
+    startedAt,
+    updatedAt: now,
+    finishedAt: undefined,
+  }
+  if (event.stage === 'done' && event.status === 'success') {
+    pipelineActiveJobs.delete(event.videoId)
+    const doneRow = {
+      ...row,
+      finishedAt: now,
+    }
+    pipelineSuccessfulJobs.unshift(doneRow)
+    while (pipelineSuccessfulJobs.length > MAX_PIPELINE_SUCCESS_JOBS) pipelineSuccessfulJobs.pop()
+    return
+  }
+  if (event.stage === 'failed' || event.status === 'failed') {
+    row.finishedAt = now
+    pipelineActiveJobs.delete(event.videoId)
+    failedPipelineJobs.unshift(row)
+    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
+    return
+  }
+  pipelineActiveJobs.set(event.videoId, row)
+}
+
+function consumePipelineLine(line) {
+  if (!line.startsWith('VMP_PIPELINE_EVENT\t')) return false
+  const parts = line.split('\t', 5)
+  if (parts.length < 4) return false
+  const [, videoId, stage, status, detailRaw] = parts
+  if (!videoId || !stage || !status) return false
+  const detail = detailRaw || ''
+  const sourceMatch = detail.match(/(?:^|\s)source=([a-zA-Z0-9_.-]+)/)
+  upsertPipelineJob({
+    videoId,
+    stage,
+    status,
+    detail,
+    source: sourceMatch ? sourceMatch[1] : undefined,
+  })
+  return true
 }
 
 /** @type {{ pid: number|null, startedAt: string|null, exited: boolean, code: number|null, signal: string|null }} */
@@ -84,17 +166,60 @@ function startPipeline() {
   pipelineState.signal = null
   pushLog(`Started pipeline pid=${pipelineState.pid} (${pipelineScript})`)
 
-  const onData = (buf, stream) => {
-    for (const line of buf.toString().split(/\r?\n/)) {
-      if (line.trim()) pushLog(`[pipeline] ${line}`)
+  let stdoutBuffer = ''
+  let stderrBuffer = ''
+
+  const processBuffer = (buffer, isStdout) => {
+    const lines = buffer.split(/\r?\n/)
+    const completeLines = lines.slice(0, -1)
+    const partialLine = lines[lines.length - 1]
+
+    for (const line of completeLines) {
+      if (!line.trim()) continue
+      if (consumePipelineLine(line)) continue
+      pushLog(`[pipeline] ${line}`)
+    }
+
+    return partialLine
+  }
+
+  pipelineChild.stdout?.on('data', (d) => {
+    stdoutBuffer += d.toString()
+    stdoutBuffer = processBuffer(stdoutBuffer, true)
+  })
+
+  pipelineChild.stderr?.on('data', (d) => {
+    stderrBuffer += d.toString()
+    stderrBuffer = processBuffer(stderrBuffer, false)
+  })
+
+  const flushBuffers = () => {
+    if (stdoutBuffer.trim()) {
+      if (consumePipelineLine(stdoutBuffer)) {
+        stdoutBuffer = ''
+        return
+      }
+      pushLog(`[pipeline] ${stdoutBuffer}`)
+      stdoutBuffer = ''
+    }
+    if (stderrBuffer.trim()) {
+      if (consumePipelineLine(stderrBuffer)) {
+        stderrBuffer = ''
+        return
+      }
+      pushLog(`[pipeline] ${stderrBuffer}`)
+      stderrBuffer = ''
     }
   }
-  pipelineChild.stdout?.on('data', (d) => onData(d, 'out'))
-  pipelineChild.stderr?.on('data', (d) => onData(d, 'err'))
+
+  pipelineChild.stdout?.on('end', flushBuffers)
+  pipelineChild.stderr?.on('end', flushBuffers)
+
   pipelineChild.on('error', (err) => {
     pushLog(`Pipeline spawn error: ${err.message}`)
   })
   pipelineChild.on('close', (code, signal) => {
+    flushBuffers()
     pipelineState.exited = true
     pipelineState.code = code
     pipelineState.signal = signal ?? null
@@ -229,8 +354,16 @@ function dashboardHtml() {
     <div id="pipeline">Loading…</div>
   </section>
   <section>
+    <h2>Jobs (pipeline)</h2>
+    <div id="pipeline-jobs">Loading…</div>
+  </section>
+  <section>
     <h2>Jobs (preview MP3)</h2>
     <div id="jobs">Loading…</div>
+  </section>
+  <section>
+    <h2>Successful jobs log (pipeline)</h2>
+    <div id="pipeline-success">Loading…</div>
   </section>
   <section>
     <h2>Recent log</h2>
@@ -257,10 +390,18 @@ function dashboardHtml() {
           '<p><strong>Status:</strong> ' +
           (p.exited ? ('exited code ' + escapeHtml(p.code) + (p.signal ? ' signal ' + escapeHtml(p.signal) : '')) : 'running') +
           '</p>'
+        const pipelineRows = (d.pipelineActiveJobs || []).map(j =>
+          '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td><td>' + escapeHtml(j.updatedAt || '') + '</td></tr>'
+        ).join('')
+        document.getElementById('pipeline-jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Video</th><th>Stage</th><th>Detail</th><th>Source</th><th>Updated</th></tr></thead><tbody>' + pipelineRows + '</tbody></table>'
         const rows = (d.jobs || []).map(j =>
           '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.type || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td></tr>'
         ).join('')
         document.getElementById('jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Type</th><th>Video</th><th>Detail</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table>'
+        const successRows = (d.pipelineSuccessfulJobs || []).map(j =>
+          '<tr><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.finishedAt || '') + '</td></tr>'
+        ).join('')
+        document.getElementById('pipeline-success').innerHTML = '<table><thead><tr><th>Video</th><th>Final stage</th><th>Detail</th><th>Finished</th></tr></thead><tbody>' + successRows + '</tbody></table>'
         document.getElementById('log').textContent = (d.logLines || []).join('\\n')
       } catch (e) {
         document.getElementById('pipeline').textContent = 'Error: ' + e
@@ -289,6 +430,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/status') {
+    const activeRows = Array.from(pipelineActiveJobs.values())
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+      .map((job) => ({
+        ...job,
+        stageLabel: stageLabel(job.stage),
+      }))
+    const successRows = pipelineSuccessfulJobs.map((job) => ({
+      ...job,
+      stageLabel: stageLabel(job.stage),
+    }))
+    const failedRows = failedPipelineJobs.map((job) => ({
+      ...job,
+      stageLabel: stageLabel(job.stage),
+    }))
     json(res, {
       pipeline: {
         script: pipelineScript,
@@ -302,6 +457,9 @@ const server = http.createServer(async (req, res) => {
       previewQueueLength: previewQueue.length,
       previewRunning,
       jobs,
+      pipelineActiveJobs: activeRows,
+      pipelineSuccessfulJobs: successRows,
+      failedPipelineJobs: failedRows,
       logLines,
     })
     return
