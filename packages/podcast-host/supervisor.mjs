@@ -46,6 +46,9 @@ const pipelineActiveJobs = new Map()
 /** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
 const pipelineSuccessfulJobs = []
 const MAX_PIPELINE_SUCCESS_JOBS = 400
+/** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
+const failedPipelineJobs = []
+const MAX_PIPELINE_FAILED_JOBS = 200
 /** @type {string[]} */
 const logLines = []
 const MAX_LOG = 400
@@ -106,6 +109,10 @@ function upsertPipelineJob(event) {
   }
   if (event.stage === 'failed' || event.status === 'failed') {
     row.finishedAt = now
+    pipelineActiveJobs.delete(event.videoId)
+    failedPipelineJobs.unshift(row)
+    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
+    return
   }
   pipelineActiveJobs.set(event.videoId, row)
 }
@@ -159,19 +166,60 @@ function startPipeline() {
   pipelineState.signal = null
   pushLog(`Started pipeline pid=${pipelineState.pid} (${pipelineScript})`)
 
-  const onData = (buf) => {
-    for (const line of buf.toString().split(/\r?\n/)) {
+  let stdoutBuffer = ''
+  let stderrBuffer = ''
+
+  const processBuffer = (buffer, isStdout) => {
+    const lines = buffer.split(/\r?\n/)
+    const completeLines = lines.slice(0, -1)
+    const partialLine = lines[lines.length - 1]
+
+    for (const line of completeLines) {
       if (!line.trim()) continue
       if (consumePipelineLine(line)) continue
       pushLog(`[pipeline] ${line}`)
     }
+
+    return partialLine
   }
-  pipelineChild.stdout?.on('data', (d) => onData(d))
-  pipelineChild.stderr?.on('data', (d) => onData(d))
+
+  pipelineChild.stdout?.on('data', (d) => {
+    stdoutBuffer += d.toString()
+    stdoutBuffer = processBuffer(stdoutBuffer, true)
+  })
+
+  pipelineChild.stderr?.on('data', (d) => {
+    stderrBuffer += d.toString()
+    stderrBuffer = processBuffer(stderrBuffer, false)
+  })
+
+  const flushBuffers = () => {
+    if (stdoutBuffer.trim()) {
+      if (consumePipelineLine(stdoutBuffer)) {
+        stdoutBuffer = ''
+        return
+      }
+      pushLog(`[pipeline] ${stdoutBuffer}`)
+      stdoutBuffer = ''
+    }
+    if (stderrBuffer.trim()) {
+      if (consumePipelineLine(stderrBuffer)) {
+        stderrBuffer = ''
+        return
+      }
+      pushLog(`[pipeline] ${stderrBuffer}`)
+      stderrBuffer = ''
+    }
+  }
+
+  pipelineChild.stdout?.on('end', flushBuffers)
+  pipelineChild.stderr?.on('end', flushBuffers)
+
   pipelineChild.on('error', (err) => {
     pushLog(`Pipeline spawn error: ${err.message}`)
   })
   pipelineChild.on('close', (code, signal) => {
+    flushBuffers()
     pipelineState.exited = true
     pipelineState.code = code
     pipelineState.signal = signal ?? null
@@ -392,6 +440,10 @@ const server = http.createServer(async (req, res) => {
       ...job,
       stageLabel: stageLabel(job.stage),
     }))
+    const failedRows = failedPipelineJobs.map((job) => ({
+      ...job,
+      stageLabel: stageLabel(job.stage),
+    }))
     json(res, {
       pipeline: {
         script: pipelineScript,
@@ -407,6 +459,7 @@ const server = http.createServer(async (req, res) => {
       jobs,
       pipelineActiveJobs: activeRows,
       pipelineSuccessfulJobs: successRows,
+      failedPipelineJobs: failedRows,
       logLines,
     })
     return

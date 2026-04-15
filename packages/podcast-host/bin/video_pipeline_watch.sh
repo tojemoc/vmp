@@ -406,15 +406,28 @@ fi
 log "✅ Upload verified"
 emit_pipeline_event "$VIDEO_ID" "upload_assets" "active" "verified"
 
-if [ "$PREVIEW_MP3_ENABLED" = "1" ] && [ "$HAS_AUDIO" -gt 0 ] && [ -f "$TMP_DIR/$MP3_NAME" ]; then
-    emit_pipeline_event "$VIDEO_ID" "preview_wait" "active" "${PREVIEW_MP3_LOCK_SECONDS}s"
-    sleep "$PREVIEW_MP3_LOCK_SECONDS"
-    emit_pipeline_event "$VIDEO_ID" "preview_render" "active" "${PREVIEW_MP3_SECONDS}s"
-    ffmpeg -hide_banner -y -i "$TMP_DIR/$MP3_NAME" -t "$PREVIEW_MP3_SECONDS" -vn -c:a libmp3lame -q:a 2 -f mp3 "$TMP_DIR/$MP3_PREVIEW_NAME.tmp.$$"
-    mv "$TMP_DIR/$MP3_PREVIEW_NAME.tmp.$$" "$TMP_DIR/$MP3_PREVIEW_NAME"
-    emit_pipeline_event "$VIDEO_ID" "preview_upload" "active" "start"
-    rclone copyto "$TMP_DIR/$MP3_PREVIEW_NAME" "${R2_BUCKET}:/videos/${VIDEO_ID}/${MP3_PREVIEW_NAME}"
-    emit_pipeline_event "$VIDEO_ID" "preview_upload" "active" "done"
+if [ "$PREVIEW_MP3_ENABLED" = "1" ] && [ "$HAS_AUDIO" -gt 0 ]; then
+    if [ ! -f "$TMP_DIR/$MP3_NAME" ]; then
+        log "📥 Local MP3 missing, attempting to fetch from R2 for preview"
+        if rclone copy "${R2_BUCKET}:/videos/${VIDEO_ID}/${MP3_NAME}" "$TMP_DIR/" 2>/dev/null; then
+            log "✅ Fetched MP3 from R2 for preview rendering"
+        else
+            log "⚠️ Could not fetch MP3 from R2 — skipping preview"
+            emit_pipeline_event "$VIDEO_ID" "preview_render" "active" "skipped"
+            rm -f "$TMP_DIR/$MP3_NAME"
+        fi
+    fi
+
+    if [ -f "$TMP_DIR/$MP3_NAME" ]; then
+        emit_pipeline_event "$VIDEO_ID" "preview_wait" "active" "${PREVIEW_MP3_LOCK_SECONDS}s"
+        sleep "$PREVIEW_MP3_LOCK_SECONDS"
+        emit_pipeline_event "$VIDEO_ID" "preview_render" "active" "${PREVIEW_MP3_SECONDS}s"
+        ffmpeg -hide_banner -y -i "$TMP_DIR/$MP3_NAME" -t "$PREVIEW_MP3_SECONDS" -vn -c:a libmp3lame -q:a 2 -f mp3 "$TMP_DIR/$MP3_PREVIEW_NAME.tmp.$$"
+        mv "$TMP_DIR/$MP3_PREVIEW_NAME.tmp.$$" "$TMP_DIR/$MP3_PREVIEW_NAME"
+        emit_pipeline_event "$VIDEO_ID" "preview_upload" "active" "start"
+        rclone copyto "$TMP_DIR/$MP3_PREVIEW_NAME" "${R2_BUCKET}:/videos/${VIDEO_ID}/${MP3_PREVIEW_NAME}"
+        emit_pipeline_event "$VIDEO_ID" "preview_upload" "active" "done"
+    fi
 else
     emit_pipeline_event "$VIDEO_ID" "preview_render" "active" "skipped"
 fi
