@@ -162,12 +162,14 @@ function drainPreviewQueue() {
   }
 }
 
-function verifySignature(rawBody, sigHeader) {
+function verifySignature(rawBody, sigHeader, ts) {
   if (!secret) return false
   if (!sigHeader || typeof sigHeader !== 'string') return false
+  if (!ts || typeof ts !== 'string') return false
   const m = sigHeader.match(/^sha256=([0-9a-f]{64})$/i)
   if (!m) return false
-  const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
+  const signedPayload = `${ts}.${rawBody}`
+  const expected = crypto.createHmac('sha256', secret).update(signedPayload, 'utf8').digest('hex')
   const a = Buffer.from(m[1], 'hex')
   const b = Buffer.from(expected, 'hex')
   return a.length === b.length && crypto.timingSafeEqual(a, b)
@@ -176,6 +178,15 @@ function verifySignature(rawBody, sigHeader) {
 function json(res, obj, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(obj, null, 2))
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function dashboardHtml() {
@@ -214,20 +225,28 @@ function dashboardHtml() {
     <pre id="log">Loading…</pre>
   </section>
   <script>
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    }
     async function tick() {
       try {
         const r = await fetch('/api/status')
         const d = await r.json()
         const p = d.pipeline || {}
         document.getElementById('pipeline').innerHTML =
-          '<p><strong>Script:</strong> ' + (p.script || '') + '</p>' +
-          '<p><strong>PID:</strong> ' + (p.pid ?? '—') +
-          ' · <strong>Started:</strong> ' + (p.startedAt || '—') + '</p>' +
+          '<p><strong>Script:</strong> ' + escapeHtml(p.script || '') + '</p>' +
+          '<p><strong>PID:</strong> ' + escapeHtml(p.pid ?? '—') +
+          ' · <strong>Started:</strong> ' + escapeHtml(p.startedAt || '—') + '</p>' +
           '<p><strong>Status:</strong> ' +
-          (p.exited ? ('exited code ' + p.code + (p.signal ? ' signal ' + p.signal : '')) : 'running') +
+          (p.exited ? ('exited code ' + escapeHtml(p.code) + (p.signal ? ' signal ' + escapeHtml(p.signal) : '')) : 'running') +
           '</p>'
         const rows = (d.jobs || []).map(j =>
-          '<tr><td>' + (j.status || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.videoId || '') + '</td><td>' + (j.detail || '') + '</td><td>' + (j.source || '') + '</td></tr>'
+          '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.type || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td></tr>'
         ).join('')
         document.getElementById('jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Type</th><th>Video</th><th>Detail</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table>'
         document.getElementById('log').textContent = (d.logLines || []).join('\\n')
@@ -276,8 +295,28 @@ const server = http.createServer(async (req, res) => {
     const rawBody = Buffer.concat(chunks)
 
     if (secret) {
+      // Validate timestamp freshness
+      const tsHeader = req.headers['x-vmp-timestamp']
+      const ts = Array.isArray(tsHeader) ? tsHeader[0] : tsHeader
+      if (!ts) {
+        json(res, { error: 'Invalid or stale timestamp' }, 401)
+        return
+      }
+      const tsNum = Number(ts)
+      if (!Number.isFinite(tsNum) || tsNum <= 0) {
+        json(res, { error: 'Invalid or stale timestamp' }, 401)
+        return
+      }
+      const nowSec = Math.floor(Date.now() / 1000)
+      const skewWindow = 5 * 60 // 5 minutes in seconds
+      if (Math.abs(nowSec - tsNum) > skewWindow) {
+        json(res, { error: 'Invalid or stale timestamp' }, 401)
+        return
+      }
+
+      // Verify signature
       const sig = req.headers['x-vmp-signature']
-      if (!verifySignature(rawBody, Array.isArray(sig) ? sig[0] : sig)) {
+      if (!verifySignature(rawBody, Array.isArray(sig) ? sig[0] : sig, ts)) {
         json(res, { error: 'Invalid signature' }, 401)
         return
       }
