@@ -132,8 +132,9 @@ Run these commands after migrations and before promoting traffic:
   - Row counts emitted for key tables.
   - Final line: `[verify] PASS: all integrity checks are zero.`
 - Expected FAIL output:
-  - Final line: `[verify] FAIL: <n> integrity check(s) are non-zero.`
-  - Command exits `1`; deployment should stop until non-zero checks are fixed.
+  - Integrity failures: Final line `[verify] FAIL: <n> integrity check(s) are non-zero.` — command exits `1`; deployment should stop until non-zero checks are fixed.
+  - Schema failures: Final line `[verify] FAIL: <n> required schema check(s) missing.` — command exits `1`; deployment should stop until schema drift is resolved.
+  - Operators should look for either failure message when triaging verification issues.
 
 3) Targeted deterministic regression suite (Task 12)
 
@@ -180,4 +181,3 @@ Use the smallest rollback that restores service:
 - Direct provider playback currently does not support the same proxy tokenization and preview truncation controls used for VOD HLS in `/api/video-proxy`.
 - Rewind/time-shift capability depends on provider playlist configuration; this integration assumes live-edge playback first, with explicit VOD handoff through admin swap.
 - To preserve durable playback and existing proxy protections, finalize streams by swapping in an uploaded VOD (`/api/admin/videos/:id/swap`) once recording is available.
-

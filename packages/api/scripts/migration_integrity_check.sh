@@ -44,11 +44,47 @@ print_check() {
 
 echo "[verify] Running integrity verification on ${DB_NAME} (${MODE_FLAG})"
 
-subscriptions_count="$(run_scalar "SELECT COUNT(*) AS n FROM subscriptions;")"
-newsletter_sends_count="$(run_scalar "SELECT COUNT(*) AS n FROM brevo_newsletter_sends;")"
-segment_events_count="$(run_scalar "SELECT COUNT(*) AS n FROM video_segment_events;")"
-livestreams_count="$(run_scalar "SELECT COUNT(*) AS n FROM livestreams;")"
-checkout_sessions_count="$(run_scalar "SELECT COUNT(*) AS n FROM payment_checkout_sessions;")"
+schema_failures=0
+
+if table_exists "subscriptions"; then
+  subscriptions_count="$(run_scalar "SELECT COUNT(*) AS n FROM subscriptions;")"
+else
+  echo "[verify] schema_missing.table.subscriptions"
+  subscriptions_count=0
+  schema_failures=$((schema_failures + 1))
+fi
+
+if table_exists "brevo_newsletter_sends"; then
+  newsletter_sends_count="$(run_scalar "SELECT COUNT(*) AS n FROM brevo_newsletter_sends;")"
+else
+  echo "[verify] schema_missing.table.brevo_newsletter_sends"
+  newsletter_sends_count=0
+  schema_failures=$((schema_failures + 1))
+fi
+
+if table_exists "video_segment_events"; then
+  segment_events_count="$(run_scalar "SELECT COUNT(*) AS n FROM video_segment_events;")"
+else
+  echo "[verify] schema_missing.table.video_segment_events"
+  segment_events_count=0
+  schema_failures=$((schema_failures + 1))
+fi
+
+if table_exists "livestreams"; then
+  livestreams_count="$(run_scalar "SELECT COUNT(*) AS n FROM livestreams;")"
+else
+  echo "[verify] schema_missing.table.livestreams"
+  livestreams_count=0
+  schema_failures=$((schema_failures + 1))
+fi
+
+if table_exists "payment_checkout_sessions"; then
+  checkout_sessions_count="$(run_scalar "SELECT COUNT(*) AS n FROM payment_checkout_sessions;")"
+else
+  echo "[verify] schema_missing.table.payment_checkout_sessions"
+  checkout_sessions_count=0
+  schema_failures=$((schema_failures + 1))
+fi
 
 print_check "row_count.subscriptions" "$subscriptions_count"
 print_check "row_count.brevo_newsletter_sends" "$newsletter_sends_count"
@@ -68,7 +104,6 @@ orphan_category_assignments_video=0
 orphan_category_assignments_category=0
 orphan_livestream_video=0
 orphan_checkout_users=0
-schema_failures=0
 
 if table_exists "subscriptions" && column_exists "subscriptions" "provider"; then
   bad_provider="$(run_scalar "SELECT COUNT(*) AS n FROM subscriptions WHERE provider IS NULL OR trim(provider) = '';")"
@@ -133,47 +168,52 @@ else
   schema_failures=$((schema_failures + 1))
 fi
 
-if table_exists "subscriptions" && table_exists "users"; then
+if table_exists "subscriptions" && table_exists "users" \
+  && column_exists "subscriptions" "user_id" && column_exists "users" "id"; then
   orphan_subscription_users="$(run_scalar "SELECT COUNT(*) AS n FROM subscriptions s LEFT JOIN users u ON u.id = s.user_id WHERE u.id IS NULL;")"
 else
-  echo "[verify] schema_missing.subscriptions_or_users_for_orphan_check"
+  echo "[verify] schema_missing.subscriptions_or_users_column"
   schema_failures=$((schema_failures + 1))
 fi
 
-if table_exists "video_category_assignments" && table_exists "videos"; then
+if table_exists "video_category_assignments" && table_exists "videos" \
+  && column_exists "video_category_assignments" "video_id" && column_exists "videos" "id"; then
   orphan_category_assignments_video="$(run_scalar "SELECT COUNT(*) AS n
     FROM video_category_assignments vca
     LEFT JOIN videos v ON v.id = vca.video_id
     WHERE v.id IS NULL;")"
 else
-  echo "[verify] schema_missing.video_category_assignments_or_videos"
+  echo "[verify] schema_missing.video_category_assignments_or_videos_column"
   schema_failures=$((schema_failures + 1))
 fi
 
-if table_exists "video_category_assignments" && table_exists "video_categories"; then
+if table_exists "video_category_assignments" && table_exists "video_categories" \
+  && column_exists "video_category_assignments" "category_id" && column_exists "video_categories" "id"; then
   orphan_category_assignments_category="$(run_scalar "SELECT COUNT(*) AS n
     FROM video_category_assignments vca
     LEFT JOIN video_categories vc ON vc.id = vca.category_id
     WHERE vc.id IS NULL;")"
 else
-  echo "[verify] schema_missing.video_category_assignments_or_video_categories"
+  echo "[verify] schema_missing.video_category_assignments_or_video_categories_column"
   schema_failures=$((schema_failures + 1))
 fi
 
-if table_exists "livestreams" && table_exists "videos"; then
+if table_exists "livestreams" && table_exists "videos" \
+  && column_exists "livestreams" "video_id" && column_exists "videos" "id"; then
   orphan_livestream_video="$(run_scalar "SELECT COUNT(*) AS n FROM livestreams l LEFT JOIN videos v ON v.id = l.video_id WHERE v.id IS NULL;")"
 else
-  echo "[verify] schema_missing.livestreams_or_videos"
+  echo "[verify] schema_missing.livestreams_or_videos_column"
   schema_failures=$((schema_failures + 1))
 fi
 
-if table_exists "payment_checkout_sessions" && table_exists "users"; then
+if table_exists "payment_checkout_sessions" && table_exists "users" \
+  && column_exists "payment_checkout_sessions" "user_id" && column_exists "users" "id"; then
   orphan_checkout_users="$(run_scalar "SELECT COUNT(*) AS n
     FROM payment_checkout_sessions pcs
     LEFT JOIN users u ON u.id = pcs.user_id
     WHERE u.id IS NULL;")"
 else
-  echo "[verify] schema_missing.payment_checkout_sessions_or_users"
+  echo "[verify] schema_missing.payment_checkout_sessions_or_users_column"
   schema_failures=$((schema_failures + 1))
 fi
 

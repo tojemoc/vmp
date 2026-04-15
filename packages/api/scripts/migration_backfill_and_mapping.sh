@@ -50,16 +50,16 @@ if table_exists "subscriptions" \
   && column_exists "subscriptions" "provider_customer_id" \
   && column_exists "subscriptions" "stripe_subscription_id" \
   && column_exists "subscriptions" "stripe_customer_id"; then
-  run_sql "UPDATE subscriptions SET provider = 'stripe' WHERE provider IS NULL OR trim(provider) = '';"
+  run_sql "UPDATE subscriptions SET provider = 'stripe' WHERE lower(trim(provider)) = '' OR provider IS NULL;"
   run_sql "UPDATE subscriptions
            SET provider_subscription_id = stripe_subscription_id
-           WHERE provider = 'stripe'
+           WHERE lower(trim(provider)) = 'stripe'
              AND (provider_subscription_id IS NULL OR trim(provider_subscription_id) = '')
              AND stripe_subscription_id IS NOT NULL
              AND trim(stripe_subscription_id) <> '';"
   run_sql "UPDATE subscriptions
            SET provider_customer_id = stripe_customer_id
-           WHERE provider = 'stripe'
+           WHERE lower(trim(provider)) = 'stripe'
              AND (provider_customer_id IS NULL OR trim(provider_customer_id) = '')
              AND stripe_customer_id IS NOT NULL
              AND trim(stripe_customer_id) <> '';"
