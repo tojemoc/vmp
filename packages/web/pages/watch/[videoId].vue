@@ -9,7 +9,7 @@
       <div v-if="loading" class="flex items-center justify-center min-h-[60vh]">
         <div class="text-center">
           <div class="inline-block w-12 h-12 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-          <p class="text-gray-600 dark:text-gray-400">Loading video...</p>
+          <p class="text-gray-600 dark:text-gray-400">{{ strings.loadingVideo }}</p>
         </div>
       </div>
 
@@ -24,24 +24,24 @@
             </div>
             <div class="flex-1">
               <h3 class="text-lg font-semibold text-amber-900 dark:text-amber-200 mb-1">
-                Free preview limit reached
+                {{ strings.rateLimitTitle }}
               </h3>
               <p class="text-amber-800 dark:text-amber-300 mb-4">
-                You've watched {{ rateLimitCurrent }} of {{ rateLimitLimit }} free previews this hour. Sign in for unlimited previews — it's free.
+                {{ strings.rateLimitMessage(rateLimitCurrent, rateLimitLimit) }}
               </p>
               <div class="flex items-center space-x-3">
                 <NuxtLink
                   :to="`/login?redirect=/watch/${videoId}`"
                   class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg transition-colors"
                 >
-                  Sign in
+                  {{ strings.signIn }}
                 </NuxtLink>
                 <NuxtLink to="/" class="text-amber-700 dark:text-amber-400 hover:underline text-sm">
-                  ← Back to homepage
+                  {{ strings.backToHomepage }}
                 </NuxtLink>
               </div>
               <p v-if="rateLimitRetryAfter" class="mt-3 text-xs text-amber-600 dark:text-amber-500">
-                Or wait {{ formatRetryAfter(rateLimitRetryAfter) }} for your limit to reset.
+                {{ strings.rateLimitWait(formatRetryAfter(rateLimitRetryAfter)) }}
               </p>
             </div>
           </div>
@@ -51,10 +51,10 @@
       <!-- Error State -->
       <div v-else-if="error" class="max-w-4xl mx-auto">
         <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6">
-          <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">Error</h3>
+          <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">{{ strings.error }}</h3>
           <p class="text-red-700 dark:text-red-300">{{ error }}</p>
           <NuxtLink to="/" class="inline-block mt-4 text-blue-600 dark:text-blue-400 hover:underline">
-            ← Back to homepage
+            {{ strings.backToHomepage }}
           </NuxtLink>
         </div>
       </div>
@@ -74,9 +74,9 @@
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                 </svg>
-                <span class="font-semibold">Preview Mode</span>
+                <span class="font-semibold">{{ strings.previewMode }}</span>
               </div>
-              <span class="text-sm">Upgrade to watch full video</span>
+              <span class="text-sm">{{ strings.upgradeToWatch }}</span>
             </div>
 
             <!-- Buffering Spinner -->
@@ -85,17 +85,17 @@
               class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
               role="status"
               aria-live="polite"
-              aria-label="Video is buffering"
+              :aria-label="strings.videoBuffering"
             >
               <div class="w-14 h-14 border-4 border-white/20 border-t-white rounded-full animate-spin" aria-hidden="true"></div>
-              <span class="sr-only">Video is buffering</span>
+              <span class="sr-only">{{ strings.videoBuffering }}</span>
             </div>
 
             <button
               v-if="autoplayBlocked"
               type="button"
               class="absolute inset-0 z-20 flex items-center justify-center"
-              aria-label="Play video"
+              :aria-label="strings.playVideo"
               @click="handleAutoplayOverlayClick"
             >
               <span class="w-20 h-20 rounded-full bg-black/70 border-2 border-white/70 text-white flex items-center justify-center shadow-xl">
@@ -108,7 +108,7 @@
             <!-- Video Player -->
             <media-controller
               id="watch-media-controller"
-              class="watch-media-controller block w-full aspect-video relative"
+              class="watch-media-controller group/controls block w-full aspect-video relative"
               @click.capture="handleUserPlaybackInteraction"
               @pointerdown="handleUserPlaybackInteraction"
             >
@@ -124,64 +124,70 @@
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
 
-              <!-- Custom Control Bar -->
-              <media-control-bar class="watch-media-control-bar relative" noautohide>
-                <media-play-button></media-play-button>
-                <media-seek-backward-button seek-offset="10"></media-seek-backward-button>
-                <media-seek-forward-button seek-offset="10"></media-seek-forward-button>
-
-                <div class="watch-seekbar-wrap flex-1 flex items-center px-2 relative h-8">
-                  <div class="relative w-full h-1.5 rounded-full pointer-events-none">
-                    <div class="absolute inset-0 rounded-full bg-white/20"></div>
-                    <div
-                      v-if="!videoData.hasAccess"
-                      class="absolute inset-y-0 rounded-r-full bg-white/5"
-                      :style="{ left: previewPercentage + '%' }"
-                    ></div>
-                    <div
-                      class="absolute inset-y-0 left-0 rounded-full bg-blue-400"
-                      :style="{ width: progressPercentage + '%' }"
-                    ></div>
-                    <div
-                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow"
-                      :style="{ left: progressPercentage + '%' }"
-                    ></div>
-                    <div
-                      v-if="!videoData.hasAccess"
-                      class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.35)] z-10"
-                      :style="{ left: previewPercentage + '%' }"
-                    >
-                      <svg class="w-2.5 h-2.5 text-black" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-                      </svg>
+              <!-- Custom Control Bar — stacked: seekbar on top, buttons below -->
+              <div class="watch-controls-container">
+                <!-- Seekbar row — full width, separate from buttons -->
+                <div class="watch-seekbar-row">
+                  <div class="watch-seekbar-wrap">
+                    <div class="relative w-full h-1 group-hover/controls:h-1.5 rounded-full pointer-events-none transition-all">
+                      <div class="absolute inset-0 rounded-full bg-white/25"></div>
+                      <div
+                        v-if="!videoData.hasAccess"
+                        class="absolute inset-y-0 rounded-r-full bg-white/5"
+                        :style="{ left: previewPercentage + '%' }"
+                      ></div>
+                      <div
+                        class="absolute inset-y-0 left-0 rounded-full bg-blue-500"
+                        :style="{ width: progressPercentage + '%' }"
+                      ></div>
+                      <div
+                        class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md opacity-0 group-hover/controls:opacity-100 transition-opacity"
+                        :style="{ left: progressPercentage + '%' }"
+                      ></div>
+                      <div
+                        v-if="!videoData.hasAccess"
+                        class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 bg-yellow-400 border-2 border-black rounded-full flex items-center justify-center shadow-[0_0_0_3px_rgba(250,204,21,0.3)] z-10"
+                        :style="{ left: previewPercentage + '%' }"
+                      >
+                        <svg class="w-2 h-2 text-black" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+                        </svg>
+                      </div>
                     </div>
+                    <input
+                      type="range"
+                      class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      :min="0"
+                      :max="effectiveFullDuration"
+                      :step="0.1"
+                      :value="currentTime"
+                      @input.capture="handleUserPlaybackInteraction"
+                      @input="handleSeekbarInput"
+                      @keydown.capture="handleUserPlaybackInteraction"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    :min="0"
-                    :max="effectiveFullDuration"
-                    :step="0.1"
-                    :value="currentTime"
-                    @input.capture="handleUserPlaybackInteraction"
-                    @input="handleSeekbarInput"
-                    @keydown.capture="handleUserPlaybackInteraction"
-                  />
                 </div>
 
-                <media-time-display show-duration></media-time-display>
-                <media-mute-button></media-mute-button>
-                <media-volume-range></media-volume-range>
-                <media-fullscreen-button></media-fullscreen-button>
-              </media-control-bar>
+                <!-- Button row -->
+                <media-control-bar class="watch-media-control-bar" noautohide>
+                  <media-play-button></media-play-button>
+                  <media-seek-backward-button class="hidden sm:inline-flex" seek-offset="10"></media-seek-backward-button>
+                  <media-seek-forward-button class="hidden sm:inline-flex" seek-offset="10"></media-seek-forward-button>
+                  <media-time-display show-duration></media-time-display>
+                  <span class="flex-1"></span>
+                  <media-mute-button></media-mute-button>
+                  <media-volume-range class="hidden sm:inline-flex"></media-volume-range>
+                  <media-fullscreen-button></media-fullscreen-button>
+                </media-control-bar>
+              </div>
             </media-controller>
             <div
               v-if="videoData.video.isLivestream && !videoData.video.playlistUrl"
               class="absolute inset-0 z-10 bg-black/85 flex items-center justify-center px-6 text-center"
             >
               <div>
-                <p class="text-base font-semibold text-white">Livestream feed unavailable</p>
-                <p class="mt-1 text-sm text-gray-300">The stream is not currently connected. Attach a recording or update the livestream playback URL in admin.</p>
+                <p class="text-base font-semibold text-white">{{ strings.livestreamUnavailable }}</p>
+                <p class="mt-1 text-sm text-gray-300">{{ strings.livestreamUnavailableDetail }}</p>
               </div>
             </div>
           </div>
@@ -215,14 +221,14 @@
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                 </svg>
-                <span>Premium Access</span>
+                <span>{{ strings.premiumAccess }}</span>
               </span>
 
               <span v-else class="flex items-center space-x-1">
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                 </svg>
-                <span>Preview Only ({{ videoData.video.previewDuration ? formatDuration(videoData.video.previewDuration) : '--' }})</span>
+                <span>{{ strings.previewOnly(videoData.video.previewDuration ? formatDuration(videoData.video.previewDuration) : '--') }}</span>
               </span>
             </div>
 
@@ -230,14 +236,14 @@
               {{ videoDescription }}
             </p>
             <p v-if="videoData.video.isLivestream" class="mt-3 text-sm text-gray-500 dark:text-gray-400">
-              Live playback depends on RealtimeKit ingest/playback availability. Rewind/time-shift and tokenized segment protection are limited until a VOD recording is attached.
+              {{ strings.livestreamRealtimeNote }}
             </p>
           </div>
         </div>
 
         <!-- Right Column: Recommendations -->
         <div class="space-y-4">
-          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">Up Next</h2>
+          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">{{ strings.upNext }}</h2>
 
           <div class="space-y-3">
             <div
@@ -291,6 +297,7 @@ import 'media-chrome'
 import 'videojs-video-element'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { sizeUrl } from '~/composables/useThumbnail'
+import strings from '~/utils/strings'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -355,7 +362,7 @@ const previewPercentage = computed(() => {
 })
 
 const videoDescription = computed(() =>
-  videoData.value?.video?.description || 'No description available.'
+  videoData.value?.video?.description || strings.noDescription
 )
 
 const formatDuration = (seconds: number) => {
@@ -619,7 +626,7 @@ const initializeVideoElement = async (
   handleLoadedMetadata = () => { console.log('Video metadata loaded') }
   handleMediaError = () => {
     if (!isCurrentInvocation()) return
-    error.value = 'Video playback error. The HLS stream could not be loaded.'
+    error.value = strings.videoPlaybackError
   }
   handleWaiting  = () => { if (isCurrentInvocation()) buffering.value = true }
   handlePlaying  = () => { if (isCurrentInvocation()) buffering.value = false }
@@ -760,10 +767,48 @@ function teardownVideoListeners() {
 
 <style scoped>
 .watch-media-controller {
-  --media-control-background: linear-gradient(to top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+  --media-control-background: transparent;
   --media-control-color: #ffffff;
 }
-.watch-media-element     { position: relative; z-index: 1; }
-.watch-media-control-bar { position: relative; z-index: 20; padding: 8px 16px; }
-.watch-seekbar-input     { margin: 0; padding: 0; }
+.watch-media-element { position: relative; z-index: 1; }
+
+.watch-controls-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+.watch-seekbar-row {
+  padding: 0 12px;
+}
+
+.watch-seekbar-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 20px;
+  cursor: pointer;
+}
+
+.watch-seekbar-input {
+  margin: 0;
+  padding: 0;
+}
+
+.watch-media-control-bar {
+  position: relative;
+  z-index: 20;
+  padding: 2px 8px 6px;
+  --media-control-background: transparent;
+}
+
+@media (min-width: 640px) {
+  .watch-seekbar-row { padding: 0 16px; }
+  .watch-media-control-bar { padding: 2px 12px 8px; }
+}
 </style>

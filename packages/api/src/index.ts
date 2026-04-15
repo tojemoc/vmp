@@ -58,6 +58,7 @@ import {
   logSegmentEvent,
 } from './adminExtras.js'
 import { handleAdminSmokeAuth } from './smokeAuth.js'
+import { handleSiteSettings } from './siteSettings.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
@@ -269,6 +270,9 @@ export default {
     if (url.pathname === '/api/admin/payments/settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminPaymentSettings(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/site-settings' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleSiteSettings(request, env, corsHeaders)
+    }
     {
       const templateById = url.pathname.match(/^\/api\/admin\/newsletter\/templates\/([^/]+)$/)
       if (templateById && (request.method === 'PATCH' || request.method === 'DELETE')) {
@@ -295,6 +299,9 @@ export default {
     }
     if (url.pathname === '/api/admin/analytics' && request.method === 'GET') {
       return handleAdminAnalytics(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/site-settings' && request.method === 'GET') {
+      return handleSiteSettings(request, env, corsHeaders)
     }
     if (url.pathname === '/api/pills' && request.method === 'GET') {
       return handlePillsPublic(request, env, corsHeaders)
@@ -1393,9 +1400,10 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
   const hasTitle  = Object.prototype.hasOwnProperty.call(body, 'title')
   const hasSlug   = Object.prototype.hasOwnProperty.call(body, 'slug')
   const hasCategoryId = Object.prototype.hasOwnProperty.call(body, 'categoryId')
+  const hasDescription = Object.prototype.hasOwnProperty.call(body, 'description')
 
-  if (!hasStatus && !hasTitle && !hasSlug && !hasCategoryId) {
-    return jsonResponse({ error: 'At least one of status, title, slug, or categoryId must be provided' }, 400, corsHeaders)
+  if (!hasStatus && !hasTitle && !hasSlug && !hasCategoryId && !hasDescription) {
+    return jsonResponse({ error: 'At least one of status, title, slug, description, or categoryId must be provided' }, 400, corsHeaders)
   }
   if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
     return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
@@ -1473,6 +1481,12 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
       }
     }
 
+    if (hasDescription) {
+      const desc = typeof body.description === 'string' ? body.description.trim() : ''
+      await db.prepare(`UPDATE videos SET description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+        .bind(desc, videoId).run()
+    }
+
     if (hasCategoryId) {
       if (validatedCategoryId === null) {
         await db.prepare(`DELETE FROM video_category_assignments WHERE video_id = ?`).bind(videoId).run()
@@ -1511,7 +1525,7 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     }
 
     const video = await db.prepare(`
-      SELECT v.id, v.title, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id,
+      SELECT v.id, v.title, v.description, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.stream_id AS livestream_stream_id,

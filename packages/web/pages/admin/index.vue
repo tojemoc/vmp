@@ -342,6 +342,31 @@
                           </a>
                         </template>
                       </div>
+                      <!-- Description editor -->
+                      <div class="mt-1 group/desc flex items-start gap-1 min-w-0">
+                        <div v-if="editingDescription?.id === video.id" class="w-full">
+                          <textarea
+                            ref="descriptionInputEl"
+                            v-model="editingDescription.value"
+                            rows="3"
+                            class="w-full px-2 py-1 text-xs rounded border border-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                            @keydown.escape="editingDescription = null"
+                            @blur="saveDescriptionEdit(video)"
+                          ></textarea>
+                        </div>
+                        <template v-else>
+                          <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 min-w-0">{{ video.description || '—' }}</p>
+                          <button
+                            class="opacity-0 group-hover/desc:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity flex-shrink-0"
+                            title="Edit description"
+                            @click="startDescriptionEdit(video)"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        </template>
+                      </div>
                       <div class="mt-1 flex flex-wrap gap-1">
                         <span v-if="video.livestream_provider" class="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 px-2 py-0.5 text-[10px] font-semibold">🔴 Live</span>
                         <span v-if="video.r2_exists === false && !video.livestream_provider" class="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-2 py-0.5 text-[10px] font-semibold">⚠ R2 missing</span>
@@ -1066,6 +1091,57 @@
           </div>
 
           <template v-else>
+            <!-- Site Branding -->
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">Site branding</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Configure site name, description, logo, and favicon. These propagate to the header, page title, podcast feed, and PWA manifest.
+                </p>
+              </div>
+              <div v-if="siteBrandingMessage" class="rounded-lg border px-4 py-3 text-sm" :class="siteBrandingMessageClass">{{ siteBrandingMessage }}</div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Site name
+                  <input v-model="siteBranding.site_name" type="text" placeholder="My Platform" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Short name (header mobile)
+                  <input v-model="siteBranding.site_name_short" type="text" placeholder="VMP" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  Site description
+                  <input v-model="siteBranding.site_description" type="text" placeholder="Premium video content platform" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Logo URL
+                  <input v-model="siteBranding.site_logo_url" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Favicon URL
+                  <input v-model="siteBranding.site_favicon_url" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Podcast feed title
+                  <input v-model="siteBranding.podcast_title" type="text" placeholder="My Podcast" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Podcast feed description
+                  <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                  :disabled="siteBrandingSaving"
+                  @click="saveSiteBranding"
+                >
+                  {{ siteBrandingSaving ? 'Saving…' : 'Save branding' }}
+                </button>
+              </div>
+            </div>
+
             <div v-if="paymentSettingsMessage" class="rounded-lg border px-4 py-3 text-sm" :class="paymentSettingsMessageClass">{{ paymentSettingsMessage }}</div>
 
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
@@ -1598,6 +1674,8 @@ const editingTitle = ref<{ id: string; value: string } | null>(null)
 const titleInputEl = ref<HTMLInputElement | null>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
 const slugInputEl  = ref<HTMLInputElement | null>(null)
+const editingDescription = ref<{ id: string; value: string } | null>(null)
+const descriptionInputEl = ref<HTMLTextAreaElement | null>(null)
 const swapModal = ref<{
   open: boolean
   step: number  // 0=pick, 1=confirm, 2=loading
@@ -1672,6 +1750,19 @@ const paymentSettings = ref<{
 const paymentSettingsSaving = ref(false)
 const paymentSettingsMessage = ref('')
 const paymentSettingsMessageClass = ref('')
+
+const siteBranding = ref({
+  site_name: '',
+  site_name_short: '',
+  site_description: '',
+  site_logo_url: '',
+  site_favicon_url: '',
+  podcast_title: '',
+  podcast_description: '',
+})
+const siteBrandingSaving = ref(false)
+const siteBrandingMessage = ref('')
+const siteBrandingMessageClass = ref('')
 const rssPodcastWebhookUrl = ref('')
 const rssPodcastWebhookSecretInput = ref('')
 const rssPodcastSecretConfigured = ref(false)
@@ -2403,6 +2494,55 @@ const loadPaymentSettings = async () => {
   }
 }
 
+const loadSiteBranding = async () => {
+  if (!isAdmin.value) return
+  siteBrandingMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, { headers: authHeader() })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    siteBranding.value = {
+      site_name: data.site_name || '',
+      site_name_short: data.site_name_short || '',
+      site_description: data.site_description || '',
+      site_logo_url: data.site_logo_url || '',
+      site_favicon_url: data.site_favicon_url || '',
+      podcast_title: data.podcast_title || '',
+      podcast_description: data.podcast_description || '',
+    }
+  } catch (e: any) {
+    siteBrandingMessage.value = `Could not load site branding: ${e.message}`
+    siteBrandingMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const saveSiteBranding = async () => {
+  if (!isAdmin.value) return
+  siteBrandingSaving.value = true
+  siteBrandingMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify(siteBranding.value),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    siteBrandingMessage.value = 'Site branding saved.'
+    siteBrandingMessageClass.value = 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-200'
+  } catch (e: any) {
+    siteBrandingMessage.value = e.message || 'Failed to save site branding'
+    siteBrandingMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    siteBrandingSaving.value = false
+  }
+}
+
 const loadRssPodcastWebhookSettings = async () => {
   if (!isAdmin.value) return
   rssPodcastMessage.value = ''
@@ -2996,6 +3136,7 @@ const reloadAll = async () => {
     await loadNewsletterSettings()
     await loadNewsletterTemplates()
     await loadPaymentSettings()
+    await loadSiteBranding()
     await loadRssPodcastWebhookSettings()
     await loadUsers()
     await loadAnalytics()
@@ -3362,6 +3503,39 @@ async function saveSlugEdit(video: Video) {
     showToast('success', newSlug ? `Slug set: /watch/${newSlug}` : 'Slug cleared.')
   } catch (e: any) {
     showToast('error', `Failed to update slug: ${e.message}`)
+  }
+}
+
+async function startDescriptionEdit(video: Video) {
+  editingDescription.value = { id: video.id, value: video.description || '' }
+  await nextTick()
+  descriptionInputEl.value?.focus()
+}
+
+async function saveDescriptionEdit(video: Video) {
+  const editing = editingDescription.value
+  if (!editing || editing.id !== video.id) return
+  const newDesc = editing.value.trim()
+  editingDescription.value = null
+  if (newDesc === (video.description || '')) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ description: newDesc }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) {
+      const cur = uploads.value[idx]!
+      uploads.value[idx] = { ...cur, description: newDesc }
+    }
+    showToast('success', 'Description updated.')
+  } catch (e: any) {
+    showToast('error', `Failed to update description: ${e.message}`)
   }
 }
 
