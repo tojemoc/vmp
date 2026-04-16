@@ -133,6 +133,12 @@ export function sanitizeCloudflareLivestreamResponse(raw: unknown) {
     ['data', 'rtmp', 'streamKey'],
     ['data', 'rtmp', 'stream_key'],
     ['data', 'streamKey'],
+    ['ingest', 'rtmp', 'streamKey'],
+    ['ingest', 'rtmp', 'stream_key'],
+    ['ingest', 'rtmps', 'streamKey'],
+    ['ingest', 'rtmps', 'stream_key'],
+    ['streamKey'],
+    ['stream_key'],
   ]
   for (const path of redactPaths) {
     let node: any = copy
