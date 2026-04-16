@@ -41,7 +41,17 @@ export async function handleSiteSettings(request: any, env: any, corsHeaders: an
       return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
     }
 
-    const body = await request.json()
+    let body: any
+    try {
+      body = await request.json()
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400, corsHeaders)
+    }
+
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return jsonResponse({ error: 'Request body must be a JSON object', code: 'INVALID_BODY' }, 400, corsHeaders)
+    }
+
     const updates: [string, string][] = []
     for (const key of SITE_KEYS) {
       if (key in body && typeof body[key] === 'string') {

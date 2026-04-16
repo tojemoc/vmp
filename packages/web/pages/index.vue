@@ -212,6 +212,7 @@ import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
 
 const { siteSettings, fetchSiteSettings } = useSiteSettings()
+await fetchSiteSettings()
 useHead({
   title: computed(() => siteSettings.value.siteName),
 })
@@ -373,7 +374,6 @@ onMounted(async () => {
       loadCategories(),
       loadPlacement(),
       loadPills(),
-      fetchSiteSettings(),
     ])
     if (!videosRes.ok) throw new Error('Failed to load videos')
     const data = await videosRes.json()
