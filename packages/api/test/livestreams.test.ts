@@ -4,11 +4,12 @@ import { normalizeLivestreamStatus } from '../src/livestreams.js'
 
 describe('normalizeLivestreamStatus', () => {
   it('keeps known statuses', () => {
-    assert.equal(normalizeLivestreamStatus('scheduled'), 'scheduled')
+    assert.equal(normalizeLivestreamStatus('draft'), 'draft')
+    assert.equal(normalizeLivestreamStatus('provisioning'), 'provisioning')
+    assert.equal(normalizeLivestreamStatus('ready'), 'ready')
     assert.equal(normalizeLivestreamStatus('live'), 'live')
     assert.equal(normalizeLivestreamStatus('ended'), 'ended')
-    assert.equal(normalizeLivestreamStatus('vod_attached'), 'vod_attached')
-    assert.equal(normalizeLivestreamStatus('replaced_with_vod'), 'replaced_with_vod')
+    assert.equal(normalizeLivestreamStatus('failed'), 'failed')
   })
 
   it('normalizes casing and whitespace', () => {
@@ -16,12 +17,12 @@ describe('normalizeLivestreamStatus', () => {
   })
 
   it('returns fallback for unknown statuses', () => {
-    assert.equal(normalizeLivestreamStatus('unknown'), 'scheduled')
+    assert.equal(normalizeLivestreamStatus('unknown'), 'draft')
     assert.equal(normalizeLivestreamStatus('unknown', 'ended'), 'ended')
-    assert.equal(normalizeLivestreamStatus(null, 'scheduled'), 'scheduled')
+    assert.equal(normalizeLivestreamStatus(null, 'draft'), 'draft')
   })
 
   it('uses custom fallback for non-string statuses', () => {
-    assert.equal(normalizeLivestreamStatus(undefined, 'vod_attached'), 'vod_attached')
+    assert.equal(normalizeLivestreamStatus(undefined, 'ready'), 'ready')
   })
 })

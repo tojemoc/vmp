@@ -382,8 +382,21 @@
                           {{ video.publish_status ?? 'draft' }}
                         </span>
                         <span v-if="video.livestream_provider" class="block text-[11px] text-purple-600 dark:text-purple-300">
-                          stream: {{ video.livestream_status || 'scheduled' }}
+                          stream: {{ video.livestream_status || 'draft' }}
                         </span>
+                        <span v-if="video.livestream_ingest_url" class="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-[18rem]" :title="video.livestream_ingest_url">
+                          ingest: {{ video.livestream_ingest_url }}
+                        </span>
+                        <span v-if="video.livestream_stream_key" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
+                          key: {{ video.livestream_stream_key }}
+                        </span>
+                        <button
+                          v-if="video.livestream_provider && video.livestream_status === 'failed' && !retryingLivestreamProvision[video.id]"
+                          class="block text-[11px] text-red-600 dark:text-red-300 hover:underline"
+                          @click="retryLivestreamProvision(video)"
+                        >
+                          retry provisioning
+                        </button>
                       </div>
                     </td>
                     <td class="py-3 pr-4">
@@ -1367,7 +1380,7 @@
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Create livestream video</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Creates a standard video row backed by RealtimeKit metadata. Attach VOD later via swap.</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Creates a standard video row. Cloudflare Realtime provisioning runs automatically and returns ingest credentials.</p>
           </div>
           <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closeLivestreamModal">Close</button>
         </div>
@@ -1378,11 +1391,10 @@
           <label class="text-sm text-gray-700 dark:text-gray-300">Slug (optional)
             <input v-model="livestreamModal.form.slug" type="text" placeholder="my-livestream" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Stream status
+          <label class="text-sm text-gray-700 dark:text-gray-300">Initial stream status
             <select v-model="livestreamModal.form.status" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-              <option value="scheduled">scheduled</option>
-              <option value="live">live</option>
-              <option value="ended">ended</option>
+              <option value="provisioning">provisioning</option>
+              <option value="draft">draft</option>
             </select>
           </label>
           <label class="text-sm text-gray-700 dark:text-gray-300">Publish status
@@ -1391,22 +1403,11 @@
               <option value="published">published</option>
             </select>
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Playback URL
-            <input v-model="livestreamModal.form.playbackUrl" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-          </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Ingest URL
-            <input v-model="livestreamModal.form.ingestUrl" type="url" placeholder="rtmps://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-          </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Stream ID
-            <input v-model="livestreamModal.form.streamId" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-          </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Stream key
-            <input v-model="livestreamModal.form.streamKey" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-          </label>
           <label class="text-sm text-gray-700 dark:text-gray-300 md:col-span-2">Description
             <textarea v-model="livestreamModal.form.description" rows="2" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"></textarea>
           </label>
         </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">After creation, use the generated RTMP URL and stream key in OBS: <span class="font-mono">Settings → Stream → Server + Stream Key</span>.</p>
         <p v-if="livestreamModal.error" class="mt-3 text-sm text-red-600 dark:text-red-300">{{ livestreamModal.error }}</p>
         <div class="mt-4 flex justify-end gap-2">
           <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeLivestreamModal">Cancel</button>
@@ -1654,6 +1655,7 @@ const actualDurationByVideoId = ref<Record<string, number>>({})
 const statusUpdating = ref<Record<string, boolean>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
+const retryingLivestreamProvision = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
@@ -1690,12 +1692,8 @@ const livestreamModal = ref({
     title: '',
     description: '',
     slug: '',
-    status: 'scheduled',
+    status: 'provisioning',
     publishStatus: 'draft',
-    playbackUrl: '',
-    ingestUrl: '',
-    streamId: '',
-    streamKey: '',
   },
 })
 const componentTypes: BlockType[] = ['hero', 'featured_row', 'cta', 'text_split', 'video_grid', 'video_grid_legacy']
@@ -2067,12 +2065,8 @@ const resetLivestreamModal = () => {
       title: '',
       description: '',
       slug: '',
-      status: 'scheduled',
+      status: 'provisioning',
       publishStatus: 'draft',
-      playbackUrl: '',
-      ingestUrl: '',
-      streamId: '',
-      streamKey: '',
     },
   }
 }
@@ -2101,11 +2095,6 @@ const createLivestream = async () => {
       slug: livestreamModal.value.form.slug.trim() || null,
       status: livestreamModal.value.form.status,
       publishStatus: livestreamModal.value.form.publishStatus,
-      playbackUrl: livestreamModal.value.form.playbackUrl.trim() || null,
-      ingestUrl: livestreamModal.value.form.ingestUrl.trim() || null,
-      streamId: livestreamModal.value.form.streamId.trim() || null,
-      streamKey: livestreamModal.value.form.streamKey.trim() || null,
-      provider: 'realtimekit',
     }
     const res = await fetch(`${config.public.apiUrl}/api/admin/videos/livestreams`, {
       method: 'POST',
@@ -2114,13 +2103,36 @@ const createLivestream = async () => {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    showToast('success', 'Livestream video created.')
+    if (data?.provisioning?.ok === false) {
+      showToast('error', `Livestream created but provisioning failed: ${data?.provisioning?.error || 'unknown error'}`)
+    } else {
+      showToast('success', 'Livestream video created and provisioned.')
+    }
     resetLivestreamModal()
     await loadVideos()
   } catch (e: any) {
     livestreamModal.value.error = e.message || 'Failed to create livestream'
   } finally {
     livestreamModal.value.saving = false
+  }
+}
+
+const retryLivestreamProvision = async (video: Video) => {
+  if (retryingLivestreamProvision.value[video.id]) return
+  retryingLivestreamProvision.value[video.id] = true
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/livestream/provision`, {
+      method: 'POST',
+      headers: { ...authHeader() },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    showToast('success', 'Livestream provisioning retried successfully.')
+    await loadVideos()
+  } catch (e: any) {
+    showToast('error', e.message || 'Failed to retry livestream provisioning.')
+  } finally {
+    retryingLivestreamProvision.value[video.id] = false
   }
 }
 

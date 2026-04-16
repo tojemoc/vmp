@@ -62,7 +62,11 @@ import { handleSiteSettings } from './siteSettings.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
-import { normalizeLivestreamStatus } from './livestreams.js'
+import {
+  normalizeLivestreamStatus,
+  createCloudflareLivestream,
+  sanitizeCloudflareLivestreamResponse,
+} from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
 
 type CorsHeaders = Record<string, string>
@@ -242,6 +246,9 @@ export default {
     }
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream$/) && request.method === 'PATCH') {
       return handleAdminLivestreamUpdate(request, env, corsHeaders)
+    }
+    if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream\/provision$/) && request.method === 'POST') {
+      return handleAdminLivestreamProvision(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
       return handleAdminVideoUpdate(request, env, ctx, corsHeaders)
@@ -607,15 +614,16 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
     const hasAccess = hasPremiumAccess || !hasVideoMetadata
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0
     const isLivestream = Boolean(livestream)
-    const livestreamStatus = normalizeLivestreamStatus(livestream?.status, 'scheduled')
+    const livestreamStatus = normalizeLivestreamStatus(livestream?.status, 'draft')
     const hasLivestreamPlaybackUrl = typeof livestream?.playback_url === 'string' && livestream.playback_url.trim().length > 0
     const livestreamPlaybackUrl = hasLivestreamPlaybackUrl ? livestream.playback_url.trim() : null
     const livestreamRecordingId = typeof livestream?.recording_video_id === 'string' && livestream.recording_video_id.trim().length > 0
       ? livestream.recording_video_id.trim()
       : null
 
+    const shouldPreferVodRecording = Boolean(livestreamRecordingId) && ['ended', 'vod_attached', 'replaced_with_vod'].includes(livestreamStatus)
     let resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: resolvedVideoId })
-    if (livestreamRecordingId) {
+    if (shouldPreferVodRecording && livestreamRecordingId) {
       resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: livestreamRecordingId })
     }
     const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
@@ -655,9 +663,10 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
     const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
     let playlistUrl: string | null = basePlaylistUrl
     if (isLivestream) {
-      if (livestreamPlaybackUrl && hasPremiumAccess) {
+      const shouldUseLivePlayback = ['live', 'ready', 'provisioning', 'scheduled', 'draft'].includes(livestreamStatus)
+      if (shouldUseLivePlayback && livestreamPlaybackUrl && hasPremiumAccess) {
         playlistUrl = livestreamPlaybackUrl
-      } else if (!livestreamPlaybackUrl && !livestreamRecordingId) {
+      } else if (!livestreamPlaybackUrl && !shouldPreferVodRecording) {
         playlistUrl = null
       }
     }
@@ -1209,20 +1218,8 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
     return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
   }
 
-  const provider = typeof body.provider === 'string' && body.provider.trim() ? body.provider.trim() : 'realtimekit'
-  const streamId = typeof body.streamId === 'string' && body.streamId.trim() ? body.streamId.trim() : null
-  const streamKey = typeof body.streamKey === 'string' && body.streamKey.trim() ? body.streamKey.trim() : null
-  const ingestUrl = typeof body.ingestUrl === 'string' && body.ingestUrl.trim() ? body.ingestUrl.trim() : null
-  const playbackUrl = typeof body.playbackUrl === 'string' && body.playbackUrl.trim() ? body.playbackUrl.trim() : null
-  if (playbackUrl) {
-    try {
-      const parsed = new URL(playbackUrl)
-      if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('invalid_protocol')
-    } catch {
-      return jsonResponse({ error: 'playbackUrl must be a valid http(s) URL' }, 400, corsHeaders)
-    }
-  }
-  const livestreamStatus = normalizeLivestreamStatus(body.status, 'planned')
+  const provider = 'cloudflare_realtime'
+  const livestreamStatus = normalizeLivestreamStatus(body.status, 'provisioning')
 
   const categoryId = typeof body.categoryId === 'string' && body.categoryId.trim() ? body.categoryId.trim() : null
   const db = getDatabaseBinding(env)
@@ -1251,8 +1248,8 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
     INSERT INTO livestreams (
       video_id, provider, stream_id, stream_key, ingest_url, playback_url, status, started_at, ended_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP)
-  `).bind(videoId, provider, streamId, streamKey, ingestUrl, playbackUrl, livestreamStatus).run()
+    VALUES (?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, CURRENT_TIMESTAMP)
+  `).bind(videoId, provider, livestreamStatus).run()
 
   if (categoryId) {
     await db.prepare(`
@@ -1262,7 +1259,26 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
     `).bind(videoId, categoryId).run()
   }
 
-  const livestreamVideo = await db.prepare(`
+  const provisionResult = await provisionLivestreamForVideo({
+    db,
+    env,
+    videoId,
+    livestreamTitle: title,
+    force: false,
+  })
+
+  const livestreamVideo = await getAdminVideoById(db, videoId)
+  return jsonResponse({
+    ok: true,
+    video: livestreamVideo,
+    provisioning: provisionResult.ok
+      ? { ok: true, skipped: ('skipped' in provisionResult) ? Boolean(provisionResult.skipped) : false }
+      : { ok: false, code: provisionResult.code, error: provisionResult.error },
+  }, 201, corsHeaders)
+}
+
+async function getAdminVideoById(db: any, videoId: string) {
+  return db.prepare(`
     SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
            v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id,
            ls.provider AS livestream_provider,
@@ -1278,8 +1294,83 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
     WHERE v.id = ?
     LIMIT 1
   `).bind(videoId).first()
+}
 
-  return jsonResponse({ ok: true, video: livestreamVideo }, 201, corsHeaders)
+async function provisionLivestreamForVideo({
+  db,
+  env,
+  videoId,
+  livestreamTitle,
+  force,
+}: {
+  db: any
+  env: any
+  videoId: string
+  livestreamTitle: string
+  force: boolean
+}) {
+  const row = await db.prepare(`
+    SELECT stream_id, status
+    FROM livestreams
+    WHERE video_id = ?
+    LIMIT 1
+  `).bind(videoId).first()
+  if (!row) return { ok: false, error: 'Livestream not found', code: 'livestream_not_found' as const }
+
+  const existingStreamId = typeof row.stream_id === 'string' && row.stream_id.trim() ? row.stream_id.trim() : null
+  if (existingStreamId && !force) {
+    return { ok: true, skipped: true, reason: 'already_provisioned' as const }
+  }
+
+  await db.prepare(`
+    UPDATE livestreams
+    SET status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE video_id = ?
+  `).bind('provisioning', videoId).run()
+
+  try {
+    const provisioned = await createCloudflareLivestream(env, { metaName: livestreamTitle || `livestream-${videoId}` })
+    console.info('Cloudflare livestream provisioned', JSON.stringify({
+      videoId,
+      provider: 'cloudflare_realtime',
+      response: sanitizeCloudflareLivestreamResponse(provisioned.raw),
+    }))
+    await db.prepare(`
+      UPDATE livestreams
+      SET provider = ?,
+          stream_id = ?,
+          stream_key = ?,
+          ingest_url = ?,
+          playback_url = ?,
+          status = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE video_id = ?
+    `).bind(
+      'cloudflare_realtime',
+      provisioned.uid,
+      provisioned.streamKey,
+      provisioned.rtmpUrl,
+      provisioned.playbackHls,
+      'ready',
+      videoId,
+    ).run()
+    return { ok: true, skipped: false }
+  } catch (error) {
+    await db.prepare(`
+      UPDATE livestreams
+      SET status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE video_id = ?
+    `).bind('failed', videoId).run()
+    console.error('Cloudflare livestream provisioning failed', {
+      videoId,
+      error: getErrorMessage(error),
+    })
+    return {
+      ok: false,
+      error: getErrorMessage(error),
+      code: 'provisioning_failed' as const,
+    }
+  }
 }
 
 async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: any) {
@@ -1301,7 +1392,7 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
   const values = []
   if (typeof body.provider === 'string') {
     updates.push('provider = ?')
-    values.push(body.provider.trim() || 'realtimekit')
+    values.push(body.provider.trim() || 'cloudflare_realtime')
   }
   if (Object.prototype.hasOwnProperty.call(body, 'streamId')) {
     updates.push('stream_id = ?')
@@ -1330,7 +1421,7 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
   }
   if (Object.prototype.hasOwnProperty.call(body, 'status')) {
     updates.push('status = ?')
-    values.push(normalizeLivestreamStatus(body.status, 'scheduled'))
+    values.push(normalizeLivestreamStatus(body.status, 'draft'))
   }
   if (Object.prototype.hasOwnProperty.call(body, 'recordingVideoId')) {
     const recordingVideoId = typeof body.recordingVideoId === 'string' && body.recordingVideoId.trim()
@@ -1360,24 +1451,44 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
   const changes = result.meta?.changes ?? result.changes ?? 0
   if (!changes) return jsonResponse({ error: 'Livestream not found' }, 404, corsHeaders)
 
-  const livestreamVideo = await db.prepare(`
-    SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
-           v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id,
-           ls.provider AS livestream_provider,
-           ls.status AS livestream_status,
-           ls.stream_id AS livestream_stream_id,
-           ls.stream_key AS livestream_stream_key,
-           ls.ingest_url AS livestream_ingest_url,
-           ls.playback_url AS livestream_playback_url,
-           ls.recording_video_id AS livestream_recording_video_id
-    FROM videos v
-    LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-    LEFT JOIN livestreams ls ON ls.video_id = v.id
-    WHERE v.id = ?
-    LIMIT 1
-  `).bind(videoId).first()
+  const livestreamVideo = await getAdminVideoById(db, videoId)
 
   return jsonResponse({ ok: true, video: livestreamVideo }, 200, corsHeaders)
+}
+
+async function handleAdminLivestreamProvision(request: any, env: any, corsHeaders: any) {
+  try {
+    await requireRole(request, env, 'editor', 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  const url = new URL(request.url)
+  const pathParts = url.pathname.split('/').filter(Boolean)
+  const videoId = pathParts[3]
+  if (!videoId) return jsonResponse({ error: 'Missing videoId' }, 400, corsHeaders)
+
+  const db = getDatabaseBinding(env)
+  const video = await db.prepare('SELECT id, title FROM videos WHERE id = ? LIMIT 1').bind(videoId).first()
+  if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+  const livestream = await db.prepare('SELECT video_id FROM livestreams WHERE video_id = ? LIMIT 1').bind(videoId).first()
+  if (!livestream) return jsonResponse({ error: 'Livestream not found' }, 404, corsHeaders)
+
+  const result = await provisionLivestreamForVideo({
+    db,
+    env,
+    videoId,
+    livestreamTitle: video.title ?? `livestream-${videoId}`,
+    force: true,
+  })
+  const updatedVideo = await getAdminVideoById(db, videoId)
+  if (!result.ok) {
+    return jsonResponse({
+      error: result.error || 'Provisioning failed',
+      code: result.code || 'provisioning_failed',
+      video: updatedVideo,
+    }, 502, corsHeaders)
+  }
+  return jsonResponse({ ok: true, video: updatedVideo }, 200, corsHeaders)
 }
 
 async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHeaders: any) {

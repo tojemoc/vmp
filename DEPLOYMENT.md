@@ -99,6 +99,8 @@ Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 - `TOTP_ENCRYPTION_KEY`
 - `VAPID_PRIVATE_KEY`
 - `RSS_SECRET`
+- `CF_ACCOUNT_ID`
+- `CF_API_TOKEN`
 
 1. Re-apply database migrations in order
 
@@ -174,10 +176,16 @@ Use the smallest rollback that restores service:
 - If staging deploy is unstable, pause merges to `main` until smoke checks are green.
 - If production deploy is unstable, disable further production tags and roll back first, then investigate.
 
-## Livestream provider notes (RealtimeKit)
+## Livestream provider notes (Cloudflare Realtime)
 
 - Livestream entries are stored as standard `videos` rows plus `livestreams` metadata rows.
-- RealtimeKit playback URLs are consumed directly on the watch page for premium/staff viewers while the stream is active.
+- On livestream creation (`POST /api/admin/videos/livestreams`), the API provisions Cloudflare Realtime ingest via `POST /v2/livestreams` and stores:
+  - `stream_id` (Cloudflare `uid`)
+  - `ingest_url` (RTMP server URL)
+  - `stream_key`
+  - `playback_url` (HLS URL)
+- If provisioning fails, the row remains in D1 with status `failed`. Admins can retry manually via `POST /api/admin/videos/:videoId/livestream/provision`.
+- Cloudflare HLS playback URLs are consumed directly on the watch page for premium/staff viewers while live/ready.
 - Direct provider playback currently does not support the same proxy tokenization and preview truncation controls used for VOD HLS in `/api/video-proxy`.
-- Rewind/time-shift capability depends on provider playlist configuration; this integration assumes live-edge playback first, with explicit VOD handoff through admin swap.
+- Rewind/time-shift capability depends on provider playlist configuration; this integration assumes live-edge playback first, with explicit VOD handoff through admin swap once recording is available.
 - To preserve durable playback and existing proxy protections, finalize streams by swapping in an uploaded VOD (`/api/admin/videos/:id/swap`) once recording is available.
