@@ -173,17 +173,17 @@
           </div>
 
           <div v-else-if="block.type === 'cta'" class="p-6 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-800">
-            <p class="text-gray-800 dark:text-gray-200">{{ block.body || 'Upgrade to unlock complete videos and premium features.' }}</p>
+            <p class="text-gray-800 dark:text-gray-200">{{ block.body || strings.cta.body }}</p>
           </div>
 
           <div v-else-if="block.type === 'text_split'" class="grid md:grid-cols-2 gap-4">
             <div class="p-4 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">{{ block.title || 'Why upgrade?' }}</h3>
-              <p class="text-gray-600 dark:text-gray-400">{{ block.body || 'Get full-length videos and uninterrupted viewing.' }}</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">{{ block.title || strings.textSplit.title }}</h3>
+              <p class="text-gray-600 dark:text-gray-400">{{ block.body || strings.textSplit.body }}</p>
             </div>
             <div class="p-4 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Free vs Premium</h3>
-              <p class="text-gray-600 dark:text-gray-400">Free users can watch previews, premium users get complete access to every upload.</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">{{ strings.textSplit.compareTitle }}</h3>
+              <p class="text-gray-600 dark:text-gray-400">{{ strings.textSplit.compareBody }}</p>
             </div>
           </div>
 
@@ -221,6 +221,7 @@
 <script setup lang="ts">
 import type { HomepageLayoutBlock, HomepagePlacementResponse } from '~/composables/useHomepageLayout'
 import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
+import { strings } from '~/utils/strings'
 
 // ── PWA install banner ────────────────────────────────────────────────────────
 const { $pwa } = useNuxtApp()
@@ -236,26 +237,15 @@ function dismissPwaBanner() {
   pwaBannerDismissed.value = true
 }
 
-interface VideoCategory {
-  id: string
-  slug: string
-  name: string
-  direction: 'asc' | 'desc'
-}
-
 const config = useRuntimeConfig()
-const { authHeader } = useAuth()
-const loading = ref(true)
-const error   = ref<string | null>(null)
-const videos  = ref<any[]>([])
+const loading = ref(false)
 const layoutBlocks       = ref<HomepageLayoutBlock[]>([])
 const featuredVideoIds   = ref<string[]>([])
 const featuredMode = ref<'latest' | 'specific'>('latest')
 const featuredVideoId = ref<string | null>(null)
-const categories = ref<VideoCategory[]>([])
 const pills = ref<Array<{ id: string; label: string; value: number; color: string }>>([])
-const homepageHeroTitle = ref<string>('Discover Premium Video Content')
-const homepageHeroSubtitle = ref<string>('Watch free previews or unlock full access with a premium subscription')
+const homepageHeroTitle = ref<string>(strings.homepage.heroTitle)
+const homepageHeroSubtitle = ref<string>(strings.homepage.heroSubtitle)
 
 const blockLabelMap: Record<HomepageLayoutBlock['type'], string> = {
   hero:                'Hero',
@@ -283,63 +273,54 @@ const sortedByUpload = computed(() =>
 )
 
 const placement = ref<HomepagePlacementResponse | null>(null)
+const { data: homepageData, pending: homepagePending, error: homepageError } = await useAsyncData(
+  'homepage-index-data',
+  async () => {
+    const [videosRes, contentRes, placementRes, pillsRes] = await Promise.all([
+      fetch(`${config.public.apiUrl}/api/videos`),
+      fetch(`${config.public.apiUrl}/api/homepage/content`),
+      fetch(`${config.public.apiUrl}/api/homepage/placement`),
+      fetch(`${config.public.apiUrl}/api/pills`),
+    ])
+
+    if (!videosRes.ok) {
+      throw new Error('Failed to load videos')
+    }
+
+    const [videosData, contentData, placementData, pillsData] = await Promise.all([
+      videosRes.json().catch(() => ({ videos: [] })),
+      contentRes.ok ? contentRes.json().catch(() => null) : Promise.resolve(null),
+      placementRes.ok ? placementRes.json().catch(() => null) : Promise.resolve(null),
+      pillsRes.ok ? pillsRes.json().catch(() => ({ pills: [] })) : Promise.resolve({ pills: [] }),
+    ])
+
+    return {
+      videos: Array.isArray(videosData?.videos) ? videosData.videos : [],
+      content: contentData,
+      placement: placementData,
+      pills: Array.isArray(pillsData?.pills) ? pillsData.pills : [],
+    }
+  },
+)
+const videos = computed(() => homepageData.value?.videos ?? [])
+const error = computed(() => homepageError.value?.message ?? null)
+
+watchEffect(() => {
+  loading.value = homepagePending.value
+  const content = homepageData.value?.content
+  homepageHeroTitle.value = content?.title || strings.homepage.heroTitle
+  homepageHeroSubtitle.value = content?.subtitle || strings.homepage.heroSubtitle
+  const homepageConfig = content?.homepageConfig ?? {}
+  layoutBlocks.value = Array.isArray(homepageConfig?.layoutBlocks) ? homepageConfig.layoutBlocks : []
+  featuredVideoIds.value = Array.isArray(homepageConfig?.featuredVideoIds) ? homepageConfig.featuredVideoIds : []
+  featuredMode.value = homepageConfig?.featuredMode === 'specific' ? 'specific' : 'latest'
+  featuredVideoId.value = typeof homepageConfig?.featuredVideoId === 'string' ? homepageConfig.featuredVideoId : null
+  placement.value = homepageData.value?.placement ?? null
+  pills.value = homepageData.value?.pills ?? []
+})
+
 const featuredVideos = computed(() => homepageRenderModel.value.featuredVideos)
 const recentTwoByTwoVideos = computed(() => homepageRenderModel.value.recentTwoByTwoVideos)
 const categorySections = computed(() => homepageRenderModel.value.categorySections)
 
-const loadAdminConfig = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) return
-  const data = await res.json()
-  homepageHeroTitle.value = data.title || 'Discover Premium Video Content'
-  homepageHeroSubtitle.value = data.subtitle || 'Watch free previews or unlock full access with a premium subscription'
-  const homepageConfig = data?.homepageConfig ?? {}
-  layoutBlocks.value     = Array.isArray(homepageConfig?.layoutBlocks)    ? homepageConfig.layoutBlocks    : []
-  featuredVideoIds.value = Array.isArray(homepageConfig?.featuredVideoIds) ? homepageConfig.featuredVideoIds : []
-  featuredMode.value = homepageConfig?.featuredMode === 'specific' ? 'specific' : 'latest'
-  featuredVideoId.value = typeof homepageConfig?.featuredVideoId === 'string' ? homepageConfig.featuredVideoId : null
-}
-
-const loadCategories = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) return
-  const data = await res.json()
-  categories.value = Array.isArray(data?.categories) ? data.categories : []
-}
-
-const loadPlacement = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
-  if (!res.ok) return
-  placement.value = await res.json()
-}
-
-const loadPills = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/pills`)
-  if (!res.ok) return
-  const data = await res.json()
-  pills.value = Array.isArray(data?.pills) ? data.pills : []
-}
-
-onMounted(async () => {
-  try {
-    const [videosRes] = await Promise.all([
-      fetch(`${config.public.apiUrl}/api/videos`),
-      loadAdminConfig(),
-      loadCategories(),
-      loadPlacement(),
-      loadPills(),
-    ])
-    if (!videosRes.ok) throw new Error('Failed to load videos')
-    const data = await videosRes.json()
-    videos.value = data.videos || []
-  } catch (e: any) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-})
 </script>

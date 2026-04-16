@@ -203,6 +203,9 @@ export default {
     if (url.pathname === '/api/homepage/placement' && request.method === 'GET') {
       return handleHomepagePlacement(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
+      return handleHomepageContentPublic(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/feed/public') {
       return handlePublicFeed(request, env, corsHeaders)
     }
@@ -413,6 +416,28 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
     return jsonResponse(placement, 200, corsHeaders)
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
+    return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
+  }
+}
+
+async function handleHomepageContentPublic(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  try {
+    const db = getDatabaseBinding(env)
+    await ensureAdminSettingsTable(db)
+    const [title, subtitle, homepageRow] = await Promise.all([
+      db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage_hero_title').first(),
+      db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage_hero_subtitle').first(),
+      db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
+    ])
+    const homepageConfig = normalizeHomepageConfig(safeJsonParse(homepageRow?.value, defaultHomepageConfig()))
+    return jsonResponse({
+      title: title?.value ?? 'Discover Premium Video Content',
+      subtitle: subtitle?.value ?? 'Watch free previews or unlock full access with a premium subscription',
+      homepageConfig,
+    }, 200, corsHeaders)
+  } catch (error) {
+    console.error('handleHomepageContentPublic:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
   }
 }
