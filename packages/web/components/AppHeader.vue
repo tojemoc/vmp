@@ -3,10 +3,10 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <NuxtLink to="/" class="flex min-w-0 items-center space-x-2 shrink">
-          <img src="/icons/pwa-192.png" alt="" aria-hidden="true" class="w-8 h-8 rounded-lg shrink-0" />
-          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden">VMP</span>
+          <img :src="siteSettings.logoUrl || '/icons/pwa-192.png'" alt="" aria-hidden="true" class="w-8 h-8 rounded-lg shrink-0" />
+          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden">{{ siteSettings.siteNameShort }}</span>
           <span class="hidden sm:block text-xl font-bold text-gray-900 dark:text-white max-w-[12rem] md:max-w-none truncate">
-            Video Monetization Platform
+            {{ siteSettings.siteName }}
           </span>
         </NuxtLink>
 
@@ -16,14 +16,14 @@
             to="/login"
             class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
           >
-            Sign in
+            {{ strings.signIn }}
           </NuxtLink>
 
           <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
             <button
               class="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
-              title="Open account menu"
-              aria-label="Open account menu"
+              :title="strings.accountMenu"
+              :aria-label="strings.accountMenu"
               :aria-expanded="dropdownOpen"
               aria-controls="account-menu"
               @click="dropdownOpen = !dropdownOpen"
@@ -48,7 +48,7 @@
                 class="absolute right-0 top-full mt-2 w-64 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden z-50"
               >
                 <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">Signed in as</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ strings.signedInAs }}</p>
                   <p class="text-sm font-medium text-gray-900 dark:text-white truncate mt-0.5">{{ user?.email }}</p>
                   <p class="text-xs mt-1" :class="roleBadgeClass">{{ roleLabel }}</p>
                 </div>
@@ -61,7 +61,7 @@
                     @click="handleBellClick"
                   >
                     <span class="w-4 text-center">{{ pushSubscribed ? '🔔' : '🔕' }}</span>
-                    {{ pushSubscribed ? 'Disable notifications' : 'Enable notifications' }}
+                    {{ pushSubscribed ? strings.disableNotifications : strings.enableNotifications }}
                   </button>
 
                   <NuxtLink
@@ -70,7 +70,7 @@
                     class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     @click="dropdownOpen = false"
                   >
-                    Admin console
+                    {{ strings.adminConsole }}
                   </NuxtLink>
 
                   <NuxtLink
@@ -78,14 +78,14 @@
                     class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     @click="dropdownOpen = false"
                   >
-                    Account
+                    {{ strings.account }}
                   </NuxtLink>
 
                   <button
                     class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                     @click="handleLogout"
                   >
-                    Sign out
+                    {{ strings.signOut }}
                   </button>
                 </div>
               </div>
@@ -112,7 +112,11 @@
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
+
 const { user, isLoggedIn, canEditContent, logout } = useAuth()
+const { siteSettings, fetchSiteSettings } = useSiteSettings()
+onMounted(() => fetchSiteSettings())
 const {
   isSupported: pushSupported,
   permission: pushPermission,
@@ -132,9 +136,9 @@ let pushToastTimer: ReturnType<typeof setTimeout> | null = null
 const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error')
 
 const pushBellTitle = computed(() => {
-  if (pushPermission.value === 'denied') return 'Notifications blocked by browser'
-  if (pushSubscribed.value) return 'Notifications on — click to disable'
-  return 'Click to enable new video notifications'
+  if (pushPermission.value === 'denied') return strings.notificationsBlocked
+  if (pushSubscribed.value) return strings.notificationsOn
+  return strings.notificationsClickEnable
 })
 
 function showPushToast(type: 'success' | 'error', message: string) {
@@ -158,12 +162,12 @@ async function handleBellClick() {
         showPushToast('error', pushError.value)
         clearPushError()
       } else if (before && !pushSubscribed.value) {
-        showPushToast('success', 'Notifications turned off.')
+        showPushToast('success', strings.notificationsTurnedOff)
       }
     } else {
       const before = pushSubscribed.value
       await pushSubscribe()
-      if (!before && pushSubscribed.value) showPushToast('success', 'Notifications enabled.')
+      if (!before && pushSubscribed.value) showPushToast('success', strings.notificationsEnabled)
       else if (pushError.value) {
         showPushToast('error', pushError.value)
         clearPushError()

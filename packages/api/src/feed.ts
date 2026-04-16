@@ -339,12 +339,17 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
       getSetting(env, 'podcast_description', { defaultValue: null }),
     ])
 
+    const siteLogoUrl = await getSetting(env, 'site_logo_url', { defaultValue: null })
+    const channelImageUrl = siteLogoUrl
+      ? buildSquareCoverImageUrl(siteLogoUrl) ?? buildFeedFaviconUrl(request, env)
+      : buildFeedFaviconUrl(request, env)
+
     const channel = {
       title: titleSetting || 'VMP Podcast',
       description: descSetting || 'Preview episodes from VMP. Subscribe to unlock full access in your personal feed.',
       link: env.FRONTEND_URL || origin,
       language: 'en',
-      imageUrl: buildFeedFaviconUrl(request, env),
+      imageUrl: channelImageUrl,
     }
 
     const items = []
@@ -461,12 +466,17 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       getSetting(env, 'podcast_description', { defaultValue: null }),
     ])
 
+    const siteLogoUrlPersonal = await getSetting(env, 'site_logo_url', { defaultValue: null })
+    const personalChannelImage = siteLogoUrlPersonal
+      ? buildSquareCoverImageUrl(siteLogoUrlPersonal) ?? buildFeedFaviconUrl(request, env)
+      : buildFeedFaviconUrl(request, env)
+
     const channel = {
       title: titleSetting || 'VMP Podcast',
       description: descSetting || 'Your VMP podcast feed.',
       link: env.FRONTEND_URL || origin,
       language: 'en',
-      imageUrl: buildFeedFaviconUrl(request, env),
+      imageUrl: personalChannelImage,
     }
 
     const items = []

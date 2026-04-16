@@ -23,7 +23,7 @@
         v-if="displayDurationSeconds > 0 ? video.preview_duration < displayDurationSeconds : video.preview_duration > 0"
         class="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-semibold px-2 py-1 rounded"
       >
-        PREMIUM
+        {{ premiumLabel }}
       </div>
     </div>
 
@@ -40,6 +40,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useThumbnail } from '~/composables/useThumbnail'
+import strings from '~/utils/strings'
 
 interface Video {
   id: string
@@ -67,6 +68,8 @@ const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
 const displayDurationSeconds = computed(
   () => props.video.fullDuration ?? props.video.full_duration ?? 0
 )
+
+const premiumLabel = strings.premiumBadge
 
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
