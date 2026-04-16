@@ -176,14 +176,14 @@ Use the smallest rollback that restores service:
 - If staging deploy is unstable, pause merges to `main` until smoke checks are green.
 - If production deploy is unstable, disable further production tags and roll back first, then investigate.
 
-## Livestream provider notes (Cloudflare Realtime)
+## Livestream provider notes (Cloudflare Stream Live)
 
 - Livestream entries are stored as standard `videos` rows plus `livestreams` metadata rows.
-- On livestream creation (`POST /api/admin/videos/livestreams`), the API provisions Cloudflare Realtime ingest via `POST /v2/livestreams` and stores:
+- On livestream creation (`POST /api/admin/videos/livestreams`), the API provisions Cloudflare Stream Live ingest via `POST /stream/live_inputs` and stores:
   - `stream_id` (Cloudflare `uid`)
-  - `ingest_url` (RTMP server URL)
+  - `ingest_url` (RTMPS ingest URL)
   - `stream_key`
-  - `playback_url` (HLS URL)
+  - `playback_url` (HLS URL, from API response or `CF_STREAM_CUSTOMER_CODE` fallback)
 - If provisioning fails, the row remains in D1 with status `failed`. Admins can retry manually via `POST /api/admin/videos/:videoId/livestream/provision`.
 - Cloudflare HLS playback URLs are consumed directly on the watch page for premium/staff viewers while live/ready.
 - Direct provider playback currently does not support the same proxy tokenization and preview truncation controls used for VOD HLS in `/api/video-proxy`.
