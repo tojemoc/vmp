@@ -182,3 +182,6 @@ jobs:
       - name: Smoke check frontend reachability (production)
         run: |
           curl -fsS "$FRONTEND_URL" >/dev/null
+
+      - run: npx nx fix-ci
+        if: always()
