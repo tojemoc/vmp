@@ -454,12 +454,13 @@
                     </td>
                     <td class="py-3">
                       <div class="flex flex-wrap gap-2">
-                        <div v-if="video.publish_status !== 'published'" class="flex flex-wrap items-center gap-2">
-                          <button
-                            class="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50"
-                            :disabled="statusUpdating[video.id]"
-                            @click="updateVideoStatus(video, 'published', null)"
-                          >Publish</button>
+                        <button
+                          v-if="video.publish_status !== 'published'"
+                          class="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50"
+                          :disabled="statusUpdating[video.id]"
+                          @click="updateVideoStatus(video, 'published', null)"
+                        >Publish</button>
+                        <div v-if="video.publish_status === 'draft'" class="flex flex-wrap items-center gap-2">
                           <input
                             :value="parseIsoForInput(video.scheduled_publish_at)"
                             type="datetime-local"
@@ -850,7 +851,7 @@
               v-model="usersImportCsv"
               rows="6"
               class="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-              placeholder="email\nuser@example.com\nsecond@example.com"
+              :placeholder="`email\nuser@example.com\nsecond@example.com`"
             />
             <p v-if="usersImportResult" class="text-xs text-emerald-700 dark:text-emerald-300">
               Imported {{ usersImportResult.imported }}, existing {{ usersImportResult.existing }}, total parsed {{ usersImportResult.totalEmails }} · list {{ usersImportResult.mailingListId }}.

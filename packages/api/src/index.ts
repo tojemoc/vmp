@@ -150,7 +150,7 @@ export class SegmentRateLimiterDO {
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
-    await runScheduledPublishJobs(env)
+    await maybeRunScheduledPublishJobsInRequest(env, ctx)
     await maybeSyncPillsApiKey(env)
 
     // ── CORS ──────────────────────────────────────────────────────────────────
@@ -372,6 +372,14 @@ export default {
     }
 
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
+  },
+
+  async scheduled(event: any, env: any, ctx: ExecutionContext) {
+    try {
+      await runScheduledPublishJobs(env)
+    } catch (err) {
+      console.error('Scheduled publish sweep failed:', err)
+    }
   },
 }
 
@@ -1848,7 +1856,7 @@ async function handleAdminVideoPublishSweep(request: any, env: any, corsHeaders:
         updated_at = CURRENT_TIMESTAMP
     WHERE publish_status != 'published'
       AND scheduled_publish_at IS NOT NULL
-      AND datetime(scheduled_publish_at) <= CURRENT_TIMESTAMP
+      AND scheduled_publish_at <= CURRENT_TIMESTAMP
   `).run()
   const publishedCount = Number(result.meta?.changes ?? result.changes ?? 0)
   return jsonResponse({
@@ -2537,9 +2545,17 @@ function normalizeScheduledPublishAt(raw: any, options: { allowNull?: boolean } 
   if (typeof raw !== 'string') return { value: null, invalid: true }
   const text = raw.trim()
   if (!text) return options.allowNull ? { value: null, invalid: false } : { value: null, invalid: true }
+
+  // Require explicit timezone: must end with 'Z' or +/-HH:MM offset
+  const hasTimezone = /[Zz]$|[+-]\d{2}:\d{2}$/.test(text)
+  if (!hasTimezone) return { value: null, invalid: true }
+
   const t = Date.parse(text)
   if (!Number.isFinite(t)) return { value: null, invalid: true }
-  if (t <= Date.now()) return { value: null, invalid: true }
+
+  // Allow timestamps within 60s grace window (treat as immediate publish)
+  if (t + 60_000 <= Date.now()) return { value: null, invalid: true }
+
   return { value: new Date(t).toISOString(), invalid: false }
 }
 
@@ -2550,7 +2566,7 @@ async function runScheduledPublishJobs(env: any) {
     FROM videos
     WHERE publish_status = 'draft'
       AND scheduled_publish_at IS NOT NULL
-      AND datetime(scheduled_publish_at) <= CURRENT_TIMESTAMP
+      AND scheduled_publish_at <= CURRENT_TIMESTAMP
   `).all()
   const dueVideos = dueRows?.results ?? []
   if (!dueVideos.length) return 0
@@ -2563,11 +2579,34 @@ async function runScheduledPublishJobs(env: any) {
     WHERE id = ?
       AND publish_status = 'draft'
       AND scheduled_publish_at IS NOT NULL
-      AND datetime(scheduled_publish_at) <= CURRENT_TIMESTAMP
+      AND scheduled_publish_at <= CURRENT_TIMESTAMP
   `)
   const statements = dueVideos.map((row: any) => publishStmt.bind(row.id))
   await db.batch(statements)
   return statements.length
+}
+
+async function maybeRunScheduledPublishJobsInRequest(env: any, ctx: ExecutionContext) {
+  const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
+  if (!kv) {
+    // No KV available, skip in-request publish sweep
+    return
+  }
+  const colo = typeof env.CF_COLO === 'string' ? env.CF_COLO : 'default'
+  const lockKey = `scheduled-publish-sweep:${colo}`
+  const lastRun = await kv.get(lockKey)
+  if (lastRun) {
+    // Already run recently in this colo
+    return
+  }
+  ctx.waitUntil((async () => {
+    try {
+      await kv.put(lockKey, Date.now().toString(), { expirationTtl: 60 })
+      await runScheduledPublishJobs(env)
+    } catch (err) {
+      console.error('In-request scheduled publish sweep failed:', err)
+    }
+  })())
 }
 
 function safeJsonParse(v: any, fallback: any) {

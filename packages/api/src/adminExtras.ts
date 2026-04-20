@@ -899,21 +899,21 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
 function parseCsvEmails(csvText: string) {
   const emails = new Set<string>()
   if (!csvText) return emails
-  const rows = csvText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  for (const row of rows) {
-    const cols = row.split(',').map((col) => col.trim().replace(/^"|"$/g, ''))
-    for (const raw of cols) {
-      const lower = raw.toLowerCase()
-      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lower)) {
-        emails.add(lower)
-      }
-    }
+  const MAX_EMAILS = 10000
+  const emailRegex = /[^\s@]+@[^\s@]+\.[^\s@]+/g
+  const matches = csvText.matchAll(emailRegex)
+  for (const match of matches) {
+    if (emails.size >= MAX_EMAILS) break
+    const lower = match[0].toLowerCase()
+    emails.add(lower)
   }
   return emails
 }
 
 export async function handleAdminUserImportCsv(request: any, env: any, corsHeaders: any) {
+  let actor
   try {
+    actor = await requireAuth(request, env)
     await requireRole(request, env, 'admin', 'super_admin')
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
@@ -932,11 +932,27 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
   }
 
   const nowIso = new Date().toISOString()
+  const actorUserId = typeof actor?.sub === 'string' ? actor.sub : 'system'
+
+  // Bulk lookup existing users
+  const emailsArray = Array.from(emails)
+  const placeholders = emailsArray.map(() => '?').join(',')
+  const existingUsersRows = await db.prepare(`
+    SELECT id, lower(email) AS email_lower FROM users WHERE lower(email) IN (${placeholders})
+  `).bind(...emailsArray).all()
+  const existingUsersMap = new Map<string, string>()
+  for (const row of (existingUsersRows?.results ?? [])) {
+    existingUsersMap.set(String(row.email_lower), String(row.id))
+  }
+
   const usersUpsert = db.prepare(`
     INSERT INTO users (id, email, role, created_at)
     VALUES (?, ?, 'viewer', CURRENT_TIMESTAMP)
     ON CONFLICT(email) DO NOTHING
   `)
+  // needs_relink is a custom status used by this feature to indicate imported users
+  // that need to be matched/linked to an external mailing list provider.
+  // See settings users_relink_mailing_list_id and users_relink_imported_at.
   const subUpsert = db.prepare(`
     INSERT INTO subscriptions (
       id, user_id, plan_type, status, stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
@@ -949,8 +965,7 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
   let existing = 0
   const statements = []
   for (const email of emails) {
-    const existingUser = await db.prepare('SELECT id FROM users WHERE lower(email) = ? LIMIT 1').bind(email).first()
-    let userId = existingUser?.id
+    let userId = existingUsersMap.get(email)
     if (!userId) {
       userId = crypto.randomUUID()
       statements.push(usersUpsert.bind(userId, email))
@@ -961,6 +976,14 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
     const subscriptionId = `import-${mailingListId}-${userId}`
     statements.push(subUpsert.bind(subscriptionId, userId, `import-list:${mailingListId}`))
   }
+
+  statements.push(buildAdminAuditLogStatement(db, {
+    actorUserId,
+    actionType: 'user_import_csv',
+    targetUserId: null,
+    detail: { mailingListId, imported, existing, totalEmails: emails.size },
+  }))
+
   if (statements.length) await db.batch(statements)
 
   await setSetting(env, 'users_relink_mailing_list_id', mailingListId)
