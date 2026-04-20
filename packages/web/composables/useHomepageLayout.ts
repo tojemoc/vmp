@@ -63,7 +63,7 @@ export function buildHomepageRenderModel({
     const combinedIds = [...block.visible, ...block.overflow].map((ref) => ref.id)
     const allVideos = combinedIds.map((id) => videoById.get(id)).filter(Boolean)
     const variant = block.category?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one'
-    const visibleCount = variant === 'side_mini' ? 4 : 3
+    const visibleCount = variant === 'side_mini' ? 2 : 3
     return {
       category: block.category,
       allVideos,

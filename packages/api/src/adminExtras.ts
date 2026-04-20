@@ -896,15 +896,16 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
   return jsonResponse({ error: 'role or subscriptionStatus is required' }, 400, corsHeaders)
 }
 
-function parseCsvEmails(csvText: string) {
+function parseCsvEmails(csvText: string, maxEmails = 10000) {
   const emails = new Set<string>()
   if (!csvText) return emails
-  const MAX_EMAILS = 10000
-  const emailRegex = /[^\s@]+@[^\s@]+\.[^\s@]+/g
+  const safeMaxEmails = Number.isFinite(maxEmails) && maxEmails > 0 ? Math.floor(maxEmails) : 10000
+  const emailRegex = /(?:^|[\s,;'"<>()\[\]{}])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?=$|[\s,;'"<>()\[\]{}])/gi
   const matches = csvText.matchAll(emailRegex)
   for (const match of matches) {
-    if (emails.size >= MAX_EMAILS) break
-    const lower = match[0].toLowerCase()
+    if (emails.size >= safeMaxEmails) break
+    const lower = (match[1] || '').toLowerCase()
+    if (!lower) continue
     emails.add(lower)
   }
   return emails
@@ -926,7 +927,19 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
   if (!csv.trim()) return jsonResponse({ error: 'csv is required' }, 400, corsHeaders)
   if (!mailingListId) return jsonResponse({ error: 'mailingListId is required' }, 400, corsHeaders)
 
-  const emails = parseCsvEmails(csv)
+  const [rawMaxEmails, rawImportPlan] = await Promise.all([
+    getSetting(env, 'import_csv_max_emails'),
+    getSetting(env, 'import_subscription_plan'),
+  ])
+  const configuredMaxEmails = Number.parseInt(String(rawMaxEmails ?? '').trim(), 10)
+  const maxEmails = Number.isFinite(configuredMaxEmails) && configuredMaxEmails > 0
+    ? configuredMaxEmails
+    : 10000
+  const importPlan = typeof rawImportPlan === 'string' && rawImportPlan.trim()
+    ? rawImportPlan.trim()
+    : 'monthly'
+
+  const emails = parseCsvEmails(csv, maxEmails)
   if (!emails.size) {
     return jsonResponse({ error: 'No valid emails found in csv payload' }, 400, corsHeaders)
   }
@@ -964,7 +977,7 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
     INSERT INTO subscriptions (
       id, user_id, plan_type, status, stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
     )
-    VALUES (?, ?, 'monthly', 'needs_relink', NULL, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, 'needs_relink', NULL, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO NOTHING
   `)
 
@@ -981,7 +994,7 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
       existing += 1
     }
     const subscriptionId = `import-${mailingListId}-${userId}`
-    statements.push(subUpsert.bind(subscriptionId, userId, `import-list:${mailingListId}`))
+    statements.push(subUpsert.bind(subscriptionId, userId, importPlan, `import-list:${mailingListId}`))
   }
 
   statements.push(buildAdminAuditLogStatement(db, {

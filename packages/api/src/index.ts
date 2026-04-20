@@ -150,7 +150,7 @@ export class SegmentRateLimiterDO {
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
-    await maybeRunScheduledPublishJobsInRequest(env, ctx)
+    ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env))
     await maybeSyncPillsApiKey(env)
 
     // ── CORS ──────────────────────────────────────────────────────────────────
@@ -1553,6 +1553,12 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
   if (hasScheduledPublishAt && scheduledPublishAt.invalid) {
     return jsonResponse({ error: 'scheduledPublishAt must be a valid ISO timestamp in the future, or null to clear schedule' }, 400, corsHeaders)
   }
+  if (hasScheduledPublishAt && hasStatus && body.status === 'published') {
+    return jsonResponse({
+      error: 'Conflicting payload: scheduledPublishAt cannot be provided when status is published',
+      code: 'invalid_payload',
+    }, 400, corsHeaders)
+  }
 
   const db = getDatabaseBinding(env)
   const videoExists = await db.prepare('SELECT 1 FROM videos WHERE id = ?').bind(videoId).first()
@@ -1818,6 +1824,16 @@ async function handleAdminVideoNotify(request: any, env: any, ctx: any, corsHead
   }
 
   const responseTimestamp = new Date().toISOString()
+  const notifiedResult = await db.prepare(`
+    UPDATE videos
+    SET notified_at = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND notified_at IS NULL
+  `).bind(responseTimestamp, videoId).run()
+  const notifiedChanges = Number(notifiedResult.meta?.changes ?? notifiedResult.changes ?? 0)
+  if (!notifiedChanges) {
+    return jsonResponse({ error: 'Video already notified', code: 'already_notified' }, 409, corsHeaders)
+  }
 
   // Send in the background; log delivery stats so failures are visible in logs.
   ctx.waitUntil(
@@ -1829,12 +1845,6 @@ async function handleAdminVideoNotify(request: any, env: any, ctx: any, corsHead
         console.error(`Push notify error [videoId:${videoId}]:`, err)
       }),
   )
-
-  await db.prepare(`
-    UPDATE videos
-    SET notified_at = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).bind(responseTimestamp, videoId).run()
 
   return jsonResponse({ ok: true, push_enqueued_at: responseTimestamp }, 200, corsHeaders)
 }
@@ -2556,7 +2566,14 @@ function normalizeScheduledPublishAt(raw: any, options: { allowNull?: boolean } 
   // Allow timestamps within 60s grace window (treat as immediate publish)
   if (t + 60_000 <= Date.now()) return { value: null, invalid: true }
 
-  return { value: new Date(t).toISOString(), invalid: false }
+  const d = new Date(t)
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mi = String(d.getUTCMinutes()).padStart(2, '0')
+  const ss = String(d.getUTCSeconds()).padStart(2, '0')
+  return { value: `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`, invalid: false }
 }
 
 async function runScheduledPublishJobs(env: any) {
@@ -2586,27 +2603,26 @@ async function runScheduledPublishJobs(env: any) {
   return statements.length
 }
 
-async function maybeRunScheduledPublishJobsInRequest(env: any, ctx: ExecutionContext) {
-  const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
-  if (!kv) {
-    // No KV available, skip in-request publish sweep
-    return
-  }
-  const colo = typeof env.CF_COLO === 'string' ? env.CF_COLO : 'default'
-  const lockKey = `scheduled-publish-sweep:${colo}`
-  const lastRun = await kv.get(lockKey)
-  if (lastRun) {
-    // Already run recently in this colo
-    return
-  }
-  ctx.waitUntil((async () => {
+async function maybeRunScheduledPublishJobsInRequest(env: any) {
+  try {
+    const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
+    if (!kv) return
+
     try {
+      const colo = typeof env.CF_COLO === 'string' ? env.CF_COLO : 'default'
+      const lockKey = `scheduled-publish-sweep:${colo}`
+      const lastRun = await kv.get(lockKey)
+      if (lastRun) return
       await kv.put(lockKey, Date.now().toString(), { expirationTtl: 60 })
-      await runScheduledPublishJobs(env)
     } catch (err) {
-      console.error('In-request scheduled publish sweep failed:', err)
+      console.error('Scheduled publish lock KV operation failed:', err)
+      return
     }
-  })())
+
+    await runScheduledPublishJobs(env)
+  } catch (err) {
+    console.error('In-request scheduled publish sweep failed:', err)
+  }
 }
 
 function safeJsonParse(v: any, fallback: any) {

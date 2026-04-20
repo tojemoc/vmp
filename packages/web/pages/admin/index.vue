@@ -137,6 +137,12 @@
                   class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold text-white"
                   :style="{ backgroundColor: pill.color || '#2563eb' }"
                 >
+                  <img
+                    v-if="pill.image_url"
+                    :src="pill.image_url"
+                    :alt="`${pill.label} image`"
+                    class="w-5 h-5 rounded-full object-cover border border-white/40"
+                  />
                   <span>{{ pill.label }}</span>
                   <span class="rounded-full bg-black/20 px-2 py-0.5">{{ pill.value }}</span>
                 </div>
@@ -466,7 +472,7 @@
                             type="datetime-local"
                             class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs text-gray-900 dark:text-white"
                             :disabled="statusUpdating[video.id]"
-                            @change="(e) => updateVideoStatus(video, 'draft', (e.target as HTMLInputElement).value || '')"
+                            @change="(e) => updateVideoStatus(video, 'draft', parseLocalDateTimeToIso((e.target as HTMLInputElement).value || ''))"
                           />
                           <button
                             v-if="video.scheduled_publish_at"
@@ -523,13 +529,17 @@
           <template v-else>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
               <h3 class="font-semibold text-gray-900 dark:text-white">Create category</h3>
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <input v-model="categoryForm.name" type="text" placeholder="Name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="categoryForm.slug" type="text" placeholder="slug-name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model.number="categoryForm.sortOrder" type="number" placeholder="Sort order" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <select v-model="categoryForm.direction" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   <option value="desc">desc</option>
                   <option value="asc">asc</option>
+                </select>
+                <select v-model="categoryForm.homepageLayoutVariant" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                  <option value="three_by_one">3×1 block</option>
+                  <option value="side_mini">2×1 small block</option>
                 </select>
               </div>
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createCategory">Create category</button>
@@ -2026,7 +2036,16 @@ const mergedHomepagePlacement = computed(() => {
     featured: featuredIds.map((id) => ({ id })),
     categoryBlocks: categories.value.map((cat) => {
       const existing = base.categoryBlocks?.find((b) => b.category.id === cat.id)
-      return existing || {
+      if (existing) {
+        return {
+          ...existing,
+          category: {
+            ...cat,
+            homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
+          },
+        }
+      }
+      return {
         category: {
           ...cat,
           homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
@@ -2070,6 +2089,13 @@ const parseIsoForInput = (raw?: string | null) => {
   if (Number.isNaN(date.getTime())) return ''
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 16)
+}
+
+const parseLocalDateTimeToIso = (raw?: string | null) => {
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString()
 }
 
 const formatDateTime = (raw?: string | null) => {
@@ -2319,7 +2345,7 @@ const createCategory = async () => {
       slug: categoryForm.value.slug.trim(),
       sortOrder: Number.parseInt(String(categoryForm.value.sortOrder), 10) || 0,
       direction: categoryForm.value.direction,
-      homepageLayoutVariant: 'three_by_one',
+      homepageLayoutVariant: categoryForm.value.homepageLayoutVariant || 'three_by_one',
     }
     const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
       method: 'POST',
