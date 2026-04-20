@@ -53,5 +53,8 @@
 			"enabled": true,
 			"invocation_logs": true
 		}
+	},
+	"triggers": {
+		"crons": ["*/5 * * * *"]
 	}
 }
