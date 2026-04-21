@@ -236,9 +236,7 @@ const homepageRenderModel = computed(() =>
 const placement = ref<HomepagePlacementResponse | null>(null)
 
 const loadAdminConfig = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
-    headers: authHeader(),
-  })
+  const res = await fetch(`${config.public.apiUrl}/api/homepage/content`)
   if (!res.ok) return
   const data = await res.json()
   const homepageConfig = data?.homepageConfig ?? {}

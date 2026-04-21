@@ -165,6 +165,7 @@ function normalizeHomepageConfigForResponse(config: any) {
         normalized.childBlocks = children
           .filter((child: any) => child && typeof child === 'object')
           .map((child: any) => ({
+            id: typeof child.id === 'string' ? child.id : crypto.randomUUID(),
             type: normalizeHomepageChildBlockType(child.type),
             title: typeof child.title === 'string' ? child.title : '',
             body: typeof child.body === 'string' ? child.body : '',
@@ -190,6 +191,10 @@ function normalizeHomepageConfigForPatch(raw: any) {
 
 function normalizeLayoutBlockType(type: any) {
   if (type === 'featured') return 'featured_row'
+  if (type === 'hero') return 'featured_row'
+  if (type === 'video_grid') return 'category'
+  if (type === 'text_split') return 'split_horizontal'
+  if (type === 'cta') return 'top_video'
   const allowedTypes = new Set(['featured_row', 'category', 'top_video', 'split_horizontal', 'split_vertical'])
   return allowedTypes.has(type) ? type : 'top_video'
 }
@@ -215,6 +220,22 @@ function normalizeCategoryOrderUpdates(raw: any) {
 function safeJsonParse(v: any, fallback: any) {
   if (!v) return fallback
   try { return JSON.parse(v) } catch { return fallback }
+}
+
+export async function handleHomepageContentPublic(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'GET') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  }
+  try {
+    const db = getDb(env)
+    await ensureAdminSettingsTable(db)
+    const homepageRow = await db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first()
+    const homepageConfig = normalizeHomepageConfigForResponse(safeJsonParse(homepageRow?.value, null))
+    return jsonResponse({ homepageConfig }, 200, corsHeaders)
+  } catch (error) {
+    console.error('handleHomepageContentPublic:', error)
+    return jsonResponse({ error: 'Internal server error', code: 'internal_error' }, 500, corsHeaders)
+  }
 }
 
 export async function handlePillsPublic(request: any, env: any, corsHeaders: any) {

@@ -47,6 +47,7 @@ import { handleGetAccountRss } from './rssAccount.js'
 import { handleRssPodcastPreviewRebuildNotify, handleRssPodcastWebhookConfig } from './rssPodcastAdmin.js'
 import {
   handleHomepageContent,
+  handleHomepageContentPublic,
   handlePillsPublic,
   handlePillsUpdate,
   handleAdminPills,
@@ -316,6 +317,9 @@ export default {
     }
     if (url.pathname === '/api/admin/rss/podcast-preview-rebuild' && request.method === 'POST') {
       return handleRssPodcastPreviewRebuildNotify(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
+      return handleHomepageContentPublic(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/homepage/content' && (request.method === 'GET' || request.method === 'PATCH')) {
       return handleHomepageContent(request, env, corsHeaders)

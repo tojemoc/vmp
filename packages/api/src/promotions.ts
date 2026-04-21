@@ -29,12 +29,21 @@ function normalizeRewardType(raw: any): RewardType {
   return 'free_month'
 }
 
-function parseAllowedPlanTypes(raw: any) {
+async function getAllowedPlansFromSettings(env: any): Promise<string[]> {
+  const raw = String(await getSetting(env, 'allowed_plans') ?? 'monthly,yearly,club')
+  const plans = raw
+    .split(',')
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string) => v.length > 0)
+  return plans.length > 0 ? Array.from(new Set(plans)) : ['monthly', 'yearly', 'club']
+}
+
+function parseAllowedPlanTypes(raw: any, allowedPlans: string[]) {
   const values = Array.isArray(raw) ? raw : String(raw ?? '').split(',')
   const normalized = values
     .map((v: any) => String(v).trim().toLowerCase())
-    .filter((v: string) => v === 'monthly' || v === 'yearly' || v === 'club')
-  return normalized.length ? Array.from(new Set(normalized)) : ['monthly', 'yearly', 'club']
+    .filter((v: string) => allowedPlans.includes(v))
+  return normalized.length ? Array.from(new Set(normalized)) : allowedPlans
 }
 
 function clampInt(raw: any, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER) {
@@ -68,10 +77,11 @@ function randomCode(length = 10) {
 
 async function ensureStripeCouponId(env: any, promoCode: any) {
   if (promoCode.reward_type !== 'discount_percent') return ''
-  if (promoCode.stripe_coupon_id && String(promoCode.stripe_coupon_id).trim()) {
-    return String(promoCode.stripe_coupon_id).trim()
+  const trimmed = String(promoCode.stripe_coupon_id ?? '').trim()
+  if (!trimmed) {
+    throw new Error('Stripe coupon ID is required for discount_percent promo codes')
   }
-  return ''
+  return trimmed
 }
 
 async function getCodeByValue(db: any, code: string) {
@@ -98,7 +108,7 @@ async function getCodeByValue(db: any, code: string) {
   `).bind(code).first()
 }
 
-function validatePromoForPlan(promoCode: any, planType: string) {
+async function validatePromoForPlan(env: any, promoCode: any, planType: string) {
   if (!promoCode) return { ok: false, error: 'Promo code not found', code: 'promo_not_found', status: 404 }
   if (!promoCode.is_active || !promoCode.campaign_is_active) {
     return { ok: false, error: 'Promo code is not active', code: 'promo_inactive', status: 400 }
@@ -112,7 +122,8 @@ function validatePromoForPlan(promoCode: any, planType: string) {
       return { ok: false, error: 'Promo code expired', code: 'promo_expired', status: 409 }
     }
   }
-  const allowedPlans = parseAllowedPlanTypes(promoCode.allowed_plan_types)
+  const allowedPlansFromSettings = await getAllowedPlansFromSettings(env)
+  const allowedPlans = parseAllowedPlanTypes(promoCode.allowed_plan_types, allowedPlansFromSettings)
   if (!allowedPlans.includes(planType)) {
     return { ok: false, error: 'Promo code does not apply to this plan', code: 'promo_plan_mismatch', status: 400 }
   }
@@ -124,7 +135,7 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
   if (!code) return { ok: false, reason: 'empty' }
   const db = getDb(env)
   const promoCode = await getCodeByValue(db, code)
-  const valid = validatePromoForPlan(promoCode, planType)
+  const valid = await validatePromoForPlan(env, promoCode, planType)
   if (!valid.ok) return { ok: false, reason: valid.code, status: valid.status, error: valid.error }
   const stripeCouponId = await ensureStripeCouponId(env, promoCode)
   return {
@@ -157,7 +168,15 @@ export async function applyPromoRedemption(env: any, params: {
   if (!promoCode || !promoCode.is_active) return
   if (Number(promoCode.used_count || 0) >= Number(promoCode.max_uses || 0)) return
 
-  const inserted = await db.prepare(`
+  const incrementResult = await db.prepare(`
+    UPDATE promo_codes
+    SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND used_count < max_uses
+  `).bind(params.promoCodeId).run()
+
+  if ((incrementResult?.meta?.changes ?? 0) === 0) return
+
+  await db.prepare(`
     INSERT INTO promo_redemptions (
       id, promo_code_id, user_id, subscription_id, provider, plan_type, granted_until
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -171,12 +190,6 @@ export async function applyPromoRedemption(env: any, params: {
     params.planType,
     params.grantedUntil ?? null,
   ).run()
-  if ((inserted?.meta?.changes ?? 0) === 0) return
-  await db.prepare(`
-    UPDATE promo_codes
-    SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND used_count < max_uses
-  `).bind(params.promoCodeId).run()
 }
 
 export async function handleAdminPromoCampaigns(request: any, env: any, corsHeaders: any) {
@@ -293,12 +306,16 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     const baseCode = normalizeCode(body?.code)
     const rewardType = normalizeRewardType(body?.rewardType)
     const maxUses = clampInt(body?.maxUses, 1, 1, 100000)
-    const allowedPlans = parseAllowedPlanTypes(body?.allowedPlanTypes)
+    const allowedPlansFromSettings = await getAllowedPlansFromSettings(env)
+    const allowedPlans = parseAllowedPlanTypes(body?.allowedPlanTypes, allowedPlansFromSettings)
     const expiresAtParsed = parseOptionalIsoDate(body?.expiresAt)
     if (expiresAtParsed.invalid) return jsonResponse({ error: 'expiresAt must be a valid datetime' }, 400, corsHeaders)
     const expiresAt = expiresAtParsed.value
     const isActive = body?.isActive === false ? 0 : 1
     const stripeCouponId = typeof body?.stripeCouponId === 'string' ? body.stripeCouponId.trim() : ''
+    if (rewardType === 'discount_percent' && !stripeCouponId) {
+      return jsonResponse({ error: 'Stripe coupon ID is required for discount_percent promo codes' }, 400, corsHeaders)
+    }
 
     const insertStmt = db.prepare(`
       INSERT INTO promo_codes (
@@ -335,6 +352,13 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     const body = await request.json().catch(() => null)
     const id = typeof body?.id === 'string' ? body.id.trim() : ''
     if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+
+    const existing = await db.prepare('SELECT reward_type, stripe_coupon_id FROM promo_codes WHERE id = ? LIMIT 1').bind(id).first()
+    if (!existing) return jsonResponse({ error: 'Promo code not found' }, 404, corsHeaders)
+
+    let currentRewardType = String(existing.reward_type || 'free_month')
+    let currentStripeCouponId = String(existing.stripe_coupon_id || '').trim()
+
     const updates = []
     const values = []
     if (typeof body?.code === 'string') {
@@ -344,8 +368,9 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
       values.push(next)
     }
     if (typeof body?.rewardType === 'string') {
+      currentRewardType = normalizeRewardType(body.rewardType)
       updates.push('reward_type = ?')
-      values.push(normalizeRewardType(body.rewardType))
+      values.push(currentRewardType)
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'maxUses')) {
       updates.push('max_uses = ?')
@@ -356,12 +381,14 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
       values.push(body.isActive ? 1 : 0)
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'allowedPlanTypes')) {
+      const allowedPlansFromSettings = await getAllowedPlansFromSettings(env)
       updates.push('allowed_plan_types = ?')
-      values.push(parseAllowedPlanTypes(body.allowedPlanTypes).join(','))
+      values.push(parseAllowedPlanTypes(body.allowedPlanTypes, allowedPlansFromSettings).join(','))
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'stripeCouponId')) {
+      currentStripeCouponId = body?.stripeCouponId ? String(body.stripeCouponId).trim() : ''
       updates.push('stripe_coupon_id = ?')
-      values.push(body?.stripeCouponId ? String(body.stripeCouponId).trim() : null)
+      values.push(currentStripeCouponId || null)
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'expiresAt')) {
       const nextParsed = parseOptionalIsoDate(body?.expiresAt)
@@ -371,6 +398,10 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
       values.push(next)
     }
     if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
+
+    if (currentRewardType === 'discount_percent' && !currentStripeCouponId) {
+      return jsonResponse({ error: 'Stripe coupon ID is required for discount_percent promo codes' }, 400, corsHeaders)
+    }
     values.push(id)
     await db.prepare(`
       UPDATE promo_codes
@@ -549,6 +580,13 @@ export async function handleAdminIsicCampaigns(request: any, env: any, corsHeade
 
 export async function handleIsicValidate(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+
+  const isicAuthSecret = String(await getSetting(env, 'isic_api_secret') ?? '').trim()
+  const providedAuth = request.headers.get('X-ISIC-Auth') ?? ''
+  if (!isicAuthSecret || providedAuth !== isicAuthSecret) {
+    return jsonResponse({ error: 'Unauthorized', code: 'unauthorized' }, 401, corsHeaders)
+  }
+
   const body = await request.json().catch(() => null)
   const token = typeof body?.isicToken === 'string' ? body.isicToken.trim() : ''
   const campaignId = typeof body?.campaignId === 'string' ? body.campaignId.trim() : ''
@@ -562,13 +600,15 @@ export async function handleIsicValidate(request: any, env: any, corsHeaders: an
     return jsonResponse({
       valid: false,
       mode: 'not_configured',
-      error: 'ISIC validation API is not configured yet',
+      error: 'ISIC validation API is not configured',
       code: 'isic_not_configured',
     }, 503, corsHeaders)
   }
 
   try {
     const validationUrl = `${baseUrl.replace(/\/+$/, '')}/validate`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
     const upstream = await fetch(validationUrl, {
       method: 'POST',
       headers: {
@@ -576,12 +616,14 @@ export async function handleIsicValidate(request: any, env: any, corsHeaders: an
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ token, campaignId }),
+      signal: controller.signal,
     })
+    clearTimeout(timeoutId)
     const data: any = await upstream.json().catch(() => ({}))
     if (!upstream.ok) {
       return jsonResponse({
         valid: false,
-        error: typeof data?.error === 'string' ? data.error : 'ISIC validation failed',
+        error: 'ISIC validation failed',
         code: 'isic_validation_failed',
       }, 502, corsHeaders)
     }
@@ -589,11 +631,10 @@ export async function handleIsicValidate(request: any, env: any, corsHeaders: an
       valid: Boolean(data?.valid),
       role: typeof data?.role === 'string' ? data.role : null,
       expiresAt: data?.expiresAt ?? null,
-      providerResponse: data,
     }, 200, corsHeaders)
   } catch (error) {
     console.error('handleIsicValidate error:', error)
-    return jsonResponse({ valid: false, error: 'Internal server error', code: 'internal_error' }, 500, corsHeaders)
+    return jsonResponse({ valid: false, error: 'ISIC validation service unavailable', code: 'isic_validation_failed' }, 500, corsHeaders)
   }
 }
 

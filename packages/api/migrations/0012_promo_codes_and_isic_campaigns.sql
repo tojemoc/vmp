@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS isic_campaigns (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add promo_code_id column to payment_checkout_sessions for GoCardless promo redemption tracking
+ALTER TABLE payment_checkout_sessions ADD COLUMN promo_code_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_payment_checkout_sessions_promo_code
+  ON payment_checkout_sessions(promo_code_id);
+
 INSERT INTO admin_settings(key, value, updated_at)
 VALUES
   ('isic_api_base_url', '', CURRENT_TIMESTAMP),

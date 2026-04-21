@@ -1414,6 +1414,10 @@
                 </button>
               </div>
 
+              <div v-if="promotionsMessage" class="rounded-lg border px-3 py-2 text-sm" :class="promotionsMessageClass">
+                {{ promotionsMessage }}
+              </div>
+
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="space-y-2">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Create campaign</h4>
@@ -1472,8 +1476,16 @@
                       <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">Club</label>
                     </div>
                   </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID (for discount %)
-                    <input v-model="promoCodeForm.stripeCouponId" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" placeholder="coupon_...">
+                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
+                    <span v-if="promoCodeForm.rewardType === 'discount_percent'" class="text-red-500 dark:text-red-400">*</span>
+                    <input
+                      v-model="promoCodeForm.stripeCouponId"
+                      type="text"
+                      :required="promoCodeForm.rewardType === 'discount_percent'"
+                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                      :class="{ 'border-red-500 dark:border-red-400': promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim() }"
+                      placeholder="coupon_..."
+                    >
                   </label>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Expires at (optional)
                     <input v-model="promoCodeForm.expiresAt" type="datetime-local" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -1481,7 +1493,7 @@
                   <button
                     type="button"
                     class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="promotionsSaving || !promoCodeForm.campaignId"
+                    :disabled="promotionsSaving || !promoCodeForm.campaignId || (promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim())"
                     @click="createPromoCodes"
                   >
                     {{ promotionsSaving ? 'Saving…' : 'Create code(s)' }}
@@ -1535,6 +1547,10 @@
                 >
                   {{ isicLoading ? 'Loading…' : 'Reload ISIC' }}
                 </button>
+              </div>
+
+              <div v-if="isicMessage" class="rounded-lg border px-3 py-2 text-sm" :class="isicMessageClass">
+                {{ isicMessage }}
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1866,7 +1882,7 @@ import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
 import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
-import type { HomepageLayoutBlock, HomepagePlacementResponse } from '~/composables/useHomepageLayout'
+import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
 
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
@@ -3127,6 +3143,11 @@ const createPromoCodes = async () => {
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
+  if (promoCodeForm.value.rewardType === 'discount_percent' && !promoCodeForm.value.stripeCouponId.trim()) {
+    promotionsMessage.value = 'Stripe coupon ID is required for discount_percent promo codes.'
+    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+    return
+  }
   promotionsSaving.value = true
   promotionsMessage.value = ''
   try {
@@ -3201,15 +3222,19 @@ const saveIsicApiConfig = async () => {
   isicSaving.value = true
   isicMessage.value = ''
   try {
+    const apiConfigPayload: any = {
+      enabled: isicApiConfig.value.enabled,
+      baseUrl: isicApiConfig.value.baseUrl.trim(),
+    }
+    const trimmedApiKey = isicApiConfig.value.apiKey.trim()
+    if (trimmedApiKey) {
+      apiConfigPayload.apiKey = trimmedApiKey
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
-        apiConfig: {
-          enabled: isicApiConfig.value.enabled,
-          baseUrl: isicApiConfig.value.baseUrl.trim(),
-          apiKey: isicApiConfig.value.apiKey.trim(),
-        },
+        apiConfig: apiConfigPayload,
       }),
     })
     const data = await res.json().catch(() => ({}))

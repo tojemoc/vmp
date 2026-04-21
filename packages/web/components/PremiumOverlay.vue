@@ -293,6 +293,12 @@ async function validatePromoCode() {
   const code = promoCodeInput.value.trim().toUpperCase()
   promoCodeInput.value = code
   if (!code) return
+
+  if (!isLoggedIn.value) {
+    promoError.value = 'Please sign in to validate promo codes.'
+    return
+  }
+
   promoValidating.value = true
   try {
     const res = await fetch(`${apiUrl}/api/account/promotions/validate`, {
@@ -347,6 +353,15 @@ watch(selectedPlan, () => {
   // Plan changes can invalidate a previously-applied code.
   promoApplied.value = null
   promoError.value = null
+})
+
+watch(promoCodeInput, (newInput) => {
+  const trimmed = newInput.trim()
+  const appliedCode = promoApplied.value?.code ?? ''
+  if (trimmed !== appliedCode) {
+    promoApplied.value = null
+    promoError.value = null
+  }
 })
 
 watch(() => route.fullPath, () => {

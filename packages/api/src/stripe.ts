@@ -394,15 +394,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   if (!body?.planType || !allowedPlans.includes(body.planType)) {
     return jsonResponse({ error: `planType must be one of: ${allowedPlans.join(', ')}` }, 400, corsHeaders)
   }
-    const planType = normalizePlanType(body.planType)
-    const promoResolution = await resolvePromoCodeForCheckout(env, body?.promoCode, planType)
-    const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null
-    if (!promoResolution.ok && promoResolution.reason !== 'empty') {
-      return jsonResponse({
-        error: promoResolution.error ?? 'Promo code is not valid',
-        code: promoResolution.reason ?? 'invalid_promo',
-      }, promoResolution.status ?? 400, corsHeaders)
-    }
+  const planType = normalizePlanType(body.planType)
 
   try {
     const db = getDb(env)
@@ -418,6 +410,17 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const provider: PaymentProvider = selectedProvider && providerOrder.includes(selectedProvider)
       ? selectedProvider
       : defaultProvider
+
+    const promoResolution = provider === 'stripe'
+      ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType)
+      : { ok: false, reason: 'empty' }
+    const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null
+    if (!promoResolution.ok && promoResolution.reason !== 'empty') {
+      return jsonResponse({
+        error: promoResolution.error ?? 'Promo code is not valid',
+        code: promoResolution.reason ?? 'invalid_promo',
+      }, promoResolution.status ?? 400, corsHeaders)
+    }
 
     if (!configuredProviders.includes(provider)) {
       return jsonResponse({
@@ -484,14 +487,23 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
     }
 
+    const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''
+    let promoCodeId: string | null = null
+    if (promoCodeInput) {
+      const promoValidation = await resolvePromoCodeForCheckout(env, promoCodeInput, planType)
+      if (promoValidation.ok) {
+        promoCodeId = promoValidation.checkoutMeta?.promoCodeId ?? null
+      }
+    }
+
     const checkoutToken = crypto.randomUUID()
     const sessionToken = crypto.randomUUID().replaceAll('-', '')
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
       INSERT INTO payment_checkout_sessions
-        (id, user_id, provider, plan_type, checkout_token, session_token, status, updated_at)
-      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken).run()
+        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, updated_at)
+      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken, promoCodeId).run()
 
     const flowResponse = await gocardlessPost('/redirect_flows', {
       redirect_flows: {
@@ -503,9 +515,6 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
           userId: user.sub,
           planType,
           checkoutToken,
-          promoCodeId: promoMeta?.promoCodeId ?? '',
-          promoCode: promoMeta?.promoCode ?? '',
-          promoRewardType: promoMeta?.rewardType ?? '',
         },
         links: {
           creditor: env.GOCARDLESS_CREDITOR_ID,
