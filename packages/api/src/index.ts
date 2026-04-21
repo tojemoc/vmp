@@ -58,6 +58,14 @@ import {
   ensurePillsApiKeySetting,
   logSegmentEvent,
 } from './adminExtras.js'
+import {
+  handleAdminPromoCampaigns,
+  handleAdminPromoCodes,
+  handleAdminIsicCampaigns,
+  handlePromoValidate,
+  handleIsicValidate,
+  handleIsicCampaignPublic,
+} from './promotions.js'
 import { handleAdminSmokeAuth } from './smokeAuth.js'
 import { handleSiteSettings } from './siteSettings.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
@@ -279,6 +287,15 @@ export default {
     if (url.pathname === '/api/admin/payments/settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminPaymentSettings(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/promotions/campaigns' && ['GET', 'POST', 'PATCH'].includes(request.method)) {
+      return handleAdminPromoCampaigns(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/promotions/codes' && ['GET', 'POST', 'PATCH'].includes(request.method)) {
+      return handleAdminPromoCodes(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/isic/campaigns' && ['GET', 'POST', 'PATCH'].includes(request.method)) {
+      return handleAdminIsicCampaigns(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/admin/site-settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleSiteSettings(request, env, corsHeaders)
     }
@@ -347,6 +364,15 @@ export default {
     }
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/promotions/validate' && request.method === 'POST') {
+      return handlePromoValidate(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/isic/validate' && request.method === 'POST') {
+      return handleIsicValidate(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/isic/campaigns' && request.method === 'GET') {
+      return handleIsicCampaignPublic(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/rss' && request.method === 'GET') {
       return handleGetAccountRss(request, env, corsHeaders)
