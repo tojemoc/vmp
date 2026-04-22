@@ -97,6 +97,7 @@
               :video="video"
               layout="horizontal"
               :show-description="false"
+              :show-relative-timestamp="true"
             />
           </div>
 

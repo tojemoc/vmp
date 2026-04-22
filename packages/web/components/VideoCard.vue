@@ -31,6 +31,9 @@
       <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 line-clamp-2" :class="titleClass">
         {{ video.title }}
       </h3>
+      <p v-if="showRelativeTimestamp && relativeUploadTime" class="text-xs text-gray-500 dark:text-gray-400">
+        {{ relativeUploadTime }}
+      </p>
       <p v-if="showDescription" class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
         {{ video.description }}
       </p>
@@ -65,19 +68,46 @@ const props = withDefaults(defineProps<{
   video: Video
   layout?: 'default' | 'horizontal'
   showDescription?: boolean
+  showRelativeTimestamp?: boolean
 }>(), {
   layout: 'default',
   showDescription: true,
+  showRelativeTimestamp: false,
 })
 
 const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
 const isHorizontal = computed(() => props.layout === 'horizontal')
 const showDescription = computed(() => props.showDescription)
+const showRelativeTimestamp = computed(() => props.showRelativeTimestamp)
 
 const linkClass = computed(() => isHorizontal.value ? 'md:grid md:grid-cols-[58%_42%] md:gap-4 md:items-center' : '')
 const mediaClass = computed(() => isHorizontal.value ? 'mb-2 md:mb-0' : 'mb-2')
 const contentClass = computed(() => isHorizontal.value ? 'space-y-2' : '')
 const titleClass = computed(() => isHorizontal.value ? 'text-xl md:text-3xl leading-tight' : 'mb-1')
+const relativeUploadTime = computed(() => {
+  const sourceDate = props.video.upload_date
+  if (!sourceDate) return ''
+  const uploadedAt = new Date(sourceDate).getTime()
+  if (Number.isNaN(uploadedAt)) return ''
+  const diffMs = Date.now() - uploadedAt
+  if (diffMs < 0) return ''
+
+  const minutes = Math.floor(diffMs / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo ago`
+
+  const years = Math.floor(months / 12)
+  return `${years}y ago`
+})
 
 // Prefer camelCase `fullDuration` when present, with a fallback to legacy `full_duration`.
 const displayDurationSeconds = computed(
