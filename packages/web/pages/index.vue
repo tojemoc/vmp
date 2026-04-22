@@ -146,6 +146,7 @@
                   :video="video"
                   layout="horizontal"
                   :show-description="false"
+                  :show-relative-timestamp="true"
                 />
               </div>
               <div v-else-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">

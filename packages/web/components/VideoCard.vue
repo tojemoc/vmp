@@ -31,10 +31,10 @@
       <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 line-clamp-2" :class="titleClass">
         {{ video.title }}
       </h3>
-      <p v-if="showRelativeTimestamp && relativeUploadTime" class="text-xs text-gray-500 dark:text-gray-400">
+      <p v-if="props.showRelativeTimestamp && relativeUploadTime" class="text-xs text-gray-500 dark:text-gray-400">
         {{ relativeUploadTime }}
       </p>
-      <p v-if="showDescription" class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+      <p v-if="props.showDescription" class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
         {{ video.description }}
       </p>
     </div>
@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useThumbnail } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
 
@@ -77,8 +77,8 @@ const props = withDefaults(defineProps<{
 
 const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
 const isHorizontal = computed(() => props.layout === 'horizontal')
-const showDescription = computed(() => props.showDescription)
-const showRelativeTimestamp = computed(() => props.showRelativeTimestamp)
+const now = ref(Date.now())
+let nowInterval: ReturnType<typeof setInterval> | undefined
 
 const linkClass = computed(() => isHorizontal.value ? 'md:grid md:grid-cols-[58%_42%] md:gap-4 md:items-center' : '')
 const mediaClass = computed(() => isHorizontal.value ? 'mb-2 md:mb-0' : 'mb-2')
@@ -89,7 +89,7 @@ const relativeUploadTime = computed(() => {
   if (!sourceDate) return ''
   const uploadedAt = new Date(sourceDate).getTime()
   if (Number.isNaN(uploadedAt)) return ''
-  const diffMs = Date.now() - uploadedAt
+  const diffMs = now.value - uploadedAt
   if (diffMs < 0) return ''
 
   const minutes = Math.floor(diffMs / 60_000)
@@ -107,6 +107,16 @@ const relativeUploadTime = computed(() => {
 
   const years = Math.floor(months / 12)
   return `${years}y ago`
+})
+
+onMounted(() => {
+  nowInterval = setInterval(() => {
+    now.value = Date.now()
+  }, 30_000)
+})
+
+onBeforeUnmount(() => {
+  if (nowInterval) clearInterval(nowInterval)
 })
 
 // Prefer camelCase `fullDuration` when present, with a fallback to legacy `full_duration`.
