@@ -14,6 +14,12 @@ MP3_ONLY="${MP3_ONLY:-0}"
 PREVIEW_MP3_SECONDS="${PREVIEW_MP3_SECONDS:-180}"
 PREVIEW_MP3_LOCK_SECONDS="${PREVIEW_MP3_LOCK_SECONDS:-60}"
 PREVIEW_MP3_ENABLED="${PREVIEW_MP3_ENABLED:-1}"
+# Controls how video IDs are derived from inbox filenames:
+#   none       -> keep filename stem as-is
+#   slug       -> normalize to lowercase [a-z0-9-]
+#   slug-hash  -> normalize + append deterministic short hash when normalization changes
+#   base64url  -> encode filename stem to URL-safe base64 (unpadded)
+VIDEO_ID_SANITIZE_MODE="${VIDEO_ID_SANITIZE_MODE:-slug-hash}"
 # VAAPI_DEVICE: GPU device node for hardware video encoding (default /dev/dri/renderD128).
 # Supervisors/operators: when using VAAPI, ensure this device exists and the process
 # has read/write permissions. Typically requires adding the user to the 'video' or 'render' group.
@@ -51,6 +57,103 @@ touch "$SLOT_LOCK"
 
 log() {
     echo "$(date '+%F %T') $*"
+}
+
+video_id_hash8() {
+    local input="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$input" | sha256sum | awk '{print substr($1,1,8)}'
+        return
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$input" | shasum -a 256 | awk '{print substr($1,1,8)}'
+        return
+    fi
+    printf '00000000'
+}
+
+base64url_encode() {
+    local input="$1"
+    if command -v basenc >/dev/null 2>&1; then
+        printf '%s' "$input" | basenc --base64url -w0
+        return
+    fi
+    printf '%s' "$input" | base64 | tr '+/' '-_' | tr -d '=\n'
+}
+
+sanitize_video_id() {
+    local raw="$1"
+    local mode="$VIDEO_ID_SANITIZE_MODE"
+
+    case "$mode" in
+        none)
+            printf '%s' "$raw"
+            return
+            ;;
+        base64url)
+            local encoded
+            encoded="$(base64url_encode "$raw")"
+            [ -n "$encoded" ] || encoded="dmlkZW8"
+            printf '%s' "$encoded"
+            return
+            ;;
+        slug|slug-hash)
+            local slug
+            slug="$(printf '%s' "$raw" \
+                | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+            [ -n "$slug" ] || slug="video"
+
+            # Preserve already-safe IDs verbatim in slug modes.
+            if [[ "$raw" =~ ^[a-z0-9-]+$ ]]; then
+                printf '%s' "$raw"
+                return
+            fi
+            if [ "$mode" = "slug" ]; then
+                printf '%s' "$slug"
+                return
+            fi
+            printf '%s-%s' "$slug" "$(video_id_hash8 "$raw")"
+            return
+            ;;
+        *)
+            printf '%s' "$raw"
+            return
+            ;;
+    esac
+}
+
+derive_video_id_from_filename() {
+    local file="$1"
+    local raw_id="${file%.*}"
+    sanitize_video_id "$raw_id"
+}
+
+rename_inbox_file_for_video_id() {
+    local file="$1"
+    local video_id="$2"
+    local current_path="$INBOX_DIR/$file"
+    local ext="${file##*.}"
+    local desired_file="${video_id}.${ext}"
+    local desired_path="$INBOX_DIR/$desired_file"
+    local collision=0
+
+    if [ "$file" = "$desired_file" ]; then
+        printf '%s|%s' "$video_id" "$file"
+        return 0
+    fi
+
+    while [ -e "$desired_path" ] && [ "$desired_path" != "$current_path" ]; do
+        collision=$((collision + 1))
+        desired_file="${video_id}-${collision}.${ext}"
+        desired_path="$INBOX_DIR/$desired_file"
+    done
+
+    mv "$current_path" "$desired_path"
+    if [ "$collision" -gt 0 ]; then
+        video_id="${video_id}-${collision}"
+    fi
+    printf '%s|%s' "$video_id" "$desired_file"
 }
 
 emit_pipeline_event() {
@@ -583,9 +686,18 @@ for f in "$INBOX_DIR"/*; do
     FILE=$(basename "$f")
     FILE_LOWER="${FILE,,}"
     [[ "$FILE_LOWER" =~ \.(mp4|mkv|mov)$ ]] || continue
-    VIDEO_ID="${FILE%.*}"
+    VIDEO_ID="$(derive_video_id_from_filename "$FILE")"
+    ORIGINAL_ID="${FILE%.*}"
+    INPUT_FILE="$FILE"
 
-    process_video "$VIDEO_ID" "$f" "startup_scan" &
+    if [ "$VIDEO_ID" != "$ORIGINAL_ID" ]; then
+        RENAMED="$(rename_inbox_file_for_video_id "$FILE" "$VIDEO_ID")"
+        VIDEO_ID="${RENAMED%%|*}"
+        INPUT_FILE="${RENAMED#*|}"
+        log "🧼 Sanitized VIDEO_ID startup_scan: '$ORIGINAL_ID' -> '$VIDEO_ID' (file '$FILE' -> '$INPUT_FILE')"
+    fi
+
+    process_video "$VIDEO_ID" "$INBOX_DIR/$INPUT_FILE" "startup_scan" &
 done
 
 garbage_collect
@@ -597,9 +709,18 @@ enqueue_backfill_jobs_from_r2 &
 inotifywait -m -e close_write --format "%f" "$INBOX_DIR" | while IFS= read -r FILE; do
     FILE_LOWER="${FILE,,}"
     [[ "$FILE_LOWER" =~ \.(mp4|mkv|mov)$ ]] || continue
-    VIDEO_ID="${FILE%.*}"
+    VIDEO_ID="$(derive_video_id_from_filename "$FILE")"
+    ORIGINAL_ID="${FILE%.*}"
+    INPUT_FILE="$FILE"
 
-    process_video "$VIDEO_ID" "$INBOX_DIR/$FILE" "watchfolder" &
+    if [ "$VIDEO_ID" != "$ORIGINAL_ID" ]; then
+        RENAMED="$(rename_inbox_file_for_video_id "$FILE" "$VIDEO_ID")"
+        VIDEO_ID="${RENAMED%%|*}"
+        INPUT_FILE="${RENAMED#*|}"
+        log "🧼 Sanitized VIDEO_ID watchfolder: '$ORIGINAL_ID' -> '$VIDEO_ID' (file '$FILE' -> '$INPUT_FILE')"
+    fi
+
+    process_video "$VIDEO_ID" "$INBOX_DIR/$INPUT_FILE" "watchfolder" &
 done
 
 wait

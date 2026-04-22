@@ -15,6 +15,7 @@
     "db:teardown": "wrangler d1 execute video-subscription-db --file=./scripts/db_teardown.sql",
     "db:reset": "npm run db:teardown && npm run db:create && npm run db:seed",
     "db:migration-backfill": "bash ./scripts/migration_backfill_and_mapping.sh",
+    "db:migration-normalize-video-ids": "bash ./scripts/migration_normalize_video_ids.sh",
     "db:migration-verify": "bash ./scripts/migration_integrity_check.sh"
   },
   "dependencies": {
