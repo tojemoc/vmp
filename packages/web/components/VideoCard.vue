@@ -2,8 +2,9 @@
   <NuxtLink
     :to="`/watch/${video.slug || video.id}`"
     class="group block"
+    :class="linkClass"
   >
-    <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
+    <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800" :class="mediaClass">
       <img
         v-if="video.thumbnail_url"
         :src="sizedUrl('medium')"
@@ -26,14 +27,14 @@
         {{ premiumLabel }}
       </div>
     </div>
-
-    <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 line-clamp-2 mb-1">
-      {{ video.title }}
-    </h3>
-
-    <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-      {{ video.description }}
-    </p>
+    <div class="min-w-0" :class="contentClass">
+      <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 line-clamp-2" :class="titleClass">
+        {{ video.title }}
+      </h3>
+      <p v-if="showDescription" class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+        {{ video.description }}
+      </p>
+    </div>
   </NuxtLink>
 </template>
 
@@ -60,9 +61,23 @@ interface Video {
   slug?: string | null
 }
 
-const props = defineProps<{ video: Video }>()
+const props = withDefaults(defineProps<{
+  video: Video
+  layout?: 'default' | 'horizontal'
+  showDescription?: boolean
+}>(), {
+  layout: 'default',
+  showDescription: true,
+})
 
 const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
+const isHorizontal = computed(() => props.layout === 'horizontal')
+const showDescription = computed(() => props.showDescription)
+
+const linkClass = computed(() => isHorizontal.value ? 'md:grid md:grid-cols-[58%_42%] md:gap-4 md:items-start' : '')
+const mediaClass = computed(() => isHorizontal.value ? 'mb-2 md:mb-0' : 'mb-2')
+const contentClass = computed(() => isHorizontal.value ? 'space-y-2' : '')
+const titleClass = computed(() => isHorizontal.value ? 'text-xl md:text-3xl leading-tight' : 'mb-1')
 
 // Prefer camelCase `fullDuration` when present, with a fallback to legacy `full_duration`.
 const displayDurationSeconds = computed(

@@ -95,6 +95,8 @@
               v-for="video in block.videos"
               :key="`top-video-${video.id}`"
               :video="video"
+              layout="horizontal"
+              :show-description="false"
             />
           </div>
 
@@ -141,6 +143,8 @@
                   v-for="video in child.videos"
                   :key="`split-top-${child.id}-${video.id}`"
                   :video="video"
+                  layout="horizontal"
+                  :show-description="false"
                 />
               </div>
               <div v-else-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
