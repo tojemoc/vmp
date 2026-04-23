@@ -501,7 +501,7 @@
                           v-if="video.publish_status !== 'draft'"
                           class="px-2 py-1 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-medium disabled:opacity-50"
                           :disabled="statusUpdating[video.id]"
-                          @click="updateVideoStatus(video, 'draft', null)"
+                          @click="openConfirmModal(video, 'revert_to_draft')"
                         >Revert to draft</button>
                         <button
                           v-if="video.publish_status === 'published'"
@@ -1848,12 +1848,25 @@
           </div>
           <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closeDescriptionModal">Close</button>
         </div>
-        <textarea
-          ref="descriptionInputEl"
-          v-model="descriptionModal.value"
-          rows="14"
-          class="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
-        ></textarea>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Markdown</label>
+            <textarea
+              ref="descriptionInputEl"
+              v-model="descriptionModal.value"
+              rows="14"
+              class="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white font-mono"
+              placeholder="Use markdown: **bold**, *italic*, lists, links, headings..."
+            ></textarea>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Preview</label>
+            <div
+              class="min-h-[22rem] max-h-[26rem] overflow-y-auto px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 text-sm text-gray-900 dark:text-gray-100 prose prose-sm dark:prose-invert max-w-none"
+              v-html="descriptionModalPreviewHtml"
+            ></div>
+          </div>
+        </div>
         <div class="mt-4 flex justify-end gap-2">
           <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeDescriptionModal">Cancel</button>
           <button type="button" class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="saveDescriptionModal">Save description</button>
@@ -1968,6 +1981,7 @@ import { sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
 import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
+import { renderMarkdownToHtml } from '~/utils/markdown'
 
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
@@ -2617,7 +2631,10 @@ const getVideoById = (videoId: string | null) => {
   return uploads.value.find((video) => video.id === videoId) ?? null
 }
 const scheduleModalVideo = computed(() => getVideoById(scheduleModal.value.videoId))
-const descriptionModalVideo = computed(() => getVideoById(descriptionModal.value.videoId))
+const descriptionModalPreviewHtml = computed(() => {
+  const html = renderMarkdownToHtml(descriptionModal.value.value)
+  return html || '<p class="text-gray-500 dark:text-gray-400">No description preview.</p>'
+})
 
 const isScheduledDraft = (video: Video) =>
   video.publish_status === 'draft' && Boolean(video.scheduled_publish_at)
@@ -4578,7 +4595,7 @@ type ConfirmModalState =
   | {
       open: true
       mode: 'video'
-      action: 'trash'
+      action: 'trash' | 'revert_to_draft'
       video: Video
       impactText: string
     }
@@ -4599,7 +4616,7 @@ const confirmModal = ref<ConfirmModalState>({ open: false })
 const confirmModalTitle = computed(() => {
   const m = confirmModal.value
   if (!m.open) return ''
-  if (m.mode === 'video') return 'Permanently delete video?'
+  if (m.mode === 'video') return m.action === 'trash' ? 'Permanently delete video?' : 'Revert video to draft?'
   if (m.mode === 'user_role') return 'Confirm role change'
   return 'Confirm subscription change'
 })
@@ -4607,7 +4624,9 @@ const confirmModalTitle = computed(() => {
 const confirmModalConfirmClass = computed(() => {
   const m = confirmModal.value
   if (!m.open || m.mode === 'video') {
-    return 'bg-red-600 hover:bg-red-700'
+    return m.open && m.mode === 'video' && m.action === 'trash'
+      ? 'bg-red-600 hover:bg-red-700'
+      : 'bg-amber-600 hover:bg-amber-700'
   }
   return 'bg-purple-600 hover:bg-purple-700'
 })
@@ -4628,7 +4647,7 @@ function onConfirmCancel() {
   }
 }
 
-function openConfirmModal(video: Video, action: 'trash'): void
+function openConfirmModal(video: Video, action: 'trash' | 'revert_to_draft'): void
 function openConfirmModal(payload: {
   mode: 'user_role' | 'user_subscription'
   userId: string
@@ -4650,7 +4669,7 @@ function openConfirmModal(
     nextSubscription: string
     impactText: string
   },
-  action?: 'trash',
+  action?: 'trash' | 'revert_to_draft',
 ) {
   if (videoOrPayload && typeof videoOrPayload === 'object' && 'mode' in videoOrPayload) {
     const p = videoOrPayload
@@ -4674,7 +4693,9 @@ function openConfirmModal(
     mode: 'video',
     action: act,
     video,
-    impactText: `This permanently removes ${video.title} from the database and deletes all files in R2 (videos/${video.id}/). This cannot be undone.`,
+    impactText: act === 'trash'
+      ? `This permanently removes ${video.title} from the database and deletes all files in R2 (videos/${video.id}/). This cannot be undone.`
+      : `This will move ${video.title} back to draft status and remove it from published surfaces.`,
   }
 }
 
@@ -4683,7 +4704,11 @@ async function runConfirmedAction() {
   if (!current.open) return
   if (current.mode === 'video') {
     closeConfirmModal()
-    await trashVideo(current.video)
+    if (current.action === 'trash') {
+      await trashVideo(current.video)
+    } else {
+      await updateVideoStatus(current.video, 'draft', null)
+    }
     return
   }
   const snap = { ...current }
