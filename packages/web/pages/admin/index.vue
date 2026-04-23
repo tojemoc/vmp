@@ -170,7 +170,13 @@
               </div>
 
               <div v-if="block.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <VideoCard v-for="video in block.videos" :key="`preview-featured-${video.id}`" :video="video" />
+                <VideoCard
+                  v-for="video in block.videos"
+                  :key="`preview-featured-${video.id}`"
+                  :video="video"
+                  :show-description="false"
+                  :show-relative-timestamp="true"
+                />
               </div>
 
               <div v-else-if="block.type === 'top_video'" class="space-y-4">
@@ -178,6 +184,9 @@
                   v-for="video in block.videos"
                   :key="`preview-top-video-${video.id}`"
                   :video="video"
+                  layout="horizontal"
+                  :show-description="false"
+                  :show-relative-timestamp="true"
                 />
               </div>
 
@@ -187,6 +196,8 @@
                     v-for="video in block.categorySection.visible"
                     :key="`preview-category-video-${block.categorySection.category.id}-${video.id}`"
                     :video="video"
+                    :show-description="false"
+                    :show-relative-timestamp="true"
                   />
                 </div>
                 <p v-else class="text-xs text-gray-500 dark:text-gray-400">No category selected or no videos available.</p>
@@ -205,6 +216,8 @@
                       v-for="video in child.videos"
                       :key="`preview-split-featured-${child.id}-${video.id}`"
                       :video="video"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
                     />
                   </div>
                   <div v-else-if="child.type === 'top_video'" class="space-y-3">
@@ -212,6 +225,9 @@
                       v-for="video in child.videos"
                       :key="`preview-split-top-${child.id}-${video.id}`"
                       :video="video"
+                      layout="horizontal"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
                     />
                   </div>
                   <div v-else-if="child.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -219,6 +235,8 @@
                       v-for="video in child.categorySection.visible"
                       :key="`preview-split-category-video-${child.id}-${video.id}`"
                       :video="video"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
                     />
                   </div>
                 </section>
@@ -2623,8 +2641,9 @@ const parseEuropeanDateTimeToIso = (raw: string): string | null => {
 
 const scheduleInputPlaceholder = 'DD.MM.YYYY HH:mm'
 const categorySelectWidthCh = computed(() => {
+  const maxAllowedWidthCh = 30
   const longestNameLength = categories.value.reduce((max, category) => Math.max(max, String(category.name || '').length), 0)
-  return Math.max(12, longestNameLength + 2)
+  return Math.min(maxAllowedWidthCh, Math.max(12, longestNameLength + 2))
 })
 const getVideoById = (videoId: string | null) => {
   if (!videoId) return null
