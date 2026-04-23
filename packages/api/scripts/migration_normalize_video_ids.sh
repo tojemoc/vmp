@@ -260,7 +260,6 @@ for old_id in "${SORTED_KEYS[@]}"; do
   escaped_new_sql="$(sql_escape "$escaped_new_json")"
 
   sql_batch="PRAGMA defer_foreign_keys = ON;
-BEGIN TRANSACTION;
 UPDATE videos SET id = '${new_sql}' WHERE id = '${old_sql}';
 UPDATE video_category_assignments SET video_id = '${new_sql}' WHERE video_id = '${old_sql}';
 UPDATE video_segment_events SET video_id = '${new_sql}' WHERE video_id = '${old_sql}';
@@ -285,7 +284,6 @@ WHERE key = 'homepage'
 VALUES ('${old_sql}', '${new_sql}')
 ON CONFLICT(old_id) DO UPDATE
   SET new_id = excluded.new_id, migrated_at = CURRENT_TIMESTAMP;
-COMMIT;
 PRAGMA foreign_keys = ON;"
 
   run_sql "$sql_batch"
