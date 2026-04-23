@@ -11,7 +11,9 @@ function escapeHtml(input: string): string {
 
 function sanitizeUrl(rawUrl: string): string {
   try {
-    const normalized = new URL(rawUrl)
+    const normalized = new URL(rawUrl, 'http://dummy')
+    const isAbsoluteHttpUrl = /^https?:\/\//i.test(rawUrl)
+    if (!isAbsoluteHttpUrl) return '#'
     if (!SAFE_URL_PROTOCOLS.has(normalized.protocol)) return '#'
     return normalized.toString()
   } catch {
