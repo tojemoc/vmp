@@ -229,6 +229,24 @@ const formatDuration = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
+const closeRuntimePart = (resource: unknown) => {
+  const closable = resource as { close?: () => void; destroy?: () => void; stop?: () => void } | null
+  closable?.stop?.()
+  closable?.destroy?.()
+  closable?.close?.()
+}
+
+const disposeLiveRuntime = (runtimeToDispose?: {
+  connection?: unknown
+  broadcast?: unknown
+  moqBackend?: unknown
+} | null, shouldDetach = false) => {
+  if (shouldDetach) detachLiveMoqControls()
+  closeRuntimePart(runtimeToDispose?.moqBackend)
+  closeRuntimePart(runtimeToDispose?.broadcast)
+  closeRuntimePart(runtimeToDispose?.connection)
+}
+
 const loadRecommendations = async () => {
   try {
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`)
@@ -240,16 +258,25 @@ const loadRecommendations = async () => {
   }
 }
 
+let isMounted = true
+
 onMounted(async () => {
   loading.value = true
   error.value = null
+  let partialRuntime: {
+    connection?: unknown
+    broadcast?: unknown
+    moqBackend?: unknown
+  } | null = null
 
   try {
     const accessResponse = await fetch(`${config.public.apiUrl}/api/video-access/live`)
+    if (!isMounted) return
     if (!accessResponse.ok) {
       throw new Error('Failed to load livestream access')
     }
     const accessData = await accessResponse.json()
+    if (!isMounted) return
     const videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
     if (videoId === 'live') {
       throw new Error('Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.')
@@ -274,8 +301,10 @@ onMounted(async () => {
     }
 
     const { moq, watch } = await ensureMoqModules()
+    if (!isMounted) return
     loading.value = false
     await nextTick()
+    if (!isMounted) return
     const canvasEl = canvas.value
     if (!canvasEl) {
       throw new Error('Live player failed to initialize.')
@@ -286,6 +315,8 @@ onMounted(async () => {
       url: new URL(moqEndpoint),
       enabled: true
     })
+    partialRuntime = { connection }
+    if (!isMounted) return
 
     // The MoQ broadcast being fetched.
     const broadcast = new watch.Broadcast({
@@ -293,6 +324,8 @@ onMounted(async () => {
       enabled: true,
       name: moq.Path.from(moqBroadcast)
     })
+    partialRuntime.broadcast = broadcast
+    if (!isMounted) return
 
     const moqBackend = new watch.MultiBackend({
       element: canvasEl,
@@ -300,6 +333,8 @@ onMounted(async () => {
       latency: 'real-time',
       paused: false
     })
+    partialRuntime.moqBackend = moqBackend
+    if (!isMounted) return
     attachLiveMoqControls(moqBackend, broadcast)
 
     runtime = {
@@ -307,21 +342,22 @@ onMounted(async () => {
       broadcast,
       moqBackend
     }
+    partialRuntime = null
   } catch (e) {
+    if (partialRuntime) disposeLiveRuntime(partialRuntime, false)
     console.error('Failed to initialize live stream player', e)
     const message = e instanceof Error ? e.message : ''
     error.value = message || strings.videoPlaybackError
   } finally {
+    if (!isMounted) return
     await loadRecommendations()
-    if (loading.value) loading.value = false
+    if (isMounted && loading.value) loading.value = false
   }
 })
 
 onUnmounted(() => {
-  detachLiveMoqControls()
-  runtime?.moqBackend?.close()
-  runtime?.broadcast.close?.()
-  runtime?.connection.close?.()
+  isMounted = false
+  disposeLiveRuntime(runtime, true)
   runtime = null
 })
 </script>

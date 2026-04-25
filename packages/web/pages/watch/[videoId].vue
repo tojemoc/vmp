@@ -193,7 +193,7 @@
             >
               <canvas ref="liveCanvas" class="block w-full h-full" />
               <div
-                v-if="hasLivestreamMoqSource && hasAnyLivestreamPlaybackSource"
+                v-if="hasLivestreamMoqSource"
                 class="watch-live-moq-controls-container"
               >
                 <media-control-bar class="watch-live-moq-control-bar" noautohide>
@@ -388,6 +388,7 @@ import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
 import 'videojs-video-element'
+import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
 import { sizeUrl } from '~/composables/useThumbnail'
@@ -606,11 +607,14 @@ let handleMediaError:     (() => void) | null = null
 let handleWaiting:        (() => void) | null = null
 let handlePlaying:        (() => void) | null = null
 let handleCanPlay:        (() => void) | null = null
-let livestreamRuntime: {
-  connection: unknown
-  broadcast: unknown
-  moqBackend: { close: () => void } | null
-} | null = null
+type Closable = { close?: () => void }
+type LivestreamRuntime = {
+  connection: Closable | null
+  broadcast: Closable | null
+  moqBackend: Closable | null
+}
+
+let livestreamRuntime: LivestreamRuntime | null = null
 let reloadInFlight = false
 let currentRouteRequestId = 0
 let activeLoadAbortController: AbortController | null = null
@@ -794,28 +798,28 @@ const initializeLivestreamRuntime = async (
 
   teardownVideoListeners()
   teardownLivestreamRuntime()
-  let partialRuntime: {
-    connection?: unknown
-    broadcast?: unknown
-    moqBackend?: { close: () => void } | null
-  } = {}
+  let partialRuntime: LivestreamRuntime = {
+    connection: null,
+    broadcast: null,
+    moqBackend: null
+  }
 
   try {
     const { moq, watch } = await ensureMoqModules()
-    const connection = new moq.Connection.Reload({
+    const connection: Closable = new moq.Connection.Reload({
       url: new URL(moqEndpoint),
       enabled: true
     })
     partialRuntime.connection = connection
 
-    const broadcast = new watch.Broadcast({
+    const broadcast: Broadcast = new watch.Broadcast({
       connection: connection.established,
       enabled: true,
       name: moq.Path.from(moqBroadcast)
     })
     partialRuntime.broadcast = broadcast
 
-    const moqBackend = new watch.MultiBackend({
+    const moqBackend: MultiBackend = new watch.MultiBackend({
       element: canvas,
       broadcast,
       latency: 'real-time',
@@ -825,7 +829,7 @@ const initializeLivestreamRuntime = async (
     attachLiveMoqControls(moqBackend, broadcast)
 
     ensureActive()
-    livestreamRuntime = partialRuntime as typeof livestreamRuntime
+    livestreamRuntime = partialRuntime
   } catch (error) {
     teardownLivestreamRuntime(partialRuntime)
     throw error
@@ -1019,17 +1023,18 @@ function teardownVideoListeners() {
   if (handleCanPlay)        { video.removeEventListener('canplay', handleCanPlay);                handleCanPlay        = null }
 }
 
-function teardownLivestreamRuntime(runtimeToDispose?: Record<string, unknown> | null) {
+function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) {
   const source = runtimeToDispose ?? livestreamRuntime
-  if (!runtimeToDispose || runtimeToDispose === livestreamRuntime) {
+  if (
+    !runtimeToDispose ||
+    runtimeToDispose === livestreamRuntime ||
+    Boolean(source?.moqBackend)
+  ) {
     detachLiveMoqControls()
   }
-  const moqBackend = source?.moqBackend as { close?: () => void } | undefined
-  moqBackend?.close?.()
-  const broadcast = source?.broadcast as { close?: () => void } | undefined
-  broadcast?.close?.()
-  const connection = source?.connection as { close?: () => void } | undefined
-  connection?.close?.()
+  source?.moqBackend?.close?.()
+  source?.broadcast?.close?.()
+  source?.connection?.close?.()
   if (!runtimeToDispose || runtimeToDispose === livestreamRuntime) {
     livestreamRuntime = null
   }

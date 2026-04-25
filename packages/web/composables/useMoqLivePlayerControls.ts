@@ -1,4 +1,4 @@
-import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
+import { ref, shallowRef, type ShallowRef } from 'vue'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 
 type Dispose = () => void
@@ -91,8 +91,13 @@ export function useMoqLivePlayerControls() {
       } else {
         await el.requestFullscreen()
       }
-    } catch {
-      /* user gesture / policy */
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn('toggleFullscreen failed in useMoqLivePlayerControls', {
+          shellRef: shellRef.value,
+          err
+        })
+      }
     }
   }
 
