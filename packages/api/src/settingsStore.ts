@@ -12,7 +12,14 @@ function getDb(env: any) {
   return db
 }
 
-const inMemorySettingsCache = new Map<string, { value: any, expiresAt: number }>()
+const SETTINGS_VERSION_KEY = 'settings_changed_at'
+const SETTINGS_VERSION_CACHE_MS = 5_000
+const STRIPE_SETTING_PREFIX = 'stripe_price_'
+const STRIPE_SETTING_TTL_SECONDS = 30
+
+const inMemorySettingsCache = new Map<string, { value: any, expiresAt: number, version: string }>()
+let cachedSettingsVersion = '0'
+let cachedSettingsVersionExpiresAt = 0
 
 export interface SettingsOptions {
   ttlSeconds?: number
@@ -21,14 +28,57 @@ export interface SettingsOptions {
   bypassKv?: boolean
 }
 
+function normalizeCacheTtlSeconds(key: string, ttlSeconds: number) {
+  if (key.startsWith(STRIPE_SETTING_PREFIX)) return Math.min(Math.max(1, ttlSeconds), STRIPE_SETTING_TTL_SECONDS)
+  return Math.max(1, ttlSeconds)
+}
+
+function bumpLocalSettingsVersion(version: string) {
+  cachedSettingsVersion = version
+  cachedSettingsVersionExpiresAt = Date.now() + SETTINGS_VERSION_CACHE_MS
+}
+
+function invalidateLocalSettingCacheOnly(key: string) {
+  inMemorySettingsCache.delete(key)
+}
+
+async function getSettingsVersion(env: any, db: any, forceRefresh = false) {
+  const now = Date.now()
+  if (!forceRefresh && cachedSettingsVersionExpiresAt > now) return cachedSettingsVersion
+
+  try {
+    const row = await db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind(SETTINGS_VERSION_KEY).first()
+    const version = String(row?.value ?? '0')
+    bumpLocalSettingsVersion(version)
+    return version
+  } catch {
+    if (cachedSettingsVersionExpiresAt > now) return cachedSettingsVersion
+    cachedSettingsVersionExpiresAt = now + 1_000
+    return cachedSettingsVersion
+  }
+}
+
+export async function invalidateSetting(env: any, key: any, persistVersion = true) {
+  const db = getDb(env)
+  invalidateLocalSettingCacheOnly(String(key))
+  if (!persistVersion) return
+  const version = String(Date.now())
+  await db.prepare(`
+    INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).bind(SETTINGS_VERSION_KEY, version).run()
+  bumpLocalSettingsVersion(version)
+}
+
 export async function getSetting(env: any, key: any, options: SettingsOptions = {}) {
   const { ttlSeconds = 300, defaultValue = null } = options
   const db = getDb(env)
   const cacheKey = String(key)
   const now = Date.now()
+  const version = await getSettingsVersion(env, db)
 
   const cached = inMemorySettingsCache.get(cacheKey)
-  if (cached && cached.expiresAt > now) {
+  if (cached && cached.expiresAt > now && cached.version === version) {
     return cached.value
   }
 
@@ -45,7 +95,8 @@ export async function getSetting(env: any, key: any, options: SettingsOptions = 
   if (hasDbRowValue) {
     inMemorySettingsCache.set(cacheKey, {
       value,
-      expiresAt: now + Math.max(1, ttlSeconds) * 1000,
+      expiresAt: now + normalizeCacheTtlSeconds(cacheKey, ttlSeconds) * 1000,
+      version,
     })
   } else {
     inMemorySettingsCache.delete(cacheKey)
@@ -55,24 +106,85 @@ export async function getSetting(env: any, key: any, options: SettingsOptions = 
 }
 
 export async function getSettings(env: any, keys: any, options: SettingsOptions = {}) {
-  const entries = await Promise.all(keys.map(async (k: any) => [k, await getSetting(env, k, options)]))
-  return Object.fromEntries(entries)
+  if (!Array.isArray(keys) || keys.length === 0) return {}
+  const { ttlSeconds = 300, defaultValue = null } = options
+  const db = getDb(env)
+  const version = await getSettingsVersion(env, db)
+  const now = Date.now()
+
+  const result: any = {}
+  const uniqueKeys = [...new Set(keys.map((key: any) => String(key)))]
+  const missingKeys: string[] = []
+
+  for (const key of uniqueKeys) {
+    const cached = inMemorySettingsCache.get(key)
+    if (cached && cached.expiresAt > now && cached.version === version) {
+      result[key] = cached.value
+      continue
+    }
+    missingKeys.push(key)
+  }
+
+  if (missingKeys.length) {
+    try {
+      const placeholders = missingKeys.map(() => '?').join(', ')
+      const rows = await db
+        .prepare(`SELECT key, value FROM admin_settings WHERE key IN (${placeholders})`)
+        .bind(...missingKeys)
+        .all()
+      const rowsByKey = new Map((rows?.results ?? []).map((row: any) => [String(row.key), row.value]))
+
+      for (const key of missingKeys) {
+        if (rowsByKey.has(key)) {
+          const value = rowsByKey.get(key)
+          result[key] = value
+          inMemorySettingsCache.set(key, {
+            value,
+            expiresAt: now + normalizeCacheTtlSeconds(key, ttlSeconds) * 1000,
+            version,
+          })
+        } else {
+          result[key] = defaultValue
+          inMemorySettingsCache.delete(key)
+        }
+      }
+    } catch {
+      for (const key of missingKeys) {
+        result[key] = await getSetting(env, key, options)
+      }
+    }
+  }
+
+  return Object.fromEntries(keys.map((key: any) => [key, result[String(key)] ?? defaultValue]))
 }
 
 export async function setSetting(env: any, key: any, value: any, options: SettingsOptions = {}) {
   const { ttlSeconds = 300 } = options
   const db = getDb(env)
+  const cacheKey = String(key)
   const normalized = value == null ? '' : String(value)
+  const version = String(Date.now())
 
-  await db.prepare(`
+  await db.batch([
+    db.prepare(`
     INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-  `).bind(key, normalized).run()
+  `).bind(key, normalized),
+    db.prepare(`
+    INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).bind(SETTINGS_VERSION_KEY, version),
+  ])
 
-  inMemorySettingsCache.set(String(key), {
+  bumpLocalSettingsVersion(version)
+
+  inMemorySettingsCache.set(cacheKey, {
     value: normalized,
-    expiresAt: Date.now() + Math.max(1, ttlSeconds) * 1000,
+    expiresAt: Date.now() + normalizeCacheTtlSeconds(cacheKey, ttlSeconds) * 1000,
+    version,
   })
+
+  if (cacheKey.startsWith(STRIPE_SETTING_PREFIX)) invalidateLocalSettingCacheOnly(cacheKey)
 }
 
 export function buildSettingsStatements(env: any, entries: any) {
@@ -95,13 +207,21 @@ export async function setSettings(env: any, entries: any, options: SettingsOptio
 
   if (!Array.isArray(entries) || entries.length === 0) return
 
+  const version = String(Date.now())
   // D1 does not support SQL BEGIN/COMMIT via db.exec(); use batch() for atomic multi-row writes.
   const statements = buildSettingsStatements(env, entries)
+  statements.push(db.prepare(`
+    INSERT INTO admin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).bind(SETTINGS_VERSION_KEY, version))
   await db.batch(statements)
+  bumpLocalSettingsVersion(version)
 
-  const expiresAt = Date.now() + Math.max(1, ttlSeconds) * 1000
   for (const [key, value] of entries) {
     const normalized = value == null ? '' : String(value)
-    inMemorySettingsCache.set(String(key), { value: normalized, expiresAt })
+    const cacheKey = String(key)
+    const adjustedExpiresAt = Date.now() + normalizeCacheTtlSeconds(cacheKey, ttlSeconds) * 1000
+    inMemorySettingsCache.set(cacheKey, { value: normalized, expiresAt: adjustedExpiresAt, version })
+    if (cacheKey.startsWith(STRIPE_SETTING_PREFIX)) invalidateLocalSettingCacheOnly(cacheKey)
   }
 }

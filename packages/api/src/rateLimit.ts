@@ -26,12 +26,16 @@ async function getRateLimitValue(env: any) {
       .first()
     const parsed = row ? parseInt(row.value, 10) : NaN
     cachedRateLimit = Number.isFinite(parsed) && parsed > 0 ? parsed : 5
+    cacheExpiresAt = now + 60_000
+    return cachedRateLimit
   } catch {
-    cachedRateLimit = 5
+    if (cachedRateLimit !== null) {
+      cacheExpiresAt = now + 5_000
+      return cachedRateLimit
+    }
+    cacheExpiresAt = now + 5_000
+    return 5
   }
-
-  cacheExpiresAt = now + 60_000
-  return cachedRateLimit
 }
 
 /**
@@ -42,7 +46,7 @@ async function getRateLimitValue(env: any) {
  *   { limited: false, current, limit } — request is allowed
  *   { limited: true, retryAfter, limit, current } — request is blocked (429)
  */
-export async function checkAnonymousRateLimit(request: any, env: any) {
+export async function checkAnonymousRateLimit(request: any, env: any, ctx?: ExecutionContext) {
   const db = env.DB || env.video_subscription_db
   if (!db) return null // Database binding not configured — skip silently
 
@@ -56,6 +60,20 @@ export async function checkAnonymousRateLimit(request: any, env: any) {
   const now = new Date()
   // e.g. "2026-03-30T14" — one bucket per UTC hour
   const hourKey = now.toISOString().slice(0, 13)
+
+  // Opportunistic cleanup runs before the counter check and, when available,
+  // is dispatched asynchronously to avoid adding latency to request handling.
+  if (Math.random() < 0.01) {
+    const cleanupPromise = db.prepare('DELETE FROM anonymous_rate_limits WHERE expires_at <= CURRENT_TIMESTAMP').run()
+      .catch(() => {
+        // Cleanup failures are non-fatal for request handling.
+      })
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(cleanupPromise)
+    } else {
+      await cleanupPromise
+    }
+  }
 
   const limit = await getRateLimitValue(env)
   const upsert = await db.prepare(`
@@ -79,15 +97,6 @@ export async function checkAnonymousRateLimit(request: any, env: any) {
     const retryAfter = (60 - minutesElapsed) * 60 - secondsElapsed
 
     return { limited: true, retryAfter, limit, current }
-  }
-
-  // Opportunistic cleanup keeps the table bounded without cron-only dependence.
-  if (Math.random() < 0.01) {
-    try {
-      await db.prepare('DELETE FROM anonymous_rate_limits WHERE expires_at <= CURRENT_TIMESTAMP').run()
-    } catch {
-      // Cleanup failures are non-fatal for request handling.
-    }
   }
 
   return { limited: false, current, limit }

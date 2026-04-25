@@ -226,7 +226,7 @@ export default {
       return handlePersonalFeed(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/video-access/')) {
-      return handleVideoAccess(request, env, corsHeaders)
+      return handleVideoAccess(request, env, corsHeaders, ctx)
     }
     if (url.pathname.startsWith('/api/video-proxy/')) {
       return handleVideoProxy(request, env, corsHeaders, ctx)
@@ -543,7 +543,7 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
   }
 }
 
-async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
+async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?: ExecutionContext) {
   try {
     const url = new URL(request.url)
     const pathParts = url.pathname.split('/').filter(Boolean)
@@ -598,7 +598,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any) {
     // Logged-in users — even on the free plan — are never rate-limited here.
     const isAnonymous = !authUser && (!userId || userId === 'anonymous')
     if (isAnonymous) {
-      const rateLimitResult = await checkAnonymousRateLimit(request, env)
+      const rateLimitResult = await checkAnonymousRateLimit(request, env, ctx)
       if (rateLimitResult?.limited) {
         return new Response(
           JSON.stringify({
