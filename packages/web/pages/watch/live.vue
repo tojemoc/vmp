@@ -30,7 +30,7 @@ onMounted(() => {
     const broadcast = new Watch.Broadcast({
         connection: connection.established,
         enabled: true,
-        name: Moq.Path.from("bbb"),
+        name: Moq.Path.from("obstesting123"),
     });
 
     // Synchronize audio and video playback.
