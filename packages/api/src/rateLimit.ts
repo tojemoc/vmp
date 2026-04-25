@@ -1,52 +1,52 @@
 /**
  * packages/api/src/rateLimit.js
  *
- * KV-backed hourly rate limiter for anonymous video-access requests.
+ * D1-backed hourly rate limiter for anonymous video-access requests.
  *
- * Key format : ratelimit:{ip}:{YYYY-MM-DDTHH}   (hourly bucket)
- * Value      : integer count (stringified)
- * TTL        : 3700 s  (a little over an hour so the key outlives the window)
- *
+ * Counter key: (ip, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
  * The limit value is read from admin_settings (key "rate_limit_anon", default 5)
- * and cached in module scope for 60 seconds to avoid a D1 hit on every request.
+ * via settingsStore/getSetting. TTL caching is delegated to settingsStore
+ * (instead of module-scope variables in this file).
  */
 
-let cachedRateLimit: any = null
-let cacheExpiresAt = 0
+import { getSetting } from './settingsStore.js'
 
 /**
- * Read rate_limit_anon from admin_settings, caching for 60 s.
- * Falls back to 5 if the row is missing or invalid.
+ * Read rate_limit_anon from admin_settings via settingsStore/getSetting.
+ * Falls back to 5 if the row is missing, invalid, or temporarily unreadable.
  */
 async function getRateLimitValue(env: any) {
-  const now = Date.now()
-  if (cachedRateLimit !== null && now < cacheExpiresAt) return cachedRateLimit
-
-  try {
-    const db = env.DB || env.video_subscription_db
-    const row = await db
-      .prepare("SELECT value FROM admin_settings WHERE key = 'rate_limit_anon' LIMIT 1")
-      .first()
-    const parsed = row ? parseInt(row.value, 10) : NaN
-    cachedRateLimit = Number.isFinite(parsed) && parsed > 0 ? parsed : 5
-  } catch {
-    cachedRateLimit = 5
+  const parseRateLimit = (raw: any) => {
+    const parsed = Number.parseInt(String(raw ?? '5'), 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5
   }
 
-  cacheExpiresAt = now + 60_000
-  return cachedRateLimit
+  try {
+    const raw = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 60, defaultValue: '5' })
+    return parseRateLimit(raw)
+  } catch {
+    // Keep retries short on transient failures.
+    try {
+      const retryValue = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 5, defaultValue: '5' })
+      return parseRateLimit(retryValue)
+    } catch {
+      // Best effort only.
+    }
+    return 5
+  }
 }
 
 /**
  * Check (and increment) the hourly counter for an anonymous request.
  *
  * Returns:
- *   null                              — KV not bound, rate limiting skipped
+ *   null                              — D1 binding not configured, rate limiting skipped
  *   { limited: false, current, limit } — request is allowed
  *   { limited: true, retryAfter, limit, current } — request is blocked (429)
  */
-export async function checkAnonymousRateLimit(request: any, env: any) {
-  if (!env.RATE_LIMIT_KV) return null // binding not configured — skip silently
+export async function checkAnonymousRateLimit(request: any, env: any, ctx?: ExecutionContext) {
+  const db = env.DB || env.video_subscription_db
+  if (!db) return null // Database binding not configured — skip silently
 
   // Use CF-Connecting-IP (set by Cloudflare) as the client identifier.
   // Fall back to X-Forwarded-For for local dev / non-CF environments.
@@ -58,13 +58,45 @@ export async function checkAnonymousRateLimit(request: any, env: any) {
   const now = new Date()
   // e.g. "2026-03-30T14" — one bucket per UTC hour
   const hourKey = now.toISOString().slice(0, 13)
-  const key = `ratelimit:${ip}:${hourKey}`
+
+  // Opportunistic cleanup runs before the counter check and, when available,
+  // is dispatched asynchronously to avoid adding latency to request handling.
+  if (Math.random() < 0.01) {
+    const cleanupPromise = db.prepare('DELETE FROM anonymous_rate_limits WHERE expires_at <= CURRENT_TIMESTAMP').run()
+      .catch(() => {
+        // Cleanup failures are non-fatal for request handling.
+      })
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(cleanupPromise)
+    } else {
+      await cleanupPromise
+    }
+  }
 
   const limit = await getRateLimitValue(env)
-  const stored = await env.RATE_LIMIT_KV.get(key)
-  const current = stored ? parseInt(stored, 10) : 0
+  let current = 0
+  try {
+    const upsert = await db.prepare(`
+      INSERT INTO anonymous_rate_limits (
+        ip, bucket_hour, request_count, expires_at, updated_at
+      ) VALUES (
+        ?, ?, 1, datetime('now', '+3700 seconds'), CURRENT_TIMESTAMP
+      )
+      ON CONFLICT(ip, bucket_hour) DO UPDATE SET
+        request_count = anonymous_rate_limits.request_count + 1,
+        expires_at = datetime('now', '+3700 seconds'),
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING request_count
+    `).bind(ip, hourKey).first()
+    current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0
+  } catch (error) {
+    // Fail-open for anonymous traffic when D1 is transiently unavailable.
+    const redactedIp = ip ? '[REDACTED_IP]' : 'unknown'
+    console.error('Anonymous rate-limit counter upsert failed; allowing request', { ip: redactedIp, hourKey, error })
+    current = 0
+  }
 
-  if (current >= limit) {
+  if (current > limit) {
     // Seconds remaining in the current UTC hour
     const minutesElapsed = now.getUTCMinutes()
     const secondsElapsed = now.getUTCSeconds()
@@ -73,7 +105,5 @@ export async function checkAnonymousRateLimit(request: any, env: any) {
     return { limited: true, retryAfter, limit, current }
   }
 
-  // Increment; TTL 3700 s keeps the key alive past the hour boundary
-  await env.RATE_LIMIT_KV.put(key, String(current + 1), { expirationTtl: 3700 })
-  return { limited: false, current: current + 1, limit }
+  return { limited: false, current, limit }
 }
