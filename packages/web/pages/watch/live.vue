@@ -42,7 +42,7 @@
                   </button>
                   <button type="button" class="watch-live-moq-live-edge-btn" :aria-label="strings.goToLive" @click="liveMoqGoLive">
                     <span class="inline-block w-2 h-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
-                    <span>Live</span>
+                    <span>{{ strings.live }}</span>
                   </button>
                   <span class="flex-1 min-w-2"></span>
                   <button
@@ -88,7 +88,7 @@
                 <span class="inline-block w-2.5 h-3 rounded-sm bg-rose-500 shrink-0" aria-hidden="true"></span>
                 <span class="inline-flex items-center gap-1.5">
                   <span class="inline-block w-2 h-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
-                  <span>Live</span>
+                  <span>{{ strings.live }}</span>
                 </span>
               </span>
             </div>
@@ -349,9 +349,14 @@ onMounted(async () => {
     const message = e instanceof Error ? e.message : ''
     error.value = message || strings.videoPlaybackError
   } finally {
-    if (!isMounted) return
-    await loadRecommendations()
-    if (isMounted && loading.value) loading.value = false
+    if (partialRuntime) {
+      disposeLiveRuntime(partialRuntime, false)
+      partialRuntime = null
+    }
+    if (isMounted) {
+      await loadRecommendations()
+      if (loading.value) loading.value = false
+    }
   }
 })
 

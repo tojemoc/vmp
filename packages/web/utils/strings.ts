@@ -58,6 +58,7 @@ const strings = {
   pauseVideo: 'Pause',
   mute: 'Mute',
   unmute: 'Unmute',
+  live: 'Live',
   goToLive: 'Go to live',
   fullscreen: 'Fullscreen',
   volume: 'Volume',

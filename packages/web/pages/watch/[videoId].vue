@@ -217,7 +217,7 @@
                     @click="liveMoqGoLive"
                   >
                     <span class="inline-block w-2 h-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
-                    <span>Live</span>
+                    <span>{{ strings.live }}</span>
                   </button>
                   <span class="flex-1 min-w-2"></span>
                   <button
@@ -281,7 +281,7 @@
                 <span class="inline-block w-2.5 h-3 rounded-sm bg-rose-500 shrink-0" aria-hidden="true"></span>
                 <span class="inline-flex items-center gap-1.5">
                   <span class="inline-block w-2 h-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
-                  <span>Live</span>
+                  <span>{{ strings.live }}</span>
                 </span>
               </span>
               <template v-else>
@@ -357,7 +357,7 @@
                       {{ rec.full_duration ? formatDuration(rec.full_duration) : '--' }}
                     </div>
                     <div
-                      v-if="rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0"
+                      v-if="!isLiveRecommendation(rec) && (rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0)"
                       class="absolute top-1 left-1 bg-yellow-500 text-black text-xs font-semibold px-1.5 py-0.5 rounded"
                     >
                       PRO
@@ -1025,11 +1025,13 @@ function teardownVideoListeners() {
 
 function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) {
   const source = runtimeToDispose ?? livestreamRuntime
-  if (
+  // Detach controls when tearing down the active runtime, or any runtime
+  // that has a moqBackend (which is where attachLiveMoqControls is wired).
+  const shouldDetach =
     !runtimeToDispose ||
     runtimeToDispose === livestreamRuntime ||
     Boolean(source?.moqBackend)
-  ) {
+  if (shouldDetach) {
     detachLiveMoqControls()
   }
   source?.moqBackend?.close?.()
