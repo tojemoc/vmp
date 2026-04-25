@@ -5,24 +5,30 @@
  *
  * Counter key: (ip, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
  * The limit value is read from admin_settings (key "rate_limit_anon", default 5)
- * and cached in module scope for 60 seconds to avoid re-reading settings on every request.
+ * via settingsStore/getSetting. TTL caching is delegated to settingsStore
+ * (instead of module-scope variables in this file).
  */
 
 import { getSetting } from './settingsStore.js'
 
 /**
- * Read rate_limit_anon from admin_settings, caching for 60 s.
- * Falls back to 5 if the row is missing or invalid.
+ * Read rate_limit_anon from admin_settings via settingsStore/getSetting.
+ * Falls back to 5 if the row is missing, invalid, or temporarily unreadable.
  */
 async function getRateLimitValue(env: any) {
-  try {
-    const raw = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 60, defaultValue: '5' })
+  const parseRateLimit = (raw: any) => {
     const parsed = Number.parseInt(String(raw ?? '5'), 10)
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 5
+  }
+
+  try {
+    const raw = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 60, defaultValue: '5' })
+    return parseRateLimit(raw)
   } catch {
     // Keep retries short on transient failures.
     try {
-      await getSetting(env, 'rate_limit_anon', { ttlSeconds: 5, defaultValue: '5' })
+      const retryValue = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 5, defaultValue: '5' })
+      return parseRateLimit(retryValue)
     } catch {
       // Best effort only.
     }
@@ -85,7 +91,8 @@ export async function checkAnonymousRateLimit(request: any, env: any, ctx?: Exec
     current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0
   } catch (error) {
     // Fail-open for anonymous traffic when D1 is transiently unavailable.
-    console.error('Anonymous rate-limit counter upsert failed; allowing request', { ip, hourKey, error })
+    const redactedIp = ip ? '[REDACTED_IP]' : 'unknown'
+    console.error('Anonymous rate-limit counter upsert failed; allowing request', { ip: redactedIp, hourKey, error })
     current = 0
   }
 
