@@ -2215,8 +2215,8 @@ const livestreamModal = ref({
     slug: '',
     status: 'draft',
     publishStatus: 'draft',
-    moqEndpoint: 'https://cdn.moq.dev/anon',
-    moqBroadcast: 'obstesting123',
+    moqEndpoint: '',
+    moqBroadcast: '',
   },
 })
 const componentTypes: BlockType[] = ['top_video', 'featured_row', 'category', 'split_horizontal', 'split_vertical']
@@ -2876,8 +2876,8 @@ const resetLivestreamModal = () => {
       slug: '',
       status: 'draft',
       publishStatus: 'draft',
-      moqEndpoint: 'https://cdn.moq.dev/anon',
-      moqBroadcast: 'obstesting123',
+      moqEndpoint: '',
+      moqBroadcast: '',
     },
   }
 }

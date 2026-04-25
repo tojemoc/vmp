@@ -203,7 +203,7 @@
               class="block w-full aspect-video"
             />
             <div
-              v-if="videoData.video.isLivestream && !hasLivestreamSource"
+              v-if="videoData.video.isLivestream && !hasLivestreamPlaybackSource"
               class="absolute inset-0 z-10 bg-black/85 flex items-center justify-center px-6 text-center"
             >
               <div>
@@ -384,13 +384,20 @@ const isFullPublicPreview = computed(() => {
   const EPSILON_SECONDS = 0.5
   return typeof prev === 'number' && full > 0 && prev >= (full - EPSILON_SECONDS)
 })
-const hasLivestreamSource = computed(() =>
+const hasLivestreamMoqSource = computed(() =>
   Boolean(
     videoData.value?.video?.isLivestream &&
     typeof videoData.value?.video?.livestreamMoqEndpoint === 'string' &&
     videoData.value?.video?.livestreamMoqEndpoint.trim().length > 0 &&
     typeof videoData.value?.video?.livestreamMoqBroadcast === 'string' &&
     videoData.value?.video?.livestreamMoqBroadcast.trim().length > 0
+  )
+)
+const hasLivestreamPlaybackSource = computed(() =>
+  Boolean(
+    videoData.value?.video?.isLivestream &&
+    typeof videoData.value?.video?.playlistUrl === 'string' &&
+    videoData.value?.video?.playlistUrl.trim().length > 0
   )
 )
 
@@ -637,7 +644,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     await nextTick()
     ensureCurrent()
     if (videoData.value?.video?.isLivestream) {
-      if (hasLivestreamSource.value && !rateLimited.value) {
+      if (hasLivestreamMoqSource.value && !rateLimited.value) {
         error.value = null
         await initializeLivestreamRuntime(
           String(videoData.value.video.livestreamMoqEndpoint),
@@ -680,35 +687,58 @@ const initializeLivestreamRuntime = async (
 
   teardownVideoListeners()
   teardownLivestreamRuntime()
+  let partialRuntime: {
+    connection?: unknown
+    broadcast?: unknown
+    sync?: unknown
+    videoSource?: unknown
+    videoDecoder?: unknown
+    videoRenderer?: unknown
+    audioSource?: unknown
+    audioDecoder?: unknown
+    audioEmitter?: unknown
+  } = {}
 
-  const connection = new Moq.Connection.Reload({
-    url: new URL(moqEndpoint),
-    enabled: true
-  })
-  const broadcast = new Watch.Broadcast({
-    connection: connection.established,
-    enabled: true,
-    name: Moq.Path.from(moqBroadcast)
-  })
-  const sync = new Watch.Sync()
-  const videoSource = new Watch.Video.Source(sync, { broadcast })
-  const videoDecoder = new Watch.Video.Decoder(videoSource)
-  const videoRenderer = new Watch.Video.Renderer(videoDecoder, { canvas, paused: false })
-  const audioSource = new Watch.Audio.Source(sync, { broadcast })
-  const audioDecoder = new Watch.Audio.Decoder(audioSource)
-  const audioEmitter = new Watch.Audio.Emitter(audioDecoder, { paused: false })
+  try {
+    const connection = new Moq.Connection.Reload({
+      url: new URL(moqEndpoint),
+      enabled: true
+    })
+    partialRuntime.connection = connection
 
-  ensureActive()
-  livestreamRuntime = {
-    connection,
-    broadcast,
-    sync,
-    videoSource,
-    videoDecoder,
-    videoRenderer,
-    audioSource,
-    audioDecoder,
-    audioEmitter
+    const broadcast = new Watch.Broadcast({
+      connection: connection.established,
+      enabled: true,
+      name: Moq.Path.from(moqBroadcast)
+    })
+    partialRuntime.broadcast = broadcast
+
+    const sync = new Watch.Sync()
+    partialRuntime.sync = sync
+
+    const videoSource = new Watch.Video.Source(sync, { broadcast })
+    partialRuntime.videoSource = videoSource
+
+    const videoDecoder = new Watch.Video.Decoder(videoSource)
+    partialRuntime.videoDecoder = videoDecoder
+
+    const videoRenderer = new Watch.Video.Renderer(videoDecoder, { canvas, paused: false })
+    partialRuntime.videoRenderer = videoRenderer
+
+    const audioSource = new Watch.Audio.Source(sync, { broadcast })
+    partialRuntime.audioSource = audioSource
+
+    const audioDecoder = new Watch.Audio.Decoder(audioSource)
+    partialRuntime.audioDecoder = audioDecoder
+
+    const audioEmitter = new Watch.Audio.Emitter(audioDecoder, { paused: false })
+    partialRuntime.audioEmitter = audioEmitter
+
+    ensureActive()
+    livestreamRuntime = partialRuntime as typeof livestreamRuntime
+  } catch (error) {
+    teardownLivestreamRuntime(partialRuntime)
+    throw error
   }
 }
 
@@ -899,15 +929,18 @@ function teardownVideoListeners() {
   if (handleCanPlay)        { video.removeEventListener('canplay', handleCanPlay);                handleCanPlay        = null }
 }
 
-function teardownLivestreamRuntime() {
-  const instances = livestreamRuntime ? Object.values(livestreamRuntime) : []
+function teardownLivestreamRuntime(runtimeToDispose?: Record<string, unknown> | null) {
+  const source = runtimeToDispose ?? livestreamRuntime
+  const instances = source ? Object.values(source) : []
   for (const instance of instances) {
     const resource = instance as { close?: () => void; destroy?: () => void; stop?: () => void } | undefined
     resource?.stop?.()
     resource?.destroy?.()
     resource?.close?.()
   }
-  livestreamRuntime = null
+  if (!runtimeToDispose || runtimeToDispose === livestreamRuntime) {
+    livestreamRuntime = null
+  }
 }
 </script>
 

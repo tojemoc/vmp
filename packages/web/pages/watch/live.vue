@@ -157,9 +157,28 @@ onMounted(async () => {
   }
 
   try {
+    const accessResponse = await fetch(`${config.public.apiUrl}/api/video-access/live`)
+    if (!accessResponse.ok) {
+      throw new Error('Failed to load livestream access')
+    }
+    const accessData = await accessResponse.json()
+    const hasAccess = Boolean(accessData?.hasAccess)
+    const moqEndpoint = typeof accessData?.video?.livestreamMoqEndpoint === 'string'
+      ? accessData.video.livestreamMoqEndpoint.trim()
+      : ''
+    const moqBroadcast = typeof accessData?.video?.livestreamMoqBroadcast === 'string'
+      ? accessData.video.livestreamMoqBroadcast.trim()
+      : ''
+    if (!hasAccess) {
+      throw new Error('You do not have access to this livestream.')
+    }
+    if (!moqEndpoint || !moqBroadcast) {
+      throw new Error(strings.livestreamUnavailableDetail)
+    }
+
     // A MoQ connection that is automatically re-established on drop.
     const connection = new Moq.Connection.Reload({
-      url: new URL('https://cdn.moq.dev/anon'),
+      url: new URL(moqEndpoint),
       enabled: true
     })
 
@@ -167,7 +186,7 @@ onMounted(async () => {
     const broadcast = new Watch.Broadcast({
       connection: connection.established,
       enabled: true,
-      name: Moq.Path.from('obstesting123')
+      name: Moq.Path.from(moqBroadcast)
     })
 
     // Synchronize audio and video playback.
