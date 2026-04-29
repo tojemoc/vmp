@@ -1,0 +1,17 @@
+services:
+  garage:
+    image: dxflrs/garage:v1.3.0
+    container_name: vmp-garage
+    restart: unless-stopped
+    command: server
+    environment:
+      GARAGE_CONFIG_FILE: /etc/garage/config.toml
+    ports:
+      - "3900:3900" # S3 API (HTTPS enabled in Garage config)
+      - "3901:3901" # RPC
+      - "3902:3902" # Admin API
+    volumes:
+      - ./garage/config.toml:/etc/garage/config.toml:ro
+      - ./garage/meta:/var/lib/garage/meta
+      - ./garage/data:/var/lib/garage/data
+      - ./garage/certs:/var/lib/garage/certs:ro

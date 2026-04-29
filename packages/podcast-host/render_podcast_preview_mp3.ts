@@ -2,23 +2,25 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
 
-function env(name, fallback = '') {
+let activeChild: ChildProcessWithoutNullStreams | null = null
+
+function env(name: string, fallback = ''): string {
   const value = process.env[name]
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback
 }
 
-function parseArgs() {
+function parseArgs(): { videoId: string, previewSeconds: number } {
   const [, , rawVideoId, rawSeconds] = process.argv
-  if (!rawVideoId) throw new Error('Usage: node render_podcast_preview_mp3.mjs <video_id> <preview_seconds>')
+  if (!rawVideoId) throw new Error('Usage: node dist/render_podcast_preview_mp3.js <video_id> <preview_seconds>')
   if (!/^[a-zA-Z0-9._-]+$/.test(rawVideoId)) throw new Error('video_id contains invalid characters')
   const seconds = Number.parseInt(String(rawSeconds ?? ''), 10)
   if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('preview_seconds must be a positive integer')
   return { videoId: rawVideoId, previewSeconds: Math.floor(seconds) }
 }
 
-function buildR2Root() {
+function buildR2Root(): string {
   const rcloneRemote = env('RCLONE_REMOTE')
   const bucketName = env('R2_BUCKET_NAME')
   const bucket = env('R2_BUCKET', 'vmp-videos')
@@ -26,12 +28,12 @@ function buildR2Root() {
   return bucket.includes(':') ? bucket : `${bucket}:`
 }
 
-function r2Path(root, relativePath) {
+function r2Path(root: string, relativePath: string): string {
   return `${root.replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
 }
 
-function run(command, args, label) {
-  return new Promise((resolve, reject) => {
+function run(command: string, args: readonly string[], label: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
     activeChild = child
     let stderr = ''
@@ -50,7 +52,7 @@ function run(command, args, label) {
   })
 }
 
-async function copyFirstAvailableSource(root, videoId, localIn) {
+async function copyFirstAvailableSource(root: string, videoId: string, localIn: string): Promise<string> {
   const candidates = [
     r2Path(root, `videos/${videoId}/podcast.mp3`),
     r2Path(root, `videos/${videoId}/processed/audio/podcast.mp3`),

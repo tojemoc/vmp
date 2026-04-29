@@ -1,0 +1,22 @@
+{
+  "name": "@vmp/offloading",
+  "version": "1.0.0",
+  "private": true,
+  "description": "R2 to Garage hot/cold storage offloading jobs",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node ./dist/cli.js",
+    "demote": "npm run build && node ./dist/cli.js demote",
+    "promote": "npm run build && node ./dist/cli.js promote",
+    "record-request": "npm run build && node ./dist/cli.js record-request",
+    "resolve-origin": "npm run build && node ./dist/cli.js resolve-origin"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

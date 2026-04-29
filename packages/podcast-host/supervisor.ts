@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * VMP media host supervisor: runs pipeline_watch.mjs, serves local dashboard + webhook API.
+ * VMP media host supervisor: runs pipeline_watch.js, serves local dashboard + webhook API.
  *
  * Environment:
  *   VMP_WEBHOOK_SECRET     — HMAC secret (same as admin_settings); required unless VMP_REQUIRE_WEBHOOK_SECRET=0
  *   VMP_UI_HOST            — default 127.0.0.1
  *   VMP_UI_PORT            — default 8788
- *   VMP_PIPELINE_SCRIPT    — default: pipeline_watch.mjs next to this file
- *   VMP_RENDER_SCRIPT      — path to render script; default: render_podcast_preview_mp3.mjs next to this file
+ *   VMP_PIPELINE_SCRIPT    — default: pipeline_watch.js next to this file
+ *   VMP_RENDER_SCRIPT      — path to render script; default: render_podcast_preview_mp3.js next to this file
  *   VMP_RUN_PIPELINE       — default 1; set 0 to only run UI + preview jobs (no watchfolder)
  *   VMP_PREVIEW_CONCURRENCY — max concurrent preview encodes (default 1)
  *
@@ -17,6 +17,7 @@
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -24,8 +25,8 @@ import fs from 'node:fs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const pkgRoot = __dirname
 
-const pipelineScript = process.env.VMP_PIPELINE_SCRIPT || path.join(pkgRoot, 'pipeline_watch.mjs')
-const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render_podcast_preview_mp3.mjs')
+const pipelineScript = process.env.VMP_PIPELINE_SCRIPT || path.join(pkgRoot, 'pipeline_watch.js')
+const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render_podcast_preview_mp3.js')
 
 const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0'
 const secret = process.env.VMP_WEBHOOK_SECRET?.trim()
@@ -262,8 +263,7 @@ function startPipeline() {
 
 let previewRunning = 0
 const previewQueue = []
-/** @type {Set<import('node:child_process').ChildProcess>} */
-const previewChildren = new Set()
+const previewChildren = new Set<ChildProcess>()
 
 function enqueuePreview(videoId, previewSeconds, source = 'webhook') {
   const id = crypto.randomUUID()

@@ -5,11 +5,16 @@
   "description": "VM media host: HLS/podcast pipeline (watchfolder), preview MP3 webhook, local dashboard",
   "type": "module",
   "scripts": {
-    "start": "node ./supervisor.mjs",
-    "supervisor": "node ./supervisor.mjs",
-    "pipeline": "node ./pipeline_watch.mjs",
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node ./dist/supervisor.js",
+    "supervisor": "npm run build && node ./dist/supervisor.js",
+    "pipeline": "npm run build && node ./dist/pipeline_watch.js",
     "migrate:r2-video-prefixes": "bash ./bin/video_id_r2_prefix_migrate.sh",
-    "render": "node ./render_podcast_preview_mp3.mjs"
+    "render": "npm run build && node ./dist/render_podcast_preview_mp3.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -7,6 +7,8 @@ VMP is a Cloudflare-based video subscription platform with a Worker API, Nuxt we
 - `@vmp/api` (`packages/api`) — Cloudflare Worker API + D1/R2/KV integrations.
 - `@vmp/web` (`packages/web`) — Nuxt 4 frontend deployed to Cloudflare Pages.
 - `@vmp/shared` (`packages/shared`) — shared TypeScript contracts.
+- `@vmp/podcast-host` (`packages/podcast-host`) — Node TypeScript media pipeline/supervisor for video processing and podcast preview jobs.
+- `@vmp/offloading` (`packages/offloading`) — Node TypeScript offloading service for R2↔Garage hot/cold tier orchestration.
 
 ## Deployment model (high level)
 
