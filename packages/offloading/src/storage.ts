@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { runCommand } from './util.js'
 
 function normalizePrefix(value: string): string {
@@ -53,12 +54,18 @@ export class StorageClient {
   }
 
   async copyToTemp(key: string): Promise<string> {
-    const localPath = `${this.tmpDir}/${normalizePrefix(key).replace(/\//g, '__')}`
+    const suffix = crypto.randomBytes(8).toString('hex')
+    const localPath = `${this.tmpDir}/${normalizePrefix(key).replace(/\//g, '__')}.${suffix}`
     await runCommand(this.binary, ['copyto', this.resolve(key), localPath], `copy to temp ${key}`)
     return localPath
   }
 
   async cleanupTemp(localPath: string): Promise<void> {
     await runCommand('rm', ['-f', localPath], `cleanup ${localPath}`)
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    const target = this.resolve(key)
+    await runCommand(this.binary, ['deletefile', target], `delete ${target}`)
   }
 }

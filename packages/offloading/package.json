@@ -6,11 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "npm run build && node ./dist/cli.js",
-    "demote": "npm run build && node ./dist/cli.js demote",
-    "promote": "npm run build && node ./dist/cli.js promote",
-    "record-request": "npm run build && node ./dist/cli.js record-request",
-    "resolve-origin": "npm run build && node ./dist/cli.js resolve-origin"
+    "start": "npm run build && node ./dist/index.js",
+    "demote": "npm run build && node ./dist/index.js demote",
+    "promote": "npm run build && node ./dist/index.js promote",
+    "trigger-promote": "npm run build && node ./dist/index.js trigger-promote"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

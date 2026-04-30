@@ -27,7 +27,12 @@ async function main(): Promise<void> {
   const coldStorage = new StorageClient(config.garageRoot)
   const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
 
-  const mode = process.argv[2] ?? 'demote'
+  const mode = process.argv[2]
+  if (!mode) {
+    console.error('Usage: <cmd> <mode>')
+    console.error('Available modes: demote | promote | trigger-promote')
+    process.exit(1)
+  }
   if (mode === 'demote') {
     const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size' })
     log(`demoted videos: ${demoted.length}`)

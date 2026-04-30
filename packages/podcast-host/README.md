@@ -48,20 +48,20 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | `VMP_UI_HOST` | Bind address (default `127.0.0.1`) |
 | `VMP_UI_PORT` | Dashboard + webhook port (default `8788`) |
 | `VMP_RUN_PIPELINE` | `1` (default) run watchfolder pipeline; `0` only UI + preview jobs |
-| `VMP_PIPELINE_SCRIPT` | Override path to `dist/pipeline_watch.js` |
-| `VMP_RENDER_SCRIPT` | Override path to `dist/render_podcast_preview_mp3.js` |
+| `VMP_PIPELINE_SCRIPT` | Override path to `pipeline_watch.js` |
+| `VMP_RENDER_SCRIPT` | Override path to `render_podcast_preview_mp3.js` |
 | `VMP_PREVIEW_CONCURRENCY` | Parallel preview encodes (default `1`) |
 | `MP3_BITRATE` | Full and preview podcast MP3 bitrate in kbps (default `128`) |
 | `VIDEO_ID_SANITIZE_MODE` | Controls ID derivation from filename stem: `slug-hash` (default), `slug`, `base64url`, `none` |
 | `VAAPI_DEVICE` | GPU device node for VAAPI hardware encoding (default `/dev/dri/renderD128`). Requires a GPU with VAAPI support and read/write access to the device node. |
 | `INBOX_DIR`, `TMP_DIR_BASE`, `R2_BUCKET`, … | Passed through to the Node entrypoint/processing pipeline |
 
-### Migration note (legacy `.sh`/`.mjs` overrides)
+### Migration note (legacy `.sh` overrides)
 
-If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` or `.mjs` files, update them to the compiled `.js` paths in `dist/`. The shell scripts were removed.
+If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` files, update them to the compiled `.js` paths in `dist/`. The shell scripts were removed.
 
-- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/dist/pipeline_watch.js`
-- `VMP_RENDER_SCRIPT` → `packages/podcast-host/dist/render_podcast_preview_mp3.js`
+- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/pipeline_watch.js`
+- `VMP_RENDER_SCRIPT` → `packages/podcast-host/render_podcast_preview_mp3.js`
 
 ## “Fragmented MP3” and podcast apps
 

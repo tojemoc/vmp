@@ -113,18 +113,25 @@ export class TierOffloader {
   }
 
   async demoteVideo(videoId: string, integrityMode: IntegrityMode = 'size'): Promise<void> {
-    const objectPrefix = `videos/${videoId}`
+    const keyPrefix = this.config.keyPrefix.replace(/\/+$/, '')
+    const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.hotStorage.listObjects(objectPrefix)
+    if (objects.length === 0) return
     for (const object of objects) {
       await this.hotStorage.copyObject(object.key, this.coldStorage, object.key)
       await verifyAsset(this.hotStorage, this.coldStorage, object.key, object.key, integrityMode)
+      if (this.config.deleteFromR2AfterDemotion) {
+        await this.hotStorage.deleteObject(object.key)
+      }
     }
     await this.metadataStore.upsertTier(videoId, 'cold', 'demotion sweep')
   }
 
   async promoteVideo(videoId: string, integrityMode: IntegrityMode = 'size'): Promise<void> {
-    const objectPrefix = `videos/${videoId}`
+    const keyPrefix = this.config.keyPrefix.replace(/\/+$/, '')
+    const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.coldStorage.listObjects(objectPrefix)
+    if (objects.length === 0) return
     for (const object of objects) {
       await this.coldStorage.copyObject(object.key, this.hotStorage, object.key)
       await verifyAsset(this.coldStorage, this.hotStorage, object.key, object.key, integrityMode)

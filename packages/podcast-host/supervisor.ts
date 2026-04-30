@@ -47,7 +47,7 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
   if (!fs.existsSync(resolved)) {
     throw new Error(
       `${label} script not found at ${resolved}. ` +
-      `Update ${envVarName} to a valid .mjs script path.`
+      `Update ${envVarName} to a valid .js script path.`
     )
   }
   if (basename.endsWith('.sh')) {
@@ -62,12 +62,12 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
 let resolvedPipelineScript = pipelineScript
 let resolvedRenderScript = renderScript
 try {
-  resolvedPipelineScript = validateScriptPath(pipelineScript, 'Pipeline', 'VMP_PIPELINE_SCRIPT', 'pipeline_watch.mjs')
-  resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.mjs')
+  resolvedPipelineScript = validateScriptPath(pipelineScript, 'Pipeline', 'VMP_PIPELINE_SCRIPT', 'pipeline_watch.js')
+  resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err)
   console.error(`[vmp-podcast-host] ${message}`)
-  console.error('[vmp-podcast-host] Migration note: legacy .sh scripts were removed; update env overrides to the new .mjs entrypoints.')
+  console.error('[vmp-podcast-host] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
   process.exit(1)
 }
 

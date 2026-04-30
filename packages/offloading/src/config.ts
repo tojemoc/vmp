@@ -7,6 +7,7 @@ function env(name: string, fallback = ''): string {
 
 function envNumber(name: string, fallback: number, min = Number.NEGATIVE_INFINITY): number {
   const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
   const parsed = Number(raw)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, parsed)

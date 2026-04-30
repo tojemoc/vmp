@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 import type { TierMetadata, StorageTier } from './types.js'
 
@@ -45,13 +45,15 @@ export class MetadataStore {
     try {
       const parsed = JSON.parse(raw) as Partial<TierMetadataFile>
       return { videos: parsed.videos ?? {} }
-    } catch {
-      return { videos: {} }
+    } catch (err) {
+      throw new Error(`Failed to parse metadata file ${this.filePath}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
   private async writeAll(data: TierMetadataFile): Promise<void> {
-    await writeFile(this.filePath, JSON.stringify(data, null, 2))
+    const tempPath = `${this.filePath}.tmp`
+    await writeFile(tempPath, JSON.stringify(data, null, 2))
+    await rename(tempPath, this.filePath)
   }
 
   async get(videoId: string): Promise<TierMetadata> {
