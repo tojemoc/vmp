@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, open } from 'node:fs/promises'
+import { mkdir, readFile, open } from 'node:fs/promises'
 import path from 'node:path'
 import type { RequestCounters } from './types.js'
 
