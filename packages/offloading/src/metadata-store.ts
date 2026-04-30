@@ -34,8 +34,13 @@ export class MetadataStore {
     await mkdir(path.dirname(this.filePath), { recursive: true })
     try {
       await readFile(this.filePath, 'utf8')
-    } catch {
-      await writeFile(this.filePath, JSON.stringify({ videos: {} }, null, 2))
+    } catch (err) {
+      // Only initialize the file if it doesn't exist; rethrow other errors (permission, I/O, etc.)
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        await writeFile(this.filePath, JSON.stringify({ videos: {} }, null, 2))
+      } else {
+        throw err
+      }
     }
   }
 
