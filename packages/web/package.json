@@ -37,7 +37,7 @@
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.2.7",
-    "wrangler": "^4.84.1"
+    "wrangler": "^4.86.0"
   },
   "overrides": {
     "serialize-javascript": ">=7.0.3",
