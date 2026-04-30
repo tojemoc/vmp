@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@nx/nuxt": "22.6.5",
-    "@nx/vite": "22.6.5",
+    "@nx/vite": "22.7.1",
     "@vue/language-core": "^3.2.7",
     "nuxt": "^4.0.0",
     "nx": "22.6.5",
