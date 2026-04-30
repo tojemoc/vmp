@@ -1,4 +1,5 @@
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import type { TierMetadata, StorageTier } from './types.js'
 
@@ -28,22 +29,40 @@ function createEmptyRecord(videoId: string): TierMetadata {
 }
 
 export class MetadataStore {
-  private mutationTail: Promise<void> = Promise.resolve()
-
   constructor(private readonly filePath: string) {}
 
-  private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
-    const previous = this.mutationTail
-    let release = (): void => {}
-    this.mutationTail = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    await previous
-    try {
-      return await fn()
-    } finally {
-      release()
+  private async withFileLock<T>(fn: (lockHandle: FileHandle) => Promise<T>): Promise<T> {
+    const lockPath = `${this.filePath}.lock`
+    await mkdir(path.dirname(lockPath), { recursive: true })
+
+    const maxRetries = 50
+    const retryDelayMs = 100
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Attempt to acquire an exclusive lock (wx = write, exclusive - fails if file exists)
+        const lockHandle = await open(lockPath, 'wx')
+        try {
+          return await fn(lockHandle)
+        } finally {
+          await lockHandle.close()
+          // Release the lock by removing the lock file
+          await rm(lockPath, { force: true })
+        }
+      } catch (err) {
+        if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+          // Lock file exists, another process holds the lock
+          if (attempt < maxRetries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+            continue
+          } else {
+            throw new Error(`Failed to acquire file lock after ${maxRetries} attempts`)
+          }
+        }
+        throw err
+      }
     }
+    throw new Error('Unexpected: loop exited without result')
   }
 
   private async ensureFile(): Promise<void> {
@@ -65,7 +84,9 @@ export class MetadataStore {
     const raw = await readFile(this.filePath, 'utf8')
     try {
       const parsed = JSON.parse(raw) as Partial<TierMetadataFile>
-      return { videos: parsed.videos ?? {} }
+      // Validate that parsed.videos is a non-null object and not an Array
+      const isValidVideos = typeof parsed.videos === 'object' && parsed.videos !== null && !Array.isArray(parsed.videos)
+      return { videos: isValidVideos ? (parsed.videos as Record<string, TierMetadata>) : {} }
     } catch (err) {
       throw new Error(`Failed to parse metadata file ${this.filePath}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -110,7 +131,7 @@ export class MetadataStore {
   }
 
   async upsertTier(videoId: string, tier: StorageTier, reason?: string): Promise<void> {
-    await this.withMutationLock(async () => {
+    await this.withFileLock(async () => {
       const data = await this.readAll()
       const existing = data.videos[videoId] ?? createEmptyRecord(videoId)
       data.videos[videoId] = {
