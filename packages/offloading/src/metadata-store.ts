@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import type { TierMetadata, StorageTier } from './types.js'
@@ -37,6 +37,7 @@ export class MetadataStore {
 
     const maxRetries = 50
     const retryDelayMs = 100
+    const staleLockThresholdMs = 30000 // 30 seconds
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
@@ -51,7 +52,22 @@ export class MetadataStore {
         }
       } catch (err) {
         if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EEXIST') {
-          // Lock file exists, another process holds the lock
+          // Lock file exists, check if it's stale
+          try {
+            const lockStat = await stat(lockPath)
+            const lockAge = Date.now() - lockStat.mtimeMs
+            if (lockAge > staleLockThresholdMs) {
+              // Stale lock detected, remove and retry immediately
+              await unlink(lockPath)
+              // Don't increment attempt counter, retry immediately
+              continue
+            }
+          } catch (statErr) {
+            // Lock file might have been removed by another process, retry
+            continue
+          }
+
+          // Lock file exists and is recent, another process holds the lock
           if (attempt < maxRetries - 1) {
             await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
             continue
@@ -105,18 +121,25 @@ export class MetadataStore {
       await fileHandle.close()
     }
 
+    // Perform atomic rename with its own error handling
     try {
       await rename(tempPath, this.filePath)
-      // Best-effort directory sync to persist the rename operation.
+    } catch (error) {
+      await rm(tempPath, { force: true })
+      throw error
+    }
+
+    // Best-effort directory sync to persist the rename operation.
+    // Errors here do not affect the successful rename.
+    try {
       const dirHandle = await open(dirPath, 'r')
       try {
         await dirHandle.sync()
       } finally {
         await dirHandle.close()
       }
-    } catch (error) {
-      await rm(tempPath, { force: true })
-      throw error
+    } catch (syncError) {
+      // Log or ignore sync errors - the rename already succeeded
     }
   }
 
