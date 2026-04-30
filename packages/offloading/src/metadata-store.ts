@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TierMetadata, StorageTier } from './types.js'
 
@@ -28,7 +28,23 @@ function createEmptyRecord(videoId: string): TierMetadata {
 }
 
 export class MetadataStore {
+  private mutationTail: Promise<void> = Promise.resolve()
+
   constructor(private readonly filePath: string) {}
+
+  private async withMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.mutationTail
+    let release = (): void => {}
+    this.mutationTail = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await previous
+    try {
+      return await fn()
+    } finally {
+      release()
+    }
+  }
 
   private async ensureFile(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true })
@@ -56,9 +72,31 @@ export class MetadataStore {
   }
 
   private async writeAll(data: TierMetadataFile): Promise<void> {
-    const tempPath = `${this.filePath}.tmp`
-    await writeFile(tempPath, JSON.stringify(data, null, 2))
-    await rename(tempPath, this.filePath)
+    const dirPath = path.dirname(this.filePath)
+    const tempPath = `${this.filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`
+    const encoded = JSON.stringify(data, null, 2)
+    const fileHandle = await open(tempPath, 'w')
+    try {
+      await fileHandle.writeFile(encoded, 'utf8')
+      // Best-effort durability before atomic rename.
+      await fileHandle.sync()
+    } finally {
+      await fileHandle.close()
+    }
+
+    try {
+      await rename(tempPath, this.filePath)
+      // Best-effort directory sync to persist the rename operation.
+      const dirHandle = await open(dirPath, 'r')
+      try {
+        await dirHandle.sync()
+      } finally {
+        await dirHandle.close()
+      }
+    } catch (error) {
+      await rm(tempPath, { force: true })
+      throw error
+    }
   }
 
   async get(videoId: string): Promise<TierMetadata> {
@@ -72,14 +110,16 @@ export class MetadataStore {
   }
 
   async upsertTier(videoId: string, tier: StorageTier, reason?: string): Promise<void> {
-    const data = await this.readAll()
-    const existing = data.videos[videoId] ?? createEmptyRecord(videoId)
-    data.videos[videoId] = {
-      ...existing,
-      tier,
-      reason,
-      updatedAt: nowIso(),
-    }
-    await this.writeAll(data)
+    await this.withMutationLock(async () => {
+      const data = await this.readAll()
+      const existing = data.videos[videoId] ?? createEmptyRecord(videoId)
+      data.videos[videoId] = {
+        ...existing,
+        tier,
+        reason,
+        updatedAt: nowIso(),
+      }
+      await this.writeAll(data)
+    })
   }
 }
