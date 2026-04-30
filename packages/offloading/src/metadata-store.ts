@@ -44,6 +44,9 @@ export class MetadataStore {
         // Attempt to acquire an exclusive lock (wx = write, exclusive - fails if file exists)
         const lockHandle = await open(lockPath, 'wx')
         try {
+          // Write owner record into the lock file
+          const ownerRecord = JSON.stringify({ pid: process.pid, timestamp: Date.now() })
+          await lockHandle.writeFile(ownerRecord, 'utf8')
           return await fn(lockHandle)
         } finally {
           await lockHandle.close()
@@ -57,17 +60,46 @@ export class MetadataStore {
             const lockStat = await stat(lockPath)
             const lockAge = Date.now() - lockStat.mtimeMs
             if (lockAge > staleLockThresholdMs) {
-              // Stale lock detected, remove and retry immediately
-              await unlink(lockPath)
-              // Don't increment attempt counter, retry immediately
-              continue
+              // Potentially stale lock, check if owner process is still alive
+              let ownerProcessAlive = false
+              try {
+                const ownerData = await readFile(lockPath, 'utf8')
+                const ownerRecord = JSON.parse(ownerData) as { pid: number; timestamp: number }
+                // Verify if the owner process is still running
+                try {
+                  process.kill(ownerRecord.pid, 0)
+                  // If kill succeeds, process is alive
+                  ownerProcessAlive = true
+                } catch (killErr) {
+                  // If error code is ESRCH, process is dead; if EPERM, process is alive but we lack permission
+                  if (killErr instanceof Error && 'code' in killErr && (killErr as NodeJS.ErrnoException).code === 'EPERM') {
+                    ownerProcessAlive = true
+                  }
+                  // For ESRCH or other errors, assume process is dead
+                }
+              } catch (readErr) {
+                // If we can't read or parse the owner record, treat it as stale
+                ownerProcessAlive = false
+              }
+
+              if (!ownerProcessAlive) {
+                // Owner process is dead, remove the stale lock and retry immediately
+                await unlink(lockPath)
+                continue
+              }
+              // Owner process is still alive, wait and retry normally
             }
           } catch (statErr) {
-            // Lock file might have been removed by another process, retry
-            continue
+            // Only treat ENOENT as a transient condition
+            if (statErr instanceof Error && 'code' in statErr && (statErr as NodeJS.ErrnoException).code === 'ENOENT') {
+              // Lock file was removed by another process, retry
+              continue
+            }
+            // Rethrow other stat errors (permission, I/O, etc.)
+            throw statErr
           }
 
-          // Lock file exists and is recent, another process holds the lock
+          // Lock file exists and is recent (or owner is alive), another process holds the lock
           if (attempt < maxRetries - 1) {
             await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
             continue
