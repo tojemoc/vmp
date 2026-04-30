@@ -5,6 +5,13 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
+type PipelineStatus = 'active' | 'success' | 'failed'
+type PipelineStage = 'detected' | 'deduped' | 'wait_upload_complete' | 'probe' | 'encode' | 'podcast_mp3' | 'package_hls' | 'upload_assets' | 'preview_wait' | 'preview_render' | 'preview_upload' | 'cleanup' | 'done' | 'failed'
+type QueueJob = { videoId: string, inputPath: string, source: string }
+type RunResult = { stdout: string, stderr: string }
+type RunOptions = { capture?: boolean }
+type ResolveSanitizedTargetPathResult = { safeId: string, targetPath: string, renamed: boolean }
+
 const INBOX_DIR = (process.env.INBOX_DIR || '/mnt/videos/inbox').trim()
 const TMP_DIR_BASE = (process.env.TMP_DIR_BASE || '/mnt/tmp/video_pipeline').trim()
 const VAAPI_DEVICE = (process.env.VAAPI_DEVICE || '/dev/dri/renderD128').trim()
@@ -18,16 +25,16 @@ const WAIT_STABLE_TIMEOUT_MS = Math.max(1_000, Number.parseInt(process.env.WAIT_
 const WAIT_STABLE_POLL_MS = Math.max(250, Number.parseInt(process.env.WAIT_STABLE_POLL_MS || '2000', 10) || 2000)
 const WAIT_STABLE_IDLE_POLLS = Math.max(1, Number.parseInt(process.env.WAIT_STABLE_IDLE_POLLS || '1', 10) || 1)
 
-function log(msg) {
+function log(msg: string): void {
   process.stdout.write(`${new Date().toISOString()} ${msg}\n`)
 }
 
-function emitPipelineEvent(videoId, stage, status, detail = '') {
+function emitPipelineEvent(videoId: string, stage: PipelineStage, status: PipelineStatus, detail = ''): void {
   process.stdout.write(`VMP_PIPELINE_EVENT\t${videoId}\t${stage}\t${status}\t${detail}\n`)
 }
 
-function run(command, args, label, { capture = false } = {}) {
-  return new Promise((resolve, reject) => {
+function run(command: string, args: string[], label: string, { capture = false }: RunOptions = {}): Promise<RunResult> {
+  return new Promise<RunResult>((resolve, reject) => {
     const child = spawn(command, args, { env: process.env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'] })
     let stdout = ''
     let stderr = ''
@@ -43,7 +50,7 @@ function run(command, args, label, { capture = false } = {}) {
   })
 }
 
-function r2Root() {
+function r2Root(): string {
   const rcloneRemote = (process.env.RCLONE_REMOTE || '').trim()
   const bucketName = (process.env.R2_BUCKET_NAME || '').trim()
   const bucket = (process.env.R2_BUCKET || 'vmp-videos').trim()
@@ -51,15 +58,15 @@ function r2Root() {
   return bucket.includes(':') ? bucket : `${bucket}:`
 }
 
-function r2Path(relativePath) {
+function r2Path(relativePath: string): string {
   return `${r2Root().replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
 }
 
-function hash8(value) {
+function hash8(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex').slice(0, 8)
 }
 
-function sanitizeVideoId(stem) {
+function sanitizeVideoId(stem: string): string {
   if (VIDEO_ID_SANITIZE_MODE === 'none') return stem
   if (VIDEO_ID_SANITIZE_MODE === 'base64url') return Buffer.from(stem).toString('base64url') || 'dmlkZW8'
   const slug = stem.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').replace(/-+$/, '').replace(/-{2,}/g, '-') || 'video'
@@ -68,7 +75,7 @@ function sanitizeVideoId(stem) {
   return `${slug}-${hash8(stem)}`
 }
 
-async function waitStableSize(filePath) {
+async function waitStableSize(filePath: string): Promise<void> {
   let prev = -1
   let idlePolls = 0
   const startedAt = Date.now()
@@ -86,7 +93,7 @@ async function waitStableSize(filePath) {
   throw new Error(`wait_stable_timeout after ${WAIT_STABLE_TIMEOUT_MS}ms`)
 }
 
-async function detectHasAudio(filePath) {
+async function detectHasAudio(filePath: string): Promise<boolean> {
   try {
     const { stdout } = await run('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath], 'ffprobe audio', { capture: true })
     return stdout.trim().length > 0
@@ -95,7 +102,7 @@ async function detectHasAudio(filePath) {
   }
 }
 
-async function processVideo(videoId, inputPath, source = 'watchfolder') {
+async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   const doneFlag = path.join(tmpDir, '.done')
   const lockFile = path.join(tmpDir, '.lock')
@@ -207,16 +214,16 @@ async function processVideo(videoId, inputPath, source = 'watchfolder') {
   }
 }
 
-const queue = []
+const queue: QueueJob[] = []
 let running = 0
 let shuttingDown = false
 
-function enqueue(videoId, inputPath, source) {
+function enqueue(videoId: string, inputPath: string, source: string): void {
   queue.push({ videoId, inputPath, source })
   drain()
 }
 
-async function resolveSanitizedTargetPath(stem, ext, oldPath, source) {
+async function resolveSanitizedTargetPath(stem: string, ext: string, oldPath: string, source: string): Promise<ResolveSanitizedTargetPathResult> {
   const baseId = sanitizeVideoId(stem)
   if (baseId === stem) {
     return { safeId: baseId, targetPath: oldPath, renamed: false }
@@ -240,7 +247,7 @@ async function resolveSanitizedTargetPath(stem, ext, oldPath, source) {
   throw new Error(`unable to resolve sanitized filename collision for ${oldPath}`)
 }
 
-function drain() {
+function drain(): void {
   while (!shuttingDown && running < MAX_JOBS && queue.length > 0) {
     const job = queue.shift()
     if (!job) break
@@ -254,7 +261,7 @@ function drain() {
   }
 }
 
-async function startupScan() {
+async function startupScan(): Promise<void> {
   await mkdir(INBOX_DIR, { recursive: true })
   await mkdir(TMP_DIR_BASE, { recursive: true })
   const entries = await readdir(INBOX_DIR)
@@ -274,7 +281,7 @@ async function startupScan() {
 function startWatcher() {
   const child = spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', INBOX_DIR], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] })
   let stdoutBuffer = ''
-  const processLines = async (lines) => {
+  const processLines = async (lines: string[]): Promise<void> => {
     for (const file of lines) {
       if (!/\.(mp4|mkv|mov)$/i.test(file)) continue
       const stem = file.replace(/\.[^.]+$/, '')

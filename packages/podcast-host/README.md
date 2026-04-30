@@ -2,12 +2,12 @@
 
 Runs on the **media VM** (alongside ffmpeg, shaka-packager, rclone). It bundles:
 
-1. **`pipeline_watch.mjs`** — watchfolder → encode → Shaka HLS → `podcast.mp3` → R2 (Node supervisor with direct subprocess orchestration and structured logs).
-2. **`supervisor.mjs`** — one long-lived Node process that:
+1. **`pipeline_watch.ts`** — watchfolder → encode → Shaka HLS → `podcast.mp3` → R2 (compiled to `dist/pipeline_watch.js`).
+2. **`supervisor.ts`** — one long-lived Node process that:
    - spawns the pipeline as a child (optional via `VMP_RUN_PIPELINE`),
    - serves a **local dashboard** at `http://127.0.0.1:8788/` (job queue + pipeline status + log tail),
    - accepts the **same signed webhook** the Worker sends (`POST /api/podcast-preview-rebuild`, HMAC body).
-3. **`render_podcast_preview_mp3.mjs`** — builds `podcast_preview.mp3` from full `podcast.mp3` for a given duration (used by the webhook queue).
+3. **`render_podcast_preview_mp3.ts`** — builds `podcast_preview.mp3` from full `podcast.mp3` for a given duration (compiled to `dist/render_podcast_preview_mp3.js`).
 
 ## Install on the VM
 
@@ -20,7 +20,7 @@ npm install
 
 ## Run (recommended: systemd)
 
-Point `WorkingDirectory` at the repo (or at `packages/podcast-host` if you copy only that package — then set `VMP_PIPELINE_SCRIPT` to the absolute path of `pipeline_watch.mjs`).
+Point `WorkingDirectory` at the repo (or at `packages/podcast-host` if you copy only that package — then set `VMP_PIPELINE_SCRIPT` to the absolute path of `dist/pipeline_watch.js`).
 
 ```ini
 [Service]
@@ -30,7 +30,7 @@ Environment=VMP_WEBHOOK_SECRET=your-long-shared-secret
 Environment=INBOX_DIR=/mnt/videos/inbox
 Environment=TMP_DIR_BASE=/mnt/tmp/video_pipeline
 Environment=R2_BUCKET=vmp-videos
-ExecStart=/usr/bin/node /opt/vmp/packages/podcast-host/supervisor.mjs
+ExecStart=/usr/bin/node /opt/vmp/packages/podcast-host/dist/supervisor.js
 Restart=always
 ```
 
@@ -48,8 +48,8 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | `VMP_UI_HOST` | Bind address (default `127.0.0.1`) |
 | `VMP_UI_PORT` | Dashboard + webhook port (default `8788`) |
 | `VMP_RUN_PIPELINE` | `1` (default) run watchfolder pipeline; `0` only UI + preview jobs |
-| `VMP_PIPELINE_SCRIPT` | Override path to `pipeline_watch.mjs` |
-| `VMP_RENDER_SCRIPT` | Override path to `render_podcast_preview_mp3.mjs` |
+| `VMP_PIPELINE_SCRIPT` | Override path to `pipeline_watch.js` |
+| `VMP_RENDER_SCRIPT` | Override path to `render_podcast_preview_mp3.js` |
 | `VMP_PREVIEW_CONCURRENCY` | Parallel preview encodes (default `1`) |
 | `MP3_BITRATE` | Full and preview podcast MP3 bitrate in kbps (default `128`) |
 | `VIDEO_ID_SANITIZE_MODE` | Controls ID derivation from filename stem: `slug-hash` (default), `slug`, `base64url`, `none` |
@@ -58,10 +58,10 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 
 ### Migration note (legacy `.sh` overrides)
 
-If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` files, update them to the new `.mjs` paths. The shell scripts were removed.
+If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` files, update them to the compiled `.js` paths in `dist/`. The shell scripts were removed.
 
-- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/pipeline_watch.mjs`
-- `VMP_RENDER_SCRIPT` → `packages/podcast-host/render_podcast_preview_mp3.mjs`
+- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/pipeline_watch.js`
+- `VMP_RENDER_SCRIPT` → `packages/podcast-host/render_podcast_preview_mp3.js`
 
 ## “Fragmented MP3” and podcast apps
 
