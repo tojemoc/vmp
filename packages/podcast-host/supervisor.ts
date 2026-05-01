@@ -183,7 +183,7 @@ function startPipeline() {
     pushLog('Pipeline disabled (VMP_RUN_PIPELINE=0)')
     return
   }
-  pipelineChild = spawn('node', [resolvedPipelineScript], {
+  pipelineChild = spawn(process.execPath, [resolvedPipelineScript], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -297,7 +297,7 @@ function drainPreviewQueue() {
       row.status = 'running'
       row.startedAt = new Date().toISOString()
     }
-    const child = spawn('node', [resolvedRenderScript, task.videoId, String(task.previewSeconds)], {
+    const child = spawn(process.execPath, [resolvedRenderScript, task.videoId, String(task.previewSeconds)], {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
