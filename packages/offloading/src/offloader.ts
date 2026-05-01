@@ -117,7 +117,9 @@ export class TierOffloader {
     const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.hotStorage.listObjects(objectPrefix)
     if (objects.length === 0) return
+    process.stdout.write(`${new Date().toISOString()} [offloading] demote start video=${videoId} objects=${objects.length}\n`)
     for (const object of objects) {
+      process.stdout.write(`${new Date().toISOString()} [offloading] demote copy key=${object.key}\n`)
       await this.hotStorage.copyObject(object.key, this.coldStorage, object.key)
       await verifyAsset(this.hotStorage, this.coldStorage, object.key, object.key, integrityMode)
       if (this.config.deleteFromR2AfterDemotion) {
@@ -125,6 +127,7 @@ export class TierOffloader {
       }
     }
     await this.metadataStore.upsertTier(videoId, 'cold', 'demotion sweep')
+    process.stdout.write(`${new Date().toISOString()} [offloading] demote complete video=${videoId}\n`)
   }
 
   async promoteVideo(videoId: string, integrityMode: IntegrityMode = 'size'): Promise<void> {
@@ -132,10 +135,13 @@ export class TierOffloader {
     const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.coldStorage.listObjects(objectPrefix)
     if (objects.length === 0) return
+    process.stdout.write(`${new Date().toISOString()} [offloading] promote start video=${videoId} objects=${objects.length}\n`)
     for (const object of objects) {
+      process.stdout.write(`${new Date().toISOString()} [offloading] promote copy key=${object.key}\n`)
       await this.coldStorage.copyObject(object.key, this.hotStorage, object.key)
       await verifyAsset(this.coldStorage, this.hotStorage, object.key, object.key, integrityMode)
     }
     await this.metadataStore.upsertTier(videoId, 'hot', 'promotion sweep')
+    process.stdout.write(`${new Date().toISOString()} [offloading] promote complete video=${videoId}\n`)
   }
 }

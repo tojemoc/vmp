@@ -26,6 +26,15 @@ async function main(): Promise<void> {
   const hotStorage = new StorageClient(config.r2Root)
   const coldStorage = new StorageClient(config.garageRoot)
   const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
+  log(`config r2Root=${config.r2Root} garageRoot=${config.garageRoot} metadataFile=${config.metadataFile} metricsFile=${config.metricsFile} keyPrefix=${config.keyPrefix}`)
+
+  let interrupted = false
+  const onSignal = (signal: NodeJS.Signals): void => {
+    interrupted = true
+    log(`received ${signal}; finishing current operation then exiting`)
+  }
+  process.on('SIGTERM', () => onSignal('SIGTERM'))
+  process.on('SIGINT', () => onSignal('SIGINT'))
 
   const mode = process.argv[2]
   if (!mode) {
@@ -34,11 +43,13 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   if (mode === 'demote') {
+    if (interrupted) return
     const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size' })
     log(`demoted videos: ${demoted.length}`)
     return
   }
   if (mode === 'promote') {
+    if (interrupted) return
     const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size' })
     log(`promoted videos: ${promoted.length}`)
     return
@@ -56,7 +67,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  const detail = error instanceof Error ? error.message : String(error)
+  const detail = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error)
   log(`fatal: ${detail}`)
   process.exit(1)
 })

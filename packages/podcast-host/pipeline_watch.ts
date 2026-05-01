@@ -29,13 +29,24 @@ function log(msg: string): void {
   process.stdout.write(`${new Date().toISOString()} ${msg}\n`)
 }
 
+let shuttingDown = false
+const activeChildren = new Set<import('node:child_process').ChildProcess>()
+
+function trackChild<T extends import('node:child_process').ChildProcess>(child: T): T {
+  activeChildren.add(child)
+  const clear = () => activeChildren.delete(child)
+  child.once('close', clear)
+  child.once('error', clear)
+  return child
+}
+
 function emitPipelineEvent(videoId: string, stage: PipelineStage, status: PipelineStatus, detail = ''): void {
   process.stdout.write(`VMP_PIPELINE_EVENT\t${videoId}\t${stage}\t${status}\t${detail}\n`)
 }
 
 function run(command: string, args: string[], label: string, { capture = false }: RunOptions = {}): Promise<RunResult> {
   return new Promise<RunResult>((resolve, reject) => {
-    const child = spawn(command, args, { env: process.env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'] })
+    const child = trackChild(spawn(command, args, { env: process.env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'] }))
     let stdout = ''
     let stderr = ''
     if (capture) {
@@ -216,7 +227,6 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
 
 const queue: QueueJob[] = []
 let running = 0
-let shuttingDown = false
 
 function enqueue(videoId: string, inputPath: string, source: string): void {
   queue.push({ videoId, inputPath, source })
@@ -279,7 +289,7 @@ async function startupScan(): Promise<void> {
 }
 
 function startWatcher() {
-  const child = spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', INBOX_DIR], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] })
+  const child = trackChild(spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', INBOX_DIR], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] }))
   let stdoutBuffer = ''
   const processLines = async (lines: string[]): Promise<void> => {
     for (const file of lines) {
@@ -317,6 +327,38 @@ function startWatcher() {
   return child
 }
 
+function startPollingWatcher() {
+  let timer: NodeJS.Timeout | null = null
+  let known = new Set<string>()
+  const poll = async () => {
+    if (shuttingDown) return
+    try {
+      const entries = await readdir(INBOX_DIR)
+      const current = new Set(entries)
+      for (const file of entries) {
+        if (known.has(file)) continue
+        if (!/\.(mp4|mkv|mov)$/i.test(file)) continue
+        const stem = file.replace(/\.[^.]+$/, '')
+        const oldPath = path.join(INBOX_DIR, file)
+        const ext = file.split('.').pop() || 'mp4'
+        const { safeId, targetPath, renamed } = await resolveSanitizedTargetPath(stem, ext, oldPath, 'polling_watchfolder')
+        if (renamed) log(`🧼 Sanitized VIDEO_ID polling_watchfolder: '${stem}' -> '${safeId}'`)
+        enqueue(safeId, targetPath, 'polling_watchfolder')
+      }
+      known = current
+    } catch (err) {
+      log(`polling watcher error: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    timer = setTimeout(() => { void poll() }, 2000)
+  }
+  void poll()
+  return {
+    stop: () => {
+      if (timer) clearTimeout(timer)
+    },
+  }
+}
+
 async function main() {
   if (!existsSync(VAAPI_DEVICE)) {
     throw new Error(`VAAPI device not found: ${VAAPI_DEVICE}`)
@@ -325,12 +367,24 @@ async function main() {
   log('🔍 Resuming existing jobs...')
   await startupScan()
   log('🎬 Watching for new uploads...')
-  const watcher = startWatcher()
+  let watcher: { kill: (signal?: NodeJS.Signals) => boolean } | null = null
+  let poller: { stop: () => void } | null = null
+  try {
+    watcher = startWatcher()
+    log('✅ inotify watcher started')
+  } catch (err) {
+    log(`⚠️ inotify unavailable, falling back to polling: ${err instanceof Error ? err.message : String(err)}`)
+    poller = startPollingWatcher()
+  }
 
   const shutdown = () => {
     if (shuttingDown) return
     shuttingDown = true
-    watcher.kill('SIGTERM')
+    if (watcher) watcher.kill('SIGTERM')
+    if (poller) poller.stop()
+    for (const child of activeChildren) {
+      try { child.kill('SIGTERM') } catch {}
+    }
     log('Shutting down pipeline watcher')
   }
   process.on('SIGTERM', shutdown)
