@@ -28,9 +28,9 @@ async function main(): Promise<void> {
   const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
   log(`config r2Root=${config.r2Root} garageRoot=${config.garageRoot} metadataFile=${config.metadataFile} metricsFile=${config.metricsFile} keyPrefix=${config.keyPrefix}`)
 
-  let interrupted = false
+  const abortController = new AbortController()
   const onSignal = (signal: NodeJS.Signals): void => {
-    interrupted = true
+    abortController.abort()
     log(`received ${signal}; finishing current operation then exiting`)
   }
   process.on('SIGTERM', () => onSignal('SIGTERM'))
@@ -43,14 +43,14 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   if (mode === 'demote') {
-    if (interrupted) return
-    const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size' })
+    if (abortController.signal.aborted) return
+    const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
     log(`demoted videos: ${demoted.length}`)
     return
   }
   if (mode === 'promote') {
-    if (interrupted) return
-    const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size' })
+    if (abortController.signal.aborted) return
+    const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
     log(`promoted videos: ${promoted.length}`)
     return
   }
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     if (!trigger) {
       throw new Error('Usage: node dist/index.js trigger-promote <videoId>')
     }
-    await offloader.promoteVideo(trigger.videoId, 'size')
+    await offloader.promoteVideo(trigger.videoId, 'size', abortController.signal)
     log(`promoted video: ${trigger.videoId}`)
     return
   }

@@ -7,5 +7,8 @@ COPY packages/podcast-host/package*.json ./packages/podcast-host/
 RUN npm ci --workspaces --include-workspace-root
 COPY . .
 RUN npm run build --workspace=@vmp/podcast-host
+RUN groupadd -r app && useradd -r -g app app
+RUN chown -R app:app /app
+USER app
 WORKDIR /app/packages/podcast-host
 CMD ["node", "dist/supervisor.js"]

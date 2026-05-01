@@ -7,5 +7,7 @@ COPY packages/offloading/package*.json ./packages/offloading/
 RUN npm ci --workspaces --include-workspace-root
 COPY . .
 RUN npm run build --workspace=@vmp/offloading
+RUN chown -R node:node /app
+USER node
 WORKDIR /app/packages/offloading
 CMD ["node", "dist/index.js", "demote"]

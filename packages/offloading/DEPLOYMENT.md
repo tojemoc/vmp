@@ -13,7 +13,10 @@ services:
       TMP_DIR_BASE: /data/tmp
       VMP_UI_HOST: 0.0.0.0
       VMP_UI_PORT: 8788
-      VMP_RUN_PIPELINE: "1"
+      # supervisor.ts requires VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0
+      # pipeline_watch.ts requires /dev/dri/renderD128 or VMP_RUN_PIPELINE=0
+      VMP_REQUIRE_WEBHOOK_SECRET: "0"
+      VMP_RUN_PIPELINE: "0"
     volumes:
       - ./volumes/inbox:/data/inbox
       - ./volumes/tmp:/data/tmp
