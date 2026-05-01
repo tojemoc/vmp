@@ -26,6 +26,15 @@ async function main(): Promise<void> {
   const hotStorage = new StorageClient(config.r2Root)
   const coldStorage = new StorageClient(config.garageRoot)
   const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
+  log(`config r2Root=${config.r2Root} garageRoot=${config.garageRoot} metadataFile=${config.metadataFile} metricsFile=${config.metricsFile} keyPrefix=${config.keyPrefix}`)
+
+  const abortController = new AbortController()
+  const onSignal = (signal: NodeJS.Signals): void => {
+    abortController.abort()
+    log(`received ${signal}; finishing current operation then exiting`)
+  }
+  process.on('SIGTERM', () => onSignal('SIGTERM'))
+  process.on('SIGINT', () => onSignal('SIGINT'))
 
   const mode = process.argv[2]
   if (!mode) {
@@ -34,12 +43,14 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   if (mode === 'demote') {
-    const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size' })
+    if (abortController.signal.aborted) return
+    const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
     log(`demoted videos: ${demoted.length}`)
     return
   }
   if (mode === 'promote') {
-    const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size' })
+    if (abortController.signal.aborted) return
+    const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
     log(`promoted videos: ${promoted.length}`)
     return
   }
@@ -48,7 +59,7 @@ async function main(): Promise<void> {
     if (!trigger) {
       throw new Error('Usage: node dist/index.js trigger-promote <videoId>')
     }
-    await offloader.promoteVideo(trigger.videoId, 'size')
+    await offloader.promoteVideo(trigger.videoId, 'size', abortController.signal)
     log(`promoted video: ${trigger.videoId}`)
     return
   }
@@ -56,7 +67,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  const detail = error instanceof Error ? error.message : String(error)
+  const detail = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error)
   log(`fatal: ${detail}`)
   process.exit(1)
 })

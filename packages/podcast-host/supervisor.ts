@@ -585,11 +585,12 @@ server.listen(uiPort, uiHost, () => {
   pushLog(
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
   )
+  pushLog(`Config: runPipeline=${runPipeline} previewConcurrency=${previewConcurrency} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
   startPipeline()
 })
 
-process.on('SIGTERM', async () => {
-  pushLog('SIGTERM — stopping')
+const gracefulShutdown = async (signal) => {
+  pushLog(`${signal} — stopping`)
   if (pipelineChild && !pipelineState.exited) {
     try {
       pipelineChild.kill('SIGTERM')
@@ -608,4 +609,7 @@ process.on('SIGTERM', async () => {
     } catch {}
   }
   server.close(() => process.exit(0))
-})
+}
+
+process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM') })
+process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })

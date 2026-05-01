@@ -9,6 +9,7 @@ type IntegrityMode = 'size' | 'sha256'
 
 interface OffloadOptions {
   integrityMode?: IntegrityMode
+  signal?: AbortSignal
 }
 
 async function fileDigestSha256(path: string): Promise<string> {
@@ -90,11 +91,13 @@ export class TierOffloader {
 
   async demoteEligibleVideos(options: OffloadOptions = {}): Promise<string[]> {
     const integrityMode = options.integrityMode ?? 'size'
+    const signal = options.signal
     const updated: string[] = []
     const all = await this.metadataStore.list()
     for (const record of all) {
+      if (signal?.aborted) break
       if (!this.isDemotionEligible(record)) continue
-      await this.demoteVideo(record.videoId, integrityMode)
+      await this.demoteVideo(record.videoId, integrityMode, signal)
       updated.push(record.videoId)
     }
     return updated
@@ -102,22 +105,27 @@ export class TierOffloader {
 
   async promoteEligibleVideos(options: OffloadOptions = {}): Promise<string[]> {
     const integrityMode = options.integrityMode ?? 'size'
+    const signal = options.signal
     const updated: string[] = []
     const all = await this.metadataStore.list()
     for (const record of all) {
+      if (signal?.aborted) break
       if (!this.isPromotionEligible(record)) continue
-      await this.promoteVideo(record.videoId, integrityMode)
+      await this.promoteVideo(record.videoId, integrityMode, signal)
       updated.push(record.videoId)
     }
     return updated
   }
 
-  async demoteVideo(videoId: string, integrityMode: IntegrityMode = 'size'): Promise<void> {
+  async demoteVideo(videoId: string, integrityMode: IntegrityMode = 'size', signal?: AbortSignal): Promise<void> {
     const keyPrefix = this.config.keyPrefix.replace(/\/+$/, '')
     const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.hotStorage.listObjects(objectPrefix)
     if (objects.length === 0) return
+    process.stdout.write(`${new Date().toISOString()} [offloading] demote start video=${videoId} objects=${objects.length}\n`)
     for (const object of objects) {
+      if (signal?.aborted) return
+      process.stdout.write(`${new Date().toISOString()} [offloading] demote copy key=${object.key}\n`)
       await this.hotStorage.copyObject(object.key, this.coldStorage, object.key)
       await verifyAsset(this.hotStorage, this.coldStorage, object.key, object.key, integrityMode)
       if (this.config.deleteFromR2AfterDemotion) {
@@ -125,17 +133,22 @@ export class TierOffloader {
       }
     }
     await this.metadataStore.upsertTier(videoId, 'cold', 'demotion sweep')
+    process.stdout.write(`${new Date().toISOString()} [offloading] demote complete video=${videoId}\n`)
   }
 
-  async promoteVideo(videoId: string, integrityMode: IntegrityMode = 'size'): Promise<void> {
+  async promoteVideo(videoId: string, integrityMode: IntegrityMode = 'size', signal?: AbortSignal): Promise<void> {
     const keyPrefix = this.config.keyPrefix.replace(/\/+$/, '')
     const objectPrefix = `${keyPrefix}/videos/${videoId}`.replace(/^\/+/, '')
     const objects = await this.coldStorage.listObjects(objectPrefix)
     if (objects.length === 0) return
+    process.stdout.write(`${new Date().toISOString()} [offloading] promote start video=${videoId} objects=${objects.length}\n`)
     for (const object of objects) {
+      if (signal?.aborted) return
+      process.stdout.write(`${new Date().toISOString()} [offloading] promote copy key=${object.key}\n`)
       await this.coldStorage.copyObject(object.key, this.hotStorage, object.key)
       await verifyAsset(this.coldStorage, this.hotStorage, object.key, object.key, integrityMode)
     }
     await this.metadataStore.upsertTier(videoId, 'hot', 'promotion sweep')
+    process.stdout.write(`${new Date().toISOString()} [offloading] promote complete video=${videoId}\n`)
   }
 }
