@@ -33,7 +33,7 @@ jobs:
       
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: lts/*
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
@@ -114,7 +114,7 @@ jobs:
       
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: lts/*
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
