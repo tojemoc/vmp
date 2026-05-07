@@ -1,6 +1,6 @@
 import { requireAuth, requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
-import { getSetting, setSetting, buildSettingsStatements } from './settingsStore.js'
+import { getSetting, setSetting, setSettings, buildSettingsStatements } from './settingsStore.js'
 import {
   evaluateRoleChange,
   evaluateSelfRoleChange,
@@ -1104,7 +1104,7 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   ] as const
   const settingValues = await Promise.all(settingKeys.map((key) => getSetting(env, key)))
   const getVal = (key: (typeof settingKeys)[number]) => settingValues[settingKeys.indexOf(key)]
-  analytics.integrationSettings = {
+  ;(analytics as any).integrationSettings = {
     datadog: {
       enabled: String(getVal('analytics_datadog_enabled') ?? '0') === '1',
       site: String(getVal('analytics_datadog_site') ?? ''),
@@ -1119,7 +1119,7 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
       measurementId: String(getVal('analytics_ga4_measurement_id') ?? ''),
     },
   }
-  analytics.viewCounting = {
+  ;(analytics as any).viewCounting = {
     minSegmentsPerSession: Math.max(1, Number.parseInt(String(getVal('analytics_view_min_segments') ?? '1'), 10) || 1),
     minWatchSeconds: Math.max(0, Number.parseInt(String(getVal('analytics_view_min_watch_seconds') ?? '15'), 10) || 15),
   }
