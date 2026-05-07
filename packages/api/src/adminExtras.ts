@@ -171,7 +171,6 @@ function normalizeHomepageConfigForResponse(config: any) {
             title: typeof child.title === 'string' ? child.title : '',
             body: typeof child.body === 'string' ? child.body : '',
             categoryId: typeof child.categoryId === 'string' ? child.categoryId : null,
-            rightRailWithNextSideMini: child.rightRailWithNextSideMini === true,
           }))
           .slice(0, 2)
       }

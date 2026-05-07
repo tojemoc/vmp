@@ -4601,6 +4601,9 @@ watch(
       if (block.type !== 'category' && typeof block.categoryId === 'string' && block.categoryId) {
         block.categoryId = null
       }
+      if (block.type !== 'category' && block.rightRailWithNextSideMini) {
+        block.rightRailWithNextSideMini = false
+      }
       if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
         for (const child of children) {
