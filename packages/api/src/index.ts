@@ -377,7 +377,7 @@ export default {
     if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
       return handleAdminUserImportCsv(request, env, corsHeaders)
     }
-    if (url.pathname === '/api/admin/analytics' && request.method === 'GET') {
+    if (url.pathname === '/api/admin/analytics' && (request.method === 'GET' || request.method === 'PATCH')) {
       return handleAdminAnalytics(request, env, corsHeaders)
     }
     if (url.pathname === '/api/site-settings' && request.method === 'GET') {

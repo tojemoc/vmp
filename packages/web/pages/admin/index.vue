@@ -1035,6 +1035,41 @@
         <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">Retention curves, views over time, traffic sources, subscription trends, and cashflow estimates.</p>
+          <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+            <h3 class="font-semibold text-gray-900 dark:text-white">Integrations & view counting strategy</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Datadog (priority)
+                <div class="mt-1 flex items-center gap-2">
+                  <input v-model="analyticsIntegrationSettings.datadog.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  <input v-model="analyticsIntegrationSettings.datadog.site" type="text" placeholder="datadoghq.eu" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                </div>
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">ContentSquare (optional)
+                <div class="mt-1 flex items-center gap-2">
+                  <input v-model="analyticsIntegrationSettings.contentsquare.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  <input v-model="analyticsIntegrationSettings.contentsquare.tag" type="text" placeholder="project tag" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                </div>
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">GA4 (optional)
+                <div class="mt-1 mb-1">
+                  <input v-model="analyticsIntegrationSettings.ga4.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600"> Enable
+                </div>
+                <input v-model="analyticsIntegrationSettings.ga4.measurementId" type="text" placeholder="G-XXXXXXXX" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Use for broad audience trends; internal session analytics remain source of truth.</p>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min segments per session view
+                <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min watch seconds per session view
+                <input v-model.number="analyticsViewCounting.minWatchSeconds" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              </label>
+            </div>
+            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white disabled:opacity-50" :disabled="analyticsSettingsSaving" @click="saveAnalyticsSettings">
+              {{ analyticsSettingsSaving ? 'Saving…' : 'Save analytics settings' }}
+            </button>
+          </div>
           <div class="flex flex-wrap gap-2 items-end">
             <div class="flex flex-col gap-1">
               <label class="text-xs text-gray-500 dark:text-gray-400">Range</label>
@@ -2503,6 +2538,16 @@ const analytics = ref<AnalyticsResponse>({
 })
 
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
+const analyticsSettingsSaving = ref(false)
+const analyticsIntegrationSettings = ref({
+  datadog: { enabled: false, site: '', apiKey: '', hasApiKey: false },
+  contentsquare: { enabled: false, tag: '' },
+  ga4: { enabled: false, measurementId: '' },
+})
+const analyticsViewCounting = ref({
+  minSegmentsPerSession: 1,
+  minWatchSeconds: 15,
+})
 
 const analyticsStatusRows = computed(() => {
   if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
@@ -4075,12 +4120,55 @@ const loadAnalytics = async () => {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     analytics.value = data
+    analyticsIntegrationSettings.value = {
+      datadog: {
+        enabled: Boolean(data?.integrationSettings?.datadog?.enabled),
+        site: String(data?.integrationSettings?.datadog?.site || ''),
+        apiKey: '',
+        hasApiKey: Boolean(data?.integrationSettings?.datadog?.hasApiKey),
+      },
+      contentsquare: {
+        enabled: Boolean(data?.integrationSettings?.contentsquare?.enabled),
+        tag: String(data?.integrationSettings?.contentsquare?.tag || ''),
+      },
+      ga4: {
+        enabled: Boolean(data?.integrationSettings?.ga4?.enabled),
+        measurementId: String(data?.integrationSettings?.ga4?.measurementId || ''),
+      },
+    }
+    analyticsViewCounting.value = {
+      minSegmentsPerSession: Number(data?.viewCounting?.minSegmentsPerSession || 1),
+      minWatchSeconds: Number(data?.viewCounting?.minWatchSeconds || 15),
+    }
     analyticsRange.value = data?.meta?.range || analyticsRange.value
     analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
   } catch (error: any) {
     analyticsError.value = error?.message || 'Failed to load analytics'
   } finally {
     analyticsLoading.value = false
+  }
+}
+
+const saveAnalyticsSettings = async () => {
+  if (!isAdmin.value) return
+  analyticsSettingsSaving.value = true
+  analyticsError.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        integrations: analyticsIntegrationSettings.value,
+        viewCounting: analyticsViewCounting.value,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    await loadAnalytics()
+  } catch (error: any) {
+    analyticsError.value = error?.message || 'Failed to save analytics settings'
+  } finally {
+    analyticsSettingsSaving.value = false
   }
 }
 

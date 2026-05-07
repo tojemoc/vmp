@@ -1061,6 +1061,28 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
+  if (request.method === 'PATCH') {
+    const body = await request.json().catch(() => null)
+    const integrations = body?.integrations && typeof body.integrations === 'object' ? body.integrations : {}
+    const viewCounting = body?.viewCounting && typeof body.viewCounting === 'object' ? body.viewCounting : {}
+    const toBool = (value: any) => value === true ? '1' : '0'
+    const toIntString = (value: any, fallback: number) => {
+      const next = Number.parseInt(String(value ?? ''), 10)
+      return String(Number.isFinite(next) && next >= 0 ? next : fallback)
+    }
+    await setSettings(env, [
+      ['analytics_datadog_enabled', toBool(integrations?.datadog?.enabled)],
+      ['analytics_datadog_site', String(integrations?.datadog?.site ?? '').trim()],
+      ['analytics_datadog_api_key', String(integrations?.datadog?.apiKey ?? '').trim()],
+      ['analytics_contentsquare_enabled', toBool(integrations?.contentsquare?.enabled)],
+      ['analytics_contentsquare_tag', String(integrations?.contentsquare?.tag ?? '').trim()],
+      ['analytics_ga4_enabled', toBool(integrations?.ga4?.enabled)],
+      ['analytics_ga4_measurement_id', String(integrations?.ga4?.measurementId ?? '').trim()],
+      ['analytics_view_min_segments', toIntString(viewCounting?.minSegmentsPerSession, 1)],
+      ['analytics_view_min_watch_seconds', toIntString(viewCounting?.minWatchSeconds, 15)],
+    ])
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  }
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const url = new URL(request.url)
   const parsed = parseAnalyticsQuery(url)
@@ -1069,6 +1091,38 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   }
   const db = getDb(env)
   const analytics = await buildSegmentAnalyticsSnapshotWithOptions(db, env, parsed.options)
+  const settingKeys = [
+    'analytics_datadog_enabled',
+    'analytics_datadog_site',
+    'analytics_datadog_api_key',
+    'analytics_contentsquare_enabled',
+    'analytics_contentsquare_tag',
+    'analytics_ga4_enabled',
+    'analytics_ga4_measurement_id',
+    'analytics_view_min_segments',
+    'analytics_view_min_watch_seconds',
+  ] as const
+  const settingValues = await Promise.all(settingKeys.map((key) => getSetting(env, key)))
+  const getVal = (key: (typeof settingKeys)[number]) => settingValues[settingKeys.indexOf(key)]
+  analytics.integrationSettings = {
+    datadog: {
+      enabled: String(getVal('analytics_datadog_enabled') ?? '0') === '1',
+      site: String(getVal('analytics_datadog_site') ?? ''),
+      hasApiKey: Boolean(String(getVal('analytics_datadog_api_key') ?? '').trim()),
+    },
+    contentsquare: {
+      enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
+      tag: String(getVal('analytics_contentsquare_tag') ?? ''),
+    },
+    ga4: {
+      enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
+      measurementId: String(getVal('analytics_ga4_measurement_id') ?? ''),
+    },
+  }
+  analytics.viewCounting = {
+    minSegmentsPerSession: Math.max(1, Number.parseInt(String(getVal('analytics_view_min_segments') ?? '1'), 10) || 1),
+    minWatchSeconds: Math.max(0, Number.parseInt(String(getVal('analytics_view_min_watch_seconds') ?? '15'), 10) || 15),
+  }
   if (parsed.options.format === 'csv') {
     const csv = buildAnalyticsCsvExport(analytics, parsed.options.dataset)
     return new Response(csv, {
@@ -1185,26 +1239,55 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const monthlyPriceEur = parseNumericSetting(monthlyPriceRaw, 0)
   const yearlyPriceEur = parseNumericSetting(yearlyPriceRaw, 0)
   const clubPriceEur = parseNumericSetting(clubPriceRaw, 0)
+  const [minSegmentsRaw, minWatchSecondsRaw] = env
+    ? await Promise.all([
+      getSetting(env, 'analytics_view_min_segments'),
+      getSetting(env, 'analytics_view_min_watch_seconds'),
+    ])
+    : [null, null]
+  const minSegmentsPerView = Math.max(1, Number.parseInt(String(minSegmentsRaw ?? '1'), 10) || 1)
+  const minWatchSecondsPerView = Math.max(0, Number.parseInt(String(minWatchSecondsRaw ?? '15'), 10) || 15)
 
   const [views, sourceRows, retentionRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
-      SELECT COUNT(DISTINCT ${sessionExpr}) AS total
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
-    `).bind(startAt).first(),
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id
+      )
+      SELECT COUNT(DISTINCT session_id) AS total
+      FROM session_rollup
+      WHERE segment_hits >= ? OR max_watch_seconds >= ?
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).first(),
     db.prepare(`
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          COALESCE(source_category, 'direct') AS source,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id, source
+      )
       SELECT
-        COALESCE(source_category, 'direct') AS source,
-        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions,
-        COUNT(DISTINCT ${sessionExpr}) AS hits
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
+        source,
+        COUNT(DISTINCT session_id) AS unique_sessions,
+        COUNT(DISTINCT session_id) AS hits
+      FROM session_rollup
+      WHERE segment_hits >= ? OR max_watch_seconds >= ?
       GROUP BY source
       ORDER BY unique_sessions DESC
       LIMIT 12
-    `).bind(startAt).all(),
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
       WITH events AS (
         SELECT
@@ -1268,15 +1351,26 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       ORDER BY count DESC, status ASC
     `).all(),
     db.prepare(`
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          ${bucketByCreated} AS bucket,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id, bucket
+      )
       SELECT
-        ${bucketByCreated} AS bucket,
-        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
+        bucket,
+        COUNT(DISTINCT session_id) AS unique_sessions
+      FROM session_rollup
+      WHERE segment_hits >= ? OR max_watch_seconds >= ?
       GROUP BY bucket
       ORDER BY bucket ASC
-    `).bind(startAt).all(),
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
       SELECT
         ${bucketByCreated} AS bucket,
