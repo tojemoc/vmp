@@ -144,7 +144,7 @@ async function main() {
     if (!Number.isFinite(measuredDurationSeconds) || measuredDurationSeconds <= 0) {
       throw new Error('Failed to validate rendered preview duration')
     }
-    const roundedDuration = Math.round(measuredDurationSeconds)
+    const roundedDuration = Math.max(1, Math.round(measuredDurationSeconds))
     if (roundedDuration > previewSeconds + 1) {
       throw new Error(`Trimmed preview is too long (${roundedDuration}s > ${previewSeconds}s)`)
     }

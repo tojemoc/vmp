@@ -633,7 +633,7 @@ const server = http.createServer(async (req, res) => {
       rejectedCount: rejected.length,
       jobs: accepted,
       rejected,
-    }, accepted.length > 0 ? 202 : 422)
+    }, accepted.length > 0 ? 202 : 200)
     return
   }
 

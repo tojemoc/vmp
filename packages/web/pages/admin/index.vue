@@ -3673,7 +3673,7 @@ const notifyPodcastPreviewRebuild = async () => {
     const rejected = Number(data?.rejectedCount ?? 0)
     const rejectedItems = Array.isArray(data?.rejected) ? data.rejected : []
     const rejectedText = rejectedItems.length
-      ? ` Rejected: ${rejectedItems.slice(0, 3).map((item: any) => `${item.id || 'unknown'} (${item.reason || 'invalid'})`).join(', ')}`
+      ? ` Rejected: ${rejectedItems.slice(0, 3).filter((item: any) => item && typeof item === 'object').map((item: any) => `${item.id || 'unknown'} (${item.reason || 'invalid'})`).join(', ')}`
       : ''
     rssPodcastMessage.value = `Host notified (${accepted} accepted, ${rejected} rejected).${rejectedText}`
     rssPodcastMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'

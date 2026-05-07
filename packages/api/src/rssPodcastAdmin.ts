@@ -217,13 +217,15 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
       }, 502, corsHeaders)
     }
 
+    const acceptedNum = Number(parsed?.acceptedCount ?? payload.videos.length)
+    const rejectedNum = Number(parsed?.rejectedCount ?? 0)
     return jsonResponse({
       ok: true,
       delivered: true,
       videoCount: payload.videos.length,
       webhookStatus: res.status,
-      acceptedCount: Number(parsed?.acceptedCount ?? payload.videos.length),
-      rejectedCount: Number(parsed?.rejectedCount ?? 0),
+      acceptedCount: Number.isFinite(acceptedNum) ? acceptedNum : 0,
+      rejectedCount: Number.isFinite(rejectedNum) ? rejectedNum : 0,
       rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
     }, 200, corsHeaders)
   } catch (e) {
