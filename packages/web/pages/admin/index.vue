@@ -624,24 +624,50 @@
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">Create pill</h3>
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
               <input v-model="newPill.label" type="text" placeholder="Label" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model.number="newPill.value" type="number" placeholder="Value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <select v-model="newPill.valueMode" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <option value="number">Number</option>
+                <option value="percentage">Percentage</option>
+                <option value="agree_disagree">Agree/Disagree</option>
+                <option value="graph_embed">Graph/Embed</option>
+              </select>
               <input v-model="newPill.color" type="text" placeholder="#2563eb" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+            </div>
+            <div v-if="newPill.valueMode === 'agree_disagree'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input v-model="newPill.valueSecondary" type="number" placeholder="Disagree value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+            </div>
+            <div v-if="newPill.valueMode === 'graph_embed'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input v-model="newPill.graphEmbedUrl" type="url" placeholder="Flourish/embed URL" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <textarea v-model="newPill.graphPayloadJson" rows="2" placeholder='{"series":[...]}' class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
               <input v-model="newPill.imageUrl" type="url" placeholder="Image URL (optional)" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <input type="file" accept="image/*" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, null)" />
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createPill">Create</button>
             </div>
           </div>
 
           <div class="space-y-2">
-            <div v-for="(pill, idx) in adminPills" :key="pill.id" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-[1fr_140px_140px_1fr_auto_auto_auto] gap-2 items-center">
+            <div v-for="(pill, idx) in adminPills" :key="pill.id" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
               <input v-model="pill.label" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model.number="pill.value" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <select v-model="pill.value_mode" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <option value="number">Number</option>
+                <option value="percentage">Percentage</option>
+                <option value="agree_disagree">Agree/Disagree</option>
+                <option value="graph_embed">Graph/Embed</option>
+              </select>
+              <input v-if="pill.value_mode === 'agree_disagree'" v-model.number="pill.value_secondary" type="number" placeholder="Secondary value" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <input v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_embed_url" type="url" placeholder="Embed URL" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <textarea v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_payload_json" rows="2" placeholder="Graph payload JSON" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
               <input v-model="pill.color" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model="pill.image_url" type="url" placeholder="Image URL (optional)" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
-              <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
+              <input type="file" accept="image/*" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, pill)" />
               <div class="flex gap-2">
+                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
+                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
                 <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs" @click="savePill(pill)">Save</button>
                 <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs" @click="deletePill(pill.id)">Delete</button>
               </div>
@@ -2519,8 +2545,30 @@ function isSensitiveRoleChange(from: string, to: string): boolean {
   if (from === 'admin' || from === 'super_admin') return true
   return false
 }
-const adminPills = ref<Array<{ id: string; label: string; value: number; color: string; image_url?: string | null; sort_order: number }>>([])
-const newPill = ref({ label: '', value: 0, color: '#2563eb', imageUrl: '' })
+type PillValueMode = 'number' | 'percentage' | 'agree_disagree' | 'graph_embed'
+type AdminPillRow = {
+  id: string
+  label: string
+  value: number
+  value_secondary?: number | null
+  value_mode?: PillValueMode
+  graph_embed_url?: string | null
+  graph_payload_json?: string | null
+  color: string
+  image_url?: string | null
+  sort_order: number
+}
+const adminPills = ref<AdminPillRow[]>([])
+const newPill = ref({
+  label: '',
+  value: 0,
+  valueSecondary: '',
+  valueMode: 'number' as PillValueMode,
+  graphEmbedUrl: '',
+  graphPayloadJson: '',
+  color: '#2563eb',
+  imageUrl: '',
+})
 const pillsApiKey = ref('')
 const pillsApiKeyMeta = ref<{ hasKey: boolean; managedByEnv: boolean; maskedKey: string }>({ hasKey: false, managedByEnv: false, maskedKey: '' })
 const analyticsRange = ref<AnalyticsRange>('30d')
@@ -4221,9 +4269,14 @@ const loadAdminPills = async () => {
 }
 
 const createPill = async () => {
+  const valueSecondary = newPill.value.valueSecondary === '' ? null : Number(newPill.value.valueSecondary)
   const payload = {
     label: newPill.value.label.trim(),
     value: Number(newPill.value.value),
+    valueMode: newPill.value.valueMode,
+    valueSecondary,
+    graphEmbedUrl: newPill.value.graphEmbedUrl?.trim() || null,
+    graphPayloadJson: newPill.value.graphPayloadJson?.trim() || null,
     color: newPill.value.color || '#2563eb',
     imageUrl: newPill.value.imageUrl?.trim() || null,
     sortOrder: adminPills.value.length,
@@ -4239,10 +4292,44 @@ const createPill = async () => {
       await loadAdminPills()
       throw new Error(`Failed to create pill: HTTP ${res.status}`)
     }
-    newPill.value = { label: '', value: 0, color: '#2563eb', imageUrl: '' }
+    newPill.value = {
+      label: '',
+      value: 0,
+      valueSecondary: '',
+      valueMode: 'number',
+      graphEmbedUrl: '',
+      graphPayloadJson: '',
+      color: '#2563eb',
+      imageUrl: '',
+    }
     await loadAdminPills()
   } catch (error) {
     console.error('createPill failed', error)
+  }
+}
+
+const uploadPillImage = async (event: Event, pill: AdminPillRow | null) => {
+  const target = event.target as HTMLInputElement | null
+  const file = target?.files?.[0]
+  if (!file) return
+  try {
+    const form = new FormData()
+    form.set('image', file)
+    const res = await fetch(`${config.public.apiUrl}/api/admin/pills/image-upload`, {
+      method: 'POST',
+      headers: authHeader(),
+      body: form,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    const imageUrl = String(data.imageUrl || '')
+    if (!imageUrl) return
+    if (pill) pill.image_url = imageUrl
+    else newPill.value.imageUrl = imageUrl
+  } catch (error) {
+    console.error('uploadPillImage failed', error)
+  } finally {
+    if (target) target.value = ''
   }
 }
 
@@ -4255,6 +4342,10 @@ const savePill = async (pill: any) => {
         id: pill.id,
         label: pill.label,
         value: Number(pill.value),
+        valueMode: pill.value_mode || 'number',
+        valueSecondary: pill.value_secondary == null ? null : Number(pill.value_secondary),
+        graphEmbedUrl: typeof pill.graph_embed_url === 'string' ? pill.graph_embed_url : null,
+        graphPayloadJson: typeof pill.graph_payload_json === 'string' ? pill.graph_payload_json : null,
         color: pill.color,
         imageUrl: typeof pill.image_url === 'string' ? pill.image_url : null,
         sortOrder: Number(pill.sort_order),

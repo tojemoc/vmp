@@ -61,7 +61,14 @@
             </div>
             <div class="min-w-0">
               <p class="text-sm font-medium text-gray-900 dark:text-white truncate leading-tight">{{ pill.label }}</p>
-              <p class="text-lg font-bold leading-tight" :style="{ color: pill.color || '#2563eb' }">{{ pill.value }}</p>
+              <p class="text-lg font-bold leading-tight" :style="{ color: pill.color || '#2563eb' }">{{ formatPillValue(pill) }}</p>
+              <a
+                v-if="pill.value_mode === 'graph_embed' && pill.graph_embed_url"
+                :href="pill.graph_embed_url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >Open graph</a>
             </div>
           </div>
         </div>
@@ -238,7 +245,26 @@ const error   = ref<string | null>(null)
 const videos  = ref<any[]>([])
 const layoutBlocks = ref<any[]>([])
 const categories = ref<VideoCategory[]>([])
-const pills = ref<Array<{ id: string; label: string; value: number; color: string; image_url?: string }>>([])
+type HomePill = {
+  id: string
+  label: string
+  value: number
+  value_secondary?: number | null
+  value_mode?: 'number' | 'percentage' | 'agree_disagree' | 'graph_embed'
+  graph_embed_url?: string | null
+  graph_payload_json?: string | null
+  color: string
+  image_url?: string
+}
+const pills = ref<HomePill[]>([])
+
+function formatPillValue(pill: HomePill) {
+  const mode = pill.value_mode || 'number'
+  if (mode === 'percentage') return `${pill.value}%`
+  if (mode === 'agree_disagree') return `${pill.value}/${Number(pill.value_secondary || 0)}`
+  if (mode === 'graph_embed') return 'Graph'
+  return String(pill.value)
+}
 
 const homepageRenderModel = computed(() =>
   buildHomepageRenderModel({

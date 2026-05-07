@@ -51,6 +51,7 @@ import {
   handlePillsPublic,
   handlePillsUpdate,
   handleAdminPills,
+  handleAdminPillImageUpload,
   handleAdminPillsSettings,
   handleCategoryVideosBySlug,
   handleAdminUsers,
@@ -391,6 +392,9 @@ export default {
     }
     if (url.pathname === '/api/admin/pills' && ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) {
       return handleAdminPills(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/pills/image-upload' && request.method === 'POST') {
+      return handleAdminPillImageUpload(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/pills/settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminPillsSettings(request, env, corsHeaders)
