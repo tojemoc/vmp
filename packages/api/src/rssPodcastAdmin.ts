@@ -138,6 +138,10 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     await ensureAdminSettingsTable(db)
 
     const webhookUrl = (await getSetting(env, 'podcast_rebuild_webhook_url', { defaultValue: '' }))?.trim()
+    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+    if (!freePreviewEnabled) {
+      return jsonResponse({ error: 'Free podcast preview feed is disabled', code: 'free_preview_disabled' }, 400, corsHeaders)
+    }
     if (!webhookUrl) {
       return jsonResponse({ error: 'Podcast rebuild webhook URL is not configured', code: 'webhook_not_configured' }, 400, corsHeaders)
     }
@@ -201,16 +205,33 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     }
 
     const text = await res.text().catch(() => '')
+    const parsed = (() => {
+      try {
+        return text ? JSON.parse(text) : null
+      } catch {
+        return null
+      }
+    })()
     if (!res.ok) {
       return jsonResponse({
         error: 'Webhook request failed',
         code: 'webhook_failed',
         status: res.status,
-        detail: text.slice(0, 500),
+        detail: typeof parsed?.error === 'string' ? parsed.error : text.slice(0, 500),
       }, 502, corsHeaders)
     }
 
-    return jsonResponse({ ok: true, delivered: true, videoCount: payload.videos.length }, 200, corsHeaders)
+    const acceptedNum = Number(parsed?.acceptedCount ?? payload.videos.length)
+    const rejectedNum = Number(parsed?.rejectedCount ?? 0)
+    return jsonResponse({
+      ok: true,
+      delivered: true,
+      videoCount: payload.videos.length,
+      webhookStatus: res.status,
+      acceptedCount: Number.isFinite(acceptedNum) ? acceptedNum : 0,
+      rejectedCount: Number.isFinite(rejectedNum) ? rejectedNum : 0,
+      rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
+    }, 200, corsHeaders)
   } catch (e) {
     console.error('handleRssPodcastPreviewRebuildNotify:', e)
     return jsonResponse({ error: 'Internal server error', code: 'internal_error' }, 500, corsHeaders)

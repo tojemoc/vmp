@@ -69,6 +69,7 @@ import {
 } from './promotions.js'
 import { handleAdminSmokeAuth } from './smokeAuth.js'
 import { handleSiteSettings } from './siteSettings.js'
+import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
@@ -342,6 +343,9 @@ export default {
     }
     if (url.pathname === '/api/admin/site-settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleSiteSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/system/features' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminSystemFeatures(request, env, corsHeaders)
     }
     {
       const templateById = url.pathname.match(/^\/api\/admin\/newsletter\/templates\/([^/]+)$/)

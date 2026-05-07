@@ -40,6 +40,11 @@ const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10)
 const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
 const previewConcurrency = Math.max(1, Number.parseInt(process.env.VMP_PREVIEW_CONCURRENCY || '1', 10) || 1)
 const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
+const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1'
+const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main'
+const autoUpgradeRepoDir = process.env.VMP_AUTO_UPGRADE_REPO_DIR || '/workspace'
+const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/podcast-host'
+const autoUpgradeCheckMs = Math.max(60_000, Number.parseInt(process.env.VMP_AUTO_UPGRADE_CHECK_MS || '300000', 10) || 300000)
 
 function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
   const resolved = path.resolve(rawPath)
@@ -344,6 +349,53 @@ function json(res, obj, status = 200) {
   res.end(JSON.stringify(obj, null, 2))
 }
 
+function runCommandCapture(command: string, args: string[], cwd: string): Promise<{ stdout: string, stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (d) => { stdout += d.toString() })
+    child.stderr.on('data', (d) => { stderr += d.toString() })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr })
+      } else {
+        reject(new Error(`${command} ${args.join(' ')} failed: ${stderr || stdout}`))
+      }
+    })
+  })
+}
+
+async function checkAndApplyPodcastHostUpgrade() {
+  if (!autoUpgradeEnabled) return
+  try {
+    await runCommandCapture('git', ['fetch', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
+    const local = await runCommandCapture('git', ['rev-parse', 'HEAD'], autoUpgradeRepoDir)
+    const remote = await runCommandCapture('git', ['rev-parse', `origin/${autoUpgradeBranch}`], autoUpgradeRepoDir)
+    const localSha = local.stdout.trim()
+    const remoteSha = remote.stdout.trim()
+    if (!localSha || !remoteSha || localSha === remoteSha) return
+    const changed = await runCommandCapture(
+      'git',
+      ['diff', '--name-only', `${localSha}..${remoteSha}`, '--', autoUpgradePath],
+      autoUpgradeRepoDir,
+    )
+    if (!changed.stdout.trim()) return
+    pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
+    await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
+    pushLog('[upgrade] pull successful; exiting for container/service restart')
+    process.exit(0)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    pushLog(`[upgrade] check failed: ${msg}`)
+  }
+}
+
 function dashboardHtml() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -545,30 +597,43 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (payload?.event !== 'podcast_preview_rebuild') {
-      json(res, { error: 'Unexpected event' }, 400)
+      json(res, { error: 'Unexpected event', code: 'invalid_event', expectedEvent: 'podcast_preview_rebuild' }, 400)
       return
     }
 
     const videos = Array.isArray(payload.videos) ? payload.videos : []
     const accepted = []
+    const rejected = []
     for (const v of videos) {
       const id = v?.id
       const sec = Number(v?.previewDurationSeconds)
-      if (!id || !Number.isFinite(sec) || sec <= 0) continue
+      if (!id || !Number.isFinite(sec) || sec <= 0) {
+        rejected.push({ id: String(id || ''), reason: 'invalid_preview_duration' })
+        continue
+      }
       // Reject path-like IDs to prevent directory traversal
       if (typeof id !== 'string' || id.includes('/') || id.includes('\\') || id.includes('..')) {
         pushLog(`Rejected invalid video ID: ${id}`)
+        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' })
         continue
       }
       // Stricter validation: allow only alphanumerics, dash, dot, underscore
       if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
         pushLog(`Rejected invalid video ID: ${id}`)
+        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' })
         continue
       }
       accepted.push({ jobId: enqueuePreview(id, Math.floor(sec), 'webhook'), videoId: id, previewSeconds: Math.floor(sec) })
     }
 
-    json(res, { ok: true, accepted: accepted.length, jobs: accepted }, 202)
+    json(res, {
+      ok: true,
+      code: 'accepted',
+      acceptedCount: accepted.length,
+      rejectedCount: rejected.length,
+      jobs: accepted,
+      rejected,
+    }, accepted.length > 0 ? 202 : 200)
     return
   }
 
@@ -587,6 +652,11 @@ server.listen(uiPort, uiHost, () => {
   )
   pushLog(`Config: runPipeline=${runPipeline} previewConcurrency=${previewConcurrency} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
   startPipeline()
+  if (autoUpgradeEnabled) {
+    pushLog(`[upgrade] enabled, watching ${autoUpgradePath} on ${autoUpgradeBranch} every ${Math.round(autoUpgradeCheckMs / 1000)}s`)
+    void checkAndApplyPodcastHostUpgrade()
+    setInterval(() => { void checkAndApplyPodcastHostUpgrade() }, autoUpgradeCheckMs)
+  }
 })
 
 const gracefulShutdown = async (signal) => {

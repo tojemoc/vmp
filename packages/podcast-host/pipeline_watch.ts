@@ -205,8 +205,29 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
       const prevTmp = path.join(tmpDir, `podcast_preview.mp3.tmp.${process.pid}`)
       await run('ffmpeg', ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp], 'encode preview mp3')
       await rename(prevTmp, path.join(tmpDir, 'podcast_preview.mp3'))
+      const probe = await run(
+        'ffprobe',
+        ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path.join(tmpDir, 'podcast_preview.mp3')],
+        'probe preview mp3 duration',
+        { capture: true },
+      )
+      const measuredDurationSeconds = Math.round(Number.parseFloat((probe.stdout || '').trim()))
+      if (Number.isFinite(measuredDurationSeconds) && measuredDurationSeconds > 0) {
+        await writeFile(
+          path.join(tmpDir, 'podcast_preview.meta.json'),
+          JSON.stringify({
+            videoId,
+            requestedPreviewSeconds: PREVIEW_MP3_SECONDS,
+            measuredDurationSeconds,
+            renderedAt: new Date().toISOString(),
+          }),
+        )
+      }
       emitPipelineEvent(videoId, 'preview_upload', 'active', 'start')
       await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.mp3'), r2Path(`videos/${videoId}/podcast_preview.mp3`)], 'upload preview mp3')
+      if (existsSync(path.join(tmpDir, 'podcast_preview.meta.json'))) {
+        await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata')
+      }
       emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
     } else {
       emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
