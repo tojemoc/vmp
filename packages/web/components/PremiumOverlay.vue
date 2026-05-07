@@ -305,7 +305,7 @@ async function validatePromoCode() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ promoCode: code, planType: selectedPlan.value }),
+      body: JSON.stringify({ promoCode: code, planType: selectedPlan.value, provider: selectedProvider.value }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data?.valid) {

@@ -1406,7 +1406,7 @@
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
                   <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Manage single-use and multi-use promo codes for free month/year or Stripe percentage discounts.
+                    Manage single-use and multi-use promo codes for free month/year or provider-specific percentage discounts.
                   </p>
                 </div>
                 <button
@@ -1481,24 +1481,48 @@
                       <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">Club</label>
                     </div>
                   </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
-                    <span v-if="promoCodeForm.rewardType === 'discount_percent'" class="text-red-500 dark:text-red-400">*</span>
-                    <input
-                      v-model="promoCodeForm.stripeCouponId"
-                      type="text"
-                      :required="promoCodeForm.rewardType === 'discount_percent'"
-                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                      :class="{ 'border-red-500 dark:border-red-400': promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim() }"
-                      placeholder="coupon_..."
-                    >
-                  </label>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">Stripe promo mapping</h5>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
+                        <input
+                          v-model="promoCodeForm.stripeCouponId"
+                          type="text"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                          placeholder="coupon_..."
+                        >
+                      </label>
+                    </div>
+                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">GoCardless promo mapping</h5>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Discount percent
+                        <input
+                          v-model="promoCodeForm.gocardlessDiscountPercent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-xs"
+                          placeholder="10"
+                        >
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Plan code (optional)
+                        <input
+                          v-model="promoCodeForm.gocardlessPlanCode"
+                          type="text"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                          placeholder="ALT-MONTHLY"
+                        >
+                      </label>
+                    </div>
+                  </div>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Expires at (optional)
                     <input v-model="promoCodeForm.expiresAt" type="datetime-local" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   </label>
                   <button
                     type="button"
                     class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="promotionsSaving || !promoCodeForm.campaignId || (promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim())"
+                    :disabled="promotionsSaving || !promoCodeForm.campaignId"
                     @click="createPromoCodes"
                   >
                     {{ promotionsSaving ? 'Saving…' : 'Create code(s)' }}
@@ -1516,6 +1540,7 @@
                         <th class="py-1 pr-3">Code</th>
                         <th class="py-1 pr-3">Campaign</th>
                         <th class="py-1 pr-3">Reward</th>
+                        <th class="py-1 pr-3">Provider mappings</th>
                         <th class="py-1 pr-3">Usage</th>
                         <th class="py-1 pr-3">Plans</th>
                         <th class="py-1 pr-3">Status</th>
@@ -1526,6 +1551,12 @@
                         <td class="py-2 pr-3 font-mono text-xs text-gray-900 dark:text-gray-100">{{ code.code }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.campaign_name || '—' }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.reward_type }}</td>
+                        <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
+                          <div class="space-y-1 text-xs">
+                            <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
+                            <p>GoCardless: {{ code.gocardless_discount_percent != null ? `${code.gocardless_discount_percent}%` : '—' }}</p>
+                          </div>
+                        </td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.used_count }} / {{ code.max_uses }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.allowed_plan_types }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.is_active ? 'Active' : 'Inactive' }}</td>
@@ -2298,6 +2329,9 @@ interface PromoCodeRow {
   used_count: number
   is_active: number
   allowed_plan_types: string
+  stripe_coupon_id?: string | null
+  gocardless_discount_percent?: number | null
+  gocardless_plan_code?: string | null
 }
 interface IsicCampaignRow {
   id: string
@@ -2359,6 +2393,8 @@ const promoCodeForm = ref({
   maxUses: 1,
   allowedPlanTypes: ['monthly', 'yearly', 'club'] as string[],
   stripeCouponId: '',
+  gocardlessDiscountPercent: '',
+  gocardlessPlanCode: '',
   expiresAt: '',
 })
 const isicLoading = ref(false)
@@ -3490,8 +3526,15 @@ const createPromoCodes = async () => {
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
-  if (promoCodeForm.value.rewardType === 'discount_percent' && !promoCodeForm.value.stripeCouponId.trim()) {
-    promotionsMessage.value = 'Stripe coupon ID is required for discount_percent promo codes.'
+  const stripeCouponId = promoCodeForm.value.stripeCouponId.trim()
+  const gocardlessDiscountPercentRaw = promoCodeForm.value.gocardlessDiscountPercent
+  const gocardlessDiscountPercent = gocardlessDiscountPercentRaw === ''
+    ? null
+    : Number(gocardlessDiscountPercentRaw)
+  if (promoCodeForm.value.rewardType === 'discount_percent'
+      && !stripeCouponId
+      && !(Number.isFinite(gocardlessDiscountPercent) && gocardlessDiscountPercent! > 0 && gocardlessDiscountPercent! <= 100)) {
+    promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID and/or GoCardless discount %.'
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
@@ -3509,7 +3552,9 @@ const createPromoCodes = async () => {
         rewardType: promoCodeForm.value.rewardType,
         maxUses: promoCodeForm.value.maxUses,
         allowedPlanTypes: promoCodeForm.value.allowedPlanTypes,
-        stripeCouponId: promoCodeForm.value.stripeCouponId,
+        stripeCouponId,
+        gocardlessDiscountPercent,
+        gocardlessPlanCode: promoCodeForm.value.gocardlessPlanCode.trim(),
         expiresAt: expiresIso,
       }),
     })
@@ -3529,6 +3574,8 @@ const createPromoCodes = async () => {
       maxUses: 1,
       allowedPlanTypes: ['monthly', 'yearly', 'club'],
       stripeCouponId: '',
+      gocardlessDiscountPercent: '',
+      gocardlessPlanCode: '',
       expiresAt: '',
     }
     await loadPromotions()

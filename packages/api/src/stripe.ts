@@ -412,7 +412,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       : defaultProvider
 
     const promoResolution = provider === 'stripe'
-      ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType)
+      ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType, 'stripe')
       : { ok: false, reason: 'empty' }
     const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null
     if (!promoResolution.ok && promoResolution.reason !== 'empty') {
@@ -490,7 +490,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''
     let promoCodeId: string | null = null
     if (promoCodeInput) {
-      const promoValidation = await resolvePromoCodeForCheckout(env, promoCodeInput, planType)
+      const promoValidation = await resolvePromoCodeForCheckout(env, promoCodeInput, planType, 'gocardless')
       if (!promoValidation.ok) {
         return jsonResponse({
           error: promoValidation.error ?? 'Promo code is not valid',
@@ -834,9 +834,23 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
 
     const pricing = await getEffectivePricingSettings(env, 'gocardless')
     const planType = normalizePlanType(String(checkoutSession.plan_type || 'monthly'))
-    const amountEur = pricing[planType]
+    let amountEur = pricing[planType]
     if (amountEur == null || !Number.isFinite(amountEur)) {
       return jsonResponse({ error: 'Pricing is not configured for selected plan' }, 503, corsHeaders)
+    }
+    if (checkoutSession.promo_code_id) {
+      const promoRow: any = await db.prepare(`
+        SELECT reward_type, gocardless_discount_percent
+        FROM promo_codes
+        WHERE id = ?
+        LIMIT 1
+      `).bind(checkoutSession.promo_code_id).first()
+      if (promoRow?.reward_type === 'discount_percent') {
+        const percent = Number(promoRow.gocardless_discount_percent)
+        if (Number.isFinite(percent) && percent > 0 && percent <= 100) {
+          amountEur = Number((amountEur * (1 - percent / 100)).toFixed(2))
+        }
+      }
     }
 
     const interval = getGoCardlessInterval(planType)
