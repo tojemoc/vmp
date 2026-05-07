@@ -13,7 +13,7 @@
     "render": "npm run build && node ./dist/render_podcast_preview_mp3.js"
   },
   "devDependencies": {
-    "@types/node": "^24.9.1",
+    "@types/node": "^25.6.0",
     "typescript": "^6.0.3"
   },
   "engines": {
