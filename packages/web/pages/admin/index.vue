@@ -123,6 +123,10 @@
                   <option value="">Select category</option>
                   <option v-for="cat in categories" :key="`block-cat-${block.id}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
                 </select>
+                <label v-if="block.type === 'category'" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input v-model="block.rightRailWithNextSideMini" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  Pair next side-mini category on right (2x2 + 2x1)
+                </label>
                 <div
                   v-if="(block.type === 'split_horizontal' || block.type === 'split_vertical') && block.childBlocks"
                   class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3"
@@ -201,6 +205,32 @@
                   />
                 </div>
                 <p v-else class="text-xs text-gray-500 dark:text-gray-400">No category selected or no videos available.</p>
+              </div>
+              <div v-else-if="block.type === 'category_with_side_mini'" class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div class="xl:col-span-2 space-y-3">
+                  <div v-if="block.primary.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <VideoCard
+                      v-for="video in block.primary.categorySection.visible"
+                      :key="`preview-paired-main-${block.primary.id}-${video.id}`"
+                      :video="video"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-3">
+                  <h4 class="font-semibold text-gray-900 dark:text-white">{{ block.sideMini.title || block.sideMini.categorySection?.category?.name || 'Side mini' }}</h4>
+                  <div v-if="block.sideMini.categorySection" class="space-y-3">
+                    <VideoCard
+                      v-for="video in block.sideMini.categorySection.visible"
+                      :key="`preview-paired-side-${block.sideMini.id}-${video.id}`"
+                      :video="video"
+                      layout="horizontal"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div v-else-if="block.type === 'split_horizontal' || block.type === 'split_vertical'" class="grid gap-4" :class="block.type === 'split_horizontal' ? 'md:grid-cols-2' : 'grid-cols-1'">
@@ -2977,6 +3007,7 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   const title = typeof raw.title === 'string' ? raw.title : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
+  const rightRailWithNextSideMini = raw.rightRailWithNextSideMini === true
   if (type === 'split_horizontal' || type === 'split_vertical') {
     const children = Array.isArray(raw.childBlocks) ? raw.childBlocks : []
     const normalizedChildren = children
@@ -2991,7 +3022,14 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     while (normalizedChildren.length < 2) normalizedChildren.push({ type: 'top_video', title: '', body: '', categoryId: '' })
     return { id, type, title, body, childBlocks: normalizedChildren }
   }
-  return { id, type, title, body, categoryId: type === 'category' ? categoryId : null }
+  return {
+    id,
+    type,
+    title,
+    body,
+    categoryId: type === 'category' ? categoryId : null,
+    rightRailWithNextSideMini: type === 'category' ? rightRailWithNextSideMini : false,
+  }
 }
 const sanitizeBlockForSave = (block: LayoutBlock) => {
   const payload: any = {
@@ -3002,6 +3040,7 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   }
   if (block.type === 'category') {
     payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
+    payload.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
   }
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
     payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({

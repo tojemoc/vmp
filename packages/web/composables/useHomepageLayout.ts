@@ -15,6 +15,7 @@ export interface HomepageLayoutBlock {
   title?: string
   body?: string
   categoryId?: string | null
+  rightRailWithNextSideMini?: boolean
   childBlocks?: HomepageLayoutChildBlock[]
 }
 
@@ -62,14 +63,23 @@ export interface HomepageRenderSplitBlock {
   children: HomepageRenderLeafBlock[]
 }
 
-export type HomepageRenderBlock = HomepageRenderLeafBlock | HomepageRenderSplitBlock
+export interface HomepageRenderCategoryPairBlock {
+  id: string
+  type: 'category_with_side_mini'
+  title: string
+  body: string
+  primary: HomepageRenderLeafBlock
+  sideMini: HomepageRenderLeafBlock
+}
+
+export type HomepageRenderBlock = HomepageRenderLeafBlock | HomepageRenderSplitBlock | HomepageRenderCategoryPairBlock
 
 export function isSplitRenderBlock(block: HomepageRenderBlock): block is HomepageRenderSplitBlock {
   return block.type === 'split_horizontal' || block.type === 'split_vertical'
 }
 
 export function isLeafRenderBlock(block: HomepageRenderBlock): block is HomepageRenderLeafBlock {
-  return !isSplitRenderBlock(block)
+  return block.type === 'featured_row' || block.type === 'category' || block.type === 'top_video'
 }
 
 export function buildHomepageRenderModel({
@@ -154,25 +164,59 @@ export function buildHomepageRenderModel({
     }
   }
 
-  const blockItems = renderedBlocks.map((block): HomepageRenderBlock | null => {
+  const blockItems: HomepageRenderBlock[] = []
+  for (let idx = 0; idx < renderedBlocks.length; idx += 1) {
+    const block = renderedBlocks[idx]
+    if (!block) continue
     const blockType = block?.type
     if (blockType === 'split_horizontal' || blockType === 'split_vertical') {
       const children = Array.isArray(block?.childBlocks)
         ? block.childBlocks
-          .map((child, idx) => buildLeafBlock(child, `${block.id}:child:${idx}`))
+          .map((child, childIdx) => buildLeafBlock(child, `${block.id}:child:${childIdx}`))
           .filter((child): child is HomepageRenderLeafBlock => Boolean(child))
           .slice(0, 2)
         : []
-      return {
+      blockItems.push({
         id: block.id,
         type: blockType,
         title: typeof block?.title === 'string' ? block.title : '',
         body: typeof block?.body === 'string' ? block.body : '',
         children,
-      } as HomepageRenderSplitBlock
+      } as HomepageRenderSplitBlock)
+      continue
     }
-    return buildLeafBlock(block as HomepageLayoutChildBlock, block.id)
-  }).filter((item): item is HomepageRenderBlock => Boolean(item))
+    const leaf = buildLeafBlock(block as HomepageLayoutChildBlock, block.id)
+    if (!leaf) continue
+    const shouldPairRightRail = blockType === 'category' && block?.rightRailWithNextSideMini === true
+    if (shouldPairRightRail) {
+      const next = renderedBlocks[idx + 1]
+      const nextLeaf = next ? buildLeafBlock(next as HomepageLayoutChildBlock, next.id) : null
+      const primaryIsThreeByOne = leaf.categorySection?.variant === 'three_by_one'
+      const nextIsSideMiniCategory = next?.type === 'category' && nextLeaf?.categorySection?.variant === 'side_mini'
+      if (primaryIsThreeByOne && nextIsSideMiniCategory && nextLeaf) {
+        const primaryCategorySection = leaf.categorySection
+        const pairedPrimary: HomepageRenderLeafBlock = {
+          ...leaf,
+          categorySection: primaryCategorySection ? {
+            ...primaryCategorySection,
+            visible: primaryCategorySection.allVideos.slice(0, 4),
+            overflowCount: Math.max(0, primaryCategorySection.allVideos.length - 4),
+          } : null,
+        }
+        blockItems.push({
+          id: `${leaf.id}:right-rail`,
+          type: 'category_with_side_mini',
+          title: leaf.title,
+          body: leaf.body,
+          primary: pairedPrimary,
+          sideMini: nextLeaf,
+        })
+        idx += 1
+        continue
+      }
+    }
+    blockItems.push(leaf)
+  }
 
   const hasFeaturedRowBlock = blockItems.some((item: any) =>
     item?.type === 'featured_row'

@@ -159,6 +159,7 @@ function normalizeHomepageConfigForResponse(config: any) {
       } as Record<string, any>
       if (type === 'category') {
         normalized.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
+        normalized.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
       }
       if (type === 'split_horizontal' || type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
@@ -170,6 +171,7 @@ function normalizeHomepageConfigForResponse(config: any) {
             title: typeof child.title === 'string' ? child.title : '',
             body: typeof child.body === 'string' ? child.body : '',
             categoryId: typeof child.categoryId === 'string' ? child.categoryId : null,
+            rightRailWithNextSideMini: child.rightRailWithNextSideMini === true,
           }))
           .slice(0, 2)
       }

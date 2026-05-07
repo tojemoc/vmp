@@ -135,6 +135,43 @@
               />
             </div>
           </div>
+          <div v-else-if="block.type === 'category_with_side_mini'" class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+            <section class="xl:col-span-2 space-y-3">
+              <div v-if="block.primary.categorySection" class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ block.primary.categorySection.category.name }}</h3>
+                <NuxtLink :to="`/category/${block.primary.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                  {{ strings.categoryMoreLink }}
+                </NuxtLink>
+              </div>
+              <div v-if="block.primary.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <VideoCard
+                  v-for="video in block.primary.categorySection.visible"
+                  :key="`paired-main-${block.primary.id}-${video.id}`"
+                  :video="video"
+                  :show-description="false"
+                  :show-relative-timestamp="true"
+                />
+              </div>
+            </section>
+            <aside class="space-y-3">
+              <div v-if="block.sideMini.categorySection" class="flex items-center justify-between">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ block.sideMini.categorySection.category.name }}</h3>
+                <NuxtLink :to="`/category/${block.sideMini.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                  {{ strings.categoryMoreLink }}
+                </NuxtLink>
+              </div>
+              <div v-if="block.sideMini.categorySection" class="space-y-4">
+                <VideoCard
+                  v-for="video in block.sideMini.categorySection.visible"
+                  :key="`paired-side-${block.sideMini.id}-${video.id}`"
+                  :video="video"
+                  layout="horizontal"
+                  :show-description="false"
+                  :show-relative-timestamp="true"
+                />
+              </div>
+            </aside>
+          </div>
 
           <div
             v-else-if="block.type === 'split_horizontal' || block.type === 'split_vertical'"
