@@ -441,8 +441,19 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     }
     const id = typeof body.id === 'string' ? body.id.trim() : ''
     if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+    const existing = await db.prepare(`
+      SELECT value_mode, value_secondary, graph_embed_url, graph_payload_json
+      FROM pills
+      WHERE id = ?
+      LIMIT 1
+    `).bind(id).first()
+    if (!existing) return jsonResponse({ error: 'Pill not found' }, 404, corsHeaders)
     const updates = []
     const values = []
+    let nextMode = normalizePillMode(existing.value_mode) || 'number'
+    let nextValueSecondary = existing.value_secondary == null ? null : Number(existing.value_secondary)
+    let nextGraphEmbedUrl = typeof existing.graph_embed_url === 'string' ? existing.graph_embed_url : ''
+    let nextGraphPayloadJson = typeof existing.graph_payload_json === 'string' ? existing.graph_payload_json : ''
     if (typeof body.label === 'string') {
       const next = body.label.trim()
       if (!next) return jsonResponse({ error: 'label must not be empty' }, 400, corsHeaders)
@@ -469,17 +480,20 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     if (Object.prototype.hasOwnProperty.call(body, 'valueMode')) {
       const mode = normalizePillMode(body.valueMode)
       if (!mode) return jsonResponse({ error: 'valueMode must be number, percentage, agree_disagree, or graph_embed' }, 400, corsHeaders)
+      nextMode = mode
       updates.push('value_mode = ?')
       values.push(mode)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'valueSecondary')) {
       const next = body.valueSecondary == null || body.valueSecondary === '' ? null : Number(body.valueSecondary)
       if (next != null && !Number.isFinite(next)) return jsonResponse({ error: 'valueSecondary must be a number' }, 400, corsHeaders)
+      nextValueSecondary = next
       updates.push('value_secondary = ?')
       values.push(next)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'graphEmbedUrl')) {
       const next = body.graphEmbedUrl == null ? null : String(body.graphEmbedUrl).trim().slice(0, 2048)
+      nextGraphEmbedUrl = next || ''
       updates.push('graph_embed_url = ?')
       values.push(next || null)
     }
@@ -492,6 +506,7 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
           return jsonResponse({ error: 'graphPayloadJson must be valid JSON' }, 400, corsHeaders)
         }
       }
+      nextGraphPayloadJson = next || ''
       updates.push('graph_payload_json = ?')
       values.push(next || null)
     }
@@ -501,6 +516,12 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
       values.push(body.sortOrder)
     }
     if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
+    if (nextMode === 'agree_disagree' && (nextValueSecondary == null || !Number.isFinite(nextValueSecondary))) {
+      return jsonResponse({ error: 'agree_disagree pills require valueSecondary' }, 400, corsHeaders)
+    }
+    if (nextMode === 'graph_embed' && !nextGraphEmbedUrl && !nextGraphPayloadJson) {
+      return jsonResponse({ error: 'graph_embed pills require graphEmbedUrl or graphPayloadJson' }, 400, corsHeaders)
+    }
     values.push(id)
     await db.prepare(`
       UPDATE pills
@@ -561,8 +582,9 @@ function normalizePillInput(body: any, options: { allowImageUploadUrl: boolean }
   }
   const imageUrlRaw = typeof body?.imageUrl === 'string' ? body.imageUrl.trim().slice(0, 2048) : ''
   const imageUrl = imageUrlRaw || null
-  if (!options.allowImageUploadUrl && imageUrl && !imageUrl.includes('/pills/')) {
-    return { ok: false as const, error: 'Use image upload for pill images.' }
+  if (!options.allowImageUploadUrl && imageUrl) {
+    const imageUrlValidation = validateAdminPillImageUrl(imageUrl)
+    if (!imageUrlValidation.ok) return { ok: false as const, error: 'Use image upload for pill images.' }
   }
   return {
     ok: true as const,
@@ -576,6 +598,20 @@ function normalizePillInput(body: any, options: { allowImageUploadUrl: boolean }
       graphEmbedUrl: graphEmbedUrl || null,
       graphPayloadJson: graphPayloadJson || null,
     },
+  }
+}
+
+function validateAdminPillImageUrl(imageUrl: string) {
+  try {
+    const url = new URL(imageUrl)
+    if (url.protocol !== 'https:') return { ok: false as const }
+    const encodedPath = url.pathname || ''
+    const decodedPath = decodeURIComponent(encodedPath)
+    if (!decodedPath.startsWith('/pills/')) return { ok: false as const }
+    if (decodedPath.includes('..') || /%2e/i.test(encodedPath)) return { ok: false as const }
+    return { ok: true as const }
+  } catch {
+    return { ok: false as const }
   }
 }
 
@@ -1398,7 +1434,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       )
       SELECT COUNT(DISTINCT session_id) AS total
       FROM session_rollup
-      WHERE segment_hits >= ? OR max_watch_seconds >= ?
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
     `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).first(),
     db.prepare(`
       WITH session_rollup AS (
@@ -1418,7 +1454,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
         COUNT(DISTINCT session_id) AS unique_sessions,
         COUNT(DISTINCT session_id) AS hits
       FROM session_rollup
-      WHERE segment_hits >= ? OR max_watch_seconds >= ?
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
       GROUP BY source
       ORDER BY unique_sessions DESC
       LIMIT 12
@@ -1502,7 +1538,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
         bucket,
         COUNT(DISTINCT session_id) AS unique_sessions
       FROM session_rollup
-      WHERE segment_hits >= ? OR max_watch_seconds >= ?
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
       GROUP BY bucket
       ORDER BY bucket ASC
     `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),

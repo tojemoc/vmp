@@ -4224,8 +4224,8 @@ const loadAnalytics = async () => {
       },
     }
     analyticsViewCounting.value = {
-      minSegmentsPerSession: Number(data?.viewCounting?.minSegmentsPerSession || 1),
-      minWatchSeconds: Number(data?.viewCounting?.minWatchSeconds || 15),
+      minSegmentsPerSession: Number(data?.viewCounting?.minSegmentsPerSession ?? 1),
+      minWatchSeconds: Number(data?.viewCounting?.minWatchSeconds ?? 15),
     }
     analyticsRange.value = data?.meta?.range || analyticsRange.value
     analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
@@ -4241,11 +4241,20 @@ const saveAnalyticsSettings = async () => {
   analyticsSettingsSaving.value = true
   analyticsError.value = ''
   try {
+    const integrations = {
+      datadog: {
+        enabled: analyticsIntegrationSettings.value.datadog.enabled,
+        site: analyticsIntegrationSettings.value.datadog.site,
+        ...(analyticsIntegrationSettings.value.datadog.apiKey !== '' ? { apiKey: analyticsIntegrationSettings.value.datadog.apiKey } : {}),
+      },
+      contentsquare: { ...analyticsIntegrationSettings.value.contentsquare },
+      ga4: { ...analyticsIntegrationSettings.value.ga4 },
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
-        integrations: analyticsIntegrationSettings.value,
+        integrations,
         viewCounting: analyticsViewCounting.value,
       }),
     })

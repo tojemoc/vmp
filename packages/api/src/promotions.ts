@@ -97,11 +97,17 @@ function getCheckoutRewardMapping(promoCode: any, provider: PromoProvider) {
   }
   const stripeCouponId = String(promoCode.stripe_coupon_id ?? '').trim()
   const gocardlessDiscountPercent = parseDiscountPercent(promoCode.gocardless_discount_percent)
-  if (provider === 'stripe' && !stripeCouponId) {
-    throw new Error('Stripe coupon ID is required for discount_percent promo codes')
+  if (provider === 'stripe') {
+    return {
+      stripeCouponId: stripeCouponId || '',
+      gocardlessDiscountPercent,
+    }
   }
-  if (provider === 'gocardless' && gocardlessDiscountPercent == null) {
-    throw new Error('GoCardless discount percent is required for discount_percent promo codes')
+  if (provider === 'gocardless') {
+    return {
+      stripeCouponId,
+      gocardlessDiscountPercent: gocardlessDiscountPercent == null ? null : gocardlessDiscountPercent,
+    }
   }
   return { stripeCouponId, gocardlessDiscountPercent }
 }
@@ -165,6 +171,24 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
   const valid = await validatePromoForPlan(env, promoCode, planType)
   if (!valid.ok) return { ok: false, reason: valid.code, status: valid.status, error: valid.error }
   const rewardMapping = getCheckoutRewardMapping(promoCode, provider)
+  if (promoCode.reward_type === 'discount_percent') {
+    if (provider === 'stripe' && !rewardMapping.stripeCouponId) {
+      return {
+        ok: false,
+        reason: 'promo_provider_mapping_missing',
+        status: 400,
+        error: 'Promo code is not configured for Stripe checkout',
+      }
+    }
+    if (provider === 'gocardless' && rewardMapping.gocardlessDiscountPercent == null) {
+      return {
+        ok: false,
+        reason: 'promo_provider_mapping_missing',
+        status: 400,
+        error: 'Promo code is not configured for GoCardless checkout',
+      }
+    }
+  }
   return {
     ok: true,
     promoCode,
