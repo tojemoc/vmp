@@ -228,7 +228,6 @@ export function buildHomepageRenderModel({
   return {
     renderedBlocks,
     featuredVideos,
-    recentTwoByTwoVideos: featuredVideos.slice(0, 4),
     categorySections,
     blockItems,
     hasFeaturedRowBlock,

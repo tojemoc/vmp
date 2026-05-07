@@ -2618,7 +2618,7 @@ const analytics = ref<AnalyticsResponse>({
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
 const analyticsSettingsSaving = ref(false)
 const analyticsIntegrationSettings = ref({
-  datadog: { enabled: false, site: '', apiKey: '', hasApiKey: false },
+  datadog: { enabled: false, site: '', apiKey: '' },
   contentsquare: { enabled: false, tag: '' },
   ga4: { enabled: false, measurementId: '' },
 })
@@ -4212,7 +4212,6 @@ const loadAnalytics = async () => {
         enabled: Boolean(data?.integrationSettings?.datadog?.enabled),
         site: String(data?.integrationSettings?.datadog?.site || ''),
         apiKey: '',
-        hasApiKey: Boolean(data?.integrationSettings?.datadog?.hasApiKey),
       },
       contentsquare: {
         enabled: Boolean(data?.integrationSettings?.contentsquare?.enabled),
