@@ -1194,6 +1194,38 @@
           </div>
 
           <template v-else>
+            <div v-if="systemFeatures.promotionsEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">Feature toggles</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Enable/disable system modules and reveal their settings only when enabled.</p>
+              </div>
+              <div v-if="systemFeaturesMessage" class="rounded-lg border px-4 py-3 text-sm" :class="systemFeaturesMessageClass">{{ systemFeaturesMessage }}</div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input v-model="systemFeatures.promotionsEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  Promo codes
+                </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input v-model="systemFeatures.isicEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  ISIC API
+                </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input v-model="systemFeatures.freePodcastPreviewEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  Free podcast preview feed
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                  :disabled="systemFeaturesSaving"
+                  @click="saveSystemFeatures"
+                >
+                  {{ systemFeaturesSaving ? 'Saving…' : 'Save feature toggles' }}
+                </button>
+              </div>
+            </div>
+
             <!-- Site Branding -->
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div>
@@ -1265,20 +1297,15 @@
               </div>
 
               <div>
-                <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Button order (drag via order fields)</p>
-                <div class="flex flex-wrap gap-3">
-                  <label class="text-sm text-gray-700 dark:text-gray-300">1st
-                    <select v-model="paymentSettings.providerOrder[0]" class="mt-1 block px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Primary checkout provider</p>
+                <div class="flex flex-wrap gap-3 items-end">
+                  <label class="text-sm text-gray-700 dark:text-gray-300">Primary
+                    <select v-model="paymentPrimaryProvider" class="mt-1 block px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                       <option value="stripe">Stripe</option>
                       <option value="gocardless">GoCardless</option>
                     </select>
                   </label>
-                  <label class="text-sm text-gray-700 dark:text-gray-300">2nd
-                    <select v-model="paymentSettings.providerOrder[1]" class="mt-1 block px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                      <option value="stripe">Stripe</option>
-                      <option value="gocardless">GoCardless</option>
-                    </select>
-                  </label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">The primary provider is shown first at checkout.</p>
                 </div>
               </div>
 
@@ -1316,7 +1343,7 @@
                     </label>
                   </div>
                 </div>
-                <div class="space-y-2">
+                <div v-if="paymentSettings.enabledProviders.includes('stripe')" class="space-y-2">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe price IDs</h4>
                   <p class="text-xs text-gray-500 dark:text-gray-400">From Stripe Dashboard → Products → Price IDs.</p>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Monthly price ID
@@ -1332,7 +1359,7 @@
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                <div v-if="paymentSettings.enabledProviders.includes('stripe')" class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe display prices (EUR)</h4>
                   <div class="grid grid-cols-3 gap-2">
                     <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
@@ -1346,7 +1373,7 @@
                     </label>
                   </div>
                 </div>
-                <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                <div v-if="paymentSettings.enabledProviders.includes('gocardless')" class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">GoCardless display prices (EUR)</h4>
                   <div class="grid grid-cols-3 gap-2">
                     <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
@@ -1374,7 +1401,7 @@
               </div>
             </div>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div v-if="systemFeatures.isicEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
@@ -1509,7 +1536,7 @@
               </div>
             </div>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div v-if="systemFeatures.freePodcastPreviewEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">ISIC campaigns</h3>
@@ -2307,6 +2334,14 @@ const paymentSettings = ref<{
 const paymentSettingsSaving = ref(false)
 const paymentSettingsMessage = ref('')
 const paymentSettingsMessageClass = ref('')
+const systemFeatures = ref({
+  promotionsEnabled: true,
+  isicEnabled: false,
+  freePodcastPreviewEnabled: true,
+})
+const systemFeaturesSaving = ref(false)
+const systemFeaturesMessage = ref('')
+const systemFeaturesMessageClass = ref('')
 const promotionsLoading = ref(false)
 const promotionsSaving = ref(false)
 const promoCampaigns = ref<PromoCampaign[]>([])
@@ -2369,6 +2404,17 @@ const rssPodcastWebhookSaving = ref(false)
 const rssPodcastNotifySending = ref(false)
 const rssPodcastMessage = ref('')
 const rssPodcastMessageClass = ref('')
+
+const paymentPrimaryProvider = computed<PaymentProvider>({
+  get() {
+    return paymentSettings.value.providerOrder[0] === 'gocardless' ? 'gocardless' : 'stripe'
+  },
+  set(next) {
+    paymentSettings.value.providerOrder = next === 'gocardless'
+      ? ['gocardless', 'stripe']
+      : ['stripe', 'gocardless']
+  },
+})
 
 let usersLoadRequestId = 0
 const users = ref<AdminUserRow[]>([])
@@ -3286,6 +3332,49 @@ const loadHomepageContent = async () => {
   await loadHomepageState()
 }
 
+const loadSystemFeatures = async () => {
+  if (!isAdmin.value) return
+  systemFeaturesMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, { headers: authHeader() })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    systemFeatures.value = {
+      promotionsEnabled: Boolean(data.promotionsEnabled),
+      isicEnabled: Boolean(data.isicEnabled),
+      freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
+    }
+    // Keep ISIC API enable checkbox in sync with feature toggle.
+    isicApiConfig.value.enabled = systemFeatures.value.isicEnabled
+  } catch (e: any) {
+    systemFeaturesMessage.value = `Could not load system feature toggles: ${e.message}`
+    systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const saveSystemFeatures = async () => {
+  if (!isAdmin.value) return
+  systemFeaturesSaving.value = true
+  systemFeaturesMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify(systemFeatures.value),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    systemFeaturesMessage.value = 'Feature toggles saved.'
+    systemFeaturesMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+    await loadSystemFeatures()
+  } catch (e: any) {
+    systemFeaturesMessage.value = e.message || 'Failed to save feature toggles'
+    systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    systemFeaturesSaving.value = false
+  }
+}
+
 const loadPaymentSettings = async () => {
   if (!isAdmin.value) return
   paymentSettingsMessage.value = ''
@@ -3477,6 +3566,21 @@ const loadIsicCampaigns = async () => {
 
 const saveIsicApiConfig = async () => {
   if (!isAdmin.value) return
+  if (!systemFeatures.value.isicEnabled) {
+    isicMessage.value = 'ISIC feature is disabled.'
+    isicMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+    return
+  }
+  if (!isicApiConfig.value.baseUrl.trim()) {
+    isicMessage.value = 'ISIC API base URL is required when ISIC is enabled.'
+    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+    return
+  }
+  if (!isicApiConfig.value.hasApiKey && !isicApiConfig.value.apiKey.trim()) {
+    isicMessage.value = 'Provide an ISIC API key when enabling ISIC.'
+    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+    return
+  }
   isicSaving.value = true
   isicMessage.value = ''
   try {
@@ -3627,12 +3731,27 @@ const loadRssPodcastWebhookSettings = async () => {
 
 const saveRssPodcastWebhookSettings = async () => {
   if (!isAdmin.value) return
+  if (!systemFeatures.value.freePodcastPreviewEnabled) {
+    rssPodcastMessage.value = 'Free podcast preview feed is disabled.'
+    rssPodcastMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+    return
+  }
   rssPodcastWebhookSaving.value = true
   rssPodcastMessage.value = ''
   try {
-    const body: Record<string, string> = { webhookUrl: rssPodcastWebhookUrl.value.trim() }
+    const webhookUrlTrimmed = rssPodcastWebhookUrl.value.trim()
+    if (webhookUrlTrimmed) {
+      const parsed = new URL(webhookUrlTrimmed)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Webhook URL must use http:// or https://')
+      }
+    }
+    const body: Record<string, string> = { webhookUrl: webhookUrlTrimmed }
     const sec = rssPodcastWebhookSecretInput.value.trim()
-    if (sec) body.webhookSecret = sec
+    if (sec) {
+      if (sec.length < 16) throw new Error('Webhook secret must be at least 16 characters')
+      body.webhookSecret = sec
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-rebuild-webhook`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
@@ -3654,6 +3773,11 @@ const saveRssPodcastWebhookSettings = async () => {
 
 const notifyPodcastPreviewRebuild = async () => {
   if (!isAdmin.value) return
+  if (!systemFeatures.value.freePodcastPreviewEnabled) {
+    rssPodcastMessage.value = 'Free podcast preview feed is disabled.'
+    rssPodcastMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+    return
+  }
   rssPodcastNotifySending.value = true
   rssPodcastMessage.value = ''
   try {
@@ -3691,24 +3815,34 @@ const savePaymentSettings = async () => {
   paymentSettingsMessage.value = ''
   try {
     const ps = paymentSettings.value
-    const a = ps.providerOrder[0]
-    const b = ps.providerOrder[1]
-    let order: PaymentProvider[]
-    if (a === b) {
-      const enabled: PaymentProvider[] = ps.enabledProviders.length ? ps.enabledProviders : ['stripe']
-      if (enabled.includes('stripe') && enabled.includes('gocardless')) {
-        order = ['stripe', 'gocardless']
-      } else {
-        order = [...enabled]
+    const enabledProviders = (ps.enabledProviders || []).filter((provider): provider is PaymentProvider =>
+      provider === 'stripe' || provider === 'gocardless',
+    )
+    if (!enabledProviders.length) {
+      throw new Error('Enable at least one payment gateway.')
+    }
+    if (!enabledProviders.includes(paymentPrimaryProvider.value)) {
+      throw new Error('Primary payment provider must also be enabled.')
+    }
+    const secondary = paymentPrimaryProvider.value === 'stripe' ? 'gocardless' : 'stripe'
+    const order: PaymentProvider[] = enabledProviders.includes(secondary)
+      ? [paymentPrimaryProvider.value, secondary]
+      : [paymentPrimaryProvider.value]
+    const hasAnyPlan = Array.isArray(ps.allowedPlans) && ps.allowedPlans.length > 0
+    if (!hasAnyPlan) {
+      throw new Error('Select at least one offered plan.')
+    }
+    if (enabledProviders.includes('stripe')) {
+      const missingStripePriceIds = ps.allowedPlans.filter((plan) => !String(ps.stripePriceIds?.[plan] || '').trim())
+      if (missingStripePriceIds.length) {
+        throw new Error(`Stripe price IDs are required for enabled plans: ${missingStripePriceIds.join(', ')}`)
       }
-    } else {
-      order = [a, b]
     }
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
-        enabledProviders: ps.enabledProviders,
+        enabledProviders,
         providerOrder: order,
         allowedPlans: ps.allowedPlans,
         basePrices: ps.basePrices,
@@ -4224,11 +4358,12 @@ const reloadAll = async () => {
     await loadHomepagePlacement()
     await loadNewsletterSettings()
     await loadNewsletterTemplates()
+    await loadSystemFeatures()
     await loadPaymentSettings()
-    await loadPromotions()
-    await loadIsicCampaigns()
+    if (systemFeatures.value.promotionsEnabled) await loadPromotions()
+    if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()
     await loadSiteBranding()
-    await loadRssPodcastWebhookSettings()
+    if (systemFeatures.value.freePodcastPreviewEnabled) await loadRssPodcastWebhookSettings()
     await loadUsers()
     await loadAnalytics()
     await loadAdminPills()

@@ -373,6 +373,14 @@ async function getActiveSubscriptionRow(db: any, userId: any) {
 
 export async function handlePublicFeed(request: any, env: any, corsHeaders: any) {
   try {
+    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+    if (!freePreviewEnabled) {
+      return new Response(JSON.stringify({ error: 'Not Found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
     if (request.method !== 'GET') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
@@ -459,6 +467,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
     }
 
     const rssSecret = env.RSS_SECRET?.trim()
+    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
     if (!rssSecret) {
       return new Response(JSON.stringify({ error: 'RSS not configured' }), {
         status: 503,
@@ -506,6 +515,12 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
 
     const subscription = await getActiveSubscriptionRow(session, userId)
     const hasPremiumAccess = isAdministrativeRole(user.role) || Boolean(subscription)
+    if (!hasPremiumAccess && !freePreviewEnabled) {
+      return new Response(JSON.stringify({ error: 'Premium subscription required', code: 'premium_required' }), {
+        status: 402,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
     const userPollMeta = { endpoint: 'feed_user', userId }
 
     const videos = await listPublishedVideos(session)

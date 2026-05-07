@@ -138,6 +138,10 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     await ensureAdminSettingsTable(db)
 
     const webhookUrl = (await getSetting(env, 'podcast_rebuild_webhook_url', { defaultValue: '' }))?.trim()
+    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+    if (!freePreviewEnabled) {
+      return jsonResponse({ error: 'Free podcast preview feed is disabled', code: 'free_preview_disabled' }, 400, corsHeaders)
+    }
     if (!webhookUrl) {
       return jsonResponse({ error: 'Podcast rebuild webhook URL is not configured', code: 'webhook_not_configured' }, 400, corsHeaders)
     }

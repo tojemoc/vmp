@@ -38,6 +38,11 @@ async function getAllowedPlansFromSettings(env: any): Promise<string[]> {
   return plans.length > 0 ? Array.from(new Set(plans)) : ['monthly', 'yearly', 'club']
 }
 
+async function isPromotionsEnabled(env: any): Promise<boolean> {
+  const raw = await getSetting(env, 'promotions_enabled', { defaultValue: '1' })
+  return String(raw ?? '1').trim() === '1'
+}
+
 function parseAllowedPlanTypes(raw: any, allowedPlans: string[]) {
   if (Array.isArray(raw) && raw.length === 0) return []
   const rawStr = String(raw ?? '')
@@ -134,6 +139,9 @@ async function validatePromoForPlan(env: any, promoCode: any, planType: string) 
 }
 
 export async function resolvePromoCodeForCheckout(env: any, codeInput: any, planType: string) {
+  if (!(await isPromotionsEnabled(env))) {
+    return { ok: false, reason: 'promotions_disabled', status: 503, error: 'Promo codes are currently disabled' }
+  }
   const code = normalizeCode(codeInput)
   if (!code) return { ok: false, reason: 'empty' }
   const db = getDb(env)
@@ -427,6 +435,13 @@ export async function handlePromoValidate(request: any, env: any, corsHeaders: a
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   const body = await request.json().catch(() => null)
+  if (!(await isPromotionsEnabled(env))) {
+    return jsonResponse({
+      valid: false,
+      error: 'Promo codes are currently disabled',
+      code: 'promotions_disabled',
+    }, 503, corsHeaders)
+  }
   const planType = String(body?.planType ?? 'monthly').trim().toLowerCase()
   if (!['monthly', 'yearly', 'club'].includes(planType)) {
     return jsonResponse({ error: 'planType must be one of monthly, yearly, club' }, 400, corsHeaders)
