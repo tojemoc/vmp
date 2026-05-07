@@ -1194,7 +1194,7 @@
           </div>
 
           <template v-else>
-            <div v-if="systemFeatures.promotionsEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">Feature toggles</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Enable/disable system modules and reveal their settings only when enabled.</p>
@@ -1401,7 +1401,7 @@
               </div>
             </div>
 
-            <div v-if="systemFeatures.isicEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div v-if="systemFeatures.promotionsEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
@@ -1536,7 +1536,7 @@
               </div>
             </div>
 
-            <div v-if="systemFeatures.freePodcastPreviewEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div v-if="systemFeatures.isicEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">ISIC campaigns</h3>
@@ -1643,7 +1643,7 @@
               </div>
             </div>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div v-if="systemFeatures.freePodcastPreviewEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">Podcast preview (RSS)</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -3566,7 +3566,7 @@ const loadIsicCampaigns = async () => {
 
 const saveIsicApiConfig = async () => {
   if (!isAdmin.value) return
-  if (!systemFeatures.value.isicEnabled) {
+  if (!isicApiConfig.value.enabled) {
     isicMessage.value = 'ISIC feature is disabled.'
     isicMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
     return

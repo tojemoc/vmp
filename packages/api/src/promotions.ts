@@ -140,7 +140,7 @@ async function validatePromoForPlan(env: any, promoCode: any, planType: string) 
 
 export async function resolvePromoCodeForCheckout(env: any, codeInput: any, planType: string) {
   if (!(await isPromotionsEnabled(env))) {
-    return { ok: false, reason: 'promotions_disabled', status: 503, error: 'Promo codes are currently disabled' }
+    return { ok: false, reason: 'promotions_disabled', status: 403, error: 'Promo codes are currently disabled' }
   }
   const code = normalizeCode(codeInput)
   if (!code) return { ok: false, reason: 'empty' }
@@ -440,7 +440,7 @@ export async function handlePromoValidate(request: any, env: any, corsHeaders: a
       valid: false,
       error: 'Promo codes are currently disabled',
       code: 'promotions_disabled',
-    }, 503, corsHeaders)
+    }, 403, corsHeaders)
   }
   const planType = String(body?.planType ?? 'monthly').trim().toLowerCase()
   if (!['monthly', 'yearly', 'club'].includes(planType)) {

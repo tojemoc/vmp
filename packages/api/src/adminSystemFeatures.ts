@@ -44,13 +44,13 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
 
   const updates: [string, string][] = []
   if (Object.prototype.hasOwnProperty.call(body, 'promotionsEnabled')) {
-    updates.push(['promotions_enabled', body.promotionsEnabled ? '1' : '0'])
+    updates.push(['promotions_enabled', body.promotionsEnabled === true ? '1' : '0'])
   }
   if (Object.prototype.hasOwnProperty.call(body, 'isicEnabled')) {
-    updates.push(['isic_api_enabled', body.isicEnabled ? '1' : '0'])
+    updates.push(['isic_api_enabled', body.isicEnabled === true ? '1' : '0'])
   }
   if (Object.prototype.hasOwnProperty.call(body, 'freePodcastPreviewEnabled')) {
-    updates.push(['rss_free_preview_enabled', body.freePodcastPreviewEnabled ? '1' : '0'])
+    updates.push(['rss_free_preview_enabled', body.freePodcastPreviewEnabled === true ? '1' : '0'])
   }
   if (!updates.length) {
     return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
