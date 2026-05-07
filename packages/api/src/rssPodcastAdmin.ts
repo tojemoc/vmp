@@ -201,16 +201,31 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     }
 
     const text = await res.text().catch(() => '')
+    const parsed = (() => {
+      try {
+        return text ? JSON.parse(text) : null
+      } catch {
+        return null
+      }
+    })()
     if (!res.ok) {
       return jsonResponse({
         error: 'Webhook request failed',
         code: 'webhook_failed',
         status: res.status,
-        detail: text.slice(0, 500),
+        detail: typeof parsed?.error === 'string' ? parsed.error : text.slice(0, 500),
       }, 502, corsHeaders)
     }
 
-    return jsonResponse({ ok: true, delivered: true, videoCount: payload.videos.length }, 200, corsHeaders)
+    return jsonResponse({
+      ok: true,
+      delivered: true,
+      videoCount: payload.videos.length,
+      webhookStatus: res.status,
+      acceptedCount: Number(parsed?.acceptedCount ?? payload.videos.length),
+      rejectedCount: Number(parsed?.rejectedCount ?? 0),
+      rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
+    }, 200, corsHeaders)
   } catch (e) {
     console.error('handleRssPodcastPreviewRebuildNotify:', e)
     return jsonResponse({ error: 'Internal server error', code: 'internal_error' }, 500, corsHeaders)

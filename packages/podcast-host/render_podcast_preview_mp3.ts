@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
@@ -52,6 +52,31 @@ function run(command: string, args: readonly string[], label: string): Promise<v
   })
 }
 
+async function runCapture(command: string, args: readonly string[], label: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+    activeChild = child
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString()
+      stdout += text
+      process.stdout.write(text)
+    })
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString()
+      stderr += text
+      process.stderr.write(text)
+    })
+    child.on('error', (err) => reject(err))
+    child.on('close', (code) => {
+      if (activeChild === child) activeChild = null
+      if (code === 0) return resolve(stdout)
+      reject(new Error(`${label} failed with exit ${code}: ${stderr.slice(-400)}`))
+    })
+  })
+}
+
 async function copyFirstAvailableSource(root: string, videoId: string, localIn: string): Promise<string> {
   const candidates = [
     r2Path(root, `videos/${videoId}/podcast.mp3`),
@@ -80,6 +105,7 @@ async function main() {
   const tempDir = await mkdtemp(path.join(tmpdir(), `vmp_podcast_preview_${videoId}_`))
   const localIn = path.join(tempDir, 'podcast.mp3')
   const localOut = path.join(tempDir, 'podcast_preview.mp3')
+  const localMeta = path.join(tempDir, 'podcast_preview.meta.json')
   let cleaning = false
   const cleanupTempDir = async () => {
     if (cleaning) return
@@ -109,7 +135,28 @@ async function main() {
       'ffmpeg preview render',
     )
 
+    const ffprobeRaw = await runCapture(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', localOut],
+      'ffprobe preview duration',
+    )
+    const measuredDurationSeconds = Number.parseFloat(ffprobeRaw.trim())
+    if (!Number.isFinite(measuredDurationSeconds) || measuredDurationSeconds <= 0) {
+      throw new Error('Failed to validate rendered preview duration')
+    }
+    const roundedDuration = Math.round(measuredDurationSeconds)
+    if (roundedDuration > previewSeconds + 1) {
+      throw new Error(`Trimmed preview is too long (${roundedDuration}s > ${previewSeconds}s)`)
+    }
+    await writeFile(localMeta, JSON.stringify({
+      videoId,
+      requestedPreviewSeconds: previewSeconds,
+      measuredDurationSeconds: roundedDuration,
+      renderedAt: new Date().toISOString(),
+    }))
+
     await run('rclone', ['copyto', localOut, r2Path(root, `videos/${videoId}/podcast_preview.mp3`)], 'rclone preview upload')
+    await run('rclone', ['copyto', localMeta, r2Path(root, `videos/${videoId}/podcast_preview.meta.json`)], 'rclone preview metadata upload')
     console.log(`[preview] done video=${videoId} seconds=${previewSeconds}`)
   } finally {
     process.off('SIGTERM', onSigterm)

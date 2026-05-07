@@ -170,6 +170,24 @@ function entrypointPathnameLower(entrypointUrl: unknown): string {
   }
 }
 
+async function fetchPreviewMetaDurationSeconds(metaUrl: string): Promise<number | null> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 1200)
+    try {
+      const res = await fetch(metaUrl, { signal: controller.signal })
+      if (!res.ok) return null
+      const data: any = await res.json().catch(() => null)
+      const value = Number(data?.measuredDurationSeconds)
+      return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  } catch {
+    return null
+  }
+}
+
 async function buildRssEnclosureForVideo({
   request,
   env,
@@ -218,15 +236,23 @@ async function buildRssEnclosureForVideo({
   const previewDuration = Number(v.preview_duration ?? 0) || 0
   const fullDuration = Number(v.full_duration ?? 0) || 0
   const mediaDuration = fullDuration > 0 ? fullDuration : previewDuration
+  const previewMetaDuration = isMp3
+    ? await fetchPreviewMetaDurationSeconds(
+      String(entrypointUrl).replace(/\.mp3(\?.*)?$/i, '.meta.json'),
+    )
+    : null
+  const effectivePreviewCap = previewMetaDuration && hasPreviewCap
+    ? Math.min(previewUntilSeconds, previewMetaDuration)
+    : previewUntilSeconds
   const isTruncatedPreview = hasPreviewCap
-    && typeof previewUntilSeconds === 'number'
-    && previewUntilSeconds > 0
-    && previewUntilSeconds < mediaDuration
+    && typeof effectivePreviewCap === 'number'
+    && effectivePreviewCap > 0
+    && effectivePreviewCap < mediaDuration
   const effectiveDurationSeconds = isTruncatedPreview
-    ? previewUntilSeconds
-    : (mediaDuration > 0 ? mediaDuration : (hasPreviewCap ? previewUntilSeconds : 0))
+    ? effectivePreviewCap
+    : (mediaDuration > 0 ? mediaDuration : (hasPreviewCap ? (effectivePreviewCap ?? 0) : 0))
   if (isTruncatedPreview) {
-    itunesDurationStr = secondsToItunesDuration(previewUntilSeconds)
+    itunesDurationStr = secondsToItunesDuration(effectivePreviewCap)
   } else {
     itunesDurationStr = secondsToItunesDuration(mediaDuration)
   }
