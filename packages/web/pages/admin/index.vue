@@ -309,7 +309,7 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
               <input v-model="mediaUpload.title" type="text" placeholder="Video title" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
               <input v-model="mediaUpload.description" type="text" placeholder="Description (optional)" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm md:col-span-2" />
-              <input type="file" accept="video/*" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 file:text-gray-900 dark:file:text-gray-100 file:bg-transparent text-sm" @change="onMediaUploadFileChange" />
+              <input type="file" accept="video/*" :disabled="mediaUpload.busy" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 file:text-gray-900 dark:file:text-gray-100 file:bg-transparent text-sm disabled:opacity-60 disabled:cursor-not-allowed" @change="onMediaUploadFileChange" />
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
               <button
@@ -1446,10 +1446,12 @@
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   AWS secret access key
                   <input v-model="mediaConvertSystem.awsSecretAccessKey" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasAwsSecret" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
                 </label>
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   AWS session token (optional)
                   <input v-model="mediaConvertSystem.awsSessionToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasAwsSession" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
                 </label>
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   MediaConvert endpoint
@@ -1482,6 +1484,7 @@
                 <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
                   TUS auth token (optional)
                   <input v-model="mediaConvertSystem.tusAuthToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasTusAuth" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
                 </label>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -2691,7 +2694,9 @@ const mediaConvertSystem = ref({
   awsRegion: '',
   awsAccessKeyId: '',
   awsSecretAccessKey: '',
+  hasAwsSecret: false,
   awsSessionToken: '',
+  hasAwsSession: false,
   endpoint: '',
   roleArn: '',
   inputBucket: '',
@@ -2700,6 +2705,7 @@ const mediaConvertSystem = ref({
   outputPrefix: 'mediaconvert-output',
   tusEndpoint: '',
   tusAuthToken: '',
+  hasTusAuth: false,
 })
 const mediaConvertSystemSaving = ref(false)
 const mediaConvertSystemMessage = ref('')
@@ -3430,6 +3436,7 @@ const loadMediaConvertConfig = async () => {
 }
 
 const onMediaUploadFileChange = (event: Event) => {
+  if (mediaUpload.value.busy) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
   mediaUpload.value.file = file
@@ -3437,7 +3444,6 @@ const onMediaUploadFileChange = (event: Event) => {
   mediaUpload.value.progress = 0
   mediaUpload.value.status = 'uploaded'
   mediaUpload.value.message = ''
-  mediaUpload.value.busy = false
   if (!file) return
   if (!mediaUpload.value.title.trim()) {
     mediaUpload.value.title = file.name.replace(/\.[^.]+$/, '')
@@ -3473,17 +3479,22 @@ const startMediaConvertUpload = async () => {
     if (!prepareData?.upload?.endpoint || !prepareData?.job?.id) {
       throw new Error('Upload session could not be created.')
     }
+    const uploadInputKey = String(prepareData.upload?.metadata?.inputkey || '')
+    const uploadVideoId = String(prepareData.upload?.metadata?.videoid || '')
+    const uploadJobId = String(prepareData.job?.id || '')
+    const uploadFingerprintScope = uploadInputKey || uploadVideoId || uploadJobId
 
     await new Promise<void>((resolve, reject) => {
       const upload = new TusUpload(file, {
         endpoint: String(prepareData.upload.endpoint),
         retryDelays: [0, 1000, 3000, 5000],
         chunkSize: 8 * 1024 * 1024,
+        fingerprint: async (currentFile) => `${currentFile.name}-${currentFile.type}-${currentFile.size}-${currentFile.lastModified}-${uploadFingerprintScope}`,
         metadata: {
           filename: String(prepareData.upload?.metadata?.filename || file.name),
           filetype: String(prepareData.upload?.metadata?.filetype || file.type || 'application/octet-stream'),
-          inputkey: String(prepareData.upload?.metadata?.inputkey || ''),
-          videoid: String(prepareData.upload?.metadata?.videoid || ''),
+          inputkey: uploadInputKey,
+          videoid: uploadVideoId,
         },
         headers: (prepareData.upload?.headers && typeof prepareData.upload.headers === 'object')
           ? prepareData.upload.headers
@@ -3911,8 +3922,10 @@ const loadMediaConvertSystemSettings = async () => {
       enabled: Boolean(data.enabled),
       awsRegion: String(data.awsRegion || ''),
       awsAccessKeyId: String(data.awsAccessKeyId || ''),
-      awsSecretAccessKey: String(data.awsSecretAccessKey || ''),
-      awsSessionToken: String(data.awsSessionToken || ''),
+      awsSecretAccessKey: '',
+      hasAwsSecret: Boolean(data?.secrets?.awsSecretAccessKeyMasked),
+      awsSessionToken: '',
+      hasAwsSession: Boolean(data?.secrets?.awsSessionTokenMasked),
       endpoint: String(data.endpoint || ''),
       roleArn: String(data.roleArn || ''),
       inputBucket: String(data.inputBucket || ''),
@@ -3920,7 +3933,8 @@ const loadMediaConvertSystemSettings = async () => {
       inputPrefix: String(data.inputPrefix || 'mediaconvert-input'),
       outputPrefix: String(data.outputPrefix || 'mediaconvert-output'),
       tusEndpoint: String(data.tusEndpoint || ''),
-      tusAuthToken: String(data.tusAuthToken || ''),
+      tusAuthToken: '',
+      hasTusAuth: Boolean(data?.secrets?.tusAuthTokenMasked),
     }
   } catch (e: any) {
     mediaConvertSystemMessage.value = `Could not load MediaConvert settings: ${e.message}`
@@ -3933,10 +3947,25 @@ const saveMediaConvertSystemSettings = async () => {
   mediaConvertSystemSaving.value = true
   mediaConvertSystemMessage.value = ''
   try {
+    const payload: Record<string, unknown> = {
+      enabled: mediaConvertSystem.value.enabled,
+      awsRegion: mediaConvertSystem.value.awsRegion,
+      awsAccessKeyId: mediaConvertSystem.value.awsAccessKeyId,
+      endpoint: mediaConvertSystem.value.endpoint,
+      roleArn: mediaConvertSystem.value.roleArn,
+      inputBucket: mediaConvertSystem.value.inputBucket,
+      outputBucket: mediaConvertSystem.value.outputBucket,
+      inputPrefix: mediaConvertSystem.value.inputPrefix,
+      outputPrefix: mediaConvertSystem.value.outputPrefix,
+      tusEndpoint: mediaConvertSystem.value.tusEndpoint,
+    }
+    if (mediaConvertSystem.value.awsSecretAccessKey.trim()) payload.awsSecretAccessKey = mediaConvertSystem.value.awsSecretAccessKey.trim()
+    if (mediaConvertSystem.value.awsSessionToken.trim()) payload.awsSessionToken = mediaConvertSystem.value.awsSessionToken.trim()
+    if (mediaConvertSystem.value.tusAuthToken.trim()) payload.tusAuthToken = mediaConvertSystem.value.tusAuthToken.trim()
     const res = await fetch(`${config.public.apiUrl}/api/admin/system/mediaconvert`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(mediaConvertSystem.value),
+      body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)

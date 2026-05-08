@@ -454,6 +454,9 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const inputKey = `${cfg.inputPrefix.replace(/\/+$/, '')}/${videoId}/${safeName}`
   const outputPrefix = `${cfg.outputPrefix.replace(/\/+$/, '')}/${videoId}`
+  if (!cfg.tusConfigured) {
+    return jsonResponse({ error: 'TUS upload endpoint is not configured' }, 503, corsHeaders)
+  }
   const db = getDb(env)
   if (categoryId) {
     const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
@@ -476,10 +479,6 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
     jobId, videoId, cfg.inputBucket, inputKey, cfg.outputBucket, outputPrefix,
     JSON.stringify(renditions), inputDurationSeconds, usage.normalizedMinutes, usage.estimatedCostUsd,
   ).run()
-
-  if (!cfg.tusConfigured) {
-    return jsonResponse({ error: 'TUS upload endpoint is not configured' }, 503, corsHeaders)
-  }
 
   return jsonResponse({
     ok: true,
@@ -807,8 +806,6 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
       enabled: raw('mediaconvert_enabled', '0') === '1',
       awsRegion: raw('mediaconvert_aws_region'),
       awsAccessKeyId: raw('mediaconvert_aws_access_key_id'),
-      awsSecretAccessKey: raw('mediaconvert_aws_secret_access_key'),
-      awsSessionToken: raw('mediaconvert_aws_session_token'),
       endpoint: raw('mediaconvert_endpoint'),
       roleArn: raw('mediaconvert_role_arn'),
       inputBucket: raw('mediaconvert_input_bucket'),
@@ -816,7 +813,6 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
       inputPrefix: raw('mediaconvert_input_prefix', 'mediaconvert-input'),
       outputPrefix: raw('mediaconvert_output_prefix', 'mediaconvert-output'),
       tusEndpoint: raw('mediaconvert_tus_endpoint'),
-      tusAuthToken: raw('mediaconvert_tus_auth_token'),
       secrets: {
         awsSecretAccessKeyMasked: maskSecret(raw('mediaconvert_aws_secret_access_key')),
         awsSessionTokenMasked: maskSecret(raw('mediaconvert_aws_session_token')),
@@ -830,21 +826,23 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
   const body = (bodyRaw && typeof bodyRaw === 'object') ? bodyRaw as Record<string, unknown> : null
   if (!body) return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
   const getString = (key: string) => String(body[key] ?? '').trim()
-  const updates: [string, string][] = [
-    ['mediaconvert_enabled', body.enabled === true ? '1' : '0'],
-    ['mediaconvert_aws_region', getString('awsRegion')],
-    ['mediaconvert_aws_access_key_id', getString('awsAccessKeyId')],
-    ['mediaconvert_aws_secret_access_key', getString('awsSecretAccessKey')],
-    ['mediaconvert_aws_session_token', getString('awsSessionToken')],
-    ['mediaconvert_endpoint', getString('endpoint')],
-    ['mediaconvert_role_arn', getString('roleArn')],
-    ['mediaconvert_input_bucket', getString('inputBucket')],
-    ['mediaconvert_output_bucket', getString('outputBucket')],
-    ['mediaconvert_input_prefix', getString('inputPrefix') || 'mediaconvert-input'],
-    ['mediaconvert_output_prefix', getString('outputPrefix') || 'mediaconvert-output'],
-    ['mediaconvert_tus_endpoint', getString('tusEndpoint')],
-    ['mediaconvert_tus_auth_token', getString('tusAuthToken')],
-  ]
+  const updates: [string, string][] = []
+  if (Object.prototype.hasOwnProperty.call(body, 'enabled')) {
+    updates.push(['mediaconvert_enabled', body.enabled === true ? '1' : '0'])
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'awsRegion')) updates.push(['mediaconvert_aws_region', getString('awsRegion')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsAccessKeyId')) updates.push(['mediaconvert_aws_access_key_id', getString('awsAccessKeyId')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsSecretAccessKey')) updates.push(['mediaconvert_aws_secret_access_key', getString('awsSecretAccessKey')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsSessionToken')) updates.push(['mediaconvert_aws_session_token', getString('awsSessionToken')])
+  if (Object.prototype.hasOwnProperty.call(body, 'endpoint')) updates.push(['mediaconvert_endpoint', getString('endpoint')])
+  if (Object.prototype.hasOwnProperty.call(body, 'roleArn')) updates.push(['mediaconvert_role_arn', getString('roleArn')])
+  if (Object.prototype.hasOwnProperty.call(body, 'inputBucket')) updates.push(['mediaconvert_input_bucket', getString('inputBucket')])
+  if (Object.prototype.hasOwnProperty.call(body, 'outputBucket')) updates.push(['mediaconvert_output_bucket', getString('outputBucket')])
+  if (Object.prototype.hasOwnProperty.call(body, 'inputPrefix')) updates.push(['mediaconvert_input_prefix', getString('inputPrefix')])
+  if (Object.prototype.hasOwnProperty.call(body, 'outputPrefix')) updates.push(['mediaconvert_output_prefix', getString('outputPrefix')])
+  if (Object.prototype.hasOwnProperty.call(body, 'tusEndpoint')) updates.push(['mediaconvert_tus_endpoint', getString('tusEndpoint')])
+  if (Object.prototype.hasOwnProperty.call(body, 'tusAuthToken')) updates.push(['mediaconvert_tus_auth_token', getString('tusAuthToken')])
+  if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
   await setSettings(env, updates)
   return jsonResponse({ ok: true }, 200, corsHeaders)
 }
