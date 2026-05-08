@@ -44,6 +44,16 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   })
 }
 
+function isSafeHttpUrl(urlString: string): boolean {
+  if (!urlString || typeof urlString !== 'string') return false
+  try {
+    const url = new URL(urlString)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export async function handleHomepageContent(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin')
@@ -496,6 +506,9 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'graphEmbedUrl')) {
       const next = body.graphEmbedUrl == null ? null : String(body.graphEmbedUrl).trim().slice(0, 2048)
+      if (next && !isSafeHttpUrl(next)) {
+        return jsonResponse({ error: 'graphEmbedUrl must be a valid http or https URL' }, 400, corsHeaders)
+      }
       nextGraphEmbedUrl = next || ''
       updates.push('graph_embed_url = ?')
       values.push(next || null)
@@ -569,6 +582,9 @@ function normalizePillInput(body: any, options: { allowImageUploadUrl: boolean }
   const valueSecondary = body?.valueSecondary == null || body.valueSecondary === '' ? null : Number(body.valueSecondary)
   if (valueSecondary != null && !Number.isFinite(valueSecondary)) return { ok: false as const, error: 'valueSecondary must be a number' }
   const graphEmbedUrl = typeof body?.graphEmbedUrl === 'string' ? body.graphEmbedUrl.trim().slice(0, 2048) : ''
+  if (graphEmbedUrl && !isSafeHttpUrl(graphEmbedUrl)) {
+    return { ok: false as const, error: 'graphEmbedUrl must be a valid http or https URL' }
+  }
   const graphPayloadJson = typeof body?.graphPayloadJson === 'string' ? body.graphPayloadJson.trim().slice(0, 10000) : ''
   if (valueMode === 'agree_disagree' && valueSecondary == null) {
     return { ok: false as const, error: 'agree_disagree pills require valueSecondary' }
@@ -638,10 +654,13 @@ export async function handleAdminPillImageUpload(request: any, env: any, corsHea
     : file.type === 'image/webp' ? 'webp'
       : file.type === 'image/gif' ? 'gif'
         : 'jpg'
+  const base = String(env.R2_BASE_URL ?? '').trim().replace(/\/$/, '')
+  if (!base) {
+    return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders)
+  }
   const key = `pills/${Date.now()}-${crypto.randomUUID()}.${ext}`
   await env.BUCKET.put(key, bytes, { httpMetadata: { contentType: file.type } })
-  const base = String(env.R2_BASE_URL ?? '').replace(/\/$/, '')
-  const imageUrl = base ? `${base}/${key}` : key
+  const imageUrl = `${base}/${key}`
   return jsonResponse({ ok: true, imageUrl, key }, 200, corsHeaders)
 }
 

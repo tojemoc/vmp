@@ -91,6 +91,12 @@ function parseDiscountPercent(raw: any) {
   return Number(numeric.toFixed(2))
 }
 
+function isValidGocardlessPlanCode(raw: any): boolean {
+  if (raw == null) return false
+  const value = String(raw).trim()
+  return value.length > 0
+}
+
 function getCheckoutRewardMapping(promoCode: any, provider: PromoProvider) {
   if (promoCode.reward_type !== 'discount_percent') {
     return { stripeCouponId: '', gocardlessDiscountPercent: null as number | null }
@@ -193,7 +199,7 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
     }
     if (provider === 'gocardless') {
       const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
-      if (requiresPlanCode && !rewardMapping.gocardlessPlanCode) {
+      if (requiresPlanCode && !isValidGocardlessPlanCode(rewardMapping.gocardlessPlanCode)) {
         return {
           ok: false,
           reason: 'promo_provider_mapping_missing',
@@ -387,6 +393,17 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     if (rewardType === 'discount_percent' && !stripeCouponId && gocardlessDiscountPercent == null) {
       return jsonResponse({ error: 'Provide at least one provider mapping (Stripe coupon ID and/or GoCardless discount percent) for discount_percent promo codes' }, 400, corsHeaders)
     }
+    if (rewardType === 'discount_percent' && gocardlessDiscountPercent != null) {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !isValidGocardlessPlanCode(gocardlessPlanCode)) {
+        return jsonResponse({
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }, 400, corsHeaders)
+      }
+    }
 
     const insertStmt = db.prepare(`
       INSERT INTO promo_codes (
@@ -432,6 +449,7 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     let currentRewardType = String(existing.reward_type || 'free_month')
     let currentStripeCouponId = String(existing.stripe_coupon_id || '').trim()
     let currentGoCardlessDiscountPercent = parseDiscountPercent(existing.gocardless_discount_percent)
+    let currentGocardlessPlanCode = String(existing.gocardless_plan_code || '').trim()
 
     const updates = []
     const values = []
@@ -470,8 +488,9 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
       values.push(currentGoCardlessDiscountPercent)
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'gocardlessPlanCode')) {
+      currentGocardlessPlanCode = body?.gocardlessPlanCode ? String(body.gocardlessPlanCode).trim() : ''
       updates.push('gocardless_plan_code = ?')
-      values.push(body?.gocardlessPlanCode ? String(body.gocardlessPlanCode).trim() : null)
+      values.push(currentGocardlessPlanCode || null)
     }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'expiresAt')) {
       const nextParsed = parseOptionalIsoDate(body?.expiresAt)
@@ -484,6 +503,17 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
 
     if (currentRewardType === 'discount_percent' && !currentStripeCouponId && currentGoCardlessDiscountPercent == null) {
       return jsonResponse({ error: 'Provide at least one provider mapping (Stripe coupon ID and/or GoCardless discount percent) for discount_percent promo codes' }, 400, corsHeaders)
+    }
+    if (currentRewardType === 'discount_percent' && currentGoCardlessDiscountPercent != null) {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !isValidGocardlessPlanCode(currentGocardlessPlanCode)) {
+        return jsonResponse({
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }, 400, corsHeaders)
+      }
     }
     values.push(id)
     await db.prepare(`
