@@ -489,6 +489,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
     const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''
     let promoCodeId: string | null = null
+    let gocardlessDiscountPercentSnapshot: number | null = null
     if (promoCodeInput) {
       const promoValidation = await resolvePromoCodeForCheckout(env, promoCodeInput, planType, 'gocardless')
       if (!promoValidation.ok) {
@@ -498,6 +499,8 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         }, promoValidation.status ?? 400, corsHeaders)
       }
       promoCodeId = promoValidation.checkoutMeta?.promoCodeId ?? null
+      const discountSnapshot = Number(promoValidation.checkoutMeta?.gocardlessDiscountPercent)
+      gocardlessDiscountPercentSnapshot = Number.isFinite(discountSnapshot) ? discountSnapshot : null
     }
 
     const checkoutToken = crypto.randomUUID()
@@ -505,9 +508,9 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
       INSERT INTO payment_checkout_sessions
-        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, updated_at)
-      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken, promoCodeId).run()
+        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, updated_at)
+      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, CURRENT_TIMESTAMP)
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken, promoCodeId, gocardlessDiscountPercentSnapshot).run()
 
     const flowResponse = await gocardlessPost('/redirect_flows', {
       redirect_flows: {
@@ -806,7 +809,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
   try {
     const db = getDb(env)
     const checkoutSession = await db.prepare(`
-      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id
+      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot
       FROM payment_checkout_sessions
       WHERE provider = 'gocardless'
         AND user_id = ?
@@ -838,7 +841,11 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
     if (amountEur == null || !Number.isFinite(amountEur)) {
       return jsonResponse({ error: 'Pricing is not configured for selected plan' }, 503, corsHeaders)
     }
-    if (checkoutSession.promo_code_id) {
+    const snapshotPercent = Number(checkoutSession.gocardless_discount_percent_snapshot)
+    if (Number.isFinite(snapshotPercent) && snapshotPercent > 0 && snapshotPercent <= 100) {
+      amountEur = Number((amountEur * (1 - snapshotPercent / 100)).toFixed(2))
+    } else if (checkoutSession.promo_code_id) {
+      // Backward-compatible fallback for sessions created before snapshot support.
       const promoRow: any = await db.prepare(`
         SELECT reward_type, gocardless_discount_percent
         FROM promo_codes

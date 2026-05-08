@@ -97,19 +97,22 @@ function getCheckoutRewardMapping(promoCode: any, provider: PromoProvider) {
   }
   const stripeCouponId = String(promoCode.stripe_coupon_id ?? '').trim()
   const gocardlessDiscountPercent = parseDiscountPercent(promoCode.gocardless_discount_percent)
+  const gocardlessPlanCode = String(promoCode.gocardless_plan_code ?? '').trim()
   if (provider === 'stripe') {
     return {
       stripeCouponId: stripeCouponId || '',
       gocardlessDiscountPercent,
+      gocardlessPlanCode,
     }
   }
   if (provider === 'gocardless') {
     return {
       stripeCouponId,
       gocardlessDiscountPercent: gocardlessDiscountPercent == null ? null : gocardlessDiscountPercent,
+      gocardlessPlanCode,
     }
   }
-  return { stripeCouponId, gocardlessDiscountPercent }
+  return { stripeCouponId, gocardlessDiscountPercent, gocardlessPlanCode }
 }
 
 async function getCodeByValue(db: any, code: string) {
@@ -188,6 +191,17 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
         error: 'Promo code is not configured for GoCardless checkout',
       }
     }
+    if (provider === 'gocardless') {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !rewardMapping.gocardlessPlanCode) {
+        return {
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }
+      }
+    }
   }
   return {
     ok: true,
@@ -198,6 +212,7 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
       rewardType: promoCode.reward_type,
       stripeCouponId: rewardMapping.stripeCouponId,
       gocardlessDiscountPercent: rewardMapping.gocardlessDiscountPercent,
+      gocardlessPlanCode: rewardMapping.gocardlessPlanCode || '',
     },
   }
 }

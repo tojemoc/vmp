@@ -355,6 +355,15 @@ watch(selectedPlan, () => {
   promoError.value = null
 })
 
+watch(selectedProvider, () => {
+  // Provider changes can invalidate a previously-applied code.
+  promoApplied.value = null
+  promoError.value = null
+  if (promoCodeInput.value.trim() && isLoggedIn.value) {
+    void validatePromoCode()
+  }
+})
+
 watch(promoCodeInput, (newInput) => {
   const trimmed = newInput.trim()
   const appliedCode = promoApplied.value?.code ?? ''

@@ -1099,6 +1099,13 @@
                   <input v-model="analyticsIntegrationSettings.datadog.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
                   <input v-model="analyticsIntegrationSettings.datadog.site" type="text" placeholder="datadoghq.eu" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
                 </div>
+                <input
+                  v-model="analyticsIntegrationSettings.datadog.apiKey"
+                  type="password"
+                  placeholder="Enter API key (leave blank to keep, or clear to rotate)"
+                  class="mt-2 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                  @input="analyticsDatadogApiKeyTouched = true"
+                >
               </label>
               <label class="text-xs text-gray-600 dark:text-gray-300 block">ContentSquare (optional)
                 <div class="mt-1 flex items-center gap-2">
@@ -1116,7 +1123,7 @@
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label class="text-xs text-gray-600 dark:text-gray-300 block">Min segments per session view
-                <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
               </label>
               <label class="text-xs text-gray-600 dark:text-gray-300 block">Min watch seconds per session view
                 <input v-model.number="analyticsViewCounting.minWatchSeconds" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -1646,6 +1653,7 @@
                           <div class="space-y-1 text-xs">
                             <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
                             <p>GoCardless: {{ code.gocardless_discount_percent != null ? `${code.gocardless_discount_percent}%` : '—' }}</p>
+                            <p>GoCardless plan: {{ code.gocardlessPlanCode || code.gocardless_plan_code || '—' }}</p>
                           </div>
                         </td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.used_count }} / {{ code.max_uses }}</td>
@@ -2422,6 +2430,7 @@ interface PromoCodeRow {
   allowed_plan_types: string
   stripe_coupon_id?: string | null
   gocardless_discount_percent?: number | null
+  gocardlessPlanCode?: string | null
   gocardless_plan_code?: string | null
 }
 interface IsicCampaignRow {
@@ -2617,6 +2626,8 @@ const analytics = ref<AnalyticsResponse>({
 
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
 const analyticsSettingsSaving = ref(false)
+const analyticsDatadogApiKeyTouched = ref(false)
+const analyticsSettingsInitialized = ref(false)
 const analyticsIntegrationSettings = ref({
   datadog: { enabled: false, site: '', apiKey: '' },
   contentsquare: { enabled: false, tag: '' },
@@ -4207,24 +4218,17 @@ const loadAnalytics = async () => {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     analytics.value = data
-    analyticsIntegrationSettings.value = {
-      datadog: {
-        enabled: Boolean(data?.integrationSettings?.datadog?.enabled),
-        site: String(data?.integrationSettings?.datadog?.site || ''),
-        apiKey: '',
-      },
-      contentsquare: {
-        enabled: Boolean(data?.integrationSettings?.contentsquare?.enabled),
-        tag: String(data?.integrationSettings?.contentsquare?.tag || ''),
-      },
-      ga4: {
-        enabled: Boolean(data?.integrationSettings?.ga4?.enabled),
-        measurementId: String(data?.integrationSettings?.ga4?.measurementId || ''),
-      },
-    }
-    analyticsViewCounting.value = {
-      minSegmentsPerSession: Number(data?.viewCounting?.minSegmentsPerSession ?? 1),
-      minWatchSeconds: Number(data?.viewCounting?.minWatchSeconds ?? 15),
+    if (!analyticsSettingsInitialized.value) {
+      analyticsIntegrationSettings.value.datadog.enabled = Boolean(data?.integrationSettings?.datadog?.enabled)
+      analyticsIntegrationSettings.value.datadog.site = String(data?.integrationSettings?.datadog?.site || '')
+      analyticsIntegrationSettings.value.contentsquare.enabled = Boolean(data?.integrationSettings?.contentsquare?.enabled)
+      analyticsIntegrationSettings.value.contentsquare.tag = String(data?.integrationSettings?.contentsquare?.tag || '')
+      analyticsIntegrationSettings.value.ga4.enabled = Boolean(data?.integrationSettings?.ga4?.enabled)
+      analyticsIntegrationSettings.value.ga4.measurementId = String(data?.integrationSettings?.ga4?.measurementId || '')
+      analyticsViewCounting.value.minSegmentsPerSession = Number(data?.viewCounting?.minSegmentsPerSession ?? 1)
+      analyticsViewCounting.value.minWatchSeconds = Number(data?.viewCounting?.minWatchSeconds ?? 15)
+      analyticsSettingsInitialized.value = true
+      analyticsDatadogApiKeyTouched.value = false
     }
     analyticsRange.value = data?.meta?.range || analyticsRange.value
     analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
@@ -4244,7 +4248,7 @@ const saveAnalyticsSettings = async () => {
       datadog: {
         enabled: analyticsIntegrationSettings.value.datadog.enabled,
         site: analyticsIntegrationSettings.value.datadog.site,
-        ...(analyticsIntegrationSettings.value.datadog.apiKey !== '' ? { apiKey: analyticsIntegrationSettings.value.datadog.apiKey } : {}),
+        ...(analyticsDatadogApiKeyTouched.value ? { apiKey: analyticsIntegrationSettings.value.datadog.apiKey } : {}),
       },
       contentsquare: { ...analyticsIntegrationSettings.value.contentsquare },
       ga4: { ...analyticsIntegrationSettings.value.ga4 },
@@ -4259,6 +4263,7 @@ const saveAnalyticsSettings = async () => {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    analyticsDatadogApiKeyTouched.value = false
     await loadAnalytics()
   } catch (error: any) {
     analyticsError.value = error?.message || 'Failed to save analytics settings'
@@ -4315,15 +4320,54 @@ const loadAdminPills = async () => {
   }
 }
 
+function buildModeAwarePillPayload(input: {
+  valueMode?: PillValueMode
+  value: number
+  valueSecondary?: any
+  graphEmbedUrl?: any
+  graphPayloadJson?: any
+}) {
+  const mode: PillValueMode = input.valueMode === 'percentage'
+    || input.valueMode === 'agree_disagree'
+    || input.valueMode === 'graph_embed'
+    ? input.valueMode
+    : 'number'
+  const base = {
+    valueMode: mode,
+    value: Number(input.value),
+    valueSecondary: null as number | null,
+    graphEmbedUrl: null as string | null,
+    graphPayloadJson: null as string | null,
+  }
+  if (mode === 'agree_disagree') {
+    const secondary = input.valueSecondary === '' || input.valueSecondary == null ? null : Number(input.valueSecondary)
+    return { ...base, valueSecondary: Number.isFinite(secondary as number) ? secondary : null }
+  }
+  if (mode === 'graph_embed') {
+    return {
+      ...base,
+      graphEmbedUrl: typeof input.graphEmbedUrl === 'string' ? input.graphEmbedUrl.trim() || null : null,
+      graphPayloadJson: typeof input.graphPayloadJson === 'string' ? input.graphPayloadJson.trim() || null : null,
+    }
+  }
+  return base
+}
+
 const createPill = async () => {
-  const valueSecondary = newPill.value.valueSecondary === '' ? null : Number(newPill.value.valueSecondary)
+  const modePayload = buildModeAwarePillPayload({
+    valueMode: newPill.value.valueMode,
+    value: Number(newPill.value.value),
+    valueSecondary: newPill.value.valueSecondary,
+    graphEmbedUrl: newPill.value.graphEmbedUrl,
+    graphPayloadJson: newPill.value.graphPayloadJson,
+  })
   const payload = {
     label: newPill.value.label.trim(),
-    value: Number(newPill.value.value),
-    valueMode: newPill.value.valueMode,
-    valueSecondary,
-    graphEmbedUrl: newPill.value.graphEmbedUrl?.trim() || null,
-    graphPayloadJson: newPill.value.graphPayloadJson?.trim() || null,
+    value: modePayload.value,
+    valueMode: modePayload.valueMode,
+    valueSecondary: modePayload.valueSecondary,
+    graphEmbedUrl: modePayload.graphEmbedUrl,
+    graphPayloadJson: modePayload.graphPayloadJson,
     color: newPill.value.color || '#2563eb',
     imageUrl: newPill.value.imageUrl?.trim() || null,
     sortOrder: adminPills.value.length,
@@ -4382,17 +4426,24 @@ const uploadPillImage = async (event: Event, pill: AdminPillRow | null) => {
 
 const savePill = async (pill: any) => {
   try {
+    const modePayload = buildModeAwarePillPayload({
+      valueMode: pill.value_mode || 'number',
+      value: Number(pill.value),
+      valueSecondary: pill.value_secondary,
+      graphEmbedUrl: pill.graph_embed_url,
+      graphPayloadJson: pill.graph_payload_json,
+    })
     const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
         id: pill.id,
         label: pill.label,
-        value: Number(pill.value),
-        valueMode: pill.value_mode || 'number',
-        valueSecondary: pill.value_secondary == null ? null : Number(pill.value_secondary),
-        graphEmbedUrl: typeof pill.graph_embed_url === 'string' ? pill.graph_embed_url : null,
-        graphPayloadJson: typeof pill.graph_payload_json === 'string' ? pill.graph_payload_json : null,
+        value: modePayload.value,
+        valueMode: modePayload.valueMode,
+        valueSecondary: modePayload.valueSecondary,
+        graphEmbedUrl: modePayload.graphEmbedUrl,
+        graphPayloadJson: modePayload.graphPayloadJson,
         color: pill.color,
         imageUrl: typeof pill.image_url === 'string' ? pill.image_url : null,
         sortOrder: Number(pill.sort_order),

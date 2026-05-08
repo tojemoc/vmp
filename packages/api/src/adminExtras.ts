@@ -474,6 +474,9 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'imageUrl')) {
       const next = body.imageUrl == null ? null : String(body.imageUrl).trim().slice(0, 2048)
+      if (next && !validateAdminPillImageUrl(next).ok) {
+        return jsonResponse({ error: 'Use image upload for pill images.' }, 400, corsHeaders)
+      }
       updates.push('image_url = ?')
       values.push(next || null)
     }
@@ -1234,24 +1237,48 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   }
   if (request.method === 'PATCH') {
     const body = await request.json().catch(() => null)
-    const integrations = body?.integrations && typeof body.integrations === 'object' ? body.integrations : {}
-    const viewCounting = body?.viewCounting && typeof body.viewCounting === 'object' ? body.viewCounting : {}
+    const integrations = body?.integrations && typeof body.integrations === 'object' ? body.integrations : null
+    const viewCounting = body?.viewCounting && typeof body.viewCounting === 'object' ? body.viewCounting : null
     const toBool = (value: any) => value === true ? '1' : '0'
     const toIntString = (value: any, fallback: number) => {
       const next = Number.parseInt(String(value ?? ''), 10)
       return String(Number.isFinite(next) && next >= 0 ? next : fallback)
     }
-    await setSettings(env, [
-      ['analytics_datadog_enabled', toBool(integrations?.datadog?.enabled)],
-      ['analytics_datadog_site', String(integrations?.datadog?.site ?? '').trim()],
-      ['analytics_datadog_api_key', String(integrations?.datadog?.apiKey ?? '').trim()],
-      ['analytics_contentsquare_enabled', toBool(integrations?.contentsquare?.enabled)],
-      ['analytics_contentsquare_tag', String(integrations?.contentsquare?.tag ?? '').trim()],
-      ['analytics_ga4_enabled', toBool(integrations?.ga4?.enabled)],
-      ['analytics_ga4_measurement_id', String(integrations?.ga4?.measurementId ?? '').trim()],
-      ['analytics_view_min_segments', toIntString(viewCounting?.minSegmentsPerSession, 1)],
-      ['analytics_view_min_watch_seconds', toIntString(viewCounting?.minWatchSeconds, 15)],
-    ])
+    const updates: [string, string][] = []
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'datadog') && integrations.datadog && typeof integrations.datadog === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'enabled')) {
+        updates.push(['analytics_datadog_enabled', toBool(integrations.datadog.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'site')) {
+        updates.push(['analytics_datadog_site', String(integrations.datadog.site ?? '').trim()])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'apiKey')) {
+        updates.push(['analytics_datadog_api_key', String(integrations.datadog.apiKey ?? '').trim()])
+      }
+    }
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'contentsquare') && integrations.contentsquare && typeof integrations.contentsquare === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'enabled')) {
+        updates.push(['analytics_contentsquare_enabled', toBool(integrations.contentsquare.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
+        updates.push(['analytics_contentsquare_tag', String(integrations.contentsquare.tag ?? '').trim()])
+      }
+    }
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'ga4') && integrations.ga4 && typeof integrations.ga4 === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'enabled')) {
+        updates.push(['analytics_ga4_enabled', toBool(integrations.ga4.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'measurementId')) {
+        updates.push(['analytics_ga4_measurement_id', String(integrations.ga4.measurementId ?? '').trim()])
+      }
+    }
+    if (viewCounting && Object.prototype.hasOwnProperty.call(viewCounting, 'minSegmentsPerSession')) {
+      updates.push(['analytics_view_min_segments', toIntString(viewCounting.minSegmentsPerSession, 1)])
+    }
+    if (viewCounting && Object.prototype.hasOwnProperty.call(viewCounting, 'minWatchSeconds')) {
+      updates.push(['analytics_view_min_watch_seconds', toIntString(viewCounting.minWatchSeconds, 15)])
+    }
+    if (updates.length) await setSettings(env, updates)
     return jsonResponse({ ok: true }, 200, corsHeaders)
   }
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
@@ -1291,8 +1318,8 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     },
   }
   ;(analytics as any).viewCounting = {
-    minSegmentsPerSession: Math.max(1, Number.parseInt(String(getVal('analytics_view_min_segments') ?? '1'), 10) || 1),
-    minWatchSeconds: Math.max(0, Number.parseInt(String(getVal('analytics_view_min_watch_seconds') ?? '15'), 10) || 15),
+    minSegmentsPerSession: parseNonNegativeInt(getVal('analytics_view_min_segments'), 1),
+    minWatchSeconds: parseNonNegativeInt(getVal('analytics_view_min_watch_seconds'), 15),
   }
   if (parsed.options.format === 'csv') {
     const csv = buildAnalyticsCsvExport(analytics, parsed.options.dataset)
@@ -1391,6 +1418,12 @@ function parseNumericSetting(raw: unknown, fallbackValue: number) {
   return Number.isFinite(next) && next >= 0 ? next : fallbackValue
 }
 
+function parseNonNegativeInt(raw: unknown, fallbackValue: number) {
+  const parsed = Number.parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallbackValue
+  return Math.max(0, parsed)
+}
+
 export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any, options: AnalyticsQueryOptions) {
   const sessionExpr = canonicalSessionExpression()
   const now = new Date()
@@ -1416,8 +1449,8 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       getSetting(env, 'analytics_view_min_watch_seconds'),
     ])
     : [null, null]
-  const minSegmentsPerView = Math.max(1, Number.parseInt(String(minSegmentsRaw ?? '1'), 10) || 1)
-  const minWatchSecondsPerView = Math.max(0, Number.parseInt(String(minWatchSecondsRaw ?? '15'), 10) || 15)
+  const minSegmentsPerView = parseNonNegativeInt(minSegmentsRaw, 1)
+  const minWatchSecondsPerView = parseNonNegativeInt(minWatchSecondsRaw, 15)
 
   const [views, sourceRows, retentionRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
