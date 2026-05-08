@@ -1,6 +1,6 @@
 import { requireAuth, requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
-import { getSetting, setSetting, buildSettingsStatements } from './settingsStore.js'
+import { getSetting, setSetting, setSettings, buildSettingsStatements } from './settingsStore.js'
 import {
   evaluateRoleChange,
   evaluateSelfRoleChange,
@@ -42,6 +42,16 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   })
+}
+
+function isSafeHttpUrl(urlString: string): boolean {
+  if (!urlString || typeof urlString !== 'string') return false
+  try {
+    const url = new URL(urlString)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export async function handleHomepageContent(request: any, env: any, corsHeaders: any) {
@@ -159,6 +169,7 @@ function normalizeHomepageConfigForResponse(config: any) {
       } as Record<string, any>
       if (type === 'category') {
         normalized.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
+        normalized.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
       }
       if (type === 'split_horizontal' || type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
@@ -242,10 +253,11 @@ export async function handlePillsPublic(request: any, env: any, corsHeaders: any
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDb(env)
   const rows = await db.prepare(`
-    SELECT id, label, value, color, image_url, sort_order, updated_at
+    SELECT id, label, value, color, image_url, sort_order, updated_at, value_mode, value_secondary, graph_embed_url, graph_payload_json
     FROM pills ORDER BY sort_order ASC, datetime(updated_at) DESC
   `).all()
-  return jsonResponse({ pills: rows?.results ?? [] }, 200, corsHeaders)
+  const pills = (rows?.results ?? []).map((row: any) => normalizePillRecord(row))
+  return jsonResponse({ pills }, 200, corsHeaders)
 }
 
 export async function handlePillsUpdate(request: any, env: any, corsHeaders: any) {
@@ -298,14 +310,18 @@ export async function handlePillsUpdate(request: any, env: any, corsHeaders: any
   const body = await request.json().catch(() => null)
   if (!Array.isArray(body?.pills)) return jsonResponse({ error: 'pills[] is required' }, 400, corsHeaders)
   const upsert = db.prepare(`
-    INSERT INTO pills (id, label, value, color, image_url, sort_order, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO pills (id, label, value, color, image_url, sort_order, value_mode, value_secondary, graph_embed_url, graph_payload_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       label = excluded.label,
       value = excluded.value,
       color = excluded.color,
       image_url = excluded.image_url,
       sort_order = excluded.sort_order,
+      value_mode = excluded.value_mode,
+      value_secondary = excluded.value_secondary,
+      graph_embed_url = excluded.graph_embed_url,
+      graph_payload_json = excluded.graph_payload_json,
       updated_at = CURRENT_TIMESTAMP
   `)
   const nowPayload = JSON.stringify(body.pills).slice(0, 100000)
@@ -317,14 +333,19 @@ export async function handlePillsUpdate(request: any, env: any, corsHeaders: any
   for (let i = 0; i < body.pills.length; i += 1) {
     const pill = body.pills[i]
     if (!pill || typeof pill.id !== 'string' || typeof pill.label !== 'string') continue
-    const value = Number(pill.value)
+    const normalized = normalizePillInput(pill, { allowImageUploadUrl: true })
+    if (!normalized.ok) continue
     statements.push(upsert.bind(
       pill.id,
-      pill.label.trim(),
-      Number.isFinite(value) ? value : 0,
-      typeof pill.color === 'string' && pill.color.trim() ? pill.color.trim() : '#2563eb',
-      typeof pill.imageUrl === 'string' ? pill.imageUrl.trim().slice(0, 2048) : null,
+      normalized.value.label,
+      normalized.value.value,
+      normalized.value.color,
+      normalized.value.imageUrl,
       Number.isInteger(pill.sortOrder) ? pill.sortOrder : i,
+      normalized.value.valueMode,
+      normalized.value.valueSecondary,
+      normalized.value.graphEmbedUrl,
+      normalized.value.graphPayloadJson,
     ))
   }
   if (statements.length) await db.batch(statements)
@@ -382,10 +403,11 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
 
   if (request.method === 'GET') {
     const rows = await db.prepare(`
-      SELECT id, label, value, color, image_url, sort_order, updated_at
+      SELECT id, label, value, color, image_url, sort_order, updated_at, value_mode, value_secondary, graph_embed_url, graph_payload_json
       FROM pills ORDER BY sort_order ASC, datetime(updated_at) DESC
     `).all()
-    return jsonResponse({ pills: rows?.results ?? [] }, 200, corsHeaders)
+    const pills = (rows?.results ?? []).map((row: any) => normalizePillRecord(row))
+    return jsonResponse({ pills }, 200, corsHeaders)
   }
 
   const body = await request.json().catch(() => null)
@@ -393,16 +415,24 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
 
   if (request.method === 'POST') {
     const id = typeof body.id === 'string' && body.id.trim() ? body.id.trim() : crypto.randomUUID()
-    const label = typeof body.label === 'string' ? body.label.trim() : ''
-    const value = Number(body.value)
-    const color = typeof body.color === 'string' && body.color.trim() ? body.color.trim() : '#2563eb'
-    const imageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim().slice(0, 2048) : null
+    const normalized = normalizePillInput(body, { allowImageUploadUrl: false })
+    if (!normalized.ok) return jsonResponse({ error: normalized.error }, 400, corsHeaders)
     const sortOrder = Number.isInteger(body.sortOrder) ? body.sortOrder : 0
-    if (!label) return jsonResponse({ error: 'label is required' }, 400, corsHeaders)
     await db.prepare(`
-      INSERT INTO pills (id, label, value, color, image_url, sort_order, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(id, label, Number.isFinite(value) ? value : 0, color, imageUrl, sortOrder).run()
+      INSERT INTO pills (id, label, value, color, image_url, sort_order, value_mode, value_secondary, graph_embed_url, graph_payload_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      id,
+      normalized.value.label,
+      normalized.value.value,
+      normalized.value.color,
+      normalized.value.imageUrl,
+      sortOrder,
+      normalized.value.valueMode,
+      normalized.value.valueSecondary,
+      normalized.value.graphEmbedUrl,
+      normalized.value.graphPayloadJson,
+    ).run()
     return jsonResponse({ ok: true, id }, 201, corsHeaders)
   }
 
@@ -421,8 +451,19 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     }
     const id = typeof body.id === 'string' ? body.id.trim() : ''
     if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
+    const existing = await db.prepare(`
+      SELECT value_mode, value_secondary, graph_embed_url, graph_payload_json
+      FROM pills
+      WHERE id = ?
+      LIMIT 1
+    `).bind(id).first()
+    if (!existing) return jsonResponse({ error: 'Pill not found' }, 404, corsHeaders)
     const updates = []
     const values = []
+    let nextMode = normalizePillMode(existing.value_mode) || 'number'
+    let nextValueSecondary = existing.value_secondary == null ? null : Number(existing.value_secondary)
+    let nextGraphEmbedUrl = typeof existing.graph_embed_url === 'string' ? existing.graph_embed_url : ''
+    let nextGraphPayloadJson = typeof existing.graph_payload_json === 'string' ? existing.graph_payload_json : ''
     if (typeof body.label === 'string') {
       const next = body.label.trim()
       if (!next) return jsonResponse({ error: 'label must not be empty' }, 400, corsHeaders)
@@ -443,7 +484,46 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'imageUrl')) {
       const next = body.imageUrl == null ? null : String(body.imageUrl).trim().slice(0, 2048)
+      if (next && !validateAdminPillImageUrl(next).ok) {
+        return jsonResponse({ error: 'Use image upload for pill images.' }, 400, corsHeaders)
+      }
       updates.push('image_url = ?')
+      values.push(next || null)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'valueMode')) {
+      const mode = normalizePillMode(body.valueMode)
+      if (!mode) return jsonResponse({ error: 'valueMode must be number, percentage, agree_disagree, or graph_embed' }, 400, corsHeaders)
+      nextMode = mode
+      updates.push('value_mode = ?')
+      values.push(mode)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'valueSecondary')) {
+      const next = body.valueSecondary == null || body.valueSecondary === '' ? null : Number(body.valueSecondary)
+      if (next != null && !Number.isFinite(next)) return jsonResponse({ error: 'valueSecondary must be a number' }, 400, corsHeaders)
+      nextValueSecondary = next
+      updates.push('value_secondary = ?')
+      values.push(next)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'graphEmbedUrl')) {
+      const next = body.graphEmbedUrl == null ? null : String(body.graphEmbedUrl).trim().slice(0, 2048)
+      if (next && !isSafeHttpUrl(next)) {
+        return jsonResponse({ error: 'graphEmbedUrl must be a valid http or https URL' }, 400, corsHeaders)
+      }
+      nextGraphEmbedUrl = next || ''
+      updates.push('graph_embed_url = ?')
+      values.push(next || null)
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'graphPayloadJson')) {
+      const next = body.graphPayloadJson == null ? null : String(body.graphPayloadJson).trim().slice(0, 10000)
+      if (next) {
+        try {
+          JSON.parse(next)
+        } catch {
+          return jsonResponse({ error: 'graphPayloadJson must be valid JSON' }, 400, corsHeaders)
+        }
+      }
+      nextGraphPayloadJson = next || ''
+      updates.push('graph_payload_json = ?')
       values.push(next || null)
     }
     if (Object.prototype.hasOwnProperty.call(body, 'sortOrder')) {
@@ -452,6 +532,12 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
       values.push(body.sortOrder)
     }
     if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
+    if (nextMode === 'agree_disagree' && (nextValueSecondary == null || !Number.isFinite(nextValueSecondary))) {
+      return jsonResponse({ error: 'agree_disagree pills require valueSecondary' }, 400, corsHeaders)
+    }
+    if (nextMode === 'graph_embed' && !nextGraphEmbedUrl && !nextGraphPayloadJson) {
+      return jsonResponse({ error: 'graph_embed pills require graphEmbedUrl or graphPayloadJson' }, 400, corsHeaders)
+    }
     values.push(id)
     await db.prepare(`
       UPDATE pills
@@ -469,6 +555,113 @@ export async function handleAdminPills(request: any, env: any, corsHeaders: any)
   }
 
   return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+}
+
+function normalizePillMode(rawMode: any): 'number' | 'percentage' | 'agree_disagree' | 'graph_embed' | null {
+  const next = String(rawMode ?? 'number').trim().toLowerCase()
+  if (next === 'number' || next === 'percentage' || next === 'agree_disagree' || next === 'graph_embed') return next
+  return null
+}
+
+function normalizePillRecord(row: any) {
+  return {
+    ...row,
+    value_mode: normalizePillMode(row?.value_mode) || 'number',
+    value_secondary: row?.value_secondary == null ? null : Number(row.value_secondary),
+    graph_embed_url: typeof row?.graph_embed_url === 'string' ? row.graph_embed_url : null,
+    graph_payload_json: typeof row?.graph_payload_json === 'string' ? row.graph_payload_json : null,
+  }
+}
+
+function normalizePillInput(body: any, options: { allowImageUploadUrl: boolean }) {
+  const label = typeof body?.label === 'string' ? body.label.trim() : ''
+  if (!label) return { ok: false as const, error: 'label is required' }
+  const value = Number(body?.value)
+  if (!Number.isFinite(value)) return { ok: false as const, error: 'value must be a number' }
+  const valueMode = normalizePillMode(body?.valueMode) || 'number'
+  const valueSecondary = body?.valueSecondary == null || body.valueSecondary === '' ? null : Number(body.valueSecondary)
+  if (valueSecondary != null && !Number.isFinite(valueSecondary)) return { ok: false as const, error: 'valueSecondary must be a number' }
+  const graphEmbedUrl = typeof body?.graphEmbedUrl === 'string' ? body.graphEmbedUrl.trim().slice(0, 2048) : ''
+  if (graphEmbedUrl && !isSafeHttpUrl(graphEmbedUrl)) {
+    return { ok: false as const, error: 'graphEmbedUrl must be a valid http or https URL' }
+  }
+  const graphPayloadJson = typeof body?.graphPayloadJson === 'string' ? body.graphPayloadJson.trim().slice(0, 10000) : ''
+  if (valueMode === 'agree_disagree' && valueSecondary == null) {
+    return { ok: false as const, error: 'agree_disagree pills require valueSecondary' }
+  }
+  if (valueMode === 'graph_embed' && !graphEmbedUrl && !graphPayloadJson) {
+    return { ok: false as const, error: 'graph_embed pills require graphEmbedUrl or graphPayloadJson' }
+  }
+  if (graphPayloadJson) {
+    try {
+      JSON.parse(graphPayloadJson)
+    } catch {
+      return { ok: false as const, error: 'graphPayloadJson must be valid JSON' }
+    }
+  }
+  const imageUrlRaw = typeof body?.imageUrl === 'string' ? body.imageUrl.trim().slice(0, 2048) : ''
+  const imageUrl = imageUrlRaw || null
+  if (!options.allowImageUploadUrl && imageUrl) {
+    const imageUrlValidation = validateAdminPillImageUrl(imageUrl)
+    if (!imageUrlValidation.ok) return { ok: false as const, error: 'Use image upload for pill images.' }
+  }
+  return {
+    ok: true as const,
+    value: {
+      label,
+      value,
+      color: typeof body?.color === 'string' && body.color.trim() ? body.color.trim() : '#2563eb',
+      imageUrl,
+      valueMode,
+      valueSecondary,
+      graphEmbedUrl: graphEmbedUrl || null,
+      graphPayloadJson: graphPayloadJson || null,
+    },
+  }
+}
+
+function validateAdminPillImageUrl(imageUrl: string) {
+  try {
+    const url = new URL(imageUrl)
+    if (url.protocol !== 'https:') return { ok: false as const }
+    const encodedPath = url.pathname || ''
+    const decodedPath = decodeURIComponent(encodedPath)
+    if (!decodedPath.startsWith('/pills/')) return { ok: false as const }
+    if (decodedPath.includes('..') || /%2e/i.test(encodedPath)) return { ok: false as const }
+    return { ok: true as const }
+  } catch {
+    return { ok: false as const }
+  }
+}
+
+export async function handleAdminPillImageUpload(request: any, env: any, corsHeaders: any) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  if (!env.BUCKET) return jsonResponse({ error: 'R2 bucket not configured' }, 503, corsHeaders)
+  const form = await request.formData().catch(() => null)
+  const file = form?.get('image')
+  if (!file || typeof file === 'string') return jsonResponse({ error: 'Missing image file' }, 400, corsHeaders)
+  if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+    return jsonResponse({ error: 'Unsupported image type' }, 415, corsHeaders)
+  }
+  const bytes = await file.arrayBuffer()
+  if (bytes.byteLength > 5 * 1024 * 1024) return jsonResponse({ error: 'Image too large (max 5MB)' }, 413, corsHeaders)
+  const ext = file.type === 'image/png' ? 'png'
+    : file.type === 'image/webp' ? 'webp'
+      : file.type === 'image/gif' ? 'gif'
+        : 'jpg'
+  const base = String(env.R2_BASE_URL ?? '').trim().replace(/\/$/, '')
+  if (!base) {
+    return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders)
+  }
+  const key = `pills/${Date.now()}-${crypto.randomUUID()}.${ext}`
+  await env.BUCKET.put(key, bytes, { httpMetadata: { contentType: file.type } })
+  const imageUrl = `${base}/${key}`
+  return jsonResponse({ ok: true, imageUrl, key }, 200, corsHeaders)
 }
 
 export async function handleAdminPillsSettings(request: any, env: any, corsHeaders: any) {
@@ -1061,6 +1254,52 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
+  if (request.method === 'PATCH') {
+    const body = await request.json().catch(() => null)
+    const integrations = body?.integrations && typeof body.integrations === 'object' ? body.integrations : null
+    const viewCounting = body?.viewCounting && typeof body.viewCounting === 'object' ? body.viewCounting : null
+    const toBool = (value: any) => value === true ? '1' : '0'
+    const toIntString = (value: any, fallback: number) => {
+      const next = Number.parseInt(String(value ?? ''), 10)
+      return String(Number.isFinite(next) && next >= 0 ? next : fallback)
+    }
+    const updates: [string, string][] = []
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'datadog') && integrations.datadog && typeof integrations.datadog === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'enabled')) {
+        updates.push(['analytics_datadog_enabled', toBool(integrations.datadog.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'site')) {
+        updates.push(['analytics_datadog_site', String(integrations.datadog.site ?? '').trim()])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'apiKey')) {
+        updates.push(['analytics_datadog_api_key', String(integrations.datadog.apiKey ?? '').trim()])
+      }
+    }
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'contentsquare') && integrations.contentsquare && typeof integrations.contentsquare === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'enabled')) {
+        updates.push(['analytics_contentsquare_enabled', toBool(integrations.contentsquare.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
+        updates.push(['analytics_contentsquare_tag', String(integrations.contentsquare.tag ?? '').trim()])
+      }
+    }
+    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'ga4') && integrations.ga4 && typeof integrations.ga4 === 'object') {
+      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'enabled')) {
+        updates.push(['analytics_ga4_enabled', toBool(integrations.ga4.enabled)])
+      }
+      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'measurementId')) {
+        updates.push(['analytics_ga4_measurement_id', String(integrations.ga4.measurementId ?? '').trim()])
+      }
+    }
+    if (viewCounting && Object.prototype.hasOwnProperty.call(viewCounting, 'minSegmentsPerSession')) {
+      updates.push(['analytics_view_min_segments', toIntString(viewCounting.minSegmentsPerSession, 1)])
+    }
+    if (viewCounting && Object.prototype.hasOwnProperty.call(viewCounting, 'minWatchSeconds')) {
+      updates.push(['analytics_view_min_watch_seconds', toIntString(viewCounting.minWatchSeconds, 15)])
+    }
+    if (updates.length) await setSettings(env, updates)
+    return jsonResponse({ ok: true }, 200, corsHeaders)
+  }
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const url = new URL(request.url)
   const parsed = parseAnalyticsQuery(url)
@@ -1069,6 +1308,38 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   }
   const db = getDb(env)
   const analytics = await buildSegmentAnalyticsSnapshotWithOptions(db, env, parsed.options)
+  const settingKeys = [
+    'analytics_datadog_enabled',
+    'analytics_datadog_site',
+    'analytics_datadog_api_key',
+    'analytics_contentsquare_enabled',
+    'analytics_contentsquare_tag',
+    'analytics_ga4_enabled',
+    'analytics_ga4_measurement_id',
+    'analytics_view_min_segments',
+    'analytics_view_min_watch_seconds',
+  ] as const
+  const settingValues = await Promise.all(settingKeys.map((key) => getSetting(env, key)))
+  const getVal = (key: (typeof settingKeys)[number]) => settingValues[settingKeys.indexOf(key)]
+  ;(analytics as any).integrationSettings = {
+    datadog: {
+      enabled: String(getVal('analytics_datadog_enabled') ?? '0') === '1',
+      site: String(getVal('analytics_datadog_site') ?? ''),
+      hasApiKey: Boolean(String(getVal('analytics_datadog_api_key') ?? '').trim()),
+    },
+    contentsquare: {
+      enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
+      tag: String(getVal('analytics_contentsquare_tag') ?? ''),
+    },
+    ga4: {
+      enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
+      measurementId: String(getVal('analytics_ga4_measurement_id') ?? ''),
+    },
+  }
+  ;(analytics as any).viewCounting = {
+    minSegmentsPerSession: parseNonNegativeInt(getVal('analytics_view_min_segments'), 1),
+    minWatchSeconds: parseNonNegativeInt(getVal('analytics_view_min_watch_seconds'), 15),
+  }
   if (parsed.options.format === 'csv') {
     const csv = buildAnalyticsCsvExport(analytics, parsed.options.dataset)
     return new Response(csv, {
@@ -1166,6 +1437,12 @@ function parseNumericSetting(raw: unknown, fallbackValue: number) {
   return Number.isFinite(next) && next >= 0 ? next : fallbackValue
 }
 
+function parseNonNegativeInt(raw: unknown, fallbackValue: number) {
+  const parsed = Number.parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallbackValue
+  return Math.max(0, parsed)
+}
+
 export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any, options: AnalyticsQueryOptions) {
   const sessionExpr = canonicalSessionExpression()
   const now = new Date()
@@ -1185,26 +1462,55 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const monthlyPriceEur = parseNumericSetting(monthlyPriceRaw, 0)
   const yearlyPriceEur = parseNumericSetting(yearlyPriceRaw, 0)
   const clubPriceEur = parseNumericSetting(clubPriceRaw, 0)
+  const [minSegmentsRaw, minWatchSecondsRaw] = env
+    ? await Promise.all([
+      getSetting(env, 'analytics_view_min_segments'),
+      getSetting(env, 'analytics_view_min_watch_seconds'),
+    ])
+    : [null, null]
+  const minSegmentsPerView = parseNonNegativeInt(minSegmentsRaw, 1)
+  const minWatchSecondsPerView = parseNonNegativeInt(minWatchSecondsRaw, 15)
 
   const [views, sourceRows, retentionRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
-      SELECT COUNT(DISTINCT ${sessionExpr}) AS total
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
-    `).bind(startAt).first(),
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id
+      )
+      SELECT COUNT(DISTINCT session_id) AS total
+      FROM session_rollup
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).first(),
     db.prepare(`
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          COALESCE(source_category, 'direct') AS source,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id, source
+      )
       SELECT
-        COALESCE(source_category, 'direct') AS source,
-        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions,
-        COUNT(DISTINCT ${sessionExpr}) AS hits
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
+        source,
+        COUNT(DISTINCT session_id) AS unique_sessions,
+        COUNT(DISTINCT session_id) AS hits
+      FROM session_rollup
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
       GROUP BY source
       ORDER BY unique_sessions DESC
       LIMIT 12
-    `).bind(startAt).all(),
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
       WITH events AS (
         SELECT
@@ -1268,15 +1574,26 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       ORDER BY count DESC, status ASC
     `).all(),
     db.prepare(`
+      WITH session_rollup AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          ${bucketByCreated} AS bucket,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+        GROUP BY session_id, video_id, bucket
+      )
       SELECT
-        ${bucketByCreated} AS bucket,
-        COUNT(DISTINCT ${sessionExpr}) AS unique_sessions
-      FROM video_segment_events
-      WHERE event_type = 'segment'
-        AND datetime(created_at) >= datetime(?)
+        bucket,
+        COUNT(DISTINCT session_id) AS unique_sessions
+      FROM session_rollup
+      WHERE segment_hits >= ? AND max_watch_seconds >= ?
       GROUP BY bucket
       ORDER BY bucket ASC
-    `).bind(startAt).all(),
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
       SELECT
         ${bucketByCreated} AS bucket,

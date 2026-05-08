@@ -123,6 +123,10 @@
                   <option value="">Select category</option>
                   <option v-for="cat in categories" :key="`block-cat-${block.id}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
                 </select>
+                <label v-if="block.type === 'category'" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input v-model="block.rightRailWithNextSideMini" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  Pair next side-mini category on right (2x2 + 2x1)
+                </label>
                 <div
                   v-if="(block.type === 'split_horizontal' || block.type === 'split_vertical') && block.childBlocks"
                   class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3"
@@ -201,6 +205,32 @@
                   />
                 </div>
                 <p v-else class="text-xs text-gray-500 dark:text-gray-400">No category selected or no videos available.</p>
+              </div>
+              <div v-else-if="block.type === 'category_with_side_mini'" class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div class="xl:col-span-2 space-y-3">
+                  <div v-if="block.primary.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <VideoCard
+                      v-for="video in block.primary.categorySection.visible"
+                      :key="`preview-paired-main-${block.primary.id}-${video.id}`"
+                      :video="video"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-3">
+                  <h4 class="font-semibold text-gray-900 dark:text-white">{{ block.sideMini.title || block.sideMini.categorySection?.category?.name || 'Side mini' }}</h4>
+                  <div v-if="block.sideMini.categorySection" class="space-y-3">
+                    <VideoCard
+                      v-for="video in block.sideMini.categorySection.visible"
+                      :key="`preview-paired-side-${block.sideMini.id}-${video.id}`"
+                      :video="video"
+                      layout="horizontal"
+                      :show-description="false"
+                      :show-relative-timestamp="true"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div v-else-if="block.type === 'split_horizontal' || block.type === 'split_vertical'" class="grid gap-4" :class="block.type === 'split_horizontal' ? 'md:grid-cols-2' : 'grid-cols-1'">
@@ -624,24 +654,50 @@
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">Create pill</h3>
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
               <input v-model="newPill.label" type="text" placeholder="Label" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model.number="newPill.value" type="number" placeholder="Value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <select v-model="newPill.valueMode" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <option value="number">Number</option>
+                <option value="percentage">Percentage</option>
+                <option value="agree_disagree">Agree/Disagree</option>
+                <option value="graph_embed">Graph/Embed</option>
+              </select>
               <input v-model="newPill.color" type="text" placeholder="#2563eb" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+            </div>
+            <div v-if="newPill.valueMode === 'agree_disagree'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input v-model="newPill.valueSecondary" type="number" placeholder="Disagree value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+            </div>
+            <div v-if="newPill.valueMode === 'graph_embed'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input v-model="newPill.graphEmbedUrl" type="url" placeholder="Flourish/embed URL" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <textarea v-model="newPill.graphPayloadJson" rows="2" placeholder='{"series":[...]}' class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
               <input v-model="newPill.imageUrl" type="url" placeholder="Image URL (optional)" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <input type="file" accept="image/*" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, null)" />
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createPill">Create</button>
             </div>
           </div>
 
           <div class="space-y-2">
-            <div v-for="(pill, idx) in adminPills" :key="pill.id" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-[1fr_140px_140px_1fr_auto_auto_auto] gap-2 items-center">
+            <div v-for="(pill, idx) in adminPills" :key="pill.id" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
               <input v-model="pill.label" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model.number="pill.value" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <select v-model="pill.value_mode" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <option value="number">Number</option>
+                <option value="percentage">Percentage</option>
+                <option value="agree_disagree">Agree/Disagree</option>
+                <option value="graph_embed">Graph/Embed</option>
+              </select>
+              <input v-if="pill.value_mode === 'agree_disagree'" v-model.number="pill.value_secondary" type="number" placeholder="Secondary value" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <input v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_embed_url" type="url" placeholder="Embed URL" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <textarea v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_payload_json" rows="2" placeholder="Graph payload JSON" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
               <input v-model="pill.color" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model="pill.image_url" type="url" placeholder="Image URL (optional)" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
-              <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
+              <input type="file" accept="image/*" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, pill)" />
               <div class="flex gap-2">
+                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
+                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
                 <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs" @click="savePill(pill)">Save</button>
                 <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs" @click="deletePill(pill.id)">Delete</button>
               </div>
@@ -1035,6 +1091,48 @@
         <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">Retention curves, views over time, traffic sources, subscription trends, and cashflow estimates.</p>
+          <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+            <h3 class="font-semibold text-gray-900 dark:text-white">Integrations & view counting strategy</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Datadog (priority)
+                <div class="mt-1 flex items-center gap-2">
+                  <input v-model="analyticsIntegrationSettings.datadog.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  <input v-model="analyticsIntegrationSettings.datadog.site" type="text" placeholder="datadoghq.eu" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                </div>
+                <input
+                  v-model="analyticsIntegrationSettings.datadog.apiKey"
+                  type="password"
+                  placeholder="Enter API key (leave blank to keep, or clear to rotate)"
+                  class="mt-2 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                  @input="analyticsDatadogApiKeyTouched = true"
+                >
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">ContentSquare (optional)
+                <div class="mt-1 flex items-center gap-2">
+                  <input v-model="analyticsIntegrationSettings.contentsquare.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  <input v-model="analyticsIntegrationSettings.contentsquare.tag" type="text" placeholder="project tag" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                </div>
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">GA4 (optional)
+                <div class="mt-1 mb-1">
+                  <input v-model="analyticsIntegrationSettings.ga4.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600"> Enable
+                </div>
+                <input v-model="analyticsIntegrationSettings.ga4.measurementId" type="text" placeholder="G-XXXXXXXX" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Use for broad audience trends; internal session analytics remain source of truth.</p>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min segments per session view
+                <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min watch seconds per session view
+                <input v-model.number="analyticsViewCounting.minWatchSeconds" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              </label>
+            </div>
+            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white disabled:opacity-50" :disabled="analyticsSettingsSaving" @click="saveAnalyticsSettings">
+              {{ analyticsSettingsSaving ? 'Saving…' : 'Save analytics settings' }}
+            </button>
+          </div>
           <div class="flex flex-wrap gap-2 items-end">
             <div class="flex flex-col gap-1">
               <label class="text-xs text-gray-500 dark:text-gray-400">Range</label>
@@ -1406,7 +1504,7 @@
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
                   <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Manage single-use and multi-use promo codes for free month/year or Stripe percentage discounts.
+                    Manage single-use and multi-use promo codes for free month/year or provider-specific percentage discounts.
                   </p>
                 </div>
                 <button
@@ -1481,24 +1579,48 @@
                       <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">Club</label>
                     </div>
                   </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
-                    <span v-if="promoCodeForm.rewardType === 'discount_percent'" class="text-red-500 dark:text-red-400">*</span>
-                    <input
-                      v-model="promoCodeForm.stripeCouponId"
-                      type="text"
-                      :required="promoCodeForm.rewardType === 'discount_percent'"
-                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                      :class="{ 'border-red-500 dark:border-red-400': promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim() }"
-                      placeholder="coupon_..."
-                    >
-                  </label>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">Stripe promo mapping</h5>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
+                        <input
+                          v-model="promoCodeForm.stripeCouponId"
+                          type="text"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                          placeholder="coupon_..."
+                        >
+                      </label>
+                    </div>
+                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">GoCardless promo mapping</h5>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Discount percent
+                        <input
+                          v-model="promoCodeForm.gocardlessDiscountPercent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-xs"
+                          placeholder="10"
+                        >
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Plan code (optional)
+                        <input
+                          v-model="promoCodeForm.gocardlessPlanCode"
+                          type="text"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                          placeholder="ALT-MONTHLY"
+                        >
+                      </label>
+                    </div>
+                  </div>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Expires at (optional)
                     <input v-model="promoCodeForm.expiresAt" type="datetime-local" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   </label>
                   <button
                     type="button"
                     class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="promotionsSaving || !promoCodeForm.campaignId || (promoCodeForm.rewardType === 'discount_percent' && !promoCodeForm.stripeCouponId.trim())"
+                    :disabled="promotionsSaving || !promoCodeForm.campaignId"
                     @click="createPromoCodes"
                   >
                     {{ promotionsSaving ? 'Saving…' : 'Create code(s)' }}
@@ -1516,6 +1638,7 @@
                         <th class="py-1 pr-3">Code</th>
                         <th class="py-1 pr-3">Campaign</th>
                         <th class="py-1 pr-3">Reward</th>
+                        <th class="py-1 pr-3">Provider mappings</th>
                         <th class="py-1 pr-3">Usage</th>
                         <th class="py-1 pr-3">Plans</th>
                         <th class="py-1 pr-3">Status</th>
@@ -1526,6 +1649,13 @@
                         <td class="py-2 pr-3 font-mono text-xs text-gray-900 dark:text-gray-100">{{ code.code }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.campaign_name || '—' }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.reward_type }}</td>
+                        <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
+                          <div class="space-y-1 text-xs">
+                            <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
+                            <p>GoCardless: {{ code.gocardless_discount_percent != null ? `${code.gocardless_discount_percent}%` : '—' }}</p>
+                            <p>GoCardless plan: {{ code.gocardlessPlanCode || code.gocardless_plan_code || '—' }}</p>
+                          </div>
+                        </td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.used_count }} / {{ code.max_uses }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.allowed_plan_types }}</td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.is_active ? 'Active' : 'Inactive' }}</td>
@@ -2298,6 +2428,10 @@ interface PromoCodeRow {
   used_count: number
   is_active: number
   allowed_plan_types: string
+  stripe_coupon_id?: string | null
+  gocardless_discount_percent?: number | null
+  gocardlessPlanCode?: string | null
+  gocardless_plan_code?: string | null
 }
 interface IsicCampaignRow {
   id: string
@@ -2359,6 +2493,8 @@ const promoCodeForm = ref({
   maxUses: 1,
   allowedPlanTypes: ['monthly', 'yearly', 'club'] as string[],
   stripeCouponId: '',
+  gocardlessDiscountPercent: '',
+  gocardlessPlanCode: '',
   expiresAt: '',
 })
 const isicLoading = ref(false)
@@ -2448,8 +2584,30 @@ function isSensitiveRoleChange(from: string, to: string): boolean {
   if (from === 'admin' || from === 'super_admin') return true
   return false
 }
-const adminPills = ref<Array<{ id: string; label: string; value: number; color: string; image_url?: string | null; sort_order: number }>>([])
-const newPill = ref({ label: '', value: 0, color: '#2563eb', imageUrl: '' })
+type PillValueMode = 'number' | 'percentage' | 'agree_disagree' | 'graph_embed'
+type AdminPillRow = {
+  id: string
+  label: string
+  value: number
+  value_secondary?: number | null
+  value_mode?: PillValueMode
+  graph_embed_url?: string | null
+  graph_payload_json?: string | null
+  color: string
+  image_url?: string | null
+  sort_order: number
+}
+const adminPills = ref<AdminPillRow[]>([])
+const newPill = ref({
+  label: '',
+  value: 0,
+  valueSecondary: '',
+  valueMode: 'number' as PillValueMode,
+  graphEmbedUrl: '',
+  graphPayloadJson: '',
+  color: '#2563eb',
+  imageUrl: '',
+})
 const pillsApiKey = ref('')
 const pillsApiKeyMeta = ref<{ hasKey: boolean; managedByEnv: boolean; maskedKey: string }>({ hasKey: false, managedByEnv: false, maskedKey: '' })
 const analyticsRange = ref<AnalyticsRange>('30d')
@@ -2467,6 +2625,18 @@ const analytics = ref<AnalyticsResponse>({
 })
 
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
+const analyticsSettingsSaving = ref(false)
+const analyticsDatadogApiKeyTouched = ref(false)
+const analyticsSettingsInitialized = ref(false)
+const analyticsIntegrationSettings = ref({
+  datadog: { enabled: false, site: '', apiKey: '' },
+  contentsquare: { enabled: false, tag: '' },
+  ga4: { enabled: false, measurementId: '' },
+})
+const analyticsViewCounting = ref({
+  minSegmentsPerSession: 1,
+  minWatchSeconds: 15,
+})
 
 const analyticsStatusRows = computed(() => {
   if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
@@ -2848,6 +3018,7 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   const title = typeof raw.title === 'string' ? raw.title : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
+  const rightRailWithNextSideMini = raw.rightRailWithNextSideMini === true
   if (type === 'split_horizontal' || type === 'split_vertical') {
     const children = Array.isArray(raw.childBlocks) ? raw.childBlocks : []
     const normalizedChildren = children
@@ -2862,7 +3033,14 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     while (normalizedChildren.length < 2) normalizedChildren.push({ type: 'top_video', title: '', body: '', categoryId: '' })
     return { id, type, title, body, childBlocks: normalizedChildren }
   }
-  return { id, type, title, body, categoryId: type === 'category' ? categoryId : null }
+  return {
+    id,
+    type,
+    title,
+    body,
+    categoryId: type === 'category' ? categoryId : null,
+    rightRailWithNextSideMini: type === 'category' ? rightRailWithNextSideMini : false,
+  }
 }
 const sanitizeBlockForSave = (block: LayoutBlock) => {
   const payload: any = {
@@ -2873,6 +3051,7 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   }
   if (block.type === 'category') {
     payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
+    payload.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
   }
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
     payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
@@ -3490,8 +3669,15 @@ const createPromoCodes = async () => {
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
-  if (promoCodeForm.value.rewardType === 'discount_percent' && !promoCodeForm.value.stripeCouponId.trim()) {
-    promotionsMessage.value = 'Stripe coupon ID is required for discount_percent promo codes.'
+  const stripeCouponId = promoCodeForm.value.stripeCouponId.trim()
+  const gocardlessDiscountPercentRaw = promoCodeForm.value.gocardlessDiscountPercent
+  const gocardlessDiscountPercent = gocardlessDiscountPercentRaw === ''
+    ? null
+    : Number(gocardlessDiscountPercentRaw)
+  if (promoCodeForm.value.rewardType === 'discount_percent'
+      && !stripeCouponId
+      && !(Number.isFinite(gocardlessDiscountPercent) && gocardlessDiscountPercent! > 0 && gocardlessDiscountPercent! <= 100)) {
+    promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID and/or GoCardless discount %.'
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
@@ -3509,7 +3695,9 @@ const createPromoCodes = async () => {
         rewardType: promoCodeForm.value.rewardType,
         maxUses: promoCodeForm.value.maxUses,
         allowedPlanTypes: promoCodeForm.value.allowedPlanTypes,
-        stripeCouponId: promoCodeForm.value.stripeCouponId,
+        stripeCouponId,
+        gocardlessDiscountPercent,
+        gocardlessPlanCode: promoCodeForm.value.gocardlessPlanCode.trim(),
         expiresAt: expiresIso,
       }),
     })
@@ -3529,6 +3717,8 @@ const createPromoCodes = async () => {
       maxUses: 1,
       allowedPlanTypes: ['monthly', 'yearly', 'club'],
       stripeCouponId: '',
+      gocardlessDiscountPercent: '',
+      gocardlessPlanCode: '',
       expiresAt: '',
     }
     await loadPromotions()
@@ -4028,12 +4218,57 @@ const loadAnalytics = async () => {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     analytics.value = data
+    if (!analyticsSettingsInitialized.value) {
+      analyticsIntegrationSettings.value.datadog.enabled = Boolean(data?.integrationSettings?.datadog?.enabled)
+      analyticsIntegrationSettings.value.datadog.site = String(data?.integrationSettings?.datadog?.site || '')
+      analyticsIntegrationSettings.value.contentsquare.enabled = Boolean(data?.integrationSettings?.contentsquare?.enabled)
+      analyticsIntegrationSettings.value.contentsquare.tag = String(data?.integrationSettings?.contentsquare?.tag || '')
+      analyticsIntegrationSettings.value.ga4.enabled = Boolean(data?.integrationSettings?.ga4?.enabled)
+      analyticsIntegrationSettings.value.ga4.measurementId = String(data?.integrationSettings?.ga4?.measurementId || '')
+      analyticsViewCounting.value.minSegmentsPerSession = Number(data?.viewCounting?.minSegmentsPerSession ?? 1)
+      analyticsViewCounting.value.minWatchSeconds = Number(data?.viewCounting?.minWatchSeconds ?? 15)
+      analyticsSettingsInitialized.value = true
+      analyticsDatadogApiKeyTouched.value = false
+    }
     analyticsRange.value = data?.meta?.range || analyticsRange.value
     analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
   } catch (error: any) {
     analyticsError.value = error?.message || 'Failed to load analytics'
   } finally {
     analyticsLoading.value = false
+  }
+}
+
+const saveAnalyticsSettings = async () => {
+  if (!isAdmin.value) return
+  analyticsSettingsSaving.value = true
+  analyticsError.value = ''
+  try {
+    const integrations = {
+      datadog: {
+        enabled: analyticsIntegrationSettings.value.datadog.enabled,
+        site: analyticsIntegrationSettings.value.datadog.site,
+        ...(analyticsDatadogApiKeyTouched.value ? { apiKey: analyticsIntegrationSettings.value.datadog.apiKey } : {}),
+      },
+      contentsquare: { ...analyticsIntegrationSettings.value.contentsquare },
+      ga4: { ...analyticsIntegrationSettings.value.ga4 },
+    }
+    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        integrations,
+        viewCounting: analyticsViewCounting.value,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    analyticsDatadogApiKeyTouched.value = false
+    await loadAnalytics()
+  } catch (error: any) {
+    analyticsError.value = error?.message || 'Failed to save analytics settings'
+  } finally {
+    analyticsSettingsSaving.value = false
   }
 }
 
@@ -4085,10 +4320,54 @@ const loadAdminPills = async () => {
   }
 }
 
+function buildModeAwarePillPayload(input: {
+  valueMode?: PillValueMode
+  value: number
+  valueSecondary?: any
+  graphEmbedUrl?: any
+  graphPayloadJson?: any
+}) {
+  const mode: PillValueMode = input.valueMode === 'percentage'
+    || input.valueMode === 'agree_disagree'
+    || input.valueMode === 'graph_embed'
+    ? input.valueMode
+    : 'number'
+  const base = {
+    valueMode: mode,
+    value: Number(input.value),
+    valueSecondary: null as number | null,
+    graphEmbedUrl: null as string | null,
+    graphPayloadJson: null as string | null,
+  }
+  if (mode === 'agree_disagree') {
+    const secondary = input.valueSecondary === '' || input.valueSecondary == null ? null : Number(input.valueSecondary)
+    return { ...base, valueSecondary: Number.isFinite(secondary as number) ? secondary : null }
+  }
+  if (mode === 'graph_embed') {
+    return {
+      ...base,
+      graphEmbedUrl: typeof input.graphEmbedUrl === 'string' ? input.graphEmbedUrl.trim() || null : null,
+      graphPayloadJson: typeof input.graphPayloadJson === 'string' ? input.graphPayloadJson.trim() || null : null,
+    }
+  }
+  return base
+}
+
 const createPill = async () => {
+  const modePayload = buildModeAwarePillPayload({
+    valueMode: newPill.value.valueMode,
+    value: Number(newPill.value.value),
+    valueSecondary: newPill.value.valueSecondary,
+    graphEmbedUrl: newPill.value.graphEmbedUrl,
+    graphPayloadJson: newPill.value.graphPayloadJson,
+  })
   const payload = {
     label: newPill.value.label.trim(),
-    value: Number(newPill.value.value),
+    value: modePayload.value,
+    valueMode: modePayload.valueMode,
+    valueSecondary: modePayload.valueSecondary,
+    graphEmbedUrl: modePayload.graphEmbedUrl,
+    graphPayloadJson: modePayload.graphPayloadJson,
     color: newPill.value.color || '#2563eb',
     imageUrl: newPill.value.imageUrl?.trim() || null,
     sortOrder: adminPills.value.length,
@@ -4104,22 +4383,67 @@ const createPill = async () => {
       await loadAdminPills()
       throw new Error(`Failed to create pill: HTTP ${res.status}`)
     }
-    newPill.value = { label: '', value: 0, color: '#2563eb', imageUrl: '' }
+    newPill.value = {
+      label: '',
+      value: 0,
+      valueSecondary: '',
+      valueMode: 'number',
+      graphEmbedUrl: '',
+      graphPayloadJson: '',
+      color: '#2563eb',
+      imageUrl: '',
+    }
     await loadAdminPills()
   } catch (error) {
     console.error('createPill failed', error)
   }
 }
 
+const uploadPillImage = async (event: Event, pill: AdminPillRow | null) => {
+  const target = event.target as HTMLInputElement | null
+  const file = target?.files?.[0]
+  if (!file) return
+  try {
+    const form = new FormData()
+    form.set('image', file)
+    const res = await fetch(`${config.public.apiUrl}/api/admin/pills/image-upload`, {
+      method: 'POST',
+      headers: authHeader(),
+      body: form,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    const imageUrl = String(data.imageUrl || '')
+    if (!imageUrl) return
+    if (pill) pill.image_url = imageUrl
+    else newPill.value.imageUrl = imageUrl
+  } catch (error) {
+    console.error('uploadPillImage failed', error)
+  } finally {
+    if (target) target.value = ''
+  }
+}
+
 const savePill = async (pill: any) => {
   try {
+    const modePayload = buildModeAwarePillPayload({
+      valueMode: pill.value_mode || 'number',
+      value: Number(pill.value),
+      valueSecondary: pill.value_secondary,
+      graphEmbedUrl: pill.graph_embed_url,
+      graphPayloadJson: pill.graph_payload_json,
+    })
     const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
         id: pill.id,
         label: pill.label,
-        value: Number(pill.value),
+        value: modePayload.value,
+        valueMode: modePayload.valueMode,
+        valueSecondary: modePayload.valueSecondary,
+        graphEmbedUrl: modePayload.graphEmbedUrl,
+        graphPayloadJson: modePayload.graphPayloadJson,
         color: pill.color,
         imageUrl: typeof pill.image_url === 'string' ? pill.image_url : null,
         sortOrder: Number(pill.sort_order),
@@ -4335,6 +4659,9 @@ watch(
     for (const block of blocks) {
       if (block.type !== 'category' && typeof block.categoryId === 'string' && block.categoryId) {
         block.categoryId = null
+      }
+      if (block.type !== 'category' && block.rightRailWithNextSideMini) {
+        block.rightRailWithNextSideMini = false
       }
       if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []

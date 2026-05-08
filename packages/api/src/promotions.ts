@@ -2,6 +2,7 @@ import { requireAuth, requireRole } from './auth.js'
 import { getSetting, setSettings } from './settingsStore.js'
 
 type RewardType = 'free_month' | 'free_year' | 'discount_percent'
+type PromoProvider = 'stripe' | 'gocardless'
 type PopupBehavior = 'default' | 'highlight_campaign' | 'hide_standard' | 'isic_first'
 
 function getDb(env: any) {
@@ -83,13 +84,41 @@ function randomCode(length = 10) {
   return out
 }
 
-async function ensureStripeCouponId(env: any, promoCode: any) {
-  if (promoCode.reward_type !== 'discount_percent') return ''
-  const trimmed = String(promoCode.stripe_coupon_id ?? '').trim()
-  if (!trimmed) {
-    throw new Error('Stripe coupon ID is required for discount_percent promo codes')
+function parseDiscountPercent(raw: any) {
+  const numeric = Number(raw)
+  if (!Number.isFinite(numeric)) return null
+  if (numeric <= 0 || numeric > 100) return null
+  return Number(numeric.toFixed(2))
+}
+
+function isValidGocardlessPlanCode(raw: any): boolean {
+  if (raw == null) return false
+  const value = String(raw).trim()
+  return value.length > 0
+}
+
+function getCheckoutRewardMapping(promoCode: any, provider: PromoProvider) {
+  if (promoCode.reward_type !== 'discount_percent') {
+    return { stripeCouponId: '', gocardlessDiscountPercent: null as number | null }
   }
-  return trimmed
+  const stripeCouponId = String(promoCode.stripe_coupon_id ?? '').trim()
+  const gocardlessDiscountPercent = parseDiscountPercent(promoCode.gocardless_discount_percent)
+  const gocardlessPlanCode = String(promoCode.gocardless_plan_code ?? '').trim()
+  if (provider === 'stripe') {
+    return {
+      stripeCouponId: stripeCouponId || '',
+      gocardlessDiscountPercent,
+      gocardlessPlanCode,
+    }
+  }
+  if (provider === 'gocardless') {
+    return {
+      stripeCouponId,
+      gocardlessDiscountPercent: gocardlessDiscountPercent == null ? null : gocardlessDiscountPercent,
+      gocardlessPlanCode,
+    }
+  }
+  return { stripeCouponId, gocardlessDiscountPercent, gocardlessPlanCode }
 }
 
 async function getCodeByValue(db: any, code: string) {
@@ -104,6 +133,8 @@ async function getCodeByValue(db: any, code: string) {
       pc.is_active,
       pc.allowed_plan_types,
       pc.stripe_coupon_id,
+      pc.gocardless_discount_percent,
+      pc.gocardless_plan_code,
       pc.expires_at,
       pc.created_at,
       pc.updated_at,
@@ -138,7 +169,7 @@ async function validatePromoForPlan(env: any, promoCode: any, planType: string) 
   return { ok: true }
 }
 
-export async function resolvePromoCodeForCheckout(env: any, codeInput: any, planType: string) {
+export async function resolvePromoCodeForCheckout(env: any, codeInput: any, planType: string, provider: PromoProvider = 'stripe') {
   if (!(await isPromotionsEnabled(env))) {
     return { ok: false, reason: 'promotions_disabled', status: 403, error: 'Promo codes are currently disabled' }
   }
@@ -148,7 +179,36 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
   const promoCode = await getCodeByValue(db, code)
   const valid = await validatePromoForPlan(env, promoCode, planType)
   if (!valid.ok) return { ok: false, reason: valid.code, status: valid.status, error: valid.error }
-  const stripeCouponId = await ensureStripeCouponId(env, promoCode)
+  const rewardMapping = getCheckoutRewardMapping(promoCode, provider)
+  if (promoCode.reward_type === 'discount_percent') {
+    if (provider === 'stripe' && !rewardMapping.stripeCouponId) {
+      return {
+        ok: false,
+        reason: 'promo_provider_mapping_missing',
+        status: 400,
+        error: 'Promo code is not configured for Stripe checkout',
+      }
+    }
+    if (provider === 'gocardless' && rewardMapping.gocardlessDiscountPercent == null) {
+      return {
+        ok: false,
+        reason: 'promo_provider_mapping_missing',
+        status: 400,
+        error: 'Promo code is not configured for GoCardless checkout',
+      }
+    }
+    if (provider === 'gocardless') {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !isValidGocardlessPlanCode(rewardMapping.gocardlessPlanCode)) {
+        return {
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }
+      }
+    }
+  }
   return {
     ok: true,
     promoCode,
@@ -156,7 +216,9 @@ export async function resolvePromoCodeForCheckout(env: any, codeInput: any, plan
       promoCodeId: promoCode.id,
       promoCode: promoCode.code,
       rewardType: promoCode.reward_type,
-      stripeCouponId,
+      stripeCouponId: rewardMapping.stripeCouponId,
+      gocardlessDiscountPercent: rewardMapping.gocardlessDiscountPercent,
+      gocardlessPlanCode: rewardMapping.gocardlessPlanCode || '',
     },
   }
 }
@@ -296,6 +358,8 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
         pc.is_active,
         pc.allowed_plan_types,
         pc.stripe_coupon_id,
+        pc.gocardless_discount_percent,
+        pc.gocardless_plan_code,
         pc.expires_at,
         pc.created_at,
         pc.updated_at
@@ -324,16 +388,29 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     const expiresAt = expiresAtParsed.value
     const isActive = body?.isActive === false ? 0 : 1
     const stripeCouponId = typeof body?.stripeCouponId === 'string' ? body.stripeCouponId.trim() : ''
-    if (rewardType === 'discount_percent' && !stripeCouponId) {
-      return jsonResponse({ error: 'Stripe coupon ID is required for discount_percent promo codes' }, 400, corsHeaders)
+    const gocardlessDiscountPercent = parseDiscountPercent(body?.gocardlessDiscountPercent)
+    const gocardlessPlanCode = typeof body?.gocardlessPlanCode === 'string' ? body.gocardlessPlanCode.trim() : ''
+    if (rewardType === 'discount_percent' && !stripeCouponId && gocardlessDiscountPercent == null) {
+      return jsonResponse({ error: 'Provide at least one provider mapping (Stripe coupon ID and/or GoCardless discount percent) for discount_percent promo codes' }, 400, corsHeaders)
+    }
+    if (rewardType === 'discount_percent' && gocardlessDiscountPercent != null) {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !isValidGocardlessPlanCode(gocardlessPlanCode)) {
+        return jsonResponse({
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }, 400, corsHeaders)
+      }
     }
 
     const insertStmt = db.prepare(`
       INSERT INTO promo_codes (
         id, campaign_id, code, reward_type, max_uses, used_count, is_active,
-        allowed_plan_types, stripe_coupon_id, expires_at
+        allowed_plan_types, stripe_coupon_id, gocardless_discount_percent, gocardless_plan_code, expires_at
       )
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
     `)
     const statements = []
     const createdCodes = []
@@ -351,6 +428,8 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
         isActive,
         allowedPlans.join(','),
         stripeCouponId || null,
+        gocardlessDiscountPercent,
+        gocardlessPlanCode || null,
         expiresAt,
       ))
       createdCodes.push(code)
@@ -364,11 +443,13 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     const id = typeof body?.id === 'string' ? body.id.trim() : ''
     if (!id) return jsonResponse({ error: 'id is required' }, 400, corsHeaders)
 
-    const existing = await db.prepare('SELECT reward_type, stripe_coupon_id FROM promo_codes WHERE id = ? LIMIT 1').bind(id).first()
+    const existing = await db.prepare('SELECT reward_type, stripe_coupon_id, gocardless_discount_percent, gocardless_plan_code FROM promo_codes WHERE id = ? LIMIT 1').bind(id).first()
     if (!existing) return jsonResponse({ error: 'Promo code not found' }, 404, corsHeaders)
 
     let currentRewardType = String(existing.reward_type || 'free_month')
     let currentStripeCouponId = String(existing.stripe_coupon_id || '').trim()
+    let currentGoCardlessDiscountPercent = parseDiscountPercent(existing.gocardless_discount_percent)
+    let currentGocardlessPlanCode = String(existing.gocardless_plan_code || '').trim()
 
     const updates = []
     const values = []
@@ -401,6 +482,16 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
       updates.push('stripe_coupon_id = ?')
       values.push(currentStripeCouponId || null)
     }
+    if (Object.prototype.hasOwnProperty.call(body ?? {}, 'gocardlessDiscountPercent')) {
+      currentGoCardlessDiscountPercent = parseDiscountPercent(body?.gocardlessDiscountPercent)
+      updates.push('gocardless_discount_percent = ?')
+      values.push(currentGoCardlessDiscountPercent)
+    }
+    if (Object.prototype.hasOwnProperty.call(body ?? {}, 'gocardlessPlanCode')) {
+      currentGocardlessPlanCode = body?.gocardlessPlanCode ? String(body.gocardlessPlanCode).trim() : ''
+      updates.push('gocardless_plan_code = ?')
+      values.push(currentGocardlessPlanCode || null)
+    }
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'expiresAt')) {
       const nextParsed = parseOptionalIsoDate(body?.expiresAt)
       if (nextParsed.invalid) return jsonResponse({ error: 'expiresAt must be a valid datetime' }, 400, corsHeaders)
@@ -410,8 +501,19 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     }
     if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
 
-    if (currentRewardType === 'discount_percent' && !currentStripeCouponId) {
-      return jsonResponse({ error: 'Stripe coupon ID is required for discount_percent promo codes' }, 400, corsHeaders)
+    if (currentRewardType === 'discount_percent' && !currentStripeCouponId && currentGoCardlessDiscountPercent == null) {
+      return jsonResponse({ error: 'Provide at least one provider mapping (Stripe coupon ID and/or GoCardless discount percent) for discount_percent promo codes' }, 400, corsHeaders)
+    }
+    if (currentRewardType === 'discount_percent' && currentGoCardlessDiscountPercent != null) {
+      const requiresPlanCode = String(await getSetting(env, 'gocardless_promo_requires_plan_code', { defaultValue: '0' })) === '1'
+      if (requiresPlanCode && !isValidGocardlessPlanCode(currentGocardlessPlanCode)) {
+        return jsonResponse({
+          ok: false,
+          reason: 'promo_provider_mapping_missing',
+          status: 400,
+          error: 'Promo code is missing required GoCardless plan code mapping',
+        }, 400, corsHeaders)
+      }
     }
     values.push(id)
     await db.prepare(`
@@ -446,7 +548,8 @@ export async function handlePromoValidate(request: any, env: any, corsHeaders: a
   if (!['monthly', 'yearly', 'club'].includes(planType)) {
     return jsonResponse({ error: 'planType must be one of monthly, yearly, club' }, 400, corsHeaders)
   }
-  const resolved = await resolvePromoCodeForCheckout(env, body?.promoCode, planType)
+  const provider = String(body?.provider ?? 'stripe').trim().toLowerCase() === 'gocardless' ? 'gocardless' : 'stripe'
+  const resolved = await resolvePromoCodeForCheckout(env, body?.promoCode, planType, provider)
   if (!resolved.ok) {
     return jsonResponse({
       valid: false,

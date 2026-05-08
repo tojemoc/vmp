@@ -3,7 +3,17 @@
     v-if="show"
     class="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm"
   >
-    <div class="bg-gray-900 rounded-xl p-8 max-w-lg w-full mx-4 text-center shadow-2xl">
+    <div class="relative bg-gray-900 rounded-xl p-8 max-w-lg w-full mx-4 text-center shadow-2xl">
+      <button
+        type="button"
+        aria-label="Close subscription popup"
+        class="absolute top-3 right-3 inline-flex items-center justify-center w-8 h-8 rounded-full text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+        @click="emit('close')"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+        </svg>
+      </button>
       <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center">
         <svg class="w-8 h-8 text-gray-900" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
@@ -130,6 +140,7 @@ const props = defineProps<{
   show:    boolean
   videoId: string
 }>()
+const emit = defineEmits<{ close: [] }>()
 
 const config      = useRuntimeConfig()
 const apiUrl      = config.public.apiUrl as string
@@ -305,7 +316,7 @@ async function validatePromoCode() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ promoCode: code, planType: selectedPlan.value }),
+      body: JSON.stringify({ promoCode: code, planType: selectedPlan.value, provider: selectedProvider.value }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data?.valid) {
@@ -353,6 +364,15 @@ watch(selectedPlan, () => {
   // Plan changes can invalidate a previously-applied code.
   promoApplied.value = null
   promoError.value = null
+})
+
+watch(selectedProvider, () => {
+  // Provider changes can invalidate a previously-applied code.
+  promoApplied.value = null
+  promoError.value = null
+  if (promoCodeInput.value.trim() && isLoggedIn.value) {
+    void validatePromoCode()
+  }
 })
 
 watch(promoCodeInput, (newInput) => {
