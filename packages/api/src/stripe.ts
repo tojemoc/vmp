@@ -506,20 +506,16 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     }
 
     const checkoutToken = crypto.randomUUID()
-    const sessionToken = crypto.randomUUID().replaceAll('-', '')
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
       INSERT INTO payment_checkout_sessions
         (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, updated_at)
       VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, sessionToken, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot).run()
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot).run()
 
-    const flowResponse = await gocardlessPost('/redirect_flows', {
-      redirect_flows: {
-        description: `VMP ${planType} subscription`,
-        session_token: sessionToken,
-        success_redirect_url: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        prefilled_customer: { email: user.email },
+    const billingRequestResponse = await gocardlessPost('/billing_requests', {
+      billing_requests: {
+        mandate_request: {},
         metadata: {
           userId: user.sub,
           planType,
@@ -530,21 +526,36 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         },
       },
     }, env)
+    const billingRequest = billingRequestResponse?.data?.billing_requests
+    if (!billingRequestResponse.ok || !billingRequest?.id) {
+      console.error('GoCardless billing request error:', billingRequestResponse?.data)
+      return jsonResponse({ error: 'Failed to create GoCardless checkout flow' }, 502, corsHeaders)
+    }
 
-    const redirectFlow = flowResponse?.data?.redirect_flows
-    if (!flowResponse.ok || !redirectFlow?.id || !redirectFlow?.redirect_url) {
-      console.error('GoCardless redirect flow error:', flowResponse?.data)
+    const flowResponse = await gocardlessPost('/billing_request_flows', {
+      billing_request_flows: {
+        redirect_uri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
+        prefilled_customer: { email: user.email },
+        links: {
+          billing_request: billingRequest.id,
+        },
+      },
+    }, env)
+
+    const billingRequestFlow = flowResponse?.data?.billing_request_flows
+    if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
+      console.error('GoCardless billing request flow error:', flowResponse?.data)
       return jsonResponse({ error: 'Failed to create GoCardless checkout flow' }, 502, corsHeaders)
     }
 
     await db.prepare(`
       UPDATE payment_checkout_sessions
-      SET provider_checkout_id = ?, updated_at = CURRENT_TIMESTAMP
+      SET provider_checkout_id = ?, session_token = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).bind(redirectFlow.id, checkoutSessionId).run()
+    `).bind(billingRequestFlow.id, billingRequest.id, checkoutSessionId).run()
 
     return jsonResponse({
-      checkoutUrl: redirectFlow.redirect_url,
+      checkoutUrl: billingRequestFlow.authorisation_url,
       provider,
     }, 200, corsHeaders)
   } catch (err) {
@@ -791,7 +802,7 @@ export async function handleGoCardlessWebhook(request: any, env: any, corsHeader
 
 /**
  * POST /api/payments/gocardless/complete — protected
- * Completes a redirect flow after bank authorization and creates the recurring subscription.
+ * Completes a billing request flow after bank authorization and creates the recurring subscription.
  */
 export async function handleGoCardlessComplete(request: any, env: any, corsHeaders: any) {
   let user: any
@@ -802,10 +813,10 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
   }
 
   const body = await request.json().catch(() => null)
-  const redirectFlowId = String(body?.redirectFlowId ?? '').trim()
+  const billingRequestFlowId = String(body?.billingRequestFlowId ?? body?.redirectFlowId ?? '').trim()
   const checkoutToken = String(body?.checkoutToken ?? '').trim()
-  if (!redirectFlowId || !checkoutToken) {
-    return jsonResponse({ error: 'redirectFlowId and checkoutToken are required' }, 400, corsHeaders)
+  if (!billingRequestFlowId || !checkoutToken) {
+    return jsonResponse({ error: 'billingRequestFlowId and checkoutToken are required' }, 400, corsHeaders)
   }
 
   try {
@@ -819,22 +830,64 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
         AND provider_checkout_id = ?
       ORDER BY created_at DESC
       LIMIT 1
-    `).bind(user.sub, checkoutToken, redirectFlowId).first()
+    `).bind(user.sub, checkoutToken, billingRequestFlowId).first()
 
     if (!checkoutSession || checkoutSession.status === 'completed') {
       return jsonResponse({ error: 'Checkout session not found or already completed' }, 404, corsHeaders)
     }
 
-    const completeResponse = await gocardlessPost(
-      `/redirect_flows/${redirectFlowId}/actions/complete`,
-      { data: { session_token: checkoutSession.session_token } },
-      env,
-      { 'Idempotency-Key': `gocardless-complete:${checkoutToken}` },
-    )
-    const redirectFlow = completeResponse?.data?.redirect_flows
-    if (!completeResponse.ok || !redirectFlow?.links?.mandate) {
-      console.error('GoCardless complete flow error:', completeResponse?.data)
-      return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+    const sessionTokenRef = String(checkoutSession.session_token ?? '').trim()
+    const providerCheckoutId = String(checkoutSession.provider_checkout_id ?? '').trim()
+    let billingRequest: any = null
+    let mandateId = ''
+
+    if (sessionTokenRef.startsWith('BRQ')) {
+      const billingRequestResponse = await gocardlessGet(`/billing_requests/${sessionTokenRef}`, env)
+      billingRequest = billingRequestResponse?.data?.billing_requests
+      mandateId = String(billingRequest?.mandate_request?.links?.mandate ?? '').trim()
+      if (!billingRequestResponse.ok || !mandateId) {
+        console.error('GoCardless billing request lookup error:', billingRequestResponse?.data)
+        return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+      }
+    } else {
+      const redirectFlowId = sessionTokenRef.startsWith('RE')
+        ? sessionTokenRef
+        : (providerCheckoutId.startsWith('RE') ? providerCheckoutId : '')
+      if (!redirectFlowId) {
+        return jsonResponse({ error: 'Checkout session has unsupported GoCardless reference format' }, 500, corsHeaders)
+      }
+
+      let redirectFlowResponse = await gocardlessGet(`/redirect_flows/${redirectFlowId}`, env)
+      let redirectFlow = redirectFlowResponse?.data?.redirect_flows
+      mandateId = String(redirectFlow?.links?.mandate ?? '').trim()
+
+      // Only call /actions/complete when we have the original non-RE session token.
+      const needsCompleteFlow = (!redirectFlowResponse.ok || !mandateId) && !!sessionTokenRef && !sessionTokenRef.startsWith('RE')
+      if (needsCompleteFlow) {
+        const completeResponse = await gocardlessPost(
+          `/redirect_flows/${redirectFlowId}/actions/complete`,
+          { data: { session_token: sessionTokenRef } },
+          env,
+          { 'Idempotency-Key': `gocardless-complete:${checkoutToken}` },
+        )
+        redirectFlow = completeResponse?.data?.redirect_flows
+        mandateId = String(redirectFlow?.links?.mandate ?? '').trim()
+        if (!completeResponse.ok || !mandateId) {
+          console.error('GoCardless redirect flow completion error:', completeResponse?.data)
+          return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+        }
+      } else if (!redirectFlowResponse.ok || !mandateId) {
+        console.error('GoCardless redirect flow lookup error:', redirectFlowResponse?.data)
+        return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+      }
+
+      const linkedBillingRequestId = String(redirectFlow?.links?.billing_request ?? '').trim()
+      if (linkedBillingRequestId) {
+        const billingRequestResponse = await gocardlessGet(`/billing_requests/${linkedBillingRequestId}`, env)
+        if (billingRequestResponse?.ok) {
+          billingRequest = billingRequestResponse?.data?.billing_requests ?? null
+        }
+      }
     }
 
     const pricing = await getEffectivePricingSettings(env, 'gocardless')
@@ -882,7 +935,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
         interval_unit: interval.intervalUnit,
         day_of_month: 1,
         links: {
-          mandate: redirectFlow.links.mandate,
+          mandate: mandateId,
         },
         metadata: {
           userId: user.sub,
@@ -901,7 +954,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
     const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
       ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
       : null
-    const providerCustomerId = String(gocardlessSub?.links?.customer ?? redirectFlow?.links?.customer ?? redirectFlow?.links?.mandate ?? '')
+    const providerCustomerId = String(gocardlessSub?.links?.customer ?? billingRequest?.links?.customer ?? mandateId ?? '')
     await upsertSubscriptionRow(db, {
       userId: user.sub,
       planType,
