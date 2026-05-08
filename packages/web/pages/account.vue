@@ -329,13 +329,13 @@ async function maybeCompleteGoCardlessCheckout() {
   } catch {
     gocardlessCompletionError.value = 'Network error while finalizing GoCardless checkout.'
   } finally {
+    if (!completed) return
     const nextQuery = { ...route.query }
     delete nextQuery.gocardless_billing_request_flow_id
     delete nextQuery.billing_request_flow_id
     delete nextQuery.gocardless_redirect_flow_id
     delete nextQuery.gocardless_checkout_token
-    if (completed) nextQuery.gocardless_complete = '1'
-    else delete nextQuery.gocardless_complete
+    nextQuery.gocardless_complete = '1'
     await navigateTo({ path: '/account', query: nextQuery }, { replace: true })
   }
 }

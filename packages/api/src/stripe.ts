@@ -836,17 +836,54 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
       return jsonResponse({ error: 'Checkout session not found or already completed' }, 404, corsHeaders)
     }
 
-    const billingRequestId = String(checkoutSession.session_token ?? '').trim()
-    if (!billingRequestId) {
-      return jsonResponse({ error: 'Checkout session is missing billing request reference' }, 500, corsHeaders)
-    }
+    const sessionTokenRef = String(checkoutSession.session_token ?? '').trim()
+    const providerCheckoutId = String(checkoutSession.provider_checkout_id ?? '').trim()
+    let billingRequest: any = null
+    let mandateId = ''
 
-    const billingRequestResponse = await gocardlessGet(`/billing_requests/${billingRequestId}`, env)
-    const billingRequest = billingRequestResponse?.data?.billing_requests
-    const mandateId = String(billingRequest?.mandate_request?.links?.mandate ?? '').trim()
-    if (!billingRequestResponse.ok || !mandateId) {
-      console.error('GoCardless billing request lookup error:', billingRequestResponse?.data)
-      return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+    if (sessionTokenRef.startsWith('BRQ')) {
+      const billingRequestResponse = await gocardlessGet(`/billing_requests/${sessionTokenRef}`, env)
+      billingRequest = billingRequestResponse?.data?.billing_requests
+      mandateId = String(billingRequest?.mandate_request?.links?.mandate ?? '').trim()
+      if (!billingRequestResponse.ok || !mandateId) {
+        console.error('GoCardless billing request lookup error:', billingRequestResponse?.data)
+        return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+      }
+    } else {
+      const redirectFlowId = sessionTokenRef.startsWith('RE') ? sessionTokenRef : providerCheckoutId
+      if (!redirectFlowId) {
+        return jsonResponse({ error: 'Checkout session is missing GoCardless flow reference' }, 500, corsHeaders)
+      }
+
+      let redirectFlowResponse = await gocardlessGet(`/redirect_flows/${redirectFlowId}`, env)
+      let redirectFlow = redirectFlowResponse?.data?.redirect_flows
+      mandateId = String(redirectFlow?.links?.mandate ?? '').trim()
+
+      if ((!redirectFlowResponse.ok || !mandateId) && sessionTokenRef && !sessionTokenRef.startsWith('RE')) {
+        const completeResponse = await gocardlessPost(
+          `/redirect_flows/${redirectFlowId}/actions/complete`,
+          { data: { session_token: sessionTokenRef } },
+          env,
+          { 'Idempotency-Key': `gocardless-complete:${checkoutToken}` },
+        )
+        redirectFlow = completeResponse?.data?.redirect_flows
+        mandateId = String(redirectFlow?.links?.mandate ?? '').trim()
+        if (!completeResponse.ok || !mandateId) {
+          console.error('GoCardless redirect flow completion error:', completeResponse?.data)
+          return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+        }
+      } else if (!redirectFlowResponse.ok || !mandateId) {
+        console.error('GoCardless redirect flow lookup error:', redirectFlowResponse?.data)
+        return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
+      }
+
+      const linkedBillingRequestId = String(redirectFlow?.links?.billing_request ?? '').trim()
+      if (linkedBillingRequestId) {
+        const billingRequestResponse = await gocardlessGet(`/billing_requests/${linkedBillingRequestId}`, env)
+        if (billingRequestResponse?.ok) {
+          billingRequest = billingRequestResponse?.data?.billing_requests ?? null
+        }
+      }
     }
 
     const pricing = await getEffectivePricingSettings(env, 'gocardless')
