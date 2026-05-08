@@ -10,7 +10,7 @@ type PipelineStage = 'detected' | 'deduped' | 'wait_upload_complete' | 'probe' |
 type QueueJob = { videoId: string, inputPath: string, source: string }
 type RunResult = { stdout: string, stderr: string }
 type RunOptions = { capture?: boolean }
-type ResolveSanitizedTargetPathResult = { safeId: string, targetPath: string, renamed: boolean }
+type ResolveInputTargetPathResult = { videoId: string, targetPath: string, renamed: boolean, reason?: 'legacy_filename' | 'random_uuid' | 'already_uuid' }
 
 const INBOX_DIR = (process.env.INBOX_DIR || '/mnt/videos/inbox').trim()
 const TMP_DIR_BASE = (process.env.TMP_DIR_BASE || '/mnt/tmp/video_pipeline').trim()
@@ -20,6 +20,7 @@ const MP3_BITRATE = (process.env.MP3_BITRATE || '128k').trim()
 const PREVIEW_MP3_ENABLED = process.env.PREVIEW_MP3_ENABLED !== '0'
 const PREVIEW_MP3_SECONDS = Math.max(1, Number.parseInt(process.env.PREVIEW_MP3_SECONDS || '180', 10) || 180)
 const PREVIEW_MP3_LOCK_SECONDS = Math.max(0, Number.parseInt(process.env.PREVIEW_MP3_LOCK_SECONDS || '60', 10) || 60)
+const VIDEO_ID_STRATEGY = (process.env.VIDEO_ID_STRATEGY || 'random').trim()
 const VIDEO_ID_SANITIZE_MODE = (process.env.VIDEO_ID_SANITIZE_MODE || 'slug-hash').trim()
 const WAIT_STABLE_TIMEOUT_MS = Math.max(1_000, Number.parseInt(process.env.WAIT_STABLE_TIMEOUT_MS || '120000', 10) || 120000)
 const WAIT_STABLE_POLL_MS = Math.max(250, Number.parseInt(process.env.WAIT_STABLE_POLL_MS || '2000', 10) || 2000)
@@ -84,6 +85,10 @@ function sanitizeVideoId(stem: string): string {
   if (VIDEO_ID_SANITIZE_MODE === 'slug') return slug
   if (/^[a-z0-9-]+$/.test(stem)) return stem
   return `${slug}-${hash8(stem)}`
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 async function waitStableSize(filePath: string): Promise<void> {
@@ -254,28 +259,48 @@ function enqueue(videoId: string, inputPath: string, source: string): void {
   drain()
 }
 
-async function resolveSanitizedTargetPath(stem: string, ext: string, oldPath: string, source: string): Promise<ResolveSanitizedTargetPathResult> {
-  const baseId = sanitizeVideoId(stem)
-  if (baseId === stem) {
-    return { safeId: baseId, targetPath: oldPath, renamed: false }
+async function resolveInputTargetPath(stem: string, ext: string, oldPath: string, source: string): Promise<ResolveInputTargetPathResult> {
+  if (VIDEO_ID_STRATEGY === 'filename') {
+    const baseId = sanitizeVideoId(stem)
+    if (baseId === stem) {
+      return { videoId: baseId, targetPath: oldPath, renamed: false, reason: 'legacy_filename' }
+    }
+    const dir = path.dirname(oldPath)
+    let attempt = 0
+    while (attempt < 1000) {
+      const suffix = attempt === 0 ? '' : `-${attempt}`
+      const candidateId = `${baseId}${suffix}`
+      const candidateFile = `${candidateId}.${ext}`
+      const candidatePath = path.join(dir, candidateFile)
+      if (!existsSync(candidatePath)) {
+        await rename(oldPath, candidatePath)
+        if (attempt > 0) {
+          log(`⚠️ Filename collision in ${source}: '${oldPath}' -> '${candidatePath}' (base '${baseId}' already existed)`)
+        }
+        return { videoId: candidateId, targetPath: candidatePath, renamed: true, reason: 'legacy_filename' }
+      }
+      attempt += 1
+    }
+    throw new Error(`unable to resolve sanitized filename collision for ${oldPath}`)
   }
+
+  if (isUuidLike(stem)) {
+    return { videoId: stem, targetPath: oldPath, renamed: false, reason: 'already_uuid' }
+  }
+
   const dir = path.dirname(oldPath)
   let attempt = 0
   while (attempt < 1000) {
-    const suffix = attempt === 0 ? '' : `-${attempt}`
-    const candidateId = `${baseId}${suffix}`
+    const candidateId = crypto.randomUUID()
     const candidateFile = `${candidateId}.${ext}`
     const candidatePath = path.join(dir, candidateFile)
     if (!existsSync(candidatePath)) {
       await rename(oldPath, candidatePath)
-      if (attempt > 0) {
-        log(`⚠️ Filename collision in ${source}: '${oldPath}' -> '${candidatePath}' (base '${baseId}' already existed)`)
-      }
-      return { safeId: candidateId, targetPath: candidatePath, renamed: true }
+      return { videoId: candidateId, targetPath: candidatePath, renamed: true, reason: 'random_uuid' }
     }
     attempt += 1
   }
-  throw new Error(`unable to resolve sanitized filename collision for ${oldPath}`)
+  throw new Error(`unable to allocate random video ID for ${oldPath}`)
 }
 
 function drain(): void {
@@ -301,11 +326,12 @@ async function startupScan(): Promise<void> {
     const stem = file.replace(/\.[^.]+$/, '')
     const oldPath = path.join(INBOX_DIR, file)
     const ext = file.split('.').pop() || 'mp4'
-    const { safeId, targetPath, renamed } = await resolveSanitizedTargetPath(stem, ext, oldPath, 'startup_scan')
+    const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'startup_scan')
     if (renamed) {
-      log(`🧼 Sanitized VIDEO_ID startup_scan: '${stem}' -> '${safeId}'`)
+      const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
+      log(`🧼 ${detail} startup_scan: '${stem}' -> '${videoId}'`)
     }
-    enqueue(safeId, targetPath, 'startup_scan')
+    enqueue(videoId, targetPath, 'startup_scan')
   }
 }
 
@@ -318,11 +344,12 @@ function startWatcher() {
       const stem = file.replace(/\.[^.]+$/, '')
       const oldPath = path.join(INBOX_DIR, file)
       const ext = file.split('.').pop() || 'mp4'
-      const { safeId, targetPath, renamed } = await resolveSanitizedTargetPath(stem, ext, oldPath, 'watchfolder')
+      const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'watchfolder')
       if (renamed) {
-        log(`🧼 Sanitized VIDEO_ID watchfolder: '${stem}' -> '${safeId}'`)
+        const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
+        log(`🧼 ${detail} watchfolder: '${stem}' -> '${videoId}'`)
       }
-      enqueue(safeId, targetPath, 'watchfolder')
+      enqueue(videoId, targetPath, 'watchfolder')
     }
   }
   child.stdout.on('data', async (chunk) => {
@@ -362,9 +389,12 @@ function startPollingWatcher() {
         const stem = file.replace(/\.[^.]+$/, '')
         const oldPath = path.join(INBOX_DIR, file)
         const ext = file.split('.').pop() || 'mp4'
-        const { safeId, targetPath, renamed } = await resolveSanitizedTargetPath(stem, ext, oldPath, 'polling_watchfolder')
-        if (renamed) log(`🧼 Sanitized VIDEO_ID polling_watchfolder: '${stem}' -> '${safeId}'`)
-        enqueue(safeId, targetPath, 'polling_watchfolder')
+        const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'polling_watchfolder')
+        if (renamed) {
+          const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
+          log(`🧼 ${detail} polling_watchfolder: '${stem}' -> '${videoId}'`)
+        }
+        enqueue(videoId, targetPath, 'polling_watchfolder')
       }
       known = current
     } catch (err) {

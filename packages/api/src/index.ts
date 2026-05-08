@@ -2045,6 +2045,9 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
   const cappedPreviewDuration = newVideo.full_duration > 0
     ? Math.min(oldVideo.preview_duration ?? 0, newVideo.full_duration)
     : (oldVideo.preview_duration ?? 0)
+  const preservedWatchPathToken = (typeof oldVideo.slug === 'string' && oldVideo.slug.trim())
+    ? oldVideo.slug.trim()
+    : publishedId
 
   // Promote the draft and retire the old video atomically via D1 batch so both
   // updates succeed or both fail — no half-swapped state.
@@ -2065,7 +2068,7 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
     oldVideo.title,
     oldVideo.description ?? null,
     oldVideo.thumbnail_url ?? null,
-    oldVideo.slug ?? null,
+    preservedWatchPathToken,
     oldVideo.upload_date,
     cappedPreviewDuration,
     draftId,
