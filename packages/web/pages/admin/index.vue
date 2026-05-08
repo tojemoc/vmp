@@ -107,8 +107,12 @@
             >
               <div class="flex items-center gap-3 mb-3">
                 <span class="cursor-move text-gray-500">↕</span>
-                <select v-model="block.type" class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
-                  <option v-for="componentType in componentTypes" :key="componentType" :value="componentType">{{ componentType }}</option>
+                <select
+                  v-model="block.type"
+                  aria-label="Homepage block type"
+                  class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 dark:[color-scheme:dark] text-sm text-gray-900 dark:text-white"
+                >
+                  <option v-for="componentType in blockTypeOptions(block.type)" :key="componentType" :value="componentType">{{ componentType }}</option>
                 </select>
                 <button class="ml-auto text-sm text-red-600 hover:underline" @click="removeBlock(block.id)">Remove</button>
               </div>
@@ -137,8 +141,12 @@
                     class="grid gap-2 rounded border border-gray-200 dark:border-gray-700 p-2 bg-white dark:bg-gray-900"
                   >
                     <div class="text-xs font-semibold text-gray-600 dark:text-gray-400">Child block {{ childIndex + 1 }}</div>
-                    <select v-model="child.type" class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
-                      <option v-for="componentType in leafComponentTypes" :key="`${block.id}-child-type-${componentType}`" :value="componentType">{{ componentType }}</option>
+                    <select
+                      v-model="child.type"
+                      aria-label="Homepage child block type"
+                      class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 dark:[color-scheme:dark] text-sm text-gray-900 dark:text-white"
+                    >
+                      <option v-for="componentType in leafBlockTypeOptions(child.type)" :key="`${block.id}-child-type-${componentType}`" :value="componentType">{{ componentType }}</option>
                     </select>
                     <input v-model="child.title" type="text" placeholder="Child block title" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400" />
                     <textarea v-model="child.body" rows="2" placeholder="Child block copy" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"></textarea>
@@ -617,7 +625,7 @@
         <div v-if="activeAdminTab === 'categories'" id="categories-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Category management</h2>
-            <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="loadCategories">Refresh</button>
+            <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="loadCategories">Refresh</button>
           </div>
 
           <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
@@ -665,8 +673,8 @@
                   <option value="side_mini">2×1 small block</option>
                 </select>
                 <div class="flex gap-2">
-                  <button class="px-2 py-1 rounded border text-xs" :disabled="categoryIndex === 0" @click="nudgeCategoryOrder(categoryIndex, -1)">↑</button>
-                  <button class="px-2 py-1 rounded border text-xs" :disabled="categoryIndex === categories.length - 1" @click="nudgeCategoryOrder(categoryIndex, 1)">↓</button>
+                  <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-xs" :disabled="categoryIndex === 0" aria-label="Move category up" @click="nudgeCategoryOrder(categoryIndex, -1)">↑</button>
+                  <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-xs" :disabled="categoryIndex === categories.length - 1" aria-label="Move category down" @click="nudgeCategoryOrder(categoryIndex, 1)">↓</button>
                 </div>
                 <div class="flex gap-2">
                   <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" @click="updateCategory(category)">Save</button>
@@ -1890,7 +1898,7 @@
         <h3 id="confirmModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ confirmModalTitle }}</h3>
         <p id="confirmModalDesc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ confirmModal.impactText }}</p>
         <div class="flex justify-end gap-2">
-          <button type="button" aria-label="Cancel" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="onConfirmCancel">Cancel</button>
+          <button type="button" aria-label="Cancel" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="onConfirmCancel">Cancel</button>
           <button
             type="button"
             aria-label="Confirm"
@@ -1956,7 +1964,7 @@
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">The watch page will use these MoQ fields directly for livestream playback.</p>
         <p v-if="livestreamModal.error" class="mt-3 text-sm text-red-600 dark:text-red-300">{{ livestreamModal.error }}</p>
         <div class="mt-4 flex justify-end gap-2">
-          <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeLivestreamModal">Cancel</button>
+          <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="closeLivestreamModal">Cancel</button>
           <button
             class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="livestreamModal.saving"
@@ -2100,7 +2108,7 @@
           </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
-          <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeDescriptionModal">Cancel</button>
+          <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="closeDescriptionModal">Cancel</button>
           <button type="button" class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="saveDescriptionModal">Save description</button>
         </div>
       </div>
@@ -2421,6 +2429,14 @@ const livestreamModal = ref({
 })
 const componentTypes: BlockType[] = ['top_video', 'featured_row', 'category', 'split_horizontal', 'split_vertical']
 const leafComponentTypes: LeafBlockType[] = ['top_video', 'featured_row', 'category']
+const blockTypeOptions = (currentType: unknown): string[] => {
+  if (typeof currentType !== 'string' || !currentType.trim()) return componentTypes
+  return componentTypes.includes(currentType as BlockType) ? componentTypes : [currentType, ...componentTypes]
+}
+const leafBlockTypeOptions = (currentType: unknown): string[] => {
+  if (typeof currentType !== 'string' || !currentType.trim()) return leafComponentTypes
+  return leafComponentTypes.includes(currentType as LeafBlockType) ? leafComponentTypes : [currentType, ...leafComponentTypes]
+}
 const layoutBlocks = ref<LayoutBlock[]>([])
 const homepageBaseline = ref<string>('')
 
@@ -3057,7 +3073,8 @@ const getDefaultBlocks = (): LayoutBlock[] => ([])
 const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   if (!raw || typeof raw !== 'object') return null
   const id = typeof raw.id === 'string' ? raw.id : crypto.randomUUID()
-  const type: BlockType = componentTypes.includes(raw.type) ? raw.type : 'top_video'
+  const rawType = typeof raw.type === 'string' ? raw.type.trim() : ''
+  const type: BlockType = (rawType || 'top_video') as BlockType
   const title = typeof raw.title === 'string' ? raw.title : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
@@ -3067,7 +3084,7 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     const normalizedChildren = children
       .filter((child: any) => child && typeof child === 'object')
       .map((child: any) => ({
-        type: leafComponentTypes.includes(child.type) ? child.type : 'top_video',
+        type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
         title: typeof child.title === 'string' ? child.title : '',
         body: typeof child.body === 'string' ? child.body : '',
         categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
@@ -3098,7 +3115,7 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   }
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
     payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
-      type: leafComponentTypes.includes(child?.type) ? child.type : 'top_video',
+      type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
       title: typeof child?.title === 'string' ? child.title : '',
       body: typeof child?.body === 'string' ? child.body : '',
       categoryId: typeof child?.categoryId === 'string' ? child.categoryId : null,
