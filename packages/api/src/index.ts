@@ -78,6 +78,7 @@ import {
   handleAdminMediaConvertUpload,
   handleAdminMediaConvertUploadComplete,
   handleAdminMediaConvertConfig,
+  handleAdminMediaConvertSystemSettings,
   pollMediaConvertJobs,
   enrichVideosWithMediaConvert,
 } from './mediaconvert.js'
@@ -309,6 +310,9 @@ export default {
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
       return handleAdminMediaConvertConfig(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/system/mediaconvert' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminMediaConvertSystemSettings(request, env, corsHeaders)
     }
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) && request.method === 'POST') {
       return handleThumbnailUpload(request, env, corsHeaders)

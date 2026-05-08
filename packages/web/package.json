@@ -26,6 +26,7 @@
     "media-chrome": "^4.19.0",
     "nuxt": "^4.4.4",
     "qrcode": "^1.5.4",
+    "tus-js-client": "^4.3.1",
     "video.js": "^8.23.7",
     "videojs-video-element": "^1.4.4",
     "vue": "^3.5.33"
