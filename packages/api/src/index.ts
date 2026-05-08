@@ -1374,12 +1374,12 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
       return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
     }
   }
-  if (slug) {
-    const conflict = await db.prepare('SELECT 1 FROM videos WHERE slug = ? OR id = ? LIMIT 1').bind(slug, slug).first()
-    if (conflict) return jsonResponse({ error: 'Slug already in use or conflicts with an existing video ID' }, 409, corsHeaders)
-  }
 
   const videoId = crypto.randomUUID()
+
+  // Validate slug/legacy_slug uniqueness before creating the video
+  const collisionError = await validateRouteTokenUniqueness(db, videoId, slug, null, corsHeaders)
+  if (collisionError) return collisionError
   const publishedAt = publishStatus === 'published' ? new Date().toISOString() : null
 
   await db.prepare(`
@@ -1713,34 +1713,15 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
 
   // Guard: reject a slug that equals another video's id — resolveVideoByIdOrSlug
   // resolves by id before slug, so the slug would become permanently shadowed.
-  if (hasSlug && normalizedSlug) {
-    const idCollision = await db.prepare(
-      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
-    ).bind(normalizedSlug, videoId).first()
-    if (idCollision) {
-      return jsonResponse({ error: 'Slug conflicts with an existing video ID' }, 409, corsHeaders)
-    }
-    const slugCollision = await db.prepare(
-      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
-    ).bind(videoId, normalizedSlug, normalizedSlug).first()
-    if (slugCollision) {
-      return jsonResponse({ error: 'Slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
-    }
-  }
-  if (hasLegacySlug && normalizedLegacySlug) {
-    const idCollision = await db.prepare(
-      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
-    ).bind(normalizedLegacySlug, videoId).first()
-    if (idCollision) {
-      return jsonResponse({ error: 'Legacy slug conflicts with an existing video ID' }, 409, corsHeaders)
-    }
-    const legacyCollision = await db.prepare(
-      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
-    ).bind(videoId, normalizedLegacySlug, normalizedLegacySlug).first()
-    if (legacyCollision) {
-      return jsonResponse({ error: 'Legacy slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
-    }
-  }
+  // Also ensure slug/legacy_slug don't collide with existing videos.
+  const collisionError = await validateRouteTokenUniqueness(
+    db,
+    videoId,
+    hasSlug ? normalizedSlug : null,
+    hasLegacySlug ? normalizedLegacySlug : null,
+    corsHeaders
+  )
+  if (collisionError) return collisionError
 
   try {
     // When both title and slug are supplied, write them atomically so a slug
@@ -2768,6 +2749,63 @@ function sanitizeSlug(raw: any) {
     .trim()
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Validates that slug and legacy_slug tokens do not collide with existing videos.
+ * Checks:
+ * 1. Slug doesn't equal another video's ID
+ * 2. Slug isn't already used as another video's slug or legacy_slug
+ * 3. Legacy slug doesn't equal another video's ID
+ * 4. Legacy slug isn't already used as another video's slug or legacy_slug
+ *
+ * @param db - Database binding
+ * @param videoId - ID of the video being created/updated (used to exclude self from collision checks)
+ * @param normalizedSlug - The normalized slug value (or null)
+ * @param normalizedLegacySlug - The normalized legacy_slug value (or null)
+ * @param corsHeaders - CORS headers for the response
+ * @returns Response object if there's a collision, null if validation passes
+ */
+async function validateRouteTokenUniqueness(
+  db: any,
+  videoId: string,
+  normalizedSlug: string | null,
+  normalizedLegacySlug: string | null,
+  corsHeaders: any
+): Promise<any | null> {
+  // Check slug collisions
+  if (normalizedSlug) {
+    const idCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
+    ).bind(normalizedSlug, videoId).first()
+    if (idCollision) {
+      return jsonResponse({ error: 'Slug conflicts with an existing video ID' }, 409, corsHeaders)
+    }
+    const slugCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
+    ).bind(videoId, normalizedSlug, normalizedSlug).first()
+    if (slugCollision) {
+      return jsonResponse({ error: 'Slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
+    }
+  }
+
+  // Check legacy_slug collisions
+  if (normalizedLegacySlug) {
+    const idCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
+    ).bind(normalizedLegacySlug, videoId).first()
+    if (idCollision) {
+      return jsonResponse({ error: 'Legacy slug conflicts with an existing video ID' }, 409, corsHeaders)
+    }
+    const legacyCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
+    ).bind(videoId, normalizedLegacySlug, normalizedLegacySlug).first()
+    if (legacyCollision) {
+      return jsonResponse({ error: 'Legacy slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
+    }
+  }
+
+  return null
 }
 
 const HOMEPAGE_LAYOUT_VARIANTS = new Set(['three_by_one', 'side_mini'])
