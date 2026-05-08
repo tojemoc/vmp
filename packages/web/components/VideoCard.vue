@@ -28,7 +28,7 @@
       </div>
     </div>
     <div class="min-w-0" :class="contentClass">
-      <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 line-clamp-2" :class="titleClass">
+      <h3 class="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400" :class="[titleClass, { 'line-clamp-2': props.clampTitle }]">
         {{ video.title }}
       </h3>
       <p v-if="props.showRelativeTimestamp && relativeUploadTime" class="text-xs text-gray-500 dark:text-gray-400">
@@ -69,10 +69,12 @@ const props = withDefaults(defineProps<{
   layout?: 'default' | 'horizontal'
   showDescription?: boolean
   showRelativeTimestamp?: boolean
+  clampTitle?: boolean
 }>(), {
   layout: 'default',
   showDescription: true,
   showRelativeTimestamp: false,
+  clampTitle: true,
 })
 
 const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
