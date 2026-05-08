@@ -1,3 +1,3 @@
 {
-  "install": "npm ci --no-audit --no-fund"
+  "install": "node -e \"const [major]=process.versions.node.split('.').map(Number); if (major < 20) { console.error('Node 20+ is required for this workspace.'); process.exit(1); }\" && npm -v | node -e \"const fs=require('fs'); const version=fs.readFileSync(0,'utf8').trim(); const major=Number(version.split('.')[0]); if (!Number.isFinite(major) || major < 10) { console.error('npm 10+ is required for this workspace.'); process.exit(1); }\" && npm ci --no-audit --no-fund && npm run typecheck --workspace=@vmp/api && npm exec --workspace=@vmp/web nuxi prepare"
 }
