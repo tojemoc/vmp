@@ -1264,27 +1264,13 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDatabaseBinding(env)
   try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS media_convert_jobs (
-        id TEXT PRIMARY KEY,
-        video_id TEXT NOT NULL,
-        aws_job_id TEXT,
-        status TEXT NOT NULL DEFAULT 'uploaded',
-        input_bucket TEXT NOT NULL,
-        input_key TEXT NOT NULL,
-        output_bucket TEXT NOT NULL,
-        output_prefix TEXT NOT NULL,
-        renditions_json TEXT NOT NULL DEFAULT '[]',
-        input_duration_seconds INTEGER NOT NULL DEFAULT 0,
-        normalized_minutes_est REAL NOT NULL DEFAULT 0,
-        cost_est_usd REAL NOT NULL DEFAULT 0,
-        error TEXT,
-        last_polled_at DATETIME,
-        completed_at DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `).run()
+    const mediaConvertJobsTable = await db.prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table' AND name = 'media_convert_jobs'
+      LIMIT 1
+    `).first()
+    const hasMediaConvertJobsTable = Boolean(mediaConvertJobsTable?.name)
 
     // ── 1. Auto-register any R2 uploads that have no D1 row ──────────────────
     if (env.BUCKET) {
@@ -1308,7 +1294,8 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
 
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     let videos
-    videos = await db.prepare(`
+    if (hasMediaConvertJobsTable) {
+      videos = await db.prepare(`
       WITH view_counts AS (
         SELECT
           video_id,
@@ -1325,15 +1312,17 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
         GROUP BY video_id
       ),
       latest_mc AS (
-        SELECT m1.*
-        FROM media_convert_jobs m1
-        JOIN (
-          SELECT video_id, MAX(created_at) AS max_created_at
-          FROM media_convert_jobs
-          GROUP BY video_id
-        ) latest
-          ON latest.video_id = m1.video_id
-         AND latest.max_created_at = m1.created_at
+        SELECT *
+        FROM (
+          SELECT
+            m.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY m.video_id
+              ORDER BY m.created_at DESC, m.id DESC
+            ) AS rn
+          FROM media_convert_jobs m
+        ) ranked
+        WHERE ranked.rn = 1
       )
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
@@ -1359,6 +1348,47 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       LEFT JOIN livestreams ls ON ls.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()
+    } else {
+      videos = await db.prepare(`
+      WITH view_counts AS (
+        SELECT
+          video_id,
+          COUNT(DISTINCT COALESCE(
+            session_key,
+            CASE
+              WHEN user_id IS NOT NULL THEN 'u:' || user_id
+              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
+              ELSE 'path:' || request_path
+            END
+          )) AS total_views
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+        GROUP BY video_id
+      )
+      SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
+             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
+             v.scheduled_publish_at, v.notified_at,
+             vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
+             NULL AS media_convert_status,
+             NULL AS media_convert_input_duration_seconds,
+             NULL AS media_convert_normalized_minutes_est,
+             NULL AS media_convert_cost_est_usd,
+             ls.provider AS livestream_provider,
+             ls.status AS livestream_status,
+             ls.stream_id AS livestream_stream_id,
+             ls.stream_key AS livestream_stream_key,
+             ls.ingest_url AS livestream_ingest_url,
+             ls.moq_endpoint AS livestream_moq_endpoint,
+             ls.moq_broadcast AS livestream_moq_broadcast,
+             ls.playback_url AS livestream_playback_url,
+             ls.recording_video_id AS livestream_recording_video_id
+      FROM videos v
+      LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+      LEFT JOIN view_counts vc ON vc.video_id = v.id
+      LEFT JOIN livestreams ls ON ls.video_id = v.id
+      ORDER BY v.upload_date DESC
+    `).all()
+    }
 
     // ── 3. Annotate each row with r2_exists ──────────────────────────────────
     const annotated = await Promise.all((videos.results || []).map(async (video: any) => {

@@ -2,7 +2,9 @@ CREATE TABLE IF NOT EXISTS media_convert_jobs (
   id TEXT PRIMARY KEY,
   video_id TEXT NOT NULL,
   aws_job_id TEXT,
-  status TEXT NOT NULL DEFAULT 'uploaded',
+  status TEXT NOT NULL DEFAULT 'uploaded' CHECK (
+    status IN ('uploaded','queued','transcoding','packaging','uploading','completed','failed')
+  ),
   input_bucket TEXT NOT NULL,
   input_key TEXT NOT NULL,
   output_bucket TEXT NOT NULL,

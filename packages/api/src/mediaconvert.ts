@@ -235,6 +235,81 @@ function parseS3ListKeys(xml: string): string[] {
   return matches.map((m) => m[1]).filter((key): key is string => typeof key === 'string' && key.length > 0)
 }
 
+function parseS3ListContinuation(xml: string): { isTruncated: boolean, nextToken: string | null } {
+  const truncated = xml.match(/<IsTruncated>(true|false)<\/IsTruncated>/i)?.[1]?.toLowerCase() === 'true'
+  const nextTokenRaw = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/i)?.[1] ?? null
+  return { isTruncated: truncated, nextToken: nextTokenRaw ? nextTokenRaw : null }
+}
+
+async function deleteS3Object({
+  cfg,
+  sessionTokenArg,
+  key,
+}: {
+  cfg: ReturnType<typeof getMediaConvertConfig>
+  sessionTokenArg: Record<string, string>
+  key: string
+}) {
+  const url = `https://${cfg.inputBucket}.s3.${cfg.region}.amazonaws.com/${encodeURIComponent(key).replace(/%2F/g, '/')}`
+  try {
+    await awsSignedFetch({
+      method: 'DELETE',
+      url,
+      service: 's3',
+      region: cfg.region,
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+      ...sessionTokenArg,
+      payload: '',
+    })
+  } catch {
+    // best effort cleanup only
+  }
+}
+
+async function listAllOutputKeys({
+  cfg,
+  sessionTokenArg,
+  prefix,
+}: {
+  cfg: ReturnType<typeof getMediaConvertConfig>
+  sessionTokenArg: Record<string, string>
+  prefix: string
+}): Promise<{ ok: true, keys: string[] } | { ok: false, error: string }> {
+  const keys: string[] = []
+  let continuationToken: string | null = null
+
+  for (let page = 0; page < 1000; page += 1) {
+    const params = new URLSearchParams()
+    params.set('list-type', '2')
+    params.set('prefix', prefix)
+    if (continuationToken) params.set('continuation-token', continuationToken)
+    const listUrl = `https://${cfg.outputBucket}.s3.${cfg.region}.amazonaws.com/?${params.toString()}`
+    const listRes = await awsSignedFetch({
+      method: 'GET',
+      url: listUrl,
+      service: 's3',
+      region: cfg.region,
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+      ...sessionTokenArg,
+      payload: '',
+    })
+    if (!listRes.ok) {
+      const detail = await listRes.text().catch(() => '')
+      return { ok: false, error: `S3 list failed: ${detail.slice(0, 400)}` }
+    }
+    const xml = await listRes.text()
+    keys.push(...parseS3ListKeys(xml))
+    const { isTruncated, nextToken } = parseS3ListContinuation(xml)
+    if (!isTruncated) break
+    if (!nextToken) return { ok: false, error: 'S3 list failed: missing continuation token' }
+    continuationToken = nextToken
+  }
+
+  return { ok: true, keys }
+}
+
 async function upsertVideoDraftRow(db: any, videoId: string, title: string, description: string | null, categoryId: string | null) {
   await db.prepare(`
     INSERT OR IGNORE INTO videos (id, title, description, publish_status, upload_date, full_duration, preview_duration, status, updated_at)
@@ -307,6 +382,12 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   const inputKey = `${cfg.inputPrefix.replace(/\/+$/, '')}/${videoId}/${safeName}`
   const outputPrefix = `${cfg.outputPrefix.replace(/\/+$/, '')}/${videoId}`
   const sessionTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
+  const db = getDb(env)
+  await ensureAdminSettingsTable(db)
+  if (categoryId) {
+    const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
+    if (!category) return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
+  }
 
   const payload = await file.arrayBuffer()
   const s3Url = `https://${cfg.inputBucket}.s3.${cfg.region}.amazonaws.com/${encodeURIComponent(inputKey).replace(/%2F/g, '/')}`
@@ -324,13 +405,6 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   if (!putRes.ok) {
     const body = await putRes.text().catch(() => '')
     return jsonResponse({ error: 'Failed to upload source to S3', code: 's3_upload_failed', detail: body.slice(0, 400) }, 502, corsHeaders)
-  }
-
-  const db = getDb(env)
-  await ensureAdminSettingsTable(db)
-  if (categoryId) {
-    const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
-    if (!category) return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
   }
 
   await upsertVideoDraftRow(db, videoId, title, description, categoryId)
@@ -370,6 +444,7 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
 
   if (!createRes.ok) {
     const detail = await createRes.text().catch(() => '')
+    await deleteS3Object({ cfg, sessionTokenArg, key: inputKey })
     await db.prepare(`
       UPDATE media_convert_jobs
       SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP
@@ -382,6 +457,7 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   const createPayload: any = await createRes.json().catch(() => ({}))
   const awsJobId = String(createPayload?.Job?.Id || '').trim()
   if (!awsJobId) {
+    await deleteS3Object({ cfg, sessionTokenArg, key: inputKey })
     await db.prepare(`
       UPDATE media_convert_jobs
       SET status = 'failed', error = 'MediaConvert response missing Job.Id', updated_at = CURRENT_TIMESTAMP
@@ -491,30 +567,23 @@ export async function pollMediaConvertJobs(env: any) {
     ])
 
     const prefix = `${row.output_prefix}`.replace(/\/+$/, '') + '/'
-    const listUrl = `https://${cfg.outputBucket}.s3.${cfg.region}.amazonaws.com/?list-type=2&prefix=${encodeURIComponent(prefix)}`
-    const listRes = await awsSignedFetch({
-      method: 'GET',
-      url: listUrl,
-      service: 's3',
-      region: cfg.region,
-      accessKeyId: cfg.accessKeyId,
-      secretAccessKey: cfg.secretAccessKey,
-      ...sessionTokenArg,
-      payload: '',
-    })
-
-    if (!listRes.ok) {
-      const detail = await listRes.text().catch(() => '')
+    const listResult = await listAllOutputKeys({ cfg, sessionTokenArg, prefix })
+    if (!listResult.ok) {
       await db.batch([
-        db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(`S3 list failed: ${detail.slice(0, 400)}`, localJobId),
+        db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(listResult.error, localJobId),
         db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
       ])
       continue
     }
-
-    const xml = await listRes.text()
-    const keys = parseS3ListKeys(xml)
+    const keys = listResult.keys
     const videoPrefix = `videos/${videoId}/`
+    if (!env.BUCKET) {
+      await db.batch([
+        db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind('missing R2 BUCKET', localJobId),
+        db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
+      ])
+      continue
+    }
 
     for (const sourceKey of keys) {
       const rel = sourceKey.startsWith(prefix) ? sourceKey.slice(prefix.length) : sourceKey
@@ -530,7 +599,7 @@ export async function pollMediaConvertJobs(env: any) {
         ...sessionTokenArg,
         payload: '',
       })
-      if (!getRes.ok || !env.BUCKET) {
+      if (!getRes.ok) {
         const detail = await getRes.text().catch(() => '')
         await db.batch([
           db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(`S3 get failed: ${detail.slice(0, 400)}`, localJobId),

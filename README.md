@@ -84,8 +84,10 @@ AWS setup checklist:
 2. Create a MediaConvert IAM service role (`MEDIA_CONVERT_ROLE_ARN`) with read access to input and write access to output.
 3. Create an IAM principal for the Worker credentials with:
    - `mediaconvert:CreateJob`, `mediaconvert:GetJob`
+   - `iam:PassRole` scoped to `MEDIA_CONVERT_ROLE_ARN`
    - `s3:PutObject` on input prefix
-   - `s3:GetObject`, `s3:ListBucket` on output prefix
+   - `s3:GetObject` on output object prefix
+   - `s3:ListBucket` on output bucket (bucket-level action), scoped by `s3:prefix` condition to the output prefix
 4. In MediaConvert console, copy the account endpoint into `MEDIA_CONVERT_ENDPOINT`.
 5. Run migration `packages/api/migrations/0017_media_convert_jobs.sql`.
 

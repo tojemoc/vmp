@@ -3300,7 +3300,10 @@ const loadMediaConvertConfig = async () => {
     const res = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/config`, {
       headers: authHeader(),
     })
-    if (!res.ok) return
+    if (!res.ok) {
+      mediaConvertConfig.value = { enabled: false, configured: false }
+      return
+    }
     const data = await res.json().catch(() => ({}))
     mediaConvertConfig.value = {
       enabled: Boolean(data?.enabled),
