@@ -76,6 +76,7 @@ import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepag
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
   handleAdminMediaConvertUpload,
+  handleAdminMediaConvertUploadComplete,
   handleAdminMediaConvertConfig,
   pollMediaConvertJobs,
   enrichVideosWithMediaConvert,
@@ -302,6 +303,9 @@ export default {
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert' && request.method === 'POST') {
       return handleAdminMediaConvertUpload(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/mediaconvert/complete' && request.method === 'POST') {
+      return handleAdminMediaConvertUploadComplete(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
       return handleAdminMediaConvertConfig(request, env, corsHeaders)

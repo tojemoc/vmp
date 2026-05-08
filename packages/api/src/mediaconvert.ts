@@ -15,6 +15,7 @@ const MEDIA_CONVERT_STATUSES = new Set([
 
 const HD_NORMALIZED_MULTIPLIER = 1
 const DEFAULT_HD_PRICE_PER_MINUTE_USD = 0.015
+const DEFAULT_MAX_UPLOAD_MB = 512
 
 function jsonResponse(data: unknown, status = 200, corsHeaders: CorsHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -49,7 +50,7 @@ function getMediaConvertConfig(env: any) {
     outputBucket: envTrim(env, 'MEDIA_CONVERT_OUTPUT_BUCKET'),
     inputPrefix: envTrim(env, 'MEDIA_CONVERT_INPUT_PREFIX', 'mediaconvert-input'),
     outputPrefix: envTrim(env, 'MEDIA_CONVERT_OUTPUT_PREFIX', 'mediaconvert-output'),
-    maxUploadMb: Number.parseInt(envTrim(env, 'MEDIA_CONVERT_MAX_UPLOAD_MB', '4096'), 10) || 4096,
+    maxUploadMb: Number.parseInt(envTrim(env, 'MEDIA_CONVERT_MAX_UPLOAD_MB', String(DEFAULT_MAX_UPLOAD_MB)), 10) || DEFAULT_MAX_UPLOAD_MB,
     hdPricePerMinuteUsd: Number.parseFloat(envTrim(env, 'MEDIA_CONVERT_PRICE_HD_PER_MIN', String(DEFAULT_HD_PRICE_PER_MINUTE_USD))) || DEFAULT_HD_PRICE_PER_MINUTE_USD,
   }
   const required = [
@@ -81,6 +82,70 @@ async function getSignatureKey(secret: string, date: string, region: string, ser
   const kRegion = await hmacSha256Raw(kDate, region)
   const kService = await hmacSha256Raw(kRegion, service)
   return hmacSha256Raw(kService, 'aws4_request')
+}
+
+function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+async function createPresignedS3PutUrl({
+  bucket,
+  key,
+  region,
+  accessKeyId,
+  secretAccessKey,
+  sessionToken,
+  expiresSeconds = 900,
+}: {
+  bucket: string
+  key: string
+  region: string
+  accessKeyId: string
+  secretAccessKey: string
+  sessionToken?: string
+  expiresSeconds?: number
+}) {
+  const now = new Date()
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const dateStamp = amzDate.slice(0, 8)
+  const host = `${bucket}.s3.${region}.amazonaws.com`
+  const canonicalUri = `/${key.split('/').map(encodeRfc3986).join('/')}`
+  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`
+
+  const params = new URLSearchParams()
+  params.set('X-Amz-Algorithm', 'AWS4-HMAC-SHA256')
+  params.set('X-Amz-Credential', `${accessKeyId}/${credentialScope}`)
+  params.set('X-Amz-Date', amzDate)
+  params.set('X-Amz-Expires', String(expiresSeconds))
+  params.set('X-Amz-SignedHeaders', 'host')
+  if (sessionToken) params.set('X-Amz-Security-Token', sessionToken)
+
+  const canonicalQueryString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${encodeRfc3986(k)}=${encodeRfc3986(v)}`)
+    .join('&')
+
+  const canonicalRequest = [
+    'PUT',
+    canonicalUri,
+    canonicalQueryString,
+    `host:${host}\n`,
+    'host',
+    'UNSIGNED-PAYLOAD',
+  ].join('\n')
+
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\n')
+
+  const signingKey = await getSignatureKey(secretAccessKey, dateStamp, region, 's3')
+  const signature = toHex(await hmacSha256Raw(signingKey, stringToSign))
+  params.set('X-Amz-Signature', signature)
+
+  return `https://${host}${canonicalUri}?${params.toString()}`
 }
 
 async function awsSignedFetch({
@@ -357,28 +422,31 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
     return jsonResponse({ error: 'MediaConvert pipeline is not fully configured' }, 503, corsHeaders)
   }
 
-  const form = await request.formData().catch(() => null)
-  if (!form) return jsonResponse({ error: 'Expected multipart/form-data' }, 400, corsHeaders)
+  const bodyRaw = await request.json().catch(() => null)
+  const body = (bodyRaw && typeof bodyRaw === 'object') ? bodyRaw as Record<string, unknown> : null
+  if (!body) return jsonResponse({ error: 'Expected JSON body' }, 400, corsHeaders)
 
-  const file = form.get('file')
-  if (!(file instanceof File)) return jsonResponse({ error: 'file is required' }, 400, corsHeaders)
-  if (file.size <= 0) return jsonResponse({ error: 'file is empty' }, 400, corsHeaders)
-  if (file.size > cfg.maxUploadMb * 1024 * 1024) {
+  const fileName = String(body.fileName || '').trim()
+  const fileType = String(body.fileType || 'application/octet-stream').trim() || 'application/octet-stream'
+  const fileSize = Number(body.fileSize || 0)
+  if (!fileName) return jsonResponse({ error: 'fileName is required' }, 400, corsHeaders)
+  if (!Number.isFinite(fileSize) || fileSize <= 0) return jsonResponse({ error: 'fileSize must be > 0' }, 400, corsHeaders)
+  if (fileSize > cfg.maxUploadMb * 1024 * 1024) {
     return jsonResponse({ error: `file exceeds ${cfg.maxUploadMb}MB limit` }, 413, corsHeaders)
   }
 
-  const title = String(form.get('title') || 'Untitled upload').trim() || 'Untitled upload'
-  const descriptionRaw = String(form.get('description') || '').trim()
+  const title = String(body.title || 'Untitled upload').trim() || 'Untitled upload'
+  const descriptionRaw = String(body.description || '').trim()
   const description = descriptionRaw || null
-  const categoryIdRaw = String(form.get('categoryId') || '').trim()
+  const categoryIdRaw = String(body.categoryId || '').trim()
   const categoryId = categoryIdRaw || null
-  const durationSecondsRaw = Number(form.get('durationSeconds') || 0)
+  const durationSecondsRaw = Number(body.durationSeconds || 0)
   const inputDurationSeconds = Number.isFinite(durationSecondsRaw) && durationSecondsRaw > 0
     ? Math.floor(durationSecondsRaw)
     : 0
 
   const videoId = crypto.randomUUID()
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const inputKey = `${cfg.inputPrefix.replace(/\/+$/, '')}/${videoId}/${safeName}`
   const outputPrefix = `${cfg.outputPrefix.replace(/\/+$/, '')}/${videoId}`
   const sessionTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
@@ -387,24 +455,6 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   if (categoryId) {
     const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
     if (!category) return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
-  }
-
-  const payload = await file.arrayBuffer()
-  const s3Url = `https://${cfg.inputBucket}.s3.${cfg.region}.amazonaws.com/${encodeURIComponent(inputKey).replace(/%2F/g, '/')}`
-  const putRes = await awsSignedFetch({
-    method: 'PUT',
-    url: s3Url,
-    service: 's3',
-    region: cfg.region,
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    ...sessionTokenArg,
-    payload,
-    contentType: file.type || 'application/octet-stream',
-  })
-  if (!putRes.ok) {
-    const body = await putRes.text().catch(() => '')
-    return jsonResponse({ error: 'Failed to upload source to S3', code: 's3_upload_failed', detail: body.slice(0, 400) }, 502, corsHeaders)
   }
 
   await upsertVideoDraftRow(db, videoId, title, description, categoryId)
@@ -424,10 +474,69 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
     JSON.stringify(renditions), inputDurationSeconds, usage.normalizedMinutes, usage.estimatedCostUsd,
   ).run()
 
+  const presignedTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
+  const uploadUrl = await createPresignedS3PutUrl({
+    bucket: cfg.inputBucket,
+    key: inputKey,
+    region: cfg.region,
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    ...presignedTokenArg,
+  })
+
+  return jsonResponse({
+    ok: true,
+    videoId,
+    job: {
+      id: jobId,
+      status: 'uploaded',
+      inputDurationSeconds,
+      normalizedMinutesEstimated: usage.normalizedMinutes,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      renditions,
+    },
+    upload: {
+      method: 'PUT',
+      url: uploadUrl,
+      contentType: fileType,
+      inputKey,
+      expiresInSeconds: 900,
+    },
+  }, 201, corsHeaders)
+}
+
+export async function handleAdminMediaConvertUploadComplete(request: Request, env: any, corsHeaders: CorsHeaders) {
+  try {
+    await requireRole(request, env, 'editor', 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+
+  const cfg = getMediaConvertConfig(env)
+  if (!cfg.enabled || !cfg.configured) {
+    return jsonResponse({ error: 'MediaConvert pipeline is not configured' }, 503, corsHeaders)
+  }
+
+  const bodyRaw = await request.json().catch(() => null)
+  const body = (bodyRaw && typeof bodyRaw === 'object') ? bodyRaw as Record<string, unknown> : null
+  const jobId = String(body?.jobId || '').trim()
+  if (!jobId) return jsonResponse({ error: 'jobId is required' }, 400, corsHeaders)
+
+  const db = getDb(env)
+  const sessionTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
+  const job = await db.prepare(`
+    SELECT id, video_id, input_key, output_prefix
+    FROM media_convert_jobs
+    WHERE id = ?
+    LIMIT 1
+  `).bind(jobId).first()
+  if (!job) return jsonResponse({ error: 'Upload job not found' }, 404, corsHeaders)
+
   const mcBody = buildMediaConvertJobPayload({
     roleArn: cfg.roleArn,
-    inputUrl: `s3://${cfg.inputBucket}/${inputKey}`,
-    destination: `s3://${cfg.outputBucket}/${outputPrefix}/`,
+    inputUrl: `s3://${cfg.inputBucket}/${job.input_key}`,
+    destination: `s3://${cfg.outputBucket}/${job.output_prefix}/`,
   })
 
   const createRes = await awsSignedFetch({
@@ -441,54 +550,31 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
     payload: JSON.stringify(mcBody),
     contentType: 'application/json',
   })
-
   if (!createRes.ok) {
     const detail = await createRes.text().catch(() => '')
-    await deleteS3Object({ cfg, sessionTokenArg, key: inputKey })
-    await db.prepare(`
-      UPDATE media_convert_jobs
-      SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(detail.slice(0, 1000), jobId).run()
-    await db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId).run()
+    await db.batch([
+      db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(detail.slice(0, 1000), jobId),
+      db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(job.video_id),
+    ])
     return jsonResponse({ error: 'Failed to create MediaConvert job', code: 'mediaconvert_create_failed' }, 502, corsHeaders)
   }
 
   const createPayload: any = await createRes.json().catch(() => ({}))
   const awsJobId = String(createPayload?.Job?.Id || '').trim()
   if (!awsJobId) {
-    await deleteS3Object({ cfg, sessionTokenArg, key: inputKey })
-    await db.prepare(`
-      UPDATE media_convert_jobs
-      SET status = 'failed', error = 'MediaConvert response missing Job.Id', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(jobId).run()
-    await db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId).run()
+    await db.batch([
+      db.prepare(`UPDATE media_convert_jobs SET status = 'failed', error = 'MediaConvert response missing Job.Id', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(jobId),
+      db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(job.video_id),
+    ])
     return jsonResponse({ error: 'MediaConvert returned an invalid response' }, 502, corsHeaders)
   }
 
   await db.batch([
-    db.prepare(`
-      UPDATE media_convert_jobs
-      SET aws_job_id = ?, status = 'queued', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(awsJobId, jobId),
-    db.prepare(`UPDATE videos SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
+    db.prepare(`UPDATE media_convert_jobs SET aws_job_id = ?, status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(awsJobId, jobId),
+    db.prepare(`UPDATE videos SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(job.video_id),
   ])
 
-  return jsonResponse({
-    ok: true,
-    videoId,
-    job: {
-      id: jobId,
-      awsJobId,
-      status: 'queued',
-      inputDurationSeconds,
-      normalizedMinutesEstimated: usage.normalizedMinutes,
-      estimatedCostUsd: usage.estimatedCostUsd,
-      renditions,
-    },
-  }, 201, corsHeaders)
+  return jsonResponse({ ok: true, jobId, awsJobId, status: 'queued' }, 200, corsHeaders)
 }
 
 export async function pollMediaConvertJobs(env: any) {

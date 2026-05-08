@@ -3341,37 +3341,53 @@ const startMediaConvertUpload = async () => {
   mediaUpload.value.progress = 0
   mediaUpload.value.status = 'uploading'
   try {
-    const fd = new FormData()
-    fd.append('file', file)
-    fd.append('title', mediaUpload.value.title.trim() || file.name.replace(/\.[^.]+$/, ''))
-    fd.append('description', mediaUpload.value.description.trim())
-    fd.append('durationSeconds', '0')
+    const prepareRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        title: mediaUpload.value.title.trim() || file.name.replace(/\.[^.]+$/, ''),
+        description: mediaUpload.value.description.trim(),
+        durationSeconds: 0,
+      }),
+    })
+    const prepareData = await prepareRes.json().catch(() => ({}))
+    if (!prepareRes.ok) throw new Error(prepareData.error || `HTTP ${prepareRes.status}`)
+    if (!prepareData?.upload?.url || !prepareData?.job?.id) {
+      throw new Error('Upload session could not be created.')
+    }
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert`)
-      const headers = authHeader()
-      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
+      xhr.open('PUT', String(prepareData.upload.url))
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
       xhr.upload.onprogress = (ev) => {
         if (!ev.lengthComputable) return
         mediaUpload.value.progress = Math.min(100, Math.round((ev.loaded / ev.total) * 100))
       }
       xhr.onload = async () => {
-        let data: any = {}
-        try { data = JSON.parse(xhr.responseText || '{}') } catch {}
         if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(data?.error || `HTTP ${xhr.status}`))
+          reject(new Error(`S3 upload failed (HTTP ${xhr.status})`))
           return
         }
-        mediaUpload.value.message = `Queued MediaConvert job ${data?.job?.awsJobId || ''}`.trim()
         mediaUpload.value.progress = 100
         resolve()
       }
       xhr.onerror = () => reject(new Error('Upload failed'))
-      xhr.send(fd)
+      xhr.send(file)
     })
 
     mediaUpload.value.status = 'uploaded'
+    const completeRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ jobId: prepareData.job.id }),
+    })
+    const completeData = await completeRes.json().catch(() => ({}))
+    if (!completeRes.ok) throw new Error(completeData.error || `HTTP ${completeRes.status}`)
+    mediaUpload.value.message = `Queued MediaConvert job ${completeData?.awsJobId || ''}`.trim()
     await loadVideos()
     showToast('success', 'Source uploaded and queued for MediaConvert.')
   } catch (error: any) {
