@@ -105,6 +105,7 @@
               layout="horizontal"
               :show-description="false"
               :show-relative-timestamp="true"
+              :clamp-title="false"
             />
           </div>
 
@@ -115,6 +116,7 @@
               :video="video"
               :show-description="false"
               :show-relative-timestamp="true"
+              :clamp-title="false"
             />
           </div>
 
@@ -132,6 +134,7 @@
                 :video="video"
                 :show-description="false"
                 :show-relative-timestamp="true"
+                :clamp-title="false"
               />
             </div>
           </div>
@@ -150,6 +153,7 @@
                   :video="video"
                   :show-description="false"
                   :show-relative-timestamp="true"
+                  :clamp-title="false"
                 />
               </div>
             </section>
@@ -168,6 +172,7 @@
                   layout="horizontal"
                   :show-description="false"
                   :show-relative-timestamp="true"
+                  :clamp-title="false"
                 />
               </div>
             </aside>
@@ -195,6 +200,7 @@
                   layout="horizontal"
                   :show-description="false"
                   :show-relative-timestamp="true"
+                  :clamp-title="false"
                 />
               </div>
               <div v-else-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -204,6 +210,7 @@
                   :video="video"
                   :show-description="false"
                   :show-relative-timestamp="true"
+                  :clamp-title="false"
                 />
               </div>
               <div v-else-if="child.categorySection" class="space-y-2">
@@ -220,6 +227,7 @@
                     :video="video"
                     :show-description="false"
                     :show-relative-timestamp="true"
+                    :clamp-title="false"
                   />
                 </div>
               </div>
