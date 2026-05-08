@@ -3321,24 +3321,6 @@ const onMediaUploadFileChange = (event: Event) => {
   }
 }
 
-const detectVideoDurationSeconds = (file: File): Promise<number> =>
-  new Promise((resolve) => {
-    const videoEl = document.createElement('video')
-    const src = URL.createObjectURL(file)
-    videoEl.preload = 'metadata'
-    videoEl.src = src
-    const cleanup = () => URL.revokeObjectURL(src)
-    videoEl.onloadedmetadata = () => {
-      const duration = Number.isFinite(videoEl.duration) ? Math.floor(videoEl.duration) : 0
-      cleanup()
-      resolve(Math.max(0, duration))
-    }
-    videoEl.onerror = () => {
-      cleanup()
-      resolve(0)
-    }
-  })
-
 const startMediaConvertUpload = async () => {
   const file = mediaUpload.value.file
   if (!file) {
@@ -3351,12 +3333,11 @@ const startMediaConvertUpload = async () => {
   mediaUpload.value.progress = 0
   mediaUpload.value.status = 'uploaded'
   try {
-    const durationSeconds = await detectVideoDurationSeconds(file)
     const fd = new FormData()
     fd.append('file', file)
     fd.append('title', mediaUpload.value.title.trim() || file.name.replace(/\.[^.]+$/, ''))
     fd.append('description', mediaUpload.value.description.trim())
-    fd.append('durationSeconds', String(durationSeconds))
+    fd.append('durationSeconds', '0')
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
