@@ -14,7 +14,7 @@
     "generate": "nuxi generate",
     "preview": "nuxi preview",
     "typecheck": "nuxi prepare && nuxi typecheck",
-    "deploy": "wrangler pages deploy dist/ --project-name vmp-fe --branch main",
+    "deploy": "node scripts/deploy-pages.mjs",
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
