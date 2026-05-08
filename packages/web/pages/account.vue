@@ -295,8 +295,12 @@ async function maybeCompleteGoCardlessCheckout() {
   const searchParams = import.meta.client
     ? new URLSearchParams(window.location.search)
     : null
-  const redirectFlowId = (
+  const billingRequestFlowId = (
+    (typeof route.query.gocardless_billing_request_flow_id === 'string' ? route.query.gocardless_billing_request_flow_id : '') ||
+    (typeof route.query.billing_request_flow_id === 'string' ? route.query.billing_request_flow_id : '') ||
     (typeof route.query.gocardless_redirect_flow_id === 'string' ? route.query.gocardless_redirect_flow_id : '') ||
+    searchParams?.get('gocardless_billing_request_flow_id') ||
+    searchParams?.get('billing_request_flow_id') ||
     searchParams?.get('gocardless_redirect_flow_id') ||
     ''
   ).trim()
@@ -305,7 +309,7 @@ async function maybeCompleteGoCardlessCheckout() {
     searchParams?.get('gocardless_checkout_token') ||
     ''
   ).trim()
-  if (!redirectFlowId || !checkoutToken) return
+  if (!billingRequestFlowId || !checkoutToken) return
 
   let completed = false
   try {
@@ -313,7 +317,7 @@ async function maybeCompleteGoCardlessCheckout() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ redirectFlowId, checkoutToken }),
+      body: JSON.stringify({ billingRequestFlowId, checkoutToken }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -326,6 +330,8 @@ async function maybeCompleteGoCardlessCheckout() {
     gocardlessCompletionError.value = 'Network error while finalizing GoCardless checkout.'
   } finally {
     const nextQuery = { ...route.query }
+    delete nextQuery.gocardless_billing_request_flow_id
+    delete nextQuery.billing_request_flow_id
     delete nextQuery.gocardless_redirect_flow_id
     delete nextQuery.gocardless_checkout_token
     if (completed) nextQuery.gocardless_complete = '1'
