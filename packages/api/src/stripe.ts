@@ -850,16 +850,20 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
         return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
       }
     } else {
-      const redirectFlowId = sessionTokenRef.startsWith('RE') ? sessionTokenRef : providerCheckoutId
+      const redirectFlowId = sessionTokenRef.startsWith('RE')
+        ? sessionTokenRef
+        : (providerCheckoutId.startsWith('RE') ? providerCheckoutId : '')
       if (!redirectFlowId) {
-        return jsonResponse({ error: 'Checkout session is missing GoCardless flow reference' }, 500, corsHeaders)
+        return jsonResponse({ error: 'Checkout session has unsupported GoCardless reference format' }, 500, corsHeaders)
       }
 
       let redirectFlowResponse = await gocardlessGet(`/redirect_flows/${redirectFlowId}`, env)
       let redirectFlow = redirectFlowResponse?.data?.redirect_flows
       mandateId = String(redirectFlow?.links?.mandate ?? '').trim()
 
-      if ((!redirectFlowResponse.ok || !mandateId) && sessionTokenRef && !sessionTokenRef.startsWith('RE')) {
+      // Only call /actions/complete when we have the original non-RE session token.
+      const needsCompleteFlow = (!redirectFlowResponse.ok || !mandateId) && !!sessionTokenRef && !sessionTokenRef.startsWith('RE')
+      if (needsCompleteFlow) {
         const completeResponse = await gocardlessPost(
           `/redirect_flows/${redirectFlowId}/actions/complete`,
           { data: { session_token: sessionTokenRef } },

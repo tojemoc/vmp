@@ -295,10 +295,16 @@ async function maybeCompleteGoCardlessCheckout() {
   const searchParams = import.meta.client
     ? new URLSearchParams(window.location.search)
     : null
+  const routeId = typeof route.query.id === 'string' ? route.query.id.trim() : ''
+  const searchId = (searchParams?.get('id') || '').trim()
+  const billingRequestFlowIdFromId = routeId.startsWith('BRF')
+    ? routeId
+    : (searchId.startsWith('BRF') ? searchId : '')
   const billingRequestFlowId = (
     (typeof route.query.gocardless_billing_request_flow_id === 'string' ? route.query.gocardless_billing_request_flow_id : '') ||
     (typeof route.query.billing_request_flow_id === 'string' ? route.query.billing_request_flow_id : '') ||
     (typeof route.query.gocardless_redirect_flow_id === 'string' ? route.query.gocardless_redirect_flow_id : '') ||
+    billingRequestFlowIdFromId ||
     searchParams?.get('gocardless_billing_request_flow_id') ||
     searchParams?.get('billing_request_flow_id') ||
     searchParams?.get('gocardless_redirect_flow_id') ||
@@ -329,14 +335,16 @@ async function maybeCompleteGoCardlessCheckout() {
   } catch {
     gocardlessCompletionError.value = 'Network error while finalizing GoCardless checkout.'
   } finally {
-    if (!completed) return
-    const nextQuery = { ...route.query }
-    delete nextQuery.gocardless_billing_request_flow_id
-    delete nextQuery.billing_request_flow_id
-    delete nextQuery.gocardless_redirect_flow_id
-    delete nextQuery.gocardless_checkout_token
-    nextQuery.gocardless_complete = '1'
-    await navigateTo({ path: '/account', query: nextQuery }, { replace: true })
+    if (completed) {
+      const nextQuery = { ...route.query }
+      delete nextQuery.gocardless_billing_request_flow_id
+      delete nextQuery.billing_request_flow_id
+      delete nextQuery.gocardless_redirect_flow_id
+      delete nextQuery.gocardless_checkout_token
+      delete nextQuery.id
+      nextQuery.gocardless_complete = '1'
+      await navigateTo({ path: '/account', query: nextQuery }, { replace: true })
+    }
   }
 }
 
