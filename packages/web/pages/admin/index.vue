@@ -296,7 +296,7 @@
               Create new livestream
             </button>
           </div>
-          <div class="mb-4 rounded-lg border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-950/40">
+          <div v-if="systemFeatures.videoUploaderEnabled" class="mb-4 rounded-lg border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-950/40">
             <div class="flex flex-wrap items-center gap-2 mb-2">
               <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Direct source upload (MediaConvert)</h3>
               <span v-if="!mediaConvertConfig.enabled" class="text-[11px] px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300">disabled</span>
@@ -309,12 +309,12 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
               <input v-model="mediaUpload.title" type="text" placeholder="Video title" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
               <input v-model="mediaUpload.description" type="text" placeholder="Description (optional)" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm md:col-span-2" />
-              <input type="file" accept="video/*" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" @change="onMediaUploadFileChange" />
+              <input type="file" accept="video/*" :disabled="mediaUpload.busy" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 file:text-gray-900 dark:file:text-gray-100 file:bg-transparent text-sm disabled:opacity-60 disabled:cursor-not-allowed" @change="onMediaUploadFileChange" />
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-2">
               <button
                 class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50"
-                :disabled="mediaUpload.busy || !mediaUpload.file || !mediaConvertConfig.enabled || !mediaConvertConfig.configured"
+                :disabled="mediaUpload.busy || !mediaUpload.file || !mediaConvertConfig.enabled || !mediaConvertConfig.configured || !mediaConvertConfig.tusConfigured"
                 @click="startMediaConvertUpload"
               >
                 {{ mediaUpload.busy ? 'Uploading…' : 'Upload & transcode' }}
@@ -332,6 +332,9 @@
             <p v-if="mediaUpload.message" class="mt-2 text-xs" :class="mediaUpload.error ? 'text-red-600 dark:text-red-300' : 'text-gray-600 dark:text-gray-300'">
               {{ mediaUpload.message }}
             </p>
+          </div>
+          <div v-else class="mb-4 rounded-lg border border-amber-200 dark:border-amber-900 p-3 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-800 dark:text-amber-200">
+            Video uploader is disabled by system feature toggle.
           </div>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set preview lock per video: 0s means premium-only access, while matching full duration unlocks the full video.</p>
           <div>
@@ -1402,6 +1405,10 @@
                   <input v-model="systemFeatures.freePodcastPreviewEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
                   Free podcast preview feed
                 </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input v-model="systemFeatures.videoUploaderEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                  Video uploader (MediaConvert)
+                </label>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -1411,6 +1418,78 @@
                   @click="saveSystemFeatures"
                 >
                   {{ systemFeaturesSaving ? 'Saving…' : 'Save feature toggles' }}
+                </button>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">AWS MediaConvert + TUS</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage MediaConvert credentials and TUS resumable upload endpoint for source ingest.</p>
+              </div>
+              <div v-if="mediaConvertSystemMessage" class="rounded-lg border px-4 py-3 text-sm" :class="mediaConvertSystemMessageClass">{{ mediaConvertSystemMessage }}</div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  <span class="inline-flex items-center gap-2">
+                    <input v-model="mediaConvertSystem.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                    MediaConvert pipeline enabled
+                  </span>
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  AWS region
+                  <input v-model="mediaConvertSystem.awsRegion" type="text" placeholder="eu-central-1" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  AWS access key ID
+                  <input v-model="mediaConvertSystem.awsAccessKeyId" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  AWS secret access key
+                  <input v-model="mediaConvertSystem.awsSecretAccessKey" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasAwsSecret" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  AWS session token (optional)
+                  <input v-model="mediaConvertSystem.awsSessionToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasAwsSession" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  MediaConvert endpoint
+                  <input v-model="mediaConvertSystem.endpoint" type="url" placeholder="https://abcd.mediaconvert.eu-central-1.amazonaws.com" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  MediaConvert role ARN
+                  <input v-model="mediaConvertSystem.roleArn" type="text" placeholder="arn:aws:iam::123456789012:role/MediaConvertRole" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Input bucket
+                  <input v-model="mediaConvertSystem.inputBucket" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Output bucket
+                  <input v-model="mediaConvertSystem.outputBucket" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Input prefix
+                  <input v-model="mediaConvertSystem.inputPrefix" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Output prefix
+                  <input v-model="mediaConvertSystem.outputPrefix" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  TUS endpoint
+                  <input v-model="mediaConvertSystem.tusEndpoint" type="url" placeholder="https://tus.your-domain.example/files" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  TUS auth token (optional)
+                  <input v-model="mediaConvertSystem.tusAuthToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p v-if="mediaConvertSystem.hasTusAuth" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
+                </label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50" :disabled="mediaConvertSystemSaving" @click="saveMediaConvertSystemSettings">
+                  {{ mediaConvertSystemSaving ? 'Saving…' : 'Save MediaConvert settings' }}
                 </button>
               </div>
             </div>
@@ -2265,6 +2344,7 @@ import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolli
 import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
 import { renderMarkdownToHtml } from '~/utils/markdown'
+import { Upload as TusUpload } from 'tus-js-client'
 
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
@@ -2413,6 +2493,7 @@ const uploadingFor = ref<string | null>(null)
 const mediaConvertConfig = ref({
   enabled: false,
   configured: false,
+  tusConfigured: false,
 })
 const mediaUpload = ref<{
   file: File | null
@@ -2603,10 +2684,32 @@ const systemFeatures = ref({
   promotionsEnabled: true,
   isicEnabled: false,
   freePodcastPreviewEnabled: true,
+  videoUploaderEnabled: true,
 })
 const systemFeaturesSaving = ref(false)
 const systemFeaturesMessage = ref('')
 const systemFeaturesMessageClass = ref('')
+const mediaConvertSystem = ref({
+  enabled: false,
+  awsRegion: '',
+  awsAccessKeyId: '',
+  awsSecretAccessKey: '',
+  hasAwsSecret: false,
+  awsSessionToken: '',
+  hasAwsSession: false,
+  endpoint: '',
+  roleArn: '',
+  inputBucket: '',
+  outputBucket: '',
+  inputPrefix: 'mediaconvert-input',
+  outputPrefix: 'mediaconvert-output',
+  tusEndpoint: '',
+  tusAuthToken: '',
+  hasTusAuth: false,
+})
+const mediaConvertSystemSaving = ref(false)
+const mediaConvertSystemMessage = ref('')
+const mediaConvertSystemMessageClass = ref('')
 const promotionsLoading = ref(false)
 const promotionsSaving = ref(false)
 const promoCampaigns = ref<PromoCampaign[]>([])
@@ -3318,20 +3421,22 @@ const loadMediaConvertConfig = async () => {
       headers: authHeader(),
     })
     if (!res.ok) {
-      mediaConvertConfig.value = { enabled: false, configured: false }
+      mediaConvertConfig.value = { enabled: false, configured: false, tusConfigured: false }
       return
     }
     const data = await res.json().catch(() => ({}))
     mediaConvertConfig.value = {
       enabled: Boolean(data?.enabled),
       configured: Boolean(data?.configured),
+      tusConfigured: Boolean(data?.tusConfigured),
     }
   } catch {
-    mediaConvertConfig.value = { enabled: false, configured: false }
+    mediaConvertConfig.value = { enabled: false, configured: false, tusConfigured: false }
   }
 }
 
 const onMediaUploadFileChange = (event: Event) => {
+  if (mediaUpload.value.busy) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
   mediaUpload.value.file = file
@@ -3339,7 +3444,6 @@ const onMediaUploadFileChange = (event: Event) => {
   mediaUpload.value.progress = 0
   mediaUpload.value.status = 'uploaded'
   mediaUpload.value.message = ''
-  mediaUpload.value.busy = false
   if (!file) return
   if (!mediaUpload.value.title.trim()) {
     mediaUpload.value.title = file.name.replace(/\.[^.]+$/, '')
@@ -3372,28 +3476,43 @@ const startMediaConvertUpload = async () => {
     })
     const prepareData = await prepareRes.json().catch(() => ({}))
     if (!prepareRes.ok) throw new Error(prepareData.error || `HTTP ${prepareRes.status}`)
-    if (!prepareData?.upload?.url || !prepareData?.job?.id) {
+    if (!prepareData?.upload?.endpoint || !prepareData?.job?.id) {
       throw new Error('Upload session could not be created.')
     }
+    const uploadInputKey = String(prepareData.upload?.metadata?.inputkey || '')
+    const uploadVideoId = String(prepareData.upload?.metadata?.videoid || '')
+    const uploadJobId = String(prepareData.job?.id || '')
+    const uploadFingerprintScope = uploadInputKey || uploadVideoId || uploadJobId
 
     await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('PUT', String(prepareData.upload.url))
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-      xhr.upload.onprogress = (ev) => {
-        if (!ev.lengthComputable) return
-        mediaUpload.value.progress = Math.min(100, Math.round((ev.loaded / ev.total) * 100))
-      }
-      xhr.onload = async () => {
-        if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(`S3 upload failed (HTTP ${xhr.status})`))
-          return
-        }
-        mediaUpload.value.progress = 100
-        resolve()
-      }
-      xhr.onerror = () => reject(new Error('Upload failed'))
-      xhr.send(file)
+      const upload = new TusUpload(file, {
+        endpoint: String(prepareData.upload.endpoint),
+        retryDelays: [0, 1000, 3000, 5000],
+        chunkSize: 8 * 1024 * 1024,
+        fingerprint: async (currentFile) => `${currentFile.name}-${currentFile.type}-${currentFile.size}-${currentFile.lastModified}-${uploadFingerprintScope}`,
+        metadata: {
+          filename: String(prepareData.upload?.metadata?.filename || file.name),
+          filetype: String(prepareData.upload?.metadata?.filetype || file.type || 'application/octet-stream'),
+          inputkey: uploadInputKey,
+          videoid: uploadVideoId,
+        },
+        headers: (prepareData.upload?.headers && typeof prepareData.upload.headers === 'object')
+          ? prepareData.upload.headers
+          : {},
+        onError: (error) => reject(error),
+        onProgress: (uploaded, total) => {
+          if (!total) return
+          mediaUpload.value.progress = Math.min(100, Math.round((uploaded / total) * 100))
+        },
+        onSuccess: () => {
+          mediaUpload.value.progress = 100
+          resolve()
+        },
+      })
+      upload.findPreviousUploads().then((previousUploads) => {
+        if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]!)
+        upload.start()
+      }).catch(reject)
     })
 
     mediaUpload.value.status = 'uploaded'
@@ -3759,6 +3878,7 @@ const loadSystemFeatures = async () => {
       promotionsEnabled: Boolean(data.promotionsEnabled),
       isicEnabled: Boolean(data.isicEnabled),
       freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
+      videoUploaderEnabled: data.videoUploaderEnabled !== false,
     }
     // Keep ISIC API enable checkbox in sync with feature toggle.
     isicApiConfig.value.enabled = systemFeatures.value.isicEnabled
@@ -3788,6 +3908,75 @@ const saveSystemFeatures = async () => {
     systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
   } finally {
     systemFeaturesSaving.value = false
+  }
+}
+
+const loadMediaConvertSystemSettings = async () => {
+  if (!isAdmin.value) return
+  mediaConvertSystemMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/system/mediaconvert`, { headers: authHeader() })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    mediaConvertSystem.value = {
+      enabled: Boolean(data.enabled),
+      awsRegion: String(data.awsRegion || ''),
+      awsAccessKeyId: String(data.awsAccessKeyId || ''),
+      awsSecretAccessKey: '',
+      hasAwsSecret: Boolean(data?.secrets?.awsSecretAccessKeyMasked),
+      awsSessionToken: '',
+      hasAwsSession: Boolean(data?.secrets?.awsSessionTokenMasked),
+      endpoint: String(data.endpoint || ''),
+      roleArn: String(data.roleArn || ''),
+      inputBucket: String(data.inputBucket || ''),
+      outputBucket: String(data.outputBucket || ''),
+      inputPrefix: String(data.inputPrefix || 'mediaconvert-input'),
+      outputPrefix: String(data.outputPrefix || 'mediaconvert-output'),
+      tusEndpoint: String(data.tusEndpoint || ''),
+      tusAuthToken: '',
+      hasTusAuth: Boolean(data?.secrets?.tusAuthTokenMasked),
+    }
+  } catch (e: any) {
+    mediaConvertSystemMessage.value = `Could not load MediaConvert settings: ${e.message}`
+    mediaConvertSystemMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const saveMediaConvertSystemSettings = async () => {
+  if (!isAdmin.value) return
+  mediaConvertSystemSaving.value = true
+  mediaConvertSystemMessage.value = ''
+  try {
+    const payload: Record<string, unknown> = {
+      enabled: mediaConvertSystem.value.enabled,
+      awsRegion: mediaConvertSystem.value.awsRegion,
+      awsAccessKeyId: mediaConvertSystem.value.awsAccessKeyId,
+      endpoint: mediaConvertSystem.value.endpoint,
+      roleArn: mediaConvertSystem.value.roleArn,
+      inputBucket: mediaConvertSystem.value.inputBucket,
+      outputBucket: mediaConvertSystem.value.outputBucket,
+      inputPrefix: mediaConvertSystem.value.inputPrefix,
+      outputPrefix: mediaConvertSystem.value.outputPrefix,
+      tusEndpoint: mediaConvertSystem.value.tusEndpoint,
+    }
+    if (mediaConvertSystem.value.awsSecretAccessKey.trim()) payload.awsSecretAccessKey = mediaConvertSystem.value.awsSecretAccessKey.trim()
+    if (mediaConvertSystem.value.awsSessionToken.trim()) payload.awsSessionToken = mediaConvertSystem.value.awsSessionToken.trim()
+    if (mediaConvertSystem.value.tusAuthToken.trim()) payload.tusAuthToken = mediaConvertSystem.value.tusAuthToken.trim()
+    const res = await fetch(`${config.public.apiUrl}/api/admin/system/mediaconvert`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    mediaConvertSystemMessage.value = 'MediaConvert settings saved.'
+    mediaConvertSystemMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+    await Promise.all([loadMediaConvertSystemSettings(), loadMediaConvertConfig()])
+  } catch (e: any) {
+    mediaConvertSystemMessage.value = e.message || 'Failed to save MediaConvert settings'
+    mediaConvertSystemMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    mediaConvertSystemSaving.value = false
   }
 }
 
@@ -4924,6 +5113,7 @@ const reloadAll = async () => {
     await loadNewsletterSettings()
     await loadNewsletterTemplates()
     await loadSystemFeatures()
+    await loadMediaConvertSystemSettings()
     await loadPaymentSettings()
     if (systemFeatures.value.promotionsEnabled) await loadPromotions()
     if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()

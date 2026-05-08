@@ -1,5 +1,6 @@
 import { requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
+import { getSettings, setSettings } from './settingsStore.js'
 
 type CorsHeaders = Record<string, string>
 
@@ -37,28 +38,58 @@ function isMediaConvertEnabled(env: any): boolean {
   return envTrim(env, 'MEDIA_CONVERT_ENABLED', '0') === '1'
 }
 
-function getMediaConvertConfig(env: any) {
+async function getMediaConvertConfig(env: any) {
+  const db = getDb(env)
+  await ensureAdminSettingsTable(db)
+  const settings = await getSettings(env, [
+    'mediaconvert_enabled',
+    'mediaconvert_aws_region',
+    'mediaconvert_aws_access_key_id',
+    'mediaconvert_aws_secret_access_key',
+    'mediaconvert_aws_session_token',
+    'mediaconvert_endpoint',
+    'mediaconvert_role_arn',
+    'mediaconvert_input_bucket',
+    'mediaconvert_output_bucket',
+    'mediaconvert_input_prefix',
+    'mediaconvert_output_prefix',
+    'mediaconvert_tus_endpoint',
+    'mediaconvert_tus_auth_token',
+    'mediaconvert_max_upload_mb',
+    'mediaconvert_hd_price_per_min',
+  ])
+  const read = (key: string, envKey: string, fallback = '') => {
+    const fromSettings = String(settings[key] ?? '').trim()
+    if (fromSettings) return fromSettings
+    return envTrim(env, envKey, fallback)
+  }
   const cfg = {
-    enabled: isMediaConvertEnabled(env),
-    region: envTrim(env, 'AWS_REGION'),
-    accessKeyId: envTrim(env, 'AWS_ACCESS_KEY_ID'),
-    secretAccessKey: envTrim(env, 'AWS_SECRET_ACCESS_KEY'),
-    sessionToken: envTrim(env, 'AWS_SESSION_TOKEN'),
-    endpoint: envTrim(env, 'MEDIA_CONVERT_ENDPOINT'),
-    roleArn: envTrim(env, 'MEDIA_CONVERT_ROLE_ARN'),
-    inputBucket: envTrim(env, 'MEDIA_CONVERT_INPUT_BUCKET'),
-    outputBucket: envTrim(env, 'MEDIA_CONVERT_OUTPUT_BUCKET'),
-    inputPrefix: envTrim(env, 'MEDIA_CONVERT_INPUT_PREFIX', 'mediaconvert-input'),
-    outputPrefix: envTrim(env, 'MEDIA_CONVERT_OUTPUT_PREFIX', 'mediaconvert-output'),
-    maxUploadMb: Number.parseInt(envTrim(env, 'MEDIA_CONVERT_MAX_UPLOAD_MB', String(DEFAULT_MAX_UPLOAD_MB)), 10) || DEFAULT_MAX_UPLOAD_MB,
-    hdPricePerMinuteUsd: Number.parseFloat(envTrim(env, 'MEDIA_CONVERT_PRICE_HD_PER_MIN', String(DEFAULT_HD_PRICE_PER_MINUTE_USD))) || DEFAULT_HD_PRICE_PER_MINUTE_USD,
+    enabled: read('mediaconvert_enabled', 'MEDIA_CONVERT_ENABLED', isMediaConvertEnabled(env) ? '1' : '0') === '1',
+    region: read('mediaconvert_aws_region', 'AWS_REGION'),
+    accessKeyId: read('mediaconvert_aws_access_key_id', 'AWS_ACCESS_KEY_ID'),
+    secretAccessKey: read('mediaconvert_aws_secret_access_key', 'AWS_SECRET_ACCESS_KEY'),
+    sessionToken: read('mediaconvert_aws_session_token', 'AWS_SESSION_TOKEN'),
+    endpoint: read('mediaconvert_endpoint', 'MEDIA_CONVERT_ENDPOINT'),
+    roleArn: read('mediaconvert_role_arn', 'MEDIA_CONVERT_ROLE_ARN'),
+    inputBucket: read('mediaconvert_input_bucket', 'MEDIA_CONVERT_INPUT_BUCKET'),
+    outputBucket: read('mediaconvert_output_bucket', 'MEDIA_CONVERT_OUTPUT_BUCKET'),
+    inputPrefix: read('mediaconvert_input_prefix', 'MEDIA_CONVERT_INPUT_PREFIX', 'mediaconvert-input'),
+    outputPrefix: read('mediaconvert_output_prefix', 'MEDIA_CONVERT_OUTPUT_PREFIX', 'mediaconvert-output'),
+    tusEndpoint: read('mediaconvert_tus_endpoint', 'MEDIA_CONVERT_TUS_ENDPOINT'),
+    tusAuthToken: read('mediaconvert_tus_auth_token', 'MEDIA_CONVERT_TUS_AUTH_TOKEN'),
+    maxUploadMb: Number.parseInt(read('mediaconvert_max_upload_mb', 'MEDIA_CONVERT_MAX_UPLOAD_MB', String(DEFAULT_MAX_UPLOAD_MB)), 10) || DEFAULT_MAX_UPLOAD_MB,
+    hdPricePerMinuteUsd: Number.parseFloat(read('mediaconvert_hd_price_per_min', 'MEDIA_CONVERT_PRICE_HD_PER_MIN', String(DEFAULT_HD_PRICE_PER_MINUTE_USD))) || DEFAULT_HD_PRICE_PER_MINUTE_USD,
   }
   const required = [
     cfg.region, cfg.accessKeyId, cfg.secretAccessKey, cfg.endpoint,
     cfg.roleArn, cfg.inputBucket, cfg.outputBucket,
   ]
   const configured = required.every(Boolean)
-  return { ...cfg, configured }
+  return {
+    ...cfg,
+    configured,
+    tusConfigured: Boolean(cfg.tusEndpoint),
+  }
 }
 
 function hmacSha256Raw(key: BufferSource, message: string) {
@@ -311,7 +342,7 @@ async function listAllOutputKeys({
   sessionTokenArg,
   prefix,
 }: {
-  cfg: ReturnType<typeof getMediaConvertConfig>
+  cfg: Awaited<ReturnType<typeof getMediaConvertConfig>>
   sessionTokenArg: Record<string, string>
   prefix: string
 }): Promise<{ ok: true, keys: string[] } | { ok: false, error: string }> {
@@ -388,7 +419,7 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
 
-  const cfg = getMediaConvertConfig(env)
+  const cfg = await getMediaConvertConfig(env)
   if (!cfg.enabled) {
     return jsonResponse({ error: 'MediaConvert pipeline is disabled' }, 503, corsHeaders)
   }
@@ -423,8 +454,10 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const inputKey = `${cfg.inputPrefix.replace(/\/+$/, '')}/${videoId}/${safeName}`
   const outputPrefix = `${cfg.outputPrefix.replace(/\/+$/, '')}/${videoId}`
+  if (!cfg.tusConfigured) {
+    return jsonResponse({ error: 'TUS upload endpoint is not configured' }, 503, corsHeaders)
+  }
   const db = getDb(env)
-  await ensureAdminSettingsTable(db)
   if (categoryId) {
     const category = await db.prepare(`SELECT id FROM video_categories WHERE id = ?`).bind(categoryId).first()
     if (!category) return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
@@ -447,16 +480,6 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
     JSON.stringify(renditions), inputDurationSeconds, usage.normalizedMinutes, usage.estimatedCostUsd,
   ).run()
 
-  const presignedTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
-  const uploadUrl = await createPresignedS3PutUrl({
-    bucket: cfg.inputBucket,
-    key: inputKey,
-    region: cfg.region,
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    ...presignedTokenArg,
-  })
-
   return jsonResponse({
     ok: true,
     videoId,
@@ -469,11 +492,17 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
       renditions,
     },
     upload: {
-      method: 'PUT',
-      url: uploadUrl,
+      method: 'TUS',
+      endpoint: cfg.tusEndpoint,
+      headers: cfg.tusAuthToken ? { Authorization: `Bearer ${cfg.tusAuthToken}` } : {},
       contentType: fileType,
       inputKey,
-      expiresInSeconds: 900,
+      metadata: {
+        filename: safeName,
+        filetype: fileType,
+        videoid: videoId,
+        inputkey: inputKey,
+      },
     },
   }, 201, corsHeaders)
 }
@@ -486,7 +515,7 @@ export async function handleAdminMediaConvertUploadComplete(request: Request, en
   }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
 
-  const cfg = getMediaConvertConfig(env)
+  const cfg = await getMediaConvertConfig(env)
   if (!cfg.enabled || !cfg.configured) {
     return jsonResponse({ error: 'MediaConvert pipeline is not configured' }, 503, corsHeaders)
   }
@@ -551,7 +580,7 @@ export async function handleAdminMediaConvertUploadComplete(request: Request, en
 }
 
 export async function pollMediaConvertJobs(env: any) {
-  const cfg = getMediaConvertConfig(env)
+  const cfg = await getMediaConvertConfig(env)
   if (!cfg.enabled || !cfg.configured) return
   const db = getDb(env)
   const sessionTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
@@ -701,11 +730,9 @@ export async function handleAdminMediaConvertConfig(request: Request, env: any, 
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
-  const cfg = getMediaConvertConfig(env)
+  const cfg = await getMediaConvertConfig(env)
   const db = getDb(env)
-  await ensureAdminSettingsTable(db)
-  const row = await db.prepare(`SELECT value FROM admin_settings WHERE key = ? LIMIT 1`).bind('mediaconvert_hd_price_per_min').first()
-  const price = Number.parseFloat(String(row?.value || cfg.hdPricePerMinuteUsd)) || cfg.hdPricePerMinuteUsd
+  const price = cfg.hdPricePerMinuteUsd
   return jsonResponse({
     enabled: cfg.enabled,
     configured: cfg.configured,
@@ -713,6 +740,7 @@ export async function handleAdminMediaConvertConfig(request: Request, env: any, 
     outputBucket: cfg.outputBucket,
     inputPrefix: cfg.inputPrefix,
     outputPrefix: cfg.outputPrefix,
+    tusConfigured: cfg.tusConfigured,
     renditions: [{ name: '720p', codec: 'h264', fpsCap: 30 }],
     pricing: {
       hdPerMinuteUsd: price,
@@ -720,6 +748,103 @@ export async function handleAdminMediaConvertConfig(request: Request, env: any, 
     },
     supportedFutureTargets: ['480p', '720p', '1080p', '4k', 'alternate-codecs'],
   }, 200, corsHeaders)
+}
+
+function maskSecret(value: string) {
+  if (!value) return ''
+  if (value.length <= 6) return '••••••'
+  return `${value.slice(0, 2)}••••••${value.slice(-4)}`
+}
+
+export async function handleAdminMediaConvertSystemSettings(request: Request, env: any, corsHeaders: CorsHeaders) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  const db = getDb(env)
+  await ensureAdminSettingsTable(db)
+
+  if (request.method === 'GET') {
+    const settings = await getSettings(env, [
+      'mediaconvert_enabled',
+      'mediaconvert_aws_region',
+      'mediaconvert_aws_access_key_id',
+      'mediaconvert_aws_secret_access_key',
+      'mediaconvert_aws_session_token',
+      'mediaconvert_endpoint',
+      'mediaconvert_role_arn',
+      'mediaconvert_input_bucket',
+      'mediaconvert_output_bucket',
+      'mediaconvert_input_prefix',
+      'mediaconvert_output_prefix',
+      'mediaconvert_tus_endpoint',
+      'mediaconvert_tus_auth_token',
+    ])
+    const raw = (key: string, fallback = '') => {
+      const fromSettings = String(settings[key] ?? '').trim()
+      if (fromSettings) return fromSettings
+      const envMap: Record<string, string> = {
+        mediaconvert_enabled: 'MEDIA_CONVERT_ENABLED',
+        mediaconvert_aws_region: 'AWS_REGION',
+        mediaconvert_aws_access_key_id: 'AWS_ACCESS_KEY_ID',
+        mediaconvert_aws_secret_access_key: 'AWS_SECRET_ACCESS_KEY',
+        mediaconvert_aws_session_token: 'AWS_SESSION_TOKEN',
+        mediaconvert_endpoint: 'MEDIA_CONVERT_ENDPOINT',
+        mediaconvert_role_arn: 'MEDIA_CONVERT_ROLE_ARN',
+        mediaconvert_input_bucket: 'MEDIA_CONVERT_INPUT_BUCKET',
+        mediaconvert_output_bucket: 'MEDIA_CONVERT_OUTPUT_BUCKET',
+        mediaconvert_input_prefix: 'MEDIA_CONVERT_INPUT_PREFIX',
+        mediaconvert_output_prefix: 'MEDIA_CONVERT_OUTPUT_PREFIX',
+        mediaconvert_tus_endpoint: 'MEDIA_CONVERT_TUS_ENDPOINT',
+        mediaconvert_tus_auth_token: 'MEDIA_CONVERT_TUS_AUTH_TOKEN',
+      }
+      const envValue = envMap[key] ? envTrim(env, envMap[key], fallback) : fallback
+      return envValue
+    }
+    return jsonResponse({
+      enabled: raw('mediaconvert_enabled', '0') === '1',
+      awsRegion: raw('mediaconvert_aws_region'),
+      awsAccessKeyId: raw('mediaconvert_aws_access_key_id'),
+      endpoint: raw('mediaconvert_endpoint'),
+      roleArn: raw('mediaconvert_role_arn'),
+      inputBucket: raw('mediaconvert_input_bucket'),
+      outputBucket: raw('mediaconvert_output_bucket'),
+      inputPrefix: raw('mediaconvert_input_prefix', 'mediaconvert-input'),
+      outputPrefix: raw('mediaconvert_output_prefix', 'mediaconvert-output'),
+      tusEndpoint: raw('mediaconvert_tus_endpoint'),
+      secrets: {
+        awsSecretAccessKeyMasked: maskSecret(raw('mediaconvert_aws_secret_access_key')),
+        awsSessionTokenMasked: maskSecret(raw('mediaconvert_aws_session_token')),
+        tusAuthTokenMasked: maskSecret(raw('mediaconvert_tus_auth_token')),
+      },
+    }, 200, corsHeaders)
+  }
+
+  if (request.method !== 'PATCH') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  const bodyRaw = await request.json().catch(() => null)
+  const body = (bodyRaw && typeof bodyRaw === 'object') ? bodyRaw as Record<string, unknown> : null
+  if (!body) return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+  const getString = (key: string) => String(body[key] ?? '').trim()
+  const updates: [string, string][] = []
+  if (Object.prototype.hasOwnProperty.call(body, 'enabled')) {
+    updates.push(['mediaconvert_enabled', body.enabled === true ? '1' : '0'])
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'awsRegion')) updates.push(['mediaconvert_aws_region', getString('awsRegion')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsAccessKeyId')) updates.push(['mediaconvert_aws_access_key_id', getString('awsAccessKeyId')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsSecretAccessKey')) updates.push(['mediaconvert_aws_secret_access_key', getString('awsSecretAccessKey')])
+  if (Object.prototype.hasOwnProperty.call(body, 'awsSessionToken')) updates.push(['mediaconvert_aws_session_token', getString('awsSessionToken')])
+  if (Object.prototype.hasOwnProperty.call(body, 'endpoint')) updates.push(['mediaconvert_endpoint', getString('endpoint')])
+  if (Object.prototype.hasOwnProperty.call(body, 'roleArn')) updates.push(['mediaconvert_role_arn', getString('roleArn')])
+  if (Object.prototype.hasOwnProperty.call(body, 'inputBucket')) updates.push(['mediaconvert_input_bucket', getString('inputBucket')])
+  if (Object.prototype.hasOwnProperty.call(body, 'outputBucket')) updates.push(['mediaconvert_output_bucket', getString('outputBucket')])
+  if (Object.prototype.hasOwnProperty.call(body, 'inputPrefix')) updates.push(['mediaconvert_input_prefix', getString('inputPrefix')])
+  if (Object.prototype.hasOwnProperty.call(body, 'outputPrefix')) updates.push(['mediaconvert_output_prefix', getString('outputPrefix')])
+  if (Object.prototype.hasOwnProperty.call(body, 'tusEndpoint')) updates.push(['mediaconvert_tus_endpoint', getString('tusEndpoint')])
+  if (Object.prototype.hasOwnProperty.call(body, 'tusAuthToken')) updates.push(['mediaconvert_tus_auth_token', getString('tusAuthToken')])
+  if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
+  await setSettings(env, updates)
+  return jsonResponse({ ok: true }, 200, corsHeaders)
 }
 
 export function enrichVideosWithMediaConvert(videos: any[]) {
