@@ -432,6 +432,46 @@
                           </a>
                         </template>
                       </div>
+                      <!-- Legacy slug redirect editor -->
+                      <div class="mt-0.5 group/legacy flex items-center gap-1 min-w-0">
+                        <div v-if="editingLegacySlug?.id === video.id" class="flex items-center gap-1 w-full">
+                          <input
+                            ref="legacySlugInputEl"
+                            v-model="editingLegacySlug.value"
+                            type="text"
+                            placeholder="old-platform-video-slug"
+                            class="w-full px-1 py-0.5 text-xs rounded border border-amber-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono"
+                            @keydown.enter="saveLegacySlugEdit(video)"
+                            @keydown.escape="editingLegacySlug = null"
+                            @blur="saveLegacySlugEdit(video)"
+                          />
+                        </div>
+                        <template v-else>
+                          <span class="text-[11px] truncate font-mono" :class="video.legacy_slug ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-600'">
+                            legacy: {{ video.legacy_slug || '—' }}
+                          </span>
+                          <button
+                            class="opacity-0 group-hover/legacy:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity flex-shrink-0"
+                            title="Edit legacy slug redirect"
+                            @click="startLegacySlugEdit(video)"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <a
+                            v-if="video.legacy_slug"
+                            :href="`/videos/${video.legacy_slug}`"
+                            target="_blank"
+                            class="opacity-0 group-hover/legacy:opacity-100 p-0.5 text-gray-400 hover:text-amber-500 transition-opacity flex-shrink-0"
+                            title="Open legacy URL"
+                          >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                          </a>
+                        </template>
+                      </div>
                       <!-- Description summary -->
                       <div class="mt-1 flex items-start gap-2 min-w-0">
                         <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 min-w-0">{{ video.description || '—' }}</p>
@@ -2196,6 +2236,7 @@ interface Video {
   notified_at?: string | null
   r2_exists: boolean | null
   slug?: string | null
+  legacy_slug?: string | null
   category_id?: string | null
   total_views?: number
   livestream_provider?: string | null
@@ -2331,6 +2372,8 @@ const editingTitle = ref<{ id: string; value: string } | null>(null)
 const titleInputEl = ref<HTMLInputElement | null>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
 const slugInputEl  = ref<HTMLInputElement | null>(null)
+const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
+const legacySlugInputEl = ref<HTMLInputElement | null>(null)
 const scheduleModal = ref<{
   open: boolean
   videoId: string | null
@@ -5276,6 +5319,45 @@ async function saveSlugEdit(video: Video) {
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
   } catch (e: any) {
     showToast('error', `Failed to update slug: ${e.message}`)
+  }
+}
+
+async function startLegacySlugEdit(video: Video) {
+  editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
+  await nextTick()
+  legacySlugInputEl.value?.focus()
+  legacySlugInputEl.value?.select()
+}
+
+async function saveLegacySlugEdit(video: Video) {
+  const editing = editingLegacySlug.value
+  if (!editing || editing.id !== video.id) return
+  const legacyInput = editing.value.trim()
+  const requestedLegacySlug = legacyInput
+    ? legacyInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '')
+    : null
+  editingLegacySlug.value = null
+  if (requestedLegacySlug === (video.legacy_slug ?? null)) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ legacySlug: requestedLegacySlug }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || `HTTP ${res.status}`)
+    }
+    const data = await res.json().catch(() => ({}))
+    const normalizedLegacySlug = data?.video?.legacy_slug ?? requestedLegacySlug
+    const idx = uploads.value.findIndex(v => v.id === video.id)
+    if (idx !== -1) {
+      const cur = uploads.value[idx]!
+      uploads.value[idx] = { ...cur, legacy_slug: normalizedLegacySlug }
+    }
+    showToast('success', normalizedLegacySlug ? `Legacy redirect set: /videos/${normalizedLegacySlug} -> /watch` : 'Legacy redirect cleared.')
+  } catch (e: any) {
+    showToast('error', `Failed to update legacy slug: ${e.message}`)
   }
 }
 

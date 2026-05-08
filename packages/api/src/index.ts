@@ -1286,7 +1286,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
         GROUP BY video_id
       )
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
-             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug,
+             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
              v.scheduled_publish_at, v.notified_at,
              vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
              ls.provider AS livestream_provider,
@@ -1374,12 +1374,12 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
       return jsonResponse({ error: 'Category not found', code: 'category_not_found' }, 404, corsHeaders)
     }
   }
-  if (slug) {
-    const conflict = await db.prepare('SELECT 1 FROM videos WHERE slug = ? OR id = ? LIMIT 1').bind(slug, slug).first()
-    if (conflict) return jsonResponse({ error: 'Slug already in use or conflicts with an existing video ID' }, 409, corsHeaders)
-  }
 
   const videoId = crypto.randomUUID()
+
+  // Validate slug/legacy_slug uniqueness before creating the video
+  const collisionError = await validateRouteTokenUniqueness(db, videoId, slug, null, corsHeaders)
+  if (collisionError) return collisionError
   const publishedAt = publishStatus === 'published' ? new Date().toISOString() : null
 
   await db.prepare(`
@@ -1415,7 +1415,7 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
 async function getAdminVideoById(db: any, videoId: string) {
   return db.prepare(`
     SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
-           v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, vca.category_id,
+           v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug, vca.category_id,
            ls.provider AS livestream_provider,
            ls.status AS livestream_status,
            ls.stream_id AS livestream_stream_id,
@@ -1613,9 +1613,10 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
   const hasScheduledPublishAt = Object.prototype.hasOwnProperty.call(body, 'scheduledPublishAt')
   const hasPublishedAt = Object.prototype.hasOwnProperty.call(body, 'publishedAt')
   const hasUploadDate = Object.prototype.hasOwnProperty.call(body, 'uploadDate')
+  const hasLegacySlug = Object.prototype.hasOwnProperty.call(body, 'legacySlug')
 
-  if (!hasStatus && !hasTitle && !hasSlug && !hasCategoryId && !hasDescription && !hasScheduledPublishAt && !hasPublishedAt && !hasUploadDate) {
-    return jsonResponse({ error: 'At least one of status, title, slug, description, categoryId, scheduledPublishAt, publishedAt, or uploadDate must be provided' }, 400, corsHeaders)
+  if (!hasStatus && !hasTitle && !hasSlug && !hasCategoryId && !hasDescription && !hasScheduledPublishAt && !hasPublishedAt && !hasUploadDate && !hasLegacySlug) {
+    return jsonResponse({ error: 'At least one of status, title, slug, legacySlug, description, categoryId, scheduledPublishAt, publishedAt, or uploadDate must be provided' }, 400, corsHeaders)
   }
   if (hasTitle && (typeof body.title !== 'string' || body.title.trim().length === 0)) {
     return jsonResponse({ error: 'title must not be empty' }, 400, corsHeaders)
@@ -1631,6 +1632,15 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
   }
   if (normalizedSlug && !isValidSlug(normalizedSlug)) {
     return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens (e.g. my-video-title), or null to clear it' }, 400, corsHeaders)
+  }
+  const normalizedLegacySlug = hasLegacySlug && body.legacySlug !== null
+    ? (typeof body.legacySlug === 'string' ? sanitizeSlug(body.legacySlug) : null)
+    : null
+  if (hasLegacySlug && body.legacySlug !== null && !normalizedLegacySlug) {
+    return jsonResponse({ error: 'legacySlug must be lowercase alphanumeric words separated by hyphens (e.g. old-video-title), or null to clear it' }, 400, corsHeaders)
+  }
+  if (normalizedLegacySlug && !isValidSlug(normalizedLegacySlug)) {
+    return jsonResponse({ error: 'legacySlug must be lowercase alphanumeric words separated by hyphens (e.g. old-video-title), or null to clear it' }, 400, corsHeaders)
   }
   const scheduledPublishAt = normalizeScheduledPublishAt(body.scheduledPublishAt, { allowNull: true })
   if (hasScheduledPublishAt && scheduledPublishAt.invalid) {
@@ -1703,33 +1713,46 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
 
   // Guard: reject a slug that equals another video's id — resolveVideoByIdOrSlug
   // resolves by id before slug, so the slug would become permanently shadowed.
-  if (hasSlug && normalizedSlug) {
-    const idCollision = await db.prepare(
-      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
-    ).bind(normalizedSlug, videoId).first()
-    if (idCollision) {
-      return jsonResponse({ error: 'Slug conflicts with an existing video ID' }, 409, corsHeaders)
-    }
-  }
+  // Also ensure slug/legacy_slug don't collide with existing videos.
+  const collisionError = await validateRouteTokenUniqueness(
+    db,
+    videoId,
+    hasSlug ? normalizedSlug : null,
+    hasLegacySlug ? normalizedLegacySlug : null,
+    corsHeaders
+  )
+  if (collisionError) return collisionError
 
   try {
     // When both title and slug are supplied, write them atomically so a slug
     // constraint violation cannot leave the title committed but the slug not.
-    if (hasTitle || hasSlug) {
+    if (hasTitle || hasSlug || hasLegacySlug) {
       try {
-        if (hasTitle && hasSlug) {
+        if (hasTitle && hasSlug && hasLegacySlug) {
+          await db.prepare(`UPDATE videos SET title = ?, slug = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), normalizedSlug ?? null, normalizedLegacySlug ?? null, videoId).run()
+        } else if (hasTitle && hasSlug) {
           await db.prepare(`UPDATE videos SET title = ?, slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(body.title.trim(), normalizedSlug ?? null, videoId).run()
+        } else if (hasTitle && hasLegacySlug) {
+          await db.prepare(`UPDATE videos SET title = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(body.title.trim(), normalizedLegacySlug ?? null, videoId).run()
+        } else if (hasSlug && hasLegacySlug) {
+          await db.prepare(`UPDATE videos SET slug = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(normalizedSlug ?? null, normalizedLegacySlug ?? null, videoId).run()
         } else if (hasTitle) {
           await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(body.title.trim(), videoId).run()
+        } else if (hasLegacySlug) {
+          await db.prepare(`UPDATE videos SET legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+            .bind(normalizedLegacySlug ?? null, videoId).run()
         } else {
           await db.prepare(`UPDATE videos SET slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(normalizedSlug ?? null, videoId).run()
         }
       } catch (err) {
         if (getErrorMessage(err).includes('UNIQUE')) {
-          return jsonResponse({ error: 'Slug already in use by another video' }, 409, corsHeaders)
+          return jsonResponse({ error: 'Slug or legacy slug already in use by another video' }, 409, corsHeaders)
         }
         throw err
       }
@@ -1837,7 +1860,7 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     }
 
     const video = await db.prepare(`
-      SELECT v.id, v.title, v.description, v.status, v.publish_status, v.published_at, v.scheduled_publish_at, v.notified_at, v.updated_at, v.slug, v.upload_date, vca.category_id,
+      SELECT v.id, v.title, v.description, v.status, v.publish_status, v.published_at, v.scheduled_publish_at, v.notified_at, v.updated_at, v.slug, v.legacy_slug, v.upload_date, vca.category_id,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.stream_id AS livestream_stream_id,
@@ -2045,6 +2068,9 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
   const cappedPreviewDuration = newVideo.full_duration > 0
     ? Math.min(oldVideo.preview_duration ?? 0, newVideo.full_duration)
     : (oldVideo.preview_duration ?? 0)
+  const preservedWatchPathToken = (typeof oldVideo.slug === 'string' && oldVideo.slug.trim())
+    ? oldVideo.slug.trim()
+    : publishedId
 
   // Promote the draft and retire the old video atomically via D1 batch so both
   // updates succeed or both fail — no half-swapped state.
@@ -2055,6 +2081,7 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
       description      = ?,
       thumbnail_url    = ?,
       slug             = ?,
+      legacy_slug      = ?,
       upload_date      = ?,
       preview_duration = ?,
       publish_status   = 'published',
@@ -2065,7 +2092,8 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
     oldVideo.title,
     oldVideo.description ?? null,
     oldVideo.thumbnail_url ?? null,
-    oldVideo.slug ?? null,
+    preservedWatchPathToken,
+    oldVideo.legacy_slug ?? null,
     oldVideo.upload_date,
     cappedPreviewDuration,
     draftId,
@@ -2076,6 +2104,7 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
       title          = 'OLD - ' || title,
       thumbnail_url  = NULL,
       slug           = NULL,
+      legacy_slug    = NULL,
       publish_status = 'draft',
       published_at   = NULL,
       updated_at     = CURRENT_TIMESTAMP
@@ -2702,7 +2731,9 @@ export function getProxyVideoIdFromPath(pathname: string) {
 async function resolveVideoByIdOrSlug(db: any, idOrSlug: any) {
   const byId = await db.prepare('SELECT * FROM videos WHERE id = ?').bind(idOrSlug).first()
   if (byId) return byId
-  return db.prepare('SELECT * FROM videos WHERE slug = ?').bind(idOrSlug).first()
+  const bySlug = await db.prepare('SELECT * FROM videos WHERE slug = ?').bind(idOrSlug).first()
+  if (bySlug) return bySlug
+  return db.prepare('SELECT * FROM videos WHERE legacy_slug = ?').bind(idOrSlug).first()
 }
 
 // Validate a vanity slug format: lowercase alphanumeric words separated by hyphens.
@@ -2718,6 +2749,63 @@ function sanitizeSlug(raw: any) {
     .trim()
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Validates that slug and legacy_slug tokens do not collide with existing videos.
+ * Checks:
+ * 1. Slug doesn't equal another video's ID
+ * 2. Slug isn't already used as another video's slug or legacy_slug
+ * 3. Legacy slug doesn't equal another video's ID
+ * 4. Legacy slug isn't already used as another video's slug or legacy_slug
+ *
+ * @param db - Database binding
+ * @param videoId - ID of the video being created/updated (used to exclude self from collision checks)
+ * @param normalizedSlug - The normalized slug value (or null)
+ * @param normalizedLegacySlug - The normalized legacy_slug value (or null)
+ * @param corsHeaders - CORS headers for the response
+ * @returns Response object if there's a collision, null if validation passes
+ */
+async function validateRouteTokenUniqueness(
+  db: any,
+  videoId: string,
+  normalizedSlug: string | null,
+  normalizedLegacySlug: string | null,
+  corsHeaders: any
+): Promise<any | null> {
+  // Check slug collisions
+  if (normalizedSlug) {
+    const idCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
+    ).bind(normalizedSlug, videoId).first()
+    if (idCollision) {
+      return jsonResponse({ error: 'Slug conflicts with an existing video ID' }, 409, corsHeaders)
+    }
+    const slugCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
+    ).bind(videoId, normalizedSlug, normalizedSlug).first()
+    if (slugCollision) {
+      return jsonResponse({ error: 'Slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
+    }
+  }
+
+  // Check legacy_slug collisions
+  if (normalizedLegacySlug) {
+    const idCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id = ? AND id != ? LIMIT 1'
+    ).bind(normalizedLegacySlug, videoId).first()
+    if (idCollision) {
+      return jsonResponse({ error: 'Legacy slug conflicts with an existing video ID' }, 409, corsHeaders)
+    }
+    const legacyCollision = await db.prepare(
+      'SELECT 1 FROM videos WHERE id != ? AND (slug = ? OR legacy_slug = ?) LIMIT 1'
+    ).bind(videoId, normalizedLegacySlug, normalizedLegacySlug).first()
+    if (legacyCollision) {
+      return jsonResponse({ error: 'Legacy slug already in use by another video (slug or legacy redirect)' }, 409, corsHeaders)
+    }
+  }
+
+  return null
 }
 
 const HOMEPAGE_LAYOUT_VARIANTS = new Set(['three_by_one', 'side_mini'])
