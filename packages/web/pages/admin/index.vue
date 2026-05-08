@@ -296,6 +296,43 @@
               Create new livestream
             </button>
           </div>
+          <div class="mb-4 rounded-lg border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-950/40">
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Direct source upload (MediaConvert)</h3>
+              <span v-if="!mediaConvertConfig.enabled" class="text-[11px] px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300">disabled</span>
+              <span v-else-if="!mediaConvertConfig.configured" class="text-[11px] px-2 py-0.5 rounded bg-amber-200 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">not configured</span>
+              <span v-else class="text-[11px] px-2 py-0.5 rounded bg-emerald-200 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">enabled</span>
+            </div>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">
+              Optional cloud path. Existing local/rclone workflow remains unchanged.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <input v-model="mediaUpload.title" type="text" placeholder="Video title" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
+              <input v-model="mediaUpload.description" type="text" placeholder="Description (optional)" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm md:col-span-2" />
+              <input type="file" accept="video/*" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" @change="onMediaUploadFileChange" />
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50"
+                :disabled="mediaUpload.busy || !mediaUpload.file || !mediaConvertConfig.enabled || !mediaConvertConfig.configured"
+                @click="startMediaConvertUpload"
+              >
+                {{ mediaUpload.busy ? 'Uploading…' : 'Upload & transcode' }}
+              </button>
+              <span class="text-xs text-gray-600 dark:text-gray-300">
+                status: <strong>{{ mediaUpload.status }}</strong>
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ mediaUpload.progress }}%
+              </span>
+            </div>
+            <div class="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800 overflow-hidden">
+              <div class="h-full bg-blue-600 transition-all" :style="{ width: `${mediaUpload.progress}%` }"></div>
+            </div>
+            <p v-if="mediaUpload.message" class="mt-2 text-xs" :class="mediaUpload.error ? 'text-red-600 dark:text-red-300' : 'text-gray-600 dark:text-gray-300'">
+              {{ mediaUpload.message }}
+            </p>
+          </div>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set preview lock per video: 0s means premium-only access, while matching full duration unlocks the full video.</p>
           <div>
             <div v-if="videosLoading" class="space-y-3">
@@ -515,6 +552,12 @@
                         </span>
                         <span v-if="video.livestream_stream_key" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
                           broadcast: {{ video.livestream_stream_key }}
+                        </span>
+                        <span v-if="video.ingest_status" class="block text-[11px] text-blue-600 dark:text-blue-300">
+                          ingest: {{ video.ingest_status }}
+                          <template v-if="video.media_convert_usage?.normalized_minutes_est !== null && video.media_convert_usage?.normalized_minutes_est !== undefined">
+                            · {{ Number(video.media_convert_usage.normalized_minutes_est).toFixed(2) }} norm-min
+                          </template>
                         </span>
                         <button
                           v-if="video.livestream_provider && video.livestream_status === 'failed' && !retryingLivestreamProvision[video.id]"
@@ -2256,6 +2299,12 @@ interface Video {
   livestream_moq_broadcast?: string | null
   livestream_playback_url?: string | null
   livestream_recording_video_id?: string | null
+  ingest_status?: 'uploaded' | 'queued' | 'transcoding' | 'packaging' | 'uploading' | 'completed' | 'failed' | null
+  media_convert_usage?: {
+    input_duration_seconds?: number
+    normalized_minutes_est?: number
+    estimated_cost_usd?: number
+  } | null
 }
 
 interface Category {
@@ -2361,6 +2410,29 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const retryingLivestreamProvision = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
+const mediaConvertConfig = ref({
+  enabled: false,
+  configured: false,
+})
+const mediaUpload = ref<{
+  file: File | null
+  title: string
+  description: string
+  progress: number
+  status: 'uploaded' | 'queued' | 'transcoding' | 'packaging' | 'uploading' | 'completed' | 'failed'
+  busy: boolean
+  message: string
+  error: boolean
+}>({
+  file: null,
+  title: '',
+  description: '',
+  progress: 0,
+  status: 'uploaded',
+  busy: false,
+  message: '',
+  error: false,
+})
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
@@ -3237,6 +3309,111 @@ const retryLivestreamProvision = async (video: Video) => {
     showToast('error', e.message || 'Failed to refresh livestream status.')
   } finally {
     retryingLivestreamProvision.value[video.id] = false
+  }
+}
+
+const loadMediaConvertConfig = async () => {
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/config`, {
+      headers: authHeader(),
+    })
+    if (!res.ok) {
+      mediaConvertConfig.value = { enabled: false, configured: false }
+      return
+    }
+    const data = await res.json().catch(() => ({}))
+    mediaConvertConfig.value = {
+      enabled: Boolean(data?.enabled),
+      configured: Boolean(data?.configured),
+    }
+  } catch {
+    mediaConvertConfig.value = { enabled: false, configured: false }
+  }
+}
+
+const onMediaUploadFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  mediaUpload.value.file = file
+  mediaUpload.value.error = false
+  mediaUpload.value.progress = 0
+  mediaUpload.value.status = 'uploaded'
+  mediaUpload.value.message = ''
+  mediaUpload.value.busy = false
+  if (!file) return
+  if (!mediaUpload.value.title.trim()) {
+    mediaUpload.value.title = file.name.replace(/\.[^.]+$/, '')
+  }
+}
+
+const startMediaConvertUpload = async () => {
+  const file = mediaUpload.value.file
+  if (!file) {
+    showToast('error', 'Select a source video first.')
+    return
+  }
+  mediaUpload.value.busy = true
+  mediaUpload.value.error = false
+  mediaUpload.value.message = ''
+  mediaUpload.value.progress = 0
+  mediaUpload.value.status = 'uploading'
+  try {
+    const prepareRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        title: mediaUpload.value.title.trim() || file.name.replace(/\.[^.]+$/, ''),
+        description: mediaUpload.value.description.trim(),
+        durationSeconds: 0,
+      }),
+    })
+    const prepareData = await prepareRes.json().catch(() => ({}))
+    if (!prepareRes.ok) throw new Error(prepareData.error || `HTTP ${prepareRes.status}`)
+    if (!prepareData?.upload?.url || !prepareData?.job?.id) {
+      throw new Error('Upload session could not be created.')
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', String(prepareData.upload.url))
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+      xhr.upload.onprogress = (ev) => {
+        if (!ev.lengthComputable) return
+        mediaUpload.value.progress = Math.min(100, Math.round((ev.loaded / ev.total) * 100))
+      }
+      xhr.onload = async () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(`S3 upload failed (HTTP ${xhr.status})`))
+          return
+        }
+        mediaUpload.value.progress = 100
+        resolve()
+      }
+      xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.send(file)
+    })
+
+    mediaUpload.value.status = 'uploaded'
+    const completeRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ jobId: prepareData.job.id }),
+    })
+    const completeData = await completeRes.json().catch(() => ({}))
+    if (!completeRes.ok) throw new Error(completeData.error || `HTTP ${completeRes.status}`)
+    mediaUpload.value.message = `Queued MediaConvert job ${completeData?.awsJobId || ''}`.trim()
+    await loadVideos()
+    showToast('success', 'Source uploaded and queued for MediaConvert.')
+  } catch (error: any) {
+    mediaUpload.value.error = true
+    mediaUpload.value.status = 'failed'
+    mediaUpload.value.message = error?.message || 'Upload failed'
+    showToast('error', mediaUpload.value.message)
+  } finally {
+    mediaUpload.value.busy = false
   }
 }
 
@@ -4740,6 +4917,7 @@ const reloadAll = async () => {
   loading.value = true
   try {
     await loadVideos()
+    await loadMediaConvertConfig()
     await loadCategories()
     await loadHomepageState()
     await loadHomepagePlacement()

@@ -75,6 +75,13 @@ import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
+  handleAdminMediaConvertUpload,
+  handleAdminMediaConvertUploadComplete,
+  handleAdminMediaConvertConfig,
+  pollMediaConvertJobs,
+  enrichVideosWithMediaConvert,
+} from './mediaconvert.js'
+import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
@@ -294,6 +301,15 @@ export default {
     if (url.pathname === '/api/admin/videos/livestreams' && request.method === 'POST') {
       return handleAdminLivestreamCreate(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/videos/uploads/mediaconvert' && request.method === 'POST') {
+      return handleAdminMediaConvertUpload(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/mediaconvert/complete' && request.method === 'POST') {
+      return handleAdminMediaConvertUploadComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
+      return handleAdminMediaConvertConfig(request, env, corsHeaders)
+    }
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) && request.method === 'POST') {
       return handleThumbnailUpload(request, env, corsHeaders)
     }
@@ -460,6 +476,11 @@ export default {
       await runScheduledPublishJobs(env)
     } catch (err) {
       console.error('Scheduled publish sweep failed:', err)
+    }
+    try {
+      await pollMediaConvertJobs(env)
+    } catch (err) {
+      console.error('MediaConvert poll sweep failed:', err)
     }
   },
 }
@@ -1247,6 +1268,14 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDatabaseBinding(env)
   try {
+    const mediaConvertJobsTable = await db.prepare(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table' AND name = 'media_convert_jobs'
+      LIMIT 1
+    `).first()
+    const hasMediaConvertJobsTable = Boolean(mediaConvertJobsTable?.name)
+
     // ── 1. Auto-register any R2 uploads that have no D1 row ──────────────────
     if (env.BUCKET) {
       const listed = await env.BUCKET.list({ prefix: 'videos/', delimiter: '/' })
@@ -1269,7 +1298,62 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
 
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     let videos
-    videos = await db.prepare(`
+    if (hasMediaConvertJobsTable) {
+      videos = await db.prepare(`
+      WITH view_counts AS (
+        SELECT
+          video_id,
+          COUNT(DISTINCT COALESCE(
+            session_key,
+            CASE
+              WHEN user_id IS NOT NULL THEN 'u:' || user_id
+              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
+              ELSE 'path:' || request_path
+            END
+          )) AS total_views
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+        GROUP BY video_id
+      ),
+      latest_mc AS (
+        SELECT *
+        FROM (
+          SELECT
+            m.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY m.video_id
+              ORDER BY m.created_at DESC, m.id DESC
+            ) AS rn
+          FROM media_convert_jobs m
+        ) ranked
+        WHERE ranked.rn = 1
+      )
+      SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
+             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
+             v.scheduled_publish_at, v.notified_at,
+             vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
+             lm.status AS media_convert_status,
+             lm.input_duration_seconds AS media_convert_input_duration_seconds,
+             lm.normalized_minutes_est AS media_convert_normalized_minutes_est,
+             lm.cost_est_usd AS media_convert_cost_est_usd,
+             ls.provider AS livestream_provider,
+             ls.status AS livestream_status,
+             ls.stream_id AS livestream_stream_id,
+             ls.stream_key AS livestream_stream_key,
+             ls.ingest_url AS livestream_ingest_url,
+             ls.moq_endpoint AS livestream_moq_endpoint,
+             ls.moq_broadcast AS livestream_moq_broadcast,
+             ls.playback_url AS livestream_playback_url,
+             ls.recording_video_id AS livestream_recording_video_id
+      FROM videos v
+      LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+      LEFT JOIN view_counts vc ON vc.video_id = v.id
+      LEFT JOIN latest_mc lm ON lm.video_id = v.id
+      LEFT JOIN livestreams ls ON ls.video_id = v.id
+      ORDER BY v.upload_date DESC
+    `).all()
+    } else {
+      videos = await db.prepare(`
       WITH view_counts AS (
         SELECT
           video_id,
@@ -1289,6 +1373,10 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
              v.scheduled_publish_at, v.notified_at,
              vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
+             NULL AS media_convert_status,
+             NULL AS media_convert_input_duration_seconds,
+             NULL AS media_convert_normalized_minutes_est,
+             NULL AS media_convert_cost_est_usd,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.stream_id AS livestream_stream_id,
@@ -1304,6 +1392,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       LEFT JOIN livestreams ls ON ls.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()
+    }
 
     // ── 3. Annotate each row with r2_exists ──────────────────────────────────
     const annotated = await Promise.all((videos.results || []).map(async (video: any) => {
@@ -1323,7 +1412,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       }
     }))
 
-    return jsonResponse({ videos: annotated }, 200, corsHeaders)
+    return jsonResponse({ videos: enrichVideosWithMediaConvert(annotated) }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
