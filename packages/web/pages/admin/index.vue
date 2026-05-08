@@ -3073,7 +3073,8 @@ const getDefaultBlocks = (): LayoutBlock[] => ([])
 const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   if (!raw || typeof raw !== 'object') return null
   const id = typeof raw.id === 'string' ? raw.id : crypto.randomUUID()
-  const type: BlockType = componentTypes.includes(raw.type) ? raw.type : 'top_video'
+  const rawType = typeof raw.type === 'string' ? raw.type.trim() : ''
+  const type: BlockType = (rawType || 'top_video') as BlockType
   const title = typeof raw.title === 'string' ? raw.title : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
@@ -3083,7 +3084,7 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     const normalizedChildren = children
       .filter((child: any) => child && typeof child === 'object')
       .map((child: any) => ({
-        type: leafComponentTypes.includes(child.type) ? child.type : 'top_video',
+        type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
         title: typeof child.title === 'string' ? child.title : '',
         body: typeof child.body === 'string' ? child.body : '',
         categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
@@ -3114,7 +3115,7 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   }
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
     payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
-      type: leafComponentTypes.includes(child?.type) ? child.type : 'top_video',
+      type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
       title: typeof child?.title === 'string' ? child.title : '',
       body: typeof child?.body === 'string' ? child.body : '',
       categoryId: typeof child?.categoryId === 'string' ? child.categoryId : null,
