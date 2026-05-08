@@ -306,32 +306,6 @@ function parseS3ListContinuation(xml: string): { isTruncated: boolean, nextToken
   return { isTruncated: truncated, nextToken: nextTokenRaw ? nextTokenRaw : null }
 }
 
-async function deleteS3Object({
-  cfg,
-  sessionTokenArg,
-  key,
-}: {
-  cfg: ReturnType<typeof getMediaConvertConfig>
-  sessionTokenArg: Record<string, string>
-  key: string
-}) {
-  const url = `https://${cfg.inputBucket}.s3.${cfg.region}.amazonaws.com/${encodeURIComponent(key).replace(/%2F/g, '/')}`
-  try {
-    await awsSignedFetch({
-      method: 'DELETE',
-      url,
-      service: 's3',
-      region: cfg.region,
-      accessKeyId: cfg.accessKeyId,
-      secretAccessKey: cfg.secretAccessKey,
-      ...sessionTokenArg,
-      payload: '',
-    })
-  } catch {
-    // best effort cleanup only
-  }
-}
-
 async function listAllOutputKeys({
   cfg,
   sessionTokenArg,
@@ -449,7 +423,6 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const inputKey = `${cfg.inputPrefix.replace(/\/+$/, '')}/${videoId}/${safeName}`
   const outputPrefix = `${cfg.outputPrefix.replace(/\/+$/, '')}/${videoId}`
-  const sessionTokenArg = cfg.sessionToken ? { sessionToken: cfg.sessionToken } : {}
   const db = getDb(env)
   await ensureAdminSettingsTable(db)
   if (categoryId) {
