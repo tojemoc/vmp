@@ -547,7 +547,7 @@
                         </span>
                         <span v-if="video.ingest_status" class="block text-[11px] text-blue-600 dark:text-blue-300">
                           ingest: {{ video.ingest_status }}
-                          <template v-if="video.media_convert_usage?.normalized_minutes_est">
+                          <template v-if="video.media_convert_usage?.normalized_minutes_est !== null && video.media_convert_usage?.normalized_minutes_est !== undefined">
                             · {{ Number(video.media_convert_usage.normalized_minutes_est).toFixed(2) }} norm-min
                           </template>
                         </span>
@@ -3318,6 +3318,11 @@ const onMediaUploadFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
   mediaUpload.value.file = file
+  mediaUpload.value.error = false
+  mediaUpload.value.progress = 0
+  mediaUpload.value.status = 'uploaded'
+  mediaUpload.value.message = ''
+  mediaUpload.value.busy = false
   if (!file) return
   if (!mediaUpload.value.title.trim()) {
     mediaUpload.value.title = file.name.replace(/\.[^.]+$/, '')
@@ -3334,7 +3339,7 @@ const startMediaConvertUpload = async () => {
   mediaUpload.value.error = false
   mediaUpload.value.message = ''
   mediaUpload.value.progress = 0
-  mediaUpload.value.status = 'uploaded'
+  mediaUpload.value.status = 'uploading'
   try {
     const fd = new FormData()
     fd.append('file', file)
@@ -3358,7 +3363,6 @@ const startMediaConvertUpload = async () => {
           reject(new Error(data?.error || `HTTP ${xhr.status}`))
           return
         }
-        mediaUpload.value.status = data?.job?.status || 'queued'
         mediaUpload.value.message = `Queued MediaConvert job ${data?.job?.awsJobId || ''}`.trim()
         mediaUpload.value.progress = 100
         resolve()
@@ -3367,6 +3371,7 @@ const startMediaConvertUpload = async () => {
       xhr.send(fd)
     })
 
+    mediaUpload.value.status = 'uploaded'
     await loadVideos()
     showToast('success', 'Source uploaded and queued for MediaConvert.')
   } catch (error: any) {
