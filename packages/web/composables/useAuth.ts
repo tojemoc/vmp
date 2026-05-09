@@ -31,6 +31,11 @@ export interface AuthUser {
   totpRequired?: boolean
 }
 
+export type MagicPwaHandoffResult =
+  | { kind: '2fa'; pendingToken: string }
+  | { kind: 'handoff'; handoffCode: string; totpRequired: boolean }
+  | { kind: 'session'; user: AuthUser }
+
 export interface SubscriptionData {
   id:               string
   planType:         string   // 'monthly' | 'yearly' | 'club'
@@ -137,6 +142,50 @@ export function useAuth() {
       return { requiresTwoFactor: true, pendingToken: data.pendingToken }
     }
 
+    setAccessToken(data.accessToken, data.user)
+    return data.user
+  }
+
+  /**
+   * POST /api/auth/magic-pwa-handoff — consumes the magic link on iOS Safari and
+   * returns either a 2FA challenge, a one-time handoff code for the installed PWA,
+   * or a full session when KV is unavailable (dev / misconfiguration).
+   */
+  async function magicPwaHandoff(token: string): Promise<MagicPwaHandoffResult> {
+    const res = await fetch(`${apiUrl}/api/auth/magic-pwa-handoff`, {
+      method:      'POST',
+      credentials: 'include',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify({ token }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Verification failed')
+
+    if (data.requiresTwoFactor && typeof data.pendingToken === 'string') {
+      return { kind: '2fa', pendingToken: data.pendingToken }
+    }
+    if (typeof data.handoffCode === 'string' && data.handoffCode.length > 0) {
+      return { kind: 'handoff', handoffCode: data.handoffCode, totpRequired: !!data.totpRequired }
+    }
+    if (typeof data.accessToken === 'string' && data.user) {
+      setAccessToken(data.accessToken, data.user)
+      return { kind: 'session', user: data.user }
+    }
+    throw new Error('Unexpected sign-in response')
+  }
+
+  /**
+   * POST /api/auth/redeem-pwa-handoff — completes sign-in inside the installed web app.
+   */
+  async function redeemPwaHandoff(code: string): Promise<AuthUser> {
+    const res = await fetch(`${apiUrl}/api/auth/redeem-pwa-handoff`, {
+      method:      'POST',
+      credentials: 'include',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify({ code }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Verification failed')
     setAccessToken(data.accessToken, data.user)
     return data.user
   }
@@ -276,6 +325,8 @@ export function useAuth() {
     // Methods
     signIn,
     verify,
+    magicPwaHandoff,
+    redeemPwaHandoff,
     verifyTotp,
     refreshSession,
     fetchSubscription,

@@ -33,6 +33,15 @@ const strings = {
   notificationsEnabled: 'Notifications enabled.',
   notificationsTurnedOff: 'Notifications turned off.',
 
+  // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
+  authVerifySigningIn: 'Signing you in…',
+  authVerifyHandoffTitle: 'Open the VMP app',
+  authVerifyHandoffBody:
+    'On iPhone and iPad, the app you added to your Home Screen is separate from Safari. Open VMP from your Home Screen to finish signing in — this page will complete automatically. If you do not use the installed app, continue in Safari instead.',
+  authVerifyHandoffContinueSafari: 'Continue in Safari',
+  authVerifyHandoffCopyLink: 'Copy sign-in link',
+  authVerifyHandoffCopied: 'Link copied',
+
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Discover Premium Video Content',
   heroSubtitleDefault: 'Watch free previews or unlock full access with a premium subscription',

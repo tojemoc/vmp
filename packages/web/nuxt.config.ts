@@ -62,6 +62,10 @@ export default defineNuxtConfig({
       theme_color: '#0f172a',
       background_color: '#0f172a',
       display: 'standalone',
+      // Prefer routing magic-link / handoff URLs into an already-installed PWA (Chromium; iOS may still open Safari).
+      launch_handler: {
+        client_mode: 'navigate-existing',
+      },
       icons: [
         { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
