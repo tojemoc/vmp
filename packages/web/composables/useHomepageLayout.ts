@@ -1,3 +1,5 @@
+import { compareVideosNewestFirst } from '@vmp/shared'
+
 export type HomepageBlockType = 'featured_row' | 'category' | 'top_video' | 'split_horizontal' | 'split_vertical'
 export type HomepageLeafBlockType = 'featured_row' | 'category' | 'top_video'
 
@@ -94,13 +96,12 @@ export function buildHomepageRenderModel({
   const safeLayoutBlocks = Array.isArray(layoutBlocks) ? layoutBlocks : []
   const renderedBlocks = safeLayoutBlocks
   const videoById = new Map((videos ?? []).map((video) => [video.id, video]))
-  const sortedByNewest = [...(videos ?? [])].sort((a: any, b: any) => {
-    const at = Date.parse(a?.published_at || a?.upload_date || 0)
-    const bt = Date.parse(b?.published_at || b?.upload_date || 0)
-    return bt - at
-  })
+  const sortedByNewest = [...videoById.values()].sort((a: any, b: any) => compareVideosNewestFirst(a, b))
+  const topVideo = sortedByNewest[0] ?? null
+  const topVideoId = topVideo?.id ?? null
+
   const featuredIdList = Array.isArray(placement?.featured)
-    ? placement.featured.map((ref) => ref?.id).filter(Boolean)
+    ? placement.featured.map((ref) => ref?.id).filter(Boolean).filter((id) => id !== topVideoId)
     : []
   const featuredVideos = featuredIdList
     .slice(0, 4)
@@ -108,7 +109,9 @@ export function buildHomepageRenderModel({
     .filter(Boolean)
 
   const categorySections = (placement?.categoryBlocks ?? []).map((block) => {
-    const combinedIds = [...block.visible, ...block.overflow].map((ref) => ref.id)
+    const combinedIds = [...block.visible, ...block.overflow]
+      .map((ref) => ref.id)
+      .filter((id) => id !== topVideoId)
     const allVideos = combinedIds.map((id) => videoById.get(id)).filter(Boolean)
     const variant = block.category?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one'
     const visibleCount = variant === 'side_mini' ? 2 : 3
@@ -122,7 +125,6 @@ export function buildHomepageRenderModel({
   }).filter((section) => section.allVideos.length > 0)
 
   const sectionByCategoryId = new Map(categorySections.map((section) => [section.category.id, section]))
-  const topVideo = sortedByNewest[0] ?? null
 
   const buildLeafBlock = (block: HomepageLayoutChildBlock, id: string): HomepageRenderLeafBlock | null => {
     const type = block?.type

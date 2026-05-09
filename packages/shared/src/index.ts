@@ -1,3 +1,8 @@
+export {
+  placementTimestampMs,
+  compareVideosNewestFirst,
+} from './homepagePlacementSort.js'
+
 export interface User {
   id: string
   email: string
