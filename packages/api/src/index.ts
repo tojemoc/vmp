@@ -72,6 +72,7 @@ import { handleAdminSmokeAuth } from './smokeAuth.js'
 import { handleSiteSettings } from './siteSettings.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
+import { compareVideosNewestFirst } from '@vmp/shared'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
@@ -517,6 +518,23 @@ function parseAllowedOrigins(envValue: any) {
   return envValue.split(',').map((o: any) => o.trim()).filter(Boolean);
 }
 
+/** Collapse LEFT JOIN duplicate rows (multi-category) and order like homepage placement. */
+function dedupeVideoListRows(rows: any[]) {
+  const byId = new Map<string, any>()
+  for (const row of rows) {
+    if (!row || typeof row.id !== 'string') continue
+    if (!byId.has(row.id)) {
+      byId.set(row.id, row)
+      continue
+    }
+    const prev = byId.get(row.id)
+    const prevHasCat = prev.category_id && String(prev.category_id).trim() !== ''
+    const rowHasCat = row.category_id && String(row.category_id).trim() !== ''
+    if (!prevHasCat && rowHasCat) byId.set(row.id, row)
+  }
+  return [...byId.values()].sort((a, b) => compareVideosNewestFirst(a, b))
+}
+
 // ─── Existing handler implementations (unchanged) ─────────────────────────────
 
 async function handleHomepagePlacement(request: any, env: any, corsHeaders: any) {
@@ -578,7 +596,8 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
          LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
          LEFT JOIN video_categories vc ON vc.id = vca.category_id
          LEFT JOIN livestreams ls ON ls.video_id = v.id
-         ORDER BY v.upload_date DESC`
+         ORDER BY datetime(CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END) DESC,
+                  v.id DESC`
       : `SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration, v.upload_date, v.publish_status, v.slug,
                 v.published_at, v.scheduled_publish_at, v.notified_at,
                 vc.id AS category_id,
@@ -594,13 +613,14 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
          LEFT JOIN livestreams ls ON ls.video_id = v.id
          WHERE v.publish_status = 'published'
            AND (v.scheduled_publish_at IS NULL OR datetime(v.scheduled_publish_at) <= CURRENT_TIMESTAMP)
-         ORDER BY v.upload_date DESC`
+         ORDER BY datetime(CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END) DESC,
+                  v.id DESC`
 
     const videos = await session.prepare(query).all()
 
     // Best-effort duration hydration for legacy rows where full_duration=0.
     // Cached in KV so this stays cheap for repeated list loads.
-    const results = videos.results || []
+    const results = dedupeVideoListRows(videos.results || [])
     if (env.R2_BASE_URL) {
       await Promise.all(results.map(async (v: any) => {
         if (!v || typeof v.id !== 'string') return

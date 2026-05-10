@@ -1,3 +1,7 @@
+import { placementTimestampMs, compareVideosNewestFirst } from '@vmp/shared'
+
+export { placementTimestampMs }
+
 /**
  * Homepage video placement (PR B — deterministic rules engine)
  *
@@ -71,30 +75,6 @@ export function normalizeHomepagePlacementConfig(config: unknown): NormalizedHom
   };
 }
 
-/** @param {PublishedVideoInput} v */
-export function placementTimestampMs(v: any) {
-  const primary = v.published_at
-  const fallback = v.upload_date
-  const s = (typeof primary === 'string' && primary.trim()) ? primary.trim()
-    : (typeof fallback === 'string' && fallback.trim()) ? fallback.trim()
-      : null
-  if (!s) return 0
-  const t = Date.parse(s)
-  return Number.isFinite(t) ? t : 0
-}
-
-/**
- * @param {PublishedVideoInput} a
- * @param {PublishedVideoInput} b
- */
-function compareNewestFirst(a: any, b: any) {
-  const dt = placementTimestampMs(b) - placementTimestampMs(a)
-  if (dt !== 0) return dt
-  if (a.id > b.id) return -1
-  if (a.id < b.id) return 1
-  return 0
-}
-
 /**
  * @param {PublishedVideoInput} a
  * @param {PublishedVideoInput} b
@@ -138,7 +118,7 @@ export function placeHomepageVideos(input: any) {
     if (v && typeof v.id === 'string') byId.set(v.id, v)
   }
 
-  const sortedAll = [...byId.values()].sort(compareNewestFirst)
+  const sortedAll = [...byId.values()].sort(compareVideosNewestFirst)
 
   const categorized = sortedAll.filter(v => v.category_id != null && v.category_id !== '')
   const mode = homepage.featuredMode === 'specific' ? 'specific' : 'latest'
