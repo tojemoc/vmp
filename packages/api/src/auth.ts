@@ -486,26 +486,31 @@ export async function handleMagicPwaHandoff(request: any, env: any, corsHeaders:
     return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
   }
 
-  const kv = env.RATE_LIMIT_KV
-  if (!kv) {
-    const db = getDb(env)
+  const db = getDb(env)
+  const code = generateToken()
+  const expiresAt = new Date(Date.now() + PWA_MAGIC_HANDOFF_TTL_SEC * 1000).toISOString()
+
+  try {
+    // Store handoff in D1 for atomic redeem
+    await db
+      .prepare('INSERT INTO pwa_handoffs (code, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(code, phase.user.id, expiresAt)
+      .run()
+
+    const totpRequired = shouldRequireTotpEnrollment(phase.user, env)
+    return authJson({ ok: true, handoffCode: code, totpRequired }, 200, corsHeaders)
+  } catch (err) {
+    // D1 write failed — fall back to issuing session immediately so user isn't left without access
+    console.error('[auth] D1 handoff write failed, falling back to immediate session:', err)
     return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders)
   }
-
-  const code = generateToken()
-  await kv.put(
-    `${PWA_MAGIC_HANDOFF_KV_PREFIX}${code}`,
-    JSON.stringify({ userId: phase.user.id }),
-    { expirationTtl: PWA_MAGIC_HANDOFF_TTL_SEC },
-  )
-  const totpRequired = shouldRequireTotpEnrollment(phase.user, env)
-  return authJson({ ok: true, handoffCode: code, totpRequired }, 200, corsHeaders)
 }
 
 /**
  * POST /api/auth/redeem-pwa-handoff  body: { code }
  *
  * Exchanges a one-time handoff code for a normal session (JWT + refresh cookie).
+ * Uses atomic D1 UPDATE to prevent race conditions and ensure codes are consumed exactly once.
  */
 export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders)
@@ -514,31 +519,26 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
   const code = typeof body?.code === 'string' ? body.code.trim() : ''
   if (!code) return authJson({ error: 'code is required' }, 400, corsHeaders)
 
-  const kv = env.RATE_LIMIT_KV
-  if (!kv) return authJson({ error: 'Handoff is not available' }, 503, corsHeaders)
+  const db = getDb(env)
 
-  const key = `${PWA_MAGIC_HANDOFF_KV_PREFIX}${code}`
-  const stored = await kv.get(key)
-  if (!stored) {
+  // Atomically consume the handoff: mark used_at only if not already used and not expired
+  const consumeResult = await db
+    .prepare(`
+      UPDATE pwa_handoffs
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE code = ? AND used_at IS NULL AND expires_at > datetime('now')
+      RETURNING user_id
+    `)
+    .bind(code)
+    .first()
+
+  if (!consumeResult || !consumeResult.user_id) {
     return authJson({ error: 'This sign-in step has expired or was already used. Request a new email link.' }, 401, corsHeaders)
   }
 
-  await kv.delete(key)
-
-  let payload: { userId?: string }
-  try {
-    payload = JSON.parse(stored)
-  } catch {
-    return authJson({ error: 'Invalid handoff payload' }, 401, corsHeaders)
-  }
-  if (!payload.userId || typeof payload.userId !== 'string') {
-    return authJson({ error: 'Invalid handoff payload' }, 401, corsHeaders)
-  }
-
-  const db = getDb(env)
   const row = await db
     .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
-    .bind(payload.userId)
+    .bind(consumeResult.user_id)
     .first()
   if (!row) return authJson({ error: 'User not found' }, 401, corsHeaders)
 

@@ -37,7 +37,7 @@ const strings = {
   authVerifySigningIn: 'Signing you in…',
   authVerifyHandoffTitle: 'Open the VMP app',
   authVerifyHandoffBody:
-    'On iPhone and iPad, the app you added to your Home Screen is separate from Safari. Open VMP from your Home Screen to finish signing in — this page will complete automatically. If you do not use the installed app, continue in Safari instead.',
+    'On iPhone and iPad, the app you added to your Home Screen is separate from Safari. Open VMP from your Home Screen and the app will attempt to finish signing in. If it doesn\'t complete, return to Safari and use the button below.',
   authVerifyHandoffContinueSafari: 'Continue in Safari',
   authVerifyHandoffCopyLink: 'Copy sign-in link',
   authVerifyHandoffCopied: 'Link copied',
