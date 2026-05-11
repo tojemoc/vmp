@@ -9,6 +9,8 @@
 import {
   handleRequestMagicLink,
   handleVerifyMagicLink,
+  handleMagicPwaHandoff,
+  handleRedeemPwaHandoff,
   handleRefreshToken,
   handleLogout,
   handleGetMe,
@@ -246,6 +248,12 @@ export default {
     }
     if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
       return handleVerifyMagicLink(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/magic-pwa-handoff' && request.method === 'POST') {
+      return handleMagicPwaHandoff(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
+      return handleRedeemPwaHandoff(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
       return handleRefreshToken(request, env, corsHeaders)

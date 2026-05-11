@@ -6,6 +6,7 @@
  * What lives here:
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
+ *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
  *  - Refresh token issuance and rotation.
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
@@ -349,6 +350,97 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   return authJson({ ok: true, message: 'If that address is valid, a sign-in link is on its way.' }, 200, corsHeaders)
 }
 
+const PWA_MAGIC_HANDOFF_TTL_SEC = 600
+
+type MagicLinkConsumeResult =
+  | { tag: 'invalid'; message: string }
+  | { tag: 'totp_pending'; pendingToken: string }
+  | { tag: 'session_ready'; user: { id: any; email: any; role: any; totp_enabled: any; created_at: any } }
+
+/**
+ * Validates + consumes a magic-link row and returns the next auth phase.
+ * Used by GET /api/auth/verify, POST /api/auth/magic-pwa-handoff, and redeem flows.
+ */
+async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
+  const db = getDb(env)
+  const tokenHash = await hashToken(rawToken)
+
+  const record = await db
+    .prepare(`
+      SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
+             u.totp_enabled, u.totp_secret, u.created_at
+      FROM magic_link_tokens t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ?
+    `)
+    .bind(tokenHash)
+    .first()
+
+  if (!record || record.used_at) {
+    return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' }
+  }
+
+  if (new Date(record.expires_at) < new Date()) {
+    return { tag: 'invalid', message: 'Sign-in link has expired. Request a new one.' }
+  }
+
+  const consumeResult = await db
+    .prepare('UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL')
+    .bind(record.id)
+    .run()
+
+  if (!consumeResult.meta.changes) {
+    return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' }
+  }
+
+  const user = {
+    id:           record.user_id,
+    email:        record.email,
+    role:         record.role,
+    totp_enabled: record.totp_enabled,
+    created_at:   record.created_at,
+  }
+  const totpRequired = shouldRequireTotpEnrollment(user, env)
+
+  if (totpRequired && user.totp_enabled) {
+    const now = Math.floor(Date.now() / 1000)
+    const jti = crypto.randomUUID()
+    const expiresAt = new Date((now + PENDING_2FA_TTL) * 1000).toISOString()
+
+    const pendingToken = await signJwt(
+      { sub: user.id, email: user.email, role: user.role, pending: true, jti, iat: now, exp: now + PENDING_2FA_TTL },
+      env.JWT_SECRET
+    )
+
+    await db
+      .prepare("DELETE FROM totp_challenges WHERE user_id = ? AND expires_at < datetime('now')")
+      .bind(user.id)
+      .run()
+
+    await db
+      .prepare('INSERT INTO totp_challenges (jti, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(jti, user.id, expiresAt)
+      .run()
+
+    return { tag: 'totp_pending', pendingToken }
+  }
+
+  return { tag: 'session_ready', user }
+}
+
+async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsHeaders: any) {
+  const totpRequired = shouldRequireTotpEnrollment(user, env)
+  const accessToken = await createAccessToken(user, env.JWT_SECRET)
+  const refreshToken = await issueRefreshToken(user.id, db)
+  const headers = buildResponseHeaders(corsHeaders)
+  headers.set('Set-Cookie', buildRefreshCookie(refreshToken, REFRESH_TOKEN_TTL))
+  return new Response(JSON.stringify({
+    ok:          true,
+    accessToken,
+    user: { id: user.id, email: user.email, role: user.role, totpEnabled: !!user.totp_enabled, totpRequired },
+  }), { status: 200, headers })
+}
+
 /**
  * GET /api/auth/verify?token=<raw_token>
  *
@@ -362,89 +454,103 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
 
   if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders)
 
-  const db        = getDb(env)
-  const tokenHash = await hashToken(token)
+  const phase = await consumeMagicLinkForUser(env, token)
+  if (phase.tag === 'invalid') return authJson({ error: phase.message }, 401, corsHeaders)
+  if (phase.tag === 'totp_pending') {
+    return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
+  }
 
-  const record = await db
+  const db = getDb(env)
+  return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders)
+}
+
+/**
+ * POST /api/auth/magic-pwa-handoff  body: { token }
+ *
+ * Consumes the same magic link as GET /api/auth/verify, but when a full session
+ * would be issued it stores a short-lived handoff code in KV instead of setting
+ * cookies — so the user can open the installed PWA and redeem there.
+ * When KV is unavailable, falls back to issuing the session immediately (same as GET verify).
+ */
+export async function handleMagicPwaHandoff(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders)
+
+  const body = await request.json().catch(() => null)
+  const token = typeof body?.token === 'string' ? body.token : ''
+  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders)
+
+  const phase = await consumeMagicLinkForUser(env, token)
+  if (phase.tag === 'invalid') return authJson({ error: phase.message }, 401, corsHeaders)
+  if (phase.tag === 'totp_pending') {
+    return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
+  }
+
+  const db = getDb(env)
+  const code = generateToken()
+  const codeHash = await hashToken(code)
+  const expiresAt = new Date(Date.now() + PWA_MAGIC_HANDOFF_TTL_SEC * 1000).toISOString()
+
+  try {
+    // Store handoff in D1 for atomic redeem
+    await db
+      .prepare('INSERT INTO pwa_handoffs (code, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(codeHash, phase.user.id, expiresAt)
+      .run()
+
+    const totpRequired = shouldRequireTotpEnrollment(phase.user, env)
+    return authJson({ ok: true, handoffCode: code, totpRequired }, 200, corsHeaders)
+  } catch (err) {
+    // D1 write failed — fall back to issuing session immediately so user isn't left without access
+    console.error('[auth] D1 handoff write failed, falling back to immediate session:', err)
+    return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders)
+  }
+}
+
+/**
+ * POST /api/auth/redeem-pwa-handoff  body: { code }
+ *
+ * Exchanges a one-time handoff code for a normal session (JWT + refresh cookie).
+ * Uses atomic D1 UPDATE to prevent race conditions and ensure codes are consumed exactly once.
+ */
+export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders)
+
+  const body = await request.json().catch(() => null)
+  const code = typeof body?.code === 'string' ? body.code.trim() : ''
+  if (!code) return authJson({ error: 'code is required' }, 400, corsHeaders)
+  const codeHash = await hashToken(code)
+
+  const db = getDb(env)
+
+  // Atomically consume the handoff: mark used_at only if not already used and not expired
+  const consumeResult = await db
     .prepare(`
-      SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
-             u.totp_enabled, u.totp_secret, u.created_at
-      FROM magic_link_tokens t
-      JOIN users u ON u.id = t.user_id
-      WHERE t.token_hash = ?
+      UPDATE pwa_handoffs
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
+      RETURNING user_id
     `)
-    .bind(tokenHash)
+    .bind(codeHash)
     .first()
 
-  // Deliberate: same error for "not found" and "already used" to prevent oracle attacks
-  if (!record || record.used_at) {
-    return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
+  if (!consumeResult || !consumeResult.user_id) {
+    return authJson({ error: 'This sign-in step has expired or was already used. Request a new email link.' }, 401, corsHeaders)
   }
 
-  if (new Date(record.expires_at) < new Date()) {
-    return authJson({ error: 'Sign-in link has expired. Request a new one.' }, 401, corsHeaders)
-  }
-
-  // Atomically mark the token used — the WHERE guard ensures only one concurrent
-  // request succeeds.  Zero changes means another request beat us to it.
-  const consumeResult = await db
-    .prepare('UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL')
-    .bind(record.id)
-    .run()
-
-  if (!consumeResult.meta.changes) {
-    return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
-  }
+  const row = await db
+    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
+    .bind(consumeResult.user_id)
+    .first()
+  if (!row) return authJson({ error: 'User not found' }, 401, corsHeaders)
 
   const user = {
-    id:           record.user_id,
-    email:        record.email,
-    role:         record.role,
-    totp_enabled: record.totp_enabled,
-    created_at:   record.created_at,
+    id:           row.id,
+    email:        row.email,
+    role:         row.role,
+    totp_enabled: row.totp_enabled,
+    created_at:   row.created_at,
   }
-  const totpRequired = shouldRequireTotpEnrollment(user, env)
-
-  // If this user's role requires 2FA and they have it enabled, issue a short-lived
-  // pending token instead of a full session. The frontend must complete TOTP at
-  // /api/auth/2fa/verify before getting a real access token.
-  if (totpRequired && user.totp_enabled) {
-    const now = Math.floor(Date.now() / 1000)
-    const jti = crypto.randomUUID()
-    const expiresAt = new Date((now + PENDING_2FA_TTL) * 1000).toISOString()
-
-    const pendingToken = await signJwt(
-      { sub: user.id, email: user.email, role: user.role, pending: true, jti, iat: now, exp: now + PENDING_2FA_TTL },
-      env.JWT_SECRET
-    )
-
-    // Lazy cleanup: delete expired challenges for this user before inserting a new one.
-    // Keeps the table tidy without a dedicated scheduled job.
-    await db
-      .prepare("DELETE FROM totp_challenges WHERE user_id = ? AND expires_at < datetime('now')")
-      .bind(user.id)
-      .run()
-
-    // Persist the challenge so handleTotpVerify can enforce replay + brute-force limits.
-    await db
-      .prepare('INSERT INTO totp_challenges (jti, user_id, expires_at) VALUES (?, ?, ?)')
-      .bind(jti, user.id, expiresAt)
-      .run()
-
-    return authJson({ requiresTwoFactor: true, pendingToken }, 200, corsHeaders)
-  }
-
-  const accessToken  = await createAccessToken(user, env.JWT_SECRET)
-  const refreshToken = await issueRefreshToken(user.id, db)
-
-  const headers = buildResponseHeaders(corsHeaders)
-  headers.set('Set-Cookie', buildRefreshCookie(refreshToken, REFRESH_TOKEN_TTL))
-
-  return new Response(JSON.stringify({
-    ok:          true,
-    accessToken,
-    user: { id: user.id, email: user.email, role: user.role, totpEnabled: !!user.totp_enabled, totpRequired },
-  }), { status: 200, headers })
+  return await issueFullMagicSessionResponse(user, env, db, corsHeaders)
 }
 
 /**
