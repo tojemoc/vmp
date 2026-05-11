@@ -6,7 +6,7 @@
  * What lives here:
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
- *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (KV-backed).
+ *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
  *  - Refresh token issuance and rotation.
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
@@ -350,7 +350,6 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   return authJson({ ok: true, message: 'If that address is valid, a sign-in link is on its way.' }, 200, corsHeaders)
 }
 
-const PWA_MAGIC_HANDOFF_KV_PREFIX = 'auth:pwa-handoff:'
 const PWA_MAGIC_HANDOFF_TTL_SEC = 600
 
 type MagicLinkConsumeResult =
@@ -488,13 +487,14 @@ export async function handleMagicPwaHandoff(request: any, env: any, corsHeaders:
 
   const db = getDb(env)
   const code = generateToken()
+  const codeHash = await hashToken(code)
   const expiresAt = new Date(Date.now() + PWA_MAGIC_HANDOFF_TTL_SEC * 1000).toISOString()
 
   try {
     // Store handoff in D1 for atomic redeem
     await db
       .prepare('INSERT INTO pwa_handoffs (code, user_id, expires_at) VALUES (?, ?, ?)')
-      .bind(code, phase.user.id, expiresAt)
+      .bind(codeHash, phase.user.id, expiresAt)
       .run()
 
     const totpRequired = shouldRequireTotpEnrollment(phase.user, env)
@@ -518,6 +518,7 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
   const body = await request.json().catch(() => null)
   const code = typeof body?.code === 'string' ? body.code.trim() : ''
   if (!code) return authJson({ error: 'code is required' }, 400, corsHeaders)
+  const codeHash = await hashToken(code)
 
   const db = getDb(env)
 
@@ -529,7 +530,7 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
       WHERE code = ? AND used_at IS NULL AND expires_at > datetime('now')
       RETURNING user_id
     `)
-    .bind(code)
+    .bind(codeHash)
     .first()
 
   if (!consumeResult || !consumeResult.user_id) {
