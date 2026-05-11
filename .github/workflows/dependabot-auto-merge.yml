@@ -21,7 +21,7 @@ on:
       - completed
 
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 10 */1 * *'
 
 permissions:
   contents: write
