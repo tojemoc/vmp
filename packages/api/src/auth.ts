@@ -527,7 +527,7 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
     .prepare(`
       UPDATE pwa_handoffs
       SET used_at = CURRENT_TIMESTAMP
-      WHERE code = ? AND used_at IS NULL AND expires_at > datetime('now')
+      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
       RETURNING user_id
     `)
     .bind(codeHash)
