@@ -1204,8 +1204,15 @@
               <label class="text-xs text-gray-600 dark:text-gray-300 block">ContentSquare (optional)
                 <div class="mt-1 flex items-center gap-2">
                   <input v-model="analyticsIntegrationSettings.contentsquare.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  <input v-model="analyticsIntegrationSettings.contentsquare.tag" type="text" placeholder="project tag" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
+                  <span class="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">Enable</span>
                 </div>
+                <input
+                  v-model="analyticsIntegrationSettings.contentsquare.scriptUrl"
+                  type="url"
+                  placeholder="https://t.contentsquare.net/uxa/….js"
+                  class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                >
+                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Full script <code class="font-mono">src</code> URL from Contentsquare — injected in <code class="font-mono">&lt;head&gt;</code> on every page.</p>
               </label>
               <label class="text-xs text-gray-600 dark:text-gray-300 block">GA4 (optional)
                 <div class="mt-1 mb-1">
@@ -2864,7 +2871,7 @@ const analyticsDatadogApiKeyTouched = ref(false)
 const analyticsSettingsInitialized = ref(false)
 const analyticsIntegrationSettings = ref({
   datadog: { enabled: false, site: '', apiKey: '' },
-  contentsquare: { enabled: false, tag: '' },
+  contentsquare: { enabled: false, scriptUrl: '' },
   ga4: { enabled: false, measurementId: '' },
 })
 const analyticsViewCounting = ref({
@@ -4648,7 +4655,11 @@ const loadAnalytics = async () => {
       analyticsIntegrationSettings.value.datadog.enabled = Boolean(data?.integrationSettings?.datadog?.enabled)
       analyticsIntegrationSettings.value.datadog.site = String(data?.integrationSettings?.datadog?.site || '')
       analyticsIntegrationSettings.value.contentsquare.enabled = Boolean(data?.integrationSettings?.contentsquare?.enabled)
-      analyticsIntegrationSettings.value.contentsquare.tag = String(data?.integrationSettings?.contentsquare?.tag || '')
+      analyticsIntegrationSettings.value.contentsquare.scriptUrl = String(
+        data?.integrationSettings?.contentsquare?.scriptUrl
+          || data?.integrationSettings?.contentsquare?.tag
+          || '',
+      )
       analyticsIntegrationSettings.value.ga4.enabled = Boolean(data?.integrationSettings?.ga4?.enabled)
       analyticsIntegrationSettings.value.ga4.measurementId = String(data?.integrationSettings?.ga4?.measurementId || '')
       analyticsViewCounting.value.minSegmentsPerSession = Number(data?.viewCounting?.minSegmentsPerSession ?? 1)
