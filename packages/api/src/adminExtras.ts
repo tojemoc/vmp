@@ -1,4 +1,5 @@
 import { requireAuth, requireRole } from './auth.js'
+import { normalizeContentsquareScriptSrc } from './contentsquare.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import { getSetting, setSetting, setSettings, buildSettingsStatements } from './settingsStore.js'
 import {
@@ -1280,10 +1281,12 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
         updates.push(['analytics_contentsquare_enabled', toBool(integrations.contentsquare.enabled)])
       }
       if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'scriptUrl')) {
-        updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.scriptUrl ?? '').trim()])
+        const normalized = normalizeContentsquareScriptSrc(String(integrations.contentsquare.scriptUrl ?? '').trim())
+        updates.push(['analytics_contentsquare_script_url', normalized ?? ''])
         updates.push(['analytics_contentsquare_tag', ''])
       } else if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
-        updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.tag ?? '').trim()])
+        const normalized = normalizeContentsquareScriptSrc(String(integrations.contentsquare.tag ?? '').trim())
+        updates.push(['analytics_contentsquare_script_url', normalized ?? ''])
         updates.push(['analytics_contentsquare_tag', ''])
       }
     }
@@ -1334,7 +1337,10 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     },
     contentsquare: {
       enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
-      scriptUrl: String(getVal('analytics_contentsquare_script_url') ?? ''),
+      scriptUrl: normalizeContentsquareScriptSrc(
+        String(getVal('analytics_contentsquare_script_url') ?? '').trim()
+          || String(getVal('analytics_contentsquare_tag') ?? '').trim(),
+      ) ?? '',
     },
     ga4: {
       enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
