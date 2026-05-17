@@ -1279,8 +1279,10 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
       if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'enabled')) {
         updates.push(['analytics_contentsquare_enabled', toBool(integrations.contentsquare.enabled)])
       }
-      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
-        updates.push(['analytics_contentsquare_tag', String(integrations.contentsquare.tag ?? '').trim()])
+      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'scriptUrl')) {
+        updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.scriptUrl ?? '').trim()])
+      } else if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
+        updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.tag ?? '').trim()])
       }
     }
     if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'ga4') && integrations.ga4 && typeof integrations.ga4 === 'object') {
@@ -1313,6 +1315,7 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     'analytics_datadog_site',
     'analytics_datadog_api_key',
     'analytics_contentsquare_enabled',
+    'analytics_contentsquare_script_url',
     'analytics_contentsquare_tag',
     'analytics_ga4_enabled',
     'analytics_ga4_measurement_id',
@@ -1329,7 +1332,7 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     },
     contentsquare: {
       enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
-      tag: String(getVal('analytics_contentsquare_tag') ?? ''),
+      scriptUrl: String(getVal('analytics_contentsquare_script_url') ?? getVal('analytics_contentsquare_tag') ?? ''),
     },
     ga4: {
       enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
