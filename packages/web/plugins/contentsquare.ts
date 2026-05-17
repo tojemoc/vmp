@@ -3,9 +3,9 @@
  * Script URL is read from the public site-settings API (admin enables + sets full src URL).
  */
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin(async () => {
   const config = useRuntimeConfig()
-  const { data } = useLazyFetch<{ contentsquare_script_src?: string | null }>(
+  const { data } = await useFetch<{ contentsquare_script_src?: string | null }>(
     `${config.public.apiUrl}/api/site-settings`,
     { key: 'site-settings-contentsquare' },
   )
@@ -15,9 +15,9 @@ export default defineNuxtPlugin(() => {
     return typeof url === 'string' && url.startsWith('https://') ? url : null
   })
 
-  useHead({
-    script: computed(() =>
-      src.value ? [{ src: src.value, tagPosition: 'head' as const }] : [],
-    ),
-  })
+  useHead(() => ({
+    script: src.value
+      ? [{ key: 'contentsquare', src: src.value, tagPosition: 'head' }]
+      : [],
+  }))
 })
