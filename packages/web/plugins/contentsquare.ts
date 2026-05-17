@@ -3,9 +3,9 @@
  * Script URL is read from the public site-settings API (admin enables + sets full src URL).
  */
 
-export default defineNuxtPlugin(async () => {
+export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
-  const { data } = await useFetch<{ contentsquare_script_src?: string | null }>(
+  const { data } = useLazyFetch<{ contentsquare_script_src?: string | null }>(
     `${config.public.apiUrl}/api/site-settings`,
     { key: 'site-settings-contentsquare' },
   )

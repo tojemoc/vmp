@@ -1281,8 +1281,10 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
       }
       if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'scriptUrl')) {
         updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.scriptUrl ?? '').trim()])
+        updates.push(['analytics_contentsquare_tag', ''])
       } else if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
         updates.push(['analytics_contentsquare_script_url', String(integrations.contentsquare.tag ?? '').trim()])
+        updates.push(['analytics_contentsquare_tag', ''])
       }
     }
     if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'ga4') && integrations.ga4 && typeof integrations.ga4 === 'object') {
@@ -1332,7 +1334,7 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
     },
     contentsquare: {
       enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
-      scriptUrl: String(getVal('analytics_contentsquare_script_url') ?? getVal('analytics_contentsquare_tag') ?? ''),
+      scriptUrl: String(getVal('analytics_contentsquare_script_url') ?? ''),
     },
     ga4: {
       enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
