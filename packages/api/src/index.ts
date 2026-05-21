@@ -47,6 +47,7 @@ import { signVideoToken, verifyVideoToken } from './videoTokens.js'
 import { handlePublicFeed, handlePersonalFeed } from './feed.js'
 import { handleGetAccountRss } from './rssAccount.js'
 import { handleRssPodcastPreviewRebuildNotify, handleRssPodcastWebhookConfig } from './rssPodcastAdmin.js'
+import { handleVideoPipelineStatus } from './pipelineStatus.js'
 import {
   handleHomepageContent,
   handleHomepageContentPublic,
@@ -292,6 +293,12 @@ export default {
     }
     if (url.pathname.startsWith('/api/video-proxy/')) {
       return handleVideoProxy(request, env, corsHeaders, ctx)
+    }
+    {
+      const pipelineStatusMatch = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/)
+      if (pipelineStatusMatch && request.method === 'POST') {
+        return handleVideoPipelineStatus(request, env, corsHeaders, pipelineStatusMatch[1])
+      }
     }
     if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
       return handleBootstrap(request, env, corsHeaders)
