@@ -11,7 +11,7 @@
     "podcast-host": "npm run start --workspace=@vmp/podcast-host",
     "media-host": "npm run start --workspace=@vmp/podcast-host",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web",
+    "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/api-node && npm run typecheck --workspace=@vmp/web",
     "typecheck:deploy": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web && npm run typecheck:scripts --workspace=@vmp/web && npm run build:sw-push --workspace=@vmp/web",
     "deploy:api": "npm run deploy --workspace=@vmp/api",
     "deploy:web": "npm run deploy --workspace=@vmp/web",
