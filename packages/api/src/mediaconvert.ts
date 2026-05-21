@@ -1,6 +1,12 @@
 import { requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import { getSettings, setSettings } from './settingsStore.js'
+import {
+  getBunnyStreamConfig,
+  pollBunnyVideoStatus,
+  getBunnyStreamAdminSettings,
+  patchBunnyStreamAdminSettings,
+} from './bunnyStream.js'
 
 type CorsHeaders = Record<string, string>
 
@@ -471,10 +477,10 @@ export async function handleAdminMediaConvertUpload(request: Request, env: any, 
 
   await db.prepare(`
     INSERT INTO media_convert_jobs (
-      id, video_id, status, input_bucket, input_key, output_bucket, output_prefix, renditions_json, input_duration_seconds,
+      id, video_id, status, provider, input_bucket, input_key, output_bucket, output_prefix, renditions_json, input_duration_seconds,
       normalized_minutes_est, cost_est_usd, created_at, updated_at
     )
-    VALUES (?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (?, ?, 'uploaded', 'mediaconvert', ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).bind(
     jobId, videoId, cfg.inputBucket, inputKey, cfg.outputBucket, outputPrefix,
     JSON.stringify(renditions), inputDurationSeconds, usage.normalizedMinutes, usage.estimatedCostUsd,
@@ -580,6 +586,8 @@ export async function handleAdminMediaConvertUploadComplete(request: Request, en
 }
 
 export async function pollMediaConvertJobs(env: any) {
+  await pollBunnyStreamJobs(env)
+
   const cfg = await getMediaConvertConfig(env)
   if (!cfg.enabled || !cfg.configured) return
   const db = getDb(env)
@@ -588,7 +596,8 @@ export async function pollMediaConvertJobs(env: any) {
   const pending = await db.prepare(`
     SELECT id, video_id, aws_job_id, input_duration_seconds, output_prefix
     FROM media_convert_jobs
-    WHERE status IN ('uploaded', 'queued', 'transcoding', 'packaging', 'uploading')
+    WHERE provider = 'mediaconvert'
+      AND status IN ('uploaded', 'queued', 'transcoding', 'packaging', 'uploading')
     ORDER BY created_at ASC
     LIMIT 20
   `).all()
@@ -723,6 +732,104 @@ export async function pollMediaConvertJobs(env: any) {
   }
 }
 
+/** Poll in-flight Bunny Stream jobs; HLS output stays on Bunny CDN (not copied to R2). */
+async function pollBunnyStreamJobs(env: any) {
+  const cfg = await getBunnyStreamConfig(env)
+  if (!cfg.enabled || !cfg.configured) return
+  const db = getDb(env)
+
+  const pending = await db.prepare(`
+    SELECT id, video_id, bunny_guid, aws_job_id, input_duration_seconds
+    FROM media_convert_jobs
+    WHERE provider = 'bunnystream'
+      AND status NOT IN ('completed', 'failed')
+    ORDER BY created_at ASC
+    LIMIT 20
+  `).all()
+
+  for (const row of pending.results || []) {
+    const localJobId = row.id as string
+    const videoId = row.video_id as string
+    const bunnyGuid = String(row.bunny_guid || row.aws_job_id || '').trim()
+    if (!bunnyGuid) continue
+
+    let bunnyStatus
+    try {
+      bunnyStatus = await pollBunnyVideoStatus(env, bunnyGuid, cfg.libraryId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Bunny poll failed'
+      await db.prepare(`
+        UPDATE media_convert_jobs
+        SET last_polled_at = CURRENT_TIMESTAMP, error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(message.slice(0, 1000), localJobId).run()
+      continue
+    }
+
+    if (bunnyStatus.status === 'error') {
+      const detail = `Bunny transcode error (code ${bunnyStatus.rawStatus})`
+      await db.batch([
+        db.prepare(`
+          UPDATE media_convert_jobs
+          SET status = 'failed', error = ?, last_polled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(detail, localJobId),
+        db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
+      ])
+      continue
+    }
+
+    if (bunnyStatus.status === 'finished') {
+      const hlsUrl = bunnyStatus.hlsManifestUrl || ''
+      const durationSeconds = bunnyStatus.durationSeconds || Number(row.input_duration_seconds || 0)
+      const previewSeconds = durationSeconds > 0 ? Math.min(180, durationSeconds) : 0
+      const statements = [
+        db.prepare(`
+          UPDATE media_convert_jobs
+          SET status = 'completed',
+              bunny_playback_url = ?,
+              completed_at = CURRENT_TIMESTAMP,
+              last_polled_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(hlsUrl || null, localJobId),
+        db.prepare(`
+          UPDATE videos
+          SET status = 'processed',
+              full_duration = CASE WHEN ? > 0 THEN ? ELSE full_duration END,
+              preview_duration = CASE WHEN ? > 0 THEN ? ELSE preview_duration END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(durationSeconds, durationSeconds, previewSeconds, previewSeconds, videoId),
+      ]
+      if (bunnyStatus.thumbnailUrl) {
+        statements.push(
+          db.prepare(`
+            UPDATE videos SET thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+          `).bind(bunnyStatus.thumbnailUrl, videoId),
+        )
+      }
+      await db.batch(statements)
+      continue
+    }
+
+    const mappedJobStatus =
+      bunnyStatus.status === 'transcoding' ? 'transcoding'
+        : bunnyStatus.status === 'processing' ? 'transcoding'
+          : 'queued'
+    await db.batch([
+      db.prepare(`
+        UPDATE media_convert_jobs
+        SET status = ?, last_polled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(mappedJobStatus, localJobId),
+      db.prepare(`
+        UPDATE videos SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(mappedJobStatus, videoId),
+    ])
+  }
+}
+
 export async function handleAdminMediaConvertConfig(request: Request, env: any, corsHeaders: CorsHeaders) {
   try {
     await requireRole(request, env, 'admin', 'super_admin')
@@ -802,6 +909,7 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
       const envValue = envMap[key] ? envTrim(env, envMap[key], fallback) : fallback
       return envValue
     }
+    const bunnyStream = await getBunnyStreamAdminSettings(env)
     return jsonResponse({
       enabled: raw('mediaconvert_enabled', '0') === '1',
       awsRegion: raw('mediaconvert_aws_region'),
@@ -818,6 +926,7 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
         awsSessionTokenMasked: maskSecret(raw('mediaconvert_aws_session_token')),
         tusAuthTokenMasked: maskSecret(raw('mediaconvert_tus_auth_token')),
       },
+      bunnyStream,
     }, 200, corsHeaders)
   }
 
@@ -842,6 +951,8 @@ export async function handleAdminMediaConvertSystemSettings(request: Request, en
   if (Object.prototype.hasOwnProperty.call(body, 'outputPrefix')) updates.push(['mediaconvert_output_prefix', getString('outputPrefix')])
   if (Object.prototype.hasOwnProperty.call(body, 'tusEndpoint')) updates.push(['mediaconvert_tus_endpoint', getString('tusEndpoint')])
   if (Object.prototype.hasOwnProperty.call(body, 'tusAuthToken')) updates.push(['mediaconvert_tus_auth_token', getString('tusAuthToken')])
+  const bunnyUpdates = await patchBunnyStreamAdminSettings(env, body)
+  updates.push(...bunnyUpdates)
   if (!updates.length) return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
   await setSettings(env, updates)
   return jsonResponse({ ok: true }, 200, corsHeaders)

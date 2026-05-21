@@ -86,6 +86,10 @@ import {
   enrichVideosWithMediaConvert,
 } from './mediaconvert.js'
 import {
+  handleAdminBunnyStreamUpload,
+  handleAdminBunnyStreamUploadComplete,
+} from './bunnyStream.js'
+import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
@@ -316,6 +320,12 @@ export default {
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/complete' && request.method === 'POST') {
       return handleAdminMediaConvertUploadComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/bunnystream' && request.method === 'POST') {
+      return handleAdminBunnyStreamUpload(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/bunnystream/complete' && request.method === 'POST') {
+      return handleAdminBunnyStreamUploadComplete(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
       return handleAdminMediaConvertConfig(request, env, corsHeaders)
@@ -778,11 +788,41 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
       : null
 
     const shouldPreferVodRecording = Boolean(livestreamRecordingId) && ['ended', 'vod_attached', 'replaced_with_vod'].includes(livestreamStatus)
-    let resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: resolvedVideoId })
+    const bunnyPlaybackRow = await db.prepare(`
+      SELECT bunny_playback_url
+      FROM media_convert_jobs
+      WHERE video_id = ?
+        AND provider = 'bunnystream'
+        AND status = 'completed'
+        AND bunny_playback_url IS NOT NULL
+        AND TRIM(bunny_playback_url) != ''
+      ORDER BY completed_at DESC, created_at DESC
+      LIMIT 1
+    `).bind(resolvedVideoId).first() as { bunny_playback_url?: string } | null
+    const bunnyPlaybackUrl = typeof bunnyPlaybackRow?.bunny_playback_url === 'string'
+      ? bunnyPlaybackRow.bunny_playback_url.trim()
+      : null
+
+    let resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
+      env,
+      videoId: resolvedVideoId,
+      bunnyPlaybackUrl,
+    })
     if (shouldPreferVodRecording && livestreamRecordingId) {
-      resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: livestreamRecordingId })
+      resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
+        env,
+        videoId: livestreamRecordingId,
+        bunnyPlaybackUrl: null,
+      })
     }
-    const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
+
+    const isBunnyCdnPlayback = Boolean(
+      bunnyPlaybackUrl
+      && resolvedEntrypointUrl === bunnyPlaybackUrl,
+    )
+    const basePlaylistUrl = isBunnyCdnPlayback
+      ? resolvedEntrypointUrl
+      : buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
     // Unify duration logic with the frontend: if D1 has 0/unknown duration,
     // attempt to resolve from the HLS playlist stored in R2.
     let fullDuration = video?.full_duration ?? previewDuration
