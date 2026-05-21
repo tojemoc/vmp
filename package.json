@@ -19,7 +19,7 @@
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"
   },
   "devDependencies": {
-    "@nx/nuxt": "22.7.1",
+    "@nx/nuxt": "22.7.2",
     "@nx/vite": "22.7.1",
     "@vue/language-core": "^3.2.9",
     "nuxt": "^4.4.6",
