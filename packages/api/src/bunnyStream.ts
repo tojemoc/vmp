@@ -3,9 +3,9 @@
  *
  * Bunny.net Stream transcoding integration.
  *
- * Upload flow (browser-direct, Worker never proxies video bytes):
+ * Upload flow (browser-direct via TUS, Worker never proxies video bytes):
  *   1. POST create video object → receive guid
- *   2. Browser PUT raw bytes to Bunny upload URL (AccessKey header, NOT multipart)
+ *   2. Browser TUS upload to tusupload with presigned AuthorizationSignature (no API key in client)
  *   3. POST /complete → mark job queued; Bunny transcodes automatically
  *   4. Cron pollBunny jobs until status=finished → store HLS manifest URL in D1
  *
@@ -132,13 +132,65 @@ function mapBunnyNumericStatus(code: number): BunnyVideoStatusName {
   return 'queued'
 }
 
+function bunnyCdnHost(cfg: BunnyStreamConfig): string {
+  return cfg.cdnHostname.trim()
+    || (cfg.pullZone.trim() ? `${cfg.pullZone.trim()}.b-cdn.net` : '')
+}
+
 /** Build direct HLS manifest URL on Bunny's CDN (not iframe player). */
 export function buildBunnyHlsManifestUrl(cfg: BunnyStreamConfig, videoGuid: string): string {
-  const host = cfg.cdnHostname.trim()
-    || (cfg.pullZone.trim() ? `${cfg.pullZone.trim()}.b-cdn.net` : '')
+  const host = bunnyCdnHost(cfg)
   if (!host) return ''
   const normalizedHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
   return `https://${normalizedHost}/${encodeURIComponent(videoGuid)}/playlist.m3u8`
+}
+
+/** Resolve thumbnail to a public CDN URL when Bunny returns only a filename. */
+export function buildBunnyThumbnailUrl(cfg: BunnyStreamConfig, videoGuid: string, value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.includes('://') || trimmed.startsWith('//')) return trimmed
+  const host = bunnyCdnHost(cfg)
+  if (!host) return trimmed
+  const normalizedHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const file = trimmed.replace(/^\//, '')
+  return `https://${normalizedHost}/${encodeURIComponent(videoGuid)}/${file}`
+}
+
+const BUNNY_TUS_UPLOAD_ENDPOINT = 'https://video.bunnycdn.com/tusupload'
+/** Bunny requires expire at least ~1h ahead; default 2h for large uploads. */
+const BUNNY_TUS_UPLOAD_TTL_SECONDS = 2 * 60 * 60
+
+async function sha256Hex(value: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * TUS presigned upload credentials — API key stays server-side.
+ * Signature: SHA256(libraryId + apiKey + expireUnix + videoId) per Bunny docs.
+ */
+export async function createBunnyTusUploadCredentials(
+  cfg: BunnyStreamConfig,
+  videoGuid: string,
+  ttlSeconds = BUNNY_TUS_UPLOAD_TTL_SECONDS,
+): Promise<{
+  endpoint: string
+  libraryId: string
+  videoId: string
+  authorizationSignature: string
+  authorizationExpire: number
+}> {
+  const expireUnix = Math.floor(Date.now() / 1000) + ttlSeconds
+  const signaturePayload = `${cfg.libraryId}${cfg.apiKey}${expireUnix}${videoGuid}`
+  const authorizationSignature = await sha256Hex(signaturePayload)
+  return {
+    endpoint: BUNNY_TUS_UPLOAD_ENDPOINT,
+    libraryId: cfg.libraryId,
+    videoId: videoGuid,
+    authorizationSignature,
+    authorizationExpire: expireUnix,
+  }
 }
 
 /**
@@ -226,9 +278,13 @@ export async function pollBunnyVideoStatus(
     const hlsManifestUrl = buildBunnyHlsManifestUrl(cfg, guid)
     if (hlsManifestUrl) result.hlsManifestUrl = hlsManifestUrl
 
-    const thumbnailUrl = String(
-      data.thumbnailUrl ?? data.ThumbnailUrl ?? data.thumbnailFileName ?? '',
-    ).trim()
+    let thumbnailUrl = String(data.thumbnailUrl ?? data.ThumbnailUrl ?? '').trim()
+    if (!thumbnailUrl) {
+      const fileName = String(data.thumbnailFileName ?? '').trim()
+      if (fileName) thumbnailUrl = buildBunnyThumbnailUrl(cfg, guid, fileName)
+    } else if (!thumbnailUrl.includes('://')) {
+      thumbnailUrl = buildBunnyThumbnailUrl(cfg, guid, thumbnailUrl)
+    }
     if (thumbnailUrl) result.thumbnailUrl = thumbnailUrl
   }
 
@@ -343,27 +399,38 @@ export async function handleAdminBunnyStreamUpload(
     return jsonResponse({ error: message, code: 'bunnystream_create_failed' }, 502, corsHeaders)
   }
 
-  await upsertVideoDraftRow(db, videoId, title, description, categoryId)
+  let jobId: string
+  try {
+    await upsertVideoDraftRow(db, videoId, title, description, categoryId)
 
-  const jobId = crypto.randomUUID()
-  const placeholderBucket = 'bunnystream'
-  const inputKey = `bunny/${bunnyGuid}/${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-  const outputPrefix = `bunny/${bunnyGuid}`
+    jobId = crypto.randomUUID()
+    const placeholderBucket = 'bunnystream'
+    const inputKey = `bunny/${bunnyGuid}/${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const outputPrefix = `bunny/${bunnyGuid}`
 
-  await db.prepare(`
-    INSERT INTO media_convert_jobs (
-      id, video_id, status, provider, bunny_guid, aws_job_id,
-      input_bucket, input_key, output_bucket, output_prefix,
-      renditions_json, input_duration_seconds, normalized_minutes_est, cost_est_usd,
-      created_at, updated_at
-    )
-    VALUES (?, ?, 'uploaded', 'bunnystream', ?, ?, ?, ?, ?, ?, '[]', 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).bind(
-    jobId, videoId, bunnyGuid, bunnyGuid,
-    placeholderBucket, inputKey, placeholderBucket, outputPrefix,
-  ).run()
+    await db.prepare(`
+      INSERT INTO media_convert_jobs (
+        id, video_id, status, provider, bunny_guid, aws_job_id,
+        input_bucket, input_key, output_bucket, output_prefix,
+        renditions_json, input_duration_seconds, normalized_minutes_est, cost_est_usd,
+        created_at, updated_at
+      )
+      VALUES (?, ?, 'uploaded', 'bunnystream', ?, ?, ?, ?, ?, ?, '[]', 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(
+      jobId, videoId, bunnyGuid, bunnyGuid,
+      placeholderBucket, inputKey, placeholderBucket, outputPrefix,
+    ).run()
+  } catch (err) {
+    try {
+      await deleteBunnyVideo(env, bunnyGuid, libraryId)
+    } catch {
+      // Best-effort: remove orphaned Bunny slot if local persistence failed.
+    }
+    const message = err instanceof Error ? err.message : 'Failed to persist Bunny upload job'
+    return jsonResponse({ error: message, code: 'bunnystream_persist_failed' }, 500, corsHeaders)
+  }
 
-  const uploadEndpoint = `${bunnyLibraryUrl(libraryId)}/videos/${encodeURIComponent(bunnyGuid)}`
+  const tus = await createBunnyTusUploadCredentials(cfg, bunnyGuid)
 
   return jsonResponse({
     ok: true,
@@ -371,9 +438,14 @@ export async function handleAdminBunnyStreamUpload(
     bunnyGuid,
     job: { id: jobId, status: 'uploaded' },
     upload: {
-      method: 'PUT',
-      endpoint: uploadEndpoint,
-      headers: { AccessKey: cfg.apiKey },
+      method: 'TUS',
+      endpoint: tus.endpoint,
+      headers: {
+        AuthorizationSignature: tus.authorizationSignature,
+        AuthorizationExpire: String(tus.authorizationExpire),
+        LibraryId: tus.libraryId,
+        VideoId: tus.videoId,
+      },
     },
   }, 201, corsHeaders)
 }

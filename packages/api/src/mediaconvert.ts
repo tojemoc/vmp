@@ -586,7 +586,11 @@ export async function handleAdminMediaConvertUploadComplete(request: Request, en
 }
 
 export async function pollMediaConvertJobs(env: any) {
-  await pollBunnyStreamJobs(env)
+  try {
+    await pollBunnyStreamJobs(env)
+  } catch (err) {
+    console.error('Bunny Stream poll sweep failed:', err)
+  }
 
   const cfg = await getMediaConvertConfig(env)
   if (!cfg.enabled || !cfg.configured) return
@@ -780,7 +784,20 @@ async function pollBunnyStreamJobs(env: any) {
     }
 
     if (bunnyStatus.status === 'finished') {
-      const hlsUrl = bunnyStatus.hlsManifestUrl || ''
+      const hlsUrl = String(bunnyStatus.hlsManifestUrl || '').trim()
+      if (!hlsUrl) {
+        await db.prepare(`
+          UPDATE media_convert_jobs
+          SET last_polled_at = CURRENT_TIMESTAMP,
+              error = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          'Bunny finished but HLS manifest URL is missing (configure CDN hostname or pull zone)',
+          localJobId,
+        ).run()
+        continue
+      }
       const durationSeconds = bunnyStatus.durationSeconds || Number(row.input_duration_seconds || 0)
       const previewSeconds = durationSeconds > 0 ? Math.min(180, durationSeconds) : 0
       const statements = [
@@ -792,7 +809,7 @@ async function pollBunnyStreamJobs(env: any) {
               last_polled_at = CURRENT_TIMESTAMP,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).bind(hlsUrl || null, localJobId),
+        `).bind(hlsUrl, localJobId),
         db.prepare(`
           UPDATE videos
           SET status = 'processed',

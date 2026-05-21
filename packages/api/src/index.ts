@@ -788,6 +788,10 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
       : null
 
     const shouldPreferVodRecording = Boolean(livestreamRecordingId) && ['ended', 'vod_attached', 'replaced_with_vod'].includes(livestreamStatus)
+    const playbackVideoId = shouldPreferVodRecording && livestreamRecordingId
+      ? livestreamRecordingId
+      : resolvedVideoId
+
     const bunnyPlaybackRow = await db.prepare(`
       SELECT bunny_playback_url
       FROM media_convert_jobs
@@ -798,23 +802,16 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
         AND TRIM(bunny_playback_url) != ''
       ORDER BY completed_at DESC, created_at DESC
       LIMIT 1
-    `).bind(resolvedVideoId).first() as { bunny_playback_url?: string } | null
+    `).bind(playbackVideoId).first() as { bunny_playback_url?: string } | null
     const bunnyPlaybackUrl = typeof bunnyPlaybackRow?.bunny_playback_url === 'string'
       ? bunnyPlaybackRow.bunny_playback_url.trim()
       : null
 
-    let resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
+    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
       env,
-      videoId: resolvedVideoId,
+      videoId: playbackVideoId,
       bunnyPlaybackUrl,
     })
-    if (shouldPreferVodRecording && livestreamRecordingId) {
-      resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
-        env,
-        videoId: livestreamRecordingId,
-        bunnyPlaybackUrl: null,
-      })
-    }
 
     const isBunnyCdnPlayback = Boolean(
       bunnyPlaybackUrl
