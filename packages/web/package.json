@@ -18,7 +18,7 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/lite": "^0.2.2",
+    "@moq/lite": "^0.3.0",
     "@moq/watch": "^0.2.10",
     "@nuxtjs/color-mode": "^4.0.0",
     "@vite-pwa/nuxt": "^1.1.1",
