@@ -45,6 +45,8 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | Variable | Purpose |
 |----------|---------|
 | `VMP_WEBHOOK_SECRET` | Same value as `podcast_rebuild_webhook_secret` in D1 admin settings |
+| `VMP_API_BASE_URL` | VMP Worker base URL (e.g. `https://api.example.workers.dev`) for pipeline status callbacks |
+| `VMP_API_PIPELINE_SECRET` | Shared HMAC secret with Worker `VMP_API_PIPELINE_SECRET` (pipeline → `POST /api/admin/videos/:id/pipeline-status`) |
 | `VMP_UI_HOST` | Bind address (default `127.0.0.1`) |
 | `VMP_UI_PORT` | Dashboard + webhook port (default `8788`) |
 | `VMP_RUN_PIPELINE` | `1` (default) run watchfolder pipeline; `0` only UI + preview jobs |

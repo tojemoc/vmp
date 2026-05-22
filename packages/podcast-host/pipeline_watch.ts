@@ -6,11 +6,17 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 type PipelineStatus = 'active' | 'success' | 'failed'
-type PipelineStage = 'detected' | 'deduped' | 'wait_upload_complete' | 'probe' | 'encode' | 'podcast_mp3' | 'package_hls' | 'upload_assets' | 'preview_wait' | 'preview_render' | 'preview_upload' | 'cleanup' | 'done' | 'failed'
+type PipelineStage =
+  | 'detected' | 'deduped' | 'wait_upload_complete' | 'probe'
+  | 'phase1_encode' | 'phase1_upload' | 'phase1_available'
+  | 'phase2_encode' | 'phase2_package' | 'phase2_upload' | 'phase2_manifest_swap' | 'multi_rendition_ready'
+  | 'podcast_mp3' | 'preview_wait' | 'preview_render' | 'preview_upload' | 'cleanup' | 'done' | 'failed'
 type QueueJob = { videoId: string, inputPath: string, source: string }
 type RunResult = { stdout: string, stderr: string }
 type RunOptions = { capture?: boolean }
 type ResolveInputTargetPathResult = { videoId: string, targetPath: string, renamed: boolean, reason?: 'legacy_filename' | 'random_uuid' | 'already_uuid' }
+type RenditionKey = '1080p' | '720p' | '480p'
+type Phase1Result = { audioTmpPath: string | null, hasAudio: boolean }
 
 const INBOX_DIR = (process.env.INBOX_DIR || '/mnt/videos/inbox').trim()
 const TMP_DIR_BASE = (process.env.TMP_DIR_BASE || '/mnt/tmp/video_pipeline').trim()
@@ -25,6 +31,17 @@ const VIDEO_ID_SANITIZE_MODE = (process.env.VIDEO_ID_SANITIZE_MODE || 'slug-hash
 const WAIT_STABLE_TIMEOUT_MS = Math.max(1_000, Number.parseInt(process.env.WAIT_STABLE_TIMEOUT_MS || '120000', 10) || 120000)
 const WAIT_STABLE_POLL_MS = Math.max(250, Number.parseInt(process.env.WAIT_STABLE_POLL_MS || '2000', 10) || 2000)
 const WAIT_STABLE_IDLE_POLLS = Math.max(1, Number.parseInt(process.env.WAIT_STABLE_IDLE_POLLS || '1', 10) || 1)
+const VMP_API_BASE_URL = (process.env.VMP_API_BASE_URL || '').trim().replace(/\/+$/, '')
+const VMP_API_PIPELINE_SECRET = (process.env.VMP_API_PIPELINE_SECRET || '').trim()
+const PIPELINE_CALLBACK_TIMEOUT_MS = Math.max(5_000, Number.parseInt(process.env.PIPELINE_CALLBACK_TIMEOUT_MS || '15000', 10) || 15_000)
+const HLS_AUDIO_GROUP_ID = 'audio'
+const HLS_AUDIO_PLAYLIST = 'audio.m3u8'
+
+const RENDITION_CONFIG: Record<RenditionKey, { out: string, w: string, h: string, br: string, max: string, buf: string, abr: string }> = {
+  '1080p': { out: '1080p.mp4', w: '1920', h: '1080', br: '5M', max: '5M', buf: '10M', abr: '128k' },
+  '720p': { out: '720p.mp4', w: '1280', h: '720', br: '3M', max: '3M', buf: '6M', abr: '128k' },
+  '480p': { out: '480p.mp4', w: '854', h: '480', br: '1500k', max: '1500k', buf: '3000k', abr: '96k' },
+}
 
 function log(msg: string): void {
   process.stdout.write(`${new Date().toISOString()} ${msg}\n`)
@@ -118,6 +135,273 @@ async function detectHasAudio(filePath: string): Promise<boolean> {
   }
 }
 
+function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): string[] {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3']
+  if (hasAudio) {
+    lines.push(
+      `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${HLS_AUDIO_GROUP_ID}",NAME="Main",DEFAULT=YES,AUTOSELECT=YES,URI="${HLS_AUDIO_PLAYLIST}"`,
+    )
+  }
+  for (const streamInf of videoStreamInfs) {
+    if (hasAudio && streamInf.startsWith('#EXT-X-STREAM-INF')) {
+      lines.push(`${streamInf},AUDIO="${HLS_AUDIO_GROUP_ID}"`)
+    } else {
+      lines.push(streamInf)
+    }
+  }
+  return lines
+}
+
+async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
+  const lines = buildMasterM3u8Lines(hasAudio, [
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '720p/playlist.m3u8',
+  ])
+  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
+}
+
+async function writePhase2MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
+  const lines = buildMasterM3u8Lines(hasAudio, [
+    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080',
+    '1080p/playlist.m3u8',
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '720p/playlist.m3u8',
+    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480',
+    '480p/playlist.m3u8',
+  ])
+  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
+}
+
+async function encodeRendition(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  key: RenditionKey,
+  options: { includeAudio: boolean, stage: PipelineStage },
+): Promise<string> {
+  const r = RENDITION_CONFIG[key]
+  emitPipelineEvent(videoId, options.stage, 'active', r.out)
+  const outPath = path.join(tmpDir, `${r.out}.tmp.${process.pid}`)
+  const args = [
+    '-hide_banner', '-y',
+    '-init_hw_device', `vaapi=vaapi0:${VAAPI_DEVICE}`,
+    '-i', inputPath, '-r', '30',
+    '-vf', `format=nv12,hwupload,scale_vaapi=w=${r.w}:h=${r.h}:force_original_aspect_ratio=decrease`,
+    '-map', '0:v:0',
+  ]
+  if (options.includeAudio) {
+    args.push('-map', '0:a?', '-c:a', 'aac', '-b:a', r.abr)
+  }
+  args.push(
+    '-c:v', 'h264_vaapi', '-g', '180', '-keyint_min', '180', '-sc_threshold', '0',
+    '-b:v', r.br, '-maxrate', r.max, '-bufsize', r.buf,
+    '-f', 'mp4',
+    outPath,
+  )
+  await run('ffmpeg', args, `encode ${r.out}`)
+  const finalPath = path.join(tmpDir, r.out)
+  await rename(outPath, finalPath)
+  return finalPath
+}
+
+async function packagePhase1Hls(tmpDir: string, hasAudio: boolean): Promise<void> {
+  await mkdir(path.join(tmpDir, '720p'), { recursive: true })
+  const shakaArgs = [
+    `input=${path.join(tmpDir, '720p.mp4')},stream=video,init_segment=${path.join(tmpDir, '720p/init_720.mp4')},segment_template=${path.join(tmpDir, '720p/seg_720_$Number$.m4s')},playlist_name=720p/playlist.m3u8`,
+  ]
+  if (hasAudio) {
+    shakaArgs.push(
+      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
+    )
+  }
+  shakaArgs.push(
+    '--segment_duration', '6',
+    '--fragment_duration', '6',
+    '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
+  )
+  await run('shaka-packager', shakaArgs, 'shaka-packager phase1')
+  await writePhase1MasterM3u8(tmpDir, hasAudio)
+}
+
+async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void> {
+  for (const sub of ['1080p', '720p', '480p'] as const) {
+    await mkdir(path.join(tmpDir, sub), { recursive: true })
+  }
+  const shakaArgs = [
+    `input=${path.join(tmpDir, '1080p.mp4')},stream=video,init_segment=${path.join(tmpDir, '1080p/init_1080.mp4')},segment_template=${path.join(tmpDir, '1080p/seg_1080_$Number$.m4s')},playlist_name=1080p/playlist.m3u8`,
+    `input=${path.join(tmpDir, '720p.mp4')},stream=video,init_segment=${path.join(tmpDir, '720p/init_720.mp4')},segment_template=${path.join(tmpDir, '720p/seg_720_$Number$.m4s')},playlist_name=720p/playlist.m3u8`,
+    `input=${path.join(tmpDir, '480p.mp4')},stream=video,init_segment=${path.join(tmpDir, '480p/init_480.mp4')},segment_template=${path.join(tmpDir, '480p/seg_480_$Number$.m4s')},playlist_name=480p/playlist.m3u8`,
+  ]
+  if (hasAudio) {
+    shakaArgs.push(
+      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
+    )
+  }
+  shakaArgs.push(
+    '--segment_duration', '6',
+    '--fragment_duration', '6',
+    '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
+  )
+  await run('shaka-packager', shakaArgs, 'shaka-packager phase2')
+  await writePhase2MasterM3u8(tmpDir, hasAudio)
+}
+
+async function rcloneCopyDir(localDir: string, r2Dest: string, label: string): Promise<void> {
+  await run('rclone', ['copy', localDir, r2Dest, '--transfers', '8', '--checkers', '16'], label)
+}
+
+async function rcloneCopyFile(localFile: string, r2Dest: string, label: string): Promise<void> {
+  await run('rclone', ['copyto', localFile, r2Dest, '--checkers', '16'], label)
+}
+
+async function rcloneCheckDir(localDir: string, r2Dest: string, label: string): Promise<void> {
+  await run('rclone', ['check', localDir, r2Dest, '--one-way'], label)
+}
+
+async function notifyVideoAvailable(
+  videoId: string,
+  stage: 'preview_ready' | 'fully_processed',
+  availableRenditions: RenditionKey[],
+): Promise<void> {
+  if (!VMP_API_BASE_URL || !VMP_API_PIPELINE_SECRET) {
+    log(`⚠️ ${videoId}: pipeline status callback skipped (VMP_API_BASE_URL or VMP_API_PIPELINE_SECRET unset)`)
+    return
+  }
+
+  const payload = {
+    event: 'pipeline_status_update',
+    videoId,
+    stage,
+    hlsManifestPath: `videos/${videoId}/master.m3u8`,
+    availableRenditions,
+    timestamp: new Date().toISOString(),
+  }
+  const rawBody = JSON.stringify(payload)
+  const url = `${VMP_API_BASE_URL}/api/admin/videos/${encodeURIComponent(videoId)}/pipeline-status`
+
+  const attempt = async (retry: boolean): Promise<void> => {
+    const ts = String(Math.floor(Date.now() / 1000))
+    const signature = crypto.createHmac('sha256', VMP_API_PIPELINE_SECRET).update(`${ts}.${rawBody}`, 'utf8').digest('hex')
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), PIPELINE_CALLBACK_TIMEOUT_MS)
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-VMP-Signature': `sha256=${signature}`,
+          'X-VMP-Timestamp': ts,
+        },
+        body: rawBody,
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!retry) {
+        log(`⚠️ ${videoId}: pipeline status callback failed (${stage}), retrying in 5s: ${msg}`)
+        await new Promise((r) => setTimeout(r, 5000))
+        return attempt(true)
+      }
+      log(`⚠️ ${videoId}: pipeline status callback gave up (${stage}): ${msg}`)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  await attempt(false)
+}
+
+async function phase1EncodeAndPublish(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  hasAudio: boolean,
+): Promise<Phase1Result> {
+  emitPipelineEvent(videoId, 'phase1_encode', 'active', '720p')
+  const audioTmpPath = await encodeRendition(videoId, inputPath, tmpDir, '720p', { includeAudio: hasAudio, stage: 'phase1_encode' })
+  emitPipelineEvent(videoId, 'phase1_encode', 'active', 'done')
+
+  emitPipelineEvent(videoId, 'phase1_encode', 'active', 'packaging_hls')
+  await packagePhase1Hls(tmpDir, hasAudio)
+
+  emitPipelineEvent(videoId, 'phase1_upload', 'active', 'start')
+  const r2Base = r2Path(`videos/${videoId}`)
+  await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1')
+  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
+    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase1')
+    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
+      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase1')
+    }
+    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
+    for (const seg of audioSegs) {
+      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase1`)
+    }
+  }
+  await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase1')
+  await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase1')
+  emitPipelineEvent(videoId, 'phase1_upload', 'active', 'done')
+
+  await notifyVideoAvailable(videoId, 'preview_ready', ['720p'])
+  emitPipelineEvent(videoId, 'phase1_available', 'success', 'preview_ready')
+
+  return { audioTmpPath: hasAudio ? audioTmpPath : null, hasAudio }
+}
+
+async function phase2RemainingRenditions(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  hasAudio: boolean,
+): Promise<void> {
+  emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
+  await encodeRendition(videoId, inputPath, tmpDir, '1080p', { includeAudio: false, stage: 'phase2_encode' })
+  await encodeRendition(videoId, inputPath, tmpDir, '480p', { includeAudio: false, stage: 'phase2_encode' })
+  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
+
+  emitPipelineEvent(videoId, 'phase2_package', 'active', 'start')
+  await packagePhase2Hls(tmpDir, hasAudio)
+  emitPipelineEvent(videoId, 'phase2_package', 'active', 'done')
+
+  emitPipelineEvent(videoId, 'phase2_upload', 'active', 'start')
+  const r2Base = r2Path(`videos/${videoId}`)
+  await rcloneCopyDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone upload 1080p phase2')
+  await rcloneCopyDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone upload 480p phase2')
+  await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase2')
+  await rcloneCheckDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone check 1080p phase2')
+  await rcloneCheckDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone check 480p phase2')
+  await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase2')
+  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
+    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase2')
+    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
+      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase2')
+    }
+    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
+    for (const seg of audioSegs) {
+      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase2`)
+    }
+  }
+
+  emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
+  await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase2')
+  emitPipelineEvent(videoId, 'phase2_upload', 'active', 'done')
+
+  await notifyVideoAvailable(videoId, 'fully_processed', ['1080p', '720p', '480p'])
+  emitPipelineEvent(videoId, 'multi_rendition_ready', 'success', 'fully_processed')
+}
+
+async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: string): Promise<void> {
+  emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'start')
+  const mp3Tmp = path.join(tmpDir, `podcast.mp3.tmp.${process.pid}`)
+  await run('ffmpeg', ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', mp3Tmp], 'encode podcast mp3')
+  await rename(mp3Tmp, path.join(tmpDir, 'podcast.mp3'))
+  await run('rclone', ['copyto', path.join(tmpDir, 'podcast.mp3'), r2Path(`videos/${videoId}/podcast.mp3`)], 'upload podcast mp3')
+  emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'done')
+}
+
 async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   const doneFlag = path.join(tmpDir, '.done')
@@ -140,66 +424,24 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
 
     emitPipelineEvent(videoId, 'probe', 'active', 'probing_streams')
     const hasAudio = await detectHasAudio(inputPath)
+    emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}`)
 
-    const renditions = [
-      { out: '1080p.mp4', w: '1920', h: '1080', br: '5M', max: '5M', buf: '10M', abr: '128k' },
-      { out: '720p.mp4', w: '1280', h: '720', br: '3M', max: '3M', buf: '6M', abr: '128k' },
-      { out: '480p.mp4', w: '854', h: '480', br: '1500k', max: '1500k', buf: '3000k', abr: '96k' },
-    ]
-    for (let i = 0; i < renditions.length; i += 1) {
-      const r = renditions[i]
-      emitPipelineEvent(videoId, 'encode', 'active', `${i + 1}/3 ${r.out}`)
-      const outPath = path.join(tmpDir, `${r.out}.tmp.${process.pid}`)
-      await run('ffmpeg', [
-        '-hide_banner', '-y',
-        '-init_hw_device', `vaapi=vaapi0:${VAAPI_DEVICE}`,
-        '-i', inputPath, '-r', '30',
-        '-vf', `format=nv12,hwupload,scale_vaapi=w=${r.w}:h=${r.h}:force_original_aspect_ratio=decrease`,
-        '-map', '0:v:0', '-map', '0:a?', '-c:v', 'h264_vaapi', '-g', '180', '-keyint_min', '180', '-sc_threshold', '0',
-        '-b:v', r.br, '-maxrate', r.max, '-bufsize', r.buf, '-c:a', 'aac', '-b:a', r.abr, '-f', 'mp4',
-        outPath,
-      ], `encode ${r.out}`)
-      await rename(outPath, path.join(tmpDir, r.out))
-    }
-    emitPipelineEvent(videoId, 'encode', 'active', 'done')
+    await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
+    emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
 
-    if (hasAudio) {
-      emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'start')
-      const mp3Tmp = path.join(tmpDir, `podcast.mp3.tmp.${process.pid}`)
-      await run('ffmpeg', ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', mp3Tmp], 'encode podcast mp3')
-      await rename(mp3Tmp, path.join(tmpDir, 'podcast.mp3'))
-      emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'done')
-    } else {
-      emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
-    }
+    const podcastTask = hasAudio
+      ? encodePodcastMp3(videoId, inputPath, tmpDir).catch((err) => {
+        log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
+        emitPipelineEvent(videoId, 'podcast_mp3', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+      })
+      : (emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio'), Promise.resolve())
 
-    emitPipelineEvent(videoId, 'package_hls', 'active', 'start')
-    const shakaArgs = [
-      `input=${path.join(tmpDir, '1080p.mp4')},stream=video,init_segment=${path.join(tmpDir, 'init_1080.mp4')},segment_template=${path.join(tmpDir, 'seg_1080_$Number$.m4s')}`,
-      `input=${path.join(tmpDir, '720p.mp4')},stream=video,init_segment=${path.join(tmpDir, 'init_720.mp4')},segment_template=${path.join(tmpDir, 'seg_720_$Number$.m4s')}`,
-      `input=${path.join(tmpDir, '480p.mp4')},stream=video,init_segment=${path.join(tmpDir, 'init_480.mp4')},segment_template=${path.join(tmpDir, 'seg_480_$Number$.m4s')}`,
-    ]
-    if (hasAudio) {
-      shakaArgs.push(`input=${path.join(tmpDir, '1080p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')}`)
-    }
-    shakaArgs.push('--segment_duration', '6', '--fragment_duration', '6', '--generate_static_live_mpd', '--mpd_output', path.join(tmpDir, 'manifest.mpd'), '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8'))
-    await run('shaka-packager', shakaArgs, 'shaka-packager')
-    emitPipelineEvent(videoId, 'package_hls', 'active', 'done')
+    const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
+      log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
+      emitPipelineEvent(videoId, 'phase2_upload', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+    })
 
-    emitPipelineEvent(videoId, 'upload_assets', 'active', 'start')
-    await run('rclone', [
-      'copy', tmpDir, r2Path(`videos/${videoId}`),
-      '--exclude', '1080p.mp4',
-      '--exclude', '720p.mp4',
-      '--exclude', '480p.mp4',
-      '--exclude', '.lock',
-      '--exclude', '.done',
-      '--exclude', '*.tmp.*',
-      '--ignore-existing',
-      '--transfers', '8',
-      '--checkers', '16',
-    ], 'rclone upload assets')
-    emitPipelineEvent(videoId, 'upload_assets', 'active', 'verified')
+    await Promise.all([podcastTask, phase2Task])
 
     if (PREVIEW_MP3_ENABLED && hasAudio && existsSync(path.join(tmpDir, 'podcast.mp3'))) {
       if (PREVIEW_MP3_LOCK_SECONDS > 0) {
