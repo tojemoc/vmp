@@ -5,6 +5,7 @@
   "description": "VM media host: HLS/podcast pipeline (watchfolder), preview MP3 webhook, local dashboard",
   "type": "module",
   "scripts": {
+    "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/supervisor.js",
     "supervisor": "npm run build && node ./dist/supervisor.js",
