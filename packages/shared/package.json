@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "lint": "eslint src --ext .ts,.vue,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

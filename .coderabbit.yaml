@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# VMP does not use ESLint (see AGENTS.md). CI and local checks use:
+#   npm run typecheck
+# Disable CodeRabbit's ESLint tool to avoid "no ESLint configuration" failures.
+
+reviews:
+  tools:
+    eslint:
+      enabled: false

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "packages/api": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/web": {
+      "entry": [
+        "nuxt.config.ts",
+        "app.vue",
+        "pages/**/*.{vue,ts}",
+        "plugins/**/*.{ts,vue}",
+        "middleware/**/*.ts"
+      ],
+      "project": [
+        "components/**/*.vue",
+        "composables/**/*.ts",
+        "utils/**/*.ts",
+        "scripts/**/*.ts",
+        "middleware/**/*.ts",
+        "plugins/**/*.ts",
+        "pages/**/*.{vue,ts}",
+        "nuxt.config.ts",
+        "app.vue",
+        "sw-push.ts",
+        "tailwind.config.ts"
+      ]
+    },
+    "packages/shared": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/offloading": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/podcast-host": {
+      "entry": ["supervisor.ts", "pipeline_watch.ts", "render_podcast_preview_mp3.ts"],
+      "project": ["*.ts"]
+    }
+  },
+  "ignore": ["**/*.test.ts", "**/migrations/**", "**/dist/**", "**/.nuxt/**"]
+}
