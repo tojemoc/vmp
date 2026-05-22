@@ -162,6 +162,7 @@ import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/us
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
+import { buildWatchRecommendations } from '~/utils/watchRecommendations'
 
 const config = useRuntimeConfig()
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -291,12 +292,21 @@ const reconnectToLiveEdge = () => {
   }
 }
 
-const loadRecommendations = async () => {
+const loadRecommendations = async (currentVideoId?: string, routeVideoKey?: string) => {
   try {
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`)
     if (!recsResponse.ok) return
     const recommendationsData = await recsResponse.json()
-    recommendations.value = (recommendationsData.videos || []).slice(0, 5)
+    const resolvedId = currentVideoId ?? liveVideo.value?.id
+    if (!resolvedId) {
+      recommendations.value = (recommendationsData.videos || []).slice(0, 5)
+      return
+    }
+    recommendations.value = buildWatchRecommendations(recommendationsData.videos || [], {
+      currentVideoId: resolvedId,
+      routeVideoKey: routeVideoKey ?? 'live',
+      limit: 5
+    })
   } catch {
     recommendations.value = []
   }
@@ -398,7 +408,7 @@ onMounted(async () => {
       partialRuntime = null
     }
     if (isMounted) {
-      await loadRecommendations()
+      await loadRecommendations(videoId, 'live')
       if (loading.value) loading.value = false
     }
   }
