@@ -33,6 +33,9 @@ const WAIT_STABLE_POLL_MS = Math.max(250, Number.parseInt(process.env.WAIT_STABL
 const WAIT_STABLE_IDLE_POLLS = Math.max(1, Number.parseInt(process.env.WAIT_STABLE_IDLE_POLLS || '1', 10) || 1)
 const VMP_API_BASE_URL = (process.env.VMP_API_BASE_URL || '').trim().replace(/\/+$/, '')
 const VMP_API_PIPELINE_SECRET = (process.env.VMP_API_PIPELINE_SECRET || '').trim()
+const PIPELINE_CALLBACK_TIMEOUT_MS = Math.max(5_000, Number.parseInt(process.env.PIPELINE_CALLBACK_TIMEOUT_MS || '15000', 10) || 15_000)
+const HLS_AUDIO_GROUP_ID = 'audio'
+const HLS_AUDIO_PLAYLIST = 'audio.m3u8'
 
 const RENDITION_CONFIG: Record<RenditionKey, { out: string, w: string, h: string, br: string, max: string, buf: string, abr: string }> = {
   '1080p': { out: '1080p.mp4', w: '1920', h: '1080', br: '5M', max: '5M', buf: '10M', abr: '128k' },
@@ -132,30 +135,38 @@ async function detectHasAudio(filePath: string): Promise<boolean> {
   }
 }
 
-async function writePhase1MasterM3u8(tmpDir: string): Promise<void> {
-  const content = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:3',
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
-    '720p/playlist.m3u8',
-    '',
-  ].join('\n')
-  await writeFile(path.join(tmpDir, 'master.m3u8'), content)
+function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): string[] {
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3']
+  if (hasAudio) {
+    lines.push(
+      `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${HLS_AUDIO_GROUP_ID}",NAME="Main",DEFAULT=YES,AUTOSELECT=YES,URI="${HLS_AUDIO_PLAYLIST}"`,
+    )
+  }
+  for (const streamInf of videoStreamInfs) {
+    const audioAttr = hasAudio ? `,AUDIO="${HLS_AUDIO_GROUP_ID}"` : ''
+    lines.push(`${streamInf}${audioAttr}`)
+  }
+  return lines
 }
 
-async function writePhase2MasterM3u8(tmpDir: string): Promise<void> {
-  const content = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:3',
+async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
+  const lines = buildMasterM3u8Lines(hasAudio, [
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '720p/playlist.m3u8',
+  ])
+  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
+}
+
+async function writePhase2MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
+  const lines = buildMasterM3u8Lines(hasAudio, [
     '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080',
     '1080p/playlist.m3u8',
     '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
     '720p/playlist.m3u8',
     '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480',
     '480p/playlist.m3u8',
-    '',
-  ].join('\n')
-  await writeFile(path.join(tmpDir, 'master.m3u8'), content)
+  ])
+  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
 }
 
 async function encodeRendition(
@@ -197,7 +208,7 @@ async function packagePhase1Hls(tmpDir: string, hasAudio: boolean): Promise<void
   ]
   if (hasAudio) {
     shakaArgs.push(
-      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')}`,
+      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
     )
   }
   shakaArgs.push(
@@ -206,7 +217,7 @@ async function packagePhase1Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase1')
-  await writePhase1MasterM3u8(tmpDir)
+  await writePhase1MasterM3u8(tmpDir, hasAudio)
 }
 
 async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void> {
@@ -220,7 +231,7 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void
   ]
   if (hasAudio) {
     shakaArgs.push(
-      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')}`,
+      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
     )
   }
   shakaArgs.push(
@@ -229,7 +240,7 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase2')
-  await writePhase2MasterM3u8(tmpDir)
+  await writePhase2MasterM3u8(tmpDir, hasAudio)
 }
 
 async function rcloneCopyDir(localDir: string, r2Dest: string, label: string): Promise<void> {
@@ -268,6 +279,8 @@ async function notifyVideoAvailable(
   const attempt = async (retry: boolean): Promise<void> => {
     const ts = String(Math.floor(Date.now() / 1000))
     const signature = crypto.createHmac('sha256', VMP_API_PIPELINE_SECRET).update(`${ts}.${rawBody}`, 'utf8').digest('hex')
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), PIPELINE_CALLBACK_TIMEOUT_MS)
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -277,6 +290,7 @@ async function notifyVideoAvailable(
           'X-VMP-Timestamp': ts,
         },
         body: rawBody,
+        signal: controller.signal,
       })
       if (!res.ok) {
         const text = await res.text().catch(() => '')
@@ -290,6 +304,8 @@ async function notifyVideoAvailable(
         return attempt(true)
       }
       log(`⚠️ ${videoId}: pipeline status callback gave up (${stage}): ${msg}`)
+    } finally {
+      clearTimeout(timeout)
     }
   }
 
@@ -314,6 +330,9 @@ async function phase1EncodeAndPublish(
   await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1')
   if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
     await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase1')
+    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
+      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase1')
+    }
     const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
     for (const seg of audioSegs) {
       await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase1`)
@@ -354,6 +373,9 @@ async function phase2RemainingRenditions(
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase2')
   if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
     await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase2')
+    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
+      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase2')
+    }
     const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
     for (const seg of audioSegs) {
       await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase2`)
