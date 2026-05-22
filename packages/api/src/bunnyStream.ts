@@ -404,20 +404,21 @@ export async function handleAdminBunnyStreamUpload(
     await upsertVideoDraftRow(db, videoId, title, description, categoryId)
 
     jobId = crypto.randomUUID()
+    const persistedLibraryId = cfg.libraryId || libraryId
     const placeholderBucket = 'bunnystream'
     const inputKey = `bunny/${bunnyGuid}/${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`
     const outputPrefix = `bunny/${bunnyGuid}`
 
     await db.prepare(`
       INSERT INTO media_convert_jobs (
-        id, video_id, status, provider, bunny_guid, aws_job_id,
+        id, video_id, status, provider, bunny_guid, library_id, aws_job_id,
         input_bucket, input_key, output_bucket, output_prefix,
         renditions_json, input_duration_seconds, normalized_minutes_est, cost_est_usd,
         created_at, updated_at
       )
-      VALUES (?, ?, 'uploaded', 'bunnystream', ?, ?, ?, ?, ?, ?, '[]', 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, 'uploaded', 'bunnystream', ?, ?, ?, ?, ?, ?, ?, '[]', 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).bind(
-      jobId, videoId, bunnyGuid, bunnyGuid,
+      jobId, videoId, bunnyGuid, persistedLibraryId, bunnyGuid,
       placeholderBucket, inputKey, placeholderBucket, outputPrefix,
     ).run()
   } catch (err) {
@@ -480,15 +481,29 @@ export async function handleAdminBunnyStreamUploadComplete(
   if (!db) return jsonResponse({ error: 'Database not configured' }, 500, corsHeaders)
 
   const job = await db.prepare(`
-    SELECT id, video_id, bunny_guid, provider
+    SELECT id, video_id, bunny_guid, provider, status
     FROM media_convert_jobs
     WHERE id = ?
     LIMIT 1
-  `).bind(jobId).first() as { id: string, video_id: string, bunny_guid: string | null, provider: string } | null
+  `).bind(jobId).first() as {
+    id: string
+    video_id: string
+    bunny_guid: string | null
+    provider: string
+    status: string
+  } | null
 
   if (!job) return jsonResponse({ error: 'Upload job not found' }, 404, corsHeaders)
   if (job.provider !== 'bunnystream') {
     return jsonResponse({ error: 'Job is not a Bunny Stream upload' }, 400, corsHeaders)
+  }
+
+  if (job.status !== 'uploaded') {
+    return jsonResponse(
+      { error: 'Job not in uploaded state', code: 'invalid_job_status', status: job.status },
+      400,
+      corsHeaders,
+    )
   }
 
   const bunnyGuid = String(job.bunny_guid || '').trim()

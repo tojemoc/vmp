@@ -743,10 +743,10 @@ async function pollBunnyStreamJobs(env: any) {
   const db = getDb(env)
 
   const pending = await db.prepare(`
-    SELECT id, video_id, bunny_guid, aws_job_id, input_duration_seconds
+    SELECT id, video_id, bunny_guid, library_id, aws_job_id, input_duration_seconds
     FROM media_convert_jobs
     WHERE provider = 'bunnystream'
-      AND status NOT IN ('completed', 'failed')
+      AND status IN ('queued', 'transcoding', 'packaging', 'uploading')
     ORDER BY created_at ASC
     LIMIT 20
   `).all()
@@ -755,11 +755,12 @@ async function pollBunnyStreamJobs(env: any) {
     const localJobId = row.id as string
     const videoId = row.video_id as string
     const bunnyGuid = String(row.bunny_guid || row.aws_job_id || '').trim()
-    if (!bunnyGuid) continue
+    const jobLibraryId = String(row.library_id || cfg.libraryId || '').trim()
+    if (!bunnyGuid || !jobLibraryId) continue
 
     let bunnyStatus
     try {
-      bunnyStatus = await pollBunnyVideoStatus(env, bunnyGuid, cfg.libraryId)
+      bunnyStatus = await pollBunnyVideoStatus(env, bunnyGuid, jobLibraryId)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Bunny poll failed'
       await db.prepare(`
