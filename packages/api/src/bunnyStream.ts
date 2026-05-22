@@ -467,11 +467,6 @@ export async function handleAdminBunnyStreamUploadComplete(
   }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
 
-  const cfg = await getBunnyStreamConfig(env)
-  if (!cfg.enabled || !cfg.configured) {
-    return jsonResponse({ error: 'Bunny Stream pipeline is not configured' }, 503, corsHeaders)
-  }
-
   const bodyRaw = await request.json().catch(() => null)
   const body = (bodyRaw && typeof bodyRaw === 'object') ? bodyRaw as Record<string, unknown> : null
   const jobId = String(body?.jobId || '').trim()

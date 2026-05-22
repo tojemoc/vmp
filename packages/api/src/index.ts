@@ -810,11 +810,12 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
       env,
       videoId: playbackVideoId,
-      bunnyPlaybackUrl,
+      bunnyPlaybackUrl: hasPremiumAccess ? bunnyPlaybackUrl : null,
     })
 
     const isBunnyCdnPlayback = Boolean(
-      bunnyPlaybackUrl
+      hasPremiumAccess
+      && bunnyPlaybackUrl
       && resolvedEntrypointUrl === bunnyPlaybackUrl,
     )
     const basePlaylistUrl = isBunnyCdnPlayback

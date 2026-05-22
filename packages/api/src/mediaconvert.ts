@@ -743,10 +743,13 @@ async function pollBunnyStreamJobs(env: any) {
   const db = getDb(env)
 
   const pending = await db.prepare(`
-    SELECT id, video_id, bunny_guid, library_id, aws_job_id, input_duration_seconds
+    SELECT id, video_id, status, bunny_guid, library_id, aws_job_id, input_duration_seconds
     FROM media_convert_jobs
     WHERE provider = 'bunnystream'
-      AND status IN ('queued', 'transcoding', 'packaging', 'uploading')
+      AND (
+        status IN ('queued', 'transcoding', 'packaging', 'uploading')
+        OR (status = 'uploaded' AND updated_at < datetime('now', '-24 hours'))
+      )
     ORDER BY created_at ASC
     LIMIT 20
   `).all()
@@ -754,6 +757,7 @@ async function pollBunnyStreamJobs(env: any) {
   for (const row of pending.results || []) {
     const localJobId = row.id as string
     const videoId = row.video_id as string
+    const localStatus = String(row.status || '')
     const bunnyGuid = String(row.bunny_guid || row.aws_job_id || '').trim()
     const jobLibraryId = String(row.library_id || cfg.libraryId || '').trim()
     if (!bunnyGuid || !jobLibraryId) continue
@@ -769,6 +773,30 @@ async function pollBunnyStreamJobs(env: any) {
         WHERE id = ?
       `).bind(message.slice(0, 1000), localJobId).run()
       continue
+    }
+
+    // Stale uploaded rows never received /complete — fail if Bunny still has no progress.
+    if (localStatus === 'uploaded' && bunnyStatus.status === 'queued' && bunnyStatus.rawStatus === 0) {
+      const detail = 'Bunny upload never completed (no /complete callback within 24 hours)'
+      await db.batch([
+        db.prepare(`
+          UPDATE media_convert_jobs
+          SET status = 'failed', error = ?, last_polled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(detail, localJobId),
+        db.prepare(`UPDATE videos SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
+      ])
+      continue
+    }
+    if (localStatus === 'uploaded' && bunnyStatus.status !== 'error') {
+      await db.batch([
+        db.prepare(`
+          UPDATE media_convert_jobs
+          SET status = 'queued', aws_job_id = ?, last_polled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(bunnyGuid, localJobId),
+        db.prepare(`UPDATE videos SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
+      ])
     }
 
     if (bunnyStatus.status === 'error') {
