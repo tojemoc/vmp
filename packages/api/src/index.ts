@@ -46,6 +46,10 @@ import {
 import { signVideoToken, verifyVideoToken } from './videoTokens.js'
 import { handlePublicFeed, handlePersonalFeed } from './feed.js'
 import { handleGetAccountRss } from './rssAccount.js'
+import {
+  handleAccountTransferSubscription,
+  handleAdminTransferSubscription,
+} from './subscriptionTransfer.js'
 import { handleRssPodcastPreviewRebuildNotify, handleRssPodcastWebhookConfig } from './rssPodcastAdmin.js'
 import {
   handleHomepageContent,
@@ -417,6 +421,9 @@ export default {
     if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
       return handleAdminUserImportCsv(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/users/transfer-subscription' && request.method === 'POST') {
+      return handleAdminTransferSubscription(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/admin/analytics' && (request.method === 'GET' || request.method === 'PATCH')) {
       return handleAdminAnalytics(request, env, corsHeaders)
     }
@@ -470,6 +477,9 @@ export default {
     }
     if (url.pathname === '/api/account/rss' && request.method === 'GET') {
       return handleGetAccountRss(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/transfer-subscription' && request.method === 'POST') {
+      return handleAccountTransferSubscription(request, env, corsHeaders)
     }
     if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
       return handlePortal(request, env, corsHeaders)
