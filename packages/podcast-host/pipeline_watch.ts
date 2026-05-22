@@ -143,8 +143,11 @@ function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): str
     )
   }
   for (const streamInf of videoStreamInfs) {
-    const audioAttr = hasAudio ? `,AUDIO="${HLS_AUDIO_GROUP_ID}"` : ''
-    lines.push(`${streamInf}${audioAttr}`)
+    if (hasAudio && streamInf.startsWith('#EXT-X-STREAM-INF')) {
+      lines.push(`${streamInf},AUDIO="${HLS_AUDIO_GROUP_ID}"`)
+    } else {
+      lines.push(streamInf)
+    }
   }
   return lines
 }
