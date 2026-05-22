@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import {
+  extractMandateIdFromBillingRequest,
+  resolveFulfilledBillingRequestMandate,
+} from '../src/gocardless.js'
+
+describe('extractMandateIdFromBillingRequest', () => {
+  it('reads mandate from mandate_request.links', () => {
+    assert.equal(
+      extractMandateIdFromBillingRequest({
+        mandate_request: { links: { mandate: 'MD123' } },
+      }),
+      'MD123',
+    )
+  })
+
+  it('falls back to top-level links.mandate', () => {
+    assert.equal(
+      extractMandateIdFromBillingRequest({ links: { mandate: 'MD456' } }),
+      'MD456',
+    )
+  })
+})
+
+describe('resolveFulfilledBillingRequestMandate', () => {
+  const originalFetch = globalThis.fetch
+
+  it('fulfils when billing request is ready_to_fulfil', async () => {
+    const calls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if (url.endsWith('/billing_requests/BRQ123') && init?.method !== 'POST') {
+        return new Response(JSON.stringify({
+          billing_requests: { id: 'BRQ123', status: 'ready_to_fulfil', mandate_request: { links: {} } },
+        }), { status: 200 })
+      }
+      if (url.endsWith('/billing_requests/BRQ123/actions/fulfil')) {
+        return new Response(JSON.stringify({
+          billing_requests: {
+            id: 'BRQ123',
+            status: 'fulfilled',
+            mandate_request: { links: { mandate: 'MD789' } },
+          },
+        }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    }) as typeof fetch
+
+    try {
+      const result = await resolveFulfilledBillingRequestMandate('BRQ123', {
+        GOCARDLESS_ACCESS_TOKEN: 'test-token',
+      })
+      assert.equal(result.ok, true)
+      if (result.ok) {
+        assert.equal(result.mandateId, 'MD789')
+        assert.equal(result.billingRequest.status, 'fulfilled')
+      }
+      assert.deepEqual(calls, [
+        'GET https://api.gocardless.com/billing_requests/BRQ123',
+        'POST https://api.gocardless.com/billing_requests/BRQ123/actions/fulfil',
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('returns mandate when billing request is already fulfilled', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/billing_requests/BRQ999')) {
+        return new Response(JSON.stringify({
+          billing_requests: {
+            id: 'BRQ999',
+            status: 'fulfilled',
+            mandate_request: { links: { mandate: 'MD111' } },
+          },
+        }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    }) as typeof fetch
+
+    try {
+      const result = await resolveFulfilledBillingRequestMandate('BRQ999', {
+        GOCARDLESS_ACCESS_TOKEN: 'test-token',
+      })
+      assert.equal(result.ok, true)
+      if (result.ok) assert.equal(result.mandateId, 'MD111')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('fails when mandate is not ready after authorisation', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/billing_requests/BRQ000')) {
+        return new Response(JSON.stringify({
+          billing_requests: { id: 'BRQ000', status: 'pending', mandate_request: { links: {} } },
+        }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    }) as typeof fetch
+
+    try {
+      const result = await resolveFulfilledBillingRequestMandate('BRQ000', {
+        GOCARDLESS_ACCESS_TOKEN: 'test-token',
+      })
+      assert.equal(result.ok, false)
+      if (!result.ok) assert.equal(result.reason, 'mandate_not_ready')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
