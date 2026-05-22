@@ -855,7 +855,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     // Sign the playlist URL with a short-lived video token so the proxy can
     // authenticate every subsequent manifest and segment request.
     const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
-    let playlistUrl: string | null = basePlaylistUrl
+    let playlistUrl: string | null = basePlaylistUrl ?? null
     if (isLivestream) {
       const shouldUseLivePlayback = ['live', 'ready', 'provisioning', 'scheduled', 'draft'].includes(livestreamStatus)
       const hasRealtimePlaybackSource = Boolean(livestreamPlaybackUrl) || Boolean(livestreamMoqEndpoint && livestreamMoqBroadcast)
