@@ -74,6 +74,7 @@ const strings = {
   goToLive: 'Go to live',
   fullscreen: 'Fullscreen',
   volume: 'Volume',
+  playbackSpeed: 'Playback speed',
   videoPlaybackError: 'Video playback error. The HLS stream could not be loaded.',
   livestreamUnavailable: 'Livestream feed unavailable',
   livestreamUnavailableDetail: 'The stream is not currently connected. Attach a recording or update the livestream playback URL in admin.',
