@@ -86,6 +86,10 @@ import {
   enrichVideosWithMediaConvert,
 } from './mediaconvert.js'
 import {
+  handleAdminBunnyStreamUpload,
+  handleAdminBunnyStreamUploadComplete,
+} from './bunnyStream.js'
+import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
@@ -316,6 +320,12 @@ export default {
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/complete' && request.method === 'POST') {
       return handleAdminMediaConvertUploadComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/bunnystream' && request.method === 'POST') {
+      return handleAdminBunnyStreamUpload(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/videos/uploads/bunnystream/complete' && request.method === 'POST') {
+      return handleAdminBunnyStreamUploadComplete(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
       return handleAdminMediaConvertConfig(request, env, corsHeaders)
@@ -778,11 +788,39 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
       : null
 
     const shouldPreferVodRecording = Boolean(livestreamRecordingId) && ['ended', 'vod_attached', 'replaced_with_vod'].includes(livestreamStatus)
-    let resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: resolvedVideoId })
-    if (shouldPreferVodRecording && livestreamRecordingId) {
-      resolvedEntrypointUrl = await resolveMediaEntrypointUrl({ env, videoId: livestreamRecordingId })
-    }
-    const basePlaylistUrl = buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
+    const playbackVideoId = shouldPreferVodRecording && livestreamRecordingId
+      ? livestreamRecordingId
+      : resolvedVideoId
+
+    const bunnyPlaybackRow = await db.prepare(`
+      SELECT bunny_playback_url
+      FROM media_convert_jobs
+      WHERE video_id = ?
+        AND provider = 'bunnystream'
+        AND status = 'completed'
+        AND bunny_playback_url IS NOT NULL
+        AND TRIM(bunny_playback_url) != ''
+      ORDER BY completed_at DESC, created_at DESC
+      LIMIT 1
+    `).bind(playbackVideoId).first() as { bunny_playback_url?: string } | null
+    const bunnyPlaybackUrl = typeof bunnyPlaybackRow?.bunny_playback_url === 'string'
+      ? bunnyPlaybackRow.bunny_playback_url.trim()
+      : null
+
+    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
+      env,
+      videoId: playbackVideoId,
+      bunnyPlaybackUrl: hasPremiumAccess ? bunnyPlaybackUrl : null,
+    })
+
+    const isBunnyCdnPlayback = Boolean(
+      hasPremiumAccess
+      && bunnyPlaybackUrl
+      && resolvedEntrypointUrl === bunnyPlaybackUrl,
+    )
+    const basePlaylistUrl = isBunnyCdnPlayback
+      ? resolvedEntrypointUrl
+      : buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
     // Unify duration logic with the frontend: if D1 has 0/unknown duration,
     // attempt to resolve from the HLS playlist stored in R2.
     let fullDuration = video?.full_duration ?? previewDuration
@@ -817,7 +855,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     // Sign the playlist URL with a short-lived video token so the proxy can
     // authenticate every subsequent manifest and segment request.
     const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
-    let playlistUrl: string | null = basePlaylistUrl
+    let playlistUrl: string | null = basePlaylistUrl ?? null
     if (isLivestream) {
       const shouldUseLivePlayback = ['live', 'ready', 'provisioning', 'scheduled', 'draft'].includes(livestreamStatus)
       const hasRealtimePlaybackSource = Boolean(livestreamPlaybackUrl) || Boolean(livestreamMoqEndpoint && livestreamMoqBroadcast)
@@ -832,7 +870,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     if (env.JWT_SECRET) {
       const shouldSignProxyUrl = typeof playlistUrl === 'string' && playlistUrl.startsWith(new URL(request.url).origin)
       if (shouldSignProxyUrl && playlistUrl) {
-        const vt = await signVideoToken(effectiveUserId, resolvedVideoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
+        const vt = await signVideoToken(effectiveUserId, playbackVideoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
         playlistUrl = playlistUrl.includes('?')
           ? `${playlistUrl}&vt=${vt}`
           : `${playlistUrl}?vt=${vt}`

@@ -5,6 +5,7 @@
   "description": "R2 to Garage hot/cold storage offloading jobs",
   "type": "module",
   "scripts": {
+    "lint": "eslint src --ext .ts,.vue,.tsx --max-warnings 0",
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/index.js",
     "demote": "npm run build && node ./dist/index.js demote",

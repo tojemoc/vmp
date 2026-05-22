@@ -11,6 +11,10 @@
     "podcast-host": "npm run start --workspace=@vmp/podcast-host",
     "media-host": "npm run start --workspace=@vmp/podcast-host",
     "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:unused-disable-directives": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,vue,js,mjs,cjs,json,md}\"",
+    "knip": "knip",
     "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/api-node && npm run typecheck --workspace=@vmp/web",
     "typecheck:deploy": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web && npm run typecheck:scripts --workspace=@vmp/web && npm run build:sw-push --workspace=@vmp/web",
     "deploy:api": "npm run deploy --workspace=@vmp/api",
@@ -19,12 +23,21 @@
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@nx/nuxt": "22.7.2",
-    "@nx/vite": "22.7.1",
+    "@nx/vite": "22.7.2",
     "@vue/language-core": "^3.2.9",
+    "eslint": "^9.39.4",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^16.5.0",
+    "knip": "^5.88.1",
     "nuxt": "^4.4.6",
     "nx": "22.7.2",
-    "typescript": "^6.0.3"
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4",
+    "vue-eslint-parser": "^10.4.0"
   },
   "engines": {
     "node": ">=20.0.0",

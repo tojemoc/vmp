@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
     "build:sw-push": "tsc --ignoreConfig sw-push.ts --target ES2022 --module ES2020 --lib ES2022,WebWorker --skipLibCheck --outDir public --removeComments",
     "typecheck:scripts": "tsc --ignoreConfig --noEmit sw-push.ts scripts/gen-icons.ts tailwind.config.ts --target ES2022 --module ES2020 --moduleResolution bundler --skipLibCheck --types node --lib ES2022,WebWorker",
     "predev": "npm run build:sw-push",
@@ -18,7 +19,7 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/lite": "^0.3.0",
+    "@moq/lite": "0.2.2",
     "@moq/watch": "^0.2.10",
     "@nuxtjs/color-mode": "^4.0.0",
     "@vite-pwa/nuxt": "^1.1.1",
