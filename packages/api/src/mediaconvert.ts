@@ -775,9 +775,10 @@ async function pollBunnyStreamJobs(env: any) {
       continue
     }
 
-    // Stale uploaded rows never received /complete — fail if Bunny still has no progress.
-    if (localStatus === 'uploaded' && bunnyStatus.status === 'queued' && bunnyStatus.rawStatus === 0) {
-      const detail = 'Bunny upload never completed (no /complete callback within 24 hours)'
+    // Stale uploaded rows (24h+): missing /complete callback, not "never started" on Bunny.
+    // rawStatus 0 is Queued on Bunny — we fail when still queued after the timeout window.
+    if (localStatus === 'uploaded' && bunnyStatus.status === 'queued') {
+      const detail = 'Bunny upload stuck: no /complete callback within 24 hours (Bunny status Queued)'
       await db.batch([
         db.prepare(`
           UPDATE media_convert_jobs
@@ -788,7 +789,7 @@ async function pollBunnyStreamJobs(env: any) {
       ])
       continue
     }
-    if (localStatus === 'uploaded' && bunnyStatus.status !== 'error') {
+    if (localStatus === 'uploaded' && bunnyStatus.status !== 'error' && bunnyStatus.status !== 'finished') {
       await db.batch([
         db.prepare(`
           UPDATE media_convert_jobs
@@ -797,6 +798,7 @@ async function pollBunnyStreamJobs(env: any) {
         `).bind(bunnyGuid, localJobId),
         db.prepare(`UPDATE videos SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(videoId),
       ])
+      continue
     }
 
     if (bunnyStatus.status === 'error') {
