@@ -19,7 +19,7 @@
 
 import { requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
-import { getSettings, setSettings } from './settingsStore.js'
+import { getSettings } from './settingsStore.js'
 
 type CorsHeaders = Record<string, string>
 
@@ -125,6 +125,7 @@ function bunnyLibraryUrl(libraryId: string, path = ''): string {
 }
 
 function mapBunnyNumericStatus(code: number): BunnyVideoStatusName {
+  if (code === BUNNY_STATUS_QUEUED) return 'queued'
   if (code === BUNNY_STATUS_FINISHED) return 'finished'
   if (code === BUNNY_STATUS_ERROR || code === BUNNY_STATUS_UPLOAD_FAILED) return 'error'
   if (code === BUNNY_STATUS_TRANSCODING) return 'transcoding'
@@ -137,11 +138,20 @@ function bunnyCdnHost(cfg: BunnyStreamConfig): string {
     || (cfg.pullZone.trim() ? `${cfg.pullZone.trim()}.b-cdn.net` : '')
 }
 
+/** Strip scheme/trailing slashes without regex (admin-configured host strings). */
+function normalizeCdnHost(host: string): string {
+  let h = host.trim()
+  if (h.startsWith('https://')) h = h.slice(8)
+  else if (h.startsWith('http://')) h = h.slice(7)
+  while (h.endsWith('/')) h = h.slice(0, -1)
+  return h
+}
+
 /** Build direct HLS manifest URL on Bunny's CDN (not iframe player). */
 export function buildBunnyHlsManifestUrl(cfg: BunnyStreamConfig, videoGuid: string): string {
   const host = bunnyCdnHost(cfg)
   if (!host) return ''
-  const normalizedHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  const normalizedHost = normalizeCdnHost(host)
   return `https://${normalizedHost}/${encodeURIComponent(videoGuid)}/playlist.m3u8`
 }
 
@@ -152,8 +162,8 @@ export function buildBunnyThumbnailUrl(cfg: BunnyStreamConfig, videoGuid: string
   if (trimmed.includes('://') || trimmed.startsWith('//')) return trimmed
   const host = bunnyCdnHost(cfg)
   if (!host) return trimmed
-  const normalizedHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
-  const file = trimmed.replace(/^\//, '')
+  const normalizedHost = normalizeCdnHost(host)
+  const file = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed
   return `https://${normalizedHost}/${encodeURIComponent(videoGuid)}/${file}`
 }
 
