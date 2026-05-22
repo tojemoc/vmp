@@ -976,6 +976,8 @@ const initializeVideoElement = async (
   }
   ensureActive()
 
+  applyPlaybackRate(video)
+
   try {
     await video.play()
     ensureActive()
