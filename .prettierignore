@@ -1,0 +1,8 @@
+node_modules
+dist
+.nuxt
+.output
+coverage
+.wrangler
+packages/web/public
+package-lock.json
