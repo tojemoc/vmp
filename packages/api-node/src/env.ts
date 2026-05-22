@@ -13,6 +13,7 @@ const workspaceRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)
 let cachedEnv: CFEnvShape | null = null
 let cachedDb: SqliteD1Adapter | null = null
 let cachedKv: SqliteKVAdapter | null = null
+let envBuildPromise: Promise<CFEnvShape> | null = null
 
 export function migrationsDir(): string {
   return resolve(workspaceRoot, 'packages/api/migrations')
@@ -78,8 +79,17 @@ export async function buildEnv(): Promise<CFEnvShape> {
 }
 
 export async function getEnv(): Promise<CFEnvShape> {
-  if (!cachedEnv) return buildEnv()
-  return cachedEnv
+  if (cachedEnv) return cachedEnv
+  if (envBuildPromise) return envBuildPromise
+  envBuildPromise = buildEnv()
+    .then((env) => {
+      cachedEnv = env
+      return env
+    })
+    .finally(() => {
+      envBuildPromise = null
+    })
+  return envBuildPromise
 }
 
 export async function rebuildEnv(): Promise<CFEnvShape> {
@@ -88,7 +98,8 @@ export async function rebuildEnv(): Promise<CFEnvShape> {
   cachedEnv = null
   cachedDb = null
   cachedKv = null
-  return buildEnv()
+  envBuildPromise = null
+  return getEnv()
 }
 
 export function getDbAdapter(): SqliteD1Adapter | null {

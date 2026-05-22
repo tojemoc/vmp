@@ -189,6 +189,7 @@ export class SqliteD1Adapter {
     ]
     for (const row of rows) {
       lines.push(`-- id=${row.id} created_at=${row.created_at}`)
+      lines.push(`-- params: ${row.params_json}`)
       lines.push(row.sql)
       lines.push('')
     }

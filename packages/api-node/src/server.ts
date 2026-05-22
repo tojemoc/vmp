@@ -6,12 +6,27 @@ import { buildHealthResponse } from './middleware/health.js'
 import { buildEnv, getDbAdapter, getEnv, rebuildEnv, toNodeEnv } from './env.js'
 import { syncD1ToLocal } from './sync/d1sync.js'
 import type { CFEnvShape } from './types.js'
-import workerHandler from '../../api/src/index.js'
-import { requireRole } from '../../api/src/auth.js'
+import { getWorkerFetch, requireAdminRole } from './workerBridge.js'
+
 installCachePolyfill()
 
 const PORT = Number.parseInt(process.env.PORT ?? '8787', 10)
 const SYNC_INTERVAL_MS = Number.parseInt(process.env.D1_SYNC_INTERVAL_MS ?? '300000', 10)
+
+function authErrorStatus(err: unknown): number {
+  const message = err instanceof Error ? err.message : ''
+  if (message.includes('Insufficient role')) return 403
+  if (
+    message.includes('Missing Bearer') ||
+    message.includes('Malformed JWT') ||
+    message.includes('Invalid JWT') ||
+    message.includes('JWT expired') ||
+    message.includes('2FA')
+  ) {
+    return 401
+  }
+  return 401
+}
 
 async function readBody(req: IncomingMessage): Promise<Buffer | null> {
   if (req.method === 'GET' || req.method === 'HEAD') return null
@@ -68,7 +83,7 @@ async function handleFailoverAdminRoutes(
   if (url.pathname === '/api/admin/failover/write-log' && req.method === 'GET') {
     try {
       const request = nodeRequestToWeb(req, null)
-      await requireRole(request, env, 'admin', 'super_admin')
+      await requireAdminRole(request, env, 'admin', 'super_admin')
       const db = getDbAdapter()
       if (!db) {
         res.writeHead(503, { 'Content-Type': 'application/json', ...corsHeaders })
@@ -80,8 +95,8 @@ async function handleFailoverAdminRoutes(
       res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
       res.end(JSON.stringify({ entries, count: db.getWriteLogPendingCount() }))
     } catch (err) {
+      const status = authErrorStatus(err)
       const message = err instanceof Error ? err.message : 'Unauthorized'
-      const status = message.includes('Forbidden') ? 403 : 401
       res.writeHead(status, { 'Content-Type': 'application/json', ...corsHeaders })
       res.end(JSON.stringify({ error: message }))
     }
@@ -91,7 +106,7 @@ async function handleFailoverAdminRoutes(
   if (url.pathname === '/api/admin/failover/write-log/export' && req.method === 'POST') {
     try {
       const request = nodeRequestToWeb(req, await readBody(req))
-      await requireRole(request, env, 'admin', 'super_admin')
+      await requireAdminRole(request, env, 'admin', 'super_admin')
       const db = getDbAdapter()
       if (!db) {
         res.writeHead(503, { 'Content-Type': 'application/json', ...corsHeaders })
@@ -106,8 +121,8 @@ async function handleFailoverAdminRoutes(
       })
       res.end(sql)
     } catch (err) {
+      const status = authErrorStatus(err)
       const message = err instanceof Error ? err.message : 'Unauthorized'
-      const status = message.includes('Forbidden') ? 403 : 401
       res.writeHead(status, { 'Content-Type': 'application/json', ...corsHeaders })
       res.end(JSON.stringify({ error: message }))
     }
@@ -139,7 +154,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFE
     passThroughOnException: () => {},
   }
 
-  const response = await workerHandler.fetch(request, env, ctx)
+  const workerFetch = await getWorkerFetch()
+  const response = await workerFetch(request, env, ctx)
   await writeWebResponse(res, response)
 }
 

@@ -20,11 +20,16 @@ class MemoryCache {
       this.store.delete(key)
       return undefined
     }
+    this.store.delete(key)
+    this.store.set(key, entry)
     return entry.response.clone()
   }
 
   async put(request: RequestInfo | URL, response: Response): Promise<void> {
     const key = this.keyFor(request)
+    if (this.store.has(key)) {
+      this.store.delete(key)
+    }
     if (this.store.size >= MAX_ENTRIES) {
       const first = this.store.keys().next().value
       if (first) this.store.delete(first)

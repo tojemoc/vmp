@@ -1,5 +1,5 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import type { NodeEnv, SyncResult } from '../types.js'
 import type { SqliteD1Adapter } from '../bindings/db.js'
 
@@ -79,7 +79,10 @@ async function pollD1Export(
 ): Promise<{ signedUrl: string; atBookmark: string }> {
   const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/export`
   let currentBookmark = bookmark
-  const maxAttempts = 120
+  const maxAttempts = Math.max(
+    1,
+    Number.parseInt(process.env.D1_EXPORT_MAX_ATTEMPTS ?? '120', 10) || 120,
+  )
   for (let i = 0; i < maxAttempts; i++) {
     const body: Record<string, string> = { output_format: 'polling' }
     if (currentBookmark) body.current_bookmark = currentBookmark
@@ -155,9 +158,12 @@ export async function syncD1ToLocal(env: NodeEnv, db: SqliteD1Adapter): Promise<
     const snapshotPath = `${dirname(env.SQLITE_DB_PATH)}/d1_snapshot.sqlite`
     await downloadExport(signedUrl, snapshotPath)
 
+    const livePath = resolve(env.SQLITE_DB_PATH)
+    const stagingPath = `${livePath}.staging`
     db.close()
-    copyFileSync(snapshotPath, env.SQLITE_DB_PATH)
-    db.reconnect()
+    copyFileSync(snapshotPath, stagingPath)
+    renameSync(stagingPath, livePath)
+    db.reconnect(livePath)
 
     const rowCounts = db.countTableRows()
     const durationMs = Date.now() - start
@@ -175,9 +181,12 @@ export async function syncD1ToLocal(env: NodeEnv, db: SqliteD1Adapter): Promise<
     const message = err instanceof Error ? err.message : String(err)
     console.error('[d1sync] failed:', message)
     try {
-      db.reconnect()
-    } catch {
-      // ignore reconnect errors after failed sync
+      db.reconnect(resolve(env.SQLITE_DB_PATH))
+    } catch (reconnectErr) {
+      console.error(
+        '[d1sync] failed to reconnect database after sync error:',
+        reconnectErr instanceof Error ? reconnectErr.message : reconnectErr,
+      )
     }
     return {
       ok: false,

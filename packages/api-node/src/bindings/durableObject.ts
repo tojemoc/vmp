@@ -17,7 +17,8 @@ export class InMemorySegmentRateLimiter {
     const identifier = body.identifier ?? 'unknown'
     const videoId = body.videoId ?? 'unknown'
     const avgSegDur = body.avgSegDur ?? null
-    const segDur = avgSegDur ?? 6
+    const segDur =
+      typeof avgSegDur === 'number' && Number.isFinite(avgSegDur) && avgSegDur > 0 ? avgSegDur : 6
     const threshold = Math.ceil(60 / segDur) * 3
     const minute = Math.floor(Date.now() / 60000)
     const countKey = `${identifier}:${videoId}:${minute}`

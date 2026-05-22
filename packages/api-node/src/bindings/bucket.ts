@@ -169,15 +169,22 @@ export class S3R2Adapter {
       await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: list[0] }))
       return
     }
-    await this.client.send(
+    const response = await this.client.send(
       new DeleteObjectsCommand({
         Bucket: this.bucket,
         Delete: {
           Objects: list.map((Key) => ({ Key })),
-          Quiet: true,
+          Quiet: false,
         },
       }),
     )
+    const errors = response.Errors ?? []
+    if (errors.length > 0) {
+      const detail = errors
+        .map((e) => `${e.Key ?? '?'}: ${e.Code ?? 'Error'} ${e.Message ?? ''}`.trim())
+        .join('; ')
+      throw new Error(`S3 batch delete failed for ${errors.length} key(s): ${detail}`)
+    }
   }
 
   async list(options?: R2ListOptions): Promise<R2Objects> {

@@ -25,11 +25,11 @@ The Worker `fetch()` entry in `packages/api/src/index.ts` is invoked unchanged. 
 ## Cold start procedure
 
 1. Copy `.env.example` to `.env` and fill secrets (match production Worker secrets).
-2. **Fly.io:** from repo root:
+2. **Fly.io:** create the persistent volume once, then deploy from repo root:
    ```bash
+   fly volumes create vmp_sqlite_data --region fra --size 1
    fly deploy --config packages/api-node/fly.toml
    ```
-   Create the volume once: `fly volumes create vmp_sqlite_data --region fra --size 1`
 3. **Docker on a VM:**
    ```bash
    docker build -f packages/api-node/Dockerfile -t vmp-api-failover .

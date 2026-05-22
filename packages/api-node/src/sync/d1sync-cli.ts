@@ -7,10 +7,10 @@ import { syncD1ToLocal } from './d1sync.js'
 const once = process.argv.includes('--once') || !process.argv.includes('--watch')
 
 async function main(): Promise<void> {
-  await buildEnv()
+  const envShape = await buildEnv()
   const db = getDbAdapter()
   if (!db) throw new Error('Database adapter not initialized')
-  const result = await syncD1ToLocal(toNodeEnv(await buildEnv()), db)
+  const result = await syncD1ToLocal(toNodeEnv(envShape), db)
   console.log(JSON.stringify(result, null, 2))
   if (!result.ok) process.exit(1)
   if (once) process.exit(0)

@@ -39,9 +39,19 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
   }
 
   const bucket = env.BUCKET as S3R2Adapter | undefined
+  const s3TimeoutMs = Number.parseInt(process.env.HEALTH_S3_TIMEOUT_MS ?? '5000', 10) || 5000
   if (bucket?.ping) {
-    const s3 = await bucket.ping()
-    checks.s3 = s3
+    try {
+      const s3 = await Promise.race([
+        bucket.ping(),
+        new Promise<{ ok: false; latencyMs: number; error: string }>((resolve) =>
+          setTimeout(() => resolve({ ok: false, latencyMs: s3TimeoutMs, error: 'timeout' }), s3TimeoutMs),
+        ),
+      ])
+      checks.s3 = s3
+    } catch (err) {
+      checks.s3 = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   } else {
     checks.s3 = { ok: false, error: 'not configured' }
   }
