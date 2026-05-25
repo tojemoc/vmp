@@ -78,6 +78,20 @@ While Cloudflare is down, writes (registrations, subscriptions, publishes, setti
 2. Let Route 53 fail back when primary `/api/health` succeeds 3 times.
 3. Monitor ~30 minutes for split-brain (duplicate emails, double charges).
 
+## PaaS / backup deploy (non-Docker)
+
+If the host runs `npm install` from the **repo root** on Node **24.11+** or **22.12+**:
+
+```bash
+# Installs only shared + api + api-node (skips Nuxt/web native deps)
+npm run install:api-node
+npm run build:api-node
+```
+
+Set the platform **Node version** to `22.12.0` (see `packages/api-node/.node-version`) or at least `24.11.0`. Node `24.2.x` is too old for current Nuxt and breaks `better-sqlite3` unless you use the workspace-filtered install above.
+
+Optional builder hints: [`deploy.json`](./deploy.json).
+
 ## Development
 
 ```bash

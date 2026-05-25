@@ -11,7 +11,10 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/api/package.json ./packages/api/
 COPY packages/api-node/package.json ./packages/api-node/
 
-RUN npm ci --workspaces --include-workspace-root
+RUN npm ci --include-workspace-root \
+    --workspace=@vmp/shared \
+    --workspace=@vmp/api \
+    --workspace=@vmp/api-node
 
 COPY packages/shared ./packages/shared
 COPY packages/api/src ./packages/api/src
