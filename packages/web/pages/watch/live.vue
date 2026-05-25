@@ -162,6 +162,7 @@ import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/us
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
+import { buildWatchRecommendations } from '~/utils/watchRecommendations'
 
 const config = useRuntimeConfig()
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -291,12 +292,21 @@ const reconnectToLiveEdge = () => {
   }
 }
 
-const loadRecommendations = async () => {
+const loadRecommendations = async (currentVideoId?: string, routeVideoKey?: string) => {
   try {
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`)
     if (!recsResponse.ok) return
     const recommendationsData = await recsResponse.json()
-    recommendations.value = (recommendationsData.videos || []).slice(0, 5)
+    const resolvedId = currentVideoId ?? liveVideo.value?.id
+    if (!resolvedId) {
+      recommendations.value = (recommendationsData.videos || []).slice(0, 5)
+      return
+    }
+    recommendations.value = buildWatchRecommendations(recommendationsData.videos || [], {
+      currentVideoId: resolvedId,
+      routeVideoKey: routeVideoKey ?? 'live',
+      limit: 5
+    })
   } catch {
     recommendations.value = []
   }
@@ -312,6 +322,7 @@ onMounted(async () => {
     broadcast?: unknown
     moqBackend?: unknown
   } | null = null
+  let videoId: string | undefined
 
   try {
     const accessResponse = await fetch(`${config.public.apiUrl}/api/video-access/live`)
@@ -321,7 +332,7 @@ onMounted(async () => {
     }
     const accessData = await accessResponse.json()
     if (!isMounted) return
-    const videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
+    videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
     if (videoId === 'live') {
       throw new Error('Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.')
     }
@@ -398,7 +409,7 @@ onMounted(async () => {
       partialRuntime = null
     }
     if (isMounted) {
-      await loadRecommendations()
+      if (videoId && videoId !== 'live') await loadRecommendations(videoId, 'live')
       if (loading.value) loading.value = false
     }
   }
