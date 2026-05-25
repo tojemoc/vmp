@@ -11,6 +11,13 @@ import {
   handleVerifyMagicLink,
   handleMagicPwaHandoff,
   handleRedeemPwaHandoff,
+} from './auth.js'
+import {
+  handlePwaPushLoginInit,
+  handlePwaPushLoginSubscribe,
+  handlePwaPushLoginDeliver,
+} from './pwa-push-login.js'
+import {
   handleRefreshToken,
   handleLogout,
   handleGetMe,
@@ -20,6 +27,7 @@ import {
   requireAuth,
   requireRole,
 } from './auth.js'
+import { isPrivateHost } from './is-private-host.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
 import { sendPushNotification, sendPushToAllSubscribers } from './webpush.js'
 import {
@@ -263,6 +271,15 @@ export default {
     }
     if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
       return handleRedeemPwaHandoff(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/init' && request.method === 'POST') {
+      return handlePwaPushLoginInit(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/subscribe' && request.method === 'POST') {
+      return handlePwaPushLoginSubscribe(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/deliver' && request.method === 'POST') {
+      return handlePwaPushLoginDeliver(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
       return handleRefreshToken(request, env, corsHeaders)
@@ -2440,58 +2457,6 @@ function safeEndpointHost(endpoint: any) {
 }
 
 // ─── Push notification helpers ────────────────────────────────────────────────
-
-/**
- * Returns true if the hostname should be blocked as a push endpoint target.
- * Prevents SSRF by rejecting localhost, loopback, link-local, and RFC-1918 ranges.
- */
-function isPrivateHost(hostname: any) {
-  // Reject .local mDNS, localhost, and empty hostnames
-  if (!hostname || hostname === 'localhost' || hostname.endsWith('.local')) return true
-
-  // Normalise: strip IPv6 brackets, lowercase
-  const h = hostname.replace(/^\[|]$/g, '').toLowerCase()
-
-  // ── IPv4 ──────────────────────────────────────────────────────────────────
-  const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (ipv4) return isPrivateIPv4Octets(Number(ipv4[1]), Number(ipv4[2]))
-
-  // ── IPv6 ──────────────────────────────────────────────────────────────────
-  // Only apply IPv6 checks when the hostname contains ':' (IPv6 addresses always do).
-  // Without this guard, domain names like `fcm.googleapis.com` (Chrome's push
-  // service) would be falsely flagged as ULA fc00::/7 addresses because they
-  // start with "fc".
-  if (h.includes(':')) {
-    if (h === '::1') return true                          // loopback
-    if (h.startsWith('fe80:')) return true                // link-local fe80::/10
-    if (h.startsWith('fc') || h.startsWith('fd')) return true // ULA fc00::/7
-  }
-
-  // IPv4-mapped IPv6 — ::ffff:x.x.x.x  (covers ::ffff:127.0.0.1 etc.)
-  const mapped = h.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-    ?? h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
-  if (mapped) {
-    if (mapped.length === 5) {
-      // Dotted-decimal form
-      return isPrivateIPv4Octets(Number(mapped[1]), Number(mapped[2]))
-    }
-    // Hex-word form: convert each 16-bit word to two octets
-    const a = parseInt(mapped[1], 16)
-    return isPrivateIPv4Octets(a >> 8, a & 0xff)
-  }
-
-  return false
-}
-
-function isPrivateIPv4Octets(a: any, b: any) {
-  if (a === 10) return true                               // 10.0.0.0/8
-  if (a === 127) return true                              // 127.0.0.0/8 loopback
-  if (a === 172 && b >= 16 && b <= 31) return true       // 172.16.0.0/12
-  if (a === 192 && b === 168) return true                 // 192.168.0.0/16
-  if (a === 169 && b === 254) return true                 // 169.254.0.0/16 link-local
-  if (a === 0) return true                                // 0.0.0.0/8
-  return false
-}
 
 // ─── Push notification handlers ───────────────────────────────────────────────
 

@@ -16,6 +16,35 @@
         <p class="text-gray-400 text-sm">{{ strings.authVerifySigningIn }}</p>
       </div>
 
+      <!-- PWA push-login: confirm signing into Home Screen app -->
+      <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyPwaPushTitle }}</h2>
+        </div>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            :disabled="delivering"
+            @click="deliverToInstalledPwa"
+          >
+            {{ delivering ? strings.authVerifyPwaPushSending : strings.authVerifyPwaPushYes }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            :disabled="delivering"
+            @click="signInHereInstead"
+          >
+            {{ strings.authVerifyPwaPushNo }}
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="state === 'pwa_push_done'" class="space-y-4">
+        <p class="text-gray-300 text-sm leading-relaxed">{{ strings.authVerifyPwaPushDone }}</p>
+      </div>
+
       <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
       <div v-else-if="state === 'handoff_wait'" class="space-y-6 text-left">
         <div>
@@ -66,9 +95,11 @@
 <script setup lang="ts">
 import { useRoute, navigateTo } from '#app'
 import strings from '~/utils/strings'
+import { isInstalledPwa } from '~/utils/pwa'
 
 const route = useRoute()
 const { verify, magicPwaHandoff, redeemPwaHandoff, canEditContent, user } = useAuth()
+const { deliverMagicLinkToPwa } = usePwaPushLogin()
 
 function isDisplayStandalone() {
   if (import.meta.server) return false
@@ -107,11 +138,13 @@ function firstQueryString(v: unknown): string {
   return ''
 }
 
-type State = 'verifying' | 'error' | 'handoff_wait'
+type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_done'
 const state = ref<State>('verifying')
 const errorMessage = ref('')
 const copyHint = ref(strings.authVerifyHandoffCopyLink)
 const handoffCodeForSafari = ref<string | null>(null)
+const magicTokenForFlow = ref<string | null>(null)
+const delivering = ref(false)
 
 async function navigateAfterFullSession(redirect: string) {
   const u = user.value
@@ -138,6 +171,96 @@ async function finishInSafari() {
   } catch (e: any) {
     state.value = 'error'
     errorMessage.value = e?.message || 'Something went wrong. Please request a new sign-in link.'
+  }
+}
+
+function isPwaPushLoginLink(): boolean {
+  const pwa = firstQueryString(route.query.pwa)
+  return pwa === '1' && !isInstalledPwa()
+}
+
+async function deliverToInstalledPwa() {
+  const token = magicTokenForFlow.value
+  if (!token) return
+  delivering.value = true
+  errorMessage.value = ''
+  try {
+    const result = await deliverMagicLinkToPwa(token)
+    if (result.code === 'requires_2fa' && result.pendingToken) {
+      const redirect = safeRedirect(route.query.redirect, '/')
+      await navigateTo(
+        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+      )
+      return
+    }
+    if (!result.delivered) {
+      if (result.code === 'no_push_subscription' || result.code === 'push_failed') {
+        await signInHereInstead()
+        return
+      }
+      state.value = 'error'
+      errorMessage.value = strings.authVerifyPwaPushDeliverFailed
+      return
+    }
+    state.value = 'pwa_push_done'
+  } catch (e: unknown) {
+    state.value = 'error'
+    errorMessage.value = e instanceof Error ? e.message : strings.authVerifyPwaPushDeliverFailed
+  } finally {
+    delivering.value = false
+  }
+}
+
+async function signInHereInstead() {
+  const token = magicTokenForFlow.value
+  if (!token) return
+  state.value = 'verifying'
+  await runNormalTokenVerify(token)
+}
+
+async function runNormalTokenVerify(token: string) {
+  const redirect = safeRedirect(route.query.redirect, '/')
+  try {
+    if (shouldUseIosMagicHandoff()) {
+      const mh = await magicPwaHandoff(token)
+      if (mh.kind === '2fa') {
+        await navigateTo(
+          `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+        )
+        return
+      }
+      if (mh.kind === 'handoff') {
+        await navigateTo(
+          { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
+          { replace: true },
+        )
+        return
+      }
+      if (mh.kind === 'session') {
+        if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
+          await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
+          return
+        }
+        await navigateTo(redirect)
+      }
+      return
+    }
+
+    const result = await verify(token)
+    if ('requiresTwoFactor' in result) {
+      await navigateTo(
+        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+      )
+      return
+    }
+    if (canEditContent.value && result.totpRequired && !result.totpEnabled) {
+      await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
+      return
+    }
+    await navigateTo(redirect)
+  } catch (err: unknown) {
+    state.value = 'error'
+    errorMessage.value = err instanceof Error ? err.message : 'Something went wrong. Please request a new sign-in link.'
   }
 }
 
@@ -189,51 +312,14 @@ watch(
       return
     }
 
-    try {
-      if (shouldUseIosMagicHandoff()) {
-        const mh = await magicPwaHandoff(token)
-        if (mh.kind === '2fa') {
-          await navigateTo(
-            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
-          )
-          return
-        }
-        if (mh.kind === 'handoff') {
-          await navigateTo(
-            { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
-            { replace: true },
-          )
-          return
-        }
-        if (mh.kind === 'session') {
-          if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
-            await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
-            return
-          }
-          await navigateTo(redirect)
-        }
-        return
-      }
+    magicTokenForFlow.value = token
 
-      const result = await verify(token)
-
-      if ('requiresTwoFactor' in result) {
-        await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
-        )
-        return
-      }
-
-      if (canEditContent.value && result.totpRequired && !result.totpEnabled) {
-        await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
-        return
-      }
-
-      await navigateTo(redirect)
-    } catch (err: any) {
-      state.value = 'error'
-      errorMessage.value = err.message || 'Something went wrong. Please request a new sign-in link.'
+    if (isPwaPushLoginLink()) {
+      state.value = 'pwa_push_prompt'
+      return
     }
+
+    await runNormalTokenVerify(token)
   },
   { immediate: true },
 )

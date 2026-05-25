@@ -361,7 +361,7 @@ type MagicLinkConsumeResult =
  * Validates + consumes a magic-link row and returns the next auth phase.
  * Used by GET /api/auth/verify, POST /api/auth/magic-pwa-handoff, and redeem flows.
  */
-async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
+export async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
   const db = getDb(env)
   const tokenHash = await hashToken(rawToken)
 
@@ -1123,7 +1123,7 @@ function authJson(data: any, status: any, corsHeaders: any) {
   })
 }
 
-function shouldRequireTotpEnrollment(user: any, env: any) {
+export function shouldRequireTotpEnrollment(user: any, env: any) {
   if (!ROLES_REQUIRING_2FA.includes(user.role)) return false
   const rawCutoff = env.TOTP_ENFORCE_CREATED_AFTER
   if (!rawCutoff) return true   // no cutoff configured → enforce for all eligible roles

@@ -1,10 +1,48 @@
 /// <reference lib="WebWorker" />
 const sw = globalThis as unknown as ServiceWorkerGlobalScope & typeof globalThis
 
+const PWA_AUTH_IDB = 'vmp-pwa-auth'
+const PWA_AUTH_STORE = 'handoffs'
+
+function openIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PWA_AUTH_IDB, 1)
+    req.onerror = () => reject(req.error)
+    req.onsuccess = () => resolve(req.result)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(PWA_AUTH_STORE)) {
+        db.createObjectStore(PWA_AUTH_STORE)
+      }
+    }
+  })
+}
+
+async function storeHandoffCode(db: IDBDatabase, handoffCode: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PWA_AUTH_STORE, 'readwrite')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.objectStore(PWA_AUTH_STORE).put(handoffCode, 'pending')
+  })
+}
+
+async function notifyClientsOrStore(handoffCode: string): Promise<void> {
+  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  if (clients.length > 0) {
+    for (const client of clients) {
+      client.postMessage({ type: 'pwa_auth_handoff', handoffCode })
+    }
+    await clients[0].focus()
+    return
+  }
+  const db = await openIdb()
+  await storeHandoffCode(db, handoffCode)
+  await sw.clients.openWindow('/')
+}
+
 /**
  * Push handlers imported by the generated Workbox service worker.
- * Required for Chrome/Android + installed PWAs where push payloads are only
- * surfaced if the SW handles the "push" event and shows a notification.
  */
 sw.addEventListener('push', (event: PushEvent) => {
   let data: Record<string, unknown> = {}
@@ -12,6 +50,28 @@ sw.addEventListener('push', (event: PushEvent) => {
     data = event.data ? (event.data.json() as Record<string, unknown>) : {}
   } catch {
     data = {}
+  }
+
+  if (data.type === 'pwa_auth' && typeof data.handoffCode === 'string') {
+    const handoffCode = data.handoffCode
+    const title = typeof data.title === 'string' ? data.title : 'Sign in'
+    const body = typeof data.body === 'string' ? data.body : 'Tap to complete sign in'
+    event.waitUntil(
+      (async () => {
+        try {
+          await notifyClientsOrStore(handoffCode)
+        } catch (err) {
+          console.warn('[sw-push] notifyClientsOrStore failed:', err)
+        }
+        await sw.registration.showNotification(title, {
+          body,
+          icon: '/icons/pwa-192.png',
+          badge: '/icons/pwa-192.png',
+          data: { handoffCode },
+        })
+      })(),
+    )
+    return
   }
 
   const title = typeof data.title === 'string' && data.title.trim()
@@ -47,7 +107,17 @@ sw.addEventListener('push', (event: PushEvent) => {
 
 sw.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close()
-  const targetUrl = (event.notification?.data as { url?: string } | undefined)?.url || '/'
+  const notifData = event.notification?.data as { handoffCode?: string; url?: string } | undefined
+
+  if (typeof notifData?.handoffCode === 'string') {
+    const code = notifData.handoffCode
+    event.waitUntil(
+      sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(code)}`),
+    )
+    return
+  }
+
+  const targetUrl = notifData?.url || '/'
 
   event.waitUntil((async () => {
     let targetPath: string
