@@ -28,6 +28,7 @@ describe('resolveFulfilledBillingRequestMandate', () => {
 
   it('fulfils when billing request is ready_to_fulfil', async () => {
     const calls: string[] = []
+    let fulfilIdempotencyKey = ''
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
@@ -37,6 +38,12 @@ describe('resolveFulfilledBillingRequestMandate', () => {
         }), { status: 200 })
       }
       if (url.endsWith('/billing_requests/BRQ123/actions/fulfil')) {
+        const headers = init?.headers
+        if (headers instanceof Headers) {
+          fulfilIdempotencyKey = headers.get('Idempotency-Key') ?? ''
+        } else if (headers && typeof headers === 'object') {
+          fulfilIdempotencyKey = String((headers as Record<string, string>)['Idempotency-Key'] ?? '')
+        }
         return new Response(JSON.stringify({
           billing_requests: {
             id: 'BRQ123',
@@ -49,14 +56,17 @@ describe('resolveFulfilledBillingRequestMandate', () => {
     }) as typeof fetch
 
     try {
-      const result = await resolveFulfilledBillingRequestMandate('BRQ123', {
-        GOCARDLESS_ACCESS_TOKEN: 'test-token',
-      })
+      const result = await resolveFulfilledBillingRequestMandate(
+        'BRQ123',
+        { GOCARDLESS_ACCESS_TOKEN: 'test-token' },
+        'test-idempotency-key',
+      )
       assert.equal(result.ok, true)
       if (result.ok) {
         assert.equal(result.mandateId, 'MD789')
         assert.equal(result.billingRequest.status, 'fulfilled')
       }
+      assert.equal(fulfilIdempotencyKey, 'test-idempotency-key')
       assert.deepEqual(calls, [
         'GET https://api.gocardless.com/billing_requests/BRQ123',
         'POST https://api.gocardless.com/billing_requests/BRQ123/actions/fulfil',

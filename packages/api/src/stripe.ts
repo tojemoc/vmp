@@ -843,7 +843,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
       return jsonResponse({
         error: 'Checkout session is missing a billing request id. Start checkout again.',
         code: 'billing_request_missing',
-      }, 500, corsHeaders)
+      }, 409, corsHeaders)
     }
 
     const mandateResolution = await resolveFulfilledBillingRequestMandate(
