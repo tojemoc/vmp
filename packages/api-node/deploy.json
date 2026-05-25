@@ -6,6 +6,6 @@
   "buildCommand": "npm run build:api-node",
   "startCommand": "node packages/api-node/dist/server.js",
   "runtimeEntrypoint": "packages/api-node/dist/server.js",
-  "denoConfig": "packages/api-node/deno.json",
+  "denoConfig": "deno.json",
   "notes": "Do not use src/server.ts as the runtime entry — sources use Node ESM .js specifiers and are bundled by esbuild. Deno Deploy must run dist/server.js after build; deno.json enables sloppy-imports only for the dependency-cache step."
 }
