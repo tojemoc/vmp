@@ -32,6 +32,12 @@ Thumbs.db
 *.tmp
 .cache/
 
+# Failover local SQLite (api-node dev)
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 
 .nx/cache
 .nx/workspace-data

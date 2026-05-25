@@ -1,0 +1,43 @@
+app = 'vmp-api-failover'
+primary_region = 'fra'
+
+[build]
+  dockerfile = "Dockerfile"
+  build-context = "../.."
+
+[env]
+  PORT = '8787'
+  SQLITE_DB_PATH = '/data/vmp.sqlite'
+  NODE_ENV = 'production'
+  D1_SYNC_INTERVAL_MS = '300000'
+
+[mounts]
+  source = 'vmp_sqlite_data'
+  destination = '/data'
+
+[[services]]
+  internal_port = 8787
+  protocol = 'tcp'
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[services.ports]]
+    port = 443
+    handlers = ['tls', 'http']
+
+  [[services.ports]]
+    port = 80
+    handlers = ['http']
+
+  [services.concurrency]
+    type = 'requests'
+    hard_limit = 200
+    soft_limit = 150
+
+  [[services.http_checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/api/health'
