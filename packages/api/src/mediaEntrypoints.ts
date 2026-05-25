@@ -37,11 +37,23 @@ export async function resolveMediaEntrypointUrl({
   videoId,
   preferPodcast = false,
   rssPreview = false,
-}: any) {
+  bunnyPlaybackUrl = null,
+}: {
+  env: { R2_BASE_URL?: string }
+  videoId: string
+  preferPodcast?: boolean
+  rssPreview?: boolean
+  /** Bunny Stream HLS manifest on Bunny CDN — used when R2 has no processed artifact. */
+  bunnyPlaybackUrl?: string | null
+}) {
   const base = env.R2_BASE_URL
   const candidates = buildEntrypointCandidates(base, videoId, { preferPodcast, rssPreview })
   for (const c of candidates) {
     if (await canLoadEntrypoint(c)) return c
+  }
+  // TODO: Bunny CDN URLs bypass /api/video-proxy — preview manifest truncation does not apply.
+  if (bunnyPlaybackUrl && typeof bunnyPlaybackUrl === 'string' && bunnyPlaybackUrl.trim()) {
+    return bunnyPlaybackUrl.trim()
   }
   return candidates[0]
 }
