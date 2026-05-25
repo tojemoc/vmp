@@ -186,6 +186,23 @@
                   <span class="flex-1"></span>
                   <media-mute-button></media-mute-button>
                   <media-volume-range class="hidden sm:inline-flex"></media-volume-range>
+                  <label class="watch-playback-rate-wrap hidden sm:inline-flex">
+                    <span class="sr-only">{{ strings.playbackSpeed }}</span>
+                    <select
+                      class="watch-playback-rate-select"
+                      :aria-label="strings.playbackSpeed"
+                      :value="String(playbackRate)"
+                      @change="handlePlaybackRateChange"
+                    >
+                      <option
+                        v-for="opt in PLAYBACK_RATE_OPTIONS"
+                        :key="opt.value"
+                        :value="String(opt.value)"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    </select>
+                  </label>
                   <media-fullscreen-button></media-fullscreen-button>
                 </media-control-bar>
               </div>
@@ -395,6 +412,10 @@ import 'videojs-video-element'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
+import {
+  PLAYBACK_RATE_OPTIONS,
+  usePlaybackRate,
+} from '~/composables/usePlaybackRate'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
@@ -431,6 +452,7 @@ type MediaLikeElement = HTMLElement & {
   src: string
   currentTime: number
   muted: boolean
+  playbackRate: number
   readyState: number
   pause: () => void
   play: () => Promise<void>
@@ -438,6 +460,20 @@ type MediaLikeElement = HTMLElement & {
   setAttribute: (name: string, value: string) => void
   addEventListener: HTMLElement['addEventListener']
   removeEventListener: HTMLElement['removeEventListener']
+}
+
+const {
+  playbackRate,
+  applyPlaybackRate,
+  setPlaybackRate,
+} = usePlaybackRate()
+
+const handlePlaybackRateChange = (event: Event) => {
+  const select = event.target as HTMLSelectElement
+  const rate = Number.parseFloat(select.value)
+  if (!Number.isFinite(rate)) return
+  setPlaybackRate(rate)
+  applyPlaybackRate(videoElement.value)
 }
 
 const videoElement        = ref<MediaLikeElement | null>(null)
@@ -946,6 +982,8 @@ const initializeVideoElement = async (
   }
   ensureActive()
 
+  applyPlaybackRate(video)
+
   try {
     await video.play()
     ensureActive()
@@ -1093,6 +1131,34 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
   z-index: 20;
   padding: 2px 8px 6px;
   --media-control-background: transparent;
+}
+
+.watch-playback-rate-wrap {
+  align-items: center;
+  margin: 0 0.15rem;
+}
+
+.watch-playback-rate-select {
+  min-width: 3.25rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.watch-playback-rate-select:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.watch-playback-rate-select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
 }
 
 @media (min-width: 640px) {
