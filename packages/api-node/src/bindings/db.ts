@@ -25,11 +25,6 @@ function metaFromRun(result: Database.RunResult): D1Result['meta'] {
   }
 }
 
-function rowsFromStatement(stmt: Database.Statement): Record<string, unknown>[] {
-  if (!stmt.reader) return []
-  return stmt.all() as Record<string, unknown>[]
-}
-
 class SqlitePreparedStatement {
   private readonly stmt: Database.Statement
   private boundArgs: unknown[] = []
