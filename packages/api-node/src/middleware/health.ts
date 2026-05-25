@@ -42,11 +42,18 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
   const s3TimeoutMs = Number.parseInt(process.env.HEALTH_S3_TIMEOUT_MS ?? '5000', 10) || 5000
   if (bucket?.ping) {
     try {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
       const s3 = await Promise.race([
-        bucket.ping(),
-        new Promise<{ ok: false; latencyMs: number; error: string }>((resolve) =>
-          setTimeout(() => resolve({ ok: false, latencyMs: s3TimeoutMs, error: 'timeout' }), s3TimeoutMs),
-        ),
+        bucket.ping().then((result) => {
+          if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
+          return result
+        }),
+        new Promise<{ ok: false; latencyMs: number; error: string }>((resolve) => {
+          timeoutHandle = setTimeout(
+            () => resolve({ ok: false, latencyMs: s3TimeoutMs, error: 'timeout' }),
+            s3TimeoutMs,
+          )
+        }),
       ])
       checks.s3 = s3
     } catch (err) {

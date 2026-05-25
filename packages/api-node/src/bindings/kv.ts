@@ -181,9 +181,43 @@ export class SqliteKVAdapter {
   async getWithMetadata(
     key: string,
     options?: KVGetOptions | 'text' | 'json' | 'arrayBuffer' | 'stream',
-  ): Promise<{ value: string | null; metadata: null }> {
+  ): Promise<{
+    value: string | object | ArrayBuffer | ReadableStream | null
+    metadata: null
+  }> {
+    const type =
+      options === 'json'
+        ? 'json'
+        : options === 'arrayBuffer'
+          ? 'arrayBuffer'
+          : options === 'stream'
+            ? 'stream'
+            : typeof options === 'object' && options && 'type' in options
+              ? options.type ?? 'text'
+              : 'text'
+
     const value = await this.get(key, options)
     if (value == null) return { value: null, metadata: null }
+
+    if (type === 'json') {
+      if (
+        typeof value === 'object' &&
+        !(value instanceof ArrayBuffer) &&
+        !(value instanceof ReadableStream)
+      ) {
+        return { value, metadata: null }
+      }
+      return { value: null, metadata: null }
+    }
+    if (type === 'arrayBuffer') {
+      if (value instanceof ArrayBuffer) return { value, metadata: null }
+      return { value: null, metadata: null }
+    }
+    if (type === 'stream') {
+      if (value instanceof ReadableStream) return { value, metadata: null }
+      return { value: null, metadata: null }
+    }
+
     if (typeof value === 'string') return { value, metadata: null }
     if (typeof value === 'object' && !(value instanceof ArrayBuffer) && !(value instanceof ReadableStream)) {
       return { value: JSON.stringify(value), metadata: null }
