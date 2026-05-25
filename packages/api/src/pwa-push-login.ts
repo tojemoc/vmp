@@ -7,6 +7,7 @@ import {
   generateToken,
   hashToken,
   consumeMagicLinkForUser,
+  shouldRequireTotpEnrollment,
 } from './auth.js'
 import { isPrivateHost } from './is-private-host.js'
 import { sendPushNotification } from './webpush.js'
@@ -142,6 +143,22 @@ async function sendMagicLinkEmail(to: string, verifyUrl: string, env: any) {
   }
 }
 
+function isLocalDevMagicLinkMode(env: any): boolean {
+  return String(env.LOCAL_DEV ?? '').toLowerCase() === 'true'
+}
+
+async function dispatchPwaPushLoginMagicLink(env: any, email: string, verifyUrl: string) {
+  if (env.BREVO_API_KEY) {
+    await sendMagicLinkEmail(email, verifyUrl, env)
+    return
+  }
+  if (isLocalDevMagicLinkMode(env)) {
+    console.log('[DEV] PWA push-login magic link email skipped (set BREVO_API_KEY to send; LOCAL_DEV=true)')
+    return
+  }
+  throw new Error('BREVO_API_KEY is not configured')
+}
+
 /**
  * POST /api/auth/pwa-push-login/init
  * Body: { email, deviceToken }
@@ -251,11 +268,7 @@ export async function handlePwaPushLoginSubscribe(request: any, env: any, corsHe
   verifyUrl.searchParams.set('pwa', '1')
 
   try {
-    if (env.BREVO_API_KEY) {
-      await sendMagicLinkEmail(attempt.email, verifyUrl.toString(), env)
-    } else {
-      console.log(`[DEV] PWA push-login magic link for ${attempt.email}: ${verifyUrl.toString()}`)
-    }
+    await dispatchPwaPushLoginMagicLink(env, attempt.email, verifyUrl.toString())
   } catch (err) {
     console.error('[pwa-push-login] email send failed:', err)
     return authJson({ error: 'Could not send sign-in email. Try again.' }, 500, corsHeaders)
@@ -285,8 +298,10 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
 
   const linkRow = await db
     .prepare(`
-      SELECT t.id, t.expires_at, t.used_at
+      SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
+             u.totp_enabled, u.created_at
       FROM magic_link_tokens t
+      JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = ?
     `)
     .bind(tokenHash)
@@ -315,12 +330,23 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
   }
 
-  const phase = await consumeMagicLinkForUser(env, rawToken)
-  if (phase.tag === 'invalid') {
-    return authJson({ error: phase.message }, 401, corsHeaders)
+  const linkUser = {
+    id: linkRow.user_id,
+    email: linkRow.email,
+    role: linkRow.role,
+    totp_enabled: linkRow.totp_enabled,
+    created_at: linkRow.created_at,
   }
-  if (phase.tag === 'totp_pending') {
-    return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
+  const totpRequired = shouldRequireTotpEnrollment(linkUser, env)
+  if (totpRequired && linkUser.totp_enabled) {
+    const phase = await consumeMagicLinkForUser(env, rawToken)
+    if (phase.tag === 'invalid') {
+      return authJson({ error: phase.message }, 401, corsHeaders)
+    }
+    if (phase.tag === 'totp_pending') {
+      await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
+      return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
+    }
   }
 
   let pushSub: { endpoint: string; keys: { p256dh: string; auth: string } }
@@ -344,7 +370,7 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
   try {
     await db
       .prepare('INSERT INTO pwa_handoffs (code, user_id, expires_at) VALUES (?, ?, ?)')
-      .bind(codeHash, phase.user.id, handoffExpiresAt)
+      .bind(codeHash, linkRow.user_id, handoffExpiresAt)
       .run()
   } catch (err) {
     console.error('[pwa-push-login] handoff insert failed:', err)
@@ -368,7 +394,18 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     )
   } catch (err) {
     console.error('[pwa-push-login] push delivery failed:', err)
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
     return authJson({ ok: false, code: 'push_failed' }, 200, corsHeaders)
+  }
+
+  const phase = await consumeMagicLinkForUser(env, rawToken)
+  if (phase.tag === 'invalid') {
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ error: phase.message }, 401, corsHeaders)
+  }
+  if (phase.tag === 'totp_pending') {
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
   }
 
   await db

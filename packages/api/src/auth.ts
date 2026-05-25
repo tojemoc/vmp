@@ -1123,7 +1123,7 @@ function authJson(data: any, status: any, corsHeaders: any) {
   })
 }
 
-function shouldRequireTotpEnrollment(user: any, env: any) {
+export function shouldRequireTotpEnrollment(user: any, env: any) {
   if (!ROLES_REQUIRING_2FA.includes(user.role)) return false
   const rawCutoff = env.TOTP_ENFORCE_CREATED_AFTER
   if (!rawCutoff) return true   // no cutoff configured → enforce for all eligible roles

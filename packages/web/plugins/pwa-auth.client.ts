@@ -9,7 +9,11 @@ export default defineNuxtPlugin(() => {
   const { redeemPwaHandoff, isLoggedIn, initialised } = useAuth()
 
   async function redeemCode(code: string): Promise<boolean> {
-    if (!code || isLoggedIn.value) return false
+    if (!code) return false
+    if (isLoggedIn.value) {
+      await clearStoredPwaHandoffCode()
+      return false
+    }
     try {
       await redeemPwaHandoff(code)
       await clearStoredPwaHandoffCode()
