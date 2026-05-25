@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "main": "./dist/server.js",
   "description": "VMP API failover node server (D1/S3/KV adapters for @vmp/api Worker code)",
   "scripts": {
     "build": "node scripts/build.mjs",

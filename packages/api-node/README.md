@@ -90,7 +90,9 @@ npm run build:api-node
 
 Set the platform **Node version** to `22.12.0` (see `packages/api-node/.node-version`) or at least `24.11.0`. Node `24.2.x` is too old for current Nuxt and breaks `better-sqlite3` unless you use the workspace-filtered install above.
 
-Optional builder hints: [`deploy.json`](./deploy.json).
+Optional builder hints: [`deploy.json`](./deploy.json), [`deno.json`](./deno.json) (Deno Deploy: `sloppy-imports` for TS cache, runtime `dist/server.js`).
+
+**Deno Deploy / PaaS entrypoint:** set runtime to `packages/api-node/dist/server.js` (after `npm run build:api-node`). If the platform caches deps from `src/server.ts`, `deno.json` must be present so `.js` imports resolve to `.ts` files during cache.
 
 ## Development
 

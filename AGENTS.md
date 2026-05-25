@@ -1,5 +1,29 @@
 # AGENTS.md
 
+## Git workflow (mandatory — read first)
+
+**Never push commits directly to `main`.** Pushes to `main` trigger **autodeploy** (staging CD via `.github/workflows/deploy.yml`). The maintainer reviews every change with **CodeRabbit** on pull requests before merge.
+
+### Required flow for every code change
+
+1. Create a **feature branch** from `main` (e.g. `fix/…`, `chore/…`, `feat/…`).
+2. Commit on that branch only.
+3. Push the branch: `git push -u origin <branch>`.
+4. Open a **pull request** (draft is fine) targeting `main` — use the PR tooling; do **not** merge locally unless asked.
+5. Wait for human review / CodeRabbit; do **not** bypass by pushing to `main`.
+
+### Forbidden
+
+- `git push origin main` (or any direct update to `main` / default branch)
+- Committing on `main` in cloud/background sessions when the task is feature work
+- Force-pushing `main`
+
+### Allowed without a PR
+
+- None for agents/automation — **always use a PR**, even for docs-only or one-line fixes.
+
+If you are unsure which branch you are on, run `git branch --show-current` before `git push`.
+
 ## Project overview
 
 VMP (Video Monetization Platform) is a subscription-gated HLS video streaming platform. npm workspaces monorepo with three packages:
@@ -82,7 +106,7 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
 - **Secrets**: never commit secrets. Use `wrangler secret put` for sensitive values. Local dev secrets go in `packages/api/.dev.vars`.
 - **TypeScript in `@vmp/web`**: all new composables and pages should be `.ts` / `<script setup lang="ts">` with explicit prop and emit types.
 - **SubtleCrypto over npm for crypto**: Workers have full WebCrypto. Don't add `crypto`, `jsonwebtoken`, `otplib`, `web-push` as Worker dependencies. Implement with SubtleCrypto directly.
-- **PRs**: one PR per step. PR description should list every file changed and why.
+- **PRs**: one PR per step; **never push to `main`** (see [Git workflow](#git-workflow-mandatory--read-first)). PR description should list every file changed and why.
 - **Before writing code for a step**: read all files that will be modified, check if migrations already exist, confirm API contract before implementing, implement API first then frontend, smoke-test with `wrangler dev`.
 
 ## Implementation roadmap

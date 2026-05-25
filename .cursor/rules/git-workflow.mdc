@@ -1,0 +1,28 @@
+---
+description: Mandatory git workflow — PRs only, never push to main (autodeploy + CodeRabbit)
+alwaysApply: true
+---
+
+# Git workflow (non-negotiable)
+
+## Never push to `main`
+
+Pushes to `main` trigger **staging autodeploy** (`.github/workflows/deploy.yml`). The project owner reviews **every** change via **CodeRabbit** on pull requests.
+
+**Do not** run `git push origin main`, commit feature work on `main`, or merge locally into `main` unless the user explicitly orders that exact action in the same message.
+
+## Always use a pull request
+
+1. `git checkout -b <type>/<short-description>` from latest `main`
+2. Make changes and commit on the branch
+3. `git push -u origin <branch>`
+4. Open a **draft PR** targeting `main` (ManagePullRequest or equivalent)
+5. Stop — do not push to `main` to "finish" the task
+
+## Before every `git push`
+
+Run `git branch --show-current`. If the branch is `main`, **stop** and create a feature branch.
+
+## Docs
+
+Full policy: `AGENTS.md` → "Git workflow (mandatory — read first)".
