@@ -41,10 +41,6 @@
     "vue-tsc": "^3.2.8",
     "wrangler": "^4.93.0"
   },
-  "overrides": {
-    "serialize-javascript": ">=7.0.3",
-    "brace-expansion": ">=5.0.5"
-  },
   "nx": {
     "targets": {
       "deploy": {

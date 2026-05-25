@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["@cloudflare/workers-types", "node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "paths": {}
+  },
+  "include": [
+    "src/bindings/**/*.ts",
+    "src/sync/**/*.ts",
+    "src/middleware/**/*.ts",
+    "src/env.ts",
+    "src/types.ts"
+  ]
+}

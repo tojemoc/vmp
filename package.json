@@ -15,10 +15,12 @@
     "lint:unused-disable-directives": "eslint . --report-unused-disable-directives --max-warnings 0",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,vue,js,mjs,cjs,json,md}\"",
     "knip": "knip",
-    "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web",
+    "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/api-node && npm run typecheck --workspace=@vmp/web",
     "typecheck:deploy": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web && npm run typecheck:scripts --workspace=@vmp/web && npm run build:sw-push --workspace=@vmp/web",
     "deploy:api": "npm run deploy --workspace=@vmp/api",
     "deploy:web": "npm run deploy --workspace=@vmp/web",
+    "install:api-node": "npm ci --include-workspace-root --workspace=@vmp/shared --workspace=@vmp/api --workspace=@vmp/api-node",
+    "build:api-node": "npm run build --workspace=@vmp/api-node",
     "db:create": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0001_canonical_schema.sql",
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"
   },
@@ -45,6 +47,7 @@
   },
   "overrides": {
     "serialize-javascript": ">=7.0.3",
-    "brace-expansion": ">=5.0.5"
+    "brace-expansion": ">=5.0.5",
+    "better-sqlite3": "^12.10.0"
   }
 }
