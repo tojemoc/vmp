@@ -1,14 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-
-/**
- * Mirrors email normalization used in subscriptionTransfer.ts
- */
-function normalizeEmail(email: string): string | null {
-  const trimmed = email.trim().toLowerCase()
-  if (!trimmed || !trimmed.includes('@')) return null
-  return trimmed
-}
+import { normalizeEmail } from '../src/subscriptionTransfer.js'
 
 describe('subscription transfer email normalization', () => {
   it('lowercases and trims valid emails', () => {

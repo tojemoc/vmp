@@ -36,7 +36,7 @@ function buildAdminAuditLogStatement(db: any, {
   )
 }
 
-function normalizeEmail(email: string): string | null {
+export function normalizeEmail(email: string): string | null {
   const trimmed = email.trim().toLowerCase()
   if (!trimmed || !trimmed.includes('@')) return null
   return trimmed
@@ -45,10 +45,12 @@ function normalizeEmail(email: string): string | null {
 const ACTIVE_STATUSES = ['active', 'trialing'] as const
 
 export type TransferSubscriptionErrorCode =
+  | 'source_not_found'
   | 'target_not_found'
   | 'target_has_subscription'
   | 'same_user'
   | 'no_active_subscription'
+  | 'transfer_failed'
   | 'invalid_email'
 
 export async function executeSubscriptionTransfer(
@@ -73,7 +75,7 @@ export async function executeSubscriptionTransfer(
 
   const sourceUser = await db.prepare('SELECT id, email FROM users WHERE id = ?').bind(sourceUserId).first()
   if (!sourceUser) {
-    return { ok: false, code: 'target_not_found', error: 'Source user not found', status: 404 }
+    return { ok: false, code: 'source_not_found', error: 'Source user not found', status: 404 }
   }
 
   const targetUser = await db.prepare('SELECT id, email FROM users WHERE lower(email) = ? LIMIT 1')
@@ -142,8 +144,8 @@ export async function executeSubscriptionTransfer(
       }
     }
   } catch (e) {
-    console.error('executeSubscriptionTransfer batch:', e)
-    return { ok: false, code: 'no_active_subscription', error: 'Transfer failed', status: 500 }
+    console.error('executeSubscriptionTransfer batch:', e instanceof Error ? e.message : String(e), e)
+    return { ok: false, code: 'transfer_failed', error: 'Transfer failed', status: 500 }
   }
 
   return {

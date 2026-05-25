@@ -2258,9 +2258,11 @@
       @click.self="closeTransferSubscriptionModal"
     >
       <div
+        ref="transferSubDialogRef"
         role="dialog"
         aria-modal="true"
         aria-label="Transfer subscription"
+        tabindex="-1"
         class="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
       >
         <template v-if="transferSubModal.step === 0">
@@ -4686,10 +4688,12 @@ async function executeTransferSubscription() {
     if (!res.ok) {
       const code = typeof data.code === 'string' ? data.code : ''
       const messages: Record<string, string> = {
+        source_not_found: 'Source user not found.',
         target_not_found: 'No account found with that email.',
         target_has_subscription: 'That account already has an active or trialing subscription.',
         same_user: 'Destination must be a different account.',
-        no_active_subscription: 'This account no longer has an active subscription to transfer.',
+        no_active_subscription: 'This account no longer has an active or trialing subscription to transfer.',
+        transfer_failed: 'Transfer failed due to an internal error.',
         invalid_email: 'Enter a valid destination email.',
       }
       transferSubModal.value.error = messages[code] || data.error || `Transfer failed (HTTP ${res.status})`
@@ -6010,6 +6014,7 @@ const confirmDialogRef = ref<HTMLElement | null>(null)
 const swapDialogRef    = ref<HTMLElement | null>(null)
 const scheduleDialogRef = ref<HTMLElement | null>(null)
 const descriptionDialogRef = ref<HTMLElement | null>(null)
+const transferSubDialogRef = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
 function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system') {
@@ -6132,6 +6137,30 @@ function onDescriptionModalKeydown(e: KeyboardEvent) {
   }
 }
 
+function onTransferSubModalKeydown(e: KeyboardEvent) {
+  if (!transferSubModal.value.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeTransferSubscriptionModal()
+    return
+  }
+  if (e.key !== 'Tab' || !transferSubDialogRef.value) return
+  const focusable = transferSubDialogRef.value.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (!focusable.length) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  const active = document.activeElement as HTMLElement | null
+  if (e.shiftKey && active === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
 watch(() => swapModal.value.open, async (open) => {
   if (open) {
     lastFocusedEl.value = document.activeElement as HTMLElement | null
@@ -6169,6 +6198,19 @@ watch(() => descriptionModal.value.open, async (open) => {
   }
 })
 
+watch(() => transferSubModal.value.open, async (open) => {
+  if (open) {
+    lastFocusedEl.value = document.activeElement as HTMLElement | null
+    await nextTick()
+    const emailInput = document.getElementById('transfer-sub-target-email') as HTMLInputElement | null
+    emailInput?.focus()
+    window.addEventListener('keydown', onTransferSubModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onTransferSubModalKeydown)
+    lastFocusedEl.value?.focus()
+  }
+})
+
 onMounted(async () => {
   await reloadAll()
 })
@@ -6178,6 +6220,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onSwapModalKeydown)
   window.removeEventListener('keydown', onScheduleModalKeydown)
   window.removeEventListener('keydown', onDescriptionModalKeydown)
+  window.removeEventListener('keydown', onTransferSubModalKeydown)
   if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer)
   for (const timer of toastTimers.values()) clearTimeout(timer)
   toastTimers.clear()
