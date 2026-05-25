@@ -398,6 +398,7 @@ import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/us
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
+import { buildWatchRecommendations } from '~/utils/watchRecommendations'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -747,7 +748,12 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
       if (recsResponse.ok) {
         const recommendationsData = await recsResponse.json()
         ensureCurrent()
-        recommendations.value = (recommendationsData.videos || []).filter((v: any) => v.id !== targetVideoId).slice(0, 5)
+        const currentVideoId = String(videoData.value?.videoId ?? targetVideoId)
+        recommendations.value = buildWatchRecommendations(recommendationsData.videos || [], {
+          currentVideoId,
+          routeVideoKey: targetVideoId,
+          limit: 5
+        })
       }
     } catch (e: any) {
       if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) throw e

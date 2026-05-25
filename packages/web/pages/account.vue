@@ -36,50 +36,6 @@
         <div class="h-4 w-24 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
       </div>
 
-      <!-- Active subscription card -->
-      <div
-        v-else-if="subscription"
-        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Current plan</p>
-            <p class="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-              {{ planDisplayName(subscription.planType) }}
-            </p>
-            <p v-if="subscription.provider" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Provider: {{ paymentProviderLabel(subscription.provider) }}
-            </p>
-          </div>
-          <span
-            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
-            :class="statusBadgeClass(subscription.status)"
-          >
-            {{ subscription.status }}
-          </span>
-        </div>
-
-        <div v-if="subscription.currentPeriodEnd" class="mt-4 text-sm text-gray-600 dark:text-gray-400">
-          <span v-if="subscription.status === 'active'">Renews on </span>
-          <span v-else>Access until </span>
-          <span class="font-medium text-gray-900 dark:text-white">
-            {{ formatDate(subscription.currentPeriodEnd) }}
-          </span>
-        </div>
-
-        <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
-          <button
-            class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            :disabled="openingPortal"
-            @click="openPortal"
-          >
-            <span v-if="openingPortal">Opening…</span>
-            <span v-else>Manage subscription</span>
-          </button>
-          <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
-        </div>
-      </div>
-
       <div
         v-if="gocardlessCompletionError"
         class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
@@ -87,26 +43,69 @@
         {{ gocardlessCompletionError }}
       </div>
 
-      <!-- No subscription -->
+      <!-- Subscription (active or empty — never both) -->
       <div
-        v-else
-        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 text-center"
+        v-else-if="!loadingSub && !gocardlessCompletionError"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
+        :class="{ 'text-center': !hasActiveSubscription }"
       >
-        <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-          <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-          </svg>
-        </div>
-        <p class="font-semibold text-gray-900 dark:text-white mb-1">No active subscription</p>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Subscribe to unlock full access to all premium videos.
-        </p>
-        <NuxtLink
-          to="/"
-          class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
-        >
-          Browse videos
-        </NuxtLink>
+        <template v-if="hasActiveSubscription && subscription">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Current plan</p>
+              <p class="text-lg font-semibold text-gray-900 dark:text-white capitalize">
+                {{ planDisplayName(subscription.planType) }}
+              </p>
+              <p v-if="subscription.provider" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Provider: {{ paymentProviderLabel(subscription.provider) }}
+              </p>
+            </div>
+            <span
+              class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
+              :class="statusBadgeClass(subscription.status)"
+            >
+              {{ subscription.status }}
+            </span>
+          </div>
+
+          <div v-if="subscription.currentPeriodEnd" class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+            <span v-if="subscription.status === 'active'">Renews on </span>
+            <span v-else>Access until </span>
+            <span class="font-medium text-gray-900 dark:text-white">
+              {{ formatDate(subscription.currentPeriodEnd) }}
+            </span>
+          </div>
+
+          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
+            <button
+              class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              :disabled="openingPortal"
+              @click="openPortal"
+            >
+              <span v-if="openingPortal">Opening…</span>
+              <span v-else>Manage subscription</span>
+            </button>
+            <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+            <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <p class="font-semibold text-gray-900 dark:text-white mb-1">No active subscription</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Subscribe to unlock full access to all premium videos.
+          </p>
+          <NuxtLink
+            to="/"
+            class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            Browse videos
+          </NuxtLink>
+        </template>
       </div>
 
       <!-- Podcast RSS -->
@@ -145,8 +144,11 @@
         </template>
       </div>
 
-      <!-- Security / 2FA card -->
-      <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+      <!-- Security / 2FA card (staff roles required; viewers optional) -->
+      <div
+        v-if="show2faCard"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
+      >
         <div class="flex items-center gap-3 mb-4">
           <div class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
             <svg class="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,7 +159,6 @@
           <h2 class="text-base font-semibold text-gray-900 dark:text-white">Two-factor authentication</h2>
         </div>
 
-        <!-- 2FA enabled (show regardless of whether it is required for this role) -->
         <div v-if="user?.totpEnabled" class="flex items-center gap-3">
           <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -168,7 +169,6 @@
           <p class="text-sm text-gray-500 dark:text-gray-400">Your account is protected with an authenticator app.</p>
         </div>
 
-        <!-- 2FA required but not yet set up -->
         <div v-else-if="user?.totpRequired">
           <div class="flex items-center gap-3 mb-4">
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
@@ -187,9 +187,16 @@
           </NuxtLink>
         </div>
 
-        <!-- 2FA not required for this role -->
         <div v-else>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Two-factor authentication is not required for your account role.</p>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Add extra security to your account (optional).
+          </p>
+          <NuxtLink
+            to="/auth/2fa/setup?redirect=/account"
+            class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Set up two-factor authentication
+          </NuxtLink>
         </div>
       </div>
 
@@ -202,7 +209,26 @@ const route  = useRoute()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
 
+const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
+
 const { user, subscription, fetchSubscription, authHeader, isLoggedIn } = useAuth()
+
+const hasActiveSubscription = computed(() => {
+  const sub = subscription.value
+  if (!sub) return false
+  return sub.status === 'active' || sub.status === 'trialing'
+})
+
+const roleRequires2fa = computed(() => {
+  const role = user.value?.role
+  return !!role && (ROLES_REQUIRING_2FA as readonly string[]).includes(role)
+})
+
+const show2faCard = computed(() => {
+  if (!user.value) return false
+  if (user.value.totpEnabled || user.value.totpRequired) return true
+  return roleRequires2fa.value || user.value.role === 'viewer'
+})
 
 // Guard: redirect to login if not authenticated
 if (!isLoggedIn.value) {
