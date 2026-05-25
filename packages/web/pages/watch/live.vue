@@ -322,6 +322,7 @@ onMounted(async () => {
     broadcast?: unknown
     moqBackend?: unknown
   } | null = null
+  let videoId: string | undefined
 
   try {
     const accessResponse = await fetch(`${config.public.apiUrl}/api/video-access/live`)
@@ -331,7 +332,7 @@ onMounted(async () => {
     }
     const accessData = await accessResponse.json()
     if (!isMounted) return
-    const videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
+    videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
     if (videoId === 'live') {
       throw new Error('Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.')
     }
@@ -408,7 +409,7 @@ onMounted(async () => {
       partialRuntime = null
     }
     if (isMounted) {
-      await loadRecommendations(videoId, 'live')
+      if (videoId && videoId !== 'live') await loadRecommendations(videoId, 'live')
       if (loading.value) loading.value = false
     }
   }
