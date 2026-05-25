@@ -304,8 +304,9 @@ export default {
     }
     {
       const pipelineStatusMatch = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/)
-      if (pipelineStatusMatch && request.method === 'POST') {
-        return handleVideoPipelineStatus(request, env, corsHeaders, pipelineStatusMatch[1])
+      const pipelineVideoId = pipelineStatusMatch?.[1]
+      if (pipelineVideoId && request.method === 'POST') {
+        return handleVideoPipelineStatus(request, env, corsHeaders, pipelineVideoId)
       }
     }
     if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
