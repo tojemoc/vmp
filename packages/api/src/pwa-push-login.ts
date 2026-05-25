@@ -8,6 +8,7 @@ import {
   hashToken,
   consumeMagicLinkForUser,
 } from './auth.js'
+import { isPrivateHost } from './is-private-host.js'
 import { sendPushNotification } from './webpush.js'
 
 const PWA_PUSH_LOGIN_TTL_SEC = 15 * 60
@@ -49,23 +50,6 @@ async function rateLimitByIp(request: any, env: any, keyPrefix: string, maxPerHo
   } catch {
     return false
   }
-}
-
-function isPrivateHost(hostname: string): boolean {
-  const h = hostname.toLowerCase()
-  if (h === 'localhost' || h.endsWith('.localhost')) return true
-  if (h === '127.0.0.1' || h.startsWith('127.')) return true
-  if (h === '::1' || h === '[::1]') return true
-  const ipv4 = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
-  if (!ipv4) return false
-  const a = Number(ipv4[1])
-  const b = Number(ipv4[2])
-  if (a === 10) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  if (a === 192 && b === 168) return true
-  if (a === 169 && b === 254) return true
-  if (a === 0) return true
-  return false
 }
 
 function validatePushSubscriptionBody(body: any): { endpoint: string; p256dh: string; auth: string } | null {

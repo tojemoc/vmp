@@ -51,6 +51,7 @@ const strings = {
   pwaLoginCheckEmailHint: 'When prompted in Safari, choose to sign into the Home Screen app. Then switch back here — you should be signed in automatically.',
 
   authVerifyPwaPushTitle: 'Are you signing into the app on your home screen?',
+  authVerifyPwaPushSending: 'Sending…',
   authVerifyPwaPushYes: 'Yes, sign me into the app',
   authVerifyPwaPushNo: 'No, sign in here instead',
   authVerifyPwaPushDone: 'Done! Switch back to the app — you should be signed in.',

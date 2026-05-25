@@ -28,7 +28,7 @@
             :disabled="delivering"
             @click="deliverToInstalledPwa"
           >
-            {{ delivering ? 'Sending…' : strings.authVerifyPwaPushYes }}
+            {{ delivering ? strings.authVerifyPwaPushSending : strings.authVerifyPwaPushYes }}
           </button>
           <button
             type="button"

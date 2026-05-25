@@ -58,7 +58,11 @@ sw.addEventListener('push', (event: PushEvent) => {
     const body = typeof data.body === 'string' ? data.body : 'Tap to complete sign in'
     event.waitUntil(
       (async () => {
-        await notifyClientsOrStore(handoffCode)
+        try {
+          await notifyClientsOrStore(handoffCode)
+        } catch (err) {
+          console.warn('[sw-push] notifyClientsOrStore failed:', err)
+        }
         await sw.registration.showNotification(title, {
           body,
           icon: '/icons/pwa-192.png',

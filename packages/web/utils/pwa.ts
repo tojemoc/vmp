@@ -6,6 +6,7 @@ export function isInstalledPwa(): boolean {
 }
 
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token'
+let fallbackDeviceToken: string | null = null
 
 /** Stable per-browser id for anonymous PWA push-login attempts. */
 export function getOrCreatePwaDeviceToken(): string {
@@ -17,6 +18,7 @@ export function getOrCreatePwaDeviceToken(): string {
     localStorage.setItem(DEVICE_TOKEN_KEY, token)
     return token
   } catch {
-    return crypto.randomUUID()
+    if (!fallbackDeviceToken) fallbackDeviceToken = crypto.randomUUID()
+    return fallbackDeviceToken
   }
 }

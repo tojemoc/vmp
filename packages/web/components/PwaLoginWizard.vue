@@ -162,13 +162,17 @@ async function requestPushAndSubscribe() {
     }
 
     const subJson = sub.toJSON()
-    await subscribeWithPushSubscription({
+    const { emailSent } = await subscribeWithPushSubscription({
       endpoint: subJson.endpoint!,
       keys: {
         p256dh: subJson.keys?.p256dh!,
         auth: subJson.keys?.auth!,
       },
     })
+    if (!emailSent) {
+      errorMessage.value = 'We could not send the sign-in email. Please try again.'
+      return
+    }
     step.value = 3
   } catch (e: unknown) {
     errorMessage.value = e instanceof Error ? e.message : 'Could not enable notifications'

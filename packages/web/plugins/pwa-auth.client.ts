@@ -8,13 +8,15 @@ export default defineNuxtPlugin(() => {
   const router = useRouter()
   const { redeemPwaHandoff, isLoggedIn, initialised } = useAuth()
 
-  async function redeemCode(code: string) {
-    if (!code || isLoggedIn.value) return
+  async function redeemCode(code: string): Promise<boolean> {
+    if (!code || isLoggedIn.value) return false
     try {
       await redeemPwaHandoff(code)
       await clearStoredPwaHandoffCode()
+      return true
     } catch (err) {
       console.warn('[pwa-auth] handoff redeem failed:', err)
+      return false
     }
   }
 
@@ -23,10 +25,12 @@ export default defineNuxtPlugin(() => {
       ? route.query.pwa_auth_handoff.trim()
       : ''
     if (fromQuery) {
-      await redeemCode(fromQuery)
-      const q = { ...route.query }
-      delete q.pwa_auth_handoff
-      await router.replace({ path: route.path, query: q })
+      const ok = await redeemCode(fromQuery)
+      if (ok) {
+        const q = { ...route.query }
+        delete q.pwa_auth_handoff
+        await router.replace({ path: route.path, query: q })
+      }
       return
     }
     const fromIdb = await readStoredPwaHandoffCode()
