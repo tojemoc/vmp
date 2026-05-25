@@ -11,6 +11,13 @@ import {
   handleVerifyMagicLink,
   handleMagicPwaHandoff,
   handleRedeemPwaHandoff,
+} from './auth.js'
+import {
+  handlePwaPushLoginInit,
+  handlePwaPushLoginSubscribe,
+  handlePwaPushLoginDeliver,
+} from './pwa-push-login.js'
+import {
   handleRefreshToken,
   handleLogout,
   handleGetMe,
@@ -263,6 +270,15 @@ export default {
     }
     if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
       return handleRedeemPwaHandoff(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/init' && request.method === 'POST') {
+      return handlePwaPushLoginInit(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/subscribe' && request.method === 'POST') {
+      return handlePwaPushLoginSubscribe(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/deliver' && request.method === 'POST') {
+      return handlePwaPushLoginDeliver(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
       return handleRefreshToken(request, env, corsHeaders)

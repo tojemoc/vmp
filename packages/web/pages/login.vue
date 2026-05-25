@@ -1,5 +1,9 @@
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+    <PwaLoginWizard
+      :open="showPwaWizard"
+      @dismiss="showPwaWizard = false"
+    />
     <div class="w-full max-w-sm">
 
       <!-- Logo / Brand -->
@@ -56,8 +60,11 @@
 </template>
 
 <script setup lang="ts">
+import { isInstalledPwa } from '~/utils/pwa'
+
 const route  = useRoute()
-const { signIn, isLoggedIn } = useAuth()
+const { signIn, isLoggedIn, initialised } = useAuth()
+const showPwaWizard = ref(false)
 
 // Must start with a single slash; rejects //evil.com and external URLs.
 function safeRedirect(value: unknown, fallback: string): string {
@@ -80,6 +87,18 @@ const email        = ref('')
 const loading      = ref(false)
 const sent         = ref(false)
 const errorMessage = ref('')
+
+onMounted(() => {
+  watch(
+    () => initialised.value,
+    (ready) => {
+      if (ready && isInstalledPwa() && !isLoggedIn.value) {
+        showPwaWizard.value = true
+      }
+    },
+    { immediate: true },
+  )
+})
 
 async function submit() {
   if (!email.value || loading.value) return

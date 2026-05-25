@@ -42,6 +42,20 @@ const strings = {
   authVerifyHandoffCopyLink: 'Copy sign-in link',
   authVerifyHandoffCopied: 'Link copied',
 
+  pwaLoginTitle: 'Sign in to the app',
+  pwaLoginIntro: 'This takes a few extra steps the first time. Follow each step carefully.',
+  pwaLoginPushStep: 'Allow notifications so we can send your sign-in to this app after you confirm in email.',
+  pwaLoginPushDenied:
+    'Push notifications are required for this sign-in method. Try signing in through Safari first, then open the app — or use the regular email form below.',
+  pwaLoginCheckEmail: 'Check your email. Tap the link to continue.',
+  pwaLoginCheckEmailHint: 'When prompted in Safari, choose to sign into the Home Screen app. Then switch back here — you should be signed in automatically.',
+
+  authVerifyPwaPushTitle: 'Are you signing into the app on your home screen?',
+  authVerifyPwaPushYes: 'Yes, sign me into the app',
+  authVerifyPwaPushNo: 'No, sign in here instead',
+  authVerifyPwaPushDone: 'Done! Switch back to the app — you should be signed in.',
+  authVerifyPwaPushDeliverFailed: 'We could not send the sign-in to your app. You can sign in in Safari instead.',
+
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Discover Premium Video Content',
   heroSubtitleDefault: 'Watch free previews or unlock full access with a premium subscription',

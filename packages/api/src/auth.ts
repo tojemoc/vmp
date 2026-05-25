@@ -361,7 +361,7 @@ type MagicLinkConsumeResult =
  * Validates + consumes a magic-link row and returns the next auth phase.
  * Used by GET /api/auth/verify, POST /api/auth/magic-pwa-handoff, and redeem flows.
  */
-async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
+export async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
   const db = getDb(env)
   const tokenHash = await hashToken(rawToken)
 

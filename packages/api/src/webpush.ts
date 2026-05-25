@@ -334,6 +334,8 @@ interface PushPayload {
   title: string
   body: string
   url?: string
+  type?: string
+  handoffCode?: string
 }
 
 interface PushEnv {
