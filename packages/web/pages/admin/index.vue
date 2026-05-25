@@ -1117,6 +1117,14 @@
               <div class="md:col-span-2">
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ u.email }}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ u.id }}</p>
+                <button
+                  v-if="userHasTransferableSubscription(u)"
+                  type="button"
+                  class="mt-1 text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline"
+                  @click="openTransferSubscriptionModal(u)"
+                >
+                  Transfer subscription…
+                </button>
               </div>
               <div>
                 <label class="sr-only" :for="`role-${u.id}`">Role for {{ u.email }}</label>
@@ -2243,6 +2251,73 @@
       </div>
     </div>
 
+    <!-- Transfer subscription modal -->
+    <div
+      v-if="transferSubModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="closeTransferSubscriptionModal"
+    >
+      <div
+        ref="transferSubDialogRef"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Transfer subscription"
+        tabindex="-1"
+        class="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
+      >
+        <template v-if="transferSubModal.step === 0">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Transfer subscription</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Move all subscription rows from <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.sourceUser?.email }}</span>
+            to another account. The destination must exist and must not already have an active or trialing subscription.
+          </p>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="transfer-sub-target-email">Destination email</label>
+          <input
+            id="transfer-sub-target-email"
+            v-model="transferSubModal.targetEmail"
+            type="email"
+            autocomplete="off"
+            class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+            placeholder="user@example.com"
+          />
+          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mt-2">{{ transferSubModal.error }}</p>
+          <div class="flex justify-end gap-2 mt-5">
+            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeTransferSubscriptionModal">Cancel</button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
+              :disabled="!transferSubModal.targetEmail.trim()"
+              @click="goTransferSubscriptionConfirm"
+            >
+              Continue
+            </button>
+          </div>
+        </template>
+        <template v-else-if="transferSubModal.step === 1">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Confirm transfer</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Transfer subscription from
+            <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.sourceUser?.email }}</span>
+            to
+            <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.targetEmail.trim() }}</span>?
+            This reassigns every subscription row to the destination account.
+          </p>
+          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mb-3">{{ transferSubModal.error }}</p>
+          <div class="flex justify-end gap-2">
+            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="transferSubModal.step = 0">Back</button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
+              :disabled="transferSubModal.submitting"
+              @click="executeTransferSubscription"
+            >
+              {{ transferSubModal.submitting ? 'Transferring…' : 'Confirm transfer' }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- Swap modal -->
     <div v-if="swapModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="swapModal.open = false">
       <div
@@ -2573,6 +2648,21 @@ const swapModal = ref<{
   sourceVideo: Video | null
   targetId: string | null
 }>({ open: false, step: 0, sourceVideo: null, targetId: null })
+const transferSubModal = ref<{
+  open: boolean
+  step: number
+  sourceUser: AdminUserRow | null
+  targetEmail: string
+  error: string | null
+  submitting: boolean
+}>({
+  open: false,
+  step: 0,
+  sourceUser: null,
+  targetEmail: '',
+  error: null,
+  submitting: false,
+})
 const livestreamModal = ref({
   open: false,
   saving: false,
@@ -4540,6 +4630,85 @@ function hasAdminUserSubscriptionRow(u: AdminUserRow): boolean {
   return u.subscription_status != null && u.subscription_status !== ''
 }
 
+function userHasTransferableSubscription(u: AdminUserRow): boolean {
+  const s = u.subscription_status
+  return s === 'active' || s === 'trialing'
+}
+
+function openTransferSubscriptionModal(u: AdminUserRow) {
+  transferSubModal.value = {
+    open: true,
+    step: 0,
+    sourceUser: u,
+    targetEmail: '',
+    error: null,
+    submitting: false,
+  }
+}
+
+function closeTransferSubscriptionModal() {
+  transferSubModal.value = {
+    open: false,
+    step: 0,
+    sourceUser: null,
+    targetEmail: '',
+    error: null,
+    submitting: false,
+  }
+}
+
+function goTransferSubscriptionConfirm() {
+  const email = transferSubModal.value.targetEmail.trim()
+  if (!email || !email.includes('@')) {
+    transferSubModal.value.error = 'Enter a valid destination email.'
+    return
+  }
+  if (email.toLowerCase() === transferSubModal.value.sourceUser?.email?.toLowerCase()) {
+    transferSubModal.value.error = 'Destination must be a different account.'
+    return
+  }
+  transferSubModal.value.error = null
+  transferSubModal.value.step = 1
+}
+
+async function executeTransferSubscription() {
+  const modal = transferSubModal.value
+  const source = modal.sourceUser
+  const targetEmail = modal.targetEmail.trim()
+  if (!source?.id || !targetEmail) return
+  transferSubModal.value.submitting = true
+  transferSubModal.value.error = null
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/users/transfer-subscription`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ sourceUserId: source.id, targetEmail }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const code = typeof data.code === 'string' ? data.code : ''
+      const messages: Record<string, string> = {
+        source_not_found: 'Source user not found.',
+        target_not_found: 'No account found with that email.',
+        target_has_subscription: 'That account already has an active or trialing subscription.',
+        same_user: 'Destination must be a different account.',
+        no_active_subscription: 'This account no longer has an active or trialing subscription to transfer.',
+        transfer_failed: 'Transfer failed due to an internal error.',
+        invalid_email: 'Enter a valid destination email.',
+      }
+      transferSubModal.value.error = messages[code] || data.error || `Transfer failed (HTTP ${res.status})`
+      return
+    }
+    closeTransferSubscriptionModal()
+    await loadUsers()
+    showToast('success', `Subscription transferred to ${data.targetEmail || targetEmail}.`)
+  } catch (e: unknown) {
+    transferSubModal.value.error = e instanceof Error ? e.message : 'Network error during transfer.'
+  } finally {
+    transferSubModal.value.submitting = false
+  }
+}
+
 function adminUserSubscriptionSelectDisabled(u: AdminUserRow): boolean {
   if (user.value?.role !== 'super_admin' && u.role === 'super_admin') return true
   return !hasAdminUserSubscriptionRow(u)
@@ -5845,6 +6014,7 @@ const confirmDialogRef = ref<HTMLElement | null>(null)
 const swapDialogRef    = ref<HTMLElement | null>(null)
 const scheduleDialogRef = ref<HTMLElement | null>(null)
 const descriptionDialogRef = ref<HTMLElement | null>(null)
+const transferSubDialogRef = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
 function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system') {
@@ -5967,6 +6137,38 @@ function onDescriptionModalKeydown(e: KeyboardEvent) {
   }
 }
 
+function onTransferSubModalKeydown(e: KeyboardEvent) {
+  if (!transferSubModal.value.open) return
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeTransferSubscriptionModal()
+    return
+  }
+  if (e.key !== 'Tab' || !transferSubDialogRef.value) return
+  const focusable = transferSubDialogRef.value.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (!focusable.length) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  const active = document.activeElement as HTMLElement | null
+  const activeIsOutside = !active || !transferSubDialogRef.value.contains(active)
+  if (activeIsOutside) {
+    e.preventDefault()
+    if (e.shiftKey) {
+      last.focus()
+    } else {
+      first.focus()
+    }
+  } else if (e.shiftKey && active === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
 watch(() => swapModal.value.open, async (open) => {
   if (open) {
     lastFocusedEl.value = document.activeElement as HTMLElement | null
@@ -6004,6 +6206,19 @@ watch(() => descriptionModal.value.open, async (open) => {
   }
 })
 
+watch(() => transferSubModal.value.open, async (open) => {
+  if (open) {
+    lastFocusedEl.value = document.activeElement as HTMLElement | null
+    await nextTick()
+    const emailInput = document.getElementById('transfer-sub-target-email') as HTMLInputElement | null
+    emailInput?.focus()
+    window.addEventListener('keydown', onTransferSubModalKeydown)
+  } else {
+    window.removeEventListener('keydown', onTransferSubModalKeydown)
+    lastFocusedEl.value?.focus()
+  }
+})
+
 onMounted(async () => {
   await reloadAll()
 })
@@ -6013,6 +6228,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onSwapModalKeydown)
   window.removeEventListener('keydown', onScheduleModalKeydown)
   window.removeEventListener('keydown', onDescriptionModalKeydown)
+  window.removeEventListener('keydown', onTransferSubModalKeydown)
   if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer)
   for (const timer of toastTimers.values()) clearTimeout(timer)
   toastTimers.clear()
