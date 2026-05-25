@@ -6152,7 +6152,15 @@ function onTransferSubModalKeydown(e: KeyboardEvent) {
   const first = focusable[0]!
   const last = focusable[focusable.length - 1]!
   const active = document.activeElement as HTMLElement | null
-  if (e.shiftKey && active === first) {
+  const activeIsOutside = !active || !transferSubDialogRef.value.contains(active)
+  if (activeIsOutside) {
+    e.preventDefault()
+    if (e.shiftKey) {
+      last.focus()
+    } else {
+      first.focus()
+    }
+  } else if (e.shiftKey && active === first) {
     e.preventDefault()
     last.focus()
   } else if (!e.shiftKey && active === last) {
