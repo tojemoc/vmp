@@ -1,3 +1,7 @@
+## Git workflow (mandatory)
+
+**Never push to `main`.** Always use a feature branch + pull request. Pushes to `main` autodeploy staging; PRs are reviewed with CodeRabbit. See `AGENTS.md` → “Git workflow”.
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
