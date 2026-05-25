@@ -18,7 +18,8 @@ function readStoredPlaybackRate(): number {
   try {
     const raw = localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY)
     if (raw == null) return 1
-    const parsed = Number.parseFloat(raw)
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return 1
     return ALLOWED_VALUES.has(parsed as (typeof PLAYBACK_RATE_OPTIONS)[number]['value'])
       ? parsed
       : 1
