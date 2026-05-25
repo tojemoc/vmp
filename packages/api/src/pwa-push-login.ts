@@ -153,7 +153,7 @@ async function dispatchPwaPushLoginMagicLink(env: any, email: string, verifyUrl:
     return
   }
   if (isLocalDevMagicLinkMode(env)) {
-    console.log('[DEV] PWA push-login magic link email skipped (set BREVO_API_KEY to send; LOCAL_DEV=true)')
+    console.log(`[DEV] PWA push-login magic link for ${email}: ${verifyUrl}`)
     return
   }
   throw new Error('BREVO_API_KEY is not configured')
