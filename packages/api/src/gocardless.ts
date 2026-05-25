@@ -93,3 +93,50 @@ export function getGoCardlessInterval(planType: PlanType): { interval: number, i
   if (planType === 'monthly') return { interval: 1, intervalUnit: 'monthly' }
   return { interval: 1, intervalUnit: 'yearly' }
 }
+
+/** Mandate id after a billing request is fulfilled (hosted flow or manual fulfil). */
+export function extractMandateIdFromBillingRequest(billingRequest: any): string {
+  return String(
+    billingRequest?.mandate_request?.links?.mandate
+    ?? billingRequest?.links?.mandate
+    ?? '',
+  ).trim()
+}
+
+/**
+ * Load a billing request and ensure its mandate exists (fulfil when ready_to_fulfil).
+ * Used after the customer returns from a Billing Request Flow authorisation URL.
+ */
+export async function resolveFulfilledBillingRequestMandate(
+  billingRequestId: string,
+  env: any,
+  idempotencyKey?: string,
+): Promise<{ ok: true, billingRequest: any, mandateId: string } | { ok: false, billingRequest?: any, reason: string }> {
+  const lookup = await gocardlessGet(`/billing_requests/${billingRequestId}`, env)
+  let billingRequest = lookup?.data?.billing_requests
+  if (!lookup.ok || !billingRequest?.id) {
+    return { ok: false, reason: 'lookup_failed' }
+  }
+
+  let status = String(billingRequest.status ?? '').trim().toLowerCase()
+  if (status === 'ready_to_fulfil') {
+    const fulfil = await gocardlessPost(
+      `/billing_requests/${billingRequestId}/actions/fulfil`,
+      {},
+      env,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    )
+    billingRequest = fulfil?.data?.billing_requests ?? billingRequest
+    if (!fulfil.ok) {
+      return { ok: false, billingRequest, reason: 'fulfil_failed' }
+    }
+    status = String(billingRequest.status ?? '').trim().toLowerCase()
+  }
+
+  const mandateId = extractMandateIdFromBillingRequest(billingRequest)
+  if (!mandateId || status !== 'fulfilled') {
+    return { ok: false, billingRequest, reason: 'mandate_not_ready' }
+  }
+
+  return { ok: true, billingRequest, mandateId }
+}
