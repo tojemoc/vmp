@@ -3,6 +3,15 @@
  * Signed callback from podcast-host when HLS renditions become available.
  */
 
+import type { D1Database } from '@cloudflare/workers-types'
+
+interface PipelineEnv {
+  DB?: D1Database
+  video_subscription_db?: D1Database
+  VMP_API_PIPELINE_SECRET?: string
+  RATE_LIMIT_KV?: { delete: (key: string) => Promise<void> }
+}
+
 function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -25,7 +34,8 @@ async function verifyPipelineWebhook(rawBody: string, sigHeader: string, tsHeade
   if (Math.abs(nowSec - tsNum) > 5 * 60) return false
 
   const m = sigHeader.match(/^sha256=([0-9a-f]{64})$/i)
-  if (!m) return false
+  const provided = m?.[1]
+  if (!provided) return false
 
   const key = await crypto.subtle.importKey(
     'raw',
@@ -36,16 +46,16 @@ async function verifyPipelineWebhook(rawBody: string, sigHeader: string, tsHeade
   )
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${tsHeader}.${rawBody}`))
   const expected = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
-  return constantTimeEqual(m[1].toLowerCase(), expected.toLowerCase())
+  return constantTimeEqual(provided.toLowerCase(), expected.toLowerCase())
 }
 
-function getDb(env: { DB?: unknown, video_subscription_db?: unknown }) {
+function getDb(env: PipelineEnv) {
   const db = env.DB || env.video_subscription_db
   if (!db) throw new Error('D1 binding not found')
   return db
 }
 
-export async function handleVideoPipelineStatus(request: Request, env: any, corsHeaders: Record<string, string>, videoId: string) {
+export async function handleVideoPipelineStatus(request: Request, env: PipelineEnv, corsHeaders: Record<string, string>, videoId: string) {
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   }

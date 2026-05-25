@@ -332,13 +332,14 @@ onMounted(async () => {
     }
     const accessData = await accessResponse.json()
     if (!isMounted) return
-    videoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
-    if (videoId === 'live') {
+    const resolvedVideoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
+    if (resolvedVideoId === 'live') {
       throw new Error('Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.')
     }
+    videoId = resolvedVideoId
     const hasAccess = Boolean(accessData?.hasAccess)
     liveVideo.value = {
-      id: videoId,
+      id: resolvedVideoId,
       title: typeof accessData?.video?.title === 'string' ? accessData.video.title : 'Live Stream',
       description: typeof accessData?.video?.description === 'string' ? accessData.video.description : '',
     }
