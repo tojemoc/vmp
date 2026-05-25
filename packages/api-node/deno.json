@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
+  "name": "@vmp/api-node",
+  "version": "1.0.0",
+  "unstable": ["sloppy-imports"],
+  "nodeModulesDir": "auto",
+  "deploy": {
+    "install": "npm --prefix ../.. run install:api-node",
+    "build": "npm --prefix ../.. run build:api-node",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./dist/server.js",
+      "cwd": "."
+    }
+  }
+}
