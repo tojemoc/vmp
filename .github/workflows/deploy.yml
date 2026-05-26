@@ -41,7 +41,7 @@ jobs:
           path: ~/.npm
 
       - name: Install api-node dependencies
-        run: npm ci
+        run: node scripts/deploy-install.mjs
 
       - name: Build api-node bundle
         run: npm run build

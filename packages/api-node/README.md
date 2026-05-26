@@ -89,7 +89,7 @@ npm run build:api-node
 
 # Isolated deploy (Deno Deploy / CI): from packages/api-node only — no Nx, no root install
 cd packages/api-node
-npm ci
+node scripts/deploy-install.mjs
 npm run build
 node dist/server.js
 ```

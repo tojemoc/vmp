@@ -3,10 +3,10 @@
   "name": "@vmp/api-node",
   "version": "1.0.0",
   "exports": {
-    ".": "./dist/server.js"
+    ".": "./src/server.ts"
   },
   "deploy": {
-    "install": "npm ci",
+    "install": "node scripts/deploy-install.mjs",
     "build": "npm run build",
     "runtime": {
       "type": "dynamic",

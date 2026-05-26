@@ -3,7 +3,7 @@
   "description": "Hints for PaaS builders deploying only the api-node failover (not the full monorepo web stack).",
   "nodeVersion": "24.11.0",
   "rootDirectory": "packages/api-node",
-  "installCommand": "npm ci",
+  "installCommand": "node scripts/deploy-install.mjs",
   "buildCommand": "npm run build",
   "startCommand": "node dist/server.js",
   "runtimeEntrypoint": "dist/server.js",
