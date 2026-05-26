@@ -6,7 +6,7 @@
     ".": "./src/server.ts"
   },
   "deploy": {
-    "install": "npm --prefix ../.. run install:api-node",
+    "install": "NX_SKIP_POSTINSTALL=1 npm --prefix ../.. run install:api-node",
     "build": "npm --prefix ../.. run build:api-node",
     "runtime": {
       "type": "dynamic",
