@@ -20,13 +20,18 @@ on:
           - production
 
 jobs:
-  # Mirrors Deno Deploy / PaaS: install and build only packages/api-node (no Nx, Nuxt, or root postinstall).
-  api-node-isolated-build:
+  # Failover API: build on Blacksmith (no Nx), upload prebuilt dist/ + node_modules to Deno Deploy.
+  deploy-api-node-backup:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: packages/api-node
+    env:
+      DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG || 'tjm' }}
+      DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP || 'vmp' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -40,17 +45,36 @@ jobs:
           key: ${{ github.repository }}-${{ runner.os }}-api-node-npm-${{ hashFiles('packages/api-node/package-lock.json') }}
           path: ~/.npm
 
-      - name: Install api-node dependencies
+      - name: Install api-node dependencies (build)
         run: node scripts/deploy-install.mjs
 
       - name: Build api-node bundle
         run: npm run build
 
-      - name: Verify runtime entrypoint exists
-        run: test -f dist/server.js
+      - name: Prune to production node_modules
+        run: node scripts/deploy-prune-prod.mjs
+
+      - name: Verify prebuilt runtime artifact
+        run: |
+          test -f dist/server.js
+          test -d node_modules/better-sqlite3
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Upload prebuilt bundle to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "::warning::DENO_DEPLOY_TOKEN is not configured. Backup API was built but not uploaded to Deno Deploy."
+            exit 0
+          fi
+          node scripts/deno-deploy-upload.mjs
 
   deploy-staging:
-    needs: [api-node-isolated-build]
+    needs: [deploy-api-node-backup]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
@@ -132,7 +156,7 @@ jobs:
           curl -fsS "$FRONTEND_URL" >/dev/null
 
   deploy-production:
-    needs: [api-node-isolated-build]
+    needs: [deploy-api-node-backup]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production

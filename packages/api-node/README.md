@@ -78,27 +78,40 @@ While Cloudflare is down, writes (registrations, subscriptions, publishes, setti
 2. Let Route 53 fail back when primary `/api/health` succeeds 3 times.
 3. Monitor ~30 minutes for split-brain (duplicate emails, double charges).
 
-## PaaS / backup deploy (non-Docker)
+## Backup deploy (Deno Deploy via GitHub Actions)
 
-If the host runs `npm install` from the **repo root** on Node **24.11+** or **22.12+**:
+Production failover on [Deno Deploy](https://docs.deno.com/deploy/) is **not** built on Deno’s hosted install step (that pulled the monorepo and Nx). It is prebuilt on **Blacksmith** in [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) job `deploy-api-node-backup`, then uploaded with `deno deploy --allow-node-modules`.
+
+**Dashboard:** link the repo in [console.deno.com](https://console.deno.com), org/app `tjm`/`vmp` (override with repo vars `DENO_DEPLOY_ORG` / `DENO_DEPLOY_APP`), and set deployment mode to **GitHub Actions** (no install/build commands in the Deno UI).
+
+**Secret:** `DENO_DEPLOY_TOKEN` from [Access tokens](https://console.deno.com/account/access-tokens).
+
+**What gets uploaded:** `dist/server.js` (esbuild bundle of `@vmp/api` + adapters) and **production** `node_modules/` (`better-sqlite3`, `@aws-sdk/client-s3`). DevDependencies are pruned on the runner before upload.
 
 ```bash
-# Monorepo (local dev): installs shared + api + api-node via workspace filter
+# Same steps as CI (from packages/api-node)
+node scripts/deploy-install.mjs
+npm run build
+node scripts/deploy-prune-prod.mjs
+# With DENO_DEPLOY_TOKEN set:
+node scripts/deno-deploy-upload.mjs
+```
+
+## PaaS / VM deploy (non-Deno)
+
+```bash
+# Monorepo (local dev)
 npm run install:api-node
 npm run build:api-node
 
-# Isolated deploy (Deno Deploy / CI): from packages/api-node only — no Nx, no root install
+# Isolated Node host (Fly, Docker, VM)
 cd packages/api-node
 node scripts/deploy-install.mjs
 npm run build
 node dist/server.js
 ```
 
-Set the platform **Node version** to `22.12.0` (see `packages/api-node/.node-version`) or at least `24.11.0`. Node `24.2.x` is too old for current Nuxt and breaks `better-sqlite3` unless you use the workspace-filtered install above.
-
-Optional builder hints: [`deploy.json`](./deploy.json) and [`deno.json`](./deno.json) (`deploy.install` / `deploy.build` run `npm ci` + `npm run build` in this directory).
-
-**Deno Deploy / PaaS:** set project root to `packages/api-node`. Install uses [`package-lock.json`](./package-lock.json) in this folder only (not the monorepo root). Runtime entrypoint is `dist/server.js` after `npm run build` (esbuild bundles `packages/api` and `packages/shared` from the checkout).
+Set **Node** to `22.12.0`+ or `24.11.0`+ (see `.node-version`). See [`deploy.json`](./deploy.json) for metadata.
 
 ## Development
 

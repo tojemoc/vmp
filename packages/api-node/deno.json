@@ -2,12 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "name": "@vmp/api-node",
   "version": "1.0.0",
+  "nodeModulesDir": "auto",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./dist/server.js"
   },
   "deploy": {
-    "install": "node scripts/deploy-install.mjs",
-    "build": "npm run build",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./dist/server.js",
