@@ -3,11 +3,11 @@
   "name": "@vmp/api-node",
   "version": "1.0.0",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./dist/server.js"
   },
   "deploy": {
-    "install": "NX_SKIP_POSTINSTALL=1 npm --prefix ../.. run install:api-node",
-    "build": "npm --prefix ../.. run build:api-node",
+    "install": "npm ci",
+    "build": "npm run build",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./dist/server.js",

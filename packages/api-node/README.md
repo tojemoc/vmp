@@ -83,16 +83,22 @@ While Cloudflare is down, writes (registrations, subscriptions, publishes, setti
 If the host runs `npm install` from the **repo root** on Node **24.11+** or **22.12+**:
 
 ```bash
-# Installs only shared + api + api-node (skips Nuxt/web native deps)
+# Monorepo (local dev): installs shared + api + api-node via workspace filter
 npm run install:api-node
 npm run build:api-node
+
+# Isolated deploy (Deno Deploy / CI): from packages/api-node only — no Nx, no root install
+cd packages/api-node
+npm ci
+npm run build
+node dist/server.js
 ```
 
 Set the platform **Node version** to `22.12.0` (see `packages/api-node/.node-version`) or at least `24.11.0`. Node `24.2.x` is too old for current Nuxt and breaks `better-sqlite3` unless you use the workspace-filtered install above.
 
-Optional builder hints: [`deploy.json`](./deploy.json), repo-root [`deno.json`](../../deno.json) workspace + [`deno.json`](./deno.json) deploy block (Deno Deploy: `sloppy-imports` at workspace root, runtime `dist/server.js`).
+Optional builder hints: [`deploy.json`](./deploy.json) and [`deno.json`](./deno.json) (`deploy.install` / `deploy.build` run `npm ci` + `npm run build` in this directory).
 
-**Deno Deploy / PaaS entrypoint:** set runtime to `packages/api-node/dist/server.js` (after `npm run build:api-node`). If the platform caches deps from `src/server.ts`, `deno.json` must be present so `.js` imports resolve to `.ts` files during cache.
+**Deno Deploy / PaaS:** set project root to `packages/api-node`. Install uses [`package-lock.json`](./package-lock.json) in this folder only (not the monorepo root). Runtime entrypoint is `dist/server.js` after `npm run build` (esbuild bundles `packages/api` and `packages/shared` from the checkout).
 
 ## Development
 
