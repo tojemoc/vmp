@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Hints for PaaS builders deploying only the api-node failover (not the full monorepo web stack).",
-  "nodeVersion": "22.12.0",
-  "installCommand": "npm run install:api-node",
+  "nodeVersion": "24.11.0",
+  "installCommand": "NX_SKIP_POSTINSTALL=1 npm run install:api-node",
   "buildCommand": "npm run build:api-node",
   "startCommand": "node packages/api-node/dist/server.js",
   "runtimeEntrypoint": "packages/api-node/dist/server.js",
