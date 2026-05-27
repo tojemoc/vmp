@@ -9,6 +9,7 @@ function safeRedirect(value: string | undefined): string | undefined {
 
 export function useLoginFlow() {
   const { isLoggedIn, initialised } = useAuth()
+  const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
   async function waitForAuthInitialised(): Promise<void> {
     if (initialised.value) return
@@ -29,27 +30,36 @@ export function useLoginFlow() {
   async function startLoginFlow(redirectPath?: string): Promise<void> {
     await waitForAuthInitialised()
 
-    const isAuthenticated = isLoggedIn.value
-    const installedPwa = isInstalledPwa()
-    const routePath = import.meta.client ? window.location.pathname : '/login'
+    const authenticated = isLoggedIn.value
+    const initialized = initialised.value
+    const standalone = isInstalledPwa()
+    const route = import.meta.client ? window.location.pathname : '/login'
 
-    console.log('[AUTH]', {
-      isAuthenticated,
-      isInstalledPwa: installedPwa,
-      route: routePath,
+    console.log('[AUTH ENTRY]', {
+      authenticated,
+      initialized,
+      standalone,
+      route,
     })
+
+    if (!initialized) {
+      console.warn('[AUTH ENTRY] auth not initialized yet')
+    }
 
     const query: Record<string, string> = {}
     const safe = safeRedirect(redirectPath)
     if (safe) query.redirect = safe
 
-    if (!isAuthenticated && installedPwa) {
-      console.log('[AUTH] Launching PWA push login wizard')
-      query.login = 'pwa-push'
-    } else {
-      console.log('[AUTH] Launching normal login flow')
+    if (!authenticated && standalone) {
+      console.log('[AUTH ENTRY] launching PWA wizard')
+      openPwaPushLoginWizard()
+      if (route !== '/login') {
+        await navigateTo({ path: '/login', query })
+      }
+      return
     }
 
+    console.log('[AUTH ENTRY] launching normal login')
     await navigateTo({ path: '/login', query })
   }
 

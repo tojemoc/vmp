@@ -1,9 +1,5 @@
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-    <PwaLoginWizard
-      :open="showPwaWizard"
-      @dismiss="showPwaWizard = false"
-    />
     <div class="w-full max-w-sm">
 
       <!-- Logo / Brand -->
@@ -65,7 +61,7 @@ import { isInstalledPwa } from '~/utils/pwa'
 const route  = useRoute()
 const { signIn, isLoggedIn } = useAuth()
 const { waitForAuthInitialised } = useLoginFlow()
-const showPwaWizard = ref(false)
+const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
 // Must start with a single slash; rejects //evil.com and external URLs.
 function safeRedirect(value: unknown, fallback: string): string {
@@ -92,22 +88,17 @@ const errorMessage = ref('')
 onMounted(() => {
   void (async () => {
     await waitForAuthInitialised()
-    const forcePwaFromQuery = route.query.login === 'pwa-push'
-    const isAuthenticated = isLoggedIn.value
-    const installedPwa = isInstalledPwa()
+    const authenticated = isLoggedIn.value
+    const standalone = isInstalledPwa()
 
-    console.log('[AUTH]', {
-      isAuthenticated,
-      isInstalledPwa: installedPwa,
+    console.log('[PWA WIZARD] auto-open check', {
+      authenticated,
+      standalone,
       route: window.location.pathname,
     })
 
-    if (!isAuthenticated && (installedPwa || forcePwaFromQuery)) {
-      console.log('[AUTH] Launching PWA push login wizard')
-      showPwaWizard.value = true
-    } else {
-      console.log('[AUTH] Launching normal login flow')
-      showPwaWizard.value = false
+    if (!authenticated && standalone) {
+      openPwaPushLoginWizard()
     }
   })()
 })

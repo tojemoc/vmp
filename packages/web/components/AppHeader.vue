@@ -211,6 +211,7 @@ async function handleLogout() {
 }
 
 async function handleSignIn() {
+  console.log('[NAVBAR] Sign in clicked')
   await startLoginFlow()
 }
 

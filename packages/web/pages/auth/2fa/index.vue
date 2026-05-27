@@ -30,10 +30,13 @@
       <!-- Session expired -->
       <div v-if="sessionExpired" class="text-center space-y-4">
         <p class="text-gray-400 text-sm">Your sign-in session has expired. Please start again.</p>
-        <NuxtLink to="/login"
-          class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+        <button
+          type="button"
+          @click="backToSignIn"
+          class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+        >
           Back to sign in
-        </NuxtLink>
+        </button>
       </div>
 
       <!-- TOTP form -->
@@ -82,6 +85,7 @@ import { useRoute, navigateTo } from '#app'
 
 const route = useRoute()
 const { verifyTotp } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 
 const code           = ref('')
 const loading        = ref(false)
@@ -121,5 +125,9 @@ async function submit() {
   } finally {
     loading.value = false
   }
+}
+
+async function backToSignIn() {
+  await startLoginFlow()
 }
 </script>
