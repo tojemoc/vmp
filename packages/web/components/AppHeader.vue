@@ -11,13 +11,14 @@
         </NuxtLink>
 
         <div class="flex items-center gap-2 sm:gap-4">
-          <NuxtLink
+          <button
             v-if="!isLoggedIn"
-            to="/login"
+            type="button"
             class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+            @click="handleSignIn"
           >
             {{ strings.signIn }}
-          </NuxtLink>
+          </button>
 
           <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
             <button
@@ -127,6 +128,7 @@ const {
   unsubscribe: pushUnsubscribe,
   clearError: clearPushError,
 } = usePushNotifications()
+const { startLoginFlow } = useLoginFlow()
 
 const router = useRouter()
 const dropdownOpen = ref(false)
@@ -206,6 +208,11 @@ async function handleLogout() {
   dropdownOpen.value = false
   await logout()
   router.push('/')
+}
+
+async function handleSignIn() {
+  console.log('[NAVBAR] Sign in clicked')
+  await startLoginFlow()
 }
 
 const ROLE_LABELS: Record<string, string> = {

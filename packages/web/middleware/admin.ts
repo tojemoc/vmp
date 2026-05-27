@@ -12,14 +12,22 @@
  *   populates user.value from the HttpOnly cookie before any navigation guard fires.
  *   So by the time this middleware runs, useAuth() already reflects the real session state.
  */
+import { isInstalledPwa } from '~/utils/pwa'
 
-export default defineNuxtRouteMiddleware((to) => {
+export default defineNuxtRouteMiddleware(async (to) => {
   const { user, canEditContent } = useAuth()
+  const { startLoginFlow } = useLoginFlow()
+  console.log('[ROUTE AUTH]', {
+    path: to.path,
+    authenticated: !!user.value,
+    standalone: isInstalledPwa(),
+  })
 
   if (!user.value) {
     // Not logged in — send to login with a redirect param so they land back
     // on the admin page after authenticating.
-    return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+    await startLoginFlow(to.fullPath)
+    return abortNavigation()
   }
 
   if (!canEditContent.value) {

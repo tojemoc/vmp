@@ -298,8 +298,8 @@ export function useAuth() {
    */
   async function initialise() {
     if (initialised.value) return
-    initialised.value = true
     await refreshSession()
+    initialised.value = true
   }
 
   function markTotpEnabled() {

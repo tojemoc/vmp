@@ -34,12 +34,13 @@
                 {{ strings.rateLimitMessage(rateLimitCurrent, rateLimitLimit) }}
               </p>
               <div class="flex items-center space-x-3">
-                <NuxtLink
-                  :to="`/login?redirect=/watch/${videoId}`"
+                <button
+                  type="button"
                   class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg transition-colors"
+                  @click="handleRateLimitSignIn"
                 >
                   {{ strings.signIn }}
-                </NuxtLink>
+                </button>
                 <NuxtLink to="/" class="text-amber-700 dark:text-amber-400 hover:underline text-sm">
                   {{ strings.backToHomepage }}
                 </NuxtLink>
@@ -447,6 +448,7 @@ const ensureMoqModules = async () => {
 // For logged-in users the API looks up their subscription and returns the
 // correct hasAccess / playlistUrl for their plan.
 const { isLoggedIn, authHeader } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 
 type MediaLikeElement = HTMLElement & {
   src: string
@@ -492,6 +494,10 @@ const autoplayBlocked     = ref(false)
 const autoplayMuting      = ref(false)
 const autoplayPlayError   = ref(false)
 const liveCanvas = ref<HTMLCanvasElement | null>(null)
+
+async function handleRateLimitSignIn() {
+  await startLoginFlow(`/watch/${encodeURIComponent(videoId.value)}`)
+}
 
 const {
   shellRef: liveMoqShellRef,

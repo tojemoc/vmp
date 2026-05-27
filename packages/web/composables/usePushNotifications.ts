@@ -21,6 +21,7 @@ let _watcherRegistered = false
 
 export function usePushNotifications() {
   const { authHeader, isLoggedIn, user } = useAuth()
+  const { startLoginFlow } = useLoginFlow()
   const config = useRuntimeConfig()
   const apiUrl = config.public.apiUrl
 
@@ -132,7 +133,7 @@ export function usePushNotifications() {
     pushError.value = null
     if (!isSupported.value) return
     if (!isLoggedIn.value) {
-      navigateTo('/login')
+      await startLoginFlow()
       return
     }
 

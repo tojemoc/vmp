@@ -129,7 +129,7 @@
       </p>
       <p v-if="!isLoggedIn" class="text-sm text-gray-400 mt-2">
         You will be asked to sign in before checkout.
-        <NuxtLink :to="`/login?redirect=/watch/${videoId}`" class="text-blue-400 hover:underline">Sign in</NuxtLink>
+        <button type="button" class="text-blue-400 hover:underline" @click="goToLoginFromOverlay">Sign in</button>
       </p>
     </div>
   </div>
@@ -146,6 +146,7 @@ const config      = useRuntimeConfig()
 const apiUrl      = config.public.apiUrl as string
 const route       = useRoute()
 const { isLoggedIn, authHeader } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'gocardless'
@@ -269,7 +270,7 @@ async function handleSubscribe(provider?: PaymentProvider) {
   if (!isLoggedIn.value) {
     const selected = provider ?? availableProviders.value[0] ?? 'stripe'
     const redirect = `/watch/${encodeURIComponent(props.videoId)}?showPremium=1&checkout_plan=${selectedPlan.value}&checkout_provider=${selected}`
-    await navigateTo(`/login?redirect=${encodeURIComponent(redirect)}`)
+    await startLoginFlow(redirect)
     return
   }
 
@@ -296,6 +297,10 @@ async function handleSubscribe(provider?: PaymentProvider) {
   } finally {
     checkingOut.value = false
   }
+}
+
+async function goToLoginFromOverlay() {
+  await startLoginFlow(`/watch/${encodeURIComponent(props.videoId)}`)
 }
 
 async function validatePromoCode() {
