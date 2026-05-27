@@ -5,6 +5,7 @@
  */
 
 import { existsSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,13 +67,31 @@ console.log('[deno-deploy] Deploying prebuilt api-node bundle...')
 console.log(`[deno-deploy] org=${org}`)
 console.log(`[deno-deploy] app=${app}`)
 console.log(`[deno-deploy] entrypoint=${entrypoint}`)
+console.log('\n[deno-deploy] Upload root:', packageRoot)
+console.log('[deno-deploy] Entry file exists:', existsSync(entrypoint))
 
+console.log('\n[deno-deploy] DIST tree:')
+console.log(execSync('ls -R dist || true', { cwd: packageRoot }).toString())
+
+console.log('\n[deno-deploy] FULL package tree (api-node):')
+console.log(execSync('find . -maxdepth 3 -type f || true', { cwd: packageRoot }).toString())
+console.log('\n[deno-deploy] CLI args:')
+console.log(JSON.stringify(args, null, 2))
+console.log('\n[deno-deploy] SIMULATED ROOT VIEW:')
+for (const file of execSync('find . -type f', { cwd: packageRoot })
+  .toString()
+  .split('\n')
+  .filter(Boolean)
+) {
+  console.log(file)
+}
 const result = spawnSync(denoBin, args, {
   cwd: packageRoot,
   stdio: 'inherit',
   env: {
     ...process.env,
     DENO_DEPLOY_TOKEN: token,
+    DENO_LOG: 'debug',
   },
 })
 
