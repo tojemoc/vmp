@@ -53,7 +53,7 @@ const denoBin = process.env.DENO ?? 'deno'
 
 const args = [
   'deploy',
-  'dist/server.js',
+  '.',
   '--org',
   org,
   '--app',
