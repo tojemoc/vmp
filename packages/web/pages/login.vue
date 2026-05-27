@@ -63,7 +63,8 @@
 import { isInstalledPwa } from '~/utils/pwa'
 
 const route  = useRoute()
-const { signIn, isLoggedIn, initialised } = useAuth()
+const { signIn, isLoggedIn } = useAuth()
+const { waitForAuthInitialised } = useLoginFlow()
 const showPwaWizard = ref(false)
 
 // Must start with a single slash; rejects //evil.com and external URLs.
@@ -89,15 +90,26 @@ const sent         = ref(false)
 const errorMessage = ref('')
 
 onMounted(() => {
-  watch(
-    () => initialised.value,
-    (ready) => {
-      if (ready && isInstalledPwa() && !isLoggedIn.value) {
-        showPwaWizard.value = true
-      }
-    },
-    { immediate: true },
-  )
+  void (async () => {
+    await waitForAuthInitialised()
+    const forcePwaFromQuery = route.query.login === 'pwa-push'
+    const isAuthenticated = isLoggedIn.value
+    const installedPwa = isInstalledPwa()
+
+    console.log('[AUTH]', {
+      isAuthenticated,
+      isInstalledPwa: installedPwa,
+      route: window.location.pathname,
+    })
+
+    if (!isAuthenticated && (installedPwa || forcePwaFromQuery)) {
+      console.log('[AUTH] Launching PWA push login wizard')
+      showPwaWizard.value = true
+    } else {
+      console.log('[AUTH] Launching normal login flow')
+      showPwaWizard.value = false
+    }
+  })()
 })
 
 async function submit() {

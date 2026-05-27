@@ -212,6 +212,7 @@ const apiUrl = config.public.apiUrl as string
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
 
 const { user, subscription, fetchSubscription, authHeader, isLoggedIn } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 
 const hasActiveSubscription = computed(() => {
   const sub = subscription.value
@@ -232,7 +233,7 @@ const show2faCard = computed(() => {
 
 // Guard: redirect to login if not authenticated
 if (!isLoggedIn.value) {
-  await navigateTo(`/login?redirect=/account`)
+  await startLoginFlow('/account')
 }
 
 const loadingSub        = ref(true)

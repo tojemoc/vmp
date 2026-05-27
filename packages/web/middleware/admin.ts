@@ -13,13 +13,14 @@
  *   So by the time this middleware runs, useAuth() already reflects the real session state.
  */
 
-export default defineNuxtRouteMiddleware((to) => {
+export default defineNuxtRouteMiddleware(async (to) => {
   const { user, canEditContent } = useAuth()
+  const { startLoginFlow } = useLoginFlow()
 
   if (!user.value) {
     // Not logged in — send to login with a redirect param so they land back
     // on the admin page after authenticating.
-    return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+    return await startLoginFlow(to.fullPath)
   }
 
   if (!canEditContent.value) {

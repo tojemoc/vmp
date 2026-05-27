@@ -121,6 +121,7 @@ import QRCode from 'qrcode'
 // because it redirects to this page when totpEnabled is false.
 // Instead, guard manually: must be logged in with an editor+ role.
 const { user, canEditContent, authHeader, markTotpEnabled, applyNewSession } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
 const route  = useRoute()
@@ -170,7 +171,7 @@ async function loadSetup() {
     if (res.status === 401) {
       const inner = safeRedirect(route.query.redirect, '')
       const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
-      await navigateTo(`/login?redirect=${encodeURIComponent(setupPath)}`)
+      await startLoginFlow(setupPath)
       return
     }
 
@@ -232,7 +233,7 @@ async function confirm() {
 }
 
 onMounted(async () => {
-  if (!user.value) { await navigateTo('/login?redirect=/auth/2fa/setup'); return }
+  if (!user.value) { await startLoginFlow('/auth/2fa/setup'); return }
   if (!canEditContent.value) { await navigateTo('/'); return }
   await loadSetup()
 })

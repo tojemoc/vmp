@@ -1,8 +1,19 @@
 /** True when running as an installed Home Screen / standalone PWA. */
 export function isInstalledPwa(): boolean {
-  if (import.meta.server) return false
-  return window.matchMedia('(display-mode: standalone)').matches
-    || (navigator as Navigator & { standalone?: boolean }).standalone === true
+  if (typeof window === 'undefined') return false
+
+  const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  const displayModeStandalone = window.matchMedia?.('(display-mode: standalone)').matches === true
+  const displayModeFullscreen = window.matchMedia?.('(display-mode: fullscreen)').matches === true
+
+  console.log('[PWA DETECT]', {
+    standalone: (window.navigator as Navigator & { standalone?: boolean }).standalone,
+    displayStandalone: window.matchMedia?.('(display-mode: standalone)').matches,
+    displayFullscreen: window.matchMedia?.('(display-mode: fullscreen)').matches,
+    userAgent: window.navigator.userAgent,
+  })
+
+  return iosStandalone || displayModeStandalone || displayModeFullscreen
 }
 
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token'
