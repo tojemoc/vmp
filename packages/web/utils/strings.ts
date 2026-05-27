@@ -56,6 +56,9 @@ const strings = {
   authVerifyPwaPushNo: 'No, sign in here instead',
   authVerifyPwaPushDone: 'Done! Switch back to the app — you should be signed in.',
   authVerifyPwaPushDeliverFailed: 'We could not send the sign-in to your app. You can sign in in Safari instead.',
+  authVerifyPwaPushAttemptNotFound: 'The login session expired. Please start again in the app.',
+  authVerifyPwaPushNoPushSubscription: 'Push subscription not found. Please start again in the app.',
+  authVerifyPwaPushPushFailed: 'Could not reach the app. Make sure it is installed and try again.',
 
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Discover Premium Video Content',

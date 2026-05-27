@@ -1,5 +1,12 @@
 import { getOrCreatePwaDeviceToken } from '~/utils/pwa'
 
+type PwaPushDeliverFailureCode = 'attempt_not_found' | 'no_push_subscription' | 'push_failed'
+type PwaPushDeliverCode = 'requires_2fa' | PwaPushDeliverFailureCode
+
+function isDeliverFailureCode(code: unknown): code is PwaPushDeliverFailureCode {
+  return code === 'attempt_not_found' || code === 'no_push_subscription' || code === 'push_failed'
+}
+
 export function usePwaPushLogin() {
   const config = useRuntimeConfig()
   const apiUrl = config.public.apiUrl as string
@@ -29,7 +36,7 @@ export function usePwaPushLogin() {
 
   async function deliverMagicLinkToPwa(token: string): Promise<{
     delivered: boolean
-    code?: string
+    code?: PwaPushDeliverCode
     pendingToken?: string
   }> {
     const res = await fetch(`${apiUrl}/api/auth/pwa-push-login/deliver`, {
@@ -38,13 +45,13 @@ export function usePwaPushLogin() {
       body: JSON.stringify({ token }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Could not deliver sign-in to the app')
     if (data.requiresTwoFactor && typeof data.pendingToken === 'string') {
       return { delivered: false, code: 'requires_2fa', pendingToken: data.pendingToken }
     }
-    if (data.code === 'no_push_subscription' || data.code === 'push_failed') {
+    if (isDeliverFailureCode(data.code)) {
       return { delivered: false, code: data.code }
     }
+    if (!res.ok) throw new Error(data.error || 'Could not deliver sign-in to the app')
     return { delivered: !!data.delivered }
   }
 

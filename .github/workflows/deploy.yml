@@ -20,7 +20,7 @@ on:
           - production
 
 jobs:
-  # Failover API: build on Blacksmith (no Nx), upload prebuilt dist/ + node_modules to Deno Deploy.
+  # api-node: prebuild on Blacksmith, upload dist/ + node_modules to Deno Deploy (Postgres via DATABASE_URL).
   deploy-api-node-backup:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -167,7 +167,7 @@ jobs:
           curl -fsS "$FRONTEND_URL" >/dev/null
 
   deploy-production:
-    needs: [deploy-api-node-backup]
+    needs: [deploy-staging]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production

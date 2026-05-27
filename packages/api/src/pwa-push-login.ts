@@ -307,6 +307,12 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     .bind(tokenHash)
     .first()
 
+  console.log('[PWA-DELIVER] token lookup result:', {
+    found: !!linkRow,
+    used: linkRow?.used_at,
+    expired: linkRow ? new Date(linkRow.expires_at) < new Date() : null,
+  })
+
   if (!linkRow || linkRow.used_at) {
     return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
   }
@@ -323,11 +329,21 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     .bind(tokenHash)
     .first()
 
-  if (!attempt?.push_subscription_json || new Date(attempt.expires_at) < new Date()) {
+  console.log('[PWA-DELIVER] attempt row lookup:', {
+    found: !!attempt,
+    hasPushSub: !!attempt?.push_subscription_json,
+    expired: attempt ? new Date(attempt.expires_at) < new Date() : null,
+  })
+
+  if (!attempt || new Date(attempt.expires_at) < new Date()) {
     if (attempt?.device_token) {
       await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
     }
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ error: 'Attempt not found', code: 'attempt_not_found' }, 404, corsHeaders)
+  }
+
+  if (!attempt.push_subscription_json) {
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const linkUser = {
@@ -354,13 +370,13 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     pushSub = JSON.parse(attempt.push_subscription_json)
   } catch {
     await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const validated = validatePushSubscriptionBody({ subscription: pushSub })
   if (!validated) {
     await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const handoffCode = generateToken()
@@ -378,6 +394,7 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
   }
 
   try {
+    console.log('[PWA-DELIVER] about to send push:', { hasValidatedPushSub: true })
     await sendPushNotification(
       {
         endpoint: validated.endpoint,
@@ -392,10 +409,12 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
       },
       env,
     )
+    console.log('[PWA-DELIVER] push sent successfully')
   } catch (err) {
-    console.error('[pwa-push-login] push delivery failed:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[pwa-push-login] push delivery failed:', { message })
     await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
-    return authJson({ ok: false, code: 'push_failed' }, 200, corsHeaders)
+    return authJson({ error: 'Push delivery failed', code: 'push_failed' }, 502, corsHeaders)
   }
 
   const phase = await consumeMagicLinkForUser(env, rawToken)
