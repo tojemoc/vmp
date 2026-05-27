@@ -233,7 +233,12 @@ async function confirm() {
 }
 
 onMounted(async () => {
-  if (!user.value) { await startLoginFlow('/auth/2fa/setup'); return }
+  if (!user.value) {
+    const inner = safeRedirect(route.query.redirect, '')
+    const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
+    await startLoginFlow(setupPath)
+    return
+  }
   if (!canEditContent.value) { await navigateTo('/'); return }
   await loadSetup()
 })

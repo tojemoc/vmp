@@ -26,7 +26,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!user.value) {
     // Not logged in — send to login with a redirect param so they land back
     // on the admin page after authenticating.
-    return await startLoginFlow(to.fullPath)
+    await startLoginFlow(to.fullPath)
+    return abortNavigation()
   }
 
   if (!canEditContent.value) {

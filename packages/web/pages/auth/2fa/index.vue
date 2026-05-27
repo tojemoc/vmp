@@ -128,6 +128,6 @@ async function submit() {
 }
 
 async function backToSignIn() {
-  await startLoginFlow()
+  await startLoginFlow(redirect.value)
 }
 </script>
