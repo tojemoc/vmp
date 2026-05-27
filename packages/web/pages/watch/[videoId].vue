@@ -864,8 +864,10 @@ const initializeLivestreamRuntime = async (
     })
     partialRuntime.connection = connection
 
+    const establishedConnection = connection.established as unknown as
+      NonNullable<ConstructorParameters<typeof watch.Broadcast>[0]>['connection']
     const broadcast: Broadcast = new watch.Broadcast({
-      connection: connection.established,
+      connection: establishedConnection,
       enabled: true,
       name: moq.Path.from(moqBroadcast)
     })

@@ -30,7 +30,7 @@ function normalizeHost(hostname: string): string {
   const zone = h.indexOf('%')
   if (zone >= 0) h = h.slice(0, zone)
   const v4WithPort = h.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)
-  if (v4WithPort) h = v4WithPort[1]
+  if (v4WithPort?.[1]) h = v4WithPort[1]
   return h
 }
 
@@ -56,14 +56,14 @@ export function isPrivateHost(hostname: string): boolean {
   if (h.startsWith('ff')) return true // multicast ff00::/8
 
   const mappedDotted = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
-  if (mappedDotted) {
+  if (mappedDotted?.[1]) {
     const inner = parseIpv4Octets(mappedDotted[1])
     if (!inner) return true
     return isPrivateIPv4(...inner)
   }
 
   const mappedHex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
-  if (mappedHex) {
+  if (mappedHex?.[1] && mappedHex?.[2]) {
     const a = parseInt(mappedHex[1], 16)
     const b = parseInt(mappedHex[2], 16)
     return isPrivateIPv4(a >> 8, a & 0xff, b >> 8, b & 0xff)
