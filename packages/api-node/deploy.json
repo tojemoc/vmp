@@ -5,6 +5,7 @@
   "rootDirectory": "packages/api-node",
   "githubActions": {
     "denoDeployOrg": "tjm",
+    "org": "tjm",
     "denoDeployApp": "vmp",
     "secret": "DENO_DEPLOY_TOKEN",
     "buildOnRunner": [
