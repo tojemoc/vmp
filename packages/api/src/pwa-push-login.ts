@@ -411,10 +411,10 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     )
     console.log('[PWA-DELIVER] push sent successfully')
   } catch (err) {
-    console.error('[pwa-push-login] push delivery failed:', err)
-    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
     const message = err instanceof Error ? err.message : String(err)
-    return authJson({ error: message, code: 'push_failed' }, 502, corsHeaders)
+    console.error('[pwa-push-login] push delivery failed:', { message })
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ error: 'Push delivery failed', code: 'push_failed' }, 502, corsHeaders)
   }
 
   const phase = await consumeMagicLinkForUser(env, rawToken)
