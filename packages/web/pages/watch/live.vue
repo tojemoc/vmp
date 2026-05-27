@@ -374,9 +374,11 @@ onMounted(async () => {
     partialRuntime = { connection }
     if (!isMounted) return
 
+    const establishedConnection = connection.established as unknown as
+      NonNullable<ConstructorParameters<typeof watch.Broadcast>[0]>['connection']
     // The MoQ broadcast being fetched.
     const broadcast = new watch.Broadcast({
-      connection: connection.established,
+      connection: establishedConnection,
       enabled: true,
       name: moq.Path.from(moqBroadcast)
     })

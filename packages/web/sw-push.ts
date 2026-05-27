@@ -33,7 +33,8 @@ async function notifyClientsOrStore(handoffCode: string): Promise<void> {
     for (const client of clients) {
       client.postMessage({ type: 'pwa_auth_handoff', handoffCode })
     }
-    await clients[0].focus()
+    const firstClient = clients[0]
+    if (firstClient) await firstClient.focus()
     return
   }
   const db = await openIdb()
