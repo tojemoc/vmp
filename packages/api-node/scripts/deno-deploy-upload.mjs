@@ -20,36 +20,51 @@ if (!existsSync(path.join(packageRoot, 'node_modules/better-sqlite3'))) {
   process.exit(1)
 }
 
-const org = process.env.DENO_DEPLOY_ORG ?? 'tjm'
-const app = process.env.DENO_DEPLOY_APP ?? 'vmp'
+const org = process.env.DENO_DEPLOY_ORG
+const app = process.env.DENO_DEPLOY_APP
 const token = process.env.DENO_DEPLOY_TOKEN
+if (!org) {
+  console.error('[deno-deploy] DENO_DEPLOY_ORG is not set.')
+  process.exit(1)
+}
+if (!app) {
+  console.error('[deno-deploy] DENO_DEPLOY_APP is not set.')
+  process.exit(1)
+}
 if (!token) {
   console.error('[deno-deploy] DENO_DEPLOY_TOKEN is not set.')
   process.exit(1)
 }
 
 const denoBin = process.env.DENO ?? 'deno'
-const args = [
+const rootDenoConfig = path.resolve(packageRoot, '../../deno.json')
+const baseArgs = [
   'deploy',
-  packageRoot,
+  entrypoint,
   '--org',
   org,
-  '--app',
-  app,
   '--prod',
   '--allow-node-modules',
   '--config',
-  path.join(packageRoot, 'deno.json'),
+  rootDenoConfig,
 ]
 
-const result = spawnSync(denoBin, args, {
-  cwd: packageRoot,
-  stdio: 'inherit',
-  env: { ...process.env, DENO_DEPLOY_TOKEN: token },
-})
+const runDeploy = (projectFlag) =>
+  spawnSync(denoBin, [...baseArgs, projectFlag, app], {
+    cwd: packageRoot,
+    stdio: 'inherit',
+    env: { ...process.env, DENO_DEPLOY_TOKEN: token },
+  })
+
+let result = runDeploy('--project')
+if (result.status !== 0 && !result.error) {
+  // Older CLI releases used --app instead of --project.
+  result = runDeploy('--app')
+}
 
 if (result.error) {
   console.error('[deno-deploy]', result.error.message)
   process.exit(1)
 }
+
 process.exit(result.status ?? 1)
