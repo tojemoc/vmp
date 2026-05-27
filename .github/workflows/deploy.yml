@@ -30,8 +30,8 @@ jobs:
       run:
         working-directory: packages/api-node
     env:
-      DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG || 'tjm' }}
-      DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP || 'vmp' }}
+      DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG }}
+      DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP }}
     steps:
       - uses: actions/checkout@v6
 
@@ -67,6 +67,10 @@ jobs:
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
         run: |
+          if [ -z "${DENO_DEPLOY_ORG:-}" ] || [ -z "${DENO_DEPLOY_APP:-}" ]; then
+            echo "::error::DENO_DEPLOY_ORG and DENO_DEPLOY_APP repository variables must be configured for this workflow."
+            exit 1
+          fi
           if [ -z "$DENO_DEPLOY_TOKEN" ]; then
             echo "::warning::DENO_DEPLOY_TOKEN is not configured. Backup API was built but not uploaded to Deno Deploy."
             # Soft-skip for manual runs; hard-fail for protected deploy triggers.
