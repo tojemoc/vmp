@@ -307,6 +307,12 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     .bind(tokenHash)
     .first()
 
+  console.log('[PWA-DELIVER] token lookup result:', {
+    found: !!linkRow,
+    used: linkRow?.used_at,
+    expired: linkRow ? new Date(linkRow.expires_at) < new Date() : null,
+  })
+
   if (!linkRow || linkRow.used_at) {
     return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
   }
@@ -316,12 +322,21 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
 
   const attempt = await db
     .prepare(`
-      SELECT device_token, push_subscription_json, expires_at
+      SELECT device_token, email, push_subscription_json, expires_at
       FROM pwa_push_login_attempts
       WHERE magic_link_token_hash = ?
     `)
     .bind(tokenHash)
     .first()
+
+  console.log('[PWA-DELIVER] attempt row lookup:', {
+    found: !!attempt,
+    email: attempt?.email,
+    hasPushSub: !!attempt?.push_subscription_json,
+    pushSubLength: attempt?.push_subscription_json?.length,
+    expires_at: attempt?.expires_at,
+    expired: attempt ? new Date(attempt.expires_at) < new Date() : null,
+  })
 
   if (!attempt?.push_subscription_json || new Date(attempt.expires_at) < new Date()) {
     if (attempt?.device_token) {
@@ -378,6 +393,7 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
   }
 
   try {
+    console.log('[PWA-DELIVER] about to send push to endpoint:', pushSub.endpoint?.slice(0, 50))
     await sendPushNotification(
       {
         endpoint: validated.endpoint,
@@ -392,6 +408,7 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
       },
       env,
     )
+    console.log('[PWA-DELIVER] push sent successfully')
   } catch (err) {
     console.error('[pwa-push-login] push delivery failed:', err)
     await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()

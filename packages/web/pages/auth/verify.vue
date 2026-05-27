@@ -17,10 +17,17 @@
       </div>
 
       <!-- PWA push-login: confirm signing into Home Screen app -->
-      <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left">
+      <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left" :aria-busy="delivering">
         <div>
           <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyPwaPushTitle }}</h2>
         </div>
+        <div v-if="delivering" class="flex justify-center" role="status" :aria-label="strings.authVerifyPwaPushSending">
+          <span
+            class="inline-block w-8 h-8 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"
+            aria-hidden="true"
+          ></span>
+        </div>
+        <p v-if="errorMessage" class="text-red-400 text-sm leading-relaxed">{{ errorMessage }}</p>
         <div class="flex flex-col gap-3">
           <button
             type="button"
@@ -28,7 +35,7 @@
             :disabled="delivering"
             @click="deliverToInstalledPwa"
           >
-            {{ delivering ? strings.authVerifyPwaPushSending : strings.authVerifyPwaPushYes }}
+            {{ strings.authVerifyPwaPushYes }}
           </button>
           <button
             type="button"
@@ -196,11 +203,6 @@ async function deliverToInstalledPwa() {
       return
     }
     if (!result.delivered) {
-      if (result.code === 'no_push_subscription' || result.code === 'push_failed') {
-        await signInHereInstead()
-        return
-      }
-      state.value = 'error'
       errorMessage.value = strings.authVerifyPwaPushDeliverFailed
       return
     }
