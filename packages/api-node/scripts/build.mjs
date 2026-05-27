@@ -1,5 +1,22 @@
 import * as esbuild from 'esbuild'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const apiEntry = path.join(packageRoot, '../api/src/index.ts')
+const sharedEntry = path.join(packageRoot, '../shared/src/index.ts')
+
+for (const required of [
+  ['Worker sources', apiEntry],
+  ['Shared types', sharedEntry],
+]) {
+  if (!existsSync(required[1])) {
+    throw new Error(
+      `[build] Missing ${required[0]} at ${required[1]}. Deploy checkout must include packages/api and packages/shared (esbuild bundles them into dist/).`,
+    )
+  }
+}
 
 mkdirSync('dist', { recursive: true })
 

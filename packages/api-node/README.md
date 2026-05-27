@@ -78,21 +78,40 @@ While Cloudflare is down, writes (registrations, subscriptions, publishes, setti
 2. Let Route 53 fail back when primary `/api/health` succeeds 3 times.
 3. Monitor ~30 minutes for split-brain (duplicate emails, double charges).
 
-## PaaS / backup deploy (non-Docker)
+## Backup deploy (Deno Deploy via GitHub Actions)
 
-If the host runs `npm install` from the **repo root** on Node **24.11+** or **22.12+**:
+Production failover on [Deno Deploy](https://docs.deno.com/deploy/) is **not** built on Deno’s hosted install step (that pulled the monorepo and Nx). It is prebuilt on **Blacksmith** in [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) job `deploy-api-node-backup`, then uploaded with `deno deploy --allow-node-modules`.
+
+**Dashboard:** link the repo in [console.deno.com](https://console.deno.com), org/app `tjm`/`vmp` (override with repo vars `DENO_DEPLOY_ORG` / `DENO_DEPLOY_APP`), and set deployment mode to **GitHub Actions** (no install/build commands in the Deno UI).
+
+**Secret:** `DENO_DEPLOY_TOKEN` from [Access tokens](https://console.deno.com/account/access-tokens).
+
+**What gets uploaded:** `dist/server.js` (esbuild bundle of `@vmp/api` + adapters) and **production** `node_modules/` (`better-sqlite3`, `@aws-sdk/client-s3`). DevDependencies are pruned on the runner before upload.
 
 ```bash
-# Installs only shared + api + api-node (skips Nuxt/web native deps)
-npm run install:api-node
-npm run build:api-node
+# Same steps as CI (from packages/api-node)
+node scripts/deploy-install.mjs
+npm run build
+node scripts/deploy-prune-prod.mjs
+# With DENO_DEPLOY_TOKEN set:
+node scripts/deno-deploy-upload.mjs
 ```
 
-Set the platform **Node version** to `22.12.0` (see `packages/api-node/.node-version`) or at least `24.11.0`. Node `24.2.x` is too old for current Nuxt and breaks `better-sqlite3` unless you use the workspace-filtered install above.
+## PaaS / VM deploy (non-Deno)
 
-Optional builder hints: [`deploy.json`](./deploy.json), repo-root [`deno.json`](../../deno.json) workspace + [`deno.json`](./deno.json) deploy block (Deno Deploy: `sloppy-imports` at workspace root, runtime `dist/server.js`).
+```bash
+# Monorepo (local dev)
+npm run install:api-node
+npm run build:api-node
 
-**Deno Deploy / PaaS entrypoint:** set runtime to `packages/api-node/dist/server.js` (after `npm run build:api-node`). If the platform caches deps from `src/server.ts`, `deno.json` must be present so `.js` imports resolve to `.ts` files during cache.
+# Isolated Node host (Fly, Docker, VM)
+cd packages/api-node
+node scripts/deploy-install.mjs
+npm run build
+node dist/server.js
+```
+
+Set **Node** to `24.11.0+` (see `.node-version`). See [`deploy.json`](./deploy.json) for metadata.
 
 ## Development
 

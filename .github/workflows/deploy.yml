@@ -20,7 +20,69 @@ on:
           - production
 
 jobs:
+  # Failover API: build on Blacksmith (no Nx), upload prebuilt dist/ + node_modules to Deno Deploy.
+  deploy-api-node-backup:
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/api-node
+    env:
+      DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG || 'tjm' }}
+      DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP || 'vmp' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.11.0'
+
+      - name: Mount npm cache (api-node only)
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-${{ runner.os }}-api-node-npm-${{ hashFiles('packages/api-node/package-lock.json') }}
+          path: ~/.npm
+
+      - name: Install api-node dependencies (build)
+        run: node scripts/deploy-install.mjs
+
+      - name: Build api-node bundle
+        run: npm run build
+
+      - name: Prune to production node_modules
+        run: node scripts/deploy-prune-prod.mjs
+
+      - name: Verify prebuilt runtime artifact
+        run: |
+          test -f dist/server.js
+          test -d node_modules/better-sqlite3
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Upload prebuilt bundle to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "::warning::DENO_DEPLOY_TOKEN is not configured. Backup API was built but not uploaded to Deno Deploy."
+            # Soft-skip for manual runs; hard-fail for protected deploy triggers.
+            if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              exit 0
+            fi
+            if [ "${GITHUB_REF:-}" = "refs/heads/main" ] || [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+              exit 1
+            fi
+            # Default to failing on non-dispatch events to avoid silently skipping backup deploys.
+            exit 1
+          fi
+          node scripts/deno-deploy-upload.mjs
+
   deploy-staging:
+    needs: [deploy-api-node-backup]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
@@ -102,6 +164,7 @@ jobs:
           curl -fsS "$FRONTEND_URL" >/dev/null
 
   deploy-production:
+    needs: [deploy-api-node-backup]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production

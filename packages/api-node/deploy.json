@@ -1,11 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Hints for PaaS builders deploying only the api-node failover (not the full monorepo web stack).",
+  "description": "VMP api-node failover — deploy via GitHub Actions (Blacksmith prebuild), not Deno built-in monorepo install.",
   "nodeVersion": "24.11.0",
-  "installCommand": "NX_SKIP_POSTINSTALL=1 npm run install:api-node",
-  "buildCommand": "npm run build:api-node",
-  "startCommand": "node packages/api-node/dist/server.js",
-  "runtimeEntrypoint": "packages/api-node/dist/server.js",
-  "denoConfig": "../../deno.json",
-  "notes": "Do not use src/server.ts as the runtime entry — sources use Node ESM .js specifiers and are bundled by esbuild. Deno Deploy must run dist/server.js after build; deno.json enables sloppy-imports only for the dependency-cache step."
+  "rootDirectory": "packages/api-node",
+  "githubActions": {
+    "denoDeployOrg": "tjm",
+    "denoDeployApp": "vmp",
+    "secret": "DENO_DEPLOY_TOKEN",
+    "buildOnRunner": [
+      "node scripts/deploy-install.mjs",
+      "npm run build",
+      "node scripts/deploy-prune-prod.mjs"
+    ],
+    "upload": "node scripts/deno-deploy-upload.mjs"
+  },
+  "runtimeEntrypoint": "dist/server.js",
+  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds dist/ + production node_modules on Blacksmith, then deno deploy --allow-node-modules uploads the prebuilt tree."
 }
