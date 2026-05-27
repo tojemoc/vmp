@@ -338,11 +338,15 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     expired: attempt ? new Date(attempt.expires_at) < new Date() : null,
   })
 
-  if (!attempt?.push_subscription_json || new Date(attempt.expires_at) < new Date()) {
+  if (!attempt || new Date(attempt.expires_at) < new Date()) {
     if (attempt?.device_token) {
       await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
     }
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ ok: false, code: 'attempt_not_found' }, 404, corsHeaders)
+  }
+
+  if (!attempt.push_subscription_json) {
+    return authJson({ ok: false, code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const linkUser = {
@@ -369,13 +373,13 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     pushSub = JSON.parse(attempt.push_subscription_json)
   } catch {
     await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ ok: false, code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const validated = validatePushSubscriptionBody({ subscription: pushSub })
   if (!validated) {
     await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
-    return authJson({ ok: false, code: 'no_push_subscription' }, 200, corsHeaders)
+    return authJson({ ok: false, code: 'no_push_subscription' }, 400, corsHeaders)
   }
 
   const handoffCode = generateToken()
@@ -412,7 +416,8 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
   } catch (err) {
     console.error('[pwa-push-login] push delivery failed:', err)
     await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
-    return authJson({ ok: false, code: 'push_failed' }, 200, corsHeaders)
+    const message = err instanceof Error ? err.message : String(err)
+    return authJson({ ok: false, code: 'push_failed', error: message }, 502, corsHeaders)
   }
 
   const phase = await consumeMagicLinkForUser(env, rawToken)

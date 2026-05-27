@@ -188,6 +188,19 @@ function isPwaPushLoginLink(): boolean {
   return pwa === '1' && !isInstalledPwa()
 }
 
+function pwaPushDeliverErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case 'attempt_not_found':
+      return strings.authVerifyPwaPushAttemptNotFound
+    case 'no_push_subscription':
+      return strings.authVerifyPwaPushNoPushSubscription
+    case 'push_failed':
+      return strings.authVerifyPwaPushPushFailed
+    default:
+      return strings.authVerifyPwaPushDeliverFailed
+  }
+}
+
 async function deliverToInstalledPwa() {
   const token = magicTokenForFlow.value
   if (!token) return
@@ -203,7 +216,7 @@ async function deliverToInstalledPwa() {
       return
     }
     if (!result.delivered) {
-      errorMessage.value = strings.authVerifyPwaPushDeliverFailed
+      errorMessage.value = pwaPushDeliverErrorMessage(result.code)
       return
     }
     state.value = 'pwa_push_done'
