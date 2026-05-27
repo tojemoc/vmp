@@ -111,7 +111,7 @@ npm run build
 node dist/server.js
 ```
 
-Set **Node** to `22.12.0`+ or `24.11.0`+ (see `.node-version`). See [`deploy.json`](./deploy.json) for metadata.
+Set **Node** to `24.11.0+` (see `.node-version`). See [`deploy.json`](./deploy.json) for metadata.
 
 ## Development
 

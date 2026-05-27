@@ -69,7 +69,15 @@ jobs:
         run: |
           if [ -z "$DENO_DEPLOY_TOKEN" ]; then
             echo "::warning::DENO_DEPLOY_TOKEN is not configured. Backup API was built but not uploaded to Deno Deploy."
-            exit 0
+            # Soft-skip for manual runs; hard-fail for protected deploy triggers.
+            if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              exit 0
+            fi
+            if [ "${GITHUB_REF:-}" = "refs/heads/main" ] || [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+              exit 1
+            fi
+            # Default to failing on non-dispatch events to avoid silently skipping backup deploys.
+            exit 1
           fi
           node scripts/deno-deploy-upload.mjs
 
