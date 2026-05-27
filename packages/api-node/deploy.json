@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "VMP api-node failover — deploy via GitHub Actions (Blacksmith prebuild), not Deno built-in monorepo install.",
+  "description": "VMP api-node — Deno Deploy via GitHub Actions prebuild; Postgres via DATABASE_URL.",
   "nodeVersion": "24.11.0",
   "rootDirectory": "packages/api-node",
   "githubActions": {

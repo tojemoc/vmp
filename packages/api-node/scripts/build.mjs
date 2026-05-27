@@ -21,7 +21,7 @@ for (const required of [
 mkdirSync('dist', { recursive: true })
 
 await esbuild.build({
-  entryPoints: ['src/server.ts', 'src/sync/d1sync-cli.ts', 'src/sync/write-log-export-cli.ts'],
+  entryPoints: ['src/server.ts'],
   bundle: true,
   platform: 'node',
   target: 'node22',
@@ -34,7 +34,7 @@ await esbuild.build({
     // Resolve @vmp/shared to source directly so worker code can be bundled.
     '@vmp/shared': sharedEntry,
   },
-  external: ['better-sqlite3', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
+  external: ['postgres', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
   sourcemap: true,
   logLevel: 'info',
 })

@@ -1,18 +1,17 @@
-import { mkdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { SqliteD1Adapter } from './bindings/db.js'
+import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js'
 import { S3R2Adapter } from './bindings/bucket.js'
-import { SqliteKVAdapter } from './bindings/kv.js'
+import { PostgresKVAdapter } from './bindings/kv.js'
 import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js'
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types'
-import type { CFEnvShape, NodeEnv } from './types.js'
+import type { CFEnvShape } from './types.js'
 
 const workspaceRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 
 let cachedEnv: CFEnvShape | null = null
-let cachedDb: SqliteD1Adapter | null = null
-let cachedKv: SqliteKVAdapter | null = null
+let cachedDb: PostgresD1Adapter | null = null
+let cachedKv: PostgresKVAdapter | null = null
 let envBuildPromise: Promise<CFEnvShape> | null = null
 
 export function migrationsDir(): string {
@@ -20,15 +19,16 @@ export function migrationsDir(): string {
 }
 
 export async function buildEnv(): Promise<CFEnvShape> {
-  const dbPath = process.env.SQLITE_DB_PATH ?? './data/vmp.sqlite'
-  mkdirSync(dirname(resolve(dbPath)), { recursive: true })
-
-  const db = new SqliteD1Adapter({
-    dbPath,
-    migrationsDir: migrationsDir(),
-    enableWriteLog: true,
+  const databaseUrl = resolveDatabaseUrl()
+  const db = new PostgresD1Adapter({
+    databaseUrl,
+    enableWriteLog: process.env.ENABLE_WRITE_LOG !== '0',
+    maxConnections: Number.parseInt(process.env.DATABASE_POOL_SIZE ?? '5', 10) || 5,
   })
-  const kv = new SqliteKVAdapter(db)
+  const runMigrations = process.env.RUN_MIGRATIONS !== '0'
+  await db.init(runMigrations ? migrationsDir() : undefined)
+
+  const kv = new PostgresKVAdapter(db)
 
   let bucket: S3R2Adapter | undefined
   if (process.env.S3_BUCKET_NAME) {
@@ -71,7 +71,7 @@ export async function buildEnv(): Promise<CFEnvShape> {
     BUCKET: bucket as unknown as R2Bucket,
     RATE_LIMIT_KV: kv as unknown as KVNamespace,
     SEGMENT_RATE_LIMITER: new InMemoryDurableObjectNamespace(),
-    CF_COLO: 'FAILOVER',
+    CF_COLO: process.env.CF_COLO ?? 'DENO',
   }
 
   cachedEnv = env
@@ -93,7 +93,7 @@ export async function getEnv(): Promise<CFEnvShape> {
 }
 
 export async function rebuildEnv(): Promise<CFEnvShape> {
-  cachedDb?.close()
+  await cachedDb?.close()
   cachedKv?.stop()
   cachedEnv = null
   cachedDb = null
@@ -102,20 +102,6 @@ export async function rebuildEnv(): Promise<CFEnvShape> {
   return getEnv()
 }
 
-export function getDbAdapter(): SqliteD1Adapter | null {
+export function getDbAdapter(): PostgresD1Adapter | null {
   return cachedDb
-}
-
-export function toNodeEnv(env: CFEnvShape): NodeEnv {
-  return {
-    ...env,
-    SQLITE_DB_PATH: process.env.SQLITE_DB_PATH ?? './data/vmp.sqlite',
-    CF_ACCOUNT_ID: process.env.CF_ACCOUNT_ID,
-    CF_API_TOKEN: process.env.CF_API_TOKEN,
-    CF_D1_DATABASE_ID: process.env.CF_D1_DATABASE_ID,
-    S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
-    AWS_REGION: process.env.AWS_REGION,
-    D1_SYNC_INTERVAL_MS: process.env.D1_SYNC_INTERVAL_MS,
-    D1_SYNC_STATE_PATH: process.env.D1_SYNC_STATE_PATH,
-  }
 }

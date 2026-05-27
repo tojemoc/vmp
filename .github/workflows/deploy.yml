@@ -57,7 +57,7 @@ jobs:
       - name: Verify prebuilt runtime artifact
         run: |
           test -f dist/server.js
-          test -d node_modules/better-sqlite3
+          test -d node_modules/postgres
 
       - uses: denoland/setup-deno@v2
         with:

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Drop devDependencies after build; keep runtime native modules (better-sqlite3, AWS SDK). */
+/** Drop devDependencies after build; keep runtime deps (postgres, AWS SDK). */
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

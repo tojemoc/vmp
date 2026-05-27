@@ -24,9 +24,9 @@ if (!existsSync(entrypoint)) {
   process.exit(1)
 }
 
-if (!existsSync(path.join(packageRoot, 'node_modules/better-sqlite3'))) {
+if (!existsSync(path.join(packageRoot, 'node_modules/postgres'))) {
   console.error(
-    '[deno-deploy] Missing node_modules/better-sqlite3. Run deploy-prune-prod after install.',
+    '[deno-deploy] Missing node_modules/postgres. Run deploy-prune-prod after install.',
   )
   process.exit(1)
 }

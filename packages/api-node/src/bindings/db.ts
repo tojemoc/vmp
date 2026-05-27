@@ -1,52 +1,78 @@
-import Database from 'better-sqlite3'
 import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import postgres from 'postgres'
+import type { Sql } from 'postgres'
 import type { D1ExecResult, D1Result } from '@cloudflare/workers-types'
+import { bindQuestionMarks, translateSqliteDdl, translateSqliteToPostgres } from './sqlDialect.js'
 
 const WRITE_SQL_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
 
-export interface SqliteD1Options {
-  dbPath: string
+export interface PostgresD1Options {
+  /** Injected by Deno Deploy when a managed Postgres database is attached. */
+  databaseUrl: string
   migrationsDir?: string
   enableWriteLog?: boolean
+  /** Keep low for Deno Deploy serverless workers. */
+  maxConnections?: number
 }
 
-function metaFromRun(result: Database.RunResult): D1Result['meta'] {
+function metaFromRun(changes: number, lastRowId: number): D1Result['meta'] {
   return {
-    changes: result.changes,
-    last_row_id: Number(result.lastInsertRowid),
+    changes,
+    last_row_id: lastRowId,
     duration: 0,
     rows_read: 0,
-    rows_written: result.changes,
-    changed_db: result.changes > 0,
+    rows_written: changes,
+    changed_db: changes > 0,
     size_after: 0,
-    served_by: 'failover-sqlite',
+    served_by: 'deno-deploy-postgres',
   }
 }
 
-class SqlitePreparedStatement {
-  private readonly stmt: Database.Statement
-  private boundArgs: unknown[] = []
-  private readonly dbAdapter: SqliteD1Adapter
+type SqlParams = Parameters<Sql['unsafe']>[1]
 
-  constructor(stmt: Database.Statement, dbAdapter: SqliteD1Adapter) {
-    this.stmt = stmt
+function translateAndBind(sql: string, params: unknown[]): { text: string; values: SqlParams } {
+  const translated = translateSqliteToPostgres(sql)
+  const text = bindQuestionMarks(translated, params.length)
+  return { text, values: params as SqlParams }
+}
+
+async function runOnSql(
+  sqlHandle: Sql,
+  sourceSql: string,
+  boundArgs: unknown[],
+): Promise<{ changes: number; lastRowId: number }> {
+  const { text, values } = translateAndBind(sourceSql, boundArgs)
+  const isWrite = WRITE_SQL_RE.test(sourceSql)
+
+  if (!isWrite) {
+    await sqlHandle.unsafe(text, values)
+    return { changes: 0, lastRowId: 0 }
+  }
+
+  const result = await sqlHandle.unsafe(text, values)
+  return { changes: result.count, lastRowId: 0 }
+}
+
+export class PostgresPreparedStatement {
+  readonly sourceSql: string
+  private boundArgs: unknown[] = []
+  private readonly dbAdapter: PostgresD1Adapter
+
+  constructor(sourceSql: string, dbAdapter: PostgresD1Adapter) {
+    this.sourceSql = sourceSql
     this.dbAdapter = dbAdapter
   }
 
-  bind(...values: unknown[]): SqlitePreparedStatement {
+  bind(...values: unknown[]): PostgresPreparedStatement {
     this.boundArgs = values
     return this
   }
 
-  private runSync(): Database.RunResult {
-    return this.stmt.run(...this.boundArgs) as Database.RunResult
-  }
-
   async first<T = unknown>(colName?: string): Promise<T | null> {
-    const row = this.stmt.get(...this.boundArgs) as Record<string, unknown> | undefined
-    if (!row) return null
+    const rows = await this.executeRows<Record<string, unknown>>()
+    if (rows.length === 0) return null
+    const row = rows[0]!
     if (colName !== undefined) {
       return (row[colName] as T) ?? null
     }
@@ -54,130 +80,158 @@ class SqlitePreparedStatement {
   }
 
   async all<T = unknown>(): Promise<D1Result<T>> {
-    const results = this.stmt.all(...this.boundArgs) as T[]
+    const results = await this.executeRows<T>()
     return {
       results,
       success: true,
-      meta: metaFromRun({ changes: 0, lastInsertRowid: 0 } as Database.RunResult),
+      meta: metaFromRun(0, 0),
     }
   }
 
   async run(): Promise<D1Result> {
-    return this.runAsD1Result()
+    return this.runAsD1Result(this.dbAdapter.sql)
   }
 
-  /** Used by SqliteD1Adapter.batch for transactional writes. */
-  runAsD1Result(): D1Result {
-    const sql = String(this.stmt.source)
-    const result = this.runSync()
-    if (WRITE_SQL_RE.test(sql)) {
-      this.dbAdapter.logWrite(sql, this.boundArgs)
+  /** Used by PostgresD1Adapter.batch inside a transaction. */
+  async runAsD1Result(sqlHandle?: Sql): Promise<D1Result> {
+    const handle = sqlHandle ?? this.dbAdapter.sql
+    const { changes, lastRowId } = await runOnSql(handle, this.sourceSql, this.boundArgs)
+    if (WRITE_SQL_RE.test(this.sourceSql)) {
+      this.dbAdapter.logWrite(this.sourceSql, this.boundArgs)
     }
     return {
       results: [],
       success: true,
-      meta: metaFromRun(result),
+      meta: metaFromRun(changes, lastRowId),
     }
+  }
+
+  private async executeRows<T>(sqlHandle?: Sql): Promise<T[]> {
+    const handle = sqlHandle ?? this.dbAdapter.sql
+    const { text, values } = translateAndBind(this.sourceSql, this.boundArgs)
+    return (await handle.unsafe(text, values)) as T[]
   }
 }
 
-export class SqliteD1Adapter {
-  private db: Database.Database
-  private readonly dbPath: string
+export class PostgresD1Adapter {
+  readonly sql: Sql
   private readonly enableWriteLog: boolean
-  private writeLogStmt: Database.Statement | null = null
+  private closed = false
 
-  constructor(options: SqliteD1Options) {
-    this.dbPath = resolve(options.dbPath)
+  constructor(options: PostgresD1Options) {
+    // postgres.js is pure JS (no native .node bindings) — required on Deno Deploy.
+    this.sql = postgres(options.databaseUrl, {
+      max: options.maxConnections ?? 5,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    })
     this.enableWriteLog = options.enableWriteLog !== false
-    this.db = new Database(this.dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('foreign_keys = ON')
-    this.ensureWriteLogTable()
-    if (options.migrationsDir) {
-      this.runMigrations(options.migrationsDir)
+  }
+
+  /** Open pool, apply SQL migrations, and ensure auxiliary tables exist. */
+  async init(migrationsDir?: string): Promise<void> {
+    await this.ping()
+    await this.ensureWriteLogTable()
+    if (migrationsDir) {
+      await this.runMigrations(migrationsDir)
     }
   }
 
-  get raw(): Database.Database {
-    return this.db
+  get raw(): Sql {
+    return this.sql
   }
 
-  get path(): string {
-    return this.dbPath
+  prepare(sql: string): PostgresPreparedStatement {
+    return new PostgresPreparedStatement(sql, this)
   }
 
-  prepare(sql: string): SqlitePreparedStatement {
-    const stmt = this.db.prepare(sql)
-    return new SqlitePreparedStatement(stmt, this)
-  }
-
-  async batch(statements: SqlitePreparedStatement[]): Promise<D1Result[]> {
+  async batch(statements: PostgresPreparedStatement[]): Promise<D1Result[]> {
     const results: D1Result[] = []
-    const transaction = this.db.transaction(() => {
+    await this.sql.begin(async (tx) => {
       for (const statement of statements) {
-        results.push(statement.runAsD1Result())
+        results.push(await statement.runAsD1Result(tx as unknown as Sql))
       }
     })
-    transaction()
     return results
   }
 
   async exec(sql: string): Promise<D1ExecResult> {
-    this.db.exec(sql)
-    return { count: 0, duration: 0 }
+    const chunks = sql
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean)
+    for (const chunk of chunks) {
+      const translated = translateSqliteToPostgres(chunk)
+      await this.sql.unsafe(translated)
+    }
+    return { count: chunks.length, duration: 0 }
   }
 
-  /** Replace the on-disk database file and reconnect (used after D1 sync). */
-  reconnect(newPath?: string): void {
-    this.db.close()
-    const path = newPath ? resolve(newPath) : this.dbPath
-    this.db = new Database(path)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('foreign_keys = ON')
-    this.ensureWriteLogTable()
+  async ping(): Promise<void> {
+    await this.sql`SELECT 1`
   }
 
-  close(): void {
-    this.db.close()
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    await this.sql.end({ timeout: 5 })
   }
 
-  countTableRows(): Record<string, number> {
-    const tables = this.db
-      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
-      .all() as { name: string }[]
+  async countTableRows(): Promise<Record<string, number>> {
+    const tables = await this.sql<{ table_name: string }[]>`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    `
     const counts: Record<string, number> = {}
-    for (const { name } of tables) {
-      if (name === 'failover_write_log' || name === '_migrations' || name === 'kv_store') continue
+    for (const { table_name } of tables) {
+      if (table_name === 'failover_write_log' || table_name === '_migrations' || table_name === 'kv_store') {
+        continue
+      }
       try {
-        const row = this.db.prepare(`SELECT COUNT(*) AS c FROM "${name.replace(/"/g, '""')}"`).get() as { c: number }
-        counts[name] = row.c
+        const rows = await this.sql.unsafe(
+          `SELECT COUNT(*)::int AS c FROM "${table_name.replace(/"/g, '""')}"`,
+        )
+        counts[table_name] = Number((rows[0] as { c: number } | undefined)?.c ?? -1)
       } catch {
-        counts[name] = -1
+        counts[table_name] = -1
       }
     }
     return counts
   }
 
-  getWriteLogPendingCount(): number {
-    const row = this.db.prepare('SELECT COUNT(*) AS c FROM failover_write_log').get() as { c: number }
-    return row.c
+  async getWriteLogPendingCount(): Promise<number> {
+    try {
+      const rows = await this.sql<{ c: number }[]>`
+        SELECT COUNT(*)::int AS c FROM failover_write_log
+      `
+      return rows[0]?.c ?? 0
+    } catch {
+      return 0
+    }
   }
 
-  listWriteLog(limit = 500): { id: number; sql: string; params_json: string; created_at: string }[] {
-    return this.db
-      .prepare(
-        `SELECT id, sql, params_json, created_at FROM failover_write_log ORDER BY id DESC LIMIT ?`,
-      )
-      .all(limit) as { id: number; sql: string; params_json: string; created_at: string }[]
+  async listWriteLog(
+    limit = 500,
+  ): Promise<{ id: number; sql: string; params_json: string; created_at: string }[]> {
+    return this.sql`
+      SELECT id, sql, params_json, created_at::text
+      FROM failover_write_log
+      ORDER BY id DESC
+      LIMIT ${limit}
+    `
   }
 
-  exportWriteLogSql(): string {
-    const rows = this.db
-      .prepare('SELECT id, sql, params_json, created_at FROM failover_write_log ORDER BY id ASC')
-      .all() as { id: number; sql: string; params_json: string; created_at: string }[]
+  async exportWriteLogSql(): Promise<string> {
+    const rows = await this.sql<
+      { id: number; sql: string; params_json: string; created_at: string }[]
+    >`
+      SELECT id, sql, params_json, created_at::text
+      FROM failover_write_log
+      ORDER BY id ASC
+    `
     const lines = [
-      '-- VMP failover write log export',
+      '-- VMP write log export',
       `-- generated_at: ${new Date().toISOString()}`,
       `-- entries: ${rows.length}`,
       '',
@@ -191,58 +245,76 @@ export class SqliteD1Adapter {
     return lines.join('\n')
   }
 
-  private ensureWriteLogTable(): void {
-    this.db.exec(`
+  private async ensureWriteLogTable(): Promise<void> {
+    await this.sql`
       CREATE TABLE IF NOT EXISTS failover_write_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id BIGSERIAL PRIMARY KEY,
         sql TEXT NOT NULL,
         params_json TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `)
-    this.writeLogStmt = this.db.prepare(
-      'INSERT INTO failover_write_log (sql, params_json) VALUES (?, ?)',
-    )
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `
   }
 
   logWrite(sql: string, params: unknown[]): void {
-    if (!this.enableWriteLog || !this.writeLogStmt) return
+    if (!this.enableWriteLog) return
     if (/failover_write_log/i.test(sql)) return
-    try {
-      this.writeLogStmt.run(sql.trim(), JSON.stringify(params))
-    } catch (err) {
-      console.error('[failover] write log insert failed:', err)
-    }
+    const trimmed = sql.trim()
+    const { text, values } = translateAndBind(trimmed, params)
+    void this.sql
+      .unsafe(`INSERT INTO failover_write_log (sql, params_json) VALUES ($1, $2)`, [
+        text,
+        JSON.stringify(values),
+      ])
+      .catch((err) => {
+        console.error('[db] write log insert failed:', err)
+      })
   }
 
-  private runMigrations(migrationsDir: string): void {
-    this.db.exec(`
+  private async runMigrations(migrationsDir: string): Promise<void> {
+    await this.sql`
       CREATE TABLE IF NOT EXISTS _migrations (
         id TEXT PRIMARY KEY,
-        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `)
-    const applied = new Set(
-      (this.db.prepare('SELECT id FROM _migrations').all() as { id: string }[]).map((r) => r.id),
-    )
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    const appliedRows = await this.sql<{ id: string }[]>`SELECT id FROM _migrations`
+    const applied = new Set(appliedRows.map((r) => r.id))
+
     const files = readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql'))
       .sort()
+
     for (const file of files) {
       const id = file.replace(/\.sql$/, '')
       if (applied.has(id)) continue
-      const sql = readFileSync(join(migrationsDir, file), 'utf8')
-      const run = this.db.transaction(() => {
-        this.db.exec(sql)
-        this.db.prepare('INSERT INTO _migrations (id) VALUES (?)').run(id)
+      const raw = readFileSync(join(migrationsDir, file), 'utf8')
+      const sql = translateSqliteDdl(raw)
+      await this.sql.begin(async (tx) => {
+        const statements = sql
+          .split(';')
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0 && !/^--/.test(part))
+        for (const statement of statements) {
+          await tx.unsafe(statement)
+        }
+        await tx`INSERT INTO _migrations (id) VALUES (${id})`
       })
-      run()
       console.log(`[migrations] applied ${file}`)
     }
   }
 }
 
-export function defaultMigrationsDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url))
-  return resolve(here, '../../api/migrations')
+export function resolveDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL is required (set by Deno Deploy when a managed Postgres database is attached)',
+    )
+  }
+  return url
 }
+
+/** @deprecated Alias — api-node now uses Postgres only. */
+export type SqliteD1Adapter = PostgresD1Adapter

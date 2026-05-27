@@ -1,5 +1,9 @@
 import { ListObjectsV2Command, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import type { NodeEnv } from '../types.js'
+/** Env fields used by optional R2→S3 manifest sync. */
+interface R2SyncEnv {
+  S3_BUCKET_NAME?: string
+  AWS_REGION?: string
+}
 
 const MAX_PUT_ATTEMPTS = 3
 
@@ -28,7 +32,7 @@ async function putWithRetry(
  *
  * TODO: configure dual-write from podcast-host so S3 stays current without this job.
  */
-export async function syncR2ManifestsToS3(env: NodeEnv): Promise<{ ok: boolean; synced: number; error?: string }> {
+export async function syncR2ManifestsToS3(env: R2SyncEnv): Promise<{ ok: boolean; synced: number; error?: string }> {
   const bucket = env.S3_BUCKET_NAME ?? process.env.S3_BUCKET_NAME
   const r2Bucket = process.env.R2_BUCKET_NAME
   const r2Endpoint = process.env.R2_S3_ENDPOINT

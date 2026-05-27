@@ -46,17 +46,6 @@ export interface DurableObjectStub {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
-export interface NodeEnv extends CFEnvShape {
-  SQLITE_DB_PATH: string
-  CF_ACCOUNT_ID?: string
-  CF_API_TOKEN?: string
-  CF_D1_DATABASE_ID?: string
-  S3_BUCKET_NAME?: string
-  AWS_REGION?: string
-  D1_SYNC_INTERVAL_MS?: string
-  D1_SYNC_STATE_PATH?: string
-}
-
 export interface SyncResult {
   ok: boolean
   durationMs: number

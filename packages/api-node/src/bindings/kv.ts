@@ -1,23 +1,23 @@
 import { Readable } from 'node:stream'
 import { Readable as ReadableStreamNode } from 'node:stream'
-import type { SqliteD1Adapter } from './db.js'
+import type { PostgresD1Adapter } from './db.js'
 
 type KVGetOptions = { type?: 'text' | 'json' | 'arrayBuffer' | 'stream' }
 type KVPutOptions = { expirationTtl?: number; expiration?: number }
 
-type StoredRow = {
-  value: Buffer
-  value_encoding: string
-  expires_at: number | null
-}
-
-export class SqliteKVAdapter {
+/**
+ * KVNamespace shim backed by Postgres (RATE_LIMIT_KV binding).
+ * Deno Deploy offers Deno KV natively; we keep a SQL table so @vmp/api code stays unchanged.
+ */
+export class PostgresKVAdapter {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null
 
-  constructor(private readonly dbAdapter: SqliteD1Adapter) {
-    this.ensureTable()
-    this.cleanupTimer = setInterval(() => this.purgeExpired(), 60_000)
-    this.purgeExpired()
+  constructor(private readonly dbAdapter: PostgresD1Adapter) {
+    void this.ensureTable()
+    this.cleanupTimer = setInterval(() => {
+      void this.purgeExpired()
+    }, 60_000)
+    void this.purgeExpired()
   }
 
   stop(): void {
@@ -27,46 +27,60 @@ export class SqliteKVAdapter {
     }
   }
 
-  private ensureTable(): void {
-    this.dbAdapter.raw.exec(`
+  private async ensureTable(): Promise<void> {
+    await this.dbAdapter.sql`
       CREATE TABLE IF NOT EXISTS kv_store (
         key TEXT PRIMARY KEY,
-        value BLOB NOT NULL,
+        value BYTEA NOT NULL,
         value_encoding TEXT NOT NULL DEFAULT 'text',
-        expires_at INTEGER,
-        created_at INTEGER NOT NULL DEFAULT (unixepoch())
-      );
-      CREATE INDEX IF NOT EXISTS idx_kv_store_expires ON kv_store(expires_at);
-    `)
-    const cols = this.dbAdapter.raw.prepare(`PRAGMA table_info(kv_store)`).all() as { name: string }[]
+        expires_at BIGINT,
+        created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::bigint)
+      )
+    `
+    await this.dbAdapter.sql`
+      CREATE INDEX IF NOT EXISTS idx_kv_store_expires ON kv_store(expires_at)
+    `
+    const cols = await this.dbAdapter.sql<{ name: string }[]>`
+      SELECT column_name AS name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'kv_store'
+    `
     if (!cols.some((c) => c.name === 'value_encoding')) {
-      this.dbAdapter.raw.exec(`ALTER TABLE kv_store ADD COLUMN value_encoding TEXT NOT NULL DEFAULT 'text'`)
+      await this.dbAdapter.sql`
+        ALTER TABLE kv_store ADD COLUMN value_encoding TEXT NOT NULL DEFAULT 'text'
+      `
     }
   }
 
-  private purgeExpired(): void {
+  private async purgeExpired(): Promise<void> {
     try {
-      this.dbAdapter.raw
-        .prepare('DELETE FROM kv_store WHERE expires_at IS NOT NULL AND expires_at < unixepoch()')
-        .run()
+      await this.dbAdapter.sql`
+        DELETE FROM kv_store
+        WHERE expires_at IS NOT NULL AND expires_at < EXTRACT(EPOCH FROM NOW())::bigint
+      `
     } catch (err) {
       console.error('[kv] expiry cleanup failed:', err)
     }
   }
 
-  private readRow(key: string): StoredRow | null {
-    const row = this.dbAdapter.raw
-      .prepare('SELECT value, value_encoding, expires_at FROM kv_store WHERE key = ?')
-      .get(key) as StoredRow | undefined
+  private async readRow(key: string): Promise<{
+    value: Buffer
+    value_encoding: string
+    expires_at: number | null
+  } | null> {
+    const rows = await this.dbAdapter.sql<
+      { value: Buffer; value_encoding: string; expires_at: number | null }[]
+    >`
+      SELECT value, value_encoding, expires_at FROM kv_store WHERE key = ${key}
+    `
+    const row = rows[0]
     if (!row) return null
-    if (!(row.value instanceof Buffer)) {
-      row.value = Buffer.from(row.value as unknown as ArrayBuffer)
-    }
+    const value = row.value instanceof Buffer ? row.value : Buffer.from(row.value)
     if (row.expires_at != null && row.expires_at < Math.floor(Date.now() / 1000)) {
-      this.dbAdapter.raw.prepare('DELETE FROM kv_store WHERE key = ?').run(key)
+      await this.dbAdapter.sql`DELETE FROM kv_store WHERE key = ${key}`
       return null
     }
-    return row
+    return { ...row, value }
   }
 
   async get(
@@ -81,9 +95,9 @@ export class SqliteKVAdapter {
           : options === 'stream'
             ? 'stream'
             : typeof options === 'object' && options && 'type' in options
-              ? options.type ?? 'text'
+              ? (options.type ?? 'text')
               : 'text'
-    const row = this.readRow(key)
+    const row = await this.readRow(key)
     if (!row) return null
 
     if (type === 'json') {
@@ -140,20 +154,25 @@ export class SqliteKVAdapter {
     } else if (options?.expiration != null) {
       expiresAt = options.expiration
     }
-    this.dbAdapter.raw
-      .prepare(
-        `INSERT INTO kv_store (key, value, value_encoding, expires_at, created_at)
-         VALUES (?, ?, ?, ?, unixepoch())
-         ON CONFLICT(key) DO UPDATE SET
-           value = excluded.value,
-           value_encoding = excluded.value_encoding,
-           expires_at = excluded.expires_at`,
+
+    await this.dbAdapter.sql`
+      INSERT INTO kv_store (key, value, value_encoding, expires_at, created_at)
+      VALUES (
+        ${key},
+        ${stored},
+        ${encoding},
+        ${expiresAt},
+        EXTRACT(EPOCH FROM NOW())::bigint
       )
-      .run(key, stored, encoding, expiresAt)
+      ON CONFLICT (key) DO UPDATE SET
+        value = EXCLUDED.value,
+        value_encoding = EXCLUDED.value_encoding,
+        expires_at = EXCLUDED.expires_at
+    `
   }
 
   async delete(key: string): Promise<void> {
-    this.dbAdapter.raw.prepare('DELETE FROM kv_store WHERE key = ?').run(key)
+    await this.dbAdapter.sql`DELETE FROM kv_store WHERE key = ${key}`
   }
 
   async list(options?: { prefix?: string | null; limit?: number; cursor?: string | null }): Promise<{
@@ -164,13 +183,14 @@ export class SqliteKVAdapter {
     const prefix = options?.prefix ?? ''
     const limit = Math.min(options?.limit ?? 1000, 1000)
     const offset = options?.cursor ? Number.parseInt(options.cursor, 10) || 0 : 0
-    const rows = this.dbAdapter.raw
-      .prepare(
-        `SELECT key FROM kv_store
-         WHERE key LIKE ? AND (expires_at IS NULL OR expires_at >= unixepoch())
-         ORDER BY key LIMIT ? OFFSET ?`,
-      )
-      .all(`${prefix}%`, limit + 1, offset) as { key: string }[]
+    const rows = await this.dbAdapter.sql<{ key: string }[]>`
+      SELECT key FROM kv_store
+      WHERE key LIKE ${`${prefix}%`}
+        AND (expires_at IS NULL OR expires_at >= EXTRACT(EPOCH FROM NOW())::bigint)
+      ORDER BY key
+      LIMIT ${limit + 1}
+      OFFSET ${offset}
+    `
     const keys = rows.slice(0, limit).map((r) => ({ name: r.key }))
     const listComplete = rows.length <= limit
     return listComplete
@@ -193,7 +213,7 @@ export class SqliteKVAdapter {
           : options === 'stream'
             ? 'stream'
             : typeof options === 'object' && options && 'type' in options
-              ? options.type ?? 'text'
+              ? (options.type ?? 'text')
               : 'text'
 
     const value = await this.get(key, options)
@@ -225,3 +245,6 @@ export class SqliteKVAdapter {
     return { value: null, metadata: null }
   }
 }
+
+/** @deprecated Alias */
+export type SqliteKVAdapter = PostgresKVAdapter

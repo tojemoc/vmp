@@ -1,14 +1,13 @@
 import type { CFEnvShape } from '../types.js'
-import { getLastD1SyncState } from '../sync/d1sync.js'
-import type { SqliteD1Adapter } from '../bindings/db.js'
+import type { PostgresD1Adapter } from '../bindings/db.js'
 import type { S3R2Adapter } from '../bindings/bucket.js'
-import type { SqliteKVAdapter } from '../bindings/kv.js'
+import type { PostgresKVAdapter } from '../bindings/kv.js'
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy'
 
 export interface HealthPayload {
   status: HealthStatus
-  mode: 'failover'
+  mode: 'deno-deploy'
   checks: Record<string, unknown>
   timestamp: string
 }
@@ -17,20 +16,19 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
   const timestamp = new Date().toISOString()
   const checks: Record<string, unknown> = {}
 
-  const db = env.DB as SqliteD1Adapter | undefined
+  const db = env.DB as PostgresD1Adapter | undefined
   let databaseOk = false
-  let dbLatency = 0
   if (db) {
     const t0 = Date.now()
     try {
-      db.raw.prepare('SELECT 1').get()
+      await db.ping()
       databaseOk = true
-      dbLatency = Date.now() - t0
-      checks.database = { ok: true, latencyMs: dbLatency }
+      checks.database = { ok: true, latencyMs: Date.now() - t0, backend: 'postgres' }
     } catch (err) {
       checks.database = {
         ok: false,
         latencyMs: Date.now() - t0,
+        backend: 'postgres',
         error: err instanceof Error ? err.message : String(err),
       }
     }
@@ -63,13 +61,13 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
     checks.s3 = { ok: false, error: 'not configured' }
   }
 
-  const kv = env.RATE_LIMIT_KV as SqliteKVAdapter | undefined
+  const kv = env.RATE_LIMIT_KV as PostgresKVAdapter | undefined
   if (kv) {
     const t0 = Date.now()
     try {
       await kv.put('__health_ping__', '1', { expirationTtl: 10 })
       await kv.get('__health_ping__')
-      checks.kv = { ok: true, latencyMs: Date.now() - t0 }
+      checks.kv = { ok: true, latencyMs: Date.now() - t0, backend: 'postgres-kv' }
     } catch (err) {
       checks.kv = { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
@@ -77,21 +75,8 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
     checks.kv = { ok: false, error: 'not configured' }
   }
 
-  const syncState = getLastD1SyncState()
-  if (syncState.lastSyncAt) {
-    const ageSeconds = Math.floor((Date.now() - new Date(syncState.lastSyncAt).getTime()) / 1000)
-    checks.lastD1Sync = {
-      ok: ageSeconds < 600,
-      ageSeconds,
-      rowCounts: syncState.lastRowCounts,
-      bookmark: syncState.lastBookmark,
-    }
-  } else {
-    checks.lastD1Sync = { ok: false, error: 'no sync completed yet' }
-  }
-
   if (db) {
-    checks.writeLogPending = { count: db.getWriteLogPendingCount() }
+    checks.writeLogPending = { count: await db.getWriteLogPendingCount() }
   }
 
   let status: HealthStatus = 'healthy'
@@ -99,13 +84,11 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
     status = 'unhealthy'
   } else if (!(checks.s3 as { ok?: boolean })?.ok) {
     status = 'degraded'
-  } else if (!(checks.lastD1Sync as { ok?: boolean })?.ok) {
-    status = 'degraded'
   }
 
   const statusCode = status === 'unhealthy' ? 503 : 200
   return {
     statusCode,
-    body: { status, mode: 'failover', checks, timestamp },
+    body: { status, mode: 'deno-deploy', checks, timestamp },
   }
 }
