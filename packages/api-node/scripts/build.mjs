@@ -29,6 +29,11 @@ await esbuild.build({
   outdir: 'dist',
   outExtension: { '.js': '.js' },
   packages: 'bundle',
+  alias: {
+    // CI can invoke api-node build without full workspace link metadata.
+    // Resolve @vmp/shared to source directly so worker code can be bundled.
+    '@vmp/shared': sharedEntry,
+  },
   external: ['better-sqlite3', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
   sourcemap: true,
   logLevel: 'info',
