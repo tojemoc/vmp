@@ -37,16 +37,16 @@ if (!token) {
 }
 
 const denoBin = process.env.DENO ?? 'deno'
-const rootDenoConfig = path.resolve(packageRoot, '../../deno.json')
+const packageDenoConfig = path.join(packageRoot, 'deno.json')
 const baseArgs = [
   'deploy',
-  entrypoint,
+  '.',
   '--org',
   org,
   '--prod',
   '--allow-node-modules',
   '--config',
-  rootDenoConfig,
+  packageDenoConfig,
 ]
 
 const runDeploy = (appFlag) =>
