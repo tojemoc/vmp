@@ -82,7 +82,6 @@ jobs:
           node scripts/deno-deploy-upload.mjs
 
   deploy-staging:
-    needs: [deploy-api-node-backup]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
