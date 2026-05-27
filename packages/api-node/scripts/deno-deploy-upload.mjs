@@ -49,17 +49,17 @@ const baseArgs = [
   rootDenoConfig,
 ]
 
-const runDeploy = (projectFlag) =>
-  spawnSync(denoBin, [...baseArgs, projectFlag, app], {
+const runDeploy = (appFlag) =>
+  spawnSync(denoBin, [...baseArgs, appFlag, app], {
     cwd: packageRoot,
     stdio: 'inherit',
     env: { ...process.env, DENO_DEPLOY_TOKEN: token },
   })
 
-let result = runDeploy('--project')
+// Current Deno Deploy CLI uses --app. Older releases accepted --project.
+let result = runDeploy('--app')
 if (result.status !== 0 && !result.error) {
-  // Older CLI releases used --app instead of --project.
-  result = runDeploy('--app')
+  result = runDeploy('--project')
 }
 
 if (result.error) {
