@@ -33,13 +33,14 @@ jobs:
       DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG }}
       DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP }}
     steps:
-      - uses: actions/checkout@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '24.11.0'
+          package-manager-cache: false
 
       - name: Mount npm cache (api-node only)
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
@@ -96,13 +97,14 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
     steps:
-      - uses: actions/checkout@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
       
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
+          package-manager-cache: false
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
@@ -171,7 +173,6 @@ jobs:
           curl -fsS "$FRONTEND_URL" >/dev/null
 
   deploy-production:
-    needs: [deploy-staging]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
@@ -180,13 +181,14 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_PROD }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_PROD }}
     steps:
-      - uses: actions/checkout@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
       
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
+          package-manager-cache: false
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
