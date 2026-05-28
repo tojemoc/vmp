@@ -20,6 +20,74 @@ on:
           - production
 
 jobs:
+  # api-node: prebuild on Blacksmith, upload dist/ + node_modules to Deno Deploy (Postgres via DATABASE_URL).
+  deploy-api-node-backup:
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/api-node
+    env:
+      DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG }}
+      DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '24.11.0'
+          package-manager-cache: false
+
+      - name: Mount npm cache (api-node only)
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
+        with:
+          key: ${{ github.repository }}-${{ runner.os }}-api-node-npm-${{ hashFiles('packages/api-node/package-lock.json') }}
+          path: ~/.npm
+
+      - name: Install api-node dependencies (build)
+        run: node scripts/deploy-install.mjs
+
+      - name: Build api-node bundle
+        run: npm run build
+
+      - name: Prune to production node_modules
+        run: node scripts/deploy-prune-prod.mjs
+
+      - name: Verify prebuilt runtime artifact
+        run: |
+          test -f dist/server.js
+          test -d node_modules/postgres
+
+      - uses: denoland/setup-deno@667a34cdef165d8d2b2e98dde39547c9daac7282
+        with:
+          deno-version: v2.x
+
+      - name: Upload prebuilt bundle to Deno Deploy
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+        run: |
+          if [ -z "${DENO_DEPLOY_ORG:-}" ] || [ -z "${DENO_DEPLOY_APP:-}" ]; then
+            echo "::error::DENO_DEPLOY_ORG and DENO_DEPLOY_APP repository variables must be configured for this workflow."
+            exit 1
+          fi
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "::warning::DENO_DEPLOY_TOKEN is not configured. Backup API was built but not uploaded to Deno Deploy."
+            # Soft-skip for manual runs; hard-fail for protected deploy triggers.
+            if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              exit 0
+            fi
+            if [ "${GITHUB_REF:-}" = "refs/heads/main" ] || [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+              exit 1
+            fi
+            # Default to failing on non-dispatch events to avoid silently skipping backup deploys.
+            exit 1
+          fi
+          node scripts/deno-deploy-upload.mjs
+
   deploy-staging:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -29,15 +97,18 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
       
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
+          package-manager-cache: false
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
-        uses: useblacksmith/stickydisk@v1
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
@@ -102,7 +173,6 @@ jobs:
           curl -fsS "$FRONTEND_URL" >/dev/null
 
   deploy-production:
-    needs: [deploy-staging]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
@@ -111,21 +181,24 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_PROD }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_PROD }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
       
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
+          package-manager-cache: false
         # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
-        uses: useblacksmith/stickydisk@v1
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-npm-cache
           path: ~/.npm
   
       - name: Mount node_modules
-        uses: useblacksmith/stickydisk@v1
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-node-modules
           path: ./node_modules
@@ -154,7 +227,7 @@ jobs:
         run: npm exec nx -- run @vmp/api:deploy
       
       - name: Deploy Web (production)
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}

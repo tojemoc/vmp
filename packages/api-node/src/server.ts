@@ -3,15 +3,13 @@ import { Readable } from 'node:stream'
 import { installCachePolyfill } from './bindings/cache.js'
 import { buildCorsHeaders } from './middleware/cors.js'
 import { buildHealthResponse } from './middleware/health.js'
-import { buildEnv, getDbAdapter, getEnv, rebuildEnv, toNodeEnv } from './env.js'
-import { syncD1ToLocal } from './sync/d1sync.js'
+import { buildEnv, getDbAdapter, getEnv, rebuildEnv } from './env.js'
 import type { CFEnvShape } from './types.js'
 import { getWorkerFetch, requireAdminRole } from './workerBridge.js'
 
 installCachePolyfill()
 
 const PORT = Number.parseInt(process.env.PORT ?? '8787', 10)
-const SYNC_INTERVAL_MS = Number.parseInt(process.env.D1_SYNC_INTERVAL_MS ?? '300000', 10)
 
 function authErrorStatus(err: unknown): number {
   const message = err instanceof Error ? err.message : ''
@@ -72,7 +70,7 @@ async function writeWebResponse(res: ServerResponse, response: Response): Promis
   res.end()
 }
 
-async function handleFailoverAdminRoutes(
+async function handleAdminWriteLogRoutes(
   req: IncomingMessage,
   res: ServerResponse,
   env: CFEnvShape,
@@ -91,9 +89,10 @@ async function handleFailoverAdminRoutes(
         return true
       }
       const limit = Math.min(1000, Number.parseInt(url.searchParams.get('limit') ?? '100', 10) || 100)
-      const entries = db.listWriteLog(limit)
+      const entries = await db.listWriteLog(limit)
+      const count = await db.getWriteLogPendingCount()
       res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
-      res.end(JSON.stringify({ entries, count: db.getWriteLogPendingCount() }))
+      res.end(JSON.stringify({ entries, count }))
     } catch (err) {
       const status = authErrorStatus(err)
       const message = err instanceof Error ? err.message : 'Unauthorized'
@@ -113,10 +112,10 @@ async function handleFailoverAdminRoutes(
         res.end(JSON.stringify({ error: 'Database not available' }))
         return true
       }
-      const sql = db.exportWriteLogSql()
+      const sql = await db.exportWriteLogSql()
       res.writeHead(200, {
         'Content-Type': 'application/sql',
-        'Content-Disposition': `attachment; filename="failover-write-log-${Date.now()}.sql"`,
+        'Content-Disposition': `attachment; filename="write-log-${Date.now()}.sql"`,
         ...corsHeaders,
       })
       res.end(sql)
@@ -143,7 +142,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFE
     return
   }
 
-  if (await handleFailoverAdminRoutes(req, res, env)) return
+  if (await handleAdminWriteLogRoutes(req, res, env)) return
 
   const body = await readBody(req)
   const request = nodeRequestToWeb(req, body)
@@ -159,20 +158,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFE
   await writeWebResponse(res, response)
 }
 
-async function runD1Sync(): Promise<void> {
-  const db = getDbAdapter()
-  if (!db) return
-  const env = toNodeEnv(await getEnv())
-  await syncD1ToLocal(env, db)
-}
-
 async function main(): Promise<void> {
   await buildEnv()
-
-  await runD1Sync()
-  setInterval(() => {
-    runD1Sync().catch((err) => console.error('[d1sync] interval error:', err))
-  }, SYNC_INTERVAL_MS).unref?.()
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -189,15 +176,15 @@ async function main(): Promise<void> {
   })
 
   server.listen(PORT, () => {
-    console.log(`[failover] listening on :${PORT}`)
+    console.log(`[api-node] listening on :${PORT} (postgres via DATABASE_URL)`)
   })
 
   process.on('SIGHUP', () => {
-    rebuildEnv().catch((err) => console.error('[failover] SIGHUP rebuild failed:', err))
+    rebuildEnv().catch((err) => console.error('[api-node] SIGHUP rebuild failed:', err))
   })
 }
 
 main().catch((err) => {
-  console.error('[failover] fatal:', err)
+  console.error('[api-node] fatal:', err)
   process.exit(1)
 })

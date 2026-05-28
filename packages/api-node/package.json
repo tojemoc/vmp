@@ -4,12 +4,10 @@
   "private": true,
   "type": "module",
   "main": "./dist/server.js",
-  "description": "VMP API failover node server (D1/S3/KV adapters for @vmp/api Worker code)",
+  "description": "VMP API on Deno Deploy (Postgres D1 shim, S3/R2, SQL-backed KV for @vmp/api Worker code)",
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node dist/server.js",
-    "sync:now": "node dist/sync/d1sync-cli.js --once",
-    "sync:write-log-export": "node dist/sync/write-log-export-cli.js",
     "dev": "npm run build && node --watch dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -18,11 +16,10 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
-    "better-sqlite3": "^12.10.0"
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260511.1",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.5.0"
