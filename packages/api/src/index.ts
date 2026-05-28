@@ -532,6 +532,7 @@ export default {
   async scheduled(event: any, env: any, ctx: ExecutionContext) {
     try {
       await runScheduledPublishJobs(env)
+      await syncScheduledPublishHint(env)
     } catch (err) {
       console.error('Scheduled publish sweep failed:', err)
     }
@@ -2077,6 +2078,12 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     // Automatic notifications on publish are intentionally disabled.
     void transitionedToPublished
 
+    try {
+      await syncScheduledPublishHint(env)
+    } catch (err) {
+      console.warn('Scheduled publish hint sync failed after admin update (non-fatal):', getErrorMessage(err))
+    }
+
     return jsonResponse({ ok: true, video }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
@@ -2140,6 +2147,12 @@ async function handleAdminVideoDelete(request: any, env: any, corsHeaders: any) 
 
     // Delete the D1 row
     await db.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId).run()
+
+    try {
+      await syncScheduledPublishHint(env)
+    } catch (err) {
+      console.warn('Scheduled publish hint sync failed after delete (non-fatal):', getErrorMessage(err))
+    }
 
     return jsonResponse({ ok: true, deletedR2Objects }, 200, corsHeaders)
   } catch (error) {
@@ -2379,6 +2392,12 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
     db.prepare('SELECT id, title, publish_status, slug, thumbnail_url FROM videos WHERE id = ?').bind(draftId).first(),
     db.prepare('SELECT id, title, publish_status, slug, thumbnail_url FROM videos WHERE id = ?').bind(publishedId).first(),
   ])
+
+  try {
+    await syncScheduledPublishHint(env)
+  } catch (err) {
+    console.warn('Scheduled publish hint sync failed after swap (non-fatal):', getErrorMessage(err))
+  }
 
   return jsonResponse({ ok: true, published, retired }, 200, corsHeaders)
 }
@@ -3074,6 +3093,23 @@ function clampSeconds(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
+async function syncScheduledPublishHint(env: any) {
+  const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
+  if (!kv) return
+
+  const hintKey = 'scheduled-publish-next:default'
+  const nextRunAt = await getNextScheduledPublishAtUtcMillis(env)
+  if (!nextRunAt) {
+    await kv.delete(hintKey)
+    return
+  }
+
+  const now = Date.now()
+  const secondsUntilDue = Math.max(0, Math.ceil((nextRunAt - now) / 1000))
+  const ttl = clampSeconds(secondsUntilDue + 3600, 3600, 86400)
+  await kv.put(hintKey, String(nextRunAt), { expirationTtl: ttl })
+}
+
 async function maybeRunScheduledPublishJobsInRequest(env: any) {
   try {
     const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
@@ -3086,15 +3122,28 @@ async function maybeRunScheduledPublishJobsInRequest(env: any) {
       if (lastRun) return
 
       const now = Date.now()
-      const nextRunAt = await getNextScheduledPublishAtUtcMillis(env)
-      if (nextRunAt === null) {
-        // No scheduled drafts pending: write a long lock so we avoid minute-level KV churn.
-        await kv.put(lockKey, String(now), { expirationTtl: 3600 })
+      const hintKey = 'scheduled-publish-next:default'
+      let hintRaw = await kv.get(hintKey)
+      if (!hintRaw) {
+        // Backfill hint in case older schedules were created before hinting was introduced.
+        await syncScheduledPublishHint(env)
+        hintRaw = await kv.get(hintKey)
+        if (!hintRaw) {
+          // No scheduled drafts exist: avoid frequent writes in request path.
+          await kv.put(lockKey, String(now), { expirationTtl: 3600 })
+          return
+        }
+      }
+
+      const nextRunAt = Number.parseInt(hintRaw, 10)
+      if (!Number.isFinite(nextRunAt) || nextRunAt <= 0) {
+        await kv.delete(hintKey)
+        await kv.put(lockKey, String(now), { expirationTtl: 600 })
         return
       }
 
       if (nextRunAt > now) {
-        // Back off until the next draft is close to due (bounded to keep eventual consistency).
+        // Back off until the next draft is due.
         const secondsUntilDue = Math.ceil((nextRunAt - now) / 1000)
         const ttl = clampSeconds(secondsUntilDue, 60, 3600)
         await kv.put(lockKey, String(now), { expirationTtl: ttl })
@@ -3108,6 +3157,7 @@ async function maybeRunScheduledPublishJobsInRequest(env: any) {
     }
 
     await runScheduledPublishJobs(env)
+    await syncScheduledPublishHint(env)
   } catch (err) {
     console.error('In-request scheduled publish sweep failed:', err)
   }
