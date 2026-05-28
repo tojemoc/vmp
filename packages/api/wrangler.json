@@ -29,6 +29,21 @@
 	      }
 	    ]
 	  },
+	"queues": {
+		"producers": [
+			{
+				"binding": "REPLICATION_QUEUE",
+				"queue": "vmp-replication-events"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "vmp-replication-events",
+				"max_batch_size": 100,
+				"max_batch_timeout": 10
+			}
+		]
+	},
 	  "migrations": [
 	    {
 	      "tag": "v1",
