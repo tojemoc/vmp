@@ -38,10 +38,24 @@ function splitSqlStatements(sql: string): string[] {
   let inDoubleQuote = false
   let inLineComment = false
   let inBlockComment = false
+  let inDollarQuote = false
+  let currentDollarTag = ''
 
   for (let i = 0; i < sql.length; i += 1) {
     const char = sql[i]
     const next = i + 1 < sql.length ? sql[i + 1] : ''
+
+    if (inDollarQuote) {
+      if (sql.startsWith(currentDollarTag, i)) {
+        current += currentDollarTag
+        i += currentDollarTag.length - 1
+        inDollarQuote = false
+        currentDollarTag = ''
+      } else {
+        current += char
+      }
+      continue
+    }
 
     if (inLineComment) {
       current += char
@@ -71,6 +85,16 @@ function splitSqlStatements(sql: string): string[] {
         i += 1
         inBlockComment = true
         continue
+      }
+      if (char === '$') {
+        const maybeTag = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/)?.[0]
+        if (maybeTag) {
+          current += maybeTag
+          i += maybeTag.length - 1
+          inDollarQuote = true
+          currentDollarTag = maybeTag
+          continue
+        }
       }
     }
 
