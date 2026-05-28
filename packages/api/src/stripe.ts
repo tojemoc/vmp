@@ -101,6 +101,17 @@ function moneyToMinorUnits(amount: number) {
   return Math.max(0, Math.round(amount * 100))
 }
 
+function extractGoCardlessApiError(response: any, fallback: string): string {
+  const errors = Array.isArray(response?.data?.error?.errors) ? response.data.error.errors : []
+  if (!errors.length) return fallback
+  const first = errors[0] ?? {}
+  const reason = typeof first.reason === 'string' ? first.reason.trim() : ''
+  const field = typeof first.field === 'string' ? first.field.trim() : ''
+  if (reason && field) return `${fallback} (${field}: ${reason})`
+  if (reason) return `${fallback} (${reason})`
+  return fallback
+}
+
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function getDb(env: any) {
@@ -514,7 +525,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot).run()
 
-    const billingRequestResponse = await gocardlessPost('/billing_requests', {
+    const billingRequestPayload: any = {
       billing_requests: {
         mandate_request: {},
         metadata: {
@@ -522,22 +533,28 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
           planType,
           checkoutToken,
         },
-        links: {
-          creditor: env.GOCARDLESS_CREDITOR_ID,
-        },
       },
-    }, env)
+    }
+    const creditorId = String(env.GOCARDLESS_CREDITOR_ID ?? '').trim()
+    if (creditorId) {
+      billingRequestPayload.billing_requests.links = { creditor: creditorId }
+    }
+    const billingRequestResponse = await gocardlessPost('/billing_requests', billingRequestPayload, env)
     const billingRequest = billingRequestResponse?.data?.billing_requests
     if (!billingRequestResponse.ok || !billingRequest?.id) {
       console.error('GoCardless billing request error:', billingRequestResponse?.data)
-      return jsonResponse({ error: 'Failed to create GoCardless checkout flow' }, 502, corsHeaders)
+      return jsonResponse({
+        error: extractGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
+        code: 'gocardless_billing_request_failed',
+      }, 502, corsHeaders)
     }
 
     const flowResponse = await gocardlessPost('/billing_request_flows', {
       billing_request_flows: {
         auto_fulfil: true,
         redirect_uri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        prefilled_customer: { email: user.email },
+        // Keep hosted flow defaults and let GoCardless collect required fields.
+        exit_uri: `${frontendUrl}/pricing`,
         links: {
           billing_request: billingRequest.id,
         },
@@ -547,7 +564,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const billingRequestFlow = flowResponse?.data?.billing_request_flows
     if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
       console.error('GoCardless billing request flow error:', flowResponse?.data)
-      return jsonResponse({ error: 'Failed to create GoCardless checkout flow' }, 502, corsHeaders)
+      return jsonResponse({
+        error: extractGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
+        code: 'gocardless_billing_request_flow_failed',
+      }, 502, corsHeaders)
     }
 
     await db.prepare(`
