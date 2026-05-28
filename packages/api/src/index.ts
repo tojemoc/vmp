@@ -3053,6 +3053,27 @@ async function runScheduledPublishJobs(env: any) {
   return statements.length
 }
 
+async function getNextScheduledPublishAtUtcMillis(env: any): Promise<number | null> {
+  const db = getDatabaseBinding(env)
+  const row = await db.prepare(`
+    SELECT scheduled_publish_at
+    FROM videos
+    WHERE publish_status = 'draft'
+      AND scheduled_publish_at IS NOT NULL
+    ORDER BY scheduled_publish_at ASC
+    LIMIT 1
+  `).first()
+  if (!row?.scheduled_publish_at || typeof row.scheduled_publish_at !== 'string') {
+    return null
+  }
+  const nextRun = parseAdminTimestampToUtcMillis(row.scheduled_publish_at)
+  return Number.isFinite(nextRun) ? nextRun : null
+}
+
+function clampSeconds(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
 async function maybeRunScheduledPublishJobsInRequest(env: any) {
   try {
     const kv = env.RATE_LIMIT_KV || env.SETTINGS_KV || null
@@ -3063,7 +3084,24 @@ async function maybeRunScheduledPublishJobsInRequest(env: any) {
       const lockKey = `scheduled-publish-sweep:${colo}`
       const lastRun = await kv.get(lockKey)
       if (lastRun) return
-      await kv.put(lockKey, Date.now().toString(), { expirationTtl: 60 })
+
+      const now = Date.now()
+      const nextRunAt = await getNextScheduledPublishAtUtcMillis(env)
+      if (nextRunAt === null) {
+        // No scheduled drafts pending: write a long lock so we avoid minute-level KV churn.
+        await kv.put(lockKey, String(now), { expirationTtl: 3600 })
+        return
+      }
+
+      if (nextRunAt > now) {
+        // Back off until the next draft is close to due (bounded to keep eventual consistency).
+        const secondsUntilDue = Math.ceil((nextRunAt - now) / 1000)
+        const ttl = clampSeconds(secondsUntilDue, 60, 3600)
+        await kv.put(lockKey, String(now), { expirationTtl: ttl })
+        return
+      }
+
+      await kv.put(lockKey, String(now), { expirationTtl: 60 })
     } catch (err) {
       console.error('Scheduled publish lock KV operation failed:', err)
       return
