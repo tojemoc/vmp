@@ -12,13 +12,23 @@ export function bindQuestionMarks(sql: string, paramCount: number): string {
   let inDouble = false
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i]
-    const prev = sql[i - 1]
-    if (ch === "'" && !inDouble && prev !== '\\') {
+    const nextCh = sql[i + 1]
+    if (ch === "'" && !inDouble) {
+      if (nextCh === "'") {
+        out += "''"
+        i += 1
+        continue
+      }
       inSingle = !inSingle
       out += ch
       continue
     }
-    if (ch === '"' && !inSingle && prev !== '\\') {
+    if (ch === '"' && !inSingle) {
+      if (nextCh === '"') {
+        out += '""'
+        i += 1
+        continue
+      }
       inDouble = !inDouble
       out += ch
       continue
@@ -113,18 +123,65 @@ export function translateSqliteToPostgres(sql: string): string {
   )
   s = s.replace(/\bunixepoch\s*\(\s*\)/gi, 'EXTRACT(EPOCH FROM NOW())::bigint')
 
-  // strftime (analytics)
-  s = s.replace(
-    /strftime\s*\(\s*'%Y-W%W'\s*,\s*datetime\s*\(\s*([^)]+)\s*\)\s*\)/gi,
-    "to_char(($1)::timestamptz, 'IYYY-\"W\"IW')",
-  )
-  s = s.replace(
-    /strftime\s*\(\s*'%Y-%m'\s*,\s*datetime\s*\(\s*([^)]+)\s*\)\s*\)/gi,
-    "to_char(($1)::timestamptz, 'YYYY-MM')",
-  )
-  s = s.replace(/date\s*\(\s*datetime\s*\(\s*([^)]+)\s*\)\s*\)/gi, '(($1)::timestamptz)::date')
+  // strftime/date analytics transforms with nested datetime(...) support.
+  s = replaceDateTimeWrapperPatterns(s)
 
   return s
+}
+
+function findMatchingParen(input: string, openIndex: number): number {
+  let depth = 0
+  for (let i = openIndex; i < input.length; i++) {
+    const ch = input[i]
+    if (ch === '(') depth += 1
+    if (ch === ')') {
+      depth -= 1
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+function replaceDateTimeWrapperPatterns(sql: string): string {
+  const patterns = [
+    {
+      start: "strftime('%Y-W%W', datetime(",
+      end: '))',
+      build: (inner: string) => `to_char((${inner})::timestamptz, 'IYYY-"W"IW')`,
+    },
+    {
+      start: "strftime('%Y-%m', datetime(",
+      end: '))',
+      build: (inner: string) => `to_char((${inner})::timestamptz, 'YYYY-MM')`,
+    },
+    {
+      start: 'date(datetime(',
+      end: '))',
+      build: (inner: string) => `((${inner})::timestamptz)::date`,
+    },
+  ] as const
+
+  let out = sql
+  for (const pattern of patterns) {
+    let cursor = 0
+    for (;;) {
+      const startIdx = out.toLowerCase().indexOf(pattern.start.toLowerCase(), cursor)
+      if (startIdx === -1) break
+      const openParenIdx = startIdx + pattern.start.length - 1
+      const closeParenIdx = findMatchingParen(out, openParenIdx)
+      if (closeParenIdx === -1) break
+      const suffix = out.slice(closeParenIdx + 1, closeParenIdx + 1 + pattern.end.length - 1)
+      if (suffix !== pattern.end.slice(1)) {
+        cursor = closeParenIdx + 1
+        continue
+      }
+      const inner = out.slice(openParenIdx + 1, closeParenIdx).trim()
+      const replacement = pattern.build(inner)
+      out = out.slice(0, startIdx) + replacement + out.slice(closeParenIdx + pattern.end.length)
+      cursor = startIdx + replacement.length
+    }
+  }
+  return out
 }
 
 /** DDL tweaks when applying packages/api/migrations/*.sql to Postgres. */

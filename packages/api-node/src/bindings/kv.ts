@@ -11,9 +11,10 @@ type KVPutOptions = { expirationTtl?: number; expiration?: number }
  */
 export class PostgresKVAdapter {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null
+  private readonly ready: Promise<void>
 
   constructor(private readonly dbAdapter: PostgresD1Adapter) {
-    void this.ensureTable()
+    this.ready = this.ensureTable()
     this.cleanupTimer = setInterval(() => {
       void this.purgeExpired()
     }, 60_000)
@@ -53,6 +54,7 @@ export class PostgresKVAdapter {
   }
 
   private async purgeExpired(): Promise<void> {
+    await this.ready
     try {
       await this.dbAdapter.sql`
         DELETE FROM kv_store
@@ -68,6 +70,7 @@ export class PostgresKVAdapter {
     value_encoding: string
     expires_at: number | null
   } | null> {
+    await this.ready
     const rows = await this.dbAdapter.sql<
       { value: Buffer; value_encoding: string; expires_at: number | null }[]
     >`
@@ -127,6 +130,7 @@ export class PostgresKVAdapter {
     value: string | ArrayBuffer | ArrayBufferView | ReadableStream | null,
     options?: KVPutOptions,
   ): Promise<void> {
+    await this.ready
     if (value == null) {
       await this.delete(key)
       return
@@ -172,6 +176,7 @@ export class PostgresKVAdapter {
   }
 
   async delete(key: string): Promise<void> {
+    await this.ready
     await this.dbAdapter.sql`DELETE FROM kv_store WHERE key = ${key}`
   }
 
@@ -180,6 +185,7 @@ export class PostgresKVAdapter {
     list_complete: boolean
     cursor?: string
   }> {
+    await this.ready
     const prefix = options?.prefix ?? ''
     const limit = Math.min(options?.limit ?? 1000, 1000)
     const offset = options?.cursor ? Number.parseInt(options.cursor, 10) || 0 : 0

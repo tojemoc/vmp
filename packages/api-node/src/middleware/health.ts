@@ -76,13 +76,22 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
   }
 
   if (db) {
-    checks.writeLogPending = { count: await db.getWriteLogPendingCount() }
+    try {
+      checks.writeLogPending = { count: await db.getWriteLogPendingCount(), healthy: true }
+    } catch (err) {
+      checks.writeLogPending = {
+        healthy: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
   }
 
   let status: HealthStatus = 'healthy'
   if (!databaseOk) {
     status = 'unhealthy'
   } else if (!(checks.s3 as { ok?: boolean })?.ok) {
+    status = 'degraded'
+  } else if (!(checks.writeLogPending as { healthy?: boolean } | undefined)?.healthy && db) {
     status = 'degraded'
   }
 
