@@ -7,6 +7,7 @@ const DEFAULT_EPOCH = 1
 const DEFAULT_BATCH_SIZE = 100
 const MAX_BATCH_SIZE = 500
 const CURSOR_ROW_LIMIT = 1000
+const REPLICATION_FETCH_TIMEOUT_MS = 10000
 const STREAM_USERS = 'users'
 const STREAM_SUBSCRIPTIONS = 'subscriptions'
 const STREAM_VIDEOS = 'videos'
@@ -71,10 +72,14 @@ function rowCursor(updatedAt: unknown, id: unknown) {
   return `${String(updatedAt ?? '')}|${String(id ?? '')}`
 }
 
-function isCursorAfter(row: { updatedAt: unknown, id: unknown }, cursor: string) {
-  if (!cursor) return true
-  const next = rowCursor(row.updatedAt, row.id)
-  return next > cursor
+function parseCursor(cursor: string) {
+  if (!cursor) return { updatedAt: '', id: '' }
+  const separator = cursor.indexOf('|')
+  if (separator < 0) return { updatedAt: cursor, id: '' }
+  return {
+    updatedAt: cursor.slice(0, separator),
+    id: cursor.slice(separator + 1),
+  }
 }
 
 async function getStreamCursor(db: any, streamName: string) {
@@ -121,16 +126,15 @@ function buildMessage(params: {
 async function enqueueStreamUsers(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
   const stream = STREAM_USERS
   const cursor = await getStreamCursor(db, stream)
+  const cursorParts = parseCursor(cursor)
   const rows = await db.prepare(`
     SELECT id, email, role, totp_enabled, created_at
     FROM users
+    WHERE (? = '' OR datetime(created_at) > datetime(?) OR (datetime(created_at) = datetime(?) AND id > ?))
     ORDER BY datetime(created_at) ASC, id ASC
     LIMIT ?
-  `).bind(CURSOR_ROW_LIMIT).all()
-  const sorted = (rows?.results ?? []).filter((row: any) => {
-    const updatedAt = row.created_at
-    return isCursorAfter({ updatedAt, id: row.id }, cursor)
-  })
+  `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
+  const sorted = rows?.results ?? []
   if (!sorted.length) return 0
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
@@ -155,14 +159,16 @@ async function enqueueStreamUsers(db: any, env: any, context: { direction: Repli
 async function enqueueStreamSubscriptions(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
   const stream = STREAM_SUBSCRIPTIONS
   const cursor = await getStreamCursor(db, stream)
+  const cursorParts = parseCursor(cursor)
   const rows = await db.prepare(`
     SELECT id, user_id, plan_type, status, provider, provider_subscription_id, provider_customer_id,
            stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
     FROM subscriptions
+    WHERE (? = '' OR datetime(updated_at) > datetime(?) OR (datetime(updated_at) = datetime(?) AND id > ?))
     ORDER BY datetime(updated_at) ASC, id ASC
     LIMIT ?
-  `).bind(CURSOR_ROW_LIMIT).all()
-  const sorted = (rows?.results ?? []).filter((row: any) => isCursorAfter({ updatedAt: row.updated_at, id: row.id }, cursor))
+  `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
+  const sorted = rows?.results ?? []
   if (!sorted.length) return 0
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
@@ -181,14 +187,16 @@ async function enqueueStreamSubscriptions(db: any, env: any, context: { directio
 async function enqueueStreamVideos(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
   const stream = STREAM_VIDEOS
   const cursor = await getStreamCursor(db, stream)
+  const cursorParts = parseCursor(cursor)
   const rows = await db.prepare(`
     SELECT id, title, description, thumbnail_url, full_duration, preview_duration, upload_date,
            status, publish_status, published_at, updated_at, slug, scheduled_publish_at, notified_at
     FROM videos
+    WHERE (? = '' OR datetime(updated_at) > datetime(?) OR (datetime(updated_at) = datetime(?) AND id > ?))
     ORDER BY datetime(updated_at) ASC, id ASC
     LIMIT ?
-  `).bind(CURSOR_ROW_LIMIT).all()
-  const sorted = (rows?.results ?? []).filter((row: any) => isCursorAfter({ updatedAt: row.updated_at, id: row.id }, cursor))
+  `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
+  const sorted = rows?.results ?? []
   if (!sorted.length) return 0
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
@@ -207,13 +215,15 @@ async function enqueueStreamVideos(db: any, env: any, context: { direction: Repl
 async function enqueueStreamAdminSettings(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
   const stream = STREAM_ADMIN_SETTINGS
   const cursor = await getStreamCursor(db, stream)
+  const cursorParts = parseCursor(cursor)
   const rows = await db.prepare(`
     SELECT key, value, updated_at
     FROM admin_settings
+    WHERE (? = '' OR datetime(updated_at) > datetime(?) OR (datetime(updated_at) = datetime(?) AND key > ?))
     ORDER BY datetime(updated_at) ASC, key ASC
     LIMIT ?
-  `).bind(CURSOR_ROW_LIMIT).all()
-  const sorted = (rows?.results ?? []).filter((row: any) => isCursorAfter({ updatedAt: row.updated_at, id: row.key }, cursor))
+  `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
+  const sorted = rows?.results ?? []
   if (!sorted.length) return 0
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
@@ -269,11 +279,23 @@ export async function handleReplicationQueue(batch: any, env: any) {
     'Content-Type': 'application/json',
   }
   if (token) headers.Authorization = `Bearer ${token}`
-  const response = await fetch(targetUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  })
+  let response: Response
+  try {
+    response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REPLICATION_FETCH_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error(`Replication target request timed out after ${REPLICATION_FETCH_TIMEOUT_MS}ms`)
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Replication target request aborted')
+    }
+    throw error
+  }
   if (!response.ok) {
     const body = await response.text()
     throw new Error(`Replication target rejected batch (${response.status}): ${body.slice(0, 300)}`)
