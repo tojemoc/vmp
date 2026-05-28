@@ -31,6 +31,88 @@ function metaFromRun(changes: number, lastRowId: number): D1Result['meta'] {
 
 type SqlParams = Parameters<Sql['unsafe']>[1]
 
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = []
+  let current = ''
+  let inSingleQuote = false
+  let inDoubleQuote = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const char = sql[i]
+    const next = i + 1 < sql.length ? sql[i + 1] : ''
+
+    if (inLineComment) {
+      current += char
+      if (char === '\n') inLineComment = false
+      continue
+    }
+
+    if (inBlockComment) {
+      current += char
+      if (char === '*' && next === '/') {
+        current += next
+        i += 1
+        inBlockComment = false
+      }
+      continue
+    }
+
+    if (!inSingleQuote && !inDoubleQuote) {
+      if (char === '-' && next === '-') {
+        current += char + next
+        i += 1
+        inLineComment = true
+        continue
+      }
+      if (char === '/' && next === '*') {
+        current += char + next
+        i += 1
+        inBlockComment = true
+        continue
+      }
+    }
+
+    if (!inDoubleQuote && char === "'" && !(inSingleQuote && next === "'")) {
+      inSingleQuote = !inSingleQuote
+      current += char
+      continue
+    }
+    if (inSingleQuote && char === "'" && next === "'") {
+      current += char + next
+      i += 1
+      continue
+    }
+
+    if (!inSingleQuote && char === '"') {
+      inDoubleQuote = !inDoubleQuote
+      current += char
+      continue
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === ';') {
+      const trimmed = current.trim()
+      if (trimmed && /\S/.test(trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) {
+        statements.push(trimmed)
+      }
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  const finalStatement = current.trim()
+  if (
+    finalStatement &&
+    /\S/.test(finalStatement.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))
+  ) {
+    statements.push(finalStatement)
+  }
+  return statements
+}
+
 function translateAndBind(sql: string, params: unknown[]): { text: string; values: SqlParams } {
   const translated = translateSqliteToPostgres(sql)
   const text = bindQuestionMarks(translated, params.length)
@@ -156,10 +238,7 @@ export class PostgresD1Adapter {
   }
 
   async exec(sql: string): Promise<D1ExecResult> {
-    const chunks = sql
-      .split(';')
-      .map((part) => part.trim())
-      .filter(Boolean)
+    const chunks = splitSqlStatements(sql)
     for (const chunk of chunks) {
       const translated = translateSqliteToPostgres(chunk)
       await this.sql.unsafe(translated)
@@ -292,10 +371,7 @@ export class PostgresD1Adapter {
       const raw = readFileSync(join(migrationsDir, file), 'utf8')
       const sql = translateSqliteDdl(raw)
       await this.sql.begin(async (tx) => {
-        const statements = sql
-          .split(';')
-          .map((part) => part.trim())
-          .filter((part) => part.length > 0 && !/^--/.test(part))
+        const statements = splitSqlStatements(sql)
         for (const statement of statements) {
           await tx.unsafe(statement)
         }
