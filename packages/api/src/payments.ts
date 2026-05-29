@@ -8,6 +8,7 @@ export {
 export { handleWebhook } from './stripe.js'
 export {
   handleGoCardlessComplete,
+  handleGoCardlessRetry,
   handleGoCardlessWebhook,
 } from './gocardless.js'
 export { normalizeGoCardlessStatus } from './gocardless.js'

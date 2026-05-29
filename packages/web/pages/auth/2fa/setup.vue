@@ -105,7 +105,7 @@
         </div>
         <div>
           <h2 class="text-lg font-semibold text-white mb-1">2FA enabled</h2>
-          <p class="text-gray-400 text-sm">Your account is now protected. Redirecting to admin…</p>
+          <p class="text-gray-400 text-sm">Your account is now protected. Redirecting…</p>
         </div>
       </div>
 
@@ -120,7 +120,7 @@ import QRCode from 'qrcode'
 // Do NOT use the admin middleware here — it would cause a redirect loop
 // because it redirects to this page when totpEnabled is false.
 // Instead, guard manually: must be logged in with an editor+ role.
-const { user, canEditContent, authHeader, markTotpEnabled, applyNewSession } = useAuth()
+const { user, isLoggedIn, authHeader, markTotpEnabled, applyNewSession } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
@@ -233,13 +233,12 @@ async function confirm() {
 }
 
 onMounted(async () => {
-  if (!user.value) {
+  if (!isLoggedIn.value) {
     const inner = safeRedirect(route.query.redirect, '')
     const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
     await startLoginFlow(setupPath)
     return
   }
-  if (!canEditContent.value) { await navigateTo('/'); return }
   await loadSetup()
 })
 </script>

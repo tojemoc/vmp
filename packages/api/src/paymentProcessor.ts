@@ -24,6 +24,7 @@ import {
   getGoCardlessInterval,
   normalizeGoCardlessCurrency,
   normalizeGoCardlessStatus,
+  prefillGoCardlessBillingRequestCustomer,
   resolveFulfilledBillingRequestMandate,
   verifyGoCardlessWebhook,
 } from './gocardlessCore.js'
@@ -491,8 +492,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       const session = await stripePost('/checkout/sessions', sessionPayload, env)
 
       if (session.error || !session.url) {
+        const stripeMessage = typeof session.error?.message === 'string'
+          ? session.error.message
+          : null
         console.error('Stripe checkout session error:', session.error)
-        return jsonResponse({ error: 'Failed to create checkout session' }, 502, corsHeaders)
+        const stripeStatus = session.error?.code === 'stripe_timeout' ? 504 : 502
+        return jsonResponse({
+          error: stripeMessage ?? 'Failed to create checkout session',
+          code: session.error?.code ?? 'stripe_checkout_failed',
+        }, stripeStatus, corsHeaders)
       }
 
       return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
@@ -557,13 +565,27 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 502, corsHeaders)
     }
 
+    const userRow = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(user.sub).first()
+    const customerEmail = String(userRow?.email ?? user.email ?? '').trim().toLowerCase()
+    const defaultCountry = String(
+      await getSetting(env, 'gocardless_default_country_code', { defaultValue: 'SK' }),
+    ).trim().toUpperCase()
+    if (customerEmail) {
+      await prefillGoCardlessBillingRequestCustomer(
+        billingRequest.id,
+        customerEmail,
+        env,
+        defaultCountry,
+      )
+    }
+
     const flowResponse = await gocardlessPost(
       '/billing_request_flows',
       buildGoCardlessBillingRequestFlowCreatePayload({
         billingRequestId: billingRequest.id,
         redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        exitUri: `${frontendUrl}/pricing`,
-        customerEmail: user.email,
+        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
+        customerEmail,
       }),
       env,
     )
@@ -587,8 +609,12 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       checkoutUrl: billingRequestFlow.authorisation_url,
       provider,
     }, 200, corsHeaders)
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('handleCheckout error:', err)
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
+    if (code === 'stripe_timeout') {
+      return jsonResponse({ error: 'Payment provider timed out. Please try again.', code }, 504, corsHeaders)
+    }
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
   }
 }
@@ -1045,6 +1071,128 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
     }, 200, corsHeaders)
   } catch (err) {
     console.error('handleGoCardlessComplete error:', err)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
+/**
+ * POST /api/payments/gocardless/retry — protected
+ * Re-opens GoCardless hosted checkout for a pending session (or latest pending for the user).
+ * Body: { checkoutToken?: string, planType?: string }
+ */
+export async function handleGoCardlessRetry(request: any, env: any, corsHeaders: any) {
+  let user: any
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const checkoutTokenInput = String(body?.checkoutToken ?? '').trim()
+  const planTypeInput = normalizePlanType(String(body?.planType ?? 'monthly'))
+
+  try {
+    const db = getDb(env)
+    let checkoutSession: any = null
+    if (checkoutTokenInput) {
+      checkoutSession = await db.prepare(`
+        SELECT id, user_id, plan_type, checkout_token, session_token, status
+        FROM payment_checkout_sessions
+        WHERE provider = 'gocardless'
+          AND user_id = ?
+          AND checkout_token = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).bind(user.sub, checkoutTokenInput).first()
+    } else {
+      checkoutSession = await db.prepare(`
+        SELECT id, user_id, plan_type, checkout_token, session_token, status
+        FROM payment_checkout_sessions
+        WHERE provider = 'gocardless'
+          AND user_id = ?
+          AND status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).bind(user.sub).first()
+    }
+
+    if (!checkoutSession || checkoutSession.status === 'completed') {
+      return jsonResponse({
+        error: 'No pending GoCardless checkout to resume. Start checkout again.',
+        code: 'checkout_not_found',
+      }, 404, corsHeaders)
+    }
+
+    const planType = normalizePlanType(String(checkoutSession.plan_type || planTypeInput))
+    const checkoutToken = String(checkoutSession.checkout_token)
+    const frontendUrl = (env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+
+    const userRow = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(user.sub).first()
+    const customerEmail = String(userRow?.email ?? user.email ?? '').trim().toLowerCase()
+    if (!customerEmail) {
+      return jsonResponse({ error: 'Account email is missing. Contact support.' }, 400, corsHeaders)
+    }
+
+    const currency = normalizeGoCardlessCurrency(
+      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
+    )
+    const defaultCountry = String(
+      await getSetting(env, 'gocardless_default_country_code', { defaultValue: 'SK' }),
+    ).trim().toUpperCase()
+
+    const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
+      currency,
+      metadata: {
+        userId: user.sub,
+        planType,
+        checkoutToken,
+      },
+      creditorId: env.GOCARDLESS_CREDITOR_ID,
+    })
+    const billingRequestResponse = await gocardlessPost('/billing_requests', billingRequestPayload, env)
+    const billingRequest = billingRequestResponse?.data?.billing_requests
+    if (!billingRequestResponse.ok || !billingRequest?.id) {
+      return jsonResponse({
+        error: formatGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
+        code: 'gocardless_billing_request_failed',
+      }, 502, corsHeaders)
+    }
+
+    await prefillGoCardlessBillingRequestCustomer(
+      billingRequest.id,
+      customerEmail,
+      env,
+      defaultCountry,
+    )
+
+    const flowResponse = await gocardlessPost(
+      '/billing_request_flows',
+      buildGoCardlessBillingRequestFlowCreatePayload({
+        billingRequestId: billingRequest.id,
+        redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
+        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
+        customerEmail,
+      }),
+      env,
+    )
+    const billingRequestFlow = flowResponse?.data?.billing_request_flows
+    if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
+      return jsonResponse({
+        error: formatGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
+        code: 'gocardless_billing_request_flow_failed',
+      }, 502, corsHeaders)
+    }
+
+    await db.prepare(`
+      UPDATE payment_checkout_sessions
+      SET provider_checkout_id = ?, session_token = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(billingRequestFlow.id, billingRequest.id, checkoutSession.id).run()
+
+    return jsonResponse({ checkoutUrl: billingRequestFlow.authorisation_url }, 200, corsHeaders)
+  } catch (err) {
+    console.error('handleGoCardlessRetry error:', err)
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
   }
 }

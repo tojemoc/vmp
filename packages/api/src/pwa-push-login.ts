@@ -7,7 +7,9 @@ import {
   generateToken,
   hashToken,
   consumeMagicLinkForUser,
+  issueTotpPendingForMagicLink,
   shouldRequireTotpEnrollment,
+  verifyTotpPendingLogin,
 } from './auth.js'
 import { isPrivateHost } from './is-private-host.js'
 import { sendPushNotification } from './webpush.js'
@@ -107,7 +109,7 @@ async function createMagicLinkForPwaPushLogin(request: any, email: string, db: a
   return { token, tokenHash, user }
 }
 
-async function sendMagicLinkEmail(to: string, verifyUrl: string, env: any) {
+async function sendPwaPushLoginMagicLinkEmail(to: string, verifyUrl: string, env: any) {
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
@@ -117,21 +119,27 @@ async function sendMagicLinkEmail(to: string, verifyUrl: string, env: any) {
     body: JSON.stringify({
       sender: { email: env.SENDER_EMAIL || 'noreply@example.com', name: env.SENDER_NAME || 'VMP' },
       to: [{ email: to }],
-      subject: 'Your sign-in link',
+      subject: 'Continue signing in to the VMP app',
       htmlContent: `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-          <h2 style="margin:0 0 16px;font-size:22px">Sign in to VMP</h2>
-          <p style="margin:0 0 24px;color:#444;line-height:1.6">
-            Click the button below to sign in. This link expires in 15 minutes
-            and can only be used once.
+          <h2 style="margin:0 0 16px;font-size:22px">You're almost signed in</h2>
+          <p style="margin:0 0 16px;color:#444;line-height:1.6">
+            You started signing in to the VMP Home Screen app and enabled notifications.
+            Tap the button below to finish — when Safari asks, choose to sign in to the app.
           </p>
+          <ol style="margin:0 0 24px;padding-left:20px;color:#444;line-height:1.6;font-size:14px">
+            <li>Open this email on your iPhone or iPad.</li>
+            <li>Tap the button below.</li>
+            <li>Confirm you want to sign in to the Home Screen app.</li>
+            <li>Switch back to the VMP app — you should be signed in automatically.</li>
+          </ol>
           <a href="${verifyUrl}"
              style="display:inline-block;padding:12px 24px;background:#2563eb;
                     color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
-            Sign in
+            Continue app sign-in
           </a>
           <p style="margin:24px 0 0;font-size:12px;color:#999">
-            If you didn't request this, you can safely ignore it.
+            This link expires in 15 minutes and works once. If you didn't start app sign-in, ignore this email.
           </p>
         </div>
       `,
@@ -149,7 +157,7 @@ function isLocalDevMagicLinkMode(env: any): boolean {
 
 async function dispatchPwaPushLoginMagicLink(env: any, email: string, verifyUrl: string) {
   if (env.BREVO_API_KEY) {
-    await sendMagicLinkEmail(email, verifyUrl, env)
+    await sendPwaPushLoginMagicLinkEmail(email, verifyUrl, env)
     return
   }
   if (isLocalDevMagicLinkMode(env)) {
@@ -355,14 +363,11 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
   }
   const totpRequired = shouldRequireTotpEnrollment(linkUser, env)
   if (totpRequired && linkUser.totp_enabled) {
-    const phase = await consumeMagicLinkForUser(env, rawToken)
-    if (phase.tag === 'invalid') {
-      return authJson({ error: phase.message }, 401, corsHeaders)
+    const pending = await issueTotpPendingForMagicLink(env, rawToken)
+    if (!pending.ok) {
+      return authJson({ error: pending.message }, 401, corsHeaders)
     }
-    if (phase.tag === 'totp_pending') {
-      await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
-      return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
-    }
+    return authJson({ requiresTwoFactor: true, pendingToken: pending.pendingToken }, 200, corsHeaders)
   }
 
   let pushSub: { endpoint: string; keys: { p256dh: string; auth: string } }
@@ -433,4 +438,143 @@ export async function handlePwaPushLoginDeliver(request: any, env: any, corsHead
     .run()
 
   return authJson({ ok: true, delivered: true }, 200, corsHeaders)
+}
+
+async function sendPwaAuthPushAndConsumeMagicLink(
+  db: any,
+  env: any,
+  corsHeaders: any,
+  attempt: { device_token: string, push_subscription_json: string },
+  linkRow: { user_id: string },
+  rawToken: string,
+) {
+  let pushSub: { endpoint: string; keys: { p256dh: string; auth: string } }
+  try {
+    pushSub = JSON.parse(attempt.push_subscription_json)
+  } catch {
+    await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
+  }
+
+  const validated = validatePushSubscriptionBody({ subscription: pushSub })
+  if (!validated) {
+    await db.prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?').bind(attempt.device_token).run()
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
+  }
+
+  const handoffCode = generateToken()
+  const codeHash = await hashToken(handoffCode)
+  const handoffExpiresAt = new Date(Date.now() + PWA_MAGIC_HANDOFF_TTL_SEC * 1000).toISOString()
+
+  try {
+    await db
+      .prepare('INSERT INTO pwa_handoffs (code, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(codeHash, linkRow.user_id, handoffExpiresAt)
+      .run()
+  } catch (err) {
+    console.error('[pwa-push-login] handoff insert failed:', err)
+    return authJson({ error: 'Could not complete sign-in. Try again.' }, 500, corsHeaders)
+  }
+
+  try {
+    await sendPushNotification(
+      {
+        endpoint: validated.endpoint,
+        p256dh: validated.p256dh,
+        auth: validated.auth,
+      },
+      {
+        type: 'pwa_auth',
+        handoffCode,
+        title: 'Tap to sign in',
+        body: 'Your sign-in is ready',
+      },
+      env,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[pwa-push-login] push delivery failed:', { message })
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ error: 'Push delivery failed', code: 'push_failed' }, 502, corsHeaders)
+  }
+
+  const phase = await consumeMagicLinkForUser(env, rawToken)
+  if (phase.tag === 'invalid') {
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ error: phase.message }, 401, corsHeaders)
+  }
+  if (phase.tag === 'totp_pending') {
+    await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
+    return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
+  }
+
+  await db
+    .prepare('DELETE FROM pwa_push_login_attempts WHERE device_token = ?')
+    .bind(attempt.device_token)
+    .run()
+
+  return authJson({ ok: true, delivered: true }, 200, corsHeaders)
+}
+
+/**
+ * POST /api/auth/pwa-push-login/verify-2fa
+ * Body: { pendingToken, code, token } — completes PWA push-login after TOTP (Safari step).
+ */
+export async function handlePwaPushLoginVerify2fa(request: any, env: any, corsHeaders: any) {
+  if (await rateLimitByIp(request, env, 'verify-2fa', 20)) {
+    return authJson({ error: 'Too many requests. Please try again later.', code: 'rate_limit_exceeded' }, 429, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  const pendingToken = typeof body?.pendingToken === 'string' ? body.pendingToken.trim() : ''
+  const code = typeof body?.code === 'string' ? body.code.trim() : ''
+  const rawToken = typeof body?.token === 'string' ? body.token.trim() : ''
+
+  if (!pendingToken || !code || !rawToken) {
+    return authJson({ error: 'pendingToken, code, and token are required' }, 400, corsHeaders)
+  }
+
+  const verified = await verifyTotpPendingLogin(env, pendingToken, code)
+  if (!verified.ok) {
+    return authJson({ error: verified.error, code: verified.code }, verified.status, corsHeaders)
+  }
+
+  const tokenHash = await hashToken(rawToken)
+  const db = getDb(env)
+  await cleanupExpiredPushLoginAttempts(db)
+
+  const attempt = await db
+    .prepare(`
+      SELECT device_token, push_subscription_json, expires_at
+      FROM pwa_push_login_attempts
+      WHERE magic_link_token_hash = ?
+    `)
+    .bind(tokenHash)
+    .first()
+
+  if (!attempt || new Date(attempt.expires_at) < new Date()) {
+    return authJson({ error: 'Sign-in session expired. Start again from the app.', code: 'attempt_expired' }, 400, corsHeaders)
+  }
+  if (!attempt.push_subscription_json) {
+    return authJson({ error: 'Push subscription not found', code: 'no_push_subscription' }, 400, corsHeaders)
+  }
+
+  const linkRow = await db
+    .prepare(`
+      SELECT t.used_at, u.id AS user_id
+      FROM magic_link_tokens t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ?
+    `)
+    .bind(tokenHash)
+    .first()
+
+  if (!linkRow || linkRow.used_at) {
+    return authJson({ error: 'Sign-in link is invalid or has already been used.' }, 401, corsHeaders)
+  }
+  if (linkRow.user_id !== verified.user.id) {
+    return authJson({ error: 'Sign-in session mismatch. Start again from the app.' }, 401, corsHeaders)
+  }
+
+  return sendPwaAuthPushAndConsumeMagicLink(db, env, corsHeaders, attempt, linkRow, rawToken)
 }

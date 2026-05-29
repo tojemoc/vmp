@@ -50,6 +50,9 @@ export const ROLES = ['super_admin', 'admin', 'editor', 'analyst', 'moderator', 
 // Roles that must complete TOTP 2FA on login (once enabled).
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin']
 
+// Roles allowed to enroll in TOTP voluntarily (includes optional viewer 2FA).
+const ROLES_ALLOWED_TOTP_ENROLLMENT = [...ROLES_REQUIRING_2FA, 'viewer']
+
 // ─── Base64url helpers ────────────────────────────────────────────────────────
 //
 // JWT requires base64url encoding (RFC 4648 §5): + → -, / → _, no padding.
@@ -361,11 +364,8 @@ type MagicLinkConsumeResult =
  * Validates + consumes a magic-link row and returns the next auth phase.
  * Used by GET /api/auth/verify, POST /api/auth/magic-pwa-handoff, and redeem flows.
  */
-export async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
-  const db = getDb(env)
-  const tokenHash = await hashToken(rawToken)
-
-  const record = await db
+async function loadMagicLinkRecord(db: any, tokenHash: string) {
+  return db
     .prepare(`
       SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
              u.totp_enabled, u.totp_secret, u.created_at
@@ -375,6 +375,65 @@ export async function consumeMagicLinkForUser(env: any, rawToken: string): Promi
     `)
     .bind(tokenHash)
     .first()
+}
+
+/**
+ * Starts a TOTP challenge for a magic link without marking the link used.
+ * Used by PWA push-login deliver so the handoff can complete after 2FA.
+ */
+export async function issueTotpPendingForMagicLink(
+  env: any,
+  rawToken: string,
+): Promise<{ ok: true, pendingToken: string } | { ok: false, message: string }> {
+  const db = getDb(env)
+  const tokenHash = await hashToken(rawToken)
+  const record = await loadMagicLinkRecord(db, tokenHash)
+
+  if (!record || record.used_at) {
+    return { ok: false, message: 'Sign-in link is invalid or has already been used.' }
+  }
+  if (new Date(record.expires_at) < new Date()) {
+    return { ok: false, message: 'Sign-in link has expired. Request a new one.' }
+  }
+
+  const user = {
+    id: record.user_id,
+    email: record.email,
+    role: record.role,
+    totp_enabled: record.totp_enabled,
+    created_at: record.created_at,
+  }
+  const totpRequired = shouldRequireTotpEnrollment(user, env)
+  if (!totpRequired || !user.totp_enabled) {
+    return { ok: false, message: '2FA is not required for this sign-in.' }
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const jti = crypto.randomUUID()
+  const expiresAt = new Date((now + PENDING_2FA_TTL) * 1000).toISOString()
+
+  const pendingToken = await signJwt(
+    { sub: user.id, email: user.email, role: user.role, pending: true, jti, iat: now, exp: now + PENDING_2FA_TTL },
+    env.JWT_SECRET,
+  )
+
+  await db
+    .prepare("DELETE FROM totp_challenges WHERE user_id = ? AND expires_at < datetime('now')")
+    .bind(user.id)
+    .run()
+
+  await db
+    .prepare('INSERT INTO totp_challenges (jti, user_id, expires_at) VALUES (?, ?, ?)')
+    .bind(jti, user.id, expiresAt)
+    .run()
+
+  return { ok: true, pendingToken }
+}
+
+export async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
+  const db = getDb(env)
+  const tokenHash = await hashToken(rawToken)
+  const record = await loadMagicLinkRecord(db, tokenHash)
 
   if (!record || record.used_at) {
     return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' }
@@ -848,7 +907,7 @@ export async function handleTotpSetup(request: any, env: any, corsHeaders: any) 
     return authJson({ error: 'Unauthorized' }, 401, corsHeaders)
   }
 
-  if (!ROLES_REQUIRING_2FA.includes(user.role)) {
+  if (!ROLES_ALLOWED_TOTP_ENROLLMENT.includes(user.role)) {
     return authJson({ error: '2FA is not available for this role.' }, 403, corsHeaders)
   }
 
@@ -887,7 +946,7 @@ export async function handleTotpConfirm(request: any, env: any, corsHeaders: any
     return authJson({ error: 'Unauthorized' }, 401, corsHeaders)
   }
 
-  if (!ROLES_REQUIRING_2FA.includes(user.role)) {
+  if (!ROLES_ALLOWED_TOTP_ENROLLMENT.includes(user.role)) {
     return authJson({ error: '2FA is not available for this role.' }, 403, corsHeaders)
   }
 
@@ -964,6 +1023,102 @@ export async function handleTotpConfirm(request: any, env: any, corsHeaders: any
  *     used_at on success to prevent token replay.
  *  2. KV IP throttle: max 10 attempts per IP per minute.
  */
+type TotpVerifyFailure = { ok: false, status: number, error: string, code?: string }
+
+/**
+ * Validates a pending 2FA JWT + TOTP code. Marks the challenge used on success.
+ */
+export async function verifyTotpPendingLogin(
+  env: any,
+  pendingToken: string,
+  code: string,
+): Promise<{ ok: true, user: { id: string, email: string, role: string, totp_enabled: number } } | TotpVerifyFailure> {
+  if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+    return { ok: false, status: 400, error: 'code must be 6 digits' }
+  }
+
+  let pending: any
+  try {
+    pending = await verifyJwt(pendingToken, env.JWT_SECRET)
+  } catch {
+    return { ok: false, status: 401, error: 'Sign-in session expired. Please start again.', code: 'session_expired' }
+  }
+  if (!pending.pending) {
+    return { ok: false, status: 401, error: 'Invalid token', code: 'session_expired' }
+  }
+
+  const db = getDb(env)
+  const MAX_FAILED_ATTEMPTS = 5
+  const challenge = pending.jti
+    ? await db
+        .prepare('SELECT jti, expires_at, failed_attempts, used_at FROM totp_challenges WHERE jti = ? AND user_id = ?')
+        .bind(pending.jti, pending.sub)
+        .first()
+    : null
+
+  if (!challenge) {
+    return { ok: false, status: 401, error: 'Sign-in session not found. Please start again.', code: 'session_expired' }
+  }
+  if (challenge.used_at) {
+    return { ok: false, status: 401, error: 'This sign-in link has already been used.', code: 'session_expired' }
+  }
+  if (new Date(challenge.expires_at) < new Date()) {
+    return { ok: false, status: 401, error: 'Sign-in session expired. Please start again.', code: 'session_expired' }
+  }
+  if (challenge.failed_attempts >= MAX_FAILED_ATTEMPTS) {
+    return { ok: false, status: 401, error: 'Too many incorrect attempts. Please sign in again.', code: 'session_expired' }
+  }
+
+  const userRow = await db
+    .prepare('SELECT id, email, role, totp_secret, totp_enabled FROM users WHERE id = ?')
+    .bind(pending.sub)
+    .first()
+
+  if (!userRow || !userRow.totp_enabled || !userRow.totp_secret) {
+    return { ok: false, status: 400, error: '2FA is not configured for this account.' }
+  }
+
+  const totpKey = getTotpEncryptionKey(env)
+  let plainSecret: string
+  try {
+    plainSecret = await decryptTotpSecret(userRow.totp_secret, totpKey)
+  } catch {
+    return { ok: false, status: 500, error: 'Failed to verify code. Please contact support.' }
+  }
+
+  const valid = await verifyTotp(plainSecret, code)
+  if (!valid) {
+    const incrResult = await db
+      .prepare(`UPDATE totp_challenges
+                SET failed_attempts = failed_attempts + 1
+                WHERE jti = ? AND user_id = ? AND used_at IS NULL AND failed_attempts < ?`)
+      .bind(pending.jti, pending.sub, MAX_FAILED_ATTEMPTS)
+      .run()
+    if (!incrResult.meta.changes) {
+      return { ok: false, status: 401, error: 'Sign-in session is no longer valid. Please start again.', code: 'session_expired' }
+    }
+    return { ok: false, status: 400, error: 'Invalid code. Please try again.' }
+  }
+
+  const consumeResult = await db
+    .prepare('UPDATE totp_challenges SET used_at = CURRENT_TIMESTAMP WHERE jti = ? AND user_id = ? AND used_at IS NULL')
+    .bind(pending.jti, pending.sub)
+    .run()
+  if (!consumeResult.meta.changes) {
+    return { ok: false, status: 401, error: 'This sign-in link has already been used.', code: 'session_expired' }
+  }
+
+  return {
+    ok: true,
+    user: {
+      id: userRow.id,
+      email: userRow.email,
+      role: userRow.role,
+      totp_enabled: userRow.totp_enabled,
+    },
+  }
+}
+
 export async function handleTotpVerify(request: any, env: any, corsHeaders: any) {
   // ── Layer 2: IP-based rate limit ─────────────────────────────────────────
   if (env.RATE_LIMIT_KV) {
@@ -987,94 +1142,13 @@ export async function handleTotpVerify(request: any, env: any, corsHeaders: any)
     return authJson({ error: 'code and pendingToken are required' }, 400, corsHeaders)
   }
 
-  const { code, pendingToken } = body
-
-  if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
-    return authJson({ error: 'code must be 6 digits' }, 400, corsHeaders)
+  const verified = await verifyTotpPendingLogin(env, body.pendingToken, body.code)
+  if (!verified.ok) {
+    return authJson({ error: verified.error, code: verified.code }, verified.status, corsHeaders)
   }
 
-  // ── Verify the pending JWT (must have pending: true and a jti) ───────────
-  let pending
-  try {
-    pending = await verifyJwt(pendingToken, env.JWT_SECRET)
-  } catch (err) {
-    return authJson({ error: 'Sign-in session expired. Please start again.', code: 'session_expired' }, 401, corsHeaders)
-  }
-  if (!pending.pending) {
-    return authJson({ error: 'Invalid token', code: 'session_expired' }, 401, corsHeaders)
-  }
-
-  const db = getDb(env)
-
-  // ── Layer 1: D1 challenge record ─────────────────────────────────────────
-  // The jti was inserted into totp_challenges by handleVerifyMagicLink.
-  const MAX_FAILED_ATTEMPTS = 5
-  const challenge = pending.jti
-    ? await db
-        .prepare('SELECT jti, expires_at, failed_attempts, used_at FROM totp_challenges WHERE jti = ? AND user_id = ?')
-        .bind(pending.jti, pending.sub)
-        .first()
-    : null
-
-  if (!challenge) {
-    return authJson({ error: 'Sign-in session not found. Please start again.', code: 'session_expired' }, 401, corsHeaders)
-  }
-  if (challenge.used_at) {
-    return authJson({ error: 'This sign-in link has already been used.', code: 'session_expired' }, 401, corsHeaders)
-  }
-  if (new Date(challenge.expires_at) < new Date()) {
-    return authJson({ error: 'Sign-in session expired. Please start again.', code: 'session_expired' }, 401, corsHeaders)
-  }
-  if (challenge.failed_attempts >= MAX_FAILED_ATTEMPTS) {
-    return authJson({ error: 'Too many incorrect attempts. Please sign in again.', code: 'session_expired' }, 401, corsHeaders)
-  }
-
-  // ── Load user + decrypt TOTP secret ──────────────────────────────────────
-  const userRow = await db
-    .prepare('SELECT id, email, role, totp_secret, totp_enabled FROM users WHERE id = ?')
-    .bind(pending.sub)
-    .first()
-
-  if (!userRow || !userRow.totp_enabled || !userRow.totp_secret) {
-    return authJson({ error: '2FA is not configured for this account.' }, 400, corsHeaders)
-  }
-
-  const totpKey = getTotpEncryptionKey(env)
-  let plainSecret
-  try {
-    plainSecret = await decryptTotpSecret(userRow.totp_secret, totpKey)
-  } catch {
-    return authJson({ error: 'Failed to verify code. Please contact support.' }, 500, corsHeaders)
-  }
-
-  // ── Verify TOTP code ──────────────────────────────────────────────────────
-  const valid = await verifyTotp(plainSecret, code)
-  if (!valid) {
-    // Guard: only increment if not already used and below the cap.
-    // A zero changes count means a concurrent request beat us — treat as expired.
-    const incrResult = await db
-      .prepare(`UPDATE totp_challenges
-                SET failed_attempts = failed_attempts + 1
-                WHERE jti = ? AND user_id = ? AND used_at IS NULL AND failed_attempts < ?`)
-      .bind(pending.jti, pending.sub, MAX_FAILED_ATTEMPTS)
-      .run()
-    if (!incrResult.meta.changes) {
-      return authJson({ error: 'Sign-in session is no longer valid. Please start again.', code: 'session_expired' }, 401, corsHeaders)
-    }
-    return authJson({ error: 'Invalid code. Please try again.' }, 400, corsHeaders)
-  }
-
-  // Mark challenge as used — guard ensures only one concurrent success wins.
-  // A zero changes count means another request already consumed this token.
-  const consumeResult = await db
-    .prepare('UPDATE totp_challenges SET used_at = CURRENT_TIMESTAMP WHERE jti = ? AND user_id = ? AND used_at IS NULL')
-    .bind(pending.jti, pending.sub)
-    .run()
-  if (!consumeResult.meta.changes) {
-    return authJson({ error: 'This sign-in link has already been used.', code: 'session_expired' }, 401, corsHeaders)
-  }
-
-  const user         = { id: userRow.id, email: userRow.email, role: userRow.role, totp_enabled: userRow.totp_enabled }
+  const db           = getDb(env)
+  const user         = { id: verified.user.id, email: verified.user.email, role: verified.user.role, totp_enabled: verified.user.totp_enabled }
   const totpRequired = shouldRequireTotpEnrollment(user, env)
   const accessToken  = await createAccessToken(user, env.JWT_SECRET)
   const refreshToken = await issueRefreshToken(user.id, db)

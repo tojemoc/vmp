@@ -17,6 +17,7 @@ export function isInstalledPwa(): boolean {
 }
 
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token'
+export const PWA_LOGIN_EMAIL_KEY = 'vmp_pwa_login_email'
 let fallbackDeviceToken: string | null = null
 
 /** Stable per-browser id for anonymous PWA push-login attempts. */

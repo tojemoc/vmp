@@ -100,8 +100,9 @@ export function usePushAttribution(options: {
       originVideoId: videoId,
     })
     try {
-      const gtm = useGtm()
-      gtm?.trackEvent?.({
+      const w = window as Window & { dataLayer?: Array<Record<string, unknown>> }
+      w.dataLayer = w.dataLayer ?? []
+      w.dataLayer.push({
         event: 'push_attributed_view',
         deliveryId: nid,
         videoId,
