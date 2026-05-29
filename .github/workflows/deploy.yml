@@ -29,7 +29,7 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
     steps:
-      - uses: actions/checkout@6
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       
