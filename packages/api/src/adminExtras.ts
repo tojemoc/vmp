@@ -1,5 +1,4 @@
 import { requireAuth, requireRole } from './auth.js'
-import { normalizeContentsquareScriptSrc } from './contentsquare.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import { getSetting, setSetting, setSettings, buildSettingsStatements } from './settingsStore.js'
 import {
@@ -1257,47 +1256,12 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   }
   if (request.method === 'PATCH') {
     const body = await request.json().catch(() => null)
-    const integrations = body?.integrations && typeof body.integrations === 'object' ? body.integrations : null
     const viewCounting = body?.viewCounting && typeof body.viewCounting === 'object' ? body.viewCounting : null
-    const toBool = (value: any) => value === true ? '1' : '0'
     const toIntString = (value: any, fallback: number) => {
       const next = Number.parseInt(String(value ?? ''), 10)
       return String(Number.isFinite(next) && next >= 0 ? next : fallback)
     }
     const updates: [string, string][] = []
-    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'datadog') && integrations.datadog && typeof integrations.datadog === 'object') {
-      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'enabled')) {
-        updates.push(['analytics_datadog_enabled', toBool(integrations.datadog.enabled)])
-      }
-      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'site')) {
-        updates.push(['analytics_datadog_site', String(integrations.datadog.site ?? '').trim()])
-      }
-      if (Object.prototype.hasOwnProperty.call(integrations.datadog, 'apiKey')) {
-        updates.push(['analytics_datadog_api_key', String(integrations.datadog.apiKey ?? '').trim()])
-      }
-    }
-    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'contentsquare') && integrations.contentsquare && typeof integrations.contentsquare === 'object') {
-      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'enabled')) {
-        updates.push(['analytics_contentsquare_enabled', toBool(integrations.contentsquare.enabled)])
-      }
-      if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'scriptUrl')) {
-        const normalized = normalizeContentsquareScriptSrc(String(integrations.contentsquare.scriptUrl ?? '').trim())
-        updates.push(['analytics_contentsquare_script_url', normalized ?? ''])
-        updates.push(['analytics_contentsquare_tag', ''])
-      } else if (Object.prototype.hasOwnProperty.call(integrations.contentsquare, 'tag')) {
-        const normalized = normalizeContentsquareScriptSrc(String(integrations.contentsquare.tag ?? '').trim())
-        updates.push(['analytics_contentsquare_script_url', normalized ?? ''])
-        updates.push(['analytics_contentsquare_tag', ''])
-      }
-    }
-    if (integrations && Object.prototype.hasOwnProperty.call(integrations, 'ga4') && integrations.ga4 && typeof integrations.ga4 === 'object') {
-      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'enabled')) {
-        updates.push(['analytics_ga4_enabled', toBool(integrations.ga4.enabled)])
-      }
-      if (Object.prototype.hasOwnProperty.call(integrations.ga4, 'measurementId')) {
-        updates.push(['analytics_ga4_measurement_id', String(integrations.ga4.measurementId ?? '').trim()])
-      }
-    }
     if (viewCounting && Object.prototype.hasOwnProperty.call(viewCounting, 'minSegmentsPerSession')) {
       updates.push(['analytics_view_min_segments', toIntString(viewCounting.minSegmentsPerSession, 1)])
     }
@@ -1316,37 +1280,11 @@ export async function handleAdminAnalytics(request: any, env: any, corsHeaders: 
   const db = getDb(env)
   const analytics = await buildSegmentAnalyticsSnapshotWithOptions(db, env, parsed.options)
   const settingKeys = [
-    'analytics_datadog_enabled',
-    'analytics_datadog_site',
-    'analytics_datadog_api_key',
-    'analytics_contentsquare_enabled',
-    'analytics_contentsquare_script_url',
-    'analytics_contentsquare_tag',
-    'analytics_ga4_enabled',
-    'analytics_ga4_measurement_id',
     'analytics_view_min_segments',
     'analytics_view_min_watch_seconds',
   ] as const
   const settingValues = await Promise.all(settingKeys.map((key) => getSetting(env, key)))
   const getVal = (key: (typeof settingKeys)[number]) => settingValues[settingKeys.indexOf(key)]
-  ;(analytics as any).integrationSettings = {
-    datadog: {
-      enabled: String(getVal('analytics_datadog_enabled') ?? '0') === '1',
-      site: String(getVal('analytics_datadog_site') ?? ''),
-      hasApiKey: Boolean(String(getVal('analytics_datadog_api_key') ?? '').trim()),
-    },
-    contentsquare: {
-      enabled: String(getVal('analytics_contentsquare_enabled') ?? '0') === '1',
-      scriptUrl: normalizeContentsquareScriptSrc(
-        String(getVal('analytics_contentsquare_script_url') ?? '').trim()
-          || String(getVal('analytics_contentsquare_tag') ?? '').trim(),
-      ) ?? '',
-    },
-    ga4: {
-      enabled: String(getVal('analytics_ga4_enabled') ?? '0') === '1',
-      measurementId: String(getVal('analytics_ga4_measurement_id') ?? ''),
-    },
-  }
   ;(analytics as any).viewCounting = {
     minSegmentsPerSession: parseNonNegativeInt(getVal('analytics_view_min_segments'), 1),
     minWatchSeconds: parseNonNegativeInt(getVal('analytics_view_min_watch_seconds'), 15),
@@ -1454,6 +1392,56 @@ function parseNonNegativeInt(raw: unknown, fallbackValue: number) {
   return Math.max(0, parsed)
 }
 
+function sessionRetentionCte(sessionExpr: string) {
+  return `
+    WITH events AS (
+      SELECT
+        e.video_id AS video_id,
+        ${sessionExpr} AS session_id,
+        CASE
+          WHEN e.playback_position_seconds IS NOT NULL THEN e.playback_position_seconds
+          WHEN e.segment_index IS NOT NULL AND e.segment_duration_seconds IS NOT NULL THEN e.segment_index * e.segment_duration_seconds
+          WHEN e.position_seconds IS NOT NULL THEN e.position_seconds
+          ELSE NULL
+        END AS playback_seconds
+      FROM video_segment_events e
+      WHERE e.event_type = 'segment'
+        AND datetime(e.created_at) >= datetime(?)
+    ),
+    session_rollup AS (
+      SELECT
+        ev.video_id AS video_id,
+        ev.session_id AS session_id,
+        v.full_duration AS full_duration,
+        COUNT(*) AS segment_hits,
+        MAX(CASE
+          WHEN v.full_duration IS NULL OR v.full_duration <= 0 OR ev.playback_seconds IS NULL THEN NULL
+          WHEN ev.playback_seconds < 0 THEN 0
+          WHEN ev.playback_seconds > v.full_duration THEN v.full_duration
+          ELSE ev.playback_seconds
+        END) AS max_bounded_seconds
+      FROM events ev
+      LEFT JOIN videos v ON v.id = ev.video_id
+      WHERE ev.session_id IS NOT NULL
+      GROUP BY ev.video_id, ev.session_id, v.full_duration
+    ),
+    qualified AS (
+      SELECT
+        video_id,
+        session_id,
+        CASE
+          WHEN full_duration IS NULL OR full_duration <= 0 OR max_bounded_seconds IS NULL THEN NULL
+          ELSE MIN(100.0, MAX(0.0, (max_bounded_seconds * 100.0) / full_duration))
+        END AS session_retention_pct
+      FROM session_rollup
+      WHERE segment_hits >= ? AND max_bounded_seconds >= ?
+    )
+    SELECT video_id, session_id, session_retention_pct
+    FROM qualified
+    WHERE session_retention_pct IS NOT NULL
+  `
+}
+
 export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any, options: AnalyticsQueryOptions) {
   const sessionExpr = canonicalSessionExpression()
   const now = new Date()
@@ -1482,7 +1470,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const minSegmentsPerView = parseNonNegativeInt(minSegmentsRaw, 1)
   const minWatchSecondsPerView = parseNonNegativeInt(minWatchSecondsRaw, 15)
 
-  const [views, sourceRows, retentionRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
+  const [views, sourceRows, globalRetentionRow, videoStatsRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
       WITH session_rollup AS (
         SELECT
@@ -1523,52 +1511,32 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       LIMIT 12
     `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
-      WITH events AS (
-        SELECT
-          e.video_id AS video_id,
-          ${sessionExpr} AS session_id,
-          CASE
-            WHEN e.playback_position_seconds IS NOT NULL THEN e.playback_position_seconds
-            WHEN e.segment_index IS NOT NULL AND e.segment_duration_seconds IS NOT NULL THEN e.segment_index * e.segment_duration_seconds
-            WHEN e.position_seconds IS NOT NULL THEN e.position_seconds
-            ELSE NULL
-          END AS playback_seconds
-        FROM video_segment_events e
-        WHERE e.event_type = 'segment'
-          AND datetime(e.created_at) >= datetime(?)
-      ),
-      normalized AS (
-        SELECT
-          ev.video_id AS video_id,
-          ev.session_id AS session_id,
-          v.full_duration AS full_duration,
-          CASE
-            WHEN v.full_duration IS NULL OR v.full_duration <= 0 OR ev.playback_seconds IS NULL THEN NULL
-            WHEN ev.playback_seconds < 0 THEN 0
-            WHEN ev.playback_seconds > v.full_duration THEN v.full_duration
-            ELSE ev.playback_seconds
-          END AS bounded_seconds
-        FROM events ev
-        LEFT JOIN videos v ON v.id = ev.video_id
-        WHERE ev.session_id IS NOT NULL
-      ),
-      buckets AS (
+      WITH session_retention AS (${sessionRetentionCte(sessionExpr)})
+      SELECT AVG(session_retention_pct) AS average_retention_percent
+      FROM session_retention
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).first(),
+    db.prepare(`
+      WITH session_retention AS (${sessionRetentionCte(sessionExpr)}),
+      per_video AS (
         SELECT
           video_id,
-          session_id,
-          CAST((bounded_seconds * 100.0) / NULLIF(full_duration, 0) AS INTEGER) AS pct
-        FROM normalized
-        WHERE bounded_seconds IS NOT NULL AND full_duration > 0
+          COUNT(DISTINCT session_id) AS view_count,
+          AVG(session_retention_pct) AS average_retention_percent
+        FROM session_retention
+        GROUP BY video_id
       )
       SELECT
-        video_id,
-        CAST(CASE WHEN pct >= 100 THEN 90 ELSE pct - (pct % 10) END AS INTEGER) AS bucket_start_percent,
-        COUNT(DISTINCT session_id) AS viewers
-      FROM buckets
-      GROUP BY video_id, bucket_start_percent
-      ORDER BY viewers DESC, video_id ASC, bucket_start_percent ASC
-      LIMIT 120
-    `).bind(startAt).all(),
+        v.id AS video_id,
+        v.title AS title,
+        v.slug AS slug,
+        v.published_at AS published_at,
+        COALESCE(pv.view_count, 0) AS view_count,
+        pv.average_retention_percent AS average_retention_percent
+      FROM videos v
+      LEFT JOIN per_video pv ON pv.video_id = v.id
+      WHERE v.publish_status = 'published'
+      ORDER BY view_count DESC, title ASC
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
     db.prepare(`
       WITH latest_subscription AS (
         SELECT s.*
@@ -1721,18 +1689,18 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const totalNewSubscriptions = subscriptionTrends.reduce((sum, row) => sum + row.newSubscriptions, 0)
   const totalChurnedSubscriptions = subscriptionTrends.reduce((sum, row) => sum + row.churnedSubscriptions, 0)
   const churnRate = totalNewSubscriptions > 0 ? Number(((totalChurnedSubscriptions / totalNewSubscriptions) * 100).toFixed(2)) : 0
-  const averageRetentionPercent = (() => {
-    const rows = retentionRows?.results ?? []
-    if (!rows.length) return 0
-    const weighted = rows.reduce((sum: number, row: any) => {
-      const bucket = Number(row.bucket_start_percent || 0)
-      const viewers = Number(row.viewers || 0)
-      return sum + ((bucket + 10) * viewers)
-    }, 0)
-    const viewersTotal = rows.reduce((sum: number, row: any) => sum + Number(row.viewers || 0), 0)
-    if (!viewersTotal) return 0
-    return Number((weighted / viewersTotal).toFixed(2))
-  })()
+  const averageRetentionPercent = Number(Number(globalRetentionRow?.average_retention_percent ?? 0).toFixed(2))
+
+  const videoStats = (videoStatsRows?.results ?? []).map((row: any) => ({
+    videoId: String(row.video_id),
+    title: String(row.title ?? ''),
+    slug: row.slug ? String(row.slug) : null,
+    publishedAt: row.published_at ? String(row.published_at) : null,
+    viewCount: Number(row.view_count || 0),
+    averageRetentionPercent: row.average_retention_percent == null
+      ? null
+      : Number(Number(row.average_retention_percent).toFixed(2)),
+  }))
 
   const kpis = {
     totalUniqueViews: totalViews,
@@ -1744,7 +1712,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
 
   const definitions = {
     totalUniqueViews: 'Distinct session keys with at least one segment request in selected range.',
-    averageRetentionPercent: 'Weighted midpoint of 10% retention buckets based on session viewers.',
+    averageRetentionPercent: 'Average max watch-through percent across all qualified sessions in selected range.',
     activeSubscribers: 'Users whose latest subscription status is active or trialing.',
     churnRatePercent: 'Churned subscriptions divided by new subscriptions in selected range.',
     estimatedActiveMrrEur: 'Approximate monthly recurring revenue from active/trialing users using admin configured prices.',
@@ -1766,7 +1734,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       series: viewSeries,
     },
     trafficSources: sourceRows?.results ?? [],
-    retention: retentionRows?.results ?? [],
+    videoStats,
     subscriptionOverview: {
       statusBreakdown: subsStatusRows?.results ?? [],
       trends: subscriptionTrends,
@@ -1801,9 +1769,10 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
     return rows.join('\n')
   }
   if (dataset === 'retention') {
-    rows.push('video_id,bucket_start_percent,viewers')
-    for (const row of (snapshot.retention ?? [])) {
-      rows.push(`${escapeCsvCell(row.video_id)},${escapeCsvCell(row.bucket_start_percent)},${escapeCsvCell(row.viewers)}`)
+    rows.push('format:retention_per_video_v1')
+    rows.push('video_id,title,view_count,average_retention_percent')
+    for (const row of (snapshot.videoStats ?? [])) {
+      rows.push(`${escapeCsvCell(row.videoId)},${escapeCsvCell(row.title)},${escapeCsvCell(row.viewCount)},${escapeCsvCell(row.averageRetentionPercent ?? '')}`)
     }
     return rows.join('\n')
   }

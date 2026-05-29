@@ -2,7 +2,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt'],
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@zadigetvoltaire/nuxt-gtm'],
+
+  gtm: {
+    id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
+    enabled: true,
+    loadScript: true,
+    enableRouterSync: true,
+    debug: process.env.NODE_ENV === 'development',
+    defer: false,
+  },
 
   colorMode: {
     preference: 'system', // default value of $colorMode.preference
@@ -24,7 +33,10 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiUrl: process.env.API_URL || 'https://vmp-api.tjm.sk',
-    }
+      gtm: {
+        id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
+      },
+    },
   },
 
   app: {

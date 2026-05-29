@@ -1,0 +1,1 @@
+CREATE INDEX idx_push_watch_sessions_campaign ON push_watch_sessions(campaign_id);
