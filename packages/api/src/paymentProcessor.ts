@@ -539,11 +539,11 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
     const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
       currency,
+      // GoCardless allows at most 3 metadata keys on billing_requests; currency is on mandate_request.
       metadata: {
         userId: user.sub,
         planType,
         checkoutToken,
-        currency,
       },
       creditorId: env.GOCARDLESS_CREDITOR_ID,
     })
