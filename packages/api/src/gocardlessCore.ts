@@ -9,11 +9,19 @@ export function normalizeGoCardlessCurrency(raw: unknown): string {
   return /^[A-Z]{3}$/.test(currency) ? currency : GOCARDLESS_DEFAULT_CURRENCY
 }
 
+const GOCARDLESS_METADATA_MAX_KEYS = 3
+
 export function buildGoCardlessMandateBillingRequestPayload(params: {
   currency: string
   metadata: Record<string, string>
   creditorId?: string
 }) {
+  const metadataKeys = Object.keys(params.metadata)
+  if (metadataKeys.length > GOCARDLESS_METADATA_MAX_KEYS) {
+    throw new Error(
+      `GoCardless billing_requests metadata allows at most ${GOCARDLESS_METADATA_MAX_KEYS} keys; got ${metadataKeys.length}: ${metadataKeys.join(', ')}`,
+    )
+  }
   const billing_requests: Record<string, unknown> = {
     mandate_request: { currency: params.currency },
     metadata: params.metadata,
@@ -56,6 +64,10 @@ export function formatGoCardlessApiError(response: any, fallback: string): strin
   if (reason === 'currency_doesnt_support_functionality') {
     return 'GoCardless bank debit checkout is not available for the configured currency. '
       + 'Set admin setting gocardless_currency to EUR for SEPA, or enable the currency on your GoCardless creditor.'
+  }
+  const message = typeof first.message === 'string' ? first.message.trim() : ''
+  if (field === 'metadata' && message.includes('3 properties')) {
+    return 'GoCardless checkout metadata is misconfigured (too many fields). Please try again or contact support.'
   }
   if (reason && field) return `${fallback} (${field}: ${reason})`
   if (reason) return `${fallback} (${reason})`

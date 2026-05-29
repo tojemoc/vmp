@@ -11,6 +11,7 @@ export interface CFEnvShape {
   RSS_SECRET?: string
   TOTP_ENCRYPTION_KEY?: string
   GOCARDLESS_ACCESS_TOKEN?: string
+  GOCARDLESS_CREDITOR_ID?: string
   GOCARDLESS_WEBHOOK_SECRET?: string
   FRONTEND_URL?: string
   ALLOWED_ORIGINS?: string

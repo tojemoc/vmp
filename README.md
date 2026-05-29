@@ -96,6 +96,11 @@ Notes:
 - Architecture is rendition-based and supports future expansion (480p/1080p/4K, alternate codecs).
 - Usage/cost values are approximate normalized-minute estimates, not billing-grade accounting.
 
+## API docs (`docs/`)
+
+- [GoCardless checkout — outbound API payloads](docs/gocardless-checkout-api.md)
+- [Pills external update API](docs/pills-external-update-api.md)
+
 ## Notes
 
 - API entrypoint is TypeScript (`packages/api/src/index.ts`) referenced by `packages/api/wrangler.json`.

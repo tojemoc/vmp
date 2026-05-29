@@ -22,6 +22,16 @@ describe('normalizeGoCardlessCurrency', () => {
 })
 
 describe('buildGoCardlessMandateBillingRequestPayload', () => {
+  it('rejects more than three metadata keys (GoCardless API limit)', () => {
+    assert.throws(
+      () => buildGoCardlessMandateBillingRequestPayload({
+        currency: 'EUR',
+        metadata: { a: '1', b: '2', c: '3', d: '4' },
+      }),
+      /at most 3 keys/,
+    )
+  })
+
   it('pins mandate currency and optional creditor', () => {
     assert.deepEqual(
       buildGoCardlessMandateBillingRequestPayload({
