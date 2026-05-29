@@ -7,7 +7,8 @@ import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
 
 export default defineNuxtPlugin(() => {
-  if (typeof globalThis.videojs === 'undefined') {
-    globalThis.videojs = videojs
+  const g = globalThis as typeof globalThis & { videojs?: typeof videojs }
+  if (typeof g.videojs === 'undefined') {
+    g.videojs = videojs
   }
 })

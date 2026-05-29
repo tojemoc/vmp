@@ -2944,7 +2944,6 @@ const analyticsError = ref('')
 const analytics = ref<AnalyticsResponse>({
   views: { totalUniqueSessions: 0, series: [] },
   trafficSources: [],
-  retention: [],
   videoStats: [],
   subscriptions: [],
   subscriptionOverview: { statusBreakdown: [], trends: [] },
