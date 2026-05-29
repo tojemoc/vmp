@@ -6,7 +6,6 @@
  * PATCH requires admin or super_admin.
  */
 
-import { resolveContentsquareScriptSrc } from './contentsquare.js'
 import { requireRole } from './auth.js'
 import { getSetting, setSettings } from './settingsStore.js'
 
@@ -32,15 +31,7 @@ export async function handleSiteSettings(request: any, env: any, corsHeaders: an
     const entries = await Promise.all(
       SITE_KEYS.map(async (key) => [key, await getSetting(env, key, { defaultValue: '' })])
     )
-    const contentsquareScriptSrc = await resolveContentsquareScriptSrc(env)
-    return jsonResponse(
-      {
-        ...Object.fromEntries(entries),
-        contentsquare_script_src: contentsquareScriptSrc,
-      },
-      200,
-      corsHeaders,
-    )
+    return jsonResponse(Object.fromEntries(entries), 200, corsHeaders)
   }
 
   if (request.method === 'PATCH') {
