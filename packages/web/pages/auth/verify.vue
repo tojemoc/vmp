@@ -48,7 +48,7 @@
         </div>
       </div>
 
-      <div v-else-if="state === 'pwa_push_done'" class="space-y-4">
+      <div v-else-if="state === 'pwa_push_done' || state === 'pwa_2fa_done'" class="space-y-4">
         <p class="text-gray-300 text-sm leading-relaxed">{{ strings.authVerifyPwaPushDone }}</p>
       </div>
 
@@ -147,7 +147,7 @@ function firstQueryString(v: unknown): string {
   return ''
 }
 
-type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_done'
+type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_done' | 'pwa_2fa_done'
 const state = ref<State>('verifying')
 const errorMessage = ref('')
 const copyHint = ref(strings.authVerifyHandoffCopyLink)
@@ -210,8 +210,11 @@ async function deliverToInstalledPwa() {
     const result = await deliverMagicLinkToPwa(token)
     if (result.code === 'requires_2fa' && result.pendingToken) {
       const redirect = safeRedirect(route.query.redirect, '/')
+      if (import.meta.client && token) {
+        try { sessionStorage.setItem('vmp_pwa_magic_token', token) } catch { /* ignore */ }
+      }
       await navigateTo(
-        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1`,
       )
       return
     }
@@ -309,6 +312,12 @@ watch(
     const redirect = safeRedirect(firstQueryString(route.query.redirect) || undefined, '/')
     const handoff = firstQueryString(route.query.handoff) || undefined
     const token = firstQueryString(route.query.token) || undefined
+    const pwaDone = firstQueryString(route.query.pwa_done)
+
+    if (pwaDone === '1') {
+      state.value = 'pwa_2fa_done'
+      return
+    }
 
     if (handoff) {
       handoffCodeForSafari.value = handoff

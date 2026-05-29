@@ -122,6 +122,37 @@ export async function gocardlessGet(path: string, env: any): Promise<any> {
   return gocardlessFetch(path, 'GET', null, env)
 }
 
+/**
+ * Pre-fill payer email on a billing request so hosted flows and retries keep attribution.
+ * Falls back silently when the action is not available (e.g. wrong request state).
+ */
+export async function prefillGoCardlessBillingRequestCustomer(
+  billingRequestId: string,
+  email: string,
+  env: any,
+  countryCode = 'SK',
+): Promise<{ ok: boolean }> {
+  const trimmedEmail = String(email ?? '').trim()
+  if (!billingRequestId || !trimmedEmail) return { ok: false }
+  const cc = String(countryCode ?? 'SK').trim().toUpperCase()
+  try {
+    const response = await gocardlessPost(
+      `/billing_requests/${billingRequestId}/actions/collect_customer_details`,
+      {
+        data: {
+          customer: { email: trimmedEmail },
+          customer_billing_detail: { country_code: /^[A-Z]{2}$/.test(cc) ? cc : 'SK' },
+        },
+      },
+      env,
+    )
+    return { ok: !!response.ok }
+  } catch (err) {
+    console.warn('[gocardless] prefill customer details failed:', err)
+    return { ok: false }
+  }
+}
+
 function constantTimeEqual(a: string, b: string) {
   if (a.length !== b.length) return false
   let diff = 0
