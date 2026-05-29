@@ -1,9 +1,71 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  buildGoCardlessBillingRequestFlowCreatePayload,
+  buildGoCardlessMandateBillingRequestPayload,
   extractMandateIdFromBillingRequest,
+  formatGoCardlessApiError,
+  normalizeGoCardlessCurrency,
   resolveFulfilledBillingRequestMandate,
 } from '../src/gocardless.js'
+
+describe('normalizeGoCardlessCurrency', () => {
+  it('defaults invalid values to EUR', () => {
+    assert.equal(normalizeGoCardlessCurrency(''), 'EUR')
+    assert.equal(normalizeGoCardlessCurrency('12'), 'EUR')
+  })
+
+  it('normalises valid ISO codes', () => {
+    assert.equal(normalizeGoCardlessCurrency('eur'), 'EUR')
+    assert.equal(normalizeGoCardlessCurrency('GBP'), 'GBP')
+  })
+})
+
+describe('buildGoCardlessMandateBillingRequestPayload', () => {
+  it('pins mandate currency and optional creditor', () => {
+    assert.deepEqual(
+      buildGoCardlessMandateBillingRequestPayload({
+        currency: 'EUR',
+        metadata: { userId: 'u1', planType: 'monthly', checkoutToken: 'tok' },
+        creditorId: 'CR123',
+      }),
+      {
+        billing_requests: {
+          mandate_request: { currency: 'EUR' },
+          metadata: { userId: 'u1', planType: 'monthly', checkoutToken: 'tok' },
+          links: { creditor: 'CR123' },
+        },
+      },
+    )
+  })
+})
+
+describe('buildGoCardlessBillingRequestFlowCreatePayload', () => {
+  it('locks currency and prefills customer email', () => {
+    const payload = buildGoCardlessBillingRequestFlowCreatePayload({
+      billingRequestId: 'BRQ123',
+      redirectUri: 'https://example.com/account',
+      exitUri: 'https://example.com/pricing',
+      customerEmail: 'alice@example.com',
+    })
+    assert.equal(payload.billing_request_flows.lock_currency, true)
+    assert.deepEqual(payload.billing_request_flows.prefilled_customer, { email: 'alice@example.com' })
+  })
+})
+
+describe('formatGoCardlessApiError', () => {
+  it('maps currency_doesnt_support_functionality to actionable text', () => {
+    const message = formatGoCardlessApiError({
+      data: {
+        error: {
+          errors: [{ reason: 'currency_doesnt_support_functionality', field: 'mandate_request.currency' }],
+        },
+      },
+    }, 'Failed to create GoCardless billing request')
+    assert.match(message, /configured currency/i)
+    assert.doesNotMatch(message, /currency_doesnt_support_functionality/)
+  })
+})
 
 describe('extractMandateIdFromBillingRequest', () => {
   it('reads mandate from mandate_request.links', () => {
