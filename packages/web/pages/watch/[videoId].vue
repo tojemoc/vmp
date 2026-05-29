@@ -959,7 +959,8 @@ const initializeVideoElement = async (
   video.muted = true
   video.setAttribute('src', playlistUrl)
   video.setAttribute('preload', 'auto')
-  video.load()
+  // videojs-video-element load() is async; await it so Video.js is initialized before play().
+  await (video as HTMLMediaElement & { load(): Promise<void> }).load()
 
   // Check if video is already ready to avoid hanging on canplay
   if (video.readyState >= 3) { // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA

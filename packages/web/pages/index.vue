@@ -276,20 +276,11 @@ function dismissPwaBanner() {
   pwaBannerDismissed.value = true
 }
 
-interface VideoCategory {
-  id: string
-  slug: string
-  name: string
-  direction: 'asc' | 'desc'
-}
-
 const config = useRuntimeConfig()
-const { authHeader } = useAuth()
 const loading = ref(true)
 const error   = ref<string | null>(null)
 const videos  = ref<any[]>([])
 const layoutBlocks = ref<any[]>([])
-const categories = ref<VideoCategory[]>([])
 type HomePill = {
   id: string
   label: string
@@ -328,15 +319,6 @@ const loadAdminConfig = async () => {
   layoutBlocks.value = Array.isArray(homepageConfig?.layoutBlocks) ? homepageConfig.layoutBlocks : []
 }
 
-const loadCategories = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
-    headers: authHeader(),
-  })
-  if (!res.ok) return
-  const data = await res.json()
-  categories.value = Array.isArray(data?.categories) ? data.categories : []
-}
-
 const loadPlacement = async () => {
   const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
   if (!res.ok) return
@@ -355,7 +337,6 @@ onMounted(async () => {
     const [videosRes] = await Promise.all([
       fetch(`${config.public.apiUrl}/api/videos`),
       loadAdminConfig(),
-      loadCategories(),
       loadPlacement(),
       loadPills(),
     ])

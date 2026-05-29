@@ -4,6 +4,13 @@ export default defineNuxtConfig({
 
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt'],
 
+  nitro: {
+    // Workbox navigateFallback requires "/" in the precache manifest (SSR builds).
+    prerender: {
+      routes: ['/'],
+    },
+  },
+
   colorMode: {
     preference: 'system', // default value of $colorMode.preference
     fallback: 'dark', // fallback value if not system preference found

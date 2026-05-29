@@ -491,8 +491,14 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       const session = await stripePost('/checkout/sessions', sessionPayload, env)
 
       if (session.error || !session.url) {
+        const stripeMessage = typeof session.error?.message === 'string'
+          ? session.error.message
+          : null
         console.error('Stripe checkout session error:', session.error)
-        return jsonResponse({ error: 'Failed to create checkout session' }, 502, corsHeaders)
+        return jsonResponse({
+          error: stripeMessage ?? 'Failed to create checkout session',
+          code: session.error?.code ?? 'stripe_checkout_failed',
+        }, 502, corsHeaders)
       }
 
       return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
@@ -587,8 +593,12 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       checkoutUrl: billingRequestFlow.authorisation_url,
       provider,
     }, 200, corsHeaders)
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('handleCheckout error:', err)
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
+    if (code === 'stripe_timeout') {
+      return jsonResponse({ error: 'Payment provider timed out. Please try again.', code }, 504, corsHeaders)
+    }
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
   }
 }
