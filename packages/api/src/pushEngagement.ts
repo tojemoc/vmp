@@ -119,7 +119,8 @@ export async function handlePushEvents(request: Request, env: any, corsHeaders: 
   }
 
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || ''
-  const ipHash = ip ? await hashIp(ip.split(',')[0].trim()) : ''
+  const firstIp = ip.split(',')[0]?.trim() ?? ''
+  const ipHash = firstIp ? await hashIp(firstIp) : ''
   if (!(await checkPushEventRateLimit(env, ipHash, eventType))) {
     return jsonResponse({ error: 'Rate limit exceeded', code: 'rate_limit' }, 429, corsHeaders)
   }
