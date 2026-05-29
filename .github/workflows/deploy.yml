@@ -29,11 +29,11 @@ jobs:
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@6
         with:
           persist-credentials: false
       
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@6
         with:
           node-version: lts/*
           package-manager-cache: false
