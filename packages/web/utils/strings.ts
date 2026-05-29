@@ -45,6 +45,10 @@ const strings = {
   pwaLoginTitle: 'Sign in to the app',
   pwaLoginIntro: 'This takes a few extra steps the first time. Follow each step carefully.',
   pwaLoginPushStep: 'Allow notifications so we can send your sign-in to this app after you confirm in email.',
+  pwaLoginPushAlreadyGranted:
+    'Notifications are already allowed on this device. Tap below to resend the sign-in email, or turn notifications off to start over.',
+  pwaLoginResendEmail: 'Resend sign-in email',
+  pwaLoginTurnOffNotifications: 'Turn off notifications',
   pwaLoginPushDenied:
     'Push notifications are required for this sign-in method. Try signing in through Safari first, then open the app — or use the regular email form below.',
   pwaLoginCheckEmail: 'Check your email. Tap the link to continue.',

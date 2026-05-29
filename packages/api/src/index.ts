@@ -16,6 +16,7 @@ import {
   handlePwaPushLoginInit,
   handlePwaPushLoginSubscribe,
   handlePwaPushLoginDeliver,
+  handlePwaPushLoginVerify2fa,
 } from './pwa-push-login.js'
 import {
   handleRefreshToken,
@@ -37,6 +38,7 @@ import {
   handleWebhook,
   handleGoCardlessWebhook,
   handleGoCardlessComplete,
+  handleGoCardlessRetry,
   handleGetSubscription,
   handlePortal,
 } from './payments.js'
@@ -285,6 +287,12 @@ export default {
     }
     if (url.pathname === '/api/auth/pwa-push-login/deliver' && request.method === 'POST') {
       return handlePwaPushLoginDeliver(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/pwa-push-login/verify-2fa' && request.method === 'POST') {
+      return handlePwaPushLoginVerify2fa(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/gocardless/retry' && request.method === 'POST') {
+      return handleGoCardlessRetry(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
       return handleRefreshToken(request, env, corsHeaders)

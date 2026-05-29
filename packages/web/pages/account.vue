@@ -38,9 +38,34 @@
 
       <div
         v-if="gocardlessCompletionError"
-        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
+        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 space-y-3 text-sm text-red-700 dark:text-red-300"
       >
-        {{ gocardlessCompletionError }}
+        <p>{{ gocardlessCompletionError }}</p>
+        <button
+          type="button"
+          class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          :disabled="retryingGoCardless"
+          @click="retryGoCardlessCheckout"
+        >
+          {{ retryingGoCardless ? 'Opening GoCardless…' : 'Retry bank setup' }}
+        </button>
+        <p v-if="gocardlessRetryError" class="text-xs">{{ gocardlessRetryError }}</p>
+      </div>
+
+      <div
+        v-else-if="showGoCardlessRetryBanner"
+        class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 space-y-3 text-sm text-amber-900 dark:text-amber-200"
+      >
+        <p>Your bank setup was not completed. You can retry with your account email prefilled.</p>
+        <button
+          type="button"
+          class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          :disabled="retryingGoCardless"
+          @click="retryGoCardlessCheckout"
+        >
+          {{ retryingGoCardless ? 'Opening GoCardless…' : 'Continue bank setup' }}
+        </button>
+        <p v-if="gocardlessRetryError" class="text-xs text-red-600 dark:text-red-400">{{ gocardlessRetryError }}</p>
       </div>
 
       <!-- Subscription (active or empty — never both) -->
@@ -241,6 +266,11 @@ const openingPortal     = ref(false)
 const portalError       = ref<string | null>(null)
 const showWelcomeBanner = ref(route.query.subscribed === '1' || route.query.gocardless_complete === '1')
 const gocardlessCompletionError = ref<string | null>(null)
+const gocardlessRetryError = ref<string | null>(null)
+const retryingGoCardless = ref(false)
+const showGoCardlessRetryBanner = computed(() =>
+  route.query.gocardless_retry === '1' && !gocardlessCompletionError.value,
+)
 const loadingRss        = ref(true)
 const rssError          = ref<string | null>(null)
 const copyError         = ref<string | null>(null)
@@ -315,6 +345,33 @@ async function openPortal() {
     portalError.value = 'Network error. Please try again.'
   } finally {
     openingPortal.value = false
+  }
+}
+
+async function retryGoCardlessCheckout() {
+  retryingGoCardless.value = true
+  gocardlessRetryError.value = null
+  const checkoutToken = (
+    (typeof route.query.gocardless_checkout_token === 'string' ? route.query.gocardless_checkout_token : '') ||
+    ''
+  ).trim()
+  try {
+    const res = await fetch(`${apiUrl}/api/payments/gocardless/retry`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify(checkoutToken ? { checkoutToken } : {}),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.checkoutUrl) {
+      gocardlessRetryError.value = data.error ?? 'Could not resume GoCardless checkout.'
+      return
+    }
+    window.location.href = data.checkoutUrl
+  } catch {
+    gocardlessRetryError.value = 'Network error. Please try again.'
+  } finally {
+    retryingGoCardless.value = false
   }
 }
 

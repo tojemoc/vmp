@@ -51,7 +51,10 @@
 
       <!-- Step 2: push permission -->
       <div v-else-if="step === 2" class="px-5 pb-5 space-y-4">
-        <p class="text-sm text-gray-300 leading-relaxed">{{ strings.pwaLoginPushStep }}</p>
+        <p v-if="pushAlreadyGranted" class="text-sm text-emerald-300/90 leading-relaxed">
+          {{ strings.pwaLoginPushAlreadyGranted }}
+        </p>
+        <p v-else class="text-sm text-gray-300 leading-relaxed">{{ strings.pwaLoginPushStep }}</p>
         <p v-if="pushDenied" class="text-sm text-amber-300/90 leading-relaxed">{{ strings.pwaLoginPushDenied }}</p>
         <p v-if="errorMessage" class="text-xs text-red-400">{{ errorMessage }}</p>
         <button
@@ -61,10 +64,19 @@
           :disabled="loading"
           @click="requestPushAndSubscribe"
         >
-          {{ loading ? 'Enabling…' : 'Allow notifications' }}
+          {{ loading ? 'Working…' : (pushAlreadyGranted ? strings.pwaLoginResendEmail : 'Allow notifications') }}
         </button>
         <button
-          v-else
+          v-if="pushAlreadyGranted"
+          type="button"
+          class="w-full py-2.5 border border-gray-600 text-gray-200 rounded-lg text-sm"
+          :disabled="loading"
+          @click="turnOffPushPermission"
+        >
+          {{ strings.pwaLoginTurnOffNotifications }}
+        </button>
+        <button
+          v-else-if="pushDenied"
           type="button"
           class="w-full py-2.5 border border-gray-600 text-gray-200 rounded-lg text-sm"
           @click="emit('dismiss')"
@@ -91,7 +103,7 @@
 
 <script setup lang="ts">
 import strings from '~/utils/strings'
-import { getOrCreatePwaDeviceToken } from '~/utils/pwa'
+import { getOrCreatePwaDeviceToken, PWA_LOGIN_EMAIL_KEY } from '~/utils/pwa'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ dismiss: [] }>()
@@ -105,10 +117,36 @@ const email = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const pushDenied = ref(false)
+const pushAlreadyGranted = ref(false)
 
-onMounted(() => {
-  console.log('[PWA WIZARD] mounted')
-})
+async function detectPushAlreadyGranted() {
+  if (!import.meta.client || !('Notification' in window)) return
+  if (Notification.permission !== 'granted') return
+  try {
+    const reg = await navigator.serviceWorker.getRegistration()
+    const sub = reg ? await reg.pushManager.getSubscription() : null
+    pushAlreadyGranted.value = !!sub
+  } catch {
+    pushAlreadyGranted.value = Notification.permission === 'granted'
+  }
+}
+
+async function turnOffPushPermission() {
+  if (loading.value) return
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const reg = await navigator.serviceWorker.getRegistration()
+    const sub = reg ? await reg.pushManager.getSubscription() : null
+    if (sub) await sub.unsubscribe()
+    pushAlreadyGranted.value = false
+    try { localStorage.removeItem(PWA_LOGIN_EMAIL_KEY) } catch { /* ignore */ }
+  } catch (e: unknown) {
+    errorMessage.value = e instanceof Error ? e.message : 'Could not turn off notifications'
+  } finally {
+    loading.value = false
+  }
+}
 
 function urlB64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -130,7 +168,10 @@ async function goStep2() {
   errorMessage.value = ''
   try {
     getOrCreatePwaDeviceToken()
-    await init(email.value.trim().toLowerCase())
+    const normalized = email.value.trim().toLowerCase()
+    await init(normalized)
+    try { localStorage.setItem(PWA_LOGIN_EMAIL_KEY, normalized) } catch { /* ignore */ }
+    await detectPushAlreadyGranted()
     step.value = 2
   } catch (e: unknown) {
     errorMessage.value = e instanceof Error ? e.message : 'Something went wrong'
@@ -185,11 +226,22 @@ async function requestPushAndSubscribe() {
   }
 }
 
-watch(() => props.open, (isOpen) => {
+watch(() => props.open, async (isOpen) => {
   if (isOpen) {
-    step.value = 1
     errorMessage.value = ''
     pushDenied.value = false
+    pushAlreadyGranted.value = false
+    try {
+      const saved = localStorage.getItem(PWA_LOGIN_EMAIL_KEY)
+      if (saved) email.value = saved
+    } catch { /* ignore */ }
+    if (email.value) {
+      await detectPushAlreadyGranted()
+      const permGranted = import.meta.client && 'Notification' in window && Notification.permission === 'granted'
+      step.value = pushAlreadyGranted.value || permGranted ? 2 : 1
+    } else {
+      step.value = 1
+    }
   }
 })
 </script>

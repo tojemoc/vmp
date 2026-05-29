@@ -84,6 +84,8 @@
 import { useRoute, navigateTo } from '#app'
 
 const route = useRoute()
+const config = useRuntimeConfig()
+const apiUrl = config.public.apiUrl as string
 const { verifyTotp } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 
@@ -93,7 +95,13 @@ const errorMessage   = ref('')
 const sessionExpired = ref(false)
 
 const pendingToken = computed(() => route.query.pending as string | undefined)
-const redirect     = computed(() => (route.query.redirect as string) || '/')
+const redirect     = computed(() => {
+  const raw = route.query.redirect
+  const value = typeof raw === 'string' ? raw : '/'
+  if (!value.startsWith('/') || value.startsWith('//')) return '/'
+  return value
+})
+const isPwaPushLogin2fa = computed(() => route.query.pwa === '1')
 
 // Redirect away if no pending token in URL
 onMounted(() => {
@@ -109,6 +117,32 @@ async function submit() {
   errorMessage.value = ''
 
   try {
+    if (isPwaPushLogin2fa.value) {
+      const magicToken = import.meta.client
+        ? (sessionStorage.getItem('vmp_pwa_magic_token') || '').trim()
+        : ''
+      if (!magicToken) {
+        throw new Error('Sign-in session expired. Open the link from your email again.')
+      }
+      const res = await fetch(`${apiUrl}/api/auth/pwa-push-login/verify-2fa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pendingToken: pendingToken.value,
+          code: code.value,
+          token: magicToken,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Verification failed')
+      try { sessionStorage.removeItem('vmp_pwa_magic_token') } catch { /* ignore */ }
+      await navigateTo({
+        path: '/auth/verify',
+        query: { pwa_done: '1', redirect: redirect.value },
+      })
+      return
+    }
+
     await verifyTotp(code.value, pendingToken.value)
     await navigateTo(redirect.value)
   } catch (err: any) {
