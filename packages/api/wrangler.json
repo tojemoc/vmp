@@ -34,12 +34,21 @@
 			{
 				"binding": "vmp_replication_events",
 				"queue": "vmp-replication-events"
+			},
+			{
+				"binding": "PUSH_DELIVERY_QUEUE",
+				"queue": "vmp-push-delivery"
 			}
 		],
 		"consumers": [
 			{
 				"queue": "vmp-replication-events",
 				"max_batch_size": 100,
+				"max_batch_timeout": 10
+			},
+			{
+				"queue": "vmp-push-delivery",
+				"max_batch_size": 50,
 				"max_batch_timeout": 10
 			}
 		]

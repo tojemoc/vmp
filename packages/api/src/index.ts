@@ -30,7 +30,7 @@ import {
 } from './auth.js'
 import { isPrivateHost } from './is-private-host.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
-import { sendPushNotification, sendPushToAllSubscribers } from './webpush.js'
+import { sendPushNotification } from './webpush.js'
 import {
   handleAdminPaymentSettings,
   handleGetPricing,
@@ -109,6 +109,17 @@ import {
   handleAdminReplicationSettings,
   handleReplicationQueue,
 } from './replication.js'
+import {
+  createPushCampaignAndDeliveries,
+  enqueueOverduePushDeliveries,
+  ensurePushTierDefaultSettings,
+  finalizeStalePushWatchSessions,
+  handleAdminPushAnalytics,
+  handlePushDeliveryQueue,
+  handlePushEvents,
+  isPushTierDeliveryEnabled,
+  syncPushEngagementProfiles,
+} from './pushEngagement.js'
 import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
@@ -535,6 +546,12 @@ export default {
     if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
       return handlePushSubscribe(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/push/events' && request.method === 'POST') {
+      return handlePushEvents(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/push-analytics' && request.method === 'GET') {
+      return handleAdminPushAnalytics(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/push/subscribe' && request.method === 'DELETE') {
       return handlePushUnsubscribe(request, env, corsHeaders)
     }
@@ -562,9 +579,22 @@ export default {
     } catch (err) {
       console.error('Replication enqueue sweep failed:', err)
     }
+    try {
+      await ensurePushTierDefaultSettings(env)
+      await enqueueOverduePushDeliveries(env)
+      await syncPushEngagementProfiles(env)
+      await finalizeStalePushWatchSessions(env)
+    } catch (err) {
+      console.error('Push engagement sweep failed:', err)
+    }
   },
 
   async queue(batch: any, env: any, ctx: ExecutionContext) {
+    const queueName = String(batch?.queue ?? '')
+    if (queueName.includes('push-delivery')) {
+      await handlePushDeliveryQueue(batch, env)
+      return
+    }
     await handleReplicationQueue(batch, env)
   },
 }
@@ -2225,6 +2255,9 @@ async function handleAdminVideoNotify(request: any, env: any, ctx: any, corsHead
     await env.RATE_LIMIT_KV.put(cooldownKey, String(Date.now()), { expirationTtl: NOTIFY_COOLDOWN_SECONDS })
   }
 
+  const authUser = await requireAuth(request, env).catch(() => null)
+  const tiered = await isPushTierDeliveryEnabled(env)
+
   const responseTimestamp = new Date().toISOString()
   const notifiedResult = await db.prepare(`
     UPDATE videos
@@ -2237,18 +2270,31 @@ async function handleAdminVideoNotify(request: any, env: any, ctx: any, corsHead
     return jsonResponse({ error: 'Video already notified', code: 'already_notified' }, 409, corsHeaders)
   }
 
-  // Send in the background; log delivery stats so failures are visible in logs.
-  ctx.waitUntil(
-    sendPushToAllSubscribers(video.title || videoId, videoId, env, db)
-      .then(stats => {
-        console.log(`Push notify [videoId:${videoId}] attempted=${stats.attempted} succeeded=${stats.succeeded} failed=${stats.failed} stale=${stats.stale}`)
-      })
-      .catch(err => {
-        console.error(`Push notify error [videoId:${videoId}]:`, err)
-      }),
-  )
+  let campaignResult
+  try {
+    campaignResult = await createPushCampaignAndDeliveries({
+      env,
+      db,
+      videoId,
+      videoTitle: video.title || videoId,
+      createdByUserId: authUser?.sub ?? null,
+      tiered,
+    })
+    console.log(`Push notify [videoId:${videoId}] campaign=${campaignResult.campaignId} mode=${campaignResult.mode} scheduled=${campaignResult.scheduled} skipped=${campaignResult.skipped}`)
+  } catch (err) {
+    console.error(`Push notify error [videoId:${videoId}]:`, err)
+    return jsonResponse({ error: 'Failed to queue push campaign' }, 500, corsHeaders)
+  }
 
-  return jsonResponse({ ok: true, push_enqueued_at: responseTimestamp }, 200, corsHeaders)
+  return jsonResponse({
+    ok: true,
+    push_enqueued_at: responseTimestamp,
+    tiered,
+    campaignId: campaignResult.campaignId,
+    scheduled: campaignResult.scheduled,
+    skipped: campaignResult.skipped,
+    tiers: campaignResult.tiers,
+  }, 200, corsHeaders)
 }
 
 async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
