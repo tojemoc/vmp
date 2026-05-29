@@ -807,6 +807,17 @@
             <button class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white" :disabled="notifying[video.id]" @click="sendNotification(video)">Notify</button>
           </div>
           <p v-if="!pendingNotificationVideos.length" class="text-xs text-gray-500 dark:text-gray-400">No pending notifications.</p>
+          <div v-if="pushCampaignFunnel" class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 space-y-2">
+            <h3 class="font-semibold text-gray-900 dark:text-white">Latest push campaign — {{ pushCampaignFunnel.videoTitle }}</h3>
+            <p class="text-xs text-gray-600 dark:text-gray-400">Campaign {{ pushCampaignFunnel.campaignId }}</p>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-800 dark:text-gray-200">
+              <p>Sent: {{ pushCampaignFunnel.sent }}</p>
+              <p>Clicks: {{ pushCampaignFunnel.clicks }} ({{ pushCampaignFunnel.clickRatePercent }}%)</p>
+              <p>Watch sessions: {{ pushCampaignFunnel.watchSessions }}</p>
+              <p>Completion: {{ pushCampaignFunnel.completionRatePercent }}%</p>
+            </div>
+            <button type="button" class="text-xs text-blue-700 dark:text-blue-300 hover:underline" @click="loadPushCampaignFunnel(pushCampaignFunnel.campaignId, pushCampaignFunnel.videoTitle)">Refresh funnel</button>
+          </div>
         </div>
 
         <div v-if="activeAdminTab === 'newsletter'" id="newsletter-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
@@ -1192,44 +1203,9 @@
 
         <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Retention curves, views over time, traffic sources, subscription trends, and cashflow estimates.</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Video retention, views over time, traffic sources, subscription trends, and cashflow estimates. Audience analytics run via Google Tag Manager.</p>
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-            <h3 class="font-semibold text-gray-900 dark:text-white">Integrations & view counting strategy</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">Datadog (priority)
-                <div class="mt-1 flex items-center gap-2">
-                  <input v-model="analyticsIntegrationSettings.datadog.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  <input v-model="analyticsIntegrationSettings.datadog.site" type="text" placeholder="datadoghq.eu" class="flex-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
-                </div>
-                <input
-                  v-model="analyticsIntegrationSettings.datadog.apiKey"
-                  type="password"
-                  placeholder="Enter API key (leave blank to keep, or clear to rotate)"
-                  class="mt-2 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                  @input="analyticsDatadogApiKeyTouched = true"
-                >
-              </label>
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">ContentSquare (optional)
-                <div class="mt-1 flex items-center gap-2">
-                  <input v-model="analyticsIntegrationSettings.contentsquare.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  <span class="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">Enable</span>
-                </div>
-                <input
-                  v-model="analyticsIntegrationSettings.contentsquare.scriptUrl"
-                  type="url"
-                  placeholder="https://t.contentsquare.net/uxa/….js"
-                  class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                >
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Full script <code class="font-mono">src</code> URL from Contentsquare — injected in <code class="font-mono">&lt;head&gt;</code> on every page.</p>
-              </label>
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">GA4 (optional)
-                <div class="mt-1 mb-1">
-                  <input v-model="analyticsIntegrationSettings.ga4.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600"> Enable
-                </div>
-                <input v-model="analyticsIntegrationSettings.ga4.measurementId" type="text" placeholder="G-XXXXXXXX" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
-                <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Use for broad audience trends; internal session analytics remain source of truth.</p>
-              </label>
-            </div>
+            <h3 class="font-semibold text-gray-900 dark:text-white">View counting strategy</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label class="text-xs text-gray-600 dark:text-gray-300 block">Min segments per session view
                 <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -1343,19 +1319,31 @@
             </div>
           </div>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Retention curve (top buckets)</h3>
-              <div class="space-y-2">
-                <div v-for="row in analyticsRetentionChartRows" :key="`r-${row.videoId}-${row.bucket}`" class="space-y-1">
-                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
-                    <span>{{ row.videoId }} · {{ row.bucket }}%</span>
-                    <span>{{ row.value }}</span>
-                  </div>
-                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
-                    <div class="h-2 rounded bg-purple-500" :style="{ width: `${row.percent}%` }"></div>
-                  </div>
-                </div>
-                <p v-if="!analyticsRetentionChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No retention samples in selected range.</p>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 xl:col-span-2">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Published videos</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Average max watch-through per qualified session. Videos without duration are excluded from retention averages.</p>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                      <th class="py-2 pr-4">Title</th>
+                      <th class="py-2 pr-4">Views</th>
+                      <th class="py-2 pr-4">Avg retention</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in analyticsVideoStatsRows" :key="`vs-${row.videoId}`" class="border-b border-gray-100 dark:border-gray-800">
+                      <td class="py-2 pr-4">
+                        <a :href="videoWatchHref(row)" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">{{ row.title || row.videoId }}</a>
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ row.viewCount }}</td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatVideoRetention(row.averageRetentionPercent) }}</td>
+                    </tr>
+                    <tr v-if="!analyticsVideoStatsRows.length">
+                      <td colspan="3" class="py-3 text-gray-500 dark:text-gray-400">No published videos.</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
@@ -2532,7 +2520,14 @@ interface AnalyticsResponse {
     series?: AnalyticsSeriesPoint[]
   }
   trafficSources?: Array<{ source: string, unique_sessions?: number, hits?: number }>
-  retention?: Array<{ video_id: string, bucket_start_percent: number, viewers: number }>
+  videoStats?: Array<{
+    videoId: string
+    title: string
+    slug: string | null
+    publishedAt: string | null
+    viewCount: number
+    averageRetentionPercent: number | null
+  }>
   subscriptions?: Array<{ status: string, count: number }>
   subscriptionOverview?: {
     statusBreakdown?: Array<{ status: string, count: number }>
@@ -2949,6 +2944,7 @@ const analytics = ref<AnalyticsResponse>({
   views: { totalUniqueSessions: 0, series: [] },
   trafficSources: [],
   retention: [],
+  videoStats: [],
   subscriptions: [],
   subscriptionOverview: { statusBreakdown: [], trends: [] },
   cashflow: { currency: 'EUR', activeMrrEstimateEur: 0, trend: [] },
@@ -2957,17 +2953,26 @@ const analytics = ref<AnalyticsResponse>({
 
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
 const analyticsSettingsSaving = ref(false)
-const analyticsDatadogApiKeyTouched = ref(false)
 const analyticsSettingsInitialized = ref(false)
-const analyticsIntegrationSettings = ref({
-  datadog: { enabled: false, site: '', apiKey: '' },
-  contentsquare: { enabled: false, scriptUrl: '' },
-  ga4: { enabled: false, measurementId: '' },
-})
 const analyticsViewCounting = ref({
   minSegmentsPerSession: 1,
   minWatchSeconds: 15,
 })
+
+interface PushCampaignFunnel {
+  campaignId: string
+  videoTitle: string
+  sent: number
+  clicks: number
+  clickRatePercent: number
+  medianClickLatencySeconds: number | null
+  watchSessions: number
+  watchRatePercent: number
+  completionRatePercent: number
+  avgSessionDepth: number
+}
+
+const pushCampaignFunnel = ref<PushCampaignFunnel | null>(null)
 
 const analyticsStatusRows = computed(() => {
   if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
@@ -2988,7 +2993,7 @@ const analyticsKpiCards = computed(() => {
   const defs = analytics.value.definitions ?? {}
   return [
     { key: 'totalUniqueViews', label: 'Unique views', value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews), help: defs.totalUniqueViews || 'Distinct sessions in selected range.' },
-    { key: 'averageRetentionPercent', label: 'Avg retention', value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent), help: defs.averageRetentionPercent || 'Weighted midpoint of retention buckets.' },
+    { key: 'averageRetentionPercent', label: 'Avg retention', value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent), help: defs.averageRetentionPercent || 'Average max watch-through across qualified sessions.' },
     { key: 'activeSubscribers', label: 'Active subscribers', value: formatMetricValue('activeSubscribers', kpis.activeSubscribers), help: defs.activeSubscribers || 'Latest active/trialing subscription rows.' },
     { key: 'churnRatePercent', label: 'Churn rate', value: formatMetricValue('churnRatePercent', kpis.churnRatePercent), help: defs.churnRatePercent || 'Churned divided by new subscriptions.' },
     { key: 'estimatedActiveMrrEur', label: 'Estimated MRR', value: formatMetricValue('estimatedActiveMrrEur', kpis.estimatedActiveMrrEur), help: defs.estimatedActiveMrrEur || 'Estimated monthly recurring revenue.' },
@@ -3015,15 +3020,25 @@ const analyticsTrafficChartRows = computed(() => {
   return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
 })
 
-const analyticsRetentionChartRows = computed(() => {
-  const rows = (analytics.value.retention ?? []).map((row) => ({
-    videoId: row.video_id,
-    bucket: Number(row.bucket_start_percent || 0),
-    value: Number(row.viewers || 0),
-  }))
-  const norm = normalizeChartRows(rows.map((row) => row.value))
-  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
-})
+const analyticsVideoStatsRows = computed(() =>
+  (analytics.value.videoStats ?? []).map((row) => ({
+    videoId: row.videoId,
+    title: row.title,
+    slug: row.slug,
+    viewCount: Number(row.viewCount || 0),
+    averageRetentionPercent: row.averageRetentionPercent,
+  })),
+)
+
+function formatVideoRetention(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return '—'
+  return `${Number(value).toFixed(1)}%`
+}
+
+function videoWatchHref(row: { videoId: string, slug: string | null }) {
+  const slugOrId = row.slug?.trim() || row.videoId
+  return `/watch/${encodeURIComponent(slugOrId)}`
+}
 
 const analyticsSubscriptionTrendRows = computed(() =>
   (analytics.value.subscriptionOverview?.trends ?? []).map((row) => ({
@@ -4821,20 +4836,9 @@ const loadAnalytics = async () => {
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     analytics.value = data
     if (!analyticsSettingsInitialized.value) {
-      analyticsIntegrationSettings.value.datadog.enabled = Boolean(data?.integrationSettings?.datadog?.enabled)
-      analyticsIntegrationSettings.value.datadog.site = String(data?.integrationSettings?.datadog?.site || '')
-      analyticsIntegrationSettings.value.contentsquare.enabled = Boolean(data?.integrationSettings?.contentsquare?.enabled)
-      analyticsIntegrationSettings.value.contentsquare.scriptUrl = String(
-        data?.integrationSettings?.contentsquare?.scriptUrl
-          || data?.integrationSettings?.contentsquare?.tag
-          || '',
-      )
-      analyticsIntegrationSettings.value.ga4.enabled = Boolean(data?.integrationSettings?.ga4?.enabled)
-      analyticsIntegrationSettings.value.ga4.measurementId = String(data?.integrationSettings?.ga4?.measurementId || '')
       analyticsViewCounting.value.minSegmentsPerSession = Number(data?.viewCounting?.minSegmentsPerSession ?? 1)
       analyticsViewCounting.value.minWatchSeconds = Number(data?.viewCounting?.minWatchSeconds ?? 15)
       analyticsSettingsInitialized.value = true
-      analyticsDatadogApiKeyTouched.value = false
     }
     analyticsRange.value = data?.meta?.range || analyticsRange.value
     analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
@@ -4850,26 +4854,15 @@ const saveAnalyticsSettings = async () => {
   analyticsSettingsSaving.value = true
   analyticsError.value = ''
   try {
-    const integrations = {
-      datadog: {
-        enabled: analyticsIntegrationSettings.value.datadog.enabled,
-        site: analyticsIntegrationSettings.value.datadog.site,
-        ...(analyticsDatadogApiKeyTouched.value ? { apiKey: analyticsIntegrationSettings.value.datadog.apiKey } : {}),
-      },
-      contentsquare: { ...analyticsIntegrationSettings.value.contentsquare },
-      ga4: { ...analyticsIntegrationSettings.value.ga4 },
-    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
-        integrations,
         viewCounting: analyticsViewCounting.value,
       }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    analyticsDatadogApiKeyTouched.value = false
     await loadAnalytics()
   } catch (error: any) {
     analyticsError.value = error?.message || 'Failed to save analytics settings'
@@ -5562,26 +5555,54 @@ async function updateVideoPublishedAt(video: Video, rawValue: string) {
 
 async function sendNotification(video: Video) {
   notifying.value[video.id] = true
+  pushCampaignFunnel.value = null
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/notify`, {
       method: 'POST',
       headers: authHeader(),
     })
+    const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+      throw new Error(data.error || `HTTP ${res.status}`)
     }
     const idx = uploads.value.findIndex((v) => v.id === video.id)
     if (idx !== -1) {
       uploads.value[idx] = { ...uploads.value[idx]!, notified_at: new Date().toISOString() }
     }
     showToast('success', `Notification queued for ${video.title}.`)
+    if (typeof data.campaignId === 'string') {
+      await loadPushCampaignFunnel(data.campaignId, video.title)
+    }
   } catch (e: any) {
     saveMessage.value = `Failed to send notification for "${video.title}": ${e.message}`
     showToast('error', `Failed to notify ${video.title}: ${e.message}`)
     saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
   } finally {
     notifying.value[video.id] = false
+  }
+}
+
+async function loadPushCampaignFunnel(campaignId: string, videoTitle: string) {
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/push-analytics?campaignId=${encodeURIComponent(campaignId)}`, {
+      headers: authHeader(),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return
+    pushCampaignFunnel.value = {
+      campaignId,
+      videoTitle,
+      sent: Number(data?.funnel?.sent || 0),
+      clicks: Number(data?.funnel?.clicks || 0),
+      clickRatePercent: Number(data?.funnel?.clickRatePercent || 0),
+      medianClickLatencySeconds: data?.funnel?.medianClickLatencySeconds ?? null,
+      watchSessions: Number(data?.funnel?.watchSessions || 0),
+      watchRatePercent: Number(data?.funnel?.watchRatePercent || 0),
+      completionRatePercent: Number(data?.funnel?.completionRatePercent || 0),
+      avgSessionDepth: Number(data?.funnel?.avgSessionDepth || 0),
+    }
+  } catch {
+    // Non-fatal
   }
 }
 

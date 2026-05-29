@@ -29,7 +29,9 @@ async function notifyClientsOrStore(handoffCode) {
         for (const client of clients) {
             client.postMessage({ type: 'pwa_auth_handoff', handoffCode });
         }
-        await clients[0].focus();
+        const firstClient = clients[0];
+        if (firstClient)
+            await firstClient.focus();
         return;
     }
     const db = await openIdb();
@@ -88,7 +90,13 @@ sw.addEventListener('push', (event) => {
         body,
         icon: '/icons/pwa-192.png',
         badge: '/icons/pwa-192.png',
-        data: { url: targetUrl },
+        data: {
+            url: targetUrl,
+            type: typeof data.type === 'string' ? data.type : 'new_video',
+            deliveryId: typeof data.deliveryId === 'string' ? data.deliveryId : undefined,
+            campaignId: typeof data.campaignId === 'string' ? data.campaignId : undefined,
+            eventsUrl: typeof data.eventsUrl === 'string' ? data.eventsUrl : undefined,
+        },
     }));
 });
 sw.addEventListener('notificationclick', (event) => {
@@ -98,6 +106,16 @@ sw.addEventListener('notificationclick', (event) => {
         const code = notifData.handoffCode;
         event.waitUntil(sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(code)}`));
         return;
+    }
+    const deliveryId = typeof notifData?.deliveryId === 'string' ? notifData.deliveryId : '';
+    const pushType = typeof notifData?.type === 'string' ? notifData.type : '';
+    const eventsUrl = typeof notifData?.eventsUrl === 'string' ? notifData.eventsUrl : '';
+    if (deliveryId && pushType === 'new_video' && eventsUrl) {
+        event.waitUntil(fetch(eventsUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'click', deliveryId }),
+        }).catch(() => undefined));
     }
     const targetUrl = notifData?.url || '/';
     event.waitUntil((async () => {
