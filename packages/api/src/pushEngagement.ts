@@ -17,8 +17,17 @@ function getDb(env: any) {
   return env.video_subscription_db || env.DB
 }
 
+function stripTrailingSlashes(value: string) {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end -= 1
+  return value.slice(0, end)
+}
+
 function normalizeFrontendBaseUrl(raw: unknown) {
-  const value = typeof raw === 'string' ? raw.trim().replace(/\/+$/, '') : ''
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const value = stripTrailingSlashes(trimmed)
   return value || null
 }
 
