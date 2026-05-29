@@ -421,6 +421,7 @@ import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
 import { buildWatchRecommendations } from '~/utils/watchRecommendations'
+import { usePushAttribution } from '~/composables/usePushAttribution'
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -604,6 +605,12 @@ const handleTimeUpdate = (event: Event) => {
   currentTime.value = video.currentTime
   enforcePreviewLimit(video)
 }
+
+usePushAttribution({
+  videoId: () => videoId.value,
+  currentTime: () => currentTime.value,
+  duration: () => effectiveFullDuration.value,
+})
 
 const handleSeeking = (event: Event) => {
   const video = event.target as HTMLVideoElement

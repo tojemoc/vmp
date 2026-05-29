@@ -52,9 +52,33 @@ describe('segment playback + session derivation', () => {
 })
 
 describe('segment analytics persistence + snapshot', () => {
-  function buildDbStub(resultsByMatch: Array<{ match: string, response: any }>) {
+  function buildDbStub(resultsByMatch: Array<{ match: string, response: any }>, settings: Record<string, string> = {}) {
     return {
       prepare(sql: string) {
+        if (sql.includes('admin_settings')) {
+          return {
+            values: [] as any[],
+            bind(...args: any[]) {
+              this.values = args
+              return this
+            },
+            async first() {
+              const key = String(this.values[0] ?? '')
+              if (Object.prototype.hasOwnProperty.call(settings, key)) {
+                return { value: settings[key] }
+              }
+              if (key === 'settings_changed_at') return { value: '1' }
+              return null
+            },
+            async all() {
+              const keys = this.values
+              const results = keys
+                .filter((key: string) => Object.prototype.hasOwnProperty.call(settings, key))
+                .map((key: string) => ({ key, value: settings[key] }))
+              return { results }
+            },
+          }
+        }
         const matched = resultsByMatch.find((item) => sql.includes(item.match))
         return {
           bind() {
@@ -123,45 +147,46 @@ describe('segment analytics persistence + snapshot', () => {
     const db = buildDbStub([
       { match: 'AS total', response: { first: { total: 4 } } },
       { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'search', unique_sessions: 3 }, { source: 'direct', unique_sessions: 1 }] } } },
-      { match: 'WITH events AS', response: { all: { results: [{ video_id: 'video-1', bucket_start_percent: 20, viewers: 2 }] } } },
+      { match: 'SELECT AVG(session_retention_pct) AS average_retention_percent', response: { first: { average_retention_percent: 55.5 } } },
+      { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: 'test', published_at: '2026-01-01', view_count: 2, average_retention_percent: 55.5 }] } } },
       { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 5 }] } } },
+      { match: 'AS unique_sessions\n      FROM session_rollup', response: { all: { results: [] } } },
+      { match: 'AS new_subscriptions', response: { all: { results: [] } } },
+      { match: 'AS churned_subscriptions', response: { all: { results: [] } } },
+      { match: 'AS expiring_subscriptions', response: { all: { results: [] } } },
       { match: 'SELECT plan_type, COUNT(*) AS active_count', response: { all: { results: [{ plan_type: 'monthly', active_count: 5 }] } } },
     ])
     const snapshot = await buildSegmentAnalyticsSnapshot(db)
     assert.equal(snapshot.totalViews, 4)
     assert.equal(snapshot.trafficSources[0].source, 'search')
-    assert.equal(snapshot.retention[0].bucket_start_percent, 20)
+    assert.equal(snapshot.kpis.averageRetentionPercent, 55.5)
+    assert.equal(snapshot.videoStats[0].videoId, 'video-1')
     assert.equal(snapshot.subscriptionsLegacy[0].status, 'active')
   })
 
   it('builds analytics snapshot with time-series options and overview sections', async () => {
-    const db = buildDbStub([
-      { match: 'AS total', response: { first: { total: 9 } } },
-      { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'social', unique_sessions: 5 }] } } },
-      { match: 'WITH events AS', response: { all: { results: [{ video_id: 'video-1', bucket_start_percent: 30, viewers: 4 }] } } },
-      { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 8 }] } } },
-      { match: 'COUNT(DISTINCT', response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 3 }] } } },
-      { match: 'AS new_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', new_subscriptions: 2 }] } } },
-      { match: 'AS churned_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', churned_subscriptions: 1 }] } } },
-      { match: 'AS expiring_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', expiring_subscriptions: 1 }] } } },
-      { match: 'SELECT plan_type, COUNT(*) AS active_count', response: { all: { results: [{ plan_type: 'monthly', active_count: 6 }] } } },
-    ])
-    const settings = new Map<string, string>([
-      ['monthly_price_eur', '12'],
-      ['yearly_price_eur', '120'],
-      ['club_price_eur', '30'],
-    ])
     const env = {
-      DB: db,
-      SETTINGS_KV: {
-        async get(key: string) {
-          if (!key.startsWith('settings:')) return null
-          return settings.get(key.slice('settings:'.length)) ?? null
-        },
-        async put() {},
-      },
+      DB: buildDbStub([
+        { match: 'AS total', response: { first: { total: 9 } } },
+        { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'social', unique_sessions: 5 }] } } },
+        { match: 'SELECT AVG(session_retention_pct) AS average_retention_percent', response: { first: { average_retention_percent: 42 } } },
+        { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: null, published_at: null, view_count: 4, average_retention_percent: 42 }] } } },
+        { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 8 }] } } },
+        { match: 'AS unique_sessions\n      FROM session_rollup', response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 3 }] } } },
+        { match: 'AS new_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', new_subscriptions: 2 }] } } },
+        { match: 'AS churned_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', churned_subscriptions: 1 }] } } },
+        { match: 'AS expiring_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', expiring_subscriptions: 1 }] } } },
+        { match: 'SELECT plan_type, COUNT(*) AS active_count', response: { all: { results: [{ plan_type: 'monthly', active_count: 6 }] } } },
+      ], {
+        monthly_price_eur: '12',
+        yearly_price_eur: '120',
+        club_price_eur: '30',
+        analytics_view_min_segments: '1',
+        analytics_view_min_watch_seconds: '15',
+        settings_changed_at: '1',
+      }),
     }
-    const snapshot = await buildSegmentAnalyticsSnapshotWithOptions(db, env, {
+    const snapshot = await buildSegmentAnalyticsSnapshotWithOptions(env.DB, env, {
       range: '30d',
       granularity: 'day',
       dataset: 'all',
