@@ -1,6 +1,67 @@
 type PlanType = 'monthly' | 'yearly' | 'club'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
+export const GOCARDLESS_DEFAULT_CURRENCY = 'EUR'
+
+/** Normalise admin `gocardless_currency` (or env default) to a 3-letter ISO code. */
+export function normalizeGoCardlessCurrency(raw: unknown): string {
+  const currency = String(raw ?? GOCARDLESS_DEFAULT_CURRENCY).trim().toUpperCase()
+  return /^[A-Z]{3}$/.test(currency) ? currency : GOCARDLESS_DEFAULT_CURRENCY
+}
+
+export function buildGoCardlessMandateBillingRequestPayload(params: {
+  currency: string
+  metadata: Record<string, string>
+  creditorId?: string
+}) {
+  const billing_requests: Record<string, unknown> = {
+    mandate_request: { currency: params.currency },
+    metadata: params.metadata,
+  }
+  const creditorId = String(params.creditorId ?? '').trim()
+  if (creditorId) {
+    billing_requests.links = { creditor: creditorId }
+  }
+  return { billing_requests }
+}
+
+export function buildGoCardlessBillingRequestFlowCreatePayload(params: {
+  billingRequestId: string
+  redirectUri: string
+  exitUri: string
+  customerEmail?: string
+}) {
+  const billing_request_flows: Record<string, unknown> = {
+    auto_fulfil: true,
+    redirect_uri: params.redirectUri,
+    exit_uri: params.exitUri,
+    lock_currency: true,
+    links: {
+      billing_request: params.billingRequestId,
+    },
+  }
+  const email = String(params.customerEmail ?? '').trim()
+  if (email) {
+    billing_request_flows.prefilled_customer = { email }
+  }
+  return { billing_request_flows }
+}
+
+export function formatGoCardlessApiError(response: any, fallback: string): string {
+  const errors = Array.isArray(response?.data?.error?.errors) ? response.data.error.errors : []
+  if (!errors.length) return fallback
+  const first = errors[0] ?? {}
+  const reason = typeof first.reason === 'string' ? first.reason.trim() : ''
+  const field = typeof first.field === 'string' ? first.field.trim() : ''
+  if (reason === 'currency_doesnt_support_functionality') {
+    return 'GoCardless bank debit checkout is not available for the configured currency. '
+      + 'Set admin setting gocardless_currency to EUR for SEPA, or enable the currency on your GoCardless creditor.'
+  }
+  if (reason && field) return `${fallback} (${field}: ${reason})`
+  if (reason) return `${fallback} (${reason})`
+  return fallback
+}
+
 async function gocardlessFetch(
   path: string,
   method: string,

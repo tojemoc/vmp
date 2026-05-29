@@ -16,9 +16,13 @@ import {
 import { normalizeStripeStatus, stripeGet, stripePost, verifyStripeWebhook } from './stripeClient.js'
 export { normalizeStripeStatus } from './stripeClient.js'
 import {
+  buildGoCardlessBillingRequestFlowCreatePayload,
+  buildGoCardlessMandateBillingRequestPayload,
+  formatGoCardlessApiError,
   gocardlessGet,
   gocardlessPost,
   getGoCardlessInterval,
+  normalizeGoCardlessCurrency,
   normalizeGoCardlessStatus,
   resolveFulfilledBillingRequestMandate,
   verifyGoCardlessWebhook,
@@ -105,17 +109,6 @@ async function getEffectivePricingSettings(env: any, provider: PaymentProvider) 
 
 function moneyToMinorUnits(amount: number) {
   return Math.max(0, Math.round(amount * 100))
-}
-
-function extractGoCardlessApiError(response: any, fallback: string): string {
-  const errors = Array.isArray(response?.data?.error?.errors) ? response.data.error.errors : []
-  if (!errors.length) return fallback
-  const first = errors[0] ?? {}
-  const reason = typeof first.reason === 'string' ? first.reason.trim() : ''
-  const field = typeof first.field === 'string' ? first.field.trim() : ''
-  if (reason && field) return `${fallback} (${field}: ${reason})`
-  if (reason) return `${fallback} (${reason})`
-  return fallback
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
@@ -532,55 +525,54 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 503, corsHeaders)
     }
 
+    const currency = normalizeGoCardlessCurrency(
+      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
+    )
+
     const checkoutToken = crypto.randomUUID()
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
       INSERT INTO payment_checkout_sessions
-        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, updated_at)
-      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot).run()
+        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot, updated_at)
+      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot, currency).run()
 
-    const billingRequestPayload: any = {
-      billing_requests: {
-        mandate_request: {},
-        metadata: {
-          userId: user.sub,
-          planType,
-          checkoutToken,
-        },
+    const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
+      currency,
+      metadata: {
+        userId: user.sub,
+        planType,
+        checkoutToken,
+        currency,
       },
-    }
-    const creditorId = String(env.GOCARDLESS_CREDITOR_ID ?? '').trim()
-    if (creditorId) {
-      billingRequestPayload.billing_requests.links = { creditor: creditorId }
-    }
+      creditorId: env.GOCARDLESS_CREDITOR_ID,
+    })
     const billingRequestResponse = await gocardlessPost('/billing_requests', billingRequestPayload, env)
     const billingRequest = billingRequestResponse?.data?.billing_requests
     if (!billingRequestResponse.ok || !billingRequest?.id) {
       console.error('GoCardless billing request error:', billingRequestResponse?.data)
       return jsonResponse({
-        error: extractGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
+        error: formatGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
         code: 'gocardless_billing_request_failed',
       }, 502, corsHeaders)
     }
 
-    const flowResponse = await gocardlessPost('/billing_request_flows', {
-      billing_request_flows: {
-        auto_fulfil: true,
-        redirect_uri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        // Keep hosted flow defaults and let GoCardless collect required fields.
-        exit_uri: `${frontendUrl}/pricing`,
-        links: {
-          billing_request: billingRequest.id,
-        },
-      },
-    }, env)
+    const flowResponse = await gocardlessPost(
+      '/billing_request_flows',
+      buildGoCardlessBillingRequestFlowCreatePayload({
+        billingRequestId: billingRequest.id,
+        redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
+        exitUri: `${frontendUrl}/pricing`,
+        customerEmail: user.email,
+      }),
+      env,
+    )
 
     const billingRequestFlow = flowResponse?.data?.billing_request_flows
     if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
       console.error('GoCardless billing request flow error:', flowResponse?.data)
       return jsonResponse({
-        error: extractGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
+        error: formatGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
         code: 'gocardless_billing_request_flow_failed',
       }, 502, corsHeaders)
     }
@@ -873,7 +865,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
   try {
     const db = getDb(env)
     const checkoutSession = await db.prepare(`
-      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot
+      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot
       FROM payment_checkout_sessions
       WHERE provider = 'gocardless'
         AND user_id = ?
@@ -938,8 +930,10 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
     }
 
     const interval = getGoCardlessInterval(planType)
-    const currencyRaw = await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' })
-    const currency = String(currencyRaw || 'EUR').toUpperCase()
+    const snapshotCurrency = String(checkoutSession.gocardless_currency_snapshot ?? '').trim()
+    const currency = snapshotCurrency
+      ? normalizeGoCardlessCurrency(snapshotCurrency)
+      : normalizeGoCardlessCurrency(await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }))
     const snapshotPlanCode = String(checkoutSession.gocardless_plan_code_snapshot ?? '').trim()
     let planName: string
     if (snapshotPlanCode) {
