@@ -33,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
       
-      - uses: actions/setup-node@6
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           package-manager-cache: false
