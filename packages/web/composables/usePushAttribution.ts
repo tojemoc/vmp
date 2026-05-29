@@ -27,6 +27,16 @@ export function usePushAttribution(options: {
     sessionStorage.setItem('vmp_push_nid', id)
   }
 
+  function clearAttributionSession() {
+    if (import.meta.client) {
+      sessionStorage.removeItem('vmp_push_nid')
+    }
+    sessionStarted.value = false
+    sessionStartMs.value = null
+    maxRetentionPercent.value = 0
+    videosWatched.value = []
+  }
+
   async function postPushEvent(body: Record<string, unknown>) {
     if (!import.meta.client) return
     try {
@@ -72,7 +82,7 @@ export function usePushAttribution(options: {
       otherVideosWatched: others,
       sessionDurationSeconds,
     })
-    sessionStarted.value = false
+    clearAttributionSession()
   }
 
   async function startSessionForVideo(videoId: string) {
@@ -116,17 +126,22 @@ export function usePushAttribution(options: {
   )
 
   if (import.meta.client) {
+    const pagehideHandler = () => { void endSession() }
+    const visibilityChangeHandler = () => {
+      if (document.visibilityState === 'hidden') void endSession()
+    }
+
     onMounted(() => {
       const fromQuery = route.query.nid
       if (typeof fromQuery === 'string' && fromQuery.trim()) {
         persistDeliveryId(fromQuery.trim())
       }
-      window.addEventListener('pagehide', () => { void endSession() })
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') void endSession()
-      })
+      window.addEventListener('pagehide', pagehideHandler)
+      document.addEventListener('visibilitychange', visibilityChangeHandler)
     })
     onUnmounted(() => {
+      window.removeEventListener('pagehide', pagehideHandler)
+      document.removeEventListener('visibilitychange', visibilityChangeHandler)
       void endSession()
     })
   }

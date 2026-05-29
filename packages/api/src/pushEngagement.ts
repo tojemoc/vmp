@@ -37,9 +37,9 @@ async function hashIp(ip: string) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function checkPushEventRateLimit(env: any, ipHash: string) {
-  if (!env.RATE_LIMIT_KV || !ipHash) return true
-  const key = `push-event:${ipHash}`
+async function checkPushEventRateLimit(env: any, ipHash: string, eventType: string) {
+  if (!env.RATE_LIMIT_KV || !ipHash || !eventType) return true
+  const key = `push-event:${ipHash}:${eventType}`
   const existing = await env.RATE_LIMIT_KV.get(key)
   if (existing) return false
   await env.RATE_LIMIT_KV.put(key, '1', { expirationTtl: 60 })
@@ -105,12 +105,6 @@ export async function handlePushEvents(request: Request, env: any, corsHeaders: 
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   }
 
-  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || ''
-  const ipHash = ip ? await hashIp(ip.split(',')[0].trim()) : ''
-  if (!(await checkPushEventRateLimit(env, ipHash))) {
-    return jsonResponse({ error: 'Rate limit exceeded', code: 'rate_limit' }, 429, corsHeaders)
-  }
-
   let body: any
   try {
     body = await request.json()
@@ -122,6 +116,12 @@ export async function handlePushEvents(request: Request, env: any, corsHeaders: 
   const deliveryId = typeof body?.deliveryId === 'string' ? body.deliveryId.trim() : ''
   if (!deliveryId) {
     return jsonResponse({ error: 'deliveryId is required', code: 'invalid_payload' }, 400, corsHeaders)
+  }
+
+  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || ''
+  const ipHash = ip ? await hashIp(ip.split(',')[0].trim()) : ''
+  if (!(await checkPushEventRateLimit(env, ipHash, eventType))) {
+    return jsonResponse({ error: 'Rate limit exceeded', code: 'rate_limit' }, 429, corsHeaders)
   }
 
   const db = getDb(env)
@@ -250,14 +250,29 @@ export async function handleAdminPushAnalytics(request: Request, env: any, corsH
     db.prepare(`SELECT COUNT(*) AS count FROM push_deliveries WHERE campaign_id = ? AND status = 'sent'`).bind(campaignId).first(),
     db.prepare(`SELECT COUNT(*) AS count FROM push_clicks WHERE campaign_id = ?`).bind(campaignId).first(),
     db.prepare(`
-      SELECT AVG(click_latency_seconds) AS median_latency
-      FROM (
+      WITH ordered AS (
         SELECT click_latency_seconds
         FROM push_clicks
         WHERE campaign_id = ? AND click_latency_seconds IS NOT NULL
         ORDER BY click_latency_seconds
-        LIMIT 9999
+      ),
+      counts AS (
+        SELECT COUNT(*) AS cnt FROM ordered
       )
+      SELECT
+        CASE
+          WHEN (SELECT cnt FROM counts) = 0 THEN NULL
+          WHEN (SELECT cnt FROM counts) % 2 = 1 THEN (
+            SELECT click_latency_seconds FROM ordered
+            LIMIT 1 OFFSET (SELECT cnt / 2 FROM counts)
+          )
+          ELSE (
+            SELECT AVG(click_latency_seconds) FROM (
+              SELECT click_latency_seconds FROM ordered
+              LIMIT 2 OFFSET (SELECT cnt / 2 - 1 FROM counts)
+            )
+          )
+        END AS median_latency
     `).bind(campaignId).first(),
     db.prepare(`SELECT COUNT(*) AS count FROM push_watch_sessions WHERE campaign_id = ?`).bind(campaignId).first(),
     db.prepare(`

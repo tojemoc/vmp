@@ -2269,7 +2269,7 @@ async function handleAdminVideoNotify(request: any, env: any, ctx: any, corsHead
       db,
       videoId,
       videoTitle: video.title || videoId,
-      createdByUserId: authUser?.userId ?? null,
+      createdByUserId: authUser?.sub ?? null,
       tiered,
     })
     console.log(`Push notify [videoId:${videoId}] campaign=${campaignResult.campaignId} mode=${campaignResult.mode} scheduled=${campaignResult.scheduled} skipped=${campaignResult.skipped}`)

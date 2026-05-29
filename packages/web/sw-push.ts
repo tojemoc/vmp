@@ -45,6 +45,27 @@ async function notifyClientsOrStore(handoffCode: string): Promise<void> {
 /**
  * Push handlers imported by the generated Workbox service worker.
  */
+
+function stripTrailingSlashes(value: string) {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end -= 1
+  return value.slice(0, end)
+}
+
+function isAllowedEventsUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  try {
+    const url = new URL(raw.trim())
+    const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLocalhost)) return undefined
+    const path = stripTrailingSlashes(url.pathname)
+    if (path !== '/api/push/events') return undefined
+    return `${url.origin}/api/push/events`
+  } catch {
+    return undefined
+  }
+}
+
 sw.addEventListener('push', (event: PushEvent) => {
   let data: Record<string, unknown> = {}
   try {
@@ -106,7 +127,7 @@ sw.addEventListener('push', (event: PushEvent) => {
         type: typeof data.type === 'string' ? data.type : 'new_video',
         deliveryId: typeof data.deliveryId === 'string' ? data.deliveryId : undefined,
         campaignId: typeof data.campaignId === 'string' ? data.campaignId : undefined,
-        eventsUrl: typeof data.eventsUrl === 'string' ? data.eventsUrl : undefined,
+        eventsUrl: isAllowedEventsUrl(data.eventsUrl),
       },
     }),
   )
@@ -132,7 +153,7 @@ sw.addEventListener('notificationclick', (event: NotificationEvent) => {
 
   const deliveryId = typeof notifData?.deliveryId === 'string' ? notifData.deliveryId : ''
   const pushType = typeof notifData?.type === 'string' ? notifData.type : ''
-  const eventsUrl = typeof notifData?.eventsUrl === 'string' ? notifData.eventsUrl : ''
+  const eventsUrl = isAllowedEventsUrl(notifData?.eventsUrl)
   if (deliveryId && pushType === 'new_video' && eventsUrl) {
     event.waitUntil(
       fetch(eventsUrl, {

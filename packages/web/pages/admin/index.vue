@@ -810,6 +810,7 @@
           <div v-if="pushCampaignFunnel" class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 space-y-2">
             <h3 class="font-semibold text-gray-900 dark:text-white">Latest push campaign — {{ pushCampaignFunnel.videoTitle }}</h3>
             <p class="text-xs text-gray-600 dark:text-gray-400">Campaign {{ pushCampaignFunnel.campaignId }}</p>
+            <p v-if="pushCampaignFunnelError" class="text-xs text-red-700 dark:text-red-300">{{ pushCampaignFunnelError }}</p>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-800 dark:text-gray-200">
               <p>Sent: {{ pushCampaignFunnel.sent }}</p>
               <p>Clicks: {{ pushCampaignFunnel.clicks }} ({{ pushCampaignFunnel.clickRatePercent }}%)</p>
@@ -2973,6 +2974,7 @@ interface PushCampaignFunnel {
 }
 
 const pushCampaignFunnel = ref<PushCampaignFunnel | null>(null)
+const pushCampaignFunnelError = ref<string | null>(null)
 
 const analyticsStatusRows = computed(() => {
   if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
@@ -5556,6 +5558,7 @@ async function updateVideoPublishedAt(video: Video, rawValue: string) {
 async function sendNotification(video: Video) {
   notifying.value[video.id] = true
   pushCampaignFunnel.value = null
+  pushCampaignFunnelError.value = null
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/notify`, {
       method: 'POST',
@@ -5583,12 +5586,18 @@ async function sendNotification(video: Video) {
 }
 
 async function loadPushCampaignFunnel(campaignId: string, videoTitle: string) {
+  pushCampaignFunnelError.value = null
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/push-analytics?campaignId=${encodeURIComponent(campaignId)}`, {
       headers: authHeader(),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) return
+    if (!res.ok) {
+      const detail = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`
+      pushCampaignFunnelError.value = `Failed to load campaign funnel: ${detail}`
+      showToast('error', pushCampaignFunnelError.value)
+      return
+    }
     pushCampaignFunnel.value = {
       campaignId,
       videoTitle,
@@ -5601,8 +5610,9 @@ async function loadPushCampaignFunnel(campaignId: string, videoTitle: string) {
       completionRatePercent: Number(data?.funnel?.completionRatePercent || 0),
       avgSessionDepth: Number(data?.funnel?.avgSessionDepth || 0),
     }
-  } catch {
-    // Non-fatal
+  } catch (e: any) {
+    pushCampaignFunnelError.value = `Failed to load campaign funnel: ${e?.message || 'Unknown error'}`
+    showToast('error', pushCampaignFunnelError.value)
   }
 }
 

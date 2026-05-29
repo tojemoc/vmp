@@ -1769,6 +1769,7 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
     return rows.join('\n')
   }
   if (dataset === 'retention') {
+    rows.push('format:retention_per_video_v1')
     rows.push('video_id,title,view_count,average_retention_percent')
     for (const row of (snapshot.videoStats ?? [])) {
       rows.push(`${escapeCsvCell(row.videoId)},${escapeCsvCell(row.title)},${escapeCsvCell(row.viewCount)},${escapeCsvCell(row.averageRetentionPercent ?? '')}`)
