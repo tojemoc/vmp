@@ -525,23 +525,25 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 503, corsHeaders)
     }
 
+    const currency = normalizeGoCardlessCurrency(
+      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
+    )
+
     const checkoutToken = crypto.randomUUID()
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
       INSERT INTO payment_checkout_sessions
-        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, updated_at)
-      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot).run()
+        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot, updated_at)
+      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot, currency).run()
 
-    const currency = normalizeGoCardlessCurrency(
-      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
-    )
     const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
       currency,
       metadata: {
         userId: user.sub,
         planType,
         checkoutToken,
+        currency,
       },
       creditorId: env.GOCARDLESS_CREDITOR_ID,
     })
@@ -863,7 +865,7 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
   try {
     const db = getDb(env)
     const checkoutSession = await db.prepare(`
-      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot
+      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot
       FROM payment_checkout_sessions
       WHERE provider = 'gocardless'
         AND user_id = ?
@@ -928,9 +930,10 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
     }
 
     const interval = getGoCardlessInterval(planType)
-    const currency = normalizeGoCardlessCurrency(
-      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
-    )
+    const snapshotCurrency = String(checkoutSession.gocardless_currency_snapshot ?? '').trim()
+    const currency = snapshotCurrency
+      ? normalizeGoCardlessCurrency(snapshotCurrency)
+      : normalizeGoCardlessCurrency(await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }))
     const snapshotPlanCode = String(checkoutSession.gocardless_plan_code_snapshot ?? '').trim()
     let planName: string
     if (snapshotPlanCode) {
