@@ -858,25 +858,52 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
   const body = await request.json().catch(() => null)
   const billingRequestFlowId = String(body?.billingRequestFlowId ?? '').trim()
   const checkoutToken = String(body?.checkoutToken ?? '').trim()
-  if (!billingRequestFlowId || !checkoutToken) {
-    return jsonResponse({ error: 'billingRequestFlowId and checkoutToken are required' }, 400, corsHeaders)
+  if (!checkoutToken) {
+    return jsonResponse({ error: 'checkoutToken is required' }, 400, corsHeaders)
   }
 
   try {
     const db = getDb(env)
-    const checkoutSession = await db.prepare(`
-      SELECT id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot
-      FROM payment_checkout_sessions
-      WHERE provider = 'gocardless'
-        AND user_id = ?
-        AND checkout_token = ?
-        AND provider_checkout_id = ?
-      ORDER BY created_at DESC
-      LIMIT 1
-    `).bind(user.sub, checkoutToken, billingRequestFlowId).first()
+    const sessionColumns = `
+      id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id,
+      gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot,
+      provider_subscription_id
+    `
+    let checkoutSession: any
+    if (billingRequestFlowId) {
+      checkoutSession = await db.prepare(`
+        SELECT ${sessionColumns}
+        FROM payment_checkout_sessions
+        WHERE provider = 'gocardless'
+          AND user_id = ?
+          AND checkout_token = ?
+          AND provider_checkout_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).bind(user.sub, checkoutToken, billingRequestFlowId).first()
+    } else {
+      checkoutSession = await db.prepare(`
+        SELECT ${sessionColumns}
+        FROM payment_checkout_sessions
+        WHERE provider = 'gocardless'
+          AND user_id = ?
+          AND checkout_token = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).bind(user.sub, checkoutToken).first()
+    }
 
-    if (!checkoutSession || checkoutSession.status === 'completed') {
-      return jsonResponse({ error: 'Checkout session not found or already completed' }, 404, corsHeaders)
+    if (!checkoutSession) {
+      return jsonResponse({ error: 'Checkout session not found' }, 404, corsHeaders)
+    }
+
+    if (checkoutSession.status === 'completed') {
+      return jsonResponse({
+        ok: true,
+        alreadyCompleted: true,
+        provider: 'gocardless',
+        subscriptionId: checkoutSession.provider_subscription_id ?? null,
+      }, 200, corsHeaders)
     }
 
     const billingRequestId = String(checkoutSession.session_token ?? '').trim()
