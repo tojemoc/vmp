@@ -283,7 +283,8 @@ export async function handleAdminPushAnalytics(request: Request, env: any, corsH
 }
 
 function normalizeApiBaseUrl(env: any) {
-  const explicit = typeof env.API_PUBLIC_URL === 'string' ? env.API_PUBLIC_URL.trim().replace(/\/+$/, '') : ''
+  const explicitRaw = typeof env.API_PUBLIC_URL === 'string' ? env.API_PUBLIC_URL.trim() : ''
+  const explicit = explicitRaw ? stripTrailingSlashes(explicitRaw) : ''
   if (explicit) return explicit
   const frontend = typeof env.FRONTEND_URL === 'string' ? env.FRONTEND_URL.trim() : ''
   if (frontend.includes('localhost')) return 'http://localhost:8787'
