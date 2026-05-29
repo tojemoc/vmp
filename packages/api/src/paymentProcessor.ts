@@ -584,7 +584,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       buildGoCardlessBillingRequestFlowCreatePayload({
         billingRequestId: billingRequest.id,
         redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        exitUri: `${frontendUrl}/account?gocardless_retry=1`,
+        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
         customerEmail,
       }),
       env,
@@ -1144,7 +1144,7 @@ export async function handleGoCardlessRetry(request: any, env: any, corsHeaders:
       buildGoCardlessBillingRequestFlowCreatePayload({
         billingRequestId: billingRequest.id,
         redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        exitUri: `${frontendUrl}/account?gocardless_retry=1`,
+        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
         customerEmail,
       }),
       env,

@@ -135,17 +135,22 @@ export async function prefillGoCardlessBillingRequestCustomer(
   const trimmedEmail = String(email ?? '').trim()
   if (!billingRequestId || !trimmedEmail) return { ok: false }
   const cc = String(countryCode ?? 'SK').trim().toUpperCase()
-  const response = await gocardlessPost(
-    `/billing_requests/${billingRequestId}/actions/collect_customer_details`,
-    {
-      data: {
-        customer: { email: trimmedEmail },
-        customer_billing_detail: { country_code: /^[A-Z]{2}$/.test(cc) ? cc : 'SK' },
+  try {
+    const response = await gocardlessPost(
+      `/billing_requests/${billingRequestId}/actions/collect_customer_details`,
+      {
+        data: {
+          customer: { email: trimmedEmail },
+          customer_billing_detail: { country_code: /^[A-Z]{2}$/.test(cc) ? cc : 'SK' },
+        },
       },
-    },
-    env,
-  )
-  return { ok: !!response.ok }
+      env,
+    )
+    return { ok: !!response.ok }
+  } catch (err) {
+    console.warn('[gocardless] prefill customer details failed:', err)
+    return { ok: false }
+  }
 }
 
 function constantTimeEqual(a: string, b: string) {

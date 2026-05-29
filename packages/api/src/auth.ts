@@ -1147,6 +1147,7 @@ export async function handleTotpVerify(request: any, env: any, corsHeaders: any)
     return authJson({ error: verified.error, code: verified.code }, verified.status, corsHeaders)
   }
 
+  const db           = getDb(env)
   const user         = { id: verified.user.id, email: verified.user.email, role: verified.user.role, totp_enabled: verified.user.totp_enabled }
   const totpRequired = shouldRequireTotpEnrollment(user, env)
   const accessToken  = await createAccessToken(user, env.JWT_SECRET)
