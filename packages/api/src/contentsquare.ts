@@ -25,7 +25,11 @@ export function normalizeContentsquareScriptSrc(raw: string): string | null {
   if (!value) return null
   if (isValidContentsquareScriptUrl(value)) return value
 
-  const tag = value.replace(/^\/+|\/+$/g, '')
+  let start = 0
+  let end = value.length
+  while (start < end && value[start] === '/') start += 1
+  while (end > start && value[end - 1] === '/') end -= 1
+  const tag = value.slice(start, end)
   if (/^[a-zA-Z0-9_-]+$/.test(tag)) {
     const built = `${SCRIPT_PREFIX}${tag}.js`
     return isValidContentsquareScriptUrl(built) ? built : null

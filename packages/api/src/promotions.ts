@@ -76,12 +76,17 @@ function parseOptionalIsoDate(raw: any) {
 
 function randomCode(length = 10) {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(length))
-  let out = ''
-  for (let i = 0; i < bytes.length; i += 1) {
-    out += alphabet[bytes[i]! % alphabet.length]
+  const n = alphabet.length
+  const maxUnbiased = Math.floor(256 / n) * n
+  const chars: string[] = []
+  while (chars.length < length) {
+    const bytes = crypto.getRandomValues(new Uint8Array(length - chars.length))
+    for (let i = 0; i < bytes.length && chars.length < length; i += 1) {
+      const b = bytes[i]!
+      if (b < maxUnbiased) chars.push(alphabet[b % n]!)
+    }
   }
-  return out
+  return chars.join('')
 }
 
 function parseDiscountPercent(raw: any) {
@@ -727,7 +732,11 @@ export async function handleIsicValidate(request: any, env: any, corsHeaders: an
   }
 
   try {
-    const validationUrl = `${baseUrl.replace(/\/+$/, '')}/validate`
+    let normalizedBase = baseUrl
+    while (normalizedBase.endsWith('/')) {
+      normalizedBase = normalizedBase.slice(0, -1)
+    }
+    const validationUrl = `${normalizedBase}/validate`
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 10000)
     const upstream = await fetch(validationUrl, {
