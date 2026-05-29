@@ -3,10 +3,12 @@ export {
   handleCheckout,
   handleGetPricing,
   handleGetSubscription,
+  handlePortal,
+} from './paymentProcessor.js'
+export { handleWebhook } from './stripe.js'
+export {
   handleGoCardlessComplete,
   handleGoCardlessWebhook,
-  handlePortal,
-  handleWebhook,
-} from './stripe.js'
+} from './gocardless.js'
 export { normalizeGoCardlessStatus } from './gocardless.js'
-export { normalizeStripeStatus } from './stripeClient.js'
+export { normalizeStripeStatus } from './stripe.js'
