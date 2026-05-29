@@ -71,6 +71,12 @@ async function getRunnableProviders(env: any): Promise<PaymentProvider[]> {
   return Boolean(env.STRIPE_SECRET_KEY) ? ['stripe'] : []
 }
 
+function parseConfiguredPrice(value: unknown): number | null {
+  if (value === '' || value == null) return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
 async function getPricingSettings(env: any, provider?: PaymentProvider) {
   const prefix = provider ? `${provider}_` : ''
   const [monthly, yearly, club] = await Promise.all([
@@ -79,9 +85,9 @@ async function getPricingSettings(env: any, provider?: PaymentProvider) {
     getSetting(env, `${prefix}club_price_eur`, { ttlSeconds: 300 }),
   ])
   return {
-    monthly: monthly == null ? null : Number(monthly),
-    yearly: yearly == null ? null : Number(yearly),
-    club: club == null ? null : Number(club),
+    monthly: parseConfiguredPrice(monthly),
+    yearly: parseConfiguredPrice(yearly),
+    club: parseConfiguredPrice(club),
   }
 }
 
@@ -517,6 +523,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       gocardlessPlanCodeSnapshot = promoValidation.checkoutMeta?.gocardlessPlanCode || null
     }
 
+    const pricing = await getEffectivePricingSettings(env, 'gocardless')
+    const planAmount = pricing[planType]
+    if (planAmount == null || !Number.isFinite(planAmount)) {
+      return jsonResponse({
+        error: 'GoCardless pricing is not configured for the selected plan.',
+        code: 'prices_not_configured',
+      }, 503, corsHeaders)
+    }
+
     const checkoutToken = crypto.randomUUID()
     const checkoutSessionId = crypto.randomUUID()
     await db.prepare(`
@@ -810,9 +825,23 @@ export async function handleGoCardlessWebhook(request: any, env: any, corsHeader
         currentPeriodEnd,
       })
       if (status === 'active' || status === 'trialing') {
-        await syncNewsletterForStripeSubscription(db, existing.user_id, 'active', env)
+        try {
+          await syncNewsletterForStripeSubscription(db, existing.user_id, 'active', env)
+        } catch (brevoErr) {
+          console.error(
+            '[gocardless webhook] syncNewsletterForStripeSubscription failed',
+            { userId: existing.user_id, providerSubscriptionId: subscriptionId, status, err: brevoErr },
+          )
+        }
       } else if (status === 'cancelled' || status === 'past_due') {
-        await removeSubscriberFromNewsletter(db, existing.user_id, env)
+        try {
+          await removeSubscriberFromNewsletter(db, existing.user_id, env)
+        } catch (brevoErr) {
+          console.error(
+            '[gocardless webhook] removeSubscriberFromNewsletter failed',
+            { userId: existing.user_id, providerSubscriptionId: subscriptionId, status, err: brevoErr },
+          )
+        }
       }
     }
     return jsonResponse({ ok: true }, 200, corsHeaders)
@@ -957,9 +986,6 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
       providerCustomerId: providerCustomerId || null,
       currentPeriodEnd,
     })
-    if (status === 'active' || status === 'trialing') {
-      await syncNewsletterForStripeSubscription(db, user.sub, 'active', env)
-    }
 
     await db.prepare(`
       UPDATE payment_checkout_sessions
@@ -969,6 +995,16 @@ export async function handleGoCardlessComplete(request: any, env: any, corsHeade
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(gocardlessSub.id, checkoutSession.id).run()
+    if (status === 'active' || status === 'trialing') {
+      try {
+        await syncNewsletterForStripeSubscription(db, user.sub, 'active', env)
+      } catch (brevoErr) {
+        console.error(
+          '[gocardless complete] syncNewsletterForStripeSubscription failed',
+          { userId: user.sub, subscriptionId: gocardlessSub.id, status, err: brevoErr },
+        )
+      }
+    }
     if (checkoutSession.promo_code_id) {
       await applyPromoRedemption(env, {
         promoCodeId: String(checkoutSession.promo_code_id),
