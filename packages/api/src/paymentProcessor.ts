@@ -495,10 +495,11 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
           ? session.error.message
           : null
         console.error('Stripe checkout session error:', session.error)
+        const stripeStatus = session.error?.code === 'stripe_timeout' ? 504 : 502
         return jsonResponse({
           error: stripeMessage ?? 'Failed to create checkout session',
           code: session.error?.code ?? 'stripe_checkout_failed',
-        }, 502, corsHeaders)
+        }, stripeStatus, corsHeaders)
       }
 
       return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
