@@ -36,7 +36,7 @@
 				"queue": "vmp-replication-events"
 			},
 			{
-				"binding": "PUSH_DELIVERY_QUEUE",
+				"binding": "vmp_push_delivery",
 				"queue": "vmp-push-delivery"
 			}
 		],
