@@ -103,6 +103,11 @@ import {
   handleAdminBunnyStreamUploadComplete,
 } from './bunnyStream.js'
 import {
+  enqueueReplicationBatch,
+  handleAdminReplicationSettings,
+  handleReplicationQueue,
+} from './replication.js'
+import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
@@ -416,6 +421,9 @@ export default {
     if (url.pathname === '/api/admin/system/features' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminSystemFeatures(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminReplicationSettings(request, env, corsHeaders)
+    }
     {
       const templateById = url.pathname.match(/^\/api\/admin\/newsletter\/templates\/([^/]+)$/)
       if (templateById && (request.method === 'PATCH' || request.method === 'DELETE')) {
@@ -541,6 +549,15 @@ export default {
     } catch (err) {
       console.error('MediaConvert poll sweep failed:', err)
     }
+    try {
+      await enqueueReplicationBatch(env)
+    } catch (err) {
+      console.error('Replication enqueue sweep failed:', err)
+    }
+  },
+
+  async queue(batch: any, env: any, ctx: ExecutionContext) {
+    await handleReplicationQueue(batch, env)
   },
 }
 
