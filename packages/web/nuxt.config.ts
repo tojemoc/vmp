@@ -13,6 +13,13 @@ export default defineNuxtConfig({
     defer: false,
   },
 
+  nitro: {
+    // Workbox navigateFallback requires "/" in the precache manifest (SSR builds).
+    prerender: {
+      routes: ['/'],
+    },
+  },
+
   colorMode: {
     preference: 'system', // default value of $colorMode.preference
     fallback: 'dark', // fallback value if not system preference found
