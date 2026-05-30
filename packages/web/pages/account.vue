@@ -219,6 +219,8 @@
 </template>
 
 <script setup lang="ts">
+await usePageSeo({ title: 'Your account', noIndex: true })
+
 const route  = useRoute()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string

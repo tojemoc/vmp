@@ -47,37 +47,49 @@
 const route = useRoute()
 const config = useRuntimeConfig()
 
-const loading = ref(true)
-const loadingMore = ref(false)
-const error = ref<string | null>(null)
-const videos = ref<any[]>([])
-const categoryName = ref('Category')
-const total = ref(0)
+const categorySlug = computed(() => String(route.params.slug || ''))
 const page = ref(1)
-const hasMore = ref(false)
 
-const loadPage = async (nextPage = 1) => {
-  if (nextPage !== page.value && !loading.value) loadingMore.value = true
-  const slug = encodeURIComponent(String(route.params.slug || ''))
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/categories/${slug}/videos?page=${nextPage}&pageSize=24`)
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    videos.value = Array.isArray(data.videos) ? data.videos : []
-    categoryName.value = data?.category?.name || 'Category'
-    total.value = Number(data?.pagination?.total || 0)
-    hasMore.value = Boolean(data?.pagination?.hasMore)
-    page.value = Number(data?.pagination?.page || nextPage)
-    error.value = null
-  } catch (e: any) {
-    error.value = e.message || 'Failed to load category'
-  } finally {
-    loading.value = false
-    loadingMore.value = false
-  }
+watch(categorySlug, () => {
+  page.value = 1
+})
+
+type CategoryVideosResponse = {
+  category?: { name?: string }
+  videos?: any[]
+  pagination?: { total?: number; hasMore?: boolean; page?: number }
 }
 
-onMounted(() => {
-  loadPage(1)
-})
+const { data: categoryData, pending, error: fetchError } = await useAsyncData(
+  () => `category-videos-${categorySlug.value}-${page.value}`,
+  () =>
+    $fetch<CategoryVideosResponse>(
+      `${config.public.apiUrl}/api/categories/${encodeURIComponent(categorySlug.value)}/videos?page=${page.value}&pageSize=24`,
+    ),
+  { watch: [categorySlug, page] },
+)
+
+const videos = computed(() => categoryData.value?.videos ?? [])
+const categoryName = computed(() => categoryData.value?.category?.name || 'Category')
+const total = computed(() => Number(categoryData.value?.pagination?.total ?? 0))
+const hasMore = computed(() => Boolean(categoryData.value?.pagination?.hasMore))
+const loading = computed(() => pending.value && !categoryData.value)
+const loadingMore = computed(() => pending.value && Boolean(categoryData.value))
+const error = computed(() => fetchError.value?.message ?? null)
+
+await usePageSeo(
+  computed(() => {
+    const name = categoryName.value
+    const count = total.value
+    return {
+      title: name,
+      description: count > 0 ? `${count} videos in ${name}` : `Videos in ${name}`,
+    }
+  }),
+)
+
+const loadPage = (nextPage: number) => {
+  if (nextPage < 1 || nextPage === page.value) return
+  page.value = nextPage
+}
 </script>
