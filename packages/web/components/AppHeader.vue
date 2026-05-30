@@ -116,8 +116,7 @@
 import strings from '~/utils/strings'
 
 const { user, isLoggedIn, canEditContent, logout } = useAuth()
-const { siteSettings, fetchSiteSettings } = useSiteSettings()
-onMounted(() => fetchSiteSettings())
+const { siteSettings } = useSiteSettings()
 const {
   isSupported: pushSupported,
   supportReason: pushSupportReason,

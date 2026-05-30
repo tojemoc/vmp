@@ -23,28 +23,38 @@ function defaultSiteSettings(): SiteSettings {
   }
 }
 
+function mapSiteSettings(data: Record<string, unknown> | null | undefined): SiteSettings {
+  if (!data) return defaultSiteSettings()
+  return {
+    siteName: String(data.site_name || strings.siteName),
+    siteNameShort: String(data.site_name_short || strings.siteNameShort),
+    siteDescription: String(data.site_description || strings.siteDescription),
+    logoUrl: String(data.site_logo_url || ''),
+    faviconUrl: String(data.site_favicon_url || ''),
+  }
+}
+
 export function useSiteSettings() {
   const config = useRuntimeConfig()
-  const siteSettings = useState<SiteSettings>('site-settings', defaultSiteSettings)
-  const fetched = useState('site-settings-fetched', () => false)
 
-  async function fetchSiteSettings() {
-    if (fetched.value) return
-    try {
-      const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
-      if (!res.ok) return
-      const data = await res.json()
-      siteSettings.value = {
-        siteName: data.site_name || strings.siteName,
-        siteNameShort: data.site_name_short || strings.siteNameShort,
-        siteDescription: data.site_description || strings.siteDescription,
-        logoUrl: data.site_logo_url || '',
-        faviconUrl: data.site_favicon_url || '',
+  const { data, refresh } = useAsyncData(
+    'site-settings',
+    async () => {
+      try {
+        const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
+        if (!res.ok) return null
+        return await res.json()
+      } catch {
+        return null
       }
-      fetched.value = true
-    } catch {
-      // Best-effort; fallback to static strings — leave fetched false so client can retry
-    }
+    },
+  )
+
+  const siteSettings = computed(() => mapSiteSettings(data.value))
+
+  /** @deprecated Prefer relying on useAsyncData; kept for callers that explicitly refresh. */
+  async function fetchSiteSettings() {
+    await refresh()
   }
 
   return {

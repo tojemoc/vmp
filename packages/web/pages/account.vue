@@ -219,7 +219,7 @@
 </template>
 
 <script setup lang="ts">
-await usePageSeo({ title: 'Your account', noIndex: true })
+usePageSeo({ title: 'Your account', noIndex: true })
 
 const route  = useRoute()
 const config = useRuntimeConfig()
