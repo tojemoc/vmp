@@ -6,24 +6,50 @@
       <div class="text-center mb-8">
         <div class="inline-flex items-center space-x-2 mb-4">
           <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg"></div>
-          <span class="text-xl font-bold text-white">VMP</span>
+          <span class="text-xl font-bold text-white">{{ strings.siteNameShort }}</span>
         </div>
-        <h1 class="text-2xl font-bold text-white">Sign in</h1>
-        <p class="text-gray-400 text-sm mt-1">We'll email you a sign-in link. No password needed.</p>
+        <h1 class="text-2xl font-bold text-white">{{ strings.loginTitle }}</h1>
+        <p class="text-gray-400 text-sm mt-1">{{ strings.loginSubtitle }}</p>
       </div>
 
       <!-- Form -->
       <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-4">
         <div v-if="sent" class="rounded-lg bg-green-950 border border-green-800 px-4 py-3 text-sm text-green-300 leading-relaxed">
-          ✓ Check your inbox — a sign-in link is on its way.
-          <br><span class="text-green-500 text-xs">It expires in 15 minutes.</span>
-          <p class="mt-2 text-[11px] text-green-400">
-            If this browser does not open the link inside the app, copy/paste it into this browser to keep your session flow consistent.
+          {{ strings.loginMagicLinkSent }}
+          <br><span class="text-green-500 text-xs">{{ strings.loginMagicLinkExpires }}</span>
+          <p class="mt-3 text-[11px] text-green-400 leading-relaxed">
+            {{ strings.loginOpenEmailHint }}
           </p>
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <a
+              :href="mailtoInboxHref"
+              class="font-medium text-green-200 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenEmailApp }}
+            </a>
+            <span class="text-green-600" aria-hidden="true">·</span>
+            <a
+              :href="gmailInboxHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-green-300/90 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenGmail }}
+            </a>
+            <span class="text-green-600" aria-hidden="true">·</span>
+            <a
+              :href="outlookInboxHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-green-300/90 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenOutlook }}
+            </a>
+          </div>
         </div>
 
         <div v-else>
-          <label for="email" class="block text-sm font-medium text-gray-300 mb-2">Email address</label>
+          <label for="email" class="block text-sm font-medium text-gray-300 mb-2">{{ strings.loginEmailLabel }}</label>
           <input
             id="email"
             v-model="email"
@@ -42,7 +68,7 @@
             :disabled="loading || !email"
             @click="submit"
           >
-            {{ loading ? 'Sending…' : 'Send sign-in link' }}
+            {{ loading ? strings.loginSending : strings.loginSendLink }}
           </button>
         </div>
       </div>
@@ -56,6 +82,7 @@
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
 import { isInstalledPwa } from '~/utils/pwa'
 
 usePageSeo({ title: 'Sign in', noIndex: true })
@@ -65,7 +92,10 @@ const { signIn, isLoggedIn } = useAuth()
 const { waitForAuthInitialised } = useLoginFlow()
 const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
-// Must start with a single slash; rejects //evil.com and external URLs.
+const mailtoInboxHref = 'mailto:'
+const gmailInboxHref = 'https://mail.google.com/mail/u/0/#inbox'
+const outlookInboxHref = 'https://outlook.live.com/mail/0/inbox'
+
 function safeRedirect(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback
   const t = value.trim()
@@ -73,11 +103,8 @@ function safeRedirect(value: unknown, fallback: string): string {
   return t
 }
 
-// Capture the redirect target before any navigation.
-// The middleware sets this to e.g. /admin when an unauthed user hits that route.
 const redirectTo = safeRedirect(route.query.redirect, '/')
 
-// Already logged in — skip the login page entirely
 if (isLoggedIn.value) {
   await navigateTo(redirectTo)
 }
@@ -112,12 +139,6 @@ async function submit() {
   try {
     await signIn(email.value, redirectTo)
     sent.value = true
-    // Note: we don't redirect here. The user will click the magic link in their
-    // email, land on /auth/verify?token=..., and verify.vue will redirect to
-    // redirectTo after successful verification.
-    //
-    // Redirect preference is forwarded in the magic-link request and encoded
-    // into the emailed verify URL by the API.
   } catch (err: any) {
     errorMessage.value = err.message || 'Something went wrong. Please try again.'
   } finally {
