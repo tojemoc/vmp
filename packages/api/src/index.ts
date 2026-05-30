@@ -773,7 +773,7 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
     }
 
     if (video.scheduled_publish_at) {
-      const scheduledAt = Date.parse(String(video.scheduled_publish_at))
+      const scheduledAt = parseAdminTimestampToUtcMillis(String(video.scheduled_publish_at))
       if (Number.isFinite(scheduledAt) && scheduledAt > Date.now()) {
         return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
       }

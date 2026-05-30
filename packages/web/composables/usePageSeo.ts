@@ -79,7 +79,7 @@ export async function usePageSeo(options: MaybeRefOrGetter<PageSeoInput> = {}) {
   })
 
   const canonicalUrl = computed(() => {
-    const path = route.fullPath || '/'
+    const path = route.path || '/'
     return `${origin}${path.startsWith('/') ? path : `/${path}`}`
   })
 

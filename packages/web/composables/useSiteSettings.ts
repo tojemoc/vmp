@@ -27,7 +27,6 @@ export function useSiteSettings() {
 
   async function fetchSiteSettings() {
     if (fetched.value) return
-    fetched.value = true
     try {
       const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
       if (!res.ok) return
@@ -39,8 +38,9 @@ export function useSiteSettings() {
         logoUrl: data.site_logo_url || '',
         faviconUrl: data.site_favicon_url || '',
       }
+      fetched.value = true
     } catch {
-      // Best-effort; fallback to static strings
+      // Best-effort; fallback to static strings — leave fetched false so client can retry
     }
   }
 
