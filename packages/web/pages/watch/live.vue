@@ -176,7 +176,7 @@ const { data: liveMeta } = await useAsyncData('live-stream-meta', () =>
   $fetch<VideoMetaResponse>(`${config.public.apiUrl}/api/videos/live/meta`).catch(() => null),
 )
 
-await usePageSeo(
+usePageSeo(
   computed(() => ({
     title: liveMeta.value?.title ?? 'Live',
     description: liveMeta.value?.description,

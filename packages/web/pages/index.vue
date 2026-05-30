@@ -256,9 +256,8 @@ import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
 
-const { siteSettings, fetchSiteSettings } = useSiteSettings()
-await fetchSiteSettings()
-await usePageSeo(
+const { siteSettings } = useSiteSettings()
+usePageSeo(
   computed(() => ({
     description: siteSettings.value.siteDescription,
     image: siteSettings.value.logoUrl || undefined,

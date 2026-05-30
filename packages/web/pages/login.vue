@@ -85,7 +85,7 @@
 import strings from '~/utils/strings'
 import { isInstalledPwa } from '~/utils/pwa'
 
-await usePageSeo({ title: 'Sign in', noIndex: true })
+usePageSeo({ title: 'Sign in', noIndex: true })
 
 const route  = useRoute()
 const { signIn, isLoggedIn } = useAuth()
