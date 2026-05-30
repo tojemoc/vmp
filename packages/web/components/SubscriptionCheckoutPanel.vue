@@ -193,6 +193,8 @@ const promoCodeInput = ref('')
 const promoValidating = ref(false)
 const promoError = ref<string | null>(null)
 const promoApplied = ref<null | { code: string; rewardType: string }>(null)
+/** Bumped on each validatePromoCode() so in-flight responses cannot overwrite newer state. */
+let promoValidationGeneration = 0
 
 const planLabelClass = computed(() =>
   props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
@@ -356,6 +358,19 @@ async function goToLogin() {
   await startLoginFlow(props.returnPath)
 }
 
+function isStalePromoValidation(
+  generation: number,
+  providerAtRequest: PaymentProvider,
+  planAtRequest: PlanType,
+  codeAtRequest: string,
+): boolean {
+  if (generation !== promoValidationGeneration) return true
+  if (selectedProvider.value !== providerAtRequest) return true
+  if (selectedPlan.value !== planAtRequest) return true
+  if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true
+  return false
+}
+
 async function validatePromoCode() {
   promoError.value = null
   promoApplied.value = null
@@ -368,15 +383,20 @@ async function validatePromoCode() {
     return
   }
 
+  const generation = ++promoValidationGeneration
+  const providerAtRequest = selectedProvider.value
+  const planAtRequest = selectedPlan.value
+
   promoValidating.value = true
   try {
     const res = await fetch(`${apiUrl}/api/account/promotions/validate`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ promoCode: code, planType: selectedPlan.value, provider: selectedProvider.value }),
+      body: JSON.stringify({ promoCode: code, planType: planAtRequest, provider: providerAtRequest }),
     })
     const data = await res.json().catch(() => ({}))
+    if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
     if (!res.ok || !data?.valid) {
       promoError.value = data?.error || 'Promo code is not valid.'
       return
@@ -386,9 +406,12 @@ async function validatePromoCode() {
       rewardType: String(data?.promo?.rewardType || 'free_month'),
     }
   } catch {
+    if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
     promoError.value = 'Network error while validating promo code.'
   } finally {
-    promoValidating.value = false
+    if (generation === promoValidationGeneration) {
+      promoValidating.value = false
+    }
   }
 }
 
