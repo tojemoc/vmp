@@ -1428,6 +1428,42 @@
 
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">Deno Postgres failover</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  Push D1 changes to the Deno Deploy Postgres backup (users, subscriptions, videos, admin settings).
+                </p>
+              </div>
+              <div v-if="replicationMessage" class="rounded-lg border px-4 py-3 text-sm" :class="replicationMessageClass">{{ replicationMessage }}</div>
+              <dl v-if="replicationStatus" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <div><dt class="inline text-gray-500 dark:text-gray-400">Mode:</dt> <dd class="inline font-mono">{{ replicationStatus.mode }}</dd></div>
+                <div><dt class="inline text-gray-500 dark:text-gray-400">Ingest target:</dt> <dd class="inline">{{ replicationStatus.targetConfigured ? 'Configured' : 'Not configured' }}</dd></div>
+                <div><dt class="inline text-gray-500 dark:text-gray-400">Batch size:</dt> <dd class="inline font-mono">{{ replicationStatus.batchSize }}</dd></div>
+              </dl>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                  :disabled="replicationPushing || !replicationStatus?.targetConfigured"
+                  @click="pushReplicationToDeno"
+                >
+                  {{ replicationPushing ? 'Pushing…' : 'Push DB to Deno Postgres' }}
+                </button>
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                  :disabled="replicationPushing"
+                  @click="loadReplicationStatus"
+                >
+                  Refresh status
+                </button>
+              </div>
+              <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
+                Set <code class="font-mono">REPLICATION_TARGET_URL</code> on the Cloudflare Worker to enable manual push.
+              </p>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">AWS MediaConvert + TUS</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage MediaConvert credentials and TUS resumable upload endpoint for source ingest.</p>
               </div>
@@ -2803,6 +2839,15 @@ const mediaConvertSystem = ref({
 const mediaConvertSystemSaving = ref(false)
 const mediaConvertSystemMessage = ref('')
 const mediaConvertSystemMessageClass = ref('')
+const replicationStatus = ref<{
+  mode: string
+  batchSize: number
+  targetConfigured: boolean
+  streams?: { stream_name: string; cursor_value: string; updated_at: string }[]
+} | null>(null)
+const replicationPushing = ref(false)
+const replicationMessage = ref('')
+const replicationMessageClass = ref('')
 const promotionsLoading = ref(false)
 const promotionsSaving = ref(false)
 const promoCampaigns = ref<PromoCampaign[]>([])
@@ -4021,6 +4066,59 @@ const saveSystemFeatures = async () => {
     systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
   } finally {
     systemFeaturesSaving.value = false
+  }
+}
+
+const loadReplicationStatus = async () => {
+  if (!isAdmin.value) return
+  replicationMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, { headers: authHeader() })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    replicationStatus.value = {
+      mode: String(data.mode || 'd1_to_pg'),
+      batchSize: Number(data.batchSize) || 100,
+      targetConfigured: Boolean(data.targetConfigured),
+      streams: Array.isArray(data.streams) ? data.streams : [],
+    }
+  } catch (e: any) {
+    replicationMessage.value = `Could not load replication status: ${e.message}`
+    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const pushReplicationToDeno = async () => {
+  if (!isAdmin.value) return
+  replicationPushing.value = true
+  replicationMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/replication/push`, {
+      method: 'POST',
+      headers: authHeader(),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    const t = data.totals || {}
+    const parts = [
+      t.users ? `${t.users} users` : '',
+      t.subscriptions ? `${t.subscriptions} subscriptions` : '',
+      t.videos ? `${t.videos} videos` : '',
+      t.adminSettings ? `${t.adminSettings} settings` : '',
+    ].filter(Boolean)
+    const detail = parts.length ? parts.join(', ') : 'no new rows'
+    replicationMessage.value = data.partial
+      ? `${data.message || 'Partial push.'} Synced: ${detail}.`
+      : `Push complete (${data.rounds ?? 0} round(s)). Synced: ${detail}.`
+    replicationMessageClass.value = data.partial
+      ? 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+      : 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+    await loadReplicationStatus()
+  } catch (e: any) {
+    replicationMessage.value = e.message || 'DB push failed'
+    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    replicationPushing.value = false
   }
 }
 
@@ -5287,6 +5385,7 @@ const reloadAll = async () => {
     await loadNewsletterSettings()
     await loadNewsletterTemplates()
     await loadSystemFeatures()
+    await loadReplicationStatus()
     await loadMediaConvertSystemSettings()
     await loadPaymentSettings()
     if (systemFeatures.value.promotionsEnabled) await loadPromotions()

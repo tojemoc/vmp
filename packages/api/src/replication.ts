@@ -9,9 +9,58 @@ const DEFAULT_BATCH_SIZE = 100
 const MAX_BATCH_SIZE = 500
 const CURSOR_ROW_LIMIT = 1000
 const REPLICATION_FETCH_TIMEOUT_MS = 10000
+/** Max rounds for admin manual push (batch per stream per round). */
+const MANUAL_PUSH_MAX_ROUNDS = 50
+async function postReplicationEventsToTarget(env: any, events: unknown[]) {
+  const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
+  if (!targetUrl) throw new Error('REPLICATION_TARGET_URL is not configured')
+  const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
+  const payload = {
+    source: 'cloudflare-workers',
+    events,
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+  let response: Response
+  try {
+    response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REPLICATION_FETCH_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error(`Replication target request timed out after ${REPLICATION_FETCH_TIMEOUT_MS}ms`)
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Replication target request aborted')
+    }
+    throw error
+  }
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`Replication target rejected batch (${response.status}): ${body.slice(0, 300)}`)
+  }
+}
+
+async function publishReplicationMessages(env: any, messages: unknown[], mode: DeliveryMode) {
+  if (mode === 'queue') {
+    const queue = getReplicationQueue(env)
+    if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+    await sendReplicationMessages(queue, messages)
+    return
+  }
+  await postReplicationEventsToTarget(env, messages)
+}
+
 /** Cloudflare Queues sendBatch limit per call. */
 const QUEUE_SEND_BATCH_MAX = 100
-const STREAM_USERS = 'users'
+
+type StreamContext = { direction: ReplicationDirection, epoch: number, batchSize: number }
+type DeliveryMode = 'queue' | 'direct'
 const STREAM_SUBSCRIPTIONS = 'subscriptions'
 const STREAM_VIDEOS = 'videos'
 const STREAM_ADMIN_SETTINGS = 'admin_settings'
@@ -136,7 +185,12 @@ function buildMessage(params: {
   }
 }
 
-async function enqueueStreamUsers(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
+async function enqueueStreamUsers(
+  db: any,
+  env: any,
+  context: StreamContext,
+  mode: DeliveryMode = 'queue',
+) {
   const stream = STREAM_USERS
   const cursor = await getStreamCursor(db, stream)
   const cursorParts = parseCursor(cursor)
@@ -164,14 +218,19 @@ async function enqueueStreamUsers(db: any, env: any, context: { direction: Repli
     },
   }))
   const queue = getReplicationQueue(env)
-  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await sendReplicationMessages(queue, messages)
+  if (mode === 'queue' && !queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+  await publishReplicationMessages(env, messages, mode)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
   return selected.length
 }
 
-async function enqueueStreamSubscriptions(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
+async function enqueueStreamSubscriptions(
+  db: any,
+  env: any,
+  context: StreamContext,
+  mode: DeliveryMode = 'queue',
+) {
   const stream = STREAM_SUBSCRIPTIONS
   const cursor = await getStreamCursor(db, stream)
   const cursorParts = parseCursor(cursor)
@@ -193,15 +252,21 @@ async function enqueueStreamSubscriptions(db: any, env: any, context: { directio
     cursor: rowCursor(row.updated_at, row.id),
     row,
   }))
-  const queue = getReplicationQueue(env)
-  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await sendReplicationMessages(queue, messages)
+  if (mode === 'queue' && !getReplicationQueue(env)) {
+    throw new Error('Replication queue binding not found (vmp_replication_events)')
+  }
+  await publishReplicationMessages(env, messages, mode)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
 }
 
-async function enqueueStreamVideos(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
+async function enqueueStreamVideos(
+  db: any,
+  env: any,
+  context: StreamContext,
+  mode: DeliveryMode = 'queue',
+) {
   const stream = STREAM_VIDEOS
   const cursor = await getStreamCursor(db, stream)
   const cursorParts = parseCursor(cursor)
@@ -223,15 +288,21 @@ async function enqueueStreamVideos(db: any, env: any, context: { direction: Repl
     cursor: rowCursor(row.updated_at, row.id),
     row,
   }))
-  const queue = getReplicationQueue(env)
-  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await sendReplicationMessages(queue, messages)
+  if (mode === 'queue' && !getReplicationQueue(env)) {
+    throw new Error('Replication queue binding not found (vmp_replication_events)')
+  }
+  await publishReplicationMessages(env, messages, mode)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
 }
 
-async function enqueueStreamAdminSettings(db: any, env: any, context: { direction: ReplicationDirection, epoch: number, batchSize: number }) {
+async function enqueueStreamAdminSettings(
+  db: any,
+  env: any,
+  context: StreamContext,
+  mode: DeliveryMode = 'queue',
+) {
   const stream = STREAM_ADMIN_SETTINGS
   const cursor = await getStreamCursor(db, stream)
   const cursorParts = parseCursor(cursor)
@@ -256,31 +327,31 @@ async function enqueueStreamAdminSettings(db: any, env: any, context: { directio
       updated_at: row.updated_at,
     },
   }))
-  const queue = getReplicationQueue(env)
-  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await sendReplicationMessages(queue, messages)
+  if (mode === 'queue' && !getReplicationQueue(env)) {
+    throw new Error('Replication queue binding not found (vmp_replication_events)')
+  }
+  await publishReplicationMessages(env, messages, mode)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
   return selected.length
 }
 
-export async function enqueueReplicationBatch(env: any) {
-  if (!getReplicationQueue(env)) return { skipped: true, reason: 'queue_not_bound' }
+async function runReplicationPushRound(env: any, mode: DeliveryMode) {
   const db = getDb(env)
   await ensureReplicationStateTable(db)
   const direction = parseDirection(await getAdminSetting(db, 'replication_mode') ?? DEFAULT_DIRECTION)
-  if (direction !== 'd1_to_pg') return { skipped: true, reason: 'mode_not_primary' }
+  if (direction !== 'd1_to_pg') return { skipped: true as const, reason: 'mode_not_primary' }
   const epoch = parseEpoch(await getAdminSetting(db, 'replication_epoch'))
   const batchSize = parseBatchSize(await getAdminSetting(db, 'replication_batch_size'))
-  const context = { direction, epoch, batchSize }
+  const context: StreamContext = { direction, epoch, batchSize }
   const [users, subscriptions, videos, adminSettings] = await Promise.all([
-    enqueueStreamUsers(db, env, context),
-    enqueueStreamSubscriptions(db, env, context),
-    enqueueStreamVideos(db, env, context),
-    enqueueStreamAdminSettings(db, env, context),
+    enqueueStreamUsers(db, env, context, mode),
+    enqueueStreamSubscriptions(db, env, context, mode),
+    enqueueStreamVideos(db, env, context, mode),
+    enqueueStreamAdminSettings(db, env, context, mode),
   ])
   return {
-    skipped: false,
+    skipped: false as const,
     direction,
     epoch,
     batchSize,
@@ -288,41 +359,86 @@ export async function enqueueReplicationBatch(env: any) {
   }
 }
 
-export async function handleReplicationQueue(batch: any, env: any) {
+export async function pushReplicationToPostgres(env: any) {
   const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
-  if (!targetUrl) throw new Error('REPLICATION_TARGET_URL is not configured')
-  const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
-  const payload = {
-    source: 'cloudflare-workers',
-    events: batch.messages.map((message: any) => message.body),
-  }
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-  if (token) headers.Authorization = `Bearer ${token}`
-  let response: Response
-  try {
-    response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(REPLICATION_FETCH_TIMEOUT_MS),
-    })
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error(`Replication target request timed out after ${REPLICATION_FETCH_TIMEOUT_MS}ms`)
+  if (!targetUrl) return { ok: false, error: 'REPLICATION_TARGET_URL is not configured' }
+
+  const totals = { users: 0, subscriptions: 0, videos: 0, adminSettings: 0 }
+  let roundsExecuted = 0
+
+  for (let roundIndex = 0; roundIndex < MANUAL_PUSH_MAX_ROUNDS; roundIndex += 1) {
+    roundsExecuted += 1
+    const round = await runReplicationPushRound(env, 'direct')
+    if (round.skipped) {
+      return { ok: false, error: round.reason, rounds: roundsExecuted, totals }
     }
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Replication target request aborted')
+    totals.users += round.counts.users
+    totals.subscriptions += round.counts.subscriptions
+    totals.videos += round.counts.videos
+    totals.adminSettings += round.counts.adminSettings
+    const pushed = totals.users + totals.subscriptions + totals.videos + totals.adminSettings
+    const roundTotal = round.counts.users + round.counts.subscriptions + round.counts.videos + round.counts.adminSettings
+    if (roundTotal === 0) break
+    if (roundIndex === MANUAL_PUSH_MAX_ROUNDS - 1 && roundTotal > 0) {
+      return {
+        ok: true,
+        partial: true,
+        message: `Stopped after ${MANUAL_PUSH_MAX_ROUNDS} rounds; more rows may remain.`,
+        rounds: roundsExecuted,
+        totals,
+        pushed,
+      }
     }
-    throw error
   }
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`Replication target rejected batch (${response.status}): ${body.slice(0, 300)}`)
+
+  const pushed = totals.users + totals.subscriptions + totals.videos + totals.adminSettings
+  return {
+    ok: true,
+    partial: false,
+    rounds: roundsExecuted,
+    totals,
+    pushed,
   }
+}
+
+export async function enqueueReplicationBatch(env: any) {
+  if (!getReplicationQueue(env)) return { skipped: true, reason: 'queue_not_bound' }
+  const round = await runReplicationPushRound(env, 'queue')
+  if (round.skipped) return { skipped: true, reason: round.reason }
+  return {
+    skipped: false,
+    direction: round.direction,
+    epoch: round.epoch,
+    batchSize: round.batchSize,
+    counts: round.counts,
+  }
+}
+
+export async function handleReplicationQueue(batch: any, env: any) {
+  await postReplicationEventsToTarget(env, batch.messages.map((message: any) => message.body))
   for (const message of batch.messages) {
     message.ack()
+  }
+}
+
+export async function handleAdminReplicationPush(request: Request, env: any, corsHeaders: Record<string, string>) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  if (request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  }
+  try {
+    const result = await pushReplicationToPostgres(env)
+    if (!result.ok) {
+      return jsonResponse({ error: result.error, ...result }, 400, corsHeaders)
+    }
+    return jsonResponse(result, 200, corsHeaders)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Replication push failed'
+    return jsonResponse({ error: message }, 500, corsHeaders)
   }
 }
 

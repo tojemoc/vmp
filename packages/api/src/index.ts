@@ -107,6 +107,7 @@ import {
 import {
   enqueueReplicationBatch,
   handleAdminReplicationSettings,
+  handleAdminReplicationPush,
   handleReplicationQueue,
 } from './replication.js'
 import {
@@ -442,6 +443,9 @@ export default {
     }
     if (url.pathname === '/api/admin/system/features' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminSystemFeatures(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
+      return handleAdminReplicationPush(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminReplicationSettings(request, env, corsHeaders)
