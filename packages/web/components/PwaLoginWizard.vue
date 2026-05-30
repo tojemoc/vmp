@@ -28,7 +28,7 @@
 
       <!-- Step 1: email -->
       <div v-if="step === 1" class="px-5 pb-5 space-y-4">
-        <label for="pwa-login-email" class="block text-sm font-medium text-gray-300">Email address</label>
+        <label for="pwa-login-email" class="block text-sm font-medium text-gray-300">{{ strings.pwaLoginEmailLabel }}</label>
         <input
           id="pwa-login-email"
           v-model="email"
@@ -64,7 +64,7 @@
           :disabled="loading"
           @click="requestPushAndSubscribe"
         >
-          {{ loading ? 'Working…' : (pushAlreadyGranted ? strings.pwaLoginResendEmail : 'Allow notifications') }}
+          {{ loading ? strings.pwaLoginWorking : (pushAlreadyGranted ? strings.pwaLoginResendEmail : strings.pwaLoginAllowNotifications) }}
         </button>
         <button
           v-if="pushAlreadyGranted"

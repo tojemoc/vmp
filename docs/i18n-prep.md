@@ -1,0 +1,95 @@
+# i18n preparation (VMP web)
+
+This document describes the current string centralization pass and what it would take to add real locales or a translation platform.
+
+## Current approach
+
+All viewer-facing UI copy is consolidated in [`packages/web/utils/strings.ts`](../packages/web/utils/strings.ts). Components import the default export:
+
+```ts
+import strings from '~/utils/strings'
+```
+
+Parameterized copy uses functions on the same object (for example `strings.rateLimitMessage(current, limit)`).
+
+Admin dashboard copy is listed under `strings.admin` as an **inventory** for translators. `pages/admin/index.vue` (~6k lines) still embeds most admin strings inline; wiring that file is a separate follow-up.
+
+## String inventory (approximate)
+
+| Area | Keys in `strings.ts` | Wired in SFCs |
+|------|----------------------|---------------|
+| Site, header, roles, push | ~35 | Yes |
+| Login, verify, PWA login | ~45 | Yes |
+| 2FA (verify, setup, account) | ~40 | Yes |
+| Homepage, category, watch | ~45 | Yes |
+| Account, billing, RSS | ~35 | Yes |
+| Checkout / premium overlay | ~30 | Yes |
+| Admin inventory (`strings.admin`) | ~45 | No (inventory only) |
+
+**Total:** ~275 string entries in the catalog; ~230 wired for the public app. Admin UI adds **hundreds** more when `admin/index.vue` is migrated (toasts, table headers, form labels, analytics KPIs).
+
+Content from CMS/API (video titles, category names, homepage blocks, pill labels) is **not** in `strings.ts` — it is already dynamic and would be translated via the admin/content workflow or separate content locale fields.
+
+## Overlap with PR #286
+
+[PR #286](https://github.com/tojemoc/vmp/pull/286) (`cursor/2fa-copy-and-disable-50c1`) adds login mailto links, context-aware 2FA setup copy, and 2FA disable on the account page. This branch **includes the same string keys** under `login*` and `totp*` so you can merge either order:
+
+- Merge #286 first, then this PR — resolve conflicts by keeping one `strings.ts` (keys should align).
+- Merge this first, then #286 — #286 should reuse existing keys and only add disable-flow UI.
+
+## Next implementation steps
+
+1. **Locale modules** — Split `strings.ts` into `locales/en.ts`, `locales/sk.ts`, etc., and a thin `useStrings()` composable that picks locale from route, cookie, or `Accept-Language`.
+2. **Nuxt i18n (optional)** — [`@nuxtjs/i18n`](https://i18n.nuxtjs.org/) gives routing (`/sk/watch/...`), lazy-loaded messages, and ICU plurals. VMP does not need locale switching in URLs on day one; a composable + single default locale may be enough until you add a language picker.
+3. **Admin pass** — Replace inline copy in `admin/index.vue` with `strings.admin.*` (or `adminStrings` module) in chunks by tab.
+4. **API errors** — Many `data.error` strings come from the Worker in English; backend message catalogs would be a second project.
+
+## Crowdin / Weblate effort
+
+### Export format
+
+Both tools accept **JSON** nested by key. A one-time export script can flatten `strings.ts`:
+
+```json
+{
+  "signIn": "Sign in",
+  "rateLimitMessage": "You've watched {current} of {limit} free previews…"
+}
+```
+
+Functions become ICU or placeholder strings at export time.
+
+### Effort estimate (technical, not calendar)
+
+| Task | Scope |
+|------|--------|
+| Wire remaining admin UI | Large — one monolithic Vue file, many dynamic toasts with interpolated titles |
+| Add 2nd locale file (e.g. Slovak) | Medium — duplicate ~230 keys; product already has `Klubové predplatné` as a plan name hint |
+| Integrate Crowdin or Weblate | Small — GitHub/GitLab sync of `locales/*.json`; no code change to runtime beyond loading JSON |
+| Locale switcher UX | Small — header dropdown + `localStorage` / cookie |
+| SEO / `hreflang` | Optional — only if you use locale-prefixed routes |
+| QA / linguistic review | Dominates human time — especially 2FA, PWA handoff, and billing copy |
+
+**Crowdin** fits teams that want TMS features, in-context review, and GitHub PRs per locale.
+
+**Weblate** fits open-source style workflows with direct repo commits; self-hostable.
+
+Neither requires `@nuxtjs/i18n` initially — sync translated JSON into `locales/` and load from `useStrings()`.
+
+### What translators should skip (v1)
+
+- `strings.admin` until admin SFCs use the keys
+- API-returned errors (unless you add `error.code` + client-side mapping)
+- User-generated content (video titles, descriptions)
+- Brand tokens: `VMP`, provider names (`Stripe`, `GoCardless`) often stay untranslated
+
+## Verifying coverage
+
+After changes, search for leftover viewer copy:
+
+```bash
+rg -n ">[A-Za-z][^<{]{8,}<" packages/web/pages packages/web/components \
+  --glob '*.vue' --glob '!admin/**'
+```
+
+Some matches will be icons, layout, or dynamic API fields — manual review is still needed.

@@ -163,7 +163,7 @@
                     <input
                       type="range"
                       class="watch-seekbar-input absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      aria-label="Seek timeline"
+                      :aria-label="strings.seekTimeline"
                       :min="0"
                       :max="effectiveFullDuration"
                       :step="0.1"
@@ -431,7 +431,7 @@ let watchModule: Awaited<typeof import('@moq/watch')> | null = null
 
 const ensureMoqModules = async () => {
   if (import.meta.server) {
-    throw new Error('Livestream playback is only available in the browser.')
+    throw new Error(strings.liveBrowserOnly)
   }
   if (!moqModule || !watchModule) {
     const [moq, watch] = await Promise.all([
@@ -705,10 +705,10 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
       rateLimitLimit.value = data.limit ?? data.current ?? 0
       return
     }
-    throw new Error('Too many requests. Please try again later.')
+    throw new Error(strings.rateLimitExceeded)
   }
 
-  if (!videoResponse.ok) throw new Error('Failed to load video data')
+  if (!videoResponse.ok) throw new Error(strings.videoLoadFailed)
   const data = await videoResponse.json()
   ensureCurrent()
   videoData.value = data
@@ -853,7 +853,7 @@ const initializeLivestreamRuntime = async (
 
   ensureActive()
   const canvas = liveCanvas.value
-  if (!canvas) throw new Error('Live canvas is unavailable')
+  if (!canvas) throw new Error(strings.liveCanvasUnavailable)
 
   teardownVideoListeners()
   teardownLivestreamRuntime()
@@ -937,7 +937,7 @@ const initializeVideoElement = async (
   ensureActive()
 
   const video = videoElement.value
-  if (!video) throw new Error('Video element is unavailable')
+  if (!video) throw new Error(strings.videoElementUnavailable)
   ensureActive()
 
   teardownVideoListeners()
@@ -985,7 +985,7 @@ const initializeVideoElement = async (
       }
       const onError = () => {
         cleanup()
-        reject(new Error('Media failed to load'))
+        reject(new Error(strings.mediaFailedToLoad))
       }
       const onSignalAbort = () => {
         cleanup()

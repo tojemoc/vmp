@@ -158,7 +158,7 @@ async function handleBellClick() {
     return
   }
   if (pushPermission.value === 'denied') {
-    showPushToast('error', pushError.value || 'Notifications are blocked in your browser settings.')
+    showPushToast('error', pushError.value || strings.notificationsBlockedSettings)
     clearPushError()
     dropdownOpen.value = false
     return
@@ -215,16 +215,7 @@ async function handleSignIn() {
   await startLoginFlow()
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: 'Owner',
-  admin: 'Admin',
-  editor: 'Editor',
-  analyst: 'Analyst',
-  moderator: 'Mod',
-  viewer: 'Viewer',
-}
-
-const roleLabel = computed(() => ROLE_LABELS[user.value?.role ?? ''] ?? 'Viewer')
+const roleLabel = computed(() => strings.roleLabel(user.value?.role))
 const ROLE_BADGE_CLASSES: Record<string, string> = {
   super_admin: 'text-purple-700 dark:text-purple-300',
   admin: 'text-blue-700 dark:text-blue-300',

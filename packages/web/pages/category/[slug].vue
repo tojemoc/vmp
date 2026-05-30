@@ -3,9 +3,9 @@
     <AppHeader />
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <header>
-        <NuxtLink to="/" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">← Back to homepage</NuxtLink>
+        <NuxtLink to="/" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">{{ strings.backToHomepage }}</NuxtLink>
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white mt-2">{{ categoryName }}</h1>
-        <p class="text-gray-600 dark:text-gray-400">{{ total }} videos</p>
+        <p class="text-gray-600 dark:text-gray-400">{{ strings.categoryVideosCount(total) }}</p>
       </header>
 
       <div v-if="loading" class="text-center py-16">
@@ -15,7 +15,7 @@
         {{ error }}
       </div>
       <div v-else-if="videos.length === 0" class="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 text-gray-600 dark:text-gray-300">
-        No published videos in this category yet.
+        {{ strings.categoryEmpty }}
       </div>
       <div v-else class="space-y-6">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -27,15 +27,15 @@
             :disabled="page <= 1 || loadingMore"
             @click="loadPage(page - 1)"
           >
-            Previous
+            {{ strings.categoryPrevious }}
           </button>
-          <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ page }}</span>
+          <span class="text-sm text-gray-600 dark:text-gray-400">{{ strings.categoryPage(page) }}</span>
           <button
             class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 disabled:opacity-40"
             :disabled="!hasMore || loadingMore"
             @click="loadPage(page + 1)"
           >
-            Next
+            {{ strings.categoryNext }}
           </button>
         </div>
       </div>
@@ -44,6 +44,8 @@
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
+
 const route = useRoute()
 const config = useRuntimeConfig()
 
@@ -51,7 +53,7 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const videos = ref<any[]>([])
-const categoryName = ref('Category')
+const categoryName = ref(strings.categoryDefaultName)
 const total = ref(0)
 const page = ref(1)
 const hasMore = ref(false)
@@ -64,13 +66,13 @@ const loadPage = async (nextPage = 1) => {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     videos.value = Array.isArray(data.videos) ? data.videos : []
-    categoryName.value = data?.category?.name || 'Category'
+    categoryName.value = data?.category?.name || strings.categoryDefaultName
     total.value = Number(data?.pagination?.total || 0)
     hasMore.value = Boolean(data?.pagination?.hasMore)
     page.value = Number(data?.pagination?.page || nextPage)
     error.value = null
   } catch (e: any) {
-    error.value = e.message || 'Failed to load category'
+    error.value = e.message || strings.categoryLoadFailed
   } finally {
     loading.value = false
     loadingMore.value = false
@@ -78,6 +80,6 @@ const loadPage = async (nextPage = 1) => {
 }
 
 onMounted(() => {
-  loadPage(1)
+  void loadPage(1)
 })
 </script>
