@@ -29,11 +29,14 @@ export function isReplicationIngestConfigured(): boolean {
   return ingestToken().length > 0
 }
 
-export function verifyReplicationIngestAuth(request: Request): boolean {
+export function verifyReplicationIngestAuthHeader(authorization: string | undefined | null): boolean {
   const token = ingestToken()
   if (!token) return false
-  const header = request.headers.get('Authorization') ?? ''
-  return header === `Bearer ${token}`
+  return (authorization ?? '') === `Bearer ${token}`
+}
+
+export function verifyReplicationIngestAuth(request: Request): boolean {
+  return verifyReplicationIngestAuthHeader(request.headers.get('Authorization'))
 }
 
 function asInt(value: unknown, fallback = 0): number {

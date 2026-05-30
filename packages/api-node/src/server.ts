@@ -9,8 +9,11 @@ import { getWorkerFetch, requireAdminRole } from './workerBridge.js'
 import {
   applyReplicationEvents,
   isReplicationIngestConfigured,
-  verifyReplicationIngestAuth,
+  verifyReplicationIngestAuthHeader,
 } from './sync/replicationIngest.js'
+
+/** Max replication ingest body (matches typical queue batch sizes). */
+const REPLICATION_INGEST_MAX_BYTES = 512 * 1024
 
 installCachePolyfill()
 
@@ -31,11 +34,20 @@ function authErrorStatus(err: unknown): number {
   return 401
 }
 
-async function readBody(req: IncomingMessage): Promise<Buffer | null> {
+async function readBody(req: IncomingMessage, maxBytes?: number): Promise<Buffer | null> {
   if (req.method === 'GET' || req.method === 'HEAD') return null
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    req.on('data', (chunk) => chunks.push(chunk))
+    let total = 0
+    req.on('data', (chunk) => {
+      total += chunk.length
+      if (maxBytes !== undefined && total > maxBytes) {
+        req.destroy()
+        reject(new Error('payload_too_large'))
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
@@ -158,8 +170,7 @@ async function handleReplicationIngest(
     return true
   }
 
-  const request = nodeRequestToWeb(req, await readBody(req))
-  if (!verifyReplicationIngestAuth(request)) {
+  if (!verifyReplicationIngestAuthHeader(req.headers.authorization)) {
     res.writeHead(401, { 'Content-Type': 'application/json', ...corsHeaders })
     res.end(JSON.stringify({ error: 'Unauthorized' }))
     return true
@@ -172,9 +183,23 @@ async function handleReplicationIngest(
     return true
   }
 
+  let rawBody: Buffer | null
+  try {
+    rawBody = await readBody(req, REPLICATION_INGEST_MAX_BYTES)
+  } catch (err) {
+    const message = err instanceof Error && err.message === 'payload_too_large'
+      ? 'Payload too large'
+      : 'Failed to read body'
+    const status = err instanceof Error && err.message === 'payload_too_large' ? 413 : 400
+    res.writeHead(status, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: message }))
+    return true
+  }
+
   let body: unknown
   try {
-    body = await request.json()
+    const text = rawBody && rawBody.length > 0 ? rawBody.toString('utf8') : '{}'
+    body = JSON.parse(text)
   } catch {
     res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
     res.end(JSON.stringify({ error: 'Invalid JSON body' }))
@@ -189,9 +214,10 @@ async function handleReplicationIngest(
   }
 
   const result = await applyReplicationEvents(db, events)
-  const statusCode = result.errors.length > 0 ? 207 : 200
+  const hasErrors = result.errors.length > 0
+  const statusCode = hasErrors ? 500 : 200
   res.writeHead(statusCode, { 'Content-Type': 'application/json', ...corsHeaders })
-  res.end(JSON.stringify({ ok: result.errors.length === 0, ...result }))
+  res.end(JSON.stringify({ ok: !hasErrors, ...result }))
   return true
 }
 

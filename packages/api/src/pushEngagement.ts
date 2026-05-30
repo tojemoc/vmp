@@ -416,8 +416,11 @@ export async function enqueueOverduePushDeliveries(env: any) {
   for (const row of deliveries as any[]) {
     if (getPushDeliveryQueue(env)) {
       const scheduledMs = Date.parse(String(row.scheduled_at))
+      const now = Date.now()
       const delaySeconds = Number.isFinite(scheduledMs)
-        ? Math.max(0, Math.min(86400, Math.floor((Date.now() - scheduledMs) / 1000)))
+        ? scheduledMs <= now
+          ? 0
+          : Math.max(0, Math.min(86400, Math.floor((scheduledMs - now) / 1000)))
         : 0
       await enqueuePushDelivery(env, row.id, delaySeconds)
       enqueued++

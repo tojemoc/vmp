@@ -9,6 +9,8 @@ const DEFAULT_BATCH_SIZE = 100
 const MAX_BATCH_SIZE = 500
 const CURSOR_ROW_LIMIT = 1000
 const REPLICATION_FETCH_TIMEOUT_MS = 10000
+/** Cloudflare Queues sendBatch limit per call. */
+const QUEUE_SEND_BATCH_MAX = 100
 const STREAM_USERS = 'users'
 const STREAM_SUBSCRIPTIONS = 'subscriptions'
 const STREAM_VIDEOS = 'videos'
@@ -102,6 +104,16 @@ async function setStreamCursor(db: any, streamName: string, cursorValue: string)
   `).bind(streamName, cursorValue).run()
 }
 
+async function sendReplicationMessages(
+  queue: NonNullable<ReturnType<typeof getReplicationQueue>>,
+  messages: unknown[],
+) {
+  const batch = messages.map((body) => ({ body }))
+  for (let i = 0; i < batch.length; i += QUEUE_SEND_BATCH_MAX) {
+    await queue.sendBatch(batch.slice(i, i + QUEUE_SEND_BATCH_MAX))
+  }
+}
+
 function buildMessage(params: {
   epoch: number
   direction: ReplicationDirection
@@ -153,7 +165,7 @@ async function enqueueStreamUsers(db: any, env: any, context: { direction: Repli
   }))
   const queue = getReplicationQueue(env)
   if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await queue.sendBatch(messages.map((body) => ({ body })))
+  await sendReplicationMessages(queue, messages)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
   return selected.length
@@ -183,7 +195,7 @@ async function enqueueStreamSubscriptions(db: any, env: any, context: { directio
   }))
   const queue = getReplicationQueue(env)
   if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await queue.sendBatch(messages.map((body) => ({ body })))
+  await sendReplicationMessages(queue, messages)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
@@ -213,7 +225,7 @@ async function enqueueStreamVideos(db: any, env: any, context: { direction: Repl
   }))
   const queue = getReplicationQueue(env)
   if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await queue.sendBatch(messages.map((body) => ({ body })))
+  await sendReplicationMessages(queue, messages)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
@@ -246,7 +258,7 @@ async function enqueueStreamAdminSettings(db: any, env: any, context: { directio
   }))
   const queue = getReplicationQueue(env)
   if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await queue.sendBatch(messages.map((body) => ({ body })))
+  await sendReplicationMessages(queue, messages)
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
   return selected.length
