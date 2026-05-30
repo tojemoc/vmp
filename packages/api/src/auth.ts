@@ -257,6 +257,28 @@ async function issueRefreshToken(userId: any, db: any) {
   return token
 }
 
+/**
+ * Atomically replaces the refresh token row (single-use). Returns the new raw
+ * token, or null if the row was already rotated (concurrent refresh).
+ */
+async function rotateRefreshToken(db: any, recordId: any, currentTokenHash: any) {
+  const token     = generateToken()
+  const tokenHash = await hashToken(token)
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL * 1000).toISOString()
+
+  const result = await db
+    .prepare(`
+      UPDATE refresh_tokens
+      SET token_hash = ?, expires_at = ?
+      WHERE id = ? AND token_hash = ?
+    `)
+    .bind(tokenHash, expiresAt, recordId, currentTokenHash)
+    .run()
+
+  if (!result.meta.changes) return null
+  return token
+}
+
 // ─── Cookie helpers ───────────────────────────────────────────────────────────
 //
 // Same-site subdomains can use Lax while still allowing credentialed refresh
@@ -615,13 +637,13 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
 /**
  * POST /api/auth/refresh
  *
- * Reads the HttpOnly refresh token cookie, validates it, rotates it (issue new,
- * revoke old after the response is sent), and returns a new JWT + refresh cookie.
+ * Reads the HttpOnly refresh token cookie, validates it, atomically rotates the
+ * refresh row (UPDATE … WHERE token_hash), and returns a new JWT + refresh cookie.
  *
  * The frontend calls this on app init to silently restore a session after a
  * page reload, and again ~1 minute before the JWT expires.
  */
-export async function handleRefreshToken(request: any, env: any, corsHeaders: any, ctx?: any) {
+export async function handleRefreshToken(request: any, env: any, corsHeaders: any) {
   const rawToken = getRefreshTokenFromCookie(request)
   // No cookie — visitor has no session. 204 (not 401) avoids a red XHR in DevTools
   // on every page load; the frontend treats this as "not logged in".
@@ -652,37 +674,32 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
     return new Response(JSON.stringify({ error: 'Session expired. Please sign in again.' }), { status: 401, headers })
   }
 
-  // ── Rotation ──────────────────────────────────────────────────────────────
-  // Issue the replacement token before revoking the old one.  The previous
-  // delete-first order could log users out when a Worker was killed mid-request
-  // during a deployment (token gone, new cookie never delivered).  Old token
-  // revocation runs in waitUntil so the response can flush first.
-  const user            = {
+  const user = {
     id: record.user_id,
     email: record.email,
     role: record.role,
     totp_enabled: record.totp_enabled,
     created_at: record.created_at,
   }
-  const totpRequired    = shouldRequireTotpEnrollment(user, env)
-  const newAccessToken  = await createAccessToken(user, env.JWT_SECRET)
-  const newRefreshToken = await issueRefreshToken(user.id, db)
-  const oldTokenId      = record.id
+
+  const newRefreshToken = await rotateRefreshToken(db, record.id, tokenHash)
+  if (!newRefreshToken) {
+    const headers = buildResponseHeaders(corsHeaders)
+    headers.set('Set-Cookie', clearRefreshCookie())
+    return new Response(JSON.stringify({ error: 'Session expired. Please sign in again.' }), { status: 401, headers })
+  }
+
+  const totpRequired   = shouldRequireTotpEnrollment(user, env)
+  const newAccessToken = await createAccessToken(user, env.JWT_SECRET)
 
   const headers = buildResponseHeaders(corsHeaders)
   headers.set('Set-Cookie', buildRefreshCookie(newRefreshToken, REFRESH_TOKEN_TTL))
 
-  const response = new Response(JSON.stringify({
+  return new Response(JSON.stringify({
     ok: true,
     accessToken: newAccessToken,
     user: { id: user.id, email: user.email, role: user.role, totpEnabled: !!user.totp_enabled, totpRequired },
   }), { status: 200, headers })
-
-  ctx?.waitUntil?.(
-    db.prepare('DELETE FROM refresh_tokens WHERE id = ?').bind(oldTokenId).run()
-  )
-
-  return response
 }
 
 /**

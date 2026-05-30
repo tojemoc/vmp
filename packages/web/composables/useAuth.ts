@@ -56,6 +56,8 @@ const subscription = ref<SubscriptionData | null>(null)
 const initialised  = ref(false)
 let   refreshTimer: ReturnType<typeof setTimeout> | null = null
 let   refreshInFlight: Promise<boolean> | null = null
+/** Bumped on clearSession/logout so in-flight refresh cannot restore a stale session. */
+let   sessionVersion = 0
 
 export function useAuth() {
   const config = useRuntimeConfig()
@@ -100,6 +102,7 @@ export function useAuth() {
   }
 
   function clearSession() {
+    sessionVersion++
     user.value = null
     accessToken.value = null
     subscription.value = null
@@ -224,6 +227,8 @@ export function useAuth() {
   async function refreshSession(): Promise<boolean> {
     if (refreshInFlight) return refreshInFlight
 
+    const versionAtStart = sessionVersion
+
     refreshInFlight = (async () => {
       try {
         const res = await fetch(`${apiUrl}/api/auth/refresh`, {
@@ -232,12 +237,15 @@ export function useAuth() {
         })
         if (res.status === 204) return false
         if (!res.ok) { clearSession(); return false }
+        if (versionAtStart !== sessionVersion) return false
 
         const data = await res.json()
+        if (versionAtStart !== sessionVersion) return false
+
         setAccessToken(data.accessToken, data.user)
-        return true
+        return versionAtStart === sessionVersion
       } catch {
-        clearSession()
+        if (versionAtStart === sessionVersion) clearSession()
         return false
       }
     })()

@@ -306,7 +306,7 @@ export default {
       return handleGoCardlessRetry(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
-      return handleRefreshToken(request, env, corsHeaders, ctx)
+      return handleRefreshToken(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
       return handleLogout(request, env, corsHeaders)
