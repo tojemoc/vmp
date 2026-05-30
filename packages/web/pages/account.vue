@@ -187,18 +187,27 @@
           <button
             type="button"
             class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            :aria-expanded="showTotpDisable"
+            aria-controls="totp-disable-panel"
             @click="showTotpDisable = !showTotpDisable"
           >
             {{ strings.totpAccountDisableButton }}
           </button>
 
-          <div v-if="showTotpDisable" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+          <div
+            v-if="showTotpDisable"
+            id="totp-disable-panel"
+            class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3"
+          >
             <p class="text-sm text-gray-600 dark:text-gray-400">
               {{ user?.totpRequired ? strings.totpAccountDisableHintStaff : strings.totpAccountDisableHintOptional }}
             </p>
-            <p class="text-sm text-gray-700 dark:text-gray-300">{{ strings.totpAccountDisablePrompt }}</p>
+            <label for="totp-disable-code" class="block text-sm text-gray-700 dark:text-gray-300">
+              {{ strings.totpAccountDisablePrompt }}
+            </label>
             <div v-if="totpDisableError" class="text-sm text-red-600 dark:text-red-400">{{ totpDisableError }}</div>
             <input
+              id="totp-disable-code"
               v-model="totpDisableCode"
               type="text"
               inputmode="numeric"
@@ -265,7 +274,7 @@ const apiUrl = config.public.apiUrl as string
 
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
 
-const { user, subscription, fetchSubscription, authHeader, isLoggedIn, markTotpDisabled } = useAuth()
+const { user, subscription, fetchSubscription, authHeader, isLoggedIn, markTotpDisabled, applyNewSession } = useAuth()
 const { startLoginFlow, waitForAuthInitialised } = useLoginFlow()
 
 const hasActiveSubscription = computed(() => {
@@ -324,8 +333,13 @@ async function disableTotp() {
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Could not disable 2FA')
-    if (data.user) markTotpDisabled(data.user)
-    else markTotpDisabled()
+    if (data.accessToken && data.user) {
+      applyNewSession(data.accessToken, data.user)
+    } else if (data.user) {
+      markTotpDisabled(data.user)
+    } else {
+      markTotpDisabled()
+    }
     showTotpDisable.value = false
     totpDisableCode.value = ''
   } catch (e: unknown) {

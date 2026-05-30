@@ -916,6 +916,30 @@ async function decryptTotpSecret(stored: any, encryptionKey: any) {
 
 // ─── 2FA route handlers ───────────────────────────────────────────────────────
 
+/** Max TOTP attempts per IP per minute (shared by verify and disable). */
+async function throttleTotpIpAttempts(
+  env: any,
+  request: any,
+  corsHeaders: any,
+  keyPrefix: string,
+): Promise<Response | null> {
+  if (!env.RATE_LIMIT_KV) return null
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+  const minuteBucket = Math.floor(Date.now() / 60000)
+  const kvKey = `${keyPrefix}:${ip}:${minuteBucket}`
+  const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
+  if (current >= 10) {
+    const rlHeaders = buildResponseHeaders(corsHeaders)
+    rlHeaders.set('Retry-After', '60')
+    return new Response(
+      JSON.stringify({ error: 'Too many attempts. Please wait a minute.', code: 'rate_limit_exceeded' }),
+      { status: 429, headers: rlHeaders },
+    )
+  }
+  await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: 120 })
+  return null
+}
+
 /**
  * GET /api/auth/2fa/setup
  *
@@ -1044,6 +1068,9 @@ export async function handleTotpConfirm(request: any, env: any, corsHeaders: any
  * Staff roles (editor+) remain blocked from /admin until they enroll again.
  */
 export async function handleTotpDisable(request: any, env: any, corsHeaders: any) {
+  const ipLimited = await throttleTotpIpAttempts(env, request, corsHeaders, '2fa_disable')
+  if (ipLimited) return ipLimited
+
   let user
   try {
     user = await requireAuth(request, env)
@@ -1058,6 +1085,19 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
   const body = await request.json().catch(() => null)
   if (!body?.code || typeof body.code !== 'string' || !/^\d{6}$/.test(body.code)) {
     return authJson({ error: 'code must be 6 digits' }, 400, corsHeaders)
+  }
+
+  const MAX_FAILED_ATTEMPTS = 5
+  const disableAttemptKey = `2fa_disable_user:${user.sub}`
+  if (env.RATE_LIMIT_KV) {
+    const priorFailures = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10)
+    if (priorFailures >= MAX_FAILED_ATTEMPTS) {
+      return authJson(
+        { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
+        401,
+        corsHeaders,
+      )
+    }
   }
 
   const db = getDb(env)
@@ -1080,7 +1120,18 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
 
   const valid = await verifyTotp(plainSecret, body.code)
   if (!valid) {
-    return authJson({ error: 'Invalid code. Make sure your device clock is correct and try again.' }, 400, corsHeaders)
+    if (env.RATE_LIMIT_KV) {
+      const failed = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10) + 1
+      await env.RATE_LIMIT_KV.put(disableAttemptKey, String(failed), { expirationTtl: 900 })
+      if (failed >= MAX_FAILED_ATTEMPTS) {
+        return authJson(
+          { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
+          401,
+          corsHeaders,
+        )
+      }
+    }
+    return authJson({ error: 'Invalid code. Please try again.' }, 400, corsHeaders)
   }
 
   await db
@@ -1088,17 +1139,40 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
     .bind(user.sub)
     .run()
 
+  if (env.RATE_LIMIT_KV) {
+    await env.RATE_LIMIT_KV.delete(disableAttemptKey)
+  }
+
+  // Rotate session so the access JWT reflects totpEnabled: false (mirrors handleTotpConfirm).
+  await db
+    .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+    .bind(user.sub)
+    .run()
+
   const totpRequired = shouldRequireTotpEnrollment(userRow, env)
-  return authJson({
-    ok: true,
-    user: {
-      id: user.sub,
-      email: userRow.email,
-      role: userRow.role,
+  const tokenUser = {
+    id:           user.sub,
+    email:        userRow.email,
+    role:         userRow.role,
+    totp_enabled: 0,
+    totpRequired,
+  }
+  const newAccessToken  = await createAccessToken(tokenUser, env.JWT_SECRET)
+  const newRefreshToken = await issueRefreshToken(user.sub, db)
+
+  const headers = buildResponseHeaders(corsHeaders)
+  headers.set('Set-Cookie', buildRefreshCookie(newRefreshToken, REFRESH_TOKEN_TTL))
+  return new Response(JSON.stringify({
+    ok:          true,
+    accessToken: newAccessToken,
+    user:        {
+      id:          user.sub,
+      email:       userRow.email,
+      role:        userRow.role,
       totpEnabled: false,
       totpRequired,
     },
-  }, 200, corsHeaders)
+  }), { status: 200, headers })
 }
 
 /**
@@ -1211,22 +1285,8 @@ export async function verifyTotpPendingLogin(
 }
 
 export async function handleTotpVerify(request: any, env: any, corsHeaders: any) {
-  // ── Layer 2: IP-based rate limit ─────────────────────────────────────────
-  if (env.RATE_LIMIT_KV) {
-    const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
-    const minuteBucket = Math.floor(Date.now() / 60000)
-    const kvKey = `2fa_verify:${ip}:${minuteBucket}`
-    const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
-    if (current >= 10) {
-      const rlHeaders = buildResponseHeaders(corsHeaders)
-      rlHeaders.set('Retry-After', '60')
-      return new Response(
-        JSON.stringify({ error: 'Too many attempts. Please wait a minute.', code: 'rate_limit_exceeded' }),
-        { status: 429, headers: rlHeaders }
-      )
-    }
-    await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: 120 })
-  }
+  const ipLimited = await throttleTotpIpAttempts(env, request, corsHeaders, '2fa_verify')
+  if (ipLimited) return ipLimited
 
   const body = await request.json().catch(() => null)
   if (!body?.code || !body?.pendingToken) {
