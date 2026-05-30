@@ -12,6 +12,8 @@ export function useLoginFlow() {
   const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
   async function waitForAuthInitialised(): Promise<void> {
+    // auth.client.ts only runs in the browser — never block SSR waiting for it.
+    if (import.meta.server) return
     if (initialised.value) return
     await new Promise<void>((resolve) => {
       const stop = watch(

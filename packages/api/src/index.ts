@@ -3388,7 +3388,7 @@ async function getAvgSegmentDuration(videoId: any, env: any) {
 // ─── Segment count rate limiting (Step 4c) ────────────────────────────────────
 //
 // Allows up to 3× real-time segment requests per minute per user per video.
-// Exceeding the threshold bans that user+video pair for 30 seconds.
+// Exceeding the threshold bans that user+video pair for 60 seconds (KV minimum TTL).
 //
 // Uses a Durable Object to ensure atomic increment operations.
 
@@ -3416,7 +3416,7 @@ async function checkSegmentRateLimit(identifier: any, videoId: any, avgSegDur: a
       const result = await response.json()
 
       if (result.exceeded) {
-        await env.RATE_LIMIT_KV.put(banKey, '1', { expirationTtl: 30 })
+        await env.RATE_LIMIT_KV.put(banKey, '1', { expirationTtl: 60 })
         return true
       }
 
@@ -3438,7 +3438,7 @@ async function checkSegmentRateLimit(identifier: any, videoId: any, avgSegDur: a
   await env.RATE_LIMIT_KV.put(countKey, String(count), { expirationTtl: 90 })
 
   if (count > threshold) {
-    await env.RATE_LIMIT_KV.put(banKey, '1', { expirationTtl: 30 })
+    await env.RATE_LIMIT_KV.put(banKey, '1', { expirationTtl: 60 })
     return true
   }
 

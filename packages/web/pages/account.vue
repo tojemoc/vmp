@@ -6,7 +6,7 @@
 
       <!-- Welcome banner (shown after successful checkout redirect) -->
       <div
-        v-if="showWelcomeBanner"
+        v-if="showWelcomeBanner && !gocardlessCompletionError"
         class="flex items-start gap-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4"
       >
         <svg class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -237,7 +237,7 @@ const apiUrl = config.public.apiUrl as string
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
 
 const { user, subscription, fetchSubscription, authHeader, isLoggedIn } = useAuth()
-const { startLoginFlow } = useLoginFlow()
+const { startLoginFlow, waitForAuthInitialised } = useLoginFlow()
 
 const hasActiveSubscription = computed(() => {
   const sub = subscription.value
@@ -256,15 +256,26 @@ const show2faCard = computed(() => {
   return roleRequires2fa.value || user.value.role === 'viewer'
 })
 
-// Guard: redirect to login if not authenticated
-if (!isLoggedIn.value) {
-  await startLoginFlow('/account')
+// Guard: redirect to login if not authenticated (client only — refresh cookie is browser-only).
+if (import.meta.client) {
+  await waitForAuthInitialised()
+  if (!isLoggedIn.value) {
+    await startLoginFlow(route.fullPath)
+  }
 }
 
 const loadingSub        = ref(true)
 const openingPortal     = ref(false)
 const portalError       = ref<string | null>(null)
-const showWelcomeBanner = ref(route.query.subscribed === '1' || route.query.gocardless_complete === '1')
+const returningFromGoCardless = computed(() => {
+  const token = typeof route.query.gocardless_checkout_token === 'string'
+    ? route.query.gocardless_checkout_token.trim()
+    : ''
+  return token.length > 0
+})
+const showWelcomeBanner = ref(
+  route.query.subscribed === '1' || route.query.gocardless_complete === '1',
+)
 const gocardlessCompletionError = ref<string | null>(null)
 const gocardlessRetryError = ref<string | null>(null)
 const retryingGoCardless = ref(false)
@@ -280,8 +291,8 @@ const copiedWhich       = ref<'personal' | null>(null)
 onMounted(async () => {
   await maybeCompleteGoCardlessCheckout()
 
-  if (showWelcomeBanner.value) {
-    // After a Stripe checkout redirect the webhook may not have fired yet.
+  if (showWelcomeBanner.value || returningFromGoCardless.value) {
+    // After checkout redirect the webhook may not have fired yet.
     // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
     const MAX_ATTEMPTS = 5
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -399,18 +410,21 @@ async function maybeCompleteGoCardlessCheckout() {
     searchParams?.get('gocardless_checkout_token') ||
     ''
   ).trim()
-  if (!billingRequestFlowId || !checkoutToken) return
+  if (!checkoutToken) return
 
   let completed = false
   try {
+    const payload: { checkoutToken: string; billingRequestFlowId?: string } = { checkoutToken }
+    if (billingRequestFlowId) payload.billingRequestFlowId = billingRequestFlowId
+
     const res = await fetch(`${apiUrl}/api/payments/gocardless/complete`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ billingRequestFlowId, checkoutToken }),
+      body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
+    if (!res.ok && !data.alreadyCompleted) {
       gocardlessCompletionError.value = data.error ?? 'Could not finalize GoCardless checkout.'
       return
     }
