@@ -72,7 +72,6 @@
       <div
         v-else-if="!loadingSub && !gocardlessCompletionError"
         class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
-        :class="{ 'text-center': !hasActiveSubscription }"
       >
         <template v-if="hasActiveSubscription && subscription">
           <div class="flex items-start justify-between gap-4">
@@ -115,21 +114,11 @@
         </template>
 
         <template v-else>
-          <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-            <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-            </svg>
-          </div>
-          <p class="font-semibold text-gray-900 dark:text-white mb-1">No active subscription</p>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Subscribe to unlock full access to all premium videos.
-          </p>
-          <NuxtLink
-            to="/"
-            class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
-          >
-            Browse videos
-          </NuxtLink>
+          <SubscriptionCheckoutPanel
+            return-path="/account"
+            embedded
+            :active="!hasActiveSubscription"
+          />
         </template>
       </div>
 
