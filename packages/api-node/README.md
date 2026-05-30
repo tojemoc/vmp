@@ -60,6 +60,17 @@ npm run dev --workspace=@vmp/api-node
 
 Migrations from `packages/api/migrations/` are applied at boot (SQLite DDL translated for Postgres). Set `RUN_MIGRATIONS=0` if the schema is managed elsewhere (e.g. Deno pre-deploy migrations).
 
+## D1 → Postgres replication (Cloudflare Queues)
+
+The primary API (Cloudflare Worker) enqueues row changes on **`vmp-replication-events`**. The Worker **`binding`** in `packages/api/wrangler.json` is `vmp_replication_events` — that string is the property on `env` in code (`getReplicationQueue` in `packages/api/src/queueBindings.ts`). The **`queue`** name (`vmp-replication-events`) is only the Cloudflare resource id.
+
+1. On the **Worker**, set secrets:
+   - `REPLICATION_TARGET_URL` — e.g. `https://<your-deno-app>/api/internal/replication/ingest`
+   - `REPLICATION_TARGET_TOKEN` — shared bearer secret
+2. On **Deno Deploy** (api-node), set the same value as `REPLICATION_INGEST_TOKEN` (or `REPLICATION_TARGET_TOKEN`).
+3. Cron (`*/5 * * * *`) runs `enqueueReplicationBatch`; the queue consumer POSTs batches to the ingest URL.
+4. Admin: `GET/PATCH /api/admin/replication` on the Worker (mode `d1_to_pg`, optional cursor reset).
+
 ## Optional admin write log
 
 Mutating SQL can be recorded in `failover_write_log` for audit (`ENABLE_WRITE_LOG`, default on). Inspect via:
