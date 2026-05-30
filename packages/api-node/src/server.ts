@@ -6,6 +6,11 @@ import { buildHealthResponse } from './middleware/health.js'
 import { buildEnv, getDbAdapter, getEnv, rebuildEnv } from './env.js'
 import type { CFEnvShape } from './types.js'
 import { getWorkerFetch, requireAdminRole } from './workerBridge.js'
+import {
+  applyReplicationEvents,
+  isReplicationIngestConfigured,
+  verifyReplicationIngestAuth,
+} from './sync/replicationIngest.js'
 
 installCachePolyfill()
 
@@ -131,6 +136,65 @@ async function handleAdminWriteLogRoutes(
   return false
 }
 
+async function handleReplicationIngest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  env: CFEnvShape,
+): Promise<boolean> {
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  if (url.pathname !== '/api/internal/replication/ingest') return false
+
+  const corsHeaders = buildCorsHeaders(new Request(url), env)
+
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Method not allowed' }))
+    return true
+  }
+
+  if (!isReplicationIngestConfigured()) {
+    res.writeHead(503, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Replication ingest is not configured' }))
+    return true
+  }
+
+  const request = nodeRequestToWeb(req, await readBody(req))
+  if (!verifyReplicationIngestAuth(request)) {
+    res.writeHead(401, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Unauthorized' }))
+    return true
+  }
+
+  const db = getDbAdapter()
+  if (!db) {
+    res.writeHead(503, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Database not available' }))
+    return true
+  }
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+    return true
+  }
+
+  const events = (body as { events?: unknown })?.events
+  if (!Array.isArray(events)) {
+    res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+    res.end(JSON.stringify({ error: 'Expected { events: [...] }' }))
+    return true
+  }
+
+  const result = await applyReplicationEvents(db, events)
+  const statusCode = result.errors.length > 0 ? 207 : 200
+  res.writeHead(statusCode, { 'Content-Type': 'application/json', ...corsHeaders })
+  res.end(JSON.stringify({ ok: result.errors.length === 0, ...result }))
+  return true
+}
+
 async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFEnvShape): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
 
@@ -143,6 +207,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFE
   }
 
   if (await handleAdminWriteLogRoutes(req, res, env)) return
+  if (await handleReplicationIngest(req, res, env)) return
 
   const body = await readBody(req)
   const request = nodeRequestToWeb(req, body)

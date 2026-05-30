@@ -1,4 +1,5 @@
 import { requireRole } from './auth.js'
+import { getReplicationQueue } from './queueBindings.js'
 
 type ReplicationDirection = 'd1_to_pg' | 'pg_to_d1'
 
@@ -150,7 +151,9 @@ async function enqueueStreamUsers(db: any, env: any, context: { direction: Repli
       created_at: row.created_at,
     },
   }))
-  await env.REPLICATION_QUEUE.sendBatch(messages)
+  const queue = getReplicationQueue(env)
+  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+  await queue.sendBatch(messages.map((body) => ({ body })))
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
   return selected.length
@@ -178,7 +181,9 @@ async function enqueueStreamSubscriptions(db: any, env: any, context: { directio
     cursor: rowCursor(row.updated_at, row.id),
     row,
   }))
-  await env.REPLICATION_QUEUE.sendBatch(messages)
+  const queue = getReplicationQueue(env)
+  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+  await queue.sendBatch(messages.map((body) => ({ body })))
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
@@ -206,7 +211,9 @@ async function enqueueStreamVideos(db: any, env: any, context: { direction: Repl
     cursor: rowCursor(row.updated_at, row.id),
     row,
   }))
-  await env.REPLICATION_QUEUE.sendBatch(messages)
+  const queue = getReplicationQueue(env)
+  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+  await queue.sendBatch(messages.map((body) => ({ body })))
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return selected.length
@@ -237,14 +244,16 @@ async function enqueueStreamAdminSettings(db: any, env: any, context: { directio
       updated_at: row.updated_at,
     },
   }))
-  await env.REPLICATION_QUEUE.sendBatch(messages)
+  const queue = getReplicationQueue(env)
+  if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
+  await queue.sendBatch(messages.map((body) => ({ body })))
   const last = selected[selected.length - 1]
   await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
   return selected.length
 }
 
 export async function enqueueReplicationBatch(env: any) {
-  if (!env.REPLICATION_QUEUE) return { skipped: true, reason: 'queue_not_bound' }
+  if (!getReplicationQueue(env)) return { skipped: true, reason: 'queue_not_bound' }
   const db = getDb(env)
   await ensureReplicationStateTable(db)
   const direction = parseDirection(await getAdminSetting(db, 'replication_mode') ?? DEFAULT_DIRECTION)

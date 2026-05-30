@@ -3,6 +3,7 @@
  */
 
 import { requireRole } from './auth.js'
+import { getPushDeliveryQueue } from './queueBindings.js'
 import { getSetting, setSettings } from './settingsStore.js'
 import { sendPushNotification } from './webpush.js'
 
@@ -391,9 +392,10 @@ export async function executePushDelivery(deliveryId: string, env: any, db: any)
 }
 
 export async function enqueuePushDelivery(env: any, deliveryId: string, delaySeconds: number) {
-  if (!env.PUSH_DELIVERY_QUEUE) return false
+  const queue = getPushDeliveryQueue(env)
+  if (!queue) return false
   const capped = Math.max(0, Math.min(86400, Math.floor(delaySeconds)))
-  await env.PUSH_DELIVERY_QUEUE.send({ deliveryId }, { delaySeconds: capped })
+  await queue.send({ deliveryId }, { delaySeconds: capped })
   return true
 }
 
@@ -412,7 +414,7 @@ export async function enqueueOverduePushDeliveries(env: any) {
 
   let enqueued = 0
   for (const row of deliveries as any[]) {
-    if (env.PUSH_DELIVERY_QUEUE) {
+    if (getPushDeliveryQueue(env)) {
       const scheduledMs = Date.parse(String(row.scheduled_at))
       const delaySeconds = Number.isFinite(scheduledMs)
         ? Math.max(0, Math.min(86400, Math.floor((Date.now() - scheduledMs) / 1000)))
@@ -500,12 +502,12 @@ export async function createPushCampaignAndDeliveries(options: {
     tierCounts[tierKey] = (tierCounts[tierKey] || 0) + 1
     scheduled++
 
-    if (env.PUSH_DELIVERY_QUEUE) {
+    if (getPushDeliveryQueue(env)) {
       await enqueuePushDelivery(env, deliveryId, delaySeconds)
     }
   }
 
-  if (!env.PUSH_DELIVERY_QUEUE && scheduled > 0) {
+  if (!getPushDeliveryQueue(env) && scheduled > 0) {
     const pending = await db.prepare(`
       SELECT id FROM push_deliveries WHERE campaign_id = ? AND status = 'pending'
     `).bind(campaignId).all()
