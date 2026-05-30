@@ -13,16 +13,19 @@ interface SiteSettings {
   faviconUrl: string
 }
 
-const siteSettings = ref<SiteSettings>({
-  siteName: strings.siteName,
-  siteNameShort: strings.siteNameShort,
-  siteDescription: strings.siteDescription,
-  logoUrl: '',
-  faviconUrl: '',
-})
+function defaultSiteSettings(): SiteSettings {
+  return {
+    siteName: strings.siteName,
+    siteNameShort: strings.siteNameShort,
+    siteDescription: strings.siteDescription,
+    logoUrl: '',
+    faviconUrl: '',
+  }
+}
 
 export function useSiteSettings() {
   const config = useRuntimeConfig()
+  const siteSettings = useState<SiteSettings>('site-settings', defaultSiteSettings)
   const fetched = useState('site-settings-fetched', () => false)
 
   async function fetchSiteSettings() {
