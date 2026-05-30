@@ -47,6 +47,33 @@
 const route = useRoute()
 const config = useRuntimeConfig()
 
+const categorySlug = computed(() => String(route.params.slug || ''))
+
+type CategoryVideosResponse = {
+  category?: { name?: string }
+  pagination?: { total?: number }
+}
+
+const { data: categorySeo } = await useAsyncData(
+  () => `category-seo-${categorySlug.value}`,
+  () =>
+    $fetch<CategoryVideosResponse>(
+      `${config.public.apiUrl}/api/categories/${encodeURIComponent(categorySlug.value)}/videos?page=1&pageSize=1`,
+    ).catch(() => null),
+  { watch: [categorySlug] },
+)
+
+await usePageSeo(
+  computed(() => {
+    const name = categorySeo.value?.category?.name || 'Category'
+    const total = Number(categorySeo.value?.pagination?.total ?? 0)
+    return {
+      title: name,
+      description: total > 0 ? `${total} videos in ${name}` : `Videos in ${name}`,
+    }
+  }),
+)
+
 const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)

@@ -40,6 +40,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiUrl: process.env.API_URL || 'https://vmp-api.tjm.sk',
+      /** Canonical site origin for og:url and absolute og:image (defaults to request origin). */
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
       gtm: {
         id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
       },
@@ -53,6 +55,9 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'Premium video content platform' },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:site_name', content: 'Video Monetization Platform' },
+        { name: 'twitter:card', content: 'summary_large_image' },
         // Required by Chrome's PWA installability check
         { name: 'theme-color', content: '#0f172a' },
       ],

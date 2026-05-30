@@ -21,14 +21,13 @@ const siteSettings = ref<SiteSettings>({
   faviconUrl: '',
 })
 
-let fetched = false
-
 export function useSiteSettings() {
   const config = useRuntimeConfig()
+  const fetched = useState('site-settings-fetched', () => false)
 
   async function fetchSiteSettings() {
-    if (fetched) return
-    fetched = true
+    if (fetched.value) return
+    fetched.value = true
     try {
       const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
       if (!res.ok) return
