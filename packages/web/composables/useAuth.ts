@@ -55,6 +55,7 @@ const accessToken  = ref<string | null>(null)
 const subscription = ref<SubscriptionData | null>(null)
 const initialised  = ref(false)
 let   refreshTimer: ReturnType<typeof setTimeout> | null = null
+let   refreshInFlight: Promise<boolean> | null = null
 
 export function useAuth() {
   const config = useRuntimeConfig()
@@ -221,19 +222,30 @@ export function useAuth() {
    * for an unauthenticated visitor.
    */
   async function refreshSession(): Promise<boolean> {
-    try {
-      const res = await fetch(`${apiUrl}/api/auth/refresh`, {
-        method:      'POST',
-        credentials: 'include',
-      })
-      if (!res.ok) { clearSession(); return false }
+    if (refreshInFlight) return refreshInFlight
 
-      const data = await res.json()
-      setAccessToken(data.accessToken, data.user)
-      return true
-    } catch {
-      clearSession()
-      return false
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${apiUrl}/api/auth/refresh`, {
+          method:      'POST',
+          credentials: 'include',
+        })
+        if (res.status === 204) return false
+        if (!res.ok) { clearSession(); return false }
+
+        const data = await res.json()
+        setAccessToken(data.accessToken, data.user)
+        return true
+      } catch {
+        clearSession()
+        return false
+      }
+    })()
+
+    try {
+      return await refreshInFlight
+    } finally {
+      refreshInFlight = null
     }
   }
 
