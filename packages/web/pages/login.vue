@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { isInstalledPwa } from '~/utils/pwa'
 
-await usePageSeo({ title: 'Sign in', noIndex: true })
+usePageSeo({ title: 'Sign in', noIndex: true })
 
 const route  = useRoute()
 const { signIn, isLoggedIn } = useAuth()

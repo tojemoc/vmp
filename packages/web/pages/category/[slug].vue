@@ -77,7 +77,7 @@ const loading = computed(() => pending.value && !categoryData.value)
 const loadingMore = computed(() => pending.value && Boolean(categoryData.value))
 const error = computed(() => fetchError.value?.message ?? null)
 
-await usePageSeo(
+usePageSeo(
   computed(() => {
     const name = categoryName.value
     const count = total.value

@@ -28,10 +28,12 @@ function stripForMeta(raw: string, maxLen = 200): string {
   return text.length <= maxLen ? text : `${text.slice(0, maxLen - 1)}…`
 }
 
-function resolveSiteOrigin(config: ReturnType<typeof useRuntimeConfig>, requestUrl: URL): string {
+function resolveSiteOrigin(config: ReturnType<typeof useRuntimeConfig>): string {
   const configured = String(config.public.siteUrl || '').trim()
   if (configured) return configured.replace(/\/$/, '')
-  return requestUrl.origin
+  const event = useRequestEvent()
+  if (event) return getRequestURL(event).origin
+  return 'http://localhost'
 }
 
 function toAbsoluteUrl(origin: string, url: string | null | undefined): string | undefined {
@@ -41,15 +43,13 @@ function toAbsoluteUrl(origin: string, url: string | null | undefined): string |
   return `${origin}${path}`
 }
 
-export async function usePageSeo(options: MaybeRefOrGetter<PageSeoInput> = {}) {
+/** Sync composable — do not mark async or await fetches here (breaks prerender). */
+export function usePageSeo(options: MaybeRefOrGetter<PageSeoInput> = {}) {
   const config = useRuntimeConfig()
-  const requestUrl = useRequestURL()
   const route = useRoute()
-  const { siteSettings, fetchSiteSettings } = useSiteSettings()
+  const { siteSettings } = useSiteSettings()
 
-  await fetchSiteSettings()
-
-  const origin = resolveSiteOrigin(config, requestUrl)
+  const origin = resolveSiteOrigin(config)
   const input = computed(() => toValue(options))
 
   const pageTitle = computed(() => {
@@ -85,7 +85,7 @@ export async function usePageSeo(options: MaybeRefOrGetter<PageSeoInput> = {}) {
 
   useHead({
     title: documentTitle,
-    link: [{ rel: 'canonical', href: canonicalUrl }],
+    link: computed(() => [{ rel: 'canonical', href: canonicalUrl.value }]),
     meta: computed(() => {
       const tags: Array<Record<string, string>> = []
       if (input.value.noIndex) {

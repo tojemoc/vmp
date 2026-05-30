@@ -445,7 +445,7 @@ const { data: videoMeta } = await useAsyncData(
   { watch: [videoIdParam] },
 )
 
-await usePageSeo(
+usePageSeo(
   computed(() => ({
     title: videoMeta.value?.title,
     description: videoMeta.value?.description,
