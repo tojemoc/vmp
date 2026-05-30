@@ -481,6 +481,7 @@ export async function createPushCampaignAndDeliveries(options: {
   let scheduled = 0
   let skipped = 0
   const now = Date.now()
+  const pushQueue = getPushDeliveryQueue(env)
 
   for (const sub of subscriptions as any[]) {
     let delaySeconds = 0
@@ -505,12 +506,12 @@ export async function createPushCampaignAndDeliveries(options: {
     tierCounts[tierKey] = (tierCounts[tierKey] || 0) + 1
     scheduled++
 
-    if (getPushDeliveryQueue(env)) {
+    if (pushQueue) {
       await enqueuePushDelivery(env, deliveryId, delaySeconds)
     }
   }
 
-  if (!getPushDeliveryQueue(env) && scheduled > 0) {
+  if (!pushQueue && scheduled > 0) {
     const pending = await db.prepare(`
       SELECT id FROM push_deliveries WHERE campaign_id = ? AND status = 'pending'
     `).bind(campaignId).all()
