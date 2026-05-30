@@ -9,20 +9,22 @@ const DEFAULT_BATCH_SIZE = 100
 const MAX_BATCH_SIZE = 500
 const CURSOR_ROW_LIMIT = 1000
 const REPLICATION_FETCH_TIMEOUT_MS = 10000
-/** Max rounds for admin manual push (batch per stream per round). */
-const MANUAL_PUSH_MAX_ROUNDS = 50
+const DEFAULT_MANUAL_PUSH_MAX_ROUNDS = 50
+const MAX_MANUAL_PUSH_MAX_ROUNDS = 200
+
 async function postReplicationEventsToTarget(env: any, events: unknown[]) {
   const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
   if (!targetUrl) throw new Error('REPLICATION_TARGET_URL is not configured')
   const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
+  if (!token) throw new Error('REPLICATION_TARGET_TOKEN is not configured')
   const payload = {
     source: 'cloudflare-workers',
     events,
   }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
   }
-  if (token) headers.Authorization = `Bearer ${token}`
   let response: Response
   try {
     response = await fetch(targetUrl, {
@@ -118,6 +120,12 @@ function parseBatchSize(input: unknown) {
   const value = Number.parseInt(String(input ?? ''), 10)
   if (!Number.isFinite(value) || value < 1) return DEFAULT_BATCH_SIZE
   return Math.min(value, MAX_BATCH_SIZE)
+}
+
+function parseManualPushMaxRounds(input: unknown) {
+  const value = Number.parseInt(String(input ?? ''), 10)
+  if (!Number.isFinite(value) || value < 1) return DEFAULT_MANUAL_PUSH_MAX_ROUNDS
+  return Math.min(value, MAX_MANUAL_PUSH_MAX_ROUNDS)
 }
 
 function rowCursor(updatedAt: unknown, id: unknown) {
@@ -361,16 +369,30 @@ async function runReplicationPushRound(env: any, mode: DeliveryMode) {
 
 export async function pushReplicationToPostgres(env: any) {
   const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
-  if (!targetUrl) return { ok: false, error: 'REPLICATION_TARGET_URL is not configured' }
+  if (!targetUrl) {
+    return { ok: false, error: 'REPLICATION_TARGET_URL is not configured', code: 'target_not_configured' }
+  }
+  const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
+  if (!token) {
+    return { ok: false, error: 'REPLICATION_TARGET_TOKEN is not configured', code: 'token_not_configured' }
+  }
+
+  const db = getDb(env)
+  await ensureReplicationStateTable(db)
+  const maxRounds = parseManualPushMaxRounds(await getAdminSetting(db, 'manual_push_max_rounds'))
 
   const totals = { users: 0, subscriptions: 0, videos: 0, adminSettings: 0 }
   let roundsExecuted = 0
 
-  for (let roundIndex = 0; roundIndex < MANUAL_PUSH_MAX_ROUNDS; roundIndex += 1) {
+  for (let roundIndex = 0; roundIndex < maxRounds; roundIndex += 1) {
     roundsExecuted += 1
     const round = await runReplicationPushRound(env, 'direct')
     if (round.skipped) {
-      return { ok: false, error: round.reason, rounds: roundsExecuted, totals }
+      const code = round.reason === 'mode_not_primary' ? 'mode_not_primary' : 'replication_skipped'
+      const error = round.reason === 'mode_not_primary'
+        ? 'Replication mode must be d1_to_pg for manual push'
+        : String(round.reason)
+      return { ok: false, error, code }
     }
     totals.users += round.counts.users
     totals.subscriptions += round.counts.subscriptions
@@ -379,11 +401,11 @@ export async function pushReplicationToPostgres(env: any) {
     const pushed = totals.users + totals.subscriptions + totals.videos + totals.adminSettings
     const roundTotal = round.counts.users + round.counts.subscriptions + round.counts.videos + round.counts.adminSettings
     if (roundTotal === 0) break
-    if (roundIndex === MANUAL_PUSH_MAX_ROUNDS - 1 && roundTotal > 0) {
+    if (roundIndex === maxRounds - 1 && roundTotal > 0) {
       return {
         ok: true,
         partial: true,
-        message: `Stopped after ${MANUAL_PUSH_MAX_ROUNDS} rounds; more rows may remain.`,
+        message: `Stopped after ${maxRounds} rounds; more rows may remain.`,
         rounds: roundsExecuted,
         totals,
         pushed,
@@ -433,7 +455,7 @@ export async function handleAdminReplicationPush(request: Request, env: any, cor
   try {
     const result = await pushReplicationToPostgres(env)
     if (!result.ok) {
-      return jsonResponse({ error: result.error, ...result }, 400, corsHeaders)
+      return jsonResponse({ error: result.error, code: result.code }, 400, corsHeaders)
     }
     return jsonResponse(result, 200, corsHeaders)
   } catch (err) {

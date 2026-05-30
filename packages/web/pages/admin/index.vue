@@ -1458,7 +1458,7 @@
                 </button>
               </div>
               <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
-                Set <code class="font-mono">REPLICATION_TARGET_URL</code> on the Cloudflare Worker to enable manual push.
+                Set <code class="font-mono">REPLICATION_TARGET_URL</code> and <code class="font-mono">REPLICATION_TARGET_TOKEN</code> on the Cloudflare Worker to enable manual push.
               </p>
             </div>
 
@@ -4069,9 +4069,11 @@ const saveSystemFeatures = async () => {
   }
 }
 
-const loadReplicationStatus = async () => {
+const loadReplicationStatus = async (options?: { preserveMessage?: boolean }) => {
   if (!isAdmin.value) return
-  replicationMessage.value = ''
+  if (!options?.preserveMessage) {
+    replicationMessage.value = ''
+  }
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, { headers: authHeader() })
     const data = await res.json().catch(() => ({}))
@@ -4113,7 +4115,7 @@ const pushReplicationToDeno = async () => {
     replicationMessageClass.value = data.partial
       ? 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
       : 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadReplicationStatus()
+    await loadReplicationStatus({ preserveMessage: true })
   } catch (e: any) {
     replicationMessage.value = e.message || 'DB push failed'
     replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
