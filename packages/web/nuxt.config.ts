@@ -94,6 +94,10 @@ export default defineNuxtConfig({
     },
     workbox: {
       navigateFallback: '/',
+      // The prerendered "/" shell must not be served for deep links — Workbox would
+      // hydrate the homepage on /auth/verify and Nuxt eventually rewrites to /?token=…,
+      // so magic-link login never runs.  Only the bare homepage uses the fallback.
+      navigateFallbackDenylist: [/^\/(?!$)/],
       globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
       cleanupOutdatedCaches: true,
       // Keep push handlers in a tiny sidecar file so GenerateSW can still be used.
