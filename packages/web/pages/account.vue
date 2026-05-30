@@ -6,7 +6,7 @@
 
       <!-- Welcome banner (shown after successful checkout redirect) -->
       <div
-        v-if="showWelcomeBanner"
+        v-if="showWelcomeBanner && !gocardlessCompletionError"
         class="flex items-start gap-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4"
       >
         <svg class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -274,9 +274,7 @@ const returningFromGoCardless = computed(() => {
   return token.length > 0
 })
 const showWelcomeBanner = ref(
-  route.query.subscribed === '1'
-  || route.query.gocardless_complete === '1'
-  || returningFromGoCardless.value,
+  route.query.subscribed === '1' || route.query.gocardless_complete === '1',
 )
 const gocardlessCompletionError = ref<string | null>(null)
 const gocardlessRetryError = ref<string | null>(null)
