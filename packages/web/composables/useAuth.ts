@@ -236,7 +236,10 @@ export function useAuth() {
           credentials: 'include',
         })
         if (res.status === 204) return false
-        if (!res.ok) { clearSession(); return false }
+        if (!res.ok) {
+          if (versionAtStart === sessionVersion) clearSession()
+          return false
+        }
         if (versionAtStart !== sessionVersion) return false
 
         const data = await res.json()
