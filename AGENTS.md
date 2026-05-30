@@ -114,6 +114,7 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
   - **Process:** grep the codebase and `package.json` files first; cite the chosen module in the PR description. Example: GTM via `@zadigetvoltaire/nuxt-gtm`, not a custom `plugins/gtm.client.ts`.
 - **PRs**: one PR per step; **never push to `main`** (see [Git workflow](#git-workflow-mandatory--read-first)). PR description should list every file changed and why.
 - **Before writing code for a step**: read all files that will be modified, check if migrations already exist, confirm API contract before implementing, implement API first then frontend, smoke-test with `wrangler dev`.
+- **`package-lock.json`**: never edit the lockfile by hand. Whenever you change dependency versions in any `package.json`, run `npm install` at the repo root so the lockfile is regenerated in sync — CI uses `npm ci`, which fails if the lockfile does not match `package.json`.
 
 ## Implementation roadmap
 
@@ -204,7 +205,7 @@ npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Pages p
 
 - The wrangler dev console truncates long log lines. Use a wide terminal (or tmux `resize-window -x 500`) to capture full magic-link tokens.
 - Video playback on `/watch/:id` requires actual HLS segments in R2. The seed data has no media files, so the player shows "Media failed to load" — this is expected in a fresh local environment.
-- There is no `package-lock.json` entry in `.gitignore`; the lockfile is committed.
+- The lockfile is committed (not in `.gitignore`). Do not manually rewrite `package-lock.json`; run `npm install` after any `package.json` version change so `npm ci` succeeds in CI.
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
 
