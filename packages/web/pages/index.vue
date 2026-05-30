@@ -258,9 +258,12 @@ import strings from '~/utils/strings'
 
 const { siteSettings, fetchSiteSettings } = useSiteSettings()
 await fetchSiteSettings()
-useHead({
-  title: computed(() => siteSettings.value.siteName),
-})
+await usePageSeo(
+  computed(() => ({
+    description: siteSettings.value.siteDescription,
+    image: siteSettings.value.logoUrl || undefined,
+  })),
+)
 
 // ── PWA install banner ────────────────────────────────────────────────────────
 const { $pwa } = useNuxtApp()

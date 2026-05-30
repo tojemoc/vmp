@@ -165,6 +165,26 @@ import strings from '~/utils/strings'
 import { buildWatchRecommendations } from '~/utils/watchRecommendations'
 
 const config = useRuntimeConfig()
+
+type VideoMetaResponse = {
+  title: string
+  description: string
+  thumbnail_url: string | null
+}
+
+const { data: liveMeta } = await useAsyncData('live-stream-meta', () =>
+  $fetch<VideoMetaResponse>(`${config.public.apiUrl}/api/videos/live/meta`).catch(() => null),
+)
+
+await usePageSeo(
+  computed(() => ({
+    title: liveMeta.value?.title ?? 'Live',
+    description: liveMeta.value?.description,
+    image: liveMeta.value?.thumbnail_url,
+    ogType: 'video.other' as const,
+  })),
+)
+
 const canvas = ref<HTMLCanvasElement | null>(null)
 
 const {

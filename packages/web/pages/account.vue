@@ -257,6 +257,8 @@
 <script setup lang="ts">
 import strings from '~/utils/strings'
 
+await usePageSeo({ title: 'Your account', noIndex: true })
+
 const route  = useRoute()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
