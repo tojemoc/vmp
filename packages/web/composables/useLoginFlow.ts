@@ -8,6 +8,7 @@ function safeRedirect(value: string | undefined): string | undefined {
 }
 
 export function useLoginFlow() {
+  const nuxtApp = useNuxtApp()
   const { isLoggedIn, initialised } = useAuth()
   const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
@@ -29,7 +30,12 @@ export function useLoginFlow() {
     })
   }
 
-  async function startLoginFlow(redirectPath?: string): Promise<void> {
+  /**
+   * Redirect to login (and optionally open the PWA push-login wizard).
+   * Returns the result of navigateTo so route middleware can `return startLoginFlow(...)`.
+   * Do not await navigateTo in a nested async function from middleware — that loses Nuxt context.
+   */
+  async function startLoginFlow(redirectPath?: string) {
     await waitForAuthInitialised()
 
     const authenticated = isLoggedIn.value
@@ -52,17 +58,19 @@ export function useLoginFlow() {
     const safe = safeRedirect(redirectPath)
     if (safe) query.redirect = safe
 
+    const goLogin = () => navigateTo({ path: '/login', query })
+
     if (!authenticated && standalone) {
       console.log('[AUTH ENTRY] launching PWA wizard')
       openPwaPushLoginWizard()
       if (route !== '/login') {
-        await navigateTo({ path: '/login', query })
+        return nuxtApp.runWithContext(goLogin)
       }
       return
     }
 
     console.log('[AUTH ENTRY] launching normal login')
-    await navigateTo({ path: '/login', query })
+    return nuxtApp.runWithContext(goLogin)
   }
 
   return { startLoginFlow, waitForAuthInitialised }

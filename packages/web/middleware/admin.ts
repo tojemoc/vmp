@@ -14,6 +14,12 @@
  */
 import { isInstalledPwa } from '~/utils/pwa'
 
+function safeRedirect(value: string): string | undefined {
+  const t = value.trim()
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return undefined
+  return t
+}
+
 export default defineNuxtRouteMiddleware(async (to) => {
   const { user, canEditContent } = useAuth()
   const { startLoginFlow } = useLoginFlow()
@@ -24,10 +30,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
   })
 
   if (!user.value) {
-    // Not logged in — send to login with a redirect param so they land back
-    // on the admin page after authenticating.
-    await startLoginFlow(to.fullPath)
-    return abortNavigation()
+    // navigateTo must run in this middleware frame (not after await in startLoginFlow).
+    if (import.meta.server) {
+      const redirect = safeRedirect(to.fullPath)
+      return navigateTo({
+        path: '/login',
+        query: redirect ? { redirect } : undefined,
+      })
+    }
+    return startLoginFlow(to.fullPath)
   }
 
   if (!canEditContent.value) {
