@@ -64,6 +64,46 @@ const strings = {
   authVerifyPwaPushNoPushSubscription: 'Push subscription not found. Please start again in the app.',
   authVerifyPwaPushPushFailed: 'Could not reach the app. Make sure it is installed and try again.',
 
+  // ── Login (magic link) ─────────────────────────────────────────────────────
+  loginTitle: 'Sign in',
+  loginSubtitle: "We'll email you a sign-in link. No password needed.",
+  loginEmailLabel: 'Email address',
+  loginSendLink: 'Send sign-in link',
+  loginSending: 'Sending…',
+  loginMagicLinkSent: '✓ Check your inbox — a sign-in link is on its way.',
+  loginMagicLinkExpires: 'It expires in 15 minutes.',
+  loginOpenEmailApp: 'Open your email app',
+  loginOpenGmail: 'Gmail',
+  loginOpenOutlook: 'Outlook',
+  loginOpenEmailHint: 'Use your default mail app, or open webmail in a new tab.',
+
+  // ── Two-factor authentication ────────────────────────────────────────────
+  totpSetupTitle: 'Set up two-factor authentication',
+  totpSetupIntroAdminGate:
+    'You need two-factor authentication before you can open the admin area. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
+  totpSetupIntroStaffRequired:
+    'Your role requires two-factor authentication to access the admin area. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
+  totpSetupIntroOptional:
+    'Add an extra layer of security to your account. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
+  totpSetupManualEntry: "Can't scan? Enter this code manually:",
+  totpSetupConfirmLabel: 'Enter the 6-digit code to confirm',
+  totpSetupEnableButton: 'Enable two-factor authentication',
+  totpSetupConfirming: 'Confirming…',
+  totpSetupEnabledTitle: '2FA enabled',
+  totpSetupEnabledBody: 'Your account is now protected. Redirecting…',
+  totpSetupAlreadyEnabled: 'Two-factor authentication is already enabled. Disable it from your account page to set up a new authenticator.',
+  totpAccountSectionTitle: 'Two-factor authentication',
+  totpAccountEnabled: 'Your account is protected with an authenticator app. To switch devices, turn off 2FA below and set it up again.',
+  totpAccountSetupRequired: 'Your role requires 2FA to access the admin area.',
+  totpAccountOptionalBlurb: 'Add extra security to your account (optional).',
+  totpAccountSetupButton: 'Set up two-factor authentication',
+  totpAccountDisableButton: 'Turn off two-factor authentication',
+  totpAccountDisableHintStaff:
+    'You can turn off 2FA here, but you must set it up again before you can open the admin area.',
+  totpAccountDisableHintOptional: 'You can turn it back on anytime from this page.',
+  totpAccountDisablePrompt: 'Enter your current 6-digit code to turn off 2FA.',
+  totpAccountDisabling: 'Disabling…',
+
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Discover Premium Video Content',
   heroSubtitleDefault: 'Watch free previews or unlock full access with a premium subscription',

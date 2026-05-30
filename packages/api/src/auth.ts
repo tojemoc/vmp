@@ -1037,6 +1037,71 @@ export async function handleTotpConfirm(request: any, env: any, corsHeaders: any
 }
 
 /**
+ * POST /api/auth/2fa/disable
+ * Body: { code: string }
+ *
+ * Disables TOTP for the authenticated user after verifying a current code.
+ * Staff roles (editor+) remain blocked from /admin until they enroll again.
+ */
+export async function handleTotpDisable(request: any, env: any, corsHeaders: any) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return authJson({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  if (!ROLES_ALLOWED_TOTP_ENROLLMENT.includes(user.role)) {
+    return authJson({ error: '2FA is not available for this role.' }, 403, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body?.code || typeof body.code !== 'string' || !/^\d{6}$/.test(body.code)) {
+    return authJson({ error: 'code must be 6 digits' }, 400, corsHeaders)
+  }
+
+  const db = getDb(env)
+  const userRow = await db
+    .prepare('SELECT id, email, role, totp_secret, totp_enabled, created_at FROM users WHERE id = ?')
+    .bind(user.sub)
+    .first()
+
+  if (!userRow?.totp_enabled || !userRow.totp_secret) {
+    return authJson({ error: '2FA is not enabled for this account.', code: 'totp_not_enabled' }, 400, corsHeaders)
+  }
+
+  const totpKey = getTotpEncryptionKey(env)
+  let plainSecret: string
+  try {
+    plainSecret = await decryptTotpSecret(userRow.totp_secret, totpKey)
+  } catch {
+    return authJson({ error: 'Could not verify authenticator. Contact support.' }, 500, corsHeaders)
+  }
+
+  const valid = await verifyTotp(plainSecret, body.code)
+  if (!valid) {
+    return authJson({ error: 'Invalid code. Make sure your device clock is correct and try again.' }, 400, corsHeaders)
+  }
+
+  await db
+    .prepare('UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?')
+    .bind(user.sub)
+    .run()
+
+  const totpRequired = shouldRequireTotpEnrollment(userRow, env)
+  return authJson({
+    ok: true,
+    user: {
+      id: user.sub,
+      email: userRow.email,
+      role: userRow.role,
+      totpEnabled: false,
+      totpRequired,
+    },
+  }, 200, corsHeaders)
+}
+
+/**
  * POST /api/auth/2fa/verify
  * Body: { code: string, pendingToken: string }
  *

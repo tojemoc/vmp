@@ -1,13 +1,13 @@
 <!-- packages/web/pages/auth/2fa/setup.vue -->
 <!--
-  First-time TOTP setup page for editor/admin/super_admin users.
-  URL: /auth/2fa/setup
+  TOTP setup page (first-time or after disabling 2FA).
+  URL: /auth/2fa/setup?redirect=...
 
   Flow:
   1. Page loads → calls GET /api/auth/2fa/setup to get a fresh secret + otpauth URI
   2. Renders QR code for the user to scan with their authenticator app
   3. User enters the 6-digit code and submits
-  4. POST /api/auth/2fa/confirm — if valid, 2FA is enabled and user goes to /admin
+  4. POST /api/auth/2fa/confirm — if valid, 2FA is enabled and user is redirected
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4 py-12">
@@ -21,10 +21,9 @@
               d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
           </svg>
         </div>
-        <h1 class="text-xl font-semibold text-white">Set up two-factor authentication</h1>
+        <h1 class="text-xl font-semibold text-white">{{ strings.totpSetupTitle }}</h1>
         <p class="text-gray-400 text-sm mt-2 leading-relaxed">
-          Your account requires 2FA. Scan the QR code with an authenticator app
-          (Google Authenticator, Authy, etc.), then enter the code to confirm.
+          {{ setupIntro }}
         </p>
       </div>
 
@@ -39,9 +38,21 @@
         <div class="px-4 py-3 rounded-lg bg-red-950 border border-red-800 text-red-400 text-sm">
           {{ loadError }}
         </div>
-        <button @click="loadSetup" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors">
+        <button
+          v-if="loadErrorCode !== 'totp_already_enabled'"
+          type="button"
+          class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+          @click="loadSetup"
+        >
           Try again
         </button>
+        <NuxtLink
+          v-else
+          to="/account"
+          class="inline-block px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+        >
+          Back to account
+        </NuxtLink>
       </div>
 
       <!-- Setup form -->
@@ -51,7 +62,7 @@
         <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 flex flex-col items-center gap-4">
           <canvas ref="qrCanvas" class="rounded-lg"></canvas>
           <p class="text-xs text-gray-500 text-center">
-            Can't scan? Enter this code manually:
+            {{ strings.totpSetupManualEntry }}
           </p>
           <div class="bg-gray-800 rounded-lg px-4 py-2 font-mono text-sm text-gray-300 tracking-widest select-all text-center break-all">
             {{ formattedSecret }}
@@ -66,7 +77,7 @@
 
           <div>
             <label for="confirmCode" class="block text-sm font-medium text-gray-300 mb-1.5">
-              Enter the 6-digit code to confirm
+              {{ strings.totpSetupConfirmLabel }}
             </label>
             <input
               id="confirmCode"
@@ -88,9 +99,9 @@
           >
             <span v-if="confirming" class="inline-flex items-center gap-2">
               <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block"></span>
-              Confirming…
+              {{ strings.totpSetupConfirming }}
             </span>
-            <span v-else>Enable two-factor authentication</span>
+            <span v-else>{{ strings.totpSetupEnableButton }}</span>
           </button>
         </form>
 
@@ -104,8 +115,8 @@
           </svg>
         </div>
         <div>
-          <h2 class="text-lg font-semibold text-white mb-1">2FA enabled</h2>
-          <p class="text-gray-400 text-sm">Your account is now protected. Redirecting…</p>
+          <h2 class="text-lg font-semibold text-white mb-1">{{ strings.totpSetupEnabledTitle }}</h2>
+          <p class="text-gray-400 text-sm">{{ strings.totpSetupEnabledBody }}</p>
         </div>
       </div>
 
@@ -116,18 +127,16 @@
 <script setup lang="ts">
 import { navigateTo, useRoute } from '#app'
 import QRCode from 'qrcode'
+import strings from '~/utils/strings'
 
 // Do NOT use the admin middleware here — it would cause a redirect loop
 // because it redirects to this page when totpEnabled is false.
-// Instead, guard manually: must be logged in with an editor+ role.
 const { user, isLoggedIn, authHeader, markTotpEnabled, applyNewSession } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
 const route  = useRoute()
 
-// Mirrors the backend's normalizeRedirectPath: must start with a single slash,
-// no protocol-relative paths (//evil.com), max 1024 chars.
 function safeRedirect(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback
   const t = value.trim()
@@ -135,14 +144,28 @@ function safeRedirect(value: unknown, fallback: string): string {
   return t
 }
 
-// Where to go after setup completes.  Falls back to /admin if not specified.
 const postSetupRedirect = computed(() =>
-  safeRedirect(route.query.redirect, '/admin')
+  safeRedirect(route.query.redirect, '/account')
 )
+
+const blockedAtAdminGate = computed(() => {
+  const target = postSetupRedirect.value
+  return target === '/admin' || target.startsWith('/admin/')
+})
+
+const setupIntro = computed(() => {
+  if (user.value?.totpRequired) {
+    return blockedAtAdminGate.value
+      ? strings.totpSetupIntroAdminGate
+      : strings.totpSetupIntroStaffRequired
+  }
+  return strings.totpSetupIntroOptional
+})
 
 type State = 'loading' | 'loadError' | 'setup' | 'done'
 const state        = ref<State>('loading')
 const loadError    = ref('')
+const loadErrorCode = ref('')
 const secret       = ref('')
 const otpAuthUrl   = ref('')
 const confirmCode  = ref('')
@@ -153,7 +176,6 @@ let   redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 onUnmounted(() => { if (redirectTimer) clearTimeout(redirectTimer) })
 
-// Format the base32 secret with spaces every 4 chars for readability
 const formattedSecret = computed(() =>
   secret.value.replace(/(.{4})/g, '$1 ').trim()
 )
@@ -161,17 +183,23 @@ const formattedSecret = computed(() =>
 async function loadSetup() {
   state.value     = 'loading'
   loadError.value = ''
+  loadErrorCode.value = ''
 
   try {
     const res  = await fetch(`${apiUrl}/api/auth/2fa/setup`, { headers: authHeader() })
     const data = await res.json()
 
-    // Session missing or expired — send back to login rather than showing a
-    // confusing generic error.  Preserve the redirect so they come back here.
     if (res.status === 401) {
       const inner = safeRedirect(route.query.redirect, '')
       const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
       await startLoginFlow(setupPath)
+      return
+    }
+
+    if (res.status === 409 && data.code === 'totp_already_enabled') {
+      loadError.value = strings.totpSetupAlreadyEnabled
+      loadErrorCode.value = 'totp_already_enabled'
+      state.value = 'loadError'
       return
     }
 
@@ -181,7 +209,6 @@ async function loadSetup() {
     otpAuthUrl.value = data.otpAuthUrl
     state.value      = 'setup'
 
-    // Render QR code after the canvas mounts
     await nextTick()
     if (qrCanvas.value) {
       await QRCode.toCanvas(qrCanvas.value, data.otpAuthUrl, {
@@ -205,24 +232,20 @@ async function confirm() {
   try {
     const res = await fetch(`${apiUrl}/api/auth/2fa/confirm`, {
       method:      'POST',
-      credentials: 'include',   // required so the browser stores the new Set-Cookie
+      credentials: 'include',
       headers:     { 'Content-Type': 'application/json', ...authHeader() },
       body:        JSON.stringify({ secret: secret.value, code: confirmCode.value }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Confirmation failed')
 
-    // The server now returns a fresh access token + refresh cookie reflecting
-    // totpEnabled = true, so the user stays logged in without a re-login step.
     if (data.accessToken && data.user) {
       applyNewSession(data.accessToken, data.user)
     } else {
-      // Older server that only returned { ok } — fall back to in-memory flag.
       markTotpEnabled()
     }
     state.value = 'done'
 
-    // Brief success flash before navigating to wherever they were originally headed.
     redirectTimer = setTimeout(() => navigateTo(postSetupRedirect.value), 1500)
   } catch (err: any) {
     confirmError.value = err.message || 'Invalid code. Please try again.'

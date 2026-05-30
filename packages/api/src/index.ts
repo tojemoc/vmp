@@ -24,6 +24,7 @@ import {
   handleGetMe,
   handleTotpSetup,
   handleTotpConfirm,
+  handleTotpDisable,
   handleTotpVerify,
   requireAuth,
   requireRole,
@@ -319,6 +320,9 @@ export default {
     }
     if (url.pathname === '/api/auth/2fa/confirm' && request.method === 'POST') {
       return handleTotpConfirm(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/auth/2fa/disable' && request.method === 'POST') {
+      return handleTotpDisable(request, env, corsHeaders)
     }
     if (url.pathname === '/api/auth/2fa/verify' && request.method === 'POST') {
       return handleTotpVerify(request, env, corsHeaders)

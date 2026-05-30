@@ -170,17 +170,53 @@
                 d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           </div>
-          <h2 class="text-base font-semibold text-gray-900 dark:text-white">Two-factor authentication</h2>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ strings.totpAccountSectionTitle }}</h2>
         </div>
 
-        <div v-if="user?.totpEnabled" class="flex items-center gap-3">
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-            </svg>
-            Enabled
-          </span>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Your account is protected with an authenticator app.</p>
+        <div v-if="user?.totpEnabled" class="space-y-4">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+              Enabled
+            </span>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ strings.totpAccountEnabled }}</p>
+          </div>
+
+          <button
+            type="button"
+            class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            @click="showTotpDisable = !showTotpDisable"
+          >
+            {{ strings.totpAccountDisableButton }}
+          </button>
+
+          <div v-if="showTotpDisable" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              {{ user?.totpRequired ? strings.totpAccountDisableHintStaff : strings.totpAccountDisableHintOptional }}
+            </p>
+            <p class="text-sm text-gray-700 dark:text-gray-300">{{ strings.totpAccountDisablePrompt }}</p>
+            <div v-if="totpDisableError" class="text-sm text-red-600 dark:text-red-400">{{ totpDisableError }}</div>
+            <input
+              v-model="totpDisableCode"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              placeholder="000000"
+              :disabled="totpDisabling"
+              class="w-full max-w-xs px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-center text-lg tracking-widest font-mono"
+            />
+            <button
+              type="button"
+              class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              :disabled="totpDisabling || totpDisableCode.length !== 6"
+              @click="disableTotp"
+            >
+              {{ totpDisabling ? strings.totpAccountDisabling : strings.totpAccountDisableButton }}
+            </button>
+          </div>
         </div>
 
         <div v-else-if="user?.totpRequired">
@@ -191,25 +227,25 @@
               </svg>
               Setup required
             </span>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Your role requires 2FA to access the admin area.</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ strings.totpAccountSetupRequired }}</p>
           </div>
           <NuxtLink
             to="/auth/2fa/setup?redirect=/account"
             class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Set up two-factor authentication
+            {{ strings.totpAccountSetupButton }}
           </NuxtLink>
         </div>
 
         <div v-else>
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Add extra security to your account (optional).
+            {{ strings.totpAccountOptionalBlurb }}
           </p>
           <NuxtLink
             to="/auth/2fa/setup?redirect=/account"
             class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Set up two-factor authentication
+            {{ strings.totpAccountSetupButton }}
           </NuxtLink>
         </div>
       </div>
@@ -219,13 +255,15 @@
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
+
 const route  = useRoute()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
 
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
 
-const { user, subscription, fetchSubscription, authHeader, isLoggedIn } = useAuth()
+const { user, subscription, fetchSubscription, authHeader, isLoggedIn, markTotpDisabled } = useAuth()
 const { startLoginFlow, waitForAuthInitialised } = useLoginFlow()
 
 const hasActiveSubscription = computed(() => {
@@ -265,6 +303,35 @@ const returningFromGoCardless = computed(() => {
 const showWelcomeBanner = ref(
   route.query.subscribed === '1' || route.query.gocardless_complete === '1',
 )
+
+const showTotpDisable   = ref(false)
+const totpDisableCode   = ref('')
+const totpDisabling     = ref(false)
+const totpDisableError  = ref<string | null>(null)
+
+async function disableTotp() {
+  if (totpDisableCode.value.length !== 6 || totpDisabling.value) return
+  totpDisabling.value = true
+  totpDisableError.value = null
+  try {
+    const res = await fetch(`${apiUrl}/api/auth/2fa/disable`, {
+      method:      'POST',
+      credentials: 'include',
+      headers:     { 'Content-Type': 'application/json', ...authHeader() },
+      body:        JSON.stringify({ code: totpDisableCode.value }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Could not disable 2FA')
+    if (data.user) markTotpDisabled(data.user)
+    else markTotpDisabled()
+    showTotpDisable.value = false
+    totpDisableCode.value = ''
+  } catch (e: unknown) {
+    totpDisableError.value = e instanceof Error ? e.message : 'Could not disable 2FA'
+  } finally {
+    totpDisabling.value = false
+  }
+}
 const gocardlessCompletionError = ref<string | null>(null)
 const gocardlessRetryError = ref<string | null>(null)
 const retryingGoCardless = ref(false)
