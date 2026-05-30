@@ -923,21 +923,28 @@ async function throttleTotpIpAttempts(
   corsHeaders: any,
   keyPrefix: string,
 ): Promise<Response | null> {
-  if (!env.RATE_LIMIT_KV) return null
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
-  const minuteBucket = Math.floor(Date.now() / 60000)
-  const kvKey = `${keyPrefix}:${ip}:${minuteBucket}`
-  const current = parseInt((await env.RATE_LIMIT_KV.get(kvKey)) || '0', 10)
-  if (current >= 10) {
-    const rlHeaders = buildResponseHeaders(corsHeaders)
-    rlHeaders.set('Retry-After', '60')
-    return new Response(
-      JSON.stringify({ error: 'Too many attempts. Please wait a minute.', code: 'rate_limit_exceeded' }),
-      { status: 429, headers: rlHeaders },
-    )
+  const kv = env.RATE_LIMIT_KV
+  if (!kv) return null
+  try {
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+    const minuteBucket = Math.floor(Date.now() / 60000)
+    const kvKey = `${keyPrefix}:${ip}:${minuteBucket}`
+    const current = parseInt((await kv.get(kvKey)) || '0', 10)
+    if (current >= 10) {
+      const rlHeaders = buildResponseHeaders(corsHeaders)
+      rlHeaders.set('Retry-After', '60')
+      return new Response(
+        JSON.stringify({ error: 'Too many attempts. Please wait a minute.', code: 'rate_limit_exceeded' }),
+        { status: 429, headers: rlHeaders },
+      )
+    }
+    await kv.put(kvKey, String(current + 1), { expirationTtl: 120 })
+    return null
+  } catch (err) {
+    // Rate limiting is best effort; never break 2FA because KV is unavailable.
+    console.warn('[auth] TOTP IP rate limit KV unavailable:', err)
+    return null
   }
-  await env.RATE_LIMIT_KV.put(kvKey, String(current + 1), { expirationTtl: 120 })
-  return null
 }
 
 /**
@@ -1090,13 +1097,17 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
   const MAX_FAILED_ATTEMPTS = 5
   const disableAttemptKey = `2fa_disable_user:${user.sub}`
   if (env.RATE_LIMIT_KV) {
-    const priorFailures = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10)
-    if (priorFailures >= MAX_FAILED_ATTEMPTS) {
-      return authJson(
-        { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
-        401,
-        corsHeaders,
-      )
+    try {
+      const priorFailures = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10)
+      if (priorFailures >= MAX_FAILED_ATTEMPTS) {
+        return authJson(
+          { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
+          401,
+          corsHeaders,
+        )
+      }
+    } catch (err) {
+      console.warn('[auth] TOTP disable attempt KV read failed:', err)
     }
   }
 
@@ -1121,14 +1132,18 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
   const valid = await verifyTotp(plainSecret, body.code)
   if (!valid) {
     if (env.RATE_LIMIT_KV) {
-      const failed = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10) + 1
-      await env.RATE_LIMIT_KV.put(disableAttemptKey, String(failed), { expirationTtl: 900 })
-      if (failed >= MAX_FAILED_ATTEMPTS) {
-        return authJson(
-          { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
-          401,
-          corsHeaders,
-        )
+      try {
+        const failed = parseInt((await env.RATE_LIMIT_KV.get(disableAttemptKey)) || '0', 10) + 1
+        await env.RATE_LIMIT_KV.put(disableAttemptKey, String(failed), { expirationTtl: 900 })
+        if (failed >= MAX_FAILED_ATTEMPTS) {
+          return authJson(
+            { error: 'Too many incorrect attempts. Please try again later.', code: 'totp_locked' },
+            401,
+            corsHeaders,
+          )
+        }
+      } catch (err) {
+        console.warn('[auth] TOTP disable attempt KV update failed:', err)
       }
     }
     return authJson({ error: 'Invalid code. Please try again.' }, 400, corsHeaders)
@@ -1140,7 +1155,11 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
     .run()
 
   if (env.RATE_LIMIT_KV) {
-    await env.RATE_LIMIT_KV.delete(disableAttemptKey)
+    try {
+      await env.RATE_LIMIT_KV.delete(disableAttemptKey)
+    } catch (err) {
+      console.warn('[auth] TOTP disable attempt KV clear failed:', err)
+    }
   }
 
   // Rotate session so the access JWT reflects totpEnabled: false (mirrors handleTotpConfirm).
