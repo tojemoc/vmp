@@ -111,7 +111,7 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
   - **Cloudflare Workers:** prefer platform bindings (D1, R2, Queues, KV, DO) and documented patterns over reimplementing queues, caches, or schedulers in raw JS.
   - **Monorepo:** reuse `@vmp/shared` types and existing API helpers; do not duplicate contracts.
   - **When to roll your own:** only when no suitable module exists, the dependency is unmaintained/incompatible (verify on target Nuxt/Worker version), or the requirement is trivially small (a few lines) and a module would add more complexity than value.
-  - **Process:** grep the codebase and `package.json` files first; cite the chosen module in the PR description. Example: GTM via `@zadigetvoltaire/nuxt-gtm`, not a custom `plugins/gtm.client.ts`.
+  - **Process:** grep the codebase and `package.json` files first; cite the chosen module in the PR description. Example: GTM via `@saslavik/nuxt-gtm`, not a custom `plugins/gtm.client.ts`.
 - **PRs**: one PR per step; **never push to `main`** (see [Git workflow](#git-workflow-mandatory--read-first)). PR description should list every file changed and why.
 - **Before writing code for a step**: read all files that will be modified, check if migrations already exist, confirm API contract before implementing, implement API first then frontend, smoke-test with `wrangler dev`.
 
