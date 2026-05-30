@@ -13,22 +13,23 @@ interface SiteSettings {
   faviconUrl: string
 }
 
-const siteSettings = ref<SiteSettings>({
-  siteName: strings.siteName,
-  siteNameShort: strings.siteNameShort,
-  siteDescription: strings.siteDescription,
-  logoUrl: '',
-  faviconUrl: '',
-})
-
-let fetched = false
+function defaultSiteSettings(): SiteSettings {
+  return {
+    siteName: strings.siteName,
+    siteNameShort: strings.siteNameShort,
+    siteDescription: strings.siteDescription,
+    logoUrl: '',
+    faviconUrl: '',
+  }
+}
 
 export function useSiteSettings() {
   const config = useRuntimeConfig()
+  const siteSettings = useState<SiteSettings>('site-settings', defaultSiteSettings)
+  const fetched = useState('site-settings-fetched', () => false)
 
   async function fetchSiteSettings() {
-    if (fetched) return
-    fetched = true
+    if (fetched.value) return
     try {
       const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
       if (!res.ok) return
@@ -40,8 +41,9 @@ export function useSiteSettings() {
         logoUrl: data.site_logo_url || '',
         faviconUrl: data.site_favicon_url || '',
       }
+      fetched.value = true
     } catch {
-      // Best-effort; fallback to static strings
+      // Best-effort; fallback to static strings — leave fetched false so client can retry
     }
   }
 
