@@ -20,7 +20,7 @@ npm install
 
 ## Run (recommended: systemd)
 
-Point `WorkingDirectory` at the repo (or at `packages/podcast-host` if you copy only that package — then set `VMP_PIPELINE_SCRIPT` to the absolute path of `dist/pipeline_watch.js`).
+Point `WorkingDirectory` at the monorepo root. **`dist/` is gitignored** — run `npm run build --workspace=@vmp/podcast-host` after every `git pull` that touches `packages/podcast-host/` (auto-upgrade does this when `VMP_AUTO_UPGRADE=1`).
 
 ```ini
 [Service]
@@ -30,6 +30,8 @@ Environment=VMP_WEBHOOK_SECRET=your-long-shared-secret
 Environment=INBOX_DIR=/mnt/videos/inbox
 Environment=TMP_DIR_BASE=/mnt/tmp/video_pipeline
 Environment=R2_BUCKET=vmp-videos
+# Rebuild before start if you pulled without auto-upgrade:
+# ExecStartPre=/usr/bin/npm run build --workspace=@vmp/podcast-host
 ExecStart=/usr/bin/node /opt/vmp/packages/podcast-host/dist/supervisor.js
 Restart=always
 ```
@@ -92,8 +94,8 @@ Ratios in `ttp_summary` are wall-clock seconds divided by source duration (e.g. 
 
 If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` files, update them to the compiled `.js` paths in `dist/`. The shell scripts were removed.
 
-- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/pipeline_watch.js`
-- `VMP_RENDER_SCRIPT` → `packages/podcast-host/render_podcast_preview_mp3.js`
+- `VMP_PIPELINE_SCRIPT` → `packages/podcast-host/dist/pipeline_watch.js`
+- `VMP_RENDER_SCRIPT` → `packages/podcast-host/dist/render_podcast_preview_mp3.js`
 
 ## “Fragmented MP3” and podcast apps
 

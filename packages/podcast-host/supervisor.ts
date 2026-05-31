@@ -64,10 +64,28 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
   return resolved
 }
 
+/** Ensure compiled pipeline_watch.js sibling imports (e.g. ttpLog.js) exist after git pull. */
+function validatePipelineBundle(resolvedPipelineScript) {
+  const dir = path.dirname(resolvedPipelineScript)
+  const content = fs.readFileSync(resolvedPipelineScript, 'utf8')
+  const importRe = /from\s+['"]\.\/([^'"]+\.js)['"]/g
+  const missing = []
+  for (const match of content.matchAll(importRe)) {
+    const depPath = path.join(dir, match[1])
+    if (!fs.existsSync(depPath)) missing.push(match[1])
+  }
+  if (missing.length === 0) return
+  throw new Error(
+    `Pipeline script ${resolvedPipelineScript} imports missing module(s): ${missing.join(', ')}. ` +
+    'dist/ is not committed — run `npm run build --workspace=@vmp/podcast-host` after pulling changes.',
+  )
+}
+
 let resolvedPipelineScript = pipelineScript
 let resolvedRenderScript = renderScript
 try {
   resolvedPipelineScript = validateScriptPath(pipelineScript, 'Pipeline', 'VMP_PIPELINE_SCRIPT', 'pipeline_watch.js')
+  validatePipelineBundle(resolvedPipelineScript)
   resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err)
@@ -421,7 +439,9 @@ async function checkAndApplyPodcastHostUpgrade() {
     if (!changed.stdout.trim()) return
     pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
     await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
-    pushLog('[upgrade] pull successful; exiting for container/service restart')
+    pushLog('[upgrade] pull successful; rebuilding @vmp/podcast-host')
+    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/podcast-host'], autoUpgradeRepoDir)
+    pushLog('[upgrade] build successful; exiting for container/service restart')
     process.exit(0)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
