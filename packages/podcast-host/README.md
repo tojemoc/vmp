@@ -85,6 +85,12 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | `VIDEO_ID_SANITIZE_MODE` | Controls ID derivation from filename stem: `slug-hash` (default), `slug`, `base64url`, `none` |
 | `VAAPI_DEVICE` | GPU device node for VAAPI hardware encoding (default `/dev/dri/renderD128`). Requires a GPU with VAAPI support and read/write access to the device node. |
 | `INBOX_DIR`, `TMP_DIR_BASE`, `R2_BUCKET`, … | Passed through to the Node entrypoint/processing pipeline |
+| `RCLONE_REMOTE` | rclone remote name (e.g. `vmp-videos`). If the remote already includes the bucket in `~/.config/rclone/rclone.conf`, **omit** `R2_BUCKET_NAME` — otherwise paths become `remote:bucket:bucket/...` |
+| `R2_BUCKET_NAME` | Bucket segment when using `RCLONE_REMOTE:bucket` path form |
+| `RCLONE_TRANSFERS` | Parallel file uploads (default `4`; lower if R2 returns 501) |
+| `RCLONE_UPLOAD_CONCURRENCY` | S3 multipart concurrency (default `2` for R2 stability) |
+| `RCLONE_EXTRA_ARGS` | Extra rclone flags (space-separated) |
+| `RCLONE_LOG_LEVEL` | rclone log level (default `NOTICE`; use `ERROR` to hide retry noise) |
 | `VMP_TTP_LOG_PATH` | Optional path to append structured `VMP_TTP` JSON lines (one object per line) for TTP analysis |
 
 ### Time-to-publish (TTP) logging
@@ -118,6 +124,17 @@ Ratios in `ttp_summary` are wall-clock seconds divided by source duration (e.g. 
 ### Encode progress (dashboard)
 
 During ffmpeg encodes the pipeline emits `VMP_PIPELINE_PROGRESS` JSON lines (parsed by the supervisor, shown as progress bars on `:8788`). Progress uses ffmpeg `time=` vs probed source duration for each rendition, combined into an overall 0–100% estimate across pipeline stages.
+
+### rclone + Cloudflare R2
+
+Configure the remote with `provider = Cloudflare` in `rclone.conf` (see [Cloudflare R2 rclone docs](https://developers.cloudflare.com/r2/examples/rclone/)).
+
+Transient `501 Not Implemented` lines during upload usually mean rclone retried with a different strategy — look for `Attempt 2/3 succeeded`. The pipeline now:
+
+- uploads shared audio segments (`seg_audio_*.m4s`) in **one** batched `rclone copy` instead of hundreds of per-file calls
+- passes R2-friendly defaults: `--s3-no-check-bucket`, `--s3-upload-concurrency=2`, `--transfers=4`
+
+If 501s persist, try `Environment=RCLONE_TRANSFERS=2` and `Environment=RCLONE_UPLOAD_CONCURRENCY=1` in systemd. If your rclone remote already embeds the bucket name, remove `R2_BUCKET_NAME` from the unit file.
 
 ### Migration note (legacy `.sh` overrides)
 

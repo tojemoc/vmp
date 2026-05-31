@@ -242,6 +242,32 @@ function r2Path(relativePath: string): string {
   return `${r2Root().replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
 }
 
+const RCLONE_TRANSFERS = Math.max(1, Number.parseInt(process.env.RCLONE_TRANSFERS || '4', 10) || 4)
+const RCLONE_CHECKERS = Math.max(1, Number.parseInt(process.env.RCLONE_CHECKERS || '8', 10) || 8)
+const RCLONE_UPLOAD_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RCLONE_UPLOAD_CONCURRENCY || '2', 10) || 2)
+
+/** R2-safe rclone flags; extend with space-separated RCLONE_EXTRA_ARGS. */
+function rcloneBaseArgs(): string[] {
+  const args = [
+    '--s3-no-check-bucket',
+    `--s3-upload-concurrency=${RCLONE_UPLOAD_CONCURRENCY}`,
+    '--retries', '5',
+    '--low-level-retries', '10',
+    '--log-level', process.env.RCLONE_LOG_LEVEL || 'NOTICE',
+  ]
+  const extra = (process.env.RCLONE_EXTRA_ARGS || '').trim()
+  if (extra) args.push(...extra.split(/\s+/).filter(Boolean))
+  return args
+}
+
+function rcloneTransferArgs(): string[] {
+  return [
+    ...rcloneBaseArgs(),
+    '--transfers', String(RCLONE_TRANSFERS),
+    '--checkers', String(RCLONE_CHECKERS),
+  ]
+}
+
 function hash8(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex').slice(0, 8)
 }
@@ -421,15 +447,32 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void
 }
 
 async function rcloneCopyDir(localDir: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['copy', localDir, r2Dest, '--transfers', '8', '--checkers', '16'], label)
+  await run('rclone', ['copy', localDir, r2Dest, ...rcloneTransferArgs()], label)
 }
 
 async function rcloneCopyFile(localFile: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['copyto', localFile, r2Dest, '--checkers', '16'], label)
+  await run('rclone', ['copyto', localFile, r2Dest, ...rcloneTransferArgs()], label)
+}
+
+async function rcloneCopySharedAudioAssets(tmpDir: string, r2Base: string, label: string): Promise<void> {
+  const hasInit = existsSync(path.join(tmpDir, 'init_audio.mp4'))
+  const hasPlaylist = existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))
+  const entries = await readdir(tmpDir)
+  const hasSegments = entries.some((f) => /^seg_audio_\d+\.m4s$/.test(f))
+  if (!hasInit && !hasPlaylist && !hasSegments) return
+
+  await run('rclone', [
+    'copy', tmpDir, r2Base,
+    '--max-depth', '1',
+    '--include', 'init_audio.mp4',
+    '--include', HLS_AUDIO_PLAYLIST,
+    '--include', 'seg_audio_*.m4s',
+    ...rcloneTransferArgs(),
+  ], label)
 }
 
 async function rcloneCheckDir(localDir: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['check', localDir, r2Dest, '--one-way'], label)
+  await run('rclone', ['check', localDir, r2Dest, '--one-way', ...rcloneBaseArgs()], label)
 }
 
 async function notifyVideoAvailable(
@@ -519,15 +562,8 @@ async function phase1EncodeAndPublish(
   await emitTtp(videoId, 'phase1_upload_start', {})
   const r2Base = r2Path(`videos/${videoId}`)
   await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1')
-  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
-    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase1')
-    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
-      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase1')
-    }
-    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
-    for (const seg of audioSegs) {
-      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase1`)
-    }
+  if (hasAudio) {
+    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase1')
   }
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase1')
   await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase1')
@@ -578,15 +614,8 @@ async function phase2RemainingRenditions(
   await rcloneCheckDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone check 1080p phase2')
   await rcloneCheckDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone check 480p phase2')
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase2')
-  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
-    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase2')
-    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
-      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase2')
-    }
-    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
-    for (const seg of audioSegs) {
-      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase2`)
-    }
+  if (hasAudio) {
+    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase2')
   }
 
   emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
