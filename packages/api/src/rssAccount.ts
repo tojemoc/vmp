@@ -8,6 +8,7 @@
 
 import { requireAuth } from './auth.js'
 import { computeRssTokenHex } from './rssToken.js'
+import { getRequestPublicOrigin } from './requestPublicOrigin.js'
 
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
@@ -29,7 +30,7 @@ export async function handleGetAccountRss(request: any, env: any, corsHeaders: a
     return jsonResponse({ error: 'RSS not configured' }, 503, corsHeaders)
   }
 
-  const origin = new URL(request.url).origin
+  const origin = getRequestPublicOrigin(request, env)
   const userId = user.sub
   const token = await computeRssTokenHex(rssSecret, userId)
 

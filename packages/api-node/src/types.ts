@@ -14,6 +14,8 @@ export interface CFEnvShape {
   GOCARDLESS_CREDITOR_ID?: string
   GOCARDLESS_WEBHOOK_SECRET?: string
   FRONTEND_URL?: string
+  /** Canonical public API base (e.g. https://vmp-backup-api.tjm.sk) for proxy/RSS URLs behind TLS. */
+  API_PUBLIC_URL?: string
   ALLOWED_ORIGINS?: string
   R2_BASE_URL?: string
   SENDER_EMAIL?: string

@@ -11,6 +11,7 @@ import {
   isReplicationIngestConfigured,
   verifyReplicationIngestAuthHeader,
 } from './sync/replicationIngest.js'
+import { buildNodeIncomingRequestUrl } from '../../api/src/requestPublicOrigin.ts'
 
 /** Max replication ingest body (matches typical queue batch sizes). */
 const REPLICATION_INGEST_MAX_BYTES = 512 * 1024
@@ -53,9 +54,8 @@ async function readBody(req: IncomingMessage, maxBytes?: number): Promise<Buffer
   })
 }
 
-function nodeRequestToWeb(req: IncomingMessage, body: Buffer | null): Request {
-  const host = req.headers.host ?? `localhost:${PORT}`
-  const url = `http://${host}${req.url ?? '/'}`
+function nodeRequestToWeb(req: IncomingMessage, body: Buffer | null, env?: CFEnvShape): Request {
+  const url = buildNodeIncomingRequestUrl(req, { defaultPort: PORT, env })
   const headers = new Headers()
   for (const [key, value] of Object.entries(req.headers)) {
     if (value === undefined) continue
@@ -87,17 +87,21 @@ async function writeWebResponse(res: ServerResponse, response: Response): Promis
   res.end()
 }
 
+function incomingRequestUrl(req: IncomingMessage, env?: CFEnvShape): string {
+  return buildNodeIncomingRequestUrl(req, { defaultPort: PORT, env })
+}
+
 async function handleAdminWriteLogRoutes(
   req: IncomingMessage,
   res: ServerResponse,
   env: CFEnvShape,
 ): Promise<boolean> {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const url = new URL(incomingRequestUrl(req, env))
   const corsHeaders = buildCorsHeaders(new Request(url), env)
 
   if (url.pathname === '/api/admin/failover/write-log' && req.method === 'GET') {
     try {
-      const request = nodeRequestToWeb(req, null)
+      const request = nodeRequestToWeb(req, null, env)
       await requireAdminRole(request, env, 'admin', 'super_admin')
       const db = getDbAdapter()
       if (!db) {
@@ -121,7 +125,7 @@ async function handleAdminWriteLogRoutes(
 
   if (url.pathname === '/api/admin/failover/write-log/export' && req.method === 'POST') {
     try {
-      const request = nodeRequestToWeb(req, await readBody(req))
+      const request = nodeRequestToWeb(req, await readBody(req), env)
       await requireAdminRole(request, env, 'admin', 'super_admin')
       const db = getDbAdapter()
       if (!db) {
@@ -153,7 +157,7 @@ async function handleReplicationIngest(
   res: ServerResponse,
   env: CFEnvShape,
 ): Promise<boolean> {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const url = new URL(incomingRequestUrl(req, env))
   if (url.pathname !== '/api/internal/replication/ingest') return false
 
   const corsHeaders = buildCorsHeaders(new Request(url), env)
@@ -222,7 +226,7 @@ async function handleReplicationIngest(
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFEnvShape): Promise<void> {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const url = new URL(incomingRequestUrl(req, env))
 
   if (url.pathname === '/api/health' && req.method === 'GET') {
     const { statusCode, body } = await buildHealthResponse(env)
@@ -236,7 +240,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, env: CFE
   if (await handleReplicationIngest(req, res, env)) return
 
   const body = await readBody(req)
-  const request = nodeRequestToWeb(req, body)
+  const request = nodeRequestToWeb(req, body, env)
   const ctx = {
     waitUntil: (promise: Promise<unknown>) => {
       promise.catch((err) => console.error('[waitUntil]', err))
