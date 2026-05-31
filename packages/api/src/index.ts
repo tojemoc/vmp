@@ -716,7 +716,7 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
          LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
          LEFT JOIN video_categories vc ON vc.id = vca.category_id
          LEFT JOIN livestreams ls ON ls.video_id = v.id
-         ORDER BY datetime(CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END) DESC,
+         ORDER BY CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END DESC,
                   v.id DESC`
       : `SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration, v.upload_date, v.publish_status, v.slug,
                 v.published_at, v.scheduled_publish_at, v.notified_at,
@@ -733,7 +733,7 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
          LEFT JOIN livestreams ls ON ls.video_id = v.id
          WHERE v.publish_status = 'published'
            AND (v.scheduled_publish_at IS NULL OR datetime(v.scheduled_publish_at) <= CURRENT_TIMESTAMP)
-         ORDER BY datetime(CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END) DESC,
+         ORDER BY CASE WHEN v.published_at IS NOT NULL AND trim(v.published_at) != '' THEN v.published_at ELSE v.upload_date END DESC,
                   v.id DESC`
 
     const videos = await session.prepare(query).all()
