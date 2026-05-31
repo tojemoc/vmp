@@ -26,7 +26,7 @@ If you later add private `runtimeConfig` keys, map them via Wrangler `[vars]` or
 | `CLOUDFLARE_API_TOKEN` | `wrangler deploy` auth |
 | `CLOUDFLARE_ACCOUNT_ID` | Account routing |
 
-Do not reuse Pages project tokens for Pages deploy; this workflow only touches the Worker names above.
+These secrets are for the Workers workflow only — do not reuse Pages project tokens or Pages automation secrets for Workers deployments.
 
 ## Missing / parity gaps (not fixed in this experiment)
 

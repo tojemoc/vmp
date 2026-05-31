@@ -32,4 +32,4 @@ Non-fixing notes for the parallel Workers experiment. Primary production remains
 ## CI isolation
 
 - `deploy-web-workers.yml` does not run `npm run deploy` (Pages) or modify `deploy.yml`.
-- Requires separate secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` (staging deploy uses `*_STAGING` suffixed secrets).
+- Uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.github/workflows/deploy-web-workers.yml` (not the `CLOUDFLARE_API_TOKEN_STAGING` / `CLOUDFLARE_ACCOUNT_ID_STAGING` names from `deploy.yml`; values may still be scoped via the GitHub `staging` environment).
