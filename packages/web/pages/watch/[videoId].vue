@@ -68,22 +68,29 @@
       <div v-else-if="videoData" class="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
         <!-- Left Column: Player + Info -->
         <div class="space-y-4">
-          <!-- Player Container -->
-          <div class="relative bg-black rounded-lg overflow-hidden">
-            <!-- Premium Banner -->
-            <div
-              v-if="!videoData.hasAccess && effectiveFullDuration > 0 && !isFullPublicPreview"
-              class="absolute top-0 left-0 right-0 z-30 bg-gradient-to-b from-yellow-500/90 to-yellow-600/90 backdrop-blur-sm text-black px-4 py-2 flex items-center justify-between"
-            >
-              <div class="flex items-center space-x-2">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-                </svg>
-                <span class="font-semibold">{{ strings.previewMode }}</span>
-              </div>
-              <span class="text-sm">{{ strings.upgradeToWatch }}</span>
+          <!-- Preview banner (above player, not overlaying video) -->
+          <div
+            v-if="!videoData.hasAccess && effectiveFullDuration > 0 && !isFullPublicPreview"
+            class="-mx-4 sm:mx-0 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black px-4 py-2 flex items-center justify-between text-sm sm:text-base sm:rounded-t-lg"
+          >
+            <div class="flex items-center space-x-2 min-w-0">
+              <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+              </svg>
+              <span class="font-semibold truncate">{{ strings.previewMode }}</span>
             </div>
+            <span class="text-xs sm:text-sm shrink-0 ml-3">{{ strings.upgradeToWatch }}</span>
+          </div>
 
+          <!-- Player Container -->
+          <div
+            class="relative bg-black overflow-hidden -mx-4 sm:mx-0"
+            :class="[
+              !videoData.hasAccess && effectiveFullDuration > 0 && !isFullPublicPreview
+                ? 'sm:rounded-b-lg'
+                : 'sm:rounded-lg',
+            ]"
+          >
             <!-- Buffering Spinner -->
             <div
               v-if="buffering"
@@ -129,6 +136,12 @@
               ></videojs-video>
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
+
+              <media-settings-menu hidden anchor="auto" class="watch-settings-menu">
+                <media-playback-rate-menu rates="0.5 0.75 1 1.25 1.5 2">
+                  <span slot="header">{{ strings.playbackSpeed }}</span>
+                </media-playback-rate-menu>
+              </media-settings-menu>
 
               <!-- Custom Control Bar — stacked: seekbar on top, buttons below -->
               <div class="watch-controls-container">
@@ -187,6 +200,8 @@
                   <span class="flex-1"></span>
                   <media-mute-button></media-mute-button>
                   <media-volume-range class="hidden sm:inline-flex"></media-volume-range>
+                  <media-cast-button class="watch-cast-button"></media-cast-button>
+                  <media-airplay-button class="watch-airplay-button"></media-airplay-button>
                   <label class="watch-playback-rate-wrap hidden sm:inline-flex">
                     <span class="sr-only">{{ strings.playbackSpeed }}</span>
                     <select
@@ -204,6 +219,7 @@
                       </option>
                     </select>
                   </label>
+                  <media-settings-menu-button class="watch-settings-menu-button sm:hidden"></media-settings-menu-button>
                   <media-fullscreen-button></media-fullscreen-button>
                 </media-control-bar>
               </div>
@@ -336,10 +352,28 @@
               </template>
             </div>
 
-            <div
-              class="text-gray-700 dark:text-gray-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none"
-              v-html="videoDescriptionHtml"
-            ></div>
+            <div class="relative">
+              <div
+                ref="descriptionRef"
+                class="text-gray-700 dark:text-gray-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none transition-[max-height] duration-200"
+                :class="descriptionExpanded ? '' : 'watch-description-collapsed'"
+                v-html="videoDescriptionHtml"
+              ></div>
+              <div
+                v-if="!descriptionExpanded && descriptionClamped"
+                class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white dark:from-gray-900 to-transparent"
+                aria-hidden="true"
+              ></div>
+              <div v-if="descriptionClamped" class="flex justify-center pt-3">
+                <button
+                  type="button"
+                  class="px-5 py-1.5 text-sm font-semibold tracking-wide uppercase rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                  @click="descriptionExpanded = !descriptionExpanded"
+                >
+                  {{ descriptionExpanded ? strings.readLess : strings.readMore }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -409,6 +443,7 @@ import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
+import 'media-chrome/menu'
 import 'videojs-video-element'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
@@ -614,6 +649,27 @@ const videoDescription = computed(() => {
 })
 const videoDescriptionHtml = computed(() => renderMarkdownToHtml(videoDescription.value))
 
+const descriptionRef = ref<HTMLElement | null>(null)
+const descriptionExpanded = ref(false)
+const descriptionClamped = ref(false)
+
+function measureDescriptionClamp() {
+  descriptionExpanded.value = false
+  nextTick(() => {
+    const el = descriptionRef.value
+    if (!el) {
+      descriptionClamped.value = false
+      return
+    }
+    descriptionClamped.value = el.scrollHeight > el.clientHeight + 2
+  })
+}
+
+watch(videoDescriptionHtml, () => { measureDescriptionClamp() })
+watch(descriptionExpanded, () => {
+  if (!descriptionExpanded.value) measureDescriptionClamp()
+})
+
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
@@ -689,6 +745,7 @@ let handleMediaError:     (() => void) | null = null
 let handleWaiting:        (() => void) | null = null
 let handlePlaying:        (() => void) | null = null
 let handleCanPlay:        (() => void) | null = null
+let handleRateChange:     (() => void) | null = null
 type Closable = { close?: () => void }
 type LivestreamRuntime = {
   connection: Closable | null
@@ -840,6 +897,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     ensureCurrent()
     loading.value = false
     await nextTick()
+    measureDescriptionClamp()
     ensureCurrent()
     if (videoData.value?.video?.isLivestream) {
       if (hasLivestreamMoqSource.value && !rateLimited.value) {
@@ -979,12 +1037,18 @@ const initializeVideoElement = async (
   handleWaiting  = () => { if (isCurrentInvocation()) buffering.value = true }
   handlePlaying  = () => { if (isCurrentInvocation()) buffering.value = false }
   handleCanPlay  = () => { if (isCurrentInvocation()) buffering.value = false }
+  handleRateChange = () => {
+    if (!isCurrentInvocation()) return
+    const rate = (video as HTMLMediaElement).playbackRate
+    if (Number.isFinite(rate)) setPlaybackRate(rate)
+  }
 
   video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true })
   video.addEventListener('error', handleMediaError)
   video.addEventListener('waiting', handleWaiting)
   video.addEventListener('playing', handlePlaying)
   video.addEventListener('canplay', handleCanPlay)
+  video.addEventListener('ratechange', handleRateChange)
   ensureActive()
 
   buffering.value = true
@@ -1091,6 +1155,8 @@ watch(
   () => route.params.videoId,
   async (newVideoId, oldVideoId, onCleanup) => {
     if (newVideoId === oldVideoId) return
+    descriptionExpanded.value = false
+    descriptionClamped.value = false
     const { abortController, isCurrentInvocation, cancel } = createLoadInvocation()
 
     onCleanup(() => {
@@ -1113,6 +1179,7 @@ function teardownVideoListeners() {
   if (handleWaiting)        { video.removeEventListener('waiting', handleWaiting);                handleWaiting        = null }
   if (handlePlaying)        { video.removeEventListener('playing', handlePlaying);                handlePlaying        = null }
   if (handleCanPlay)        { video.removeEventListener('canplay', handleCanPlay);                handleCanPlay        = null }
+  if (handleRateChange)     { video.removeEventListener('ratechange', handleRateChange);          handleRateChange     = null }
 }
 
 function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) {
@@ -1203,6 +1270,25 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
 .watch-playback-rate-select:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
+}
+
+.watch-cast-button[mediacastunavailable],
+.watch-airplay-button[mediaairplayunavailable] {
+  display: none;
+}
+
+.watch-settings-menu {
+  --media-menu-background: rgba(20, 20, 30, 0.95);
+  --media-primary-color: #fff;
+}
+
+.watch-settings-menu-button {
+  --media-control-background: transparent;
+}
+
+.watch-description-collapsed {
+  max-height: 6.5rem;
+  overflow: hidden;
 }
 
 @media (min-width: 640px) {

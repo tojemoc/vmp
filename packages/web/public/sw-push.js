@@ -26,17 +26,62 @@ async function storeHandoffCode(db, handoffCode) {
 async function notifyClientsOrStore(handoffCode) {
     const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (clients.length > 0) {
+        try {
+            const db = await openIdb();
+            await storeHandoffCode(db, handoffCode);
+        }
+        catch (err) {
+            console.warn('[sw-push] IDB store failed:', err);
+        }
         for (const client of clients) {
             client.postMessage({ type: 'pwa_auth_handoff', handoffCode });
         }
         const firstClient = clients[0];
-        if (firstClient)
-            await firstClient.focus();
+        if (firstClient) {
+            try {
+                await firstClient.focus();
+            }
+            catch {
+            }
+        }
         return;
     }
     const db = await openIdb();
     await storeHandoffCode(db, handoffCode);
     await sw.clients.openWindow('/');
+}
+async function deliverHandoffToClients(handoffCode) {
+    try {
+        const db = await openIdb();
+        await storeHandoffCode(db, handoffCode);
+    }
+    catch (err) {
+        console.warn('[sw-push] IDB store failed:', err);
+    }
+    const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (clients.length > 0) {
+        for (const client of clients) {
+            client.postMessage({ type: 'pwa_auth_handoff', handoffCode });
+        }
+        const firstClient = clients[0];
+        if (firstClient) {
+            try {
+                await firstClient.focus();
+            }
+            catch {
+            }
+            if ('navigate' in firstClient && typeof firstClient.navigate === 'function') {
+                try {
+                    await firstClient.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
+                    return;
+                }
+                catch {
+                }
+            }
+        }
+        return;
+    }
+    await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
 }
 function stripTrailingSlashes(value) {
     let end = value.length;
@@ -127,7 +172,7 @@ sw.addEventListener('notificationclick', (event) => {
     const notifData = event.notification?.data;
     if (typeof notifData?.handoffCode === 'string') {
         const code = notifData.handoffCode;
-        event.waitUntil(sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(code)}`));
+        event.waitUntil(deliverHandoffToClients(code));
         return;
     }
     const deliveryId = typeof notifData?.deliveryId === 'string' ? notifData.deliveryId : '';

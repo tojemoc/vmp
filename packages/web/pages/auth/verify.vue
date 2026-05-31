@@ -16,23 +16,27 @@
         <p class="text-gray-400 text-sm">{{ strings.authVerifySigningIn }}</p>
       </div>
 
-      <!-- PWA push-login: confirm signing into Home Screen app -->
-      <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left" :aria-busy="delivering">
-        <div>
-          <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyPwaPushTitle }}</h2>
-        </div>
-        <div v-if="delivering" class="flex justify-center" role="status" :aria-label="strings.authVerifyPwaPushSending">
+      <!-- PWA push-login: sending sign-in to installed app -->
+      <div v-else-if="state === 'pwa_push_sending'" class="space-y-4">
+        <div class="flex justify-center" role="status" :aria-label="strings.authVerifyPwaPushSending">
           <span
-            class="inline-block w-8 h-8 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"
+            class="inline-block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"
             aria-hidden="true"
           ></span>
+        </div>
+        <p class="text-gray-400 text-sm">{{ strings.authVerifyPwaPushSending }}</p>
+      </div>
+
+      <!-- PWA push-login: confirm signing into Home Screen app -->
+      <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyPwaPushTitle }}</h2>
         </div>
         <p v-if="errorMessage" class="text-red-400 text-sm leading-relaxed">{{ errorMessage }}</p>
         <div class="flex flex-col gap-3">
           <button
             type="button"
             class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            :disabled="delivering"
             @click="deliverToInstalledPwa"
           >
             {{ strings.authVerifyPwaPushYes }}
@@ -40,7 +44,6 @@
           <button
             type="button"
             class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
-            :disabled="delivering"
             @click="signInHereInstead"
           >
             {{ strings.authVerifyPwaPushNo }}
@@ -48,8 +51,9 @@
         </div>
       </div>
 
-      <div v-else-if="state === 'pwa_push_done' || state === 'pwa_2fa_done'" class="space-y-4">
+      <div v-else-if="state === 'pwa_push_done' || state === 'pwa_2fa_done'" class="space-y-4 text-left">
         <p class="text-gray-300 text-sm leading-relaxed">{{ strings.authVerifyPwaPushDone }}</p>
+        <p class="text-gray-500 text-xs leading-relaxed">{{ strings.authVerifyPwaPushDoneHint }}</p>
       </div>
 
       <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
@@ -147,13 +151,12 @@ function firstQueryString(v: unknown): string {
   return ''
 }
 
-type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_done' | 'pwa_2fa_done'
+type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_sending' | 'pwa_push_done' | 'pwa_2fa_done'
 const state = ref<State>('verifying')
 const errorMessage = ref('')
 const copyHint = ref(strings.authVerifyHandoffCopyLink)
 const handoffCodeForSafari = ref<string | null>(null)
 const magicTokenForFlow = ref<string | null>(null)
-const delivering = ref(false)
 
 async function navigateAfterFullSession(redirect: string) {
   const u = user.value
@@ -204,7 +207,7 @@ function pwaPushDeliverErrorMessage(code: string | undefined): string {
 async function deliverToInstalledPwa() {
   const token = magicTokenForFlow.value
   if (!token) return
-  delivering.value = true
+  state.value = 'pwa_push_sending'
   errorMessage.value = ''
   try {
     const result = await deliverMagicLinkToPwa(token)
@@ -219,6 +222,7 @@ async function deliverToInstalledPwa() {
       return
     }
     if (!result.delivered) {
+      state.value = 'pwa_push_prompt'
       errorMessage.value = pwaPushDeliverErrorMessage(result.code)
       return
     }
@@ -226,8 +230,6 @@ async function deliverToInstalledPwa() {
   } catch (e: unknown) {
     state.value = 'error'
     errorMessage.value = e instanceof Error ? e.message : strings.authVerifyPwaPushDeliverFailed
-  } finally {
-    delivering.value = false
   }
 }
 
