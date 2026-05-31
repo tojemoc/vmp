@@ -6,7 +6,7 @@ Non-fixing notes for the parallel Workers experiment. Primary production remains
 
 | Area | Pages behavior | Workers experiment |
 |------|----------------|-------------------|
-| Deploy target | `wrangler pages deploy dist/` (`scripts/deploy-pages.mjs`, project `vmp-fe`) | `wrangler deploy` + `wrangler.toml`, Worker `vmp-web-worker-dev` |
+| Deploy target | `wrangler pages deploy` (`wrangler.toml` → `pages_build_output_dir = dist`, `nodejs_compat`) | `wrangler deploy --config wrangler.workers.toml`, Worker `vmp-web-worker-dev` |
 | Nitro preset | `cloudflare_pages` → output under `dist/` with `_worker.js` | `cloudflare-module` → `.output/server/index.mjs` + `.output/public/` |
 | Production prod web | `deploy.yml` uses `cloudflare/wrangler-action` Pages deploy to `CF_PAGES_PROJECT_NAME_PROD` | Not wired to tags yet; `[env.production]` name reserved |
 
@@ -25,7 +25,7 @@ Non-fixing notes for the parallel Workers experiment. Primary production remains
 ## SSR / runtime
 
 - Both presets use SSR (not `nuxi generate` static-only).
-- Workers module preset uses `workerd` / `nodejs_compat` (see `wrangler.toml`); Pages uses the Pages Functions worker bundle format.
+- Both presets need `nodejs_compat`: `wrangler.toml` (Pages) and `wrangler.workers.toml` (Workers).
 - **PWA:** Workbox + service worker registration may behave differently under Workers static asset routing vs Pages; test installability and `navigateFallback` on the experimental host.
 - **No D1/KV bindings** on the web Worker today (stateless SSR + static assets only).
 
