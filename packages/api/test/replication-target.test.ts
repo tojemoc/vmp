@@ -50,6 +50,24 @@ describe('parseReplicationIngestResponse', () => {
 })
 
 describe('assertReplicationIngestAccepted', () => {
+  it('accepts empty probe batch when ok and counts match', () => {
+    assert.doesNotThrow(() => {
+      assertReplicationIngestAccepted({ ok: true, applied: 0, skipped: 0, errors: [] }, 0)
+    })
+  })
+
+  it('throws when ok is false', () => {
+    assert.throws(() => {
+      assertReplicationIngestAccepted({ ok: false, applied: 0, skipped: 0, errors: [] }, 0)
+    }, /ok: false/)
+  })
+
+  it('throws when applied plus skipped does not match event count', () => {
+    assert.throws(() => {
+      assertReplicationIngestAccepted({ ok: true, applied: 2, skipped: 0, errors: [] }, 5)
+    }, /did not account/)
+  })
+
   it('throws when all events skipped', () => {
     assert.throws(() => {
       assertReplicationIngestAccepted({ ok: true, applied: 0, skipped: 3, errors: [] }, 3)

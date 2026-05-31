@@ -92,19 +92,25 @@ export function assertReplicationIngestAccepted(
   result: ReplicationIngestResult,
   eventCount: number,
 ): void {
+  if (!result.ok) {
+    throw new Error('Replication ingest returned ok: false')
+  }
   if (result.errors.length > 0) {
     const first = result.errors[0]
     throw new Error(
       `Replication ingest reported errors (${result.errors.length}): ${first.error}${first.stream ? ` [${first.stream}]` : ''}`,
     )
   }
-  if (eventCount > 0 && result.applied === 0 && result.skipped === eventCount) {
+  const accounted = result.applied + result.skipped
+  if (accounted !== eventCount) {
+    throw new Error(
+      `Replication ingest did not account for all events (expected ${eventCount}, applied ${result.applied}, skipped ${result.skipped})`,
+    )
+  }
+  if (eventCount > 0 && result.applied === 0) {
     throw new Error(
       'Replication ingest skipped all events (check replication_mode is d1_to_pg and Postgres migrations on Deno)',
     )
-  }
-  if (eventCount > 0 && result.applied === 0 && result.skipped < eventCount) {
-    throw new Error('Replication ingest applied 0 rows; target may be misconfigured or database unavailable')
   }
 }
 

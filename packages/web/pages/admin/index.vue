@@ -1464,7 +1464,7 @@
                 <button
                   type="button"
                   class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="replicationPushing || !replicationCanPush"
+                  :disabled="replicationResetting || replicationPushing || !replicationCanPush"
                   @click="pushReplicationToDeno"
                 >
                   {{ replicationPushing ? 'Pushing…' : 'Push DB to Deno Postgres' }}
@@ -1472,7 +1472,7 @@
                 <button
                   type="button"
                   class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
-                  :disabled="replicationPushing"
+                  :disabled="replicationResetting || replicationPushing"
                   @click="() => loadReplicationStatus({ probe: true })"
                 >
                   Refresh status
@@ -4133,6 +4133,7 @@ const loadReplicationStatus = async (options?: { preserveMessage?: boolean; prob
       streams: Array.isArray(data.streams) ? data.streams : [],
     }
   } catch (e: any) {
+    replicationStatus.value = null
     replicationMessage.value = `Could not load replication status: ${e.message}`
     replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
   }
@@ -4164,6 +4165,7 @@ const resetReplicationCursors = async () => {
 
 const pushReplicationToDeno = async () => {
   if (!isAdmin.value) return
+  if (replicationResetting.value) return
   replicationPushing.value = true
   replicationMessage.value = ''
   try {
