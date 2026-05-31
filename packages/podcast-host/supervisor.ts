@@ -510,7 +510,7 @@ function dashboardHtml() {
         ).join('')
         document.getElementById('pipeline-success').innerHTML = '<table><thead><tr><th>Video</th><th>Final stage</th><th>Detail</th><th>Finished</th></tr></thead><tbody>' + successRows + '</tbody></table>'
         const ttpRows = (d.ttpSummaries || []).map(s =>
-          '<tr><td>' + escapeHtml(s.videoId || '') + '</td><td>' + escapeHtml(s.minimalMs != null ? (s.minimalMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.fullMs != null ? (s.fullMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.minimalRatio != null ? s.minimalRatio + '×' : '—') + '</td><td>' + escapeHtml(s.fullRatio != null ? s.fullRatio + '×' : '—') + '</td><td>' + escapeHtml(s.at || '') + '</td></tr>'
+          '<tr><td>' + escapeHtml(s.videoId || '') + '</td><td>' + escapeHtml(s.minimalMs != null ? (s.minimalMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.fullMs != null ? (s.fullMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.minimalRatio != null ? Number(s.minimalRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.fullRatio != null ? Number(s.fullRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.at || '') + '</td></tr>'
         ).join('')
         document.getElementById('ttp').innerHTML = '<table><thead><tr><th>Video</th><th>Minimal (720p)</th><th>Full renditions</th><th>Ratio minimal</th><th>Ratio full</th><th>At</th></tr></thead><tbody>' + ttpRows + '</tbody></table>'
         document.getElementById('log').textContent = (d.logLines || []).join('\\n')

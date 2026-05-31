@@ -28,6 +28,7 @@ export type TtpMilestone =
   | 'full_renditions_ready'
   | 'api_full_renditions_ready'
   | 'podcast_mp3_done'
+  | 'podcast_mp3_failed'
   | 'podcast_mp3_skipped'
   | 'preview_mp3_done'
   | 'preview_mp3_skipped'
@@ -56,9 +57,14 @@ function msSinceInbox(state: TtpJobState, atMs = Date.now()): number {
   return Math.max(0, atMs - state.inboxAtMs)
 }
 
-function ratioToDuration(elapsedMs: number, durationSec: number | null): number | null {
-  if (durationSec == null || durationSec <= 0) return null
+function ratioToDuration(elapsedMs: number | null, durationSec: number | null): number | null {
+  if (elapsedMs == null || elapsedMs < 0 || durationSec == null || durationSec <= 0) return null
   return Number((elapsedMs / 1000 / durationSec).toFixed(4))
+}
+
+function logTtpEmitError(milestone: string, err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err)
+  process.stderr.write(`${isoNow()} VMP_TTP emit failed (${milestone}): ${msg}\n`)
 }
 
 export function beginTtpJob(videoId: string, source: string, inputPath: string): void {
@@ -72,8 +78,10 @@ export function beginTtpJob(videoId: string, source: string, inputPath: string):
     minimalReadyAtMs: null,
     fullReadyAtMs: null,
   })
-  void emitTtp(videoId, 'inbox_close_write', { source, inputPath })
-  void emitTtp(videoId, 'queue_enqueued', { source })
+  emitTtp(videoId, 'inbox_close_write', { source, inputPath }).catch((err) =>
+    logTtpEmitError('inbox_close_write', err),
+  )
+  emitTtp(videoId, 'queue_enqueued', { source }).catch((err) => logTtpEmitError('queue_enqueued', err))
 }
 
 export function getTtpJob(videoId: string): TtpJobState | undefined {
@@ -154,17 +162,11 @@ export async function emitTtpSummary(videoId: string, outcome: 'success' | 'fail
     totalElapsedMs: totalMs,
     minimalPublishReadyElapsedMs: minimalMs,
     fullRenditionsReadyElapsedMs: fullMs,
-    minimalPublishReadyRatioOfSourceDuration:
-      minimalMs != null && durationSec != null && durationSec > 0
-        ? Number((minimalMs / 1000 / durationSec).toFixed(4))
-        : null,
-    fullRenditionsReadyRatioOfSourceDuration:
-      fullMs != null && durationSec != null && durationSec > 0
-        ? Number((fullMs / 1000 / durationSec).toFixed(4))
-        : null,
+    minimalPublishReadyRatioOfSourceDuration: ratioToDuration(minimalMs, durationSec),
+    fullRenditionsReadyRatioOfSourceDuration: ratioToDuration(fullMs, durationSec),
     phase2AfterMinimalMs:
       minimalMs != null && fullMs != null ? Math.max(0, fullMs - minimalMs) : null,
   })
 
-  if (outcome === 'success') jobs.delete(videoId)
+  jobs.delete(videoId)
 }

@@ -39,7 +39,7 @@ if (!summaries.length) {
 console.log('videoId\tsource\tdurationSec\tminimalMs\tfullMs\ttotalMs\tminimalRatio\tfullRatio\tphase2AfterMinimalMs')
 for (const s of summaries) {
   console.log([
-    s.videoId,
+    s.videoId ?? '',
     s.source ?? '',
     s.sourceDurationSec ?? '',
     s.minimalPublishReadyElapsedMs ?? '',

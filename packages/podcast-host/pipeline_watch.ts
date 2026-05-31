@@ -463,7 +463,7 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitPipelineEvent(videoId, 'probe', 'active', 'probing_streams')
     const { hasAudio, durationSec } = await probeSource(inputPath)
     if (durationSec != null) setTtpSourceDuration(videoId, durationSec)
-    await emitTtp(videoId, 'probe_complete', { hasAudio, sourceDurationSec: durationSec })
+    await emitTtp(videoId, 'probe_complete', { hasAudio })
     emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
 
     await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
@@ -472,9 +472,11 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     const podcastTask = hasAudio
       ? encodePodcastMp3(videoId, inputPath, tmpDir)
         .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
-        .catch((err) => {
+        .catch(async (err) => {
+          const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
           log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
-          emitPipelineEvent(videoId, 'podcast_mp3', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+          emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
+          await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
         })
       : (async () => {
         emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
