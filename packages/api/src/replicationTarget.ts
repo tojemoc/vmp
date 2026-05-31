@@ -59,7 +59,12 @@ export function describeReplicationTarget(raw: string): {
     warning = `REPLICATION_TARGET_URL must end with ${REPLICATION_INGEST_PATH} (Deno api-node ingest).`
   }
 
-  return { configured: true, ingestPathOk, resolvedPath, warning }
+  return {
+    configured: true,
+    ingestPathOk,
+    resolvedPath,
+    ...(warning !== undefined ? { warning } : {}),
+  }
 }
 
 export function parseReplicationIngestResponse(bodyText: string): ReplicationIngestResult {
@@ -73,10 +78,12 @@ export function parseReplicationIngestResponse(bodyText: string): ReplicationIng
   const errors = Array.isArray(record.errors)
     ? record.errors.map((entry) => {
       const row = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+      const eventId = row.eventId != null ? String(row.eventId) : undefined
+      const stream = row.stream != null ? String(row.stream) : undefined
       return {
-        eventId: row.eventId != null ? String(row.eventId) : undefined,
-        stream: row.stream != null ? String(row.stream) : undefined,
         error: String(row.error ?? 'unknown'),
+        ...(eventId !== undefined ? { eventId } : {}),
+        ...(stream !== undefined ? { stream } : {}),
       }
     })
     : []
@@ -97,9 +104,12 @@ export function assertReplicationIngestAccepted(
   }
   if (result.errors.length > 0) {
     const first = result.errors[0]
-    throw new Error(
-      `Replication ingest reported errors (${result.errors.length}): ${first.error}${first.stream ? ` [${first.stream}]` : ''}`,
-    )
+    if (first) {
+      throw new Error(
+        `Replication ingest reported errors (${result.errors.length}): ${first.error}${first.stream ? ` [${first.stream}]` : ''}`,
+      )
+    }
+    throw new Error(`Replication ingest reported errors (${result.errors.length})`)
   }
   const accounted = result.applied + result.skipped
   if (accounted !== eventCount) {
