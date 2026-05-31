@@ -105,6 +105,9 @@ export function translateSqliteToPostgres(sql: string): string {
     "(created_at::timestamptz + (?::text || ' seconds')::interval)",
   )
 
+  // datetime(?) — replication cursors, analytics date filters (before column-name pass)
+  s = s.replace(/datetime\s*\(\s*\?\s*\)/gi, '(?::timestamptz)')
+
   // datetime(expr) comparisons — treat text timestamps as timestamptz
   s = s.replace(/datetime\s*\(\s*([a-zA-Z0-9_.]+)\s*\)/g, '($1::timestamptz)')
 
@@ -125,6 +128,15 @@ export function translateSqliteToPostgres(sql: string): string {
 
   // strftime/date analytics transforms with nested datetime(...) support.
   s = replaceDateTimeWrapperPatterns(s)
+
+  // Catch any remaining SQLite datetime(...) Postgres does not implement.
+  s = s.replace(/datetime\s*\(\s*([^)]+)\s*\)/gi, (_match, inner) => {
+    const expr = inner.trim()
+    if (/^'now'/i.test(expr)) return 'CURRENT_TIMESTAMP'
+    if (expr === '?' || /^\$\d+$/.test(expr)) return `(${expr}::timestamptz)`
+    if (/^CURRENT_TIMESTAMP$/i.test(expr)) return 'CURRENT_TIMESTAMP'
+    return `(${expr}::timestamptz)`
+  })
 
   return s
 }
