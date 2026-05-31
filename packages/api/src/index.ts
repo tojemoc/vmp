@@ -1011,9 +1011,9 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
         playlistUrl = null
       }
     }
-    if (env.JWT_SECRET) {
+    if (env.JWT_SECRET && playlistUrl) {
       const shouldSignProxyUrl = isLocalVideoProxyUrl(request, playlistUrl, env)
-      if (shouldSignProxyUrl && playlistUrl) {
+      if (shouldSignProxyUrl) {
         const vt = await signVideoToken(effectiveUserId, playbackVideoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
         playlistUrl = playlistUrl.includes('?')
           ? `${playlistUrl}&vt=${vt}`
