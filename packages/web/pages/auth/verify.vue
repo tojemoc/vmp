@@ -154,7 +154,7 @@ function firstQueryString(v: unknown): string {
 type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_sending' | 'pwa_push_done' | 'pwa_2fa_done'
 const state = ref<State>('verifying')
 const errorMessage = ref('')
-const copyHint = ref(strings.authVerifyHandoffCopyLink)
+const copyHint = ref<string>(strings.authVerifyHandoffCopyLink)
 const handoffCodeForSafari = ref<string | null>(null)
 const magicTokenForFlow = ref<string | null>(null)
 

@@ -126,6 +126,9 @@ export function translateSqliteToPostgres(sql: string): string {
   // strftime/date analytics transforms with nested datetime(...) support.
   s = replaceDateTimeWrapperPatterns(s)
 
+  // SQLite trim() accepts any type; Postgres trim/btrim is text-only (TIMESTAMPTZ → 42883).
+  s = s.replace(/\btrim\s*\(\s*([^)]+)\s*\)/gi, 'btrim(($1)::text)')
+
   return s
 }
 
