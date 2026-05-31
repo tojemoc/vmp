@@ -56,6 +56,7 @@ export async function buildEnv(): Promise<CFEnvShape> {
     GOCARDLESS_CREDITOR_ID: process.env.GOCARDLESS_CREDITOR_ID,
     GOCARDLESS_WEBHOOK_SECRET: process.env.GOCARDLESS_WEBHOOK_SECRET,
     FRONTEND_URL: process.env.FRONTEND_URL,
+    API_PUBLIC_URL: process.env.API_PUBLIC_URL,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     R2_BASE_URL: process.env.R2_BASE_URL,
     SENDER_EMAIL: process.env.SENDER_EMAIL,

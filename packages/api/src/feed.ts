@@ -11,6 +11,7 @@
 import { isAdministrativeRole } from './roles.js'
 import { signVideoToken } from './videoTokens.js'
 import { resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
+import { getRequestPublicOrigin } from './requestPublicOrigin.js'
 import { computeRssTokenHex } from './rssToken.js'
 import { getSetting } from './settingsStore.js'
 import { getReadSession, applySessionBookmark, getDb } from './d1Session.js'
@@ -81,7 +82,7 @@ function buildSquareCoverImageUrl(imageUrl: unknown) {
 }
 
 function buildFeedFaviconUrl(request: any, env: any) {
-  const requestOrigin = new URL(request.url).origin
+  const requestOrigin = getRequestPublicOrigin(request, env)
   const rawOrigin = String(env.FRONTEND_URL || requestOrigin)
   let frontendOrigin = rawOrigin
   while (frontendOrigin.length > 0 && frontendOrigin.endsWith('/')) {
@@ -218,7 +219,7 @@ async function buildRssEnclosureForVideo({
   const isMp3 = pathLower.endsWith('.mp3')
   const proxyPreviewSeconds = isMp3 && hasPreviewCap ? null : (hasPreviewCap ? previewUntilSeconds : null)
 
-  const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, proxyPreviewSeconds)
+  const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, proxyPreviewSeconds, env)
 
   let enclosureUrl = basePlaylistUrl
   if (env.JWT_SECRET) {
@@ -403,7 +404,7 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
         return cached
       }
     }
-    const origin = new URL(request.url).origin
+    const origin = getRequestPublicOrigin(request, env)
 
     const [titleSetting, descSetting] = await Promise.all([
       getSetting(env, 'podcast_title', { defaultValue: null }),
@@ -539,7 +540,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       }
     }
 
-    const origin = new URL(request.url).origin
+    const origin = getRequestPublicOrigin(request, env)
     const [titleSetting, descSetting] = await Promise.all([
       getSetting(env, 'podcast_title', { defaultValue: null }),
       getSetting(env, 'podcast_description', { defaultValue: null }),
