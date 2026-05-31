@@ -13,8 +13,8 @@
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
         </svg>
         <div class="flex-1">
-          <p class="font-semibold text-green-900 dark:text-green-200">You're now subscribed!</p>
-          <p class="text-sm text-green-800 dark:text-green-300 mt-0.5">Welcome to VMP Premium. Enjoy unlimited access to all content.</p>
+          <p class="font-semibold text-green-900 dark:text-green-200">{{ strings.subscribedWelcome }}</p>
+          <p class="text-sm text-green-800 dark:text-green-300 mt-0.5">{{ strings.subscribedWelcomeDetail }}</p>
         </div>
         <button class="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200" @click="showWelcomeBanner = false">
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -25,7 +25,7 @@
 
       <!-- Page heading -->
       <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Your account</h1>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ strings.yourAccount }}</h1>
         <p class="text-gray-500 dark:text-gray-400 mt-1">{{ user?.email }}</p>
       </div>
 
@@ -47,7 +47,7 @@
           :disabled="retryingGoCardless"
           @click="retryGoCardlessCheckout"
         >
-          {{ retryingGoCardless ? 'Opening GoCardless…' : 'Retry bank setup' }}
+          {{ retryingGoCardless ? strings.gocardlessOpening : strings.gocardlessRetrySetup }}
         </button>
         <p v-if="gocardlessRetryError" class="text-xs">{{ gocardlessRetryError }}</p>
       </div>
@@ -56,14 +56,14 @@
         v-else-if="showGoCardlessRetryBanner"
         class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 space-y-3 text-sm text-amber-900 dark:text-amber-200"
       >
-        <p>Your bank setup was not completed. You can retry with your account email prefilled.</p>
+        <p>{{ strings.gocardlessRetryBanner }}</p>
         <button
           type="button"
           class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
           :disabled="retryingGoCardless"
           @click="retryGoCardlessCheckout"
         >
-          {{ retryingGoCardless ? 'Opening GoCardless…' : 'Continue bank setup' }}
+          {{ retryingGoCardless ? strings.gocardlessOpening : strings.gocardlessContinueSetup }}
         </button>
         <p v-if="gocardlessRetryError" class="text-xs text-red-600 dark:text-red-400">{{ gocardlessRetryError }}</p>
       </div>
@@ -76,12 +76,12 @@
         <template v-if="hasActiveSubscription && subscription">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Current plan</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{{ strings.currentPlan }}</p>
               <p class="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-                {{ planDisplayName(subscription.planType) }}
+                {{ strings.planDisplayName(subscription.planType) }}
               </p>
               <p v-if="subscription.provider" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Provider: {{ paymentProviderLabel(subscription.provider) }}
+                {{ strings.providerLabel }}: {{ strings.paymentProviderLabel(subscription.provider) }}
               </p>
             </div>
             <span
@@ -93,8 +93,8 @@
           </div>
 
           <div v-if="subscription.currentPeriodEnd" class="mt-4 text-sm text-gray-600 dark:text-gray-400">
-            <span v-if="subscription.status === 'active'">Renews on </span>
-            <span v-else>Access until </span>
+            <span v-if="subscription.status === 'active'">{{ strings.renewsOn }} </span>
+            <span v-else>{{ strings.accessUntil }} </span>
             <span class="font-medium text-gray-900 dark:text-white">
               {{ formatDate(subscription.currentPeriodEnd) }}
             </span>
@@ -106,8 +106,8 @@
               :disabled="openingPortal"
               @click="openPortal"
             >
-              <span v-if="openingPortal">Opening…</span>
-              <span v-else>Manage subscription</span>
+              <span v-if="openingPortal">{{ strings.openingPortal }}</span>
+              <span v-else>{{ strings.manageSubscription }}</span>
             </button>
             <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
           </div>
@@ -125,9 +125,9 @@
       <!-- Podcast RSS -->
       <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4">
         <div>
-          <h2 class="text-base font-semibold text-gray-900 dark:text-white">Podcast RSS</h2>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ strings.podcastRssTitle }}</h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Use your personal URL in your podcast app for full episodes while subscribed.
+            {{ strings.podcastRssIntro }}
           </p>
         </div>
 
@@ -139,7 +139,7 @@
         </div>
         <template v-else>
           <div class="space-y-2">
-            <p class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">Your personal URL</p>
+            <p class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">{{ strings.podcastRssPersonalLabel }}</p>
             <div class="flex items-center gap-2">
               <input
                 :value="rssPersonalUrl"
@@ -150,7 +150,7 @@
                 class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
                 @click="copyText(rssPersonalUrl, 'personal')"
               >
-                {{ copiedWhich === 'personal' ? 'Copied' : 'Copy' }}
+                {{ copiedWhich === 'personal' ? strings.copied : strings.copy }}
               </button>
             </div>
             <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
@@ -179,7 +179,7 @@
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
               </svg>
-              Enabled
+              {{ strings.totpAccountEnabledBadge }}
             </span>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ strings.totpAccountEnabled }}</p>
           </div>
@@ -213,7 +213,7 @@
               inputmode="numeric"
               autocomplete="one-time-code"
               maxlength="6"
-              placeholder="000000"
+              :placeholder="strings.totpCodePlaceholder"
               :disabled="totpDisabling"
               class="w-full max-w-xs px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white text-center text-lg tracking-widest font-mono"
             />
@@ -234,7 +234,7 @@
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
               </svg>
-              Setup required
+              {{ strings.totpAccountSetupRequiredBadge }}
             </span>
             <p class="text-sm text-gray-500 dark:text-gray-400">{{ strings.totpAccountSetupRequired }}</p>
           </div>
@@ -266,7 +266,7 @@
 <script setup lang="ts">
 import strings from '~/utils/strings'
 
-usePageSeo({ title: 'Your account', noIndex: true })
+usePageSeo({ title: strings.yourAccount, noIndex: true })
 
 const route  = useRoute()
 const config = useRuntimeConfig()
@@ -332,7 +332,7 @@ async function disableTotp() {
       body:        JSON.stringify({ code: totpDisableCode.value }),
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Could not disable 2FA')
+    if (!res.ok) throw new Error(data.error || strings.totpAccountDisableFailed)
     if (data.accessToken && data.user) {
       applyNewSession(data.accessToken, data.user)
     } else if (data.user) {
@@ -343,7 +343,7 @@ async function disableTotp() {
     showTotpDisable.value = false
     totpDisableCode.value = ''
   } catch (e: unknown) {
-    totpDisableError.value = e instanceof Error ? e.message : 'Could not disable 2FA'
+    totpDisableError.value = e instanceof Error ? e.message : strings.totpAccountDisableFailed
   } finally {
     totpDisabling.value = false
   }
@@ -380,21 +380,6 @@ onMounted(async () => {
   await fetchRssUrls()
 })
 
-function planDisplayName(planType: string): string {
-  const names: Record<string, string> = {
-    monthly: 'Monthly',
-    yearly:  'Yearly',
-    club:    'Klubové predplatné',
-  }
-  return names[planType] ?? planType
-}
-
-function paymentProviderLabel(provider: string): string {
-  if (provider === 'gocardless') return 'GoCardless'
-  if (provider === 'stripe') return 'Stripe'
-  return provider
-}
-
 function statusBadgeClass(status: string): string {
   if (status === 'active' || status === 'trialing') {
     return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
@@ -420,12 +405,12 @@ async function openPortal() {
     })
     const data = await res.json()
     if (!res.ok || !data.portalUrl) {
-      portalError.value = data.error ?? 'Could not open billing portal. Please try again.'
+      portalError.value = data.error ?? strings.billingPortalFailed
       return
     }
     window.location.href = data.portalUrl
   } catch {
-    portalError.value = 'Network error. Please try again.'
+    portalError.value = strings.networkError
   } finally {
     openingPortal.value = false
   }
@@ -447,12 +432,12 @@ async function retryGoCardlessCheckout() {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.checkoutUrl) {
-      gocardlessRetryError.value = data.error ?? 'Could not resume GoCardless checkout.'
+      gocardlessRetryError.value = data.error ?? strings.gocardlessCheckoutFailed
       return
     }
     window.location.href = data.checkoutUrl
   } catch {
-    gocardlessRetryError.value = 'Network error. Please try again.'
+    gocardlessRetryError.value = strings.networkError
   } finally {
     retryingGoCardless.value = false
   }
@@ -497,13 +482,13 @@ async function maybeCompleteGoCardlessCheckout() {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok && !data.alreadyCompleted) {
-      gocardlessCompletionError.value = data.error ?? 'Could not finalize GoCardless checkout.'
+      gocardlessCompletionError.value = data.error ?? strings.gocardlessFinalizeFailed
       return
     }
     showWelcomeBanner.value = true
     completed = true
   } catch {
-    gocardlessCompletionError.value = 'Network error while finalizing GoCardless checkout.'
+    gocardlessCompletionError.value = strings.gocardlessFinalizeNetworkError
   } finally {
     if (completed) {
       const nextQuery = { ...route.query }
@@ -528,12 +513,12 @@ async function fetchRssUrls() {
     })
     const data = await res.json()
     if (!res.ok) {
-      rssError.value = data.error ?? 'Could not load RSS URLs.'
+      rssError.value = data.error ?? strings.rssLoadFailed
       return
     }
     rssPersonalUrl.value = data.personalUrl ?? ''
   } catch {
-    rssError.value = 'Network error while loading RSS URLs.'
+    rssError.value = strings.rssLoadNetworkError
   } finally {
     loadingRss.value = false
   }
@@ -549,7 +534,7 @@ async function copyText(value: string, which: 'personal') {
       if (copiedWhich.value === which) copiedWhich.value = null
     }, 1200)
   } catch {
-    copyError.value = 'Could not copy to clipboard. You can copy manually from the field.'
+    copyError.value = strings.copyFailed
   }
 }
 </script>

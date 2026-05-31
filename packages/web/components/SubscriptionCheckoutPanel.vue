@@ -13,13 +13,13 @@
       class="text-2xl font-bold mb-2"
       :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'"
     >
-      Premium Content
+      {{ strings.checkoutPremiumTitle }}
     </h3>
     <p
       class="mb-6"
       :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
     >
-      Unlock the full video and all exclusive content.
+      {{ strings.checkoutPremiumSubtitle }}
     </p>
 
     <div v-if="loadingPrices" class="flex gap-3 mb-6">
@@ -41,11 +41,11 @@
         <div
           class="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
         >
-          Most popular
+          {{ strings.checkoutMostPopular }}
         </div>
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">Monthly</p>
+        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanMonthly }}</p>
         <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('monthly')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">per month</p>
+        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerMonth }}</p>
       </button>
 
       <button
@@ -54,9 +54,9 @@
         :class="planButtonClass('yearly')"
         @click="selectedPlan = 'yearly'"
       >
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">Yearly</p>
+        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanYearly }}</p>
         <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('yearly')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">per year</p>
+        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
 
       <button
@@ -65,14 +65,14 @@
         :class="planButtonClass('club')"
         @click="selectedPlan = 'club'"
       >
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">Club</p>
+        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanClub }}</p>
         <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('club')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">per year</p>
+        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
     </div>
 
     <div v-if="priceError" class="text-red-400 text-sm mb-6">
-      Could not load pricing. Please refresh the page.
+      {{ strings.checkoutPricesLoadFailed }}
     </div>
 
     <p v-if="checkoutError" class="text-red-400 text-sm mb-3">
@@ -81,14 +81,14 @@
 
     <div class="mb-3 text-left">
       <label class="text-xs uppercase tracking-wide block mb-1" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
-        Promo code
+        {{ strings.checkoutPromoLabel }}
       </label>
       <div class="flex flex-wrap items-center gap-2">
         <input
           v-model="promoCodeInput"
           type="text"
           autocomplete="off"
-          placeholder="e.g. STUDENT2026"
+          :placeholder="strings.checkoutPromoPlaceholder"
           class="flex-1 min-w-[10rem] px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
           :class="embedded
             ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
@@ -101,7 +101,7 @@
           :disabled="promoValidating || !promoCodeInput.trim()"
           @click="validatePromoCode"
         >
-          {{ promoValidating ? 'Checking…' : 'Apply' }}
+          {{ promoValidating ? strings.checkoutPromoChecking : strings.checkoutPromoApply }}
         </button>
         <button
           v-if="promoApplied"
@@ -109,12 +109,12 @@
           class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
           @click="clearPromoCode"
         >
-          Clear
+          {{ strings.checkoutPromoClear }}
         </button>
       </div>
       <p v-if="promoError" class="text-xs text-red-400 mt-1">{{ promoError }}</p>
       <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
-        Promo applied: {{ promoApplied.code }} · {{ promoApplied.rewardType.replace('_', ' ') }}
+        {{ strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' ')) }}
       </p>
     </div>
 
@@ -128,7 +128,7 @@
         :disabled="checkingOut || loadingPrices || !providerPlanPrice(provider, selectedPlan)"
         @click="handleSubscribe(provider)"
       >
-        <span v-if="checkingOut && selectedProvider === provider">Redirecting to checkout…</span>
+        <span v-if="checkingOut && selectedProvider === provider">{{ strings.checkoutRedirecting }}</span>
         <span v-else>{{ providerButtonLabel(provider) }}</span>
       </button>
     </div>
@@ -141,15 +141,17 @@
       class="text-sm mt-2"
       :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
     >
-      You will be asked to sign in before checkout.
+      {{ strings.checkoutSignInBefore }}
       <button type="button" class="text-blue-500 dark:text-blue-400 hover:underline" @click="goToLogin">
-        Sign in
+        {{ strings.signIn }}
       </button>
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
+
 const props = withDefaults(defineProps<{
   /** Base path for post-login return (e.g. `/account` or `/watch/abc`). */
   returnPath: string
@@ -236,8 +238,8 @@ function primaryPlanPrice(plan: PlanType): number | null {
 function providerButtonLabel(provider: PaymentProvider): string {
   const amount = providerPlanPrice(provider, selectedPlan.value)
   const priceText = formatPrice(amount)
-  if (provider === 'gocardless') return `Pay ${priceText} with your bank account`
-  return `Pay ${priceText} with your card`
+  if (provider === 'gocardless') return strings.checkoutPayWithBank(priceText)
+  return strings.checkoutPayWithCard(priceText)
 }
 
 function providerButtonClass(provider: PaymentProvider): string {
@@ -249,15 +251,15 @@ function providerButtonClass(provider: PaymentProvider): string {
 
 const checkoutBlurb = computed(() => {
   if (!availableProviders.value.length) {
-    return 'Secure checkout. Cancel any time.'
+    return strings.checkoutBlurbDefault
   }
   if (availableProviders.value.length === 1) {
     const provider = availableProviders.value[0]
     return provider === 'gocardless'
-      ? 'Secure checkout via GoCardless. Cancel any time.'
-      : 'Secure checkout via Stripe. Cancel any time.'
+      ? strings.checkoutBlurbGoCardless
+      : strings.checkoutBlurbStripe
   }
-  return 'Secure checkout via Stripe or GoCardless. Cancel any time.'
+  return strings.checkoutBlurbBoth
 })
 
 function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
@@ -343,12 +345,12 @@ async function handleSubscribe(provider?: PaymentProvider) {
     })
     const data = await res.json()
     if (!res.ok || !data.checkoutUrl) {
-      checkoutError.value = data.error ?? 'Could not start checkout. Please try again.'
+      checkoutError.value = data.error ?? strings.checkoutStartFailed
       return
     }
     window.location.href = data.checkoutUrl
   } catch {
-    checkoutError.value = 'Network error. Please try again.'
+    checkoutError.value = strings.networkError
   } finally {
     checkingOut.value = false
   }
@@ -379,7 +381,7 @@ async function validatePromoCode() {
   if (!code) return
 
   if (!isLoggedIn.value) {
-    promoError.value = 'Please sign in to validate promo codes.'
+    promoError.value = strings.checkoutPromoSignIn
     return
   }
 
@@ -398,7 +400,7 @@ async function validatePromoCode() {
     const data = await res.json().catch(() => ({}))
     if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
     if (!res.ok || !data?.valid) {
-      promoError.value = data?.error || 'Promo code is not valid.'
+      promoError.value = data?.error || strings.checkoutPromoInvalid
       return
     }
     promoApplied.value = {
@@ -407,7 +409,7 @@ async function validatePromoCode() {
     }
   } catch {
     if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
-    promoError.value = 'Network error while validating promo code.'
+    promoError.value = strings.checkoutPromoValidateNetworkError
   } finally {
     if (generation === promoValidationGeneration) {
       promoValidating.value = false
