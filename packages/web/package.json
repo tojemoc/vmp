@@ -15,11 +15,11 @@
     "build:workers": "nuxi build --preset=cloudflare-module",
     "generate": "nuxi generate",
     "preview": "nuxi preview",
-    "preview:workers": "wrangler dev",
+    "preview:workers": "wrangler dev --config wrangler.workers.toml",
     "typecheck": "nuxi prepare && nuxi typecheck",
     "deploy": "node scripts/deploy-pages.mjs",
-    "deploy:workers": "wrangler deploy --env=\"\"",
-    "deploy:workers:prod": "wrangler deploy --env=production",
+    "deploy:workers": "wrangler deploy --config wrangler.workers.toml --env=\"\"",
+    "deploy:workers:prod": "wrangler deploy --config wrangler.workers.toml --env=production",
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
