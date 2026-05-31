@@ -58,6 +58,35 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | `VIDEO_ID_SANITIZE_MODE` | Controls ID derivation from filename stem: `slug-hash` (default), `slug`, `base64url`, `none` |
 | `VAAPI_DEVICE` | GPU device node for VAAPI hardware encoding (default `/dev/dri/renderD128`). Requires a GPU with VAAPI support and read/write access to the device node. |
 | `INBOX_DIR`, `TMP_DIR_BASE`, `R2_BUCKET`, … | Passed through to the Node entrypoint/processing pipeline |
+| `VMP_TTP_LOG_PATH` | Optional path to append structured `VMP_TTP` JSON lines (one object per line) for TTP analysis |
+
+### Time-to-publish (TTP) logging
+
+The pipeline emits machine-readable milestones on stdout (and optionally `VMP_TTP_LOG_PATH`):
+
+```text
+VMP_TTP	{"type":"ttp_milestone","videoId":"…","milestone":"inbox_close_write","at":"2026-…",…}
+VMP_TTP	{"type":"ttp_summary","videoId":"…","minimalPublishReadyElapsedMs":…,"fullRenditionsReadyElapsedMs":…,…}
+```
+
+Key milestones:
+
+| Milestone | Meaning |
+|-----------|---------|
+| `inbox_close_write` | inotify `close_write` on inbox (SMB upload finished) |
+| `minimal_publish_ready` | 720p HLS + master manifest on R2 (minimal publish / preview) |
+| `full_renditions_ready` | 1080p + 720p + 480p on R2 |
+| `ttp_summary` | One row per job with elapsed ms and ratios vs source duration |
+
+Summarize a log file:
+
+```bash
+grep '^VMP_TTP' /var/log/vmp-pipeline.log | node packages/podcast-host/scripts/ttp-report.mjs
+# or
+node packages/podcast-host/scripts/ttp-report.mjs /var/log/vmp-ttp.jsonl
+```
+
+Ratios in `ttp_summary` are wall-clock seconds divided by source duration (e.g. `0.35` ≈ 35% of video length to reach minimal publish).
 
 ### Migration note (legacy `.sh` overrides)
 
