@@ -334,18 +334,18 @@ function startPipeline() {
     if (stdoutBuffer.trim()) {
       if (consumeTtpLine(stdoutBuffer) || consumePipelineProgressLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
         stdoutBuffer = ''
-        return
+      } else {
+        pushLog(`[pipeline] ${stdoutBuffer}`)
+        stdoutBuffer = ''
       }
-      pushLog(`[pipeline] ${stdoutBuffer}`)
-      stdoutBuffer = ''
     }
     if (stderrBuffer.trim()) {
       if (consumeTtpLine(stderrBuffer) || consumePipelineProgressLine(stderrBuffer) || consumePipelineLine(stderrBuffer)) {
         stderrBuffer = ''
-        return
+      } else {
+        pushLog(`[pipeline] ${stderrBuffer}`)
+        stderrBuffer = ''
       }
-      pushLog(`[pipeline] ${stderrBuffer}`)
-      stderrBuffer = ''
     }
   }
 
@@ -477,6 +477,7 @@ function runCommandCapture(command: string, args: string[], cwd: string): Promis
 
 async function checkAndApplyPodcastHostUpgrade() {
   if (!autoUpgradeEnabled) return
+  let pulled = false
   try {
     await runCommandCapture('git', ['fetch', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
     const local = await runCommandCapture('git', ['rev-parse', 'HEAD'], autoUpgradeRepoDir)
@@ -492,12 +493,17 @@ async function checkAndApplyPodcastHostUpgrade() {
     if (!changed.stdout.trim()) return
     pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
     await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
+    pulled = true
     pushLog('[upgrade] pull successful; rebuilding @vmp/podcast-host')
     await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/podcast-host'], autoUpgradeRepoDir)
     pushLog('[upgrade] build successful; exiting for container/service restart')
     process.exit(0)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    if (pulled) {
+      pushLog(`[upgrade] build failed after pull; exiting for systemd restart: ${msg}`)
+      process.exit(1)
+    }
     pushLog(`[upgrade] check failed: ${msg}`)
   }
 }
@@ -564,7 +570,7 @@ function dashboardHtml() {
     function formatEta(sec) {
       if (sec == null || !Number.isFinite(sec) || sec <= 0) return ''
       const m = Math.floor(sec / 60)
-      const s = sec % 60
+      const s = Math.floor(sec - m * 60)
       return m > 0 ? m + 'm ' + s + 's' : s + 's'
     }
     function progressCell(j) {
