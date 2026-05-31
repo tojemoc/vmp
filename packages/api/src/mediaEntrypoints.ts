@@ -5,7 +5,7 @@
  * proxy URLs that point at /api/video-proxy.
  */
 
-import { getRequestPublicOrigin, normalizePublicOrigin, normalizePublicUrl } from './requestPublicOrigin.js'
+import { getRequestPublicOrigin, normalizePublicUrl } from './requestPublicOrigin.js'
 
 export function buildEntrypointCandidates(base: any, videoId: any, options: any = {}) {
   const preferPodcast = options?.preferPodcast === true
