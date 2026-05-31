@@ -1,0 +1,7 @@
+# Cloudflare Pages (primary frontend). Deploy: npm run deploy / `wrangler pages deploy`
+# Requires `pages_build_output_dir` so compatibility_flags apply to the Nuxt `_worker.js` bundle.
+
+name = "vmp-fe"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]

@@ -1,0 +1,21 @@
+# Experimental Cloudflare Workers frontend (parallel to Pages).
+# Deploy: npm run build:workers && npm run deploy:workers
+# CI: .github/workflows/deploy-web-workers.yml
+
+name = "vmp-web-worker-dev"
+main = ".output/server/index.mjs"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".output/public"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+
+[env.production]
+name = "vmp-web-worker-prod"
+
+[vars]
+# NUXT_PUBLIC_* are not read here unless you add server-side runtimeConfig without public prefix.

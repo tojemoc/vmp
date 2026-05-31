@@ -62,8 +62,8 @@ export function usePushNotifications() {
 
   async function _extractApiErrorMessage(res: Response): Promise<string> {
     const parsed = await res.clone().json().catch(() => null) as { error?: string, message?: string } | null
-    if (parsed?.error || parsed?.message) return parsed.error || parsed.message || 'Server error'
-    return await res.text().catch(() => 'Server error')
+    if (parsed?.error || parsed?.message) return parsed.error || parsed.message || strings.serverError
+    return await res.text().catch(() => strings.serverError)
   }
 
   function _urlB64ToUint8Array(base64String: string): Uint8Array {
@@ -141,7 +141,7 @@ export function usePushNotifications() {
     const perm = await Notification.requestPermission()
     permission.value = perm
     if (perm !== 'granted') {
-      pushError.value = 'Browser notifications were blocked. Enable notifications in your browser settings and try again.'
+      pushError.value = strings.notificationsBrowserBlocked
       return
     }
 
@@ -150,7 +150,7 @@ export function usePushNotifications() {
       vapidPublicKey = await _getVapidPublicKey()
     } catch (e) {
       console.error('Could not fetch VAPID key:', e)
-      pushError.value = 'Push service is not configured right now. Please try again later.'
+      pushError.value = strings.notificationsNotConfigured
       return
     }
 
@@ -204,7 +204,7 @@ export function usePushNotifications() {
           console.error('Failed to save push subscription after retry:', retryError)
           pushError.value = retryError instanceof Error
             ? `Failed to enable notifications: ${retryError.message}`
-            : 'Failed to enable notifications. Please try again.'
+            : strings.notificationsEnableFailed
           // Roll back the fresh subscription created during the retry
           const rollback = browserSub.current as PushSubscription | null
           if (rollback) await rollback.unsubscribe().catch(() => {})
@@ -215,7 +215,7 @@ export function usePushNotifications() {
         console.error('Failed to save push subscription:', firstError)
         pushError.value = firstError instanceof Error
           ? `Failed to enable notifications: ${firstError.message}`
-          : 'Failed to enable notifications. Please try again.'
+          : strings.notificationsEnableFailed
         // Roll back the newly created browser subscription
         const rollback = browserSub.current as PushSubscription | null
         if (rollback) await rollback.unsubscribe().catch(() => {})
@@ -252,7 +252,7 @@ export function usePushNotifications() {
         }
       }).catch((e) => {
         console.error('Failed to delete push subscription on server:', e)
-        pushError.value = 'Notifications were disabled in this browser, but we could not sync this change to the server.'
+        pushError.value = strings.notificationsUnsubscribeSyncFailed
       })
     }
 

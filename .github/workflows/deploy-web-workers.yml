@@ -1,0 +1,64 @@
+# Experimental: deploy @vmp/web to Cloudflare Workers (SSR + static assets).
+# Does NOT replace Pages — see .github/workflows/deploy.yml for primary frontend deploy.
+
+name: Deploy Web (Workers experimental)
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/web/**'
+      - '.github/workflows/deploy-web-workers.yml'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  deploy-web-workers:
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: packages/web
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: npm ci
+
+      - name: Build service worker (sw-push)
+        run: npm run build:sw-push
+
+      - name: Build Nuxt for Cloudflare Workers
+        env:
+          API_URL: ${{ vars.API_URL_STAGING }}
+          NODE_ENV: production
+        run: npm run build:workers
+
+      - name: Deploy Worker (experimental)
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy --config wrangler.workers.toml 2>&1 | tee deploy.log
+          url="$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)"
+          if [ -z "$url" ]; then
+            echo "Could not parse workers.dev URL from wrangler deploy output"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke check workers.dev
+        run: curl -fsS --retry 3 --retry-delay 5 "${{ steps.deploy.outputs.url }}/" -o /dev/null

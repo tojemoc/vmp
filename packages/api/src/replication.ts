@@ -412,7 +412,10 @@ async function enqueueStreamAdminSettings(
   return { enqueued: selected.length, ingest }
 }
 
-function mergeIngestTotals(target: { applied: number; skipped: number }, ingest: ReplicationIngestResult | null | undefined) {
+function mergeIngestTotals(
+  target: { applied: number; skipped: number },
+  ingest: Pick<ReplicationIngestResult, 'applied' | 'skipped'> | null | undefined,
+) {
   if (!ingest) return
   target.applied += ingest.applied
   target.skipped += ingest.skipped

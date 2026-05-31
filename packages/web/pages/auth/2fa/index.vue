@@ -18,8 +18,8 @@
               d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
-        <h1 class="text-xl font-semibold text-white">Two-factor authentication</h1>
-        <p class="text-gray-400 text-sm mt-2">Enter the 6-digit code from your authenticator app.</p>
+        <h1 class="text-xl font-semibold text-white">{{ strings.totpVerifyTitle }}</h1>
+        <p class="text-gray-400 text-sm mt-2">{{ strings.totpVerifyIntro }}</p>
       </div>
 
       <!-- Error -->
@@ -29,13 +29,13 @@
 
       <!-- Session expired -->
       <div v-if="sessionExpired" class="text-center space-y-4">
-        <p class="text-gray-400 text-sm">Your sign-in session has expired. Please start again.</p>
+        <p class="text-gray-400 text-sm">{{ strings.totpSessionExpired }}</p>
         <button
           type="button"
           @click="backToSignIn"
           class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          Back to sign in
+          {{ strings.totpBackToSignIn }}
         </button>
       </div>
 
@@ -43,7 +43,7 @@
       <form v-else @submit.prevent="submit" class="space-y-5">
         <div>
           <label for="code" class="block text-sm font-medium text-gray-300 mb-1.5">
-            Authenticator code
+            {{ strings.totpVerifyCodeLabel }}
           </label>
           <input
             id="code"
@@ -52,7 +52,7 @@
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength="6"
-            placeholder="000000"
+            :placeholder="strings.totpCodePlaceholder"
             :disabled="loading"
             class="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
           />
@@ -65,14 +65,14 @@
         >
           <span v-if="loading" class="inline-flex items-center gap-2">
             <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block"></span>
-            Verifying…
+            {{ strings.totpVerifying }}
           </span>
-          <span v-else>Verify</span>
+          <span v-else>{{ strings.totpVerifyButton }}</span>
         </button>
 
         <p class="text-center text-xs text-gray-500">
-          Lost access to your authenticator?
-          <a href="mailto:support@vmp.tjm.sk" class="text-blue-400 hover:underline">Contact support</a>
+          {{ strings.totpLostAuthenticator }}
+          <a href="mailto:support@vmp.tjm.sk" class="text-blue-400 hover:underline">{{ strings.totpContactSupport }}</a>
         </p>
       </form>
 
@@ -82,6 +82,7 @@
 
 <script setup lang="ts">
 import { useRoute, navigateTo } from '#app'
+import strings from '~/utils/strings'
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -122,7 +123,7 @@ async function submit() {
         ? (sessionStorage.getItem('vmp_pwa_magic_token') || '').trim()
         : ''
       if (!magicToken) {
-        throw new Error('Sign-in session expired. Open the link from your email again.')
+        throw new Error(strings.totpPwaSessionExpired)
       }
       const res = await fetch(`${apiUrl}/api/auth/pwa-push-login/verify-2fa`, {
         method: 'POST',
@@ -134,7 +135,7 @@ async function submit() {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Verification failed')
+      if (!res.ok) throw new Error(data.error || strings.totpVerificationFailed)
       try { sessionStorage.removeItem('vmp_pwa_magic_token') } catch { /* ignore */ }
       await navigateTo({
         path: '/auth/verify',
@@ -146,14 +147,13 @@ async function submit() {
     await verifyTotp(code.value, pendingToken.value)
     await navigateTo(redirect.value)
   } catch (err: any) {
-    // Check structured error code first; fall back to message substring for compat.
     const isExpired = err.code === 'session_expired'
       || err.message?.includes('expired')
       || err.message?.includes('session')
     if (isExpired) {
       sessionExpired.value = true
     } else {
-      errorMessage.value = err.message || 'Invalid code. Please try again.'
+      errorMessage.value = err.message || strings.totpInvalidCode
       code.value = ''
     }
   } finally {

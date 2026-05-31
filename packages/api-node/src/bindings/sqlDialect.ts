@@ -138,6 +138,9 @@ export function translateSqliteToPostgres(sql: string): string {
     return `(${expr}::timestamptz)`
   })
 
+  // SQLite trim() accepts any type; Postgres trim/btrim is text-only (TIMESTAMPTZ → 42883).
+  s = s.replace(/\btrim\s*\(\s*([^)]+)\s*\)/gi, 'btrim(($1)::text)')
+
   return s
 }
 
