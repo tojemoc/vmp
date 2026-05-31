@@ -133,7 +133,6 @@ export function translateSqliteToPostgres(sql: string): string {
   s = s.replace(/datetime\s*\(\s*([^)]+)\s*\)/gi, (_match, inner) => {
     const expr = inner.trim()
     if (/^'now'/i.test(expr)) return 'CURRENT_TIMESTAMP'
-    if (expr === '?' || /^\$\d+$/.test(expr)) return `(${expr}::timestamptz)`
     if (/^CURRENT_TIMESTAMP$/i.test(expr)) return 'CURRENT_TIMESTAMP'
     return `(${expr}::timestamptz)`
   })
