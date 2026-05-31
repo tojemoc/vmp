@@ -4,6 +4,9 @@ const sw = globalThis as unknown as ServiceWorkerGlobalScope & typeof globalThis
 const PWA_AUTH_IDB = 'vmp-pwa-auth'
 const PWA_AUTH_STORE = 'handoffs'
 
+/** Window clients that posted `pwa_auth_register_client` (installed PWA). */
+const registeredPwaAuthClientIds = new Set<string>()
+
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PWA_AUTH_IDB, 1)
@@ -27,19 +30,95 @@ async function storeHandoffCode(db: IDBDatabase, handoffCode: string): Promise<v
   })
 }
 
-async function notifyClientsOrStore(handoffCode: string): Promise<void> {
-  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  if (clients.length > 0) {
-    for (const client of clients) {
-      client.postMessage({ type: 'pwa_auth_handoff', handoffCode })
-    }
-    const firstClient = clients[0]
-    if (firstClient) await firstClient.focus()
-    return
+function isSameOriginNonAuthClient(client: Client): boolean {
+  try {
+    const url = new URL(client.url)
+    if (url.origin !== sw.location.origin) return false
+    if (url.pathname.startsWith('/auth/')) return false
+    return true
+  } catch {
+    return false
   }
+}
+
+function isRegisteredPwaAuthClient(client: Client): boolean {
+  return isSameOriginNonAuthClient(client) && registeredPwaAuthClientIds.has(client.id)
+}
+
+function pickAppShellClient(clients: readonly Client[]): WindowClient | undefined {
+  const validated = clients.filter(isRegisteredPwaAuthClient) as WindowClient[]
+  if (validated.length === 0) return undefined
+  return validated.find((c) => c.focused) ?? validated[0]
+}
+
+sw.addEventListener('message', (event: ExtendableMessageEvent) => {
+  const data = event.data as { type?: string } | null
+  if (data?.type !== 'pwa_auth_register_client') return
+  const source = event.source
+  if (source && 'id' in source && typeof source.id === 'string') {
+    registeredPwaAuthClientIds.add(source.id)
+  }
+})
+
+async function persistHandoffAndOpen(handoffCode: string): Promise<void> {
   const db = await openIdb()
   await storeHandoffCode(db, handoffCode)
-  await sw.clients.openWindow('/')
+  await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
+}
+
+async function deliverHandoffToSingleClient(handoffCode: string): Promise<void> {
+  try {
+    const db = await openIdb()
+    await storeHandoffCode(db, handoffCode)
+  } catch (err) {
+    console.warn('[sw-push] IDB store failed:', err)
+  }
+
+  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const target = pickAppShellClient(clients)
+  if (!target) {
+    await persistHandoffAndOpen(handoffCode)
+    return
+  }
+
+  target.postMessage({ type: 'pwa_auth_handoff', handoffCode })
+  try {
+    await target.focus()
+  } catch {
+    // focus may fail on some platforms
+  }
+  if ('navigate' in target && typeof target.navigate === 'function') {
+    try {
+      await target.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
+    } catch {
+      // navigate not supported — postMessage + IDB are enough
+    }
+  }
+}
+
+async function notifyClientsOrStore(handoffCode: string): Promise<void> {
+  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const target = pickAppShellClient(clients)
+  if (target) {
+    try {
+      const db = await openIdb()
+      await storeHandoffCode(db, handoffCode)
+    } catch (err) {
+      console.warn('[sw-push] IDB store failed:', err)
+    }
+    target.postMessage({ type: 'pwa_auth_handoff', handoffCode })
+    try {
+      await target.focus()
+    } catch {
+      // focus may fail on some platforms
+    }
+    return
+  }
+  await persistHandoffAndOpen(handoffCode)
+}
+
+async function deliverHandoffToClients(handoffCode: string): Promise<void> {
+  await deliverHandoffToSingleClient(handoffCode)
 }
 
 /**
@@ -145,9 +224,7 @@ sw.addEventListener('notificationclick', (event: NotificationEvent) => {
 
   if (typeof notifData?.handoffCode === 'string') {
     const code = notifData.handoffCode
-    event.waitUntil(
-      sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(code)}`),
-    )
+    event.waitUntil(deliverHandoffToClients(code))
     return
   }
 
