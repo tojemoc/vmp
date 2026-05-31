@@ -24,6 +24,7 @@ import {
   handleGetMe,
   handleTotpSetup,
   handleTotpConfirm,
+  handleTotpDisable,
   handleTotpVerify,
   requireAuth,
   requireRole,
@@ -107,6 +108,7 @@ import {
 import {
   enqueueReplicationBatch,
   handleAdminReplicationSettings,
+  handleAdminReplicationPush,
   handleReplicationQueue,
 } from './replication.js'
 import {
@@ -320,6 +322,9 @@ export default {
     if (url.pathname === '/api/auth/2fa/confirm' && request.method === 'POST') {
       return handleTotpConfirm(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/auth/2fa/disable' && request.method === 'POST') {
+      return handleTotpDisable(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/auth/2fa/verify' && request.method === 'POST') {
       return handleTotpVerify(request, env, corsHeaders)
     }
@@ -327,6 +332,9 @@ export default {
     // ── Existing routes ───────────────────────────────────────────────────────
     if (url.pathname === '/api/videos') {
       return handleVideosList(request, env, corsHeaders)
+    }
+    if (url.pathname.match(/^\/api\/videos\/[^/]+\/meta$/) && request.method === 'GET') {
+      return handleVideoPublicMeta(request, env, corsHeaders)
     }
     if (url.pathname === '/api/homepage/placement' && request.method === 'GET') {
       return handleHomepagePlacement(request, env, corsHeaders)
@@ -439,6 +447,9 @@ export default {
     }
     if (url.pathname === '/api/admin/system/features' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminSystemFeatures(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
+      return handleAdminReplicationPush(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminReplicationSettings(request, env, corsHeaders)
@@ -744,6 +755,47 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
     return response
   } catch (error) {
     console.error('Error:', error)
+    return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
+  }
+}
+
+/** Public metadata for Open Graph / social previews (no auth, no rate limit). */
+async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'GET') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  }
+
+  try {
+    const url = new URL(request.url)
+    const pathParts = url.pathname.split('/').filter(Boolean)
+    const rawIdOrSlug = pathParts.length === 4 ? decodeURIComponent(pathParts[2] ?? '') : ''
+    const idOrSlug = normalizeVideoId(rawIdOrSlug)
+    if (!idOrSlug) {
+      return jsonResponse({ error: 'Invalid video id' }, 400, corsHeaders)
+    }
+
+    const db = getDatabaseBinding(env)
+    const video = await resolveVideoByIdOrSlug(db, idOrSlug)
+    if (!video || video.publish_status !== 'published') {
+      return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+    }
+
+    if (video.scheduled_publish_at) {
+      const scheduledAt = parseAdminTimestampToUtcMillis(String(video.scheduled_publish_at))
+      if (Number.isFinite(scheduledAt) && scheduledAt > Date.now()) {
+        return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
+      }
+    }
+
+    return jsonResponse({
+      id: video.id,
+      slug: video.slug ?? null,
+      title: video.title ?? '',
+      description: video.description ?? '',
+      thumbnail_url: video.thumbnail_url ?? null,
+    }, 200, corsHeaders)
+  } catch (error) {
+    console.error('handleVideoPublicMeta:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
   }
 }

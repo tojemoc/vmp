@@ -329,6 +329,15 @@ export function useAuth() {
     if (user.value) user.value = { ...user.value, totpEnabled: true }
   }
 
+  function markTotpDisabled(authUser?: Pick<AuthUser, 'totpEnabled' | 'totpRequired'>) {
+    if (!user.value) return
+    user.value = {
+      ...user.value,
+      totpEnabled: authUser?.totpEnabled ?? false,
+      totpRequired: authUser?.totpRequired ?? user.value.totpRequired,
+    }
+  }
+
   /**
    * Store a new access token + user returned by the server (e.g. after 2FA
    * confirmation, where the server issues a fresh session in the same response
@@ -357,6 +366,7 @@ export function useAuth() {
     authHeader,
     initialise,
     markTotpEnabled,
+    markTotpDisabled,
     applyNewSession,
 
     // Role / subscription helpers

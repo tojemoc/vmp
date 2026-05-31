@@ -3,7 +3,15 @@ import { join } from 'node:path'
 import postgres from 'postgres'
 import type { Sql } from 'postgres'
 import type { D1ExecResult, D1Result } from '@cloudflare/workers-types'
-import { bindQuestionMarks, translateSqliteDdl, translateSqliteToPostgres } from './sqlDialect.js'
+import {
+  bindQuestionMarks,
+  isPostgresDuplicateObjectError,
+  translateSqliteDdl,
+  translateSqliteToPostgres,
+} from './sqlDialect.js'
+
+/** Serializes migration application across concurrent Deno Deploy instances. */
+const MIGRATION_ADVISORY_LOCK_KEY = 0x564d50
 
 const WRITE_SQL_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/i
 
@@ -374,6 +382,18 @@ export class PostgresD1Adapter {
       })
   }
 
+  private async runMigrationStatement(tx: Sql, statement: string): Promise<void> {
+    try {
+      await tx.unsafe(statement)
+    } catch (err) {
+      if (isPostgresDuplicateObjectError(err)) {
+        console.warn('[migrations] skipping duplicate object:', statement.slice(0, 120))
+        return
+      }
+      throw err
+    }
+  }
+
   private async runMigrations(migrationsDir: string): Promise<void> {
     await this.sql`
       CREATE TABLE IF NOT EXISTS _migrations (
@@ -382,26 +402,31 @@ export class PostgresD1Adapter {
       )
     `
 
-    const appliedRows = await this.sql<{ id: string }[]>`SELECT id FROM _migrations`
-    const applied = new Set(appliedRows.map((r) => r.id))
+    await this.sql`SELECT pg_advisory_lock(${MIGRATION_ADVISORY_LOCK_KEY})`
+    try {
+      const appliedRows = await this.sql<{ id: string }[]>`SELECT id FROM _migrations`
+      const applied = new Set(appliedRows.map((r) => r.id))
 
-    const files = readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
+      const files = readdirSync(migrationsDir)
+        .filter((f) => f.endsWith('.sql'))
+        .sort()
 
-    for (const file of files) {
-      const id = file.replace(/\.sql$/, '')
-      if (applied.has(id)) continue
-      const raw = readFileSync(join(migrationsDir, file), 'utf8')
-      const sql = translateSqliteDdl(raw)
-      await this.sql.begin(async (tx) => {
-        const statements = splitSqlStatements(sql)
-        for (const statement of statements) {
-          await tx.unsafe(statement)
-        }
-        await tx`INSERT INTO _migrations (id) VALUES (${id})`
-      })
-      console.log(`[migrations] applied ${file}`)
+      for (const file of files) {
+        const id = file.replace(/\.sql$/, '')
+        if (applied.has(id)) continue
+        const raw = readFileSync(join(migrationsDir, file), 'utf8')
+        const sql = translateSqliteDdl(raw)
+        await this.sql.begin(async (tx) => {
+          const statements = splitSqlStatements(sql)
+          for (const statement of statements) {
+            await this.runMigrationStatement(tx as unknown as Sql, statement)
+          }
+          await tx`INSERT INTO _migrations (id) VALUES (${id})`
+        })
+        console.log(`[migrations] applied ${file}`)
+      }
+    } finally {
+      await this.sql`SELECT pg_advisory_unlock(${MIGRATION_ADVISORY_LOCK_KEY})`
     }
   }
 }

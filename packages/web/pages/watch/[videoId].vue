@@ -426,6 +426,34 @@ import { usePushAttribution } from '~/composables/usePushAttribution'
 const route  = useRoute()
 const config = useRuntimeConfig()
 
+type VideoMetaResponse = {
+  id: string
+  slug: string | null
+  title: string
+  description: string
+  thumbnail_url: string | null
+}
+
+const videoIdParam = computed(() => String(route.params.videoId ?? ''))
+
+const { data: videoMeta } = await useAsyncData(
+  () => `video-meta-${videoIdParam.value}`,
+  () =>
+    $fetch<VideoMetaResponse>(
+      `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
+    ).catch(() => null),
+  { watch: [videoIdParam] },
+)
+
+usePageSeo(
+  computed(() => ({
+    title: videoMeta.value?.title,
+    description: videoMeta.value?.description,
+    image: videoMeta.value?.thumbnail_url,
+    ogType: 'video.other' as const,
+  })),
+)
+
 let moqModule: Awaited<typeof import('@moq/lite')> | null = null
 let watchModule: Awaited<typeof import('@moq/watch')> | null = null
 

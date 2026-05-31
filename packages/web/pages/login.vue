@@ -20,6 +20,35 @@
           <p class="mt-2 text-[11px] text-green-400 leading-relaxed">
             {{ strings.loginSessionFlowHint }}
           </p>
+          <p class="mt-3 text-[11px] text-green-400 leading-relaxed">
+            {{ strings.loginOpenEmailHint }}
+          </p>
+          <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <a
+              :href="mailtoInboxHref"
+              class="font-medium text-green-200 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenEmailApp }}
+            </a>
+            <span class="text-green-600" aria-hidden="true">·</span>
+            <a
+              :href="gmailInboxHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-green-300/90 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenGmail }}
+            </a>
+            <span class="text-green-600" aria-hidden="true">·</span>
+            <a
+              :href="outlookInboxHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-green-300/90 underline underline-offset-2 hover:text-white"
+            >
+              {{ strings.loginOpenOutlook }}
+            </a>
+          </div>
         </div>
 
         <div v-else>
@@ -59,12 +88,17 @@
 import strings from '~/utils/strings'
 import { isInstalledPwa } from '~/utils/pwa'
 
+usePageSeo({ title: strings.loginTitle, noIndex: true })
+
 const route  = useRoute()
 const { signIn, isLoggedIn } = useAuth()
 const { waitForAuthInitialised } = useLoginFlow()
 const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
-// Must start with a single slash; rejects //evil.com and external URLs.
+const mailtoInboxHref = 'mailto:'
+const gmailInboxHref = 'https://mail.google.com/mail/u/0/#inbox'
+const outlookInboxHref = 'https://outlook.live.com/mail/0/inbox'
+
 function safeRedirect(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback
   const t = value.trim()
@@ -72,11 +106,8 @@ function safeRedirect(value: unknown, fallback: string): string {
   return t
 }
 
-// Capture the redirect target before any navigation.
-// The middleware sets this to e.g. /admin when an unauthed user hits that route.
 const redirectTo = safeRedirect(route.query.redirect, '/')
 
-// Already logged in — skip the login page entirely
 if (isLoggedIn.value) {
   await navigateTo(redirectTo)
 }

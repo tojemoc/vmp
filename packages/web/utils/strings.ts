@@ -131,8 +131,6 @@ const strings = {
     'Your role requires two-factor authentication to access the admin area. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
   totpSetupIntroOptional:
     'Add an extra layer of security to your account. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
-  totpSetupIntroLegacy:
-    'Your account requires 2FA. Scan the QR code with an authenticator app (Google Authenticator, Authy, etc.), then enter the code to confirm.',
   totpSetupGenerating: 'Generating your secret…',
   totpSetupTryAgain: 'Try again',
   totpSetupBackToAccount: 'Back to account',
@@ -142,17 +140,17 @@ const strings = {
   totpSetupConfirming: 'Confirming…',
   totpSetupEnabledTitle: '2FA enabled',
   totpSetupEnabledBody: 'Your account is now protected. Redirecting…',
+  totpSetupAlreadyEnabled: 'Two-factor authentication is already enabled. Disable it from your account page to set up a new authenticator.',
   totpSetupFailedLoad: 'Failed to load setup. Please refresh.',
   totpSetupLoadFailed: 'Failed to load setup',
   totpSetupConfirmationFailed: 'Confirmation failed',
 
   totpAccountSectionTitle: 'Two-factor authentication',
-  totpAccountEnabled: 'Enabled',
-  totpAccountEnabledDetail: 'Your account is protected with an authenticator app.',
-  totpAccountEnabledDetailSwitchDevice:
+  totpAccountEnabledBadge: 'Enabled',
+  totpAccountEnabled:
     'Your account is protected with an authenticator app. To switch devices, turn off 2FA below and set it up again.',
-  totpAccountSetupRequired: 'Setup required',
-  totpAccountSetupRequiredDetail: 'Your role requires 2FA to access the admin area.',
+  totpAccountSetupRequiredBadge: 'Setup required',
+  totpAccountSetupRequired: 'Your role requires 2FA to access the admin area.',
   totpAccountOptionalBlurb: 'Add extra security to your account (optional).',
   totpAccountSetupButton: 'Set up two-factor authentication',
   totpAccountDisableButton: 'Turn off two-factor authentication',
@@ -161,8 +159,7 @@ const strings = {
   totpAccountDisableHintOptional: 'You can turn it back on anytime from this page.',
   totpAccountDisablePrompt: 'Enter your current 6-digit code to turn off 2FA.',
   totpAccountDisabling: 'Disabling…',
-  totpAccountAlreadyEnabled:
-    'Two-factor authentication is already enabled. Disable it from your account page to set up a new authenticator.',
+  totpAccountDisableFailed: 'Could not disable 2FA',
 
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Discover Premium Video Content',

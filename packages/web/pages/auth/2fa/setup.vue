@@ -1,13 +1,13 @@
 <!-- packages/web/pages/auth/2fa/setup.vue -->
 <!--
-  First-time TOTP setup page for editor/admin/super_admin users.
-  URL: /auth/2fa/setup
+  TOTP setup page (first-time or after disabling 2FA).
+  URL: /auth/2fa/setup?redirect=...
 
   Flow:
   1. Page loads → calls GET /api/auth/2fa/setup to get a fresh secret + otpauth URI
   2. Renders QR code for the user to scan with their authenticator app
   3. User enters the 6-digit code and submits
-  4. POST /api/auth/2fa/confirm — if valid, 2FA is enabled and user goes to redirect target
+  4. POST /api/auth/2fa/confirm — if valid, 2FA is enabled and user is redirected
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4 py-12">
@@ -38,9 +38,21 @@
         <div class="px-4 py-3 rounded-lg bg-red-950 border border-red-800 text-red-400 text-sm">
           {{ loadError }}
         </div>
-        <button type="button" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors" @click="loadSetup">
+        <button
+          v-if="loadErrorCode !== 'totp_already_enabled'"
+          type="button"
+          class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+          @click="loadSetup"
+        >
           {{ strings.totpSetupTryAgain }}
         </button>
+        <NuxtLink
+          v-else
+          to="/account"
+          class="inline-block px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+        >
+          {{ strings.totpSetupBackToAccount }}
+        </NuxtLink>
       </div>
 
       <!-- Setup form -->
@@ -117,6 +129,8 @@ import { navigateTo, useRoute } from '#app'
 import QRCode from 'qrcode'
 import strings from '~/utils/strings'
 
+// Do NOT use the admin middleware here — it would cause a redirect loop
+// because it redirects to this page when totpEnabled is false.
 const { user, isLoggedIn, authHeader, markTotpEnabled, applyNewSession } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 const config = useRuntimeConfig()
@@ -131,7 +145,7 @@ function safeRedirect(value: unknown, fallback: string): string {
 }
 
 const postSetupRedirect = computed(() =>
-  safeRedirect(route.query.redirect, '/admin')
+  safeRedirect(route.query.redirect, '/account')
 )
 
 const blockedAtAdminGate = computed(() => {
@@ -151,6 +165,7 @@ const setupIntro = computed(() => {
 type State = 'loading' | 'loadError' | 'setup' | 'done'
 const state        = ref<State>('loading')
 const loadError    = ref('')
+const loadErrorCode = ref('')
 const secret       = ref('')
 const otpAuthUrl   = ref('')
 const confirmCode  = ref('')
@@ -168,6 +183,7 @@ const formattedSecret = computed(() =>
 async function loadSetup() {
   state.value     = 'loading'
   loadError.value = ''
+  loadErrorCode.value = ''
 
   try {
     const res  = await fetch(`${apiUrl}/api/auth/2fa/setup`, { headers: authHeader() })
@@ -177,6 +193,13 @@ async function loadSetup() {
       const inner = safeRedirect(route.query.redirect, '')
       const setupPath = '/auth/2fa/setup' + (inner ? `?redirect=${encodeURIComponent(inner)}` : '')
       await startLoginFlow(setupPath)
+      return
+    }
+
+    if (res.status === 409 && data.code === 'totp_already_enabled') {
+      loadError.value = strings.totpSetupAlreadyEnabled
+      loadErrorCode.value = 'totp_already_enabled'
+      state.value = 'loadError'
       return
     }
 
