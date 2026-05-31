@@ -23,34 +23,31 @@ async function storeHandoffCode(db, handoffCode) {
         tx.objectStore(PWA_AUTH_STORE).put(handoffCode, 'pending');
     });
 }
-async function notifyClientsOrStore(handoffCode) {
-    const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (clients.length > 0) {
-        try {
-            const db = await openIdb();
-            await storeHandoffCode(db, handoffCode);
-        }
-        catch (err) {
-            console.warn('[sw-push] IDB store failed:', err);
-        }
-        for (const client of clients) {
-            client.postMessage({ type: 'pwa_auth_handoff', handoffCode });
-        }
-        const firstClient = clients[0];
-        if (firstClient) {
-            try {
-                await firstClient.focus();
-            }
-            catch {
-            }
-        }
-        return;
+function isAppShellClient(client) {
+    try {
+        const url = new URL(client.url);
+        if (url.origin !== sw.location.origin)
+            return false;
+        if (url.pathname.startsWith('/auth/'))
+            return false;
+        return true;
     }
+    catch {
+        return false;
+    }
+}
+function pickAppShellClient(clients) {
+    const validated = clients.filter(isAppShellClient);
+    if (validated.length === 0)
+        return undefined;
+    return validated.find((c) => c.focused) ?? validated[0];
+}
+async function persistHandoffAndOpen(handoffCode) {
     const db = await openIdb();
     await storeHandoffCode(db, handoffCode);
-    await sw.clients.openWindow('/');
+    await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
 }
-async function deliverHandoffToClients(handoffCode) {
+async function deliverHandoffToSingleClient(handoffCode) {
     try {
         const db = await openIdb();
         await storeHandoffCode(db, handoffCode);
@@ -59,29 +56,48 @@ async function deliverHandoffToClients(handoffCode) {
         console.warn('[sw-push] IDB store failed:', err);
     }
     const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (clients.length > 0) {
-        for (const client of clients) {
-            client.postMessage({ type: 'pwa_auth_handoff', handoffCode });
+    const target = pickAppShellClient(clients);
+    if (!target) {
+        await persistHandoffAndOpen(handoffCode);
+        return;
+    }
+    target.postMessage({ type: 'pwa_auth_handoff', handoffCode });
+    try {
+        await target.focus();
+    }
+    catch {
+    }
+    if ('navigate' in target && typeof target.navigate === 'function') {
+        try {
+            await target.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
         }
-        const firstClient = clients[0];
-        if (firstClient) {
-            try {
-                await firstClient.focus();
-            }
-            catch {
-            }
-            if ('navigate' in firstClient && typeof firstClient.navigate === 'function') {
-                try {
-                    await firstClient.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
-                    return;
-                }
-                catch {
-                }
-            }
+        catch {
+        }
+    }
+}
+async function notifyClientsOrStore(handoffCode) {
+    const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const target = pickAppShellClient(clients);
+    if (target) {
+        try {
+            const db = await openIdb();
+            await storeHandoffCode(db, handoffCode);
+        }
+        catch (err) {
+            console.warn('[sw-push] IDB store failed:', err);
+        }
+        target.postMessage({ type: 'pwa_auth_handoff', handoffCode });
+        try {
+            await target.focus();
+        }
+        catch {
         }
         return;
     }
-    await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`);
+    await persistHandoffAndOpen(handoffCode);
+}
+async function deliverHandoffToClients(handoffCode) {
+    await deliverHandoffToSingleClient(handoffCode);
 }
 function stripTrailingSlashes(value) {
     let end = value.length;

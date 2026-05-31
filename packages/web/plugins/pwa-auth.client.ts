@@ -9,6 +9,7 @@ export default defineNuxtPlugin(() => {
   const { redeemPwaHandoff, isLoggedIn, initialised, refreshSession } = useAuth()
 
   let redeemInFlight = false
+  let onAppVisibleInFlight = false
 
   async function redeemCode(code: string): Promise<boolean> {
     if (!code || redeemInFlight) return false
@@ -50,10 +51,15 @@ export default defineNuxtPlugin(() => {
   }
 
   async function onAppVisible() {
-    if (!initialised.value || isLoggedIn.value) return
-    await tryRedeemFromUrlOrIdb()
-    if (!isLoggedIn.value) {
-      await refreshSession()
+    if (!initialised.value || isLoggedIn.value || onAppVisibleInFlight) return
+    onAppVisibleInFlight = true
+    try {
+      await tryRedeemFromUrlOrIdb()
+      if (!isLoggedIn.value) {
+        await refreshSession()
+      }
+    } finally {
+      onAppVisibleInFlight = false
     }
   }
 

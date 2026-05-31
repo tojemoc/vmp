@@ -354,6 +354,7 @@
 
             <div class="relative">
               <div
+                id="video-description"
                 ref="descriptionRef"
                 class="text-gray-700 dark:text-gray-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none transition-[max-height] duration-200"
                 :class="descriptionExpanded ? '' : 'watch-description-collapsed'"
@@ -368,6 +369,8 @@
                 <button
                   type="button"
                   class="px-5 py-1.5 text-sm font-semibold tracking-wide uppercase rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                  :aria-expanded="descriptionExpanded"
+                  aria-controls="video-description"
                   @click="descriptionExpanded = !descriptionExpanded"
                 >
                   {{ descriptionExpanded ? strings.readLess : strings.readMore }}
@@ -439,7 +442,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
@@ -653,19 +656,28 @@ const descriptionRef = ref<HTMLElement | null>(null)
 const descriptionExpanded = ref(false)
 const descriptionClamped = ref(false)
 
-function measureDescriptionClamp() {
-  descriptionExpanded.value = false
+/** Matches `.watch-description-collapsed { max-height: 6.5rem }` */
+const DESCRIPTION_COLLAPSED_MAX_PX = 6.5 * 16
+
+function measureDescriptionClamp(options?: { resetExpanded?: boolean }) {
+  if (options?.resetExpanded) descriptionExpanded.value = false
   nextTick(() => {
     const el = descriptionRef.value
     if (!el) {
       descriptionClamped.value = false
       return
     }
-    descriptionClamped.value = el.scrollHeight > el.clientHeight + 2
+    if (descriptionExpanded.value) {
+      descriptionClamped.value = el.scrollHeight > DESCRIPTION_COLLAPSED_MAX_PX + 2
+    } else {
+      descriptionClamped.value = el.scrollHeight > el.clientHeight + 2
+    }
   })
 }
 
-watch(videoDescriptionHtml, () => { measureDescriptionClamp() })
+let descriptionClampResizeObserver: ResizeObserver | null = null
+
+watch(videoDescriptionHtml, () => { measureDescriptionClamp({ resetExpanded: true }) })
 watch(descriptionExpanded, () => {
   if (!descriptionExpanded.value) measureDescriptionClamp()
 })
@@ -735,7 +747,28 @@ const enforcePreviewLimit = (video: HTMLVideoElement) => {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+onMounted(() => {
+  measureDescriptionClamp()
+})
+
+if (import.meta.client && typeof ResizeObserver !== 'undefined') {
+  descriptionClampResizeObserver = new ResizeObserver(() => {
+    measureDescriptionClamp()
+  })
+  watch(
+    descriptionRef,
+    (el, _prev, onCleanup) => {
+      descriptionClampResizeObserver?.disconnect()
+      if (el) descriptionClampResizeObserver?.observe(el)
+      onCleanup(() => descriptionClampResizeObserver?.disconnect())
+    },
+    { immediate: true },
+  )
+}
+
 onUnmounted(() => {
+  descriptionClampResizeObserver?.disconnect()
+  descriptionClampResizeObserver = null
   teardownVideoListeners()
   teardownLivestreamRuntime()
 })

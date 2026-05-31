@@ -27,34 +27,31 @@ async function storeHandoffCode(db: IDBDatabase, handoffCode: string): Promise<v
   })
 }
 
-async function notifyClientsOrStore(handoffCode: string): Promise<void> {
-  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  if (clients.length > 0) {
-    try {
-      const db = await openIdb()
-      await storeHandoffCode(db, handoffCode)
-    } catch (err) {
-      console.warn('[sw-push] IDB store failed:', err)
-    }
-    for (const client of clients) {
-      client.postMessage({ type: 'pwa_auth_handoff', handoffCode })
-    }
-    const firstClient = clients[0]
-    if (firstClient) {
-      try {
-        await firstClient.focus()
-      } catch {
-        // focus may fail on some platforms
-      }
-    }
-    return
+/** Same-origin app window — exclude Safari magic-link tabs that could consume a one-time handoff. */
+function isAppShellClient(client: Client): boolean {
+  try {
+    const url = new URL(client.url)
+    if (url.origin !== sw.location.origin) return false
+    if (url.pathname.startsWith('/auth/')) return false
+    return true
+  } catch {
+    return false
   }
-  const db = await openIdb()
-  await storeHandoffCode(db, handoffCode)
-  await sw.clients.openWindow('/')
 }
 
-async function deliverHandoffToClients(handoffCode: string): Promise<void> {
+function pickAppShellClient(clients: readonly Client[]): WindowClient | undefined {
+  const validated = clients.filter(isAppShellClient) as WindowClient[]
+  if (validated.length === 0) return undefined
+  return validated.find((c) => c.focused) ?? validated[0]
+}
+
+async function persistHandoffAndOpen(handoffCode: string): Promise<void> {
+  const db = await openIdb()
+  await storeHandoffCode(db, handoffCode)
+  await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
+}
+
+async function deliverHandoffToSingleClient(handoffCode: string): Promise<void> {
   try {
     const db = await openIdb()
     await storeHandoffCode(db, handoffCode)
@@ -63,30 +60,50 @@ async function deliverHandoffToClients(handoffCode: string): Promise<void> {
   }
 
   const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  if (clients.length > 0) {
-    for (const client of clients) {
-      client.postMessage({ type: 'pwa_auth_handoff', handoffCode })
-    }
-    const firstClient = clients[0]
-    if (firstClient) {
-      try {
-        await firstClient.focus()
-      } catch {
-        // focus may fail on some platforms
-      }
-      if ('navigate' in firstClient && typeof firstClient.navigate === 'function') {
-        try {
-          await firstClient.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
-          return
-        } catch {
-          // navigate not supported — postMessage + IDB are enough
-        }
-      }
-    }
+  const target = pickAppShellClient(clients)
+  if (!target) {
+    await persistHandoffAndOpen(handoffCode)
     return
   }
 
-  await sw.clients.openWindow(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
+  target.postMessage({ type: 'pwa_auth_handoff', handoffCode })
+  try {
+    await target.focus()
+  } catch {
+    // focus may fail on some platforms
+  }
+  if ('navigate' in target && typeof target.navigate === 'function') {
+    try {
+      await target.navigate(`/?pwa_auth_handoff=${encodeURIComponent(handoffCode)}`)
+    } catch {
+      // navigate not supported — postMessage + IDB are enough
+    }
+  }
+}
+
+async function notifyClientsOrStore(handoffCode: string): Promise<void> {
+  const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const target = pickAppShellClient(clients)
+  if (target) {
+    try {
+      const db = await openIdb()
+      await storeHandoffCode(db, handoffCode)
+    } catch (err) {
+      console.warn('[sw-push] IDB store failed:', err)
+    }
+    target.postMessage({ type: 'pwa_auth_handoff', handoffCode })
+    try {
+      await target.focus()
+    } catch {
+      // focus may fail on some platforms
+    }
+    return
+  }
+  await persistHandoffAndOpen(handoffCode)
+}
+
+async function deliverHandoffToClients(handoffCode: string): Promise<void> {
+  await deliverHandoffToSingleClient(handoffCode)
 }
 
 /**
