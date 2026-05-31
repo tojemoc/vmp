@@ -1,5 +1,13 @@
 import { requireRole } from './auth.js'
 import { getReplicationQueue } from './queueBindings.js'
+import {
+  assertReplicationIngestAccepted,
+  describeReplicationTarget,
+  parseReplicationIngestResponse,
+  replicationTargetProbeHint,
+  resolveReplicationTargetUrl,
+  type ReplicationIngestResult,
+} from './replicationTarget.js'
 
 type ReplicationDirection = 'd1_to_pg' | 'pg_to_d1'
 
@@ -12,9 +20,14 @@ const REPLICATION_FETCH_TIMEOUT_MS = 10000
 const DEFAULT_MANUAL_PUSH_MAX_ROUNDS = 50
 const MAX_MANUAL_PUSH_MAX_ROUNDS = 200
 
-async function postReplicationEventsToTarget(env: any, events: unknown[]) {
-  const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
-  if (!targetUrl) throw new Error('REPLICATION_TARGET_URL is not configured')
+function getReplicationTargetUrl(env: any): string {
+  const raw = String(env.REPLICATION_TARGET_URL ?? '').trim()
+  if (!raw) throw new Error('REPLICATION_TARGET_URL is not configured')
+  return resolveReplicationTargetUrl(raw)
+}
+
+async function postReplicationEventsToTarget(env: any, events: unknown[]): Promise<ReplicationIngestResult> {
+  const targetUrl = getReplicationTargetUrl(env)
   const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
   if (!token) throw new Error('REPLICATION_TARGET_TOKEN is not configured')
   const payload = {
@@ -42,20 +55,66 @@ async function postReplicationEventsToTarget(env: any, events: unknown[]) {
     }
     throw error
   }
+  const bodyText = await response.text()
   if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`Replication target rejected batch (${response.status}): ${body.slice(0, 300)}`)
+    const hint = replicationTargetProbeHint(response.status, bodyText)
+    const detail = bodyText.slice(0, 300)
+    throw new Error(
+      hint
+        ? `${hint} (HTTP ${response.status}: ${detail})`
+        : `Replication target rejected batch (${response.status}): ${detail}`,
+    )
+  }
+  const result = parseReplicationIngestResponse(bodyText)
+  assertReplicationIngestAccepted(result, events.length)
+  return result
+}
+
+function compareStreamCursor(a: string, b: string): number {
+  const pa = parseCursor(a)
+  const pb = parseCursor(b)
+  const ta = pa.updatedAt || ''
+  const tb = pb.updatedAt || ''
+  if (ta < tb) return -1
+  if (ta > tb) return 1
+  if (pa.id < pb.id) return -1
+  if (pa.id > pb.id) return 1
+  return 0
+}
+
+async function advanceStreamCursorsFromEvents(db: any, events: unknown[]) {
+  const maxByStream = new Map<string, string>()
+  for (const event of events) {
+    if (!event || typeof event !== 'object') continue
+    const record = event as Record<string, unknown>
+    const stream = String(record.stream ?? '')
+    const cursor = String(record.streamCursor ?? '')
+    if (!stream || !cursor) continue
+    const previous = maxByStream.get(stream)
+    if (!previous || compareStreamCursor(cursor, previous) > 0) {
+      maxByStream.set(stream, cursor)
+    }
+  }
+  for (const [streamName, cursorValue] of maxByStream) {
+    const current = await getStreamCursor(db, streamName)
+    if (!current || compareStreamCursor(cursorValue, current) > 0) {
+      await setStreamCursor(db, streamName, cursorValue)
+    }
   }
 }
 
-async function publishReplicationMessages(env: any, messages: unknown[], mode: DeliveryMode) {
+async function publishReplicationMessages(
+  env: any,
+  messages: unknown[],
+  mode: DeliveryMode,
+): Promise<ReplicationIngestResult | null> {
   if (mode === 'queue') {
     const queue = getReplicationQueue(env)
     if (!queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
     await sendReplicationMessages(queue, messages)
-    return
+    return null
   }
-  await postReplicationEventsToTarget(env, messages)
+  return postReplicationEventsToTarget(env, messages)
 }
 
 /** Cloudflare Queues sendBatch limit per call. */
@@ -211,7 +270,7 @@ async function enqueueStreamUsers(
     LIMIT ?
   `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
   const sorted = rows?.results ?? []
-  if (!sorted.length) return 0
+  if (!sorted.length) return { enqueued: 0, ingest: null }
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
     epoch: context.epoch,
@@ -228,10 +287,12 @@ async function enqueueStreamUsers(
   }))
   const queue = getReplicationQueue(env)
   if (mode === 'queue' && !queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
-  await publishReplicationMessages(env, messages, mode)
-  const last = selected[selected.length - 1]
-  await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
-  return selected.length
+  const ingest = await publishReplicationMessages(env, messages, mode)
+  if (mode === 'direct') {
+    const last = selected[selected.length - 1]
+    await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
+  }
+  return { enqueued: selected.length, ingest }
 }
 
 async function enqueueStreamSubscriptions(
@@ -252,7 +313,7 @@ async function enqueueStreamSubscriptions(
     LIMIT ?
   `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
   const sorted = rows?.results ?? []
-  if (!sorted.length) return 0
+  if (!sorted.length) return { enqueued: 0, ingest: null }
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
     epoch: context.epoch,
@@ -264,10 +325,12 @@ async function enqueueStreamSubscriptions(
   if (mode === 'queue' && !getReplicationQueue(env)) {
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
-  await publishReplicationMessages(env, messages, mode)
-  const last = selected[selected.length - 1]
-  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
-  return selected.length
+  const ingest = await publishReplicationMessages(env, messages, mode)
+  if (mode === 'direct') {
+    const last = selected[selected.length - 1]
+    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
+  }
+  return { enqueued: selected.length, ingest }
 }
 
 async function enqueueStreamVideos(
@@ -288,7 +351,7 @@ async function enqueueStreamVideos(
     LIMIT ?
   `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
   const sorted = rows?.results ?? []
-  if (!sorted.length) return 0
+  if (!sorted.length) return { enqueued: 0, ingest: null }
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
     epoch: context.epoch,
@@ -300,10 +363,12 @@ async function enqueueStreamVideos(
   if (mode === 'queue' && !getReplicationQueue(env)) {
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
-  await publishReplicationMessages(env, messages, mode)
-  const last = selected[selected.length - 1]
-  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
-  return selected.length
+  const ingest = await publishReplicationMessages(env, messages, mode)
+  if (mode === 'direct') {
+    const last = selected[selected.length - 1]
+    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
+  }
+  return { enqueued: selected.length, ingest }
 }
 
 async function enqueueStreamAdminSettings(
@@ -323,7 +388,7 @@ async function enqueueStreamAdminSettings(
     LIMIT ?
   `).bind(cursor, cursorParts.updatedAt, cursorParts.updatedAt, cursorParts.id, CURSOR_ROW_LIMIT).all()
   const sorted = rows?.results ?? []
-  if (!sorted.length) return 0
+  if (!sorted.length) return { enqueued: 0, ingest: null }
   const selected = sorted.slice(0, context.batchSize)
   const messages = selected.map((row: any) => buildMessage({
     epoch: context.epoch,
@@ -339,10 +404,18 @@ async function enqueueStreamAdminSettings(
   if (mode === 'queue' && !getReplicationQueue(env)) {
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
-  await publishReplicationMessages(env, messages, mode)
-  const last = selected[selected.length - 1]
-  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
-  return selected.length
+  const ingest = await publishReplicationMessages(env, messages, mode)
+  if (mode === 'direct') {
+    const last = selected[selected.length - 1]
+    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
+  }
+  return { enqueued: selected.length, ingest }
+}
+
+function mergeIngestTotals(target: { applied: number; skipped: number }, ingest: ReplicationIngestResult | null | undefined) {
+  if (!ingest) return
+  target.applied += ingest.applied
+  target.skipped += ingest.skipped
 }
 
 async function runReplicationPushRound(env: any, mode: DeliveryMode) {
@@ -359,19 +432,33 @@ async function runReplicationPushRound(env: any, mode: DeliveryMode) {
     enqueueStreamVideos(db, env, context, mode),
     enqueueStreamAdminSettings(db, env, context, mode),
   ])
+  const ingestTotals = { applied: 0, skipped: 0 }
+  for (const streamResult of [users, subscriptions, videos, adminSettings]) {
+    mergeIngestTotals(ingestTotals, streamResult.ingest)
+  }
   return {
     skipped: false as const,
     direction,
     epoch,
     batchSize,
-    counts: { users, subscriptions, videos, adminSettings },
+    counts: {
+      users: users.enqueued,
+      subscriptions: subscriptions.enqueued,
+      videos: videos.enqueued,
+      adminSettings: adminSettings.enqueued,
+    },
+    ingest: ingestTotals,
   }
 }
 
 export async function pushReplicationToPostgres(env: any) {
-  const targetUrl = String(env.REPLICATION_TARGET_URL ?? '').trim()
-  if (!targetUrl) {
+  const targetRaw = String(env.REPLICATION_TARGET_URL ?? '').trim()
+  if (!targetRaw) {
     return { ok: false, error: 'REPLICATION_TARGET_URL is not configured', code: 'target_not_configured' }
+  }
+  const targetInfo = describeReplicationTarget(targetRaw)
+  if (targetInfo.warning) {
+    return { ok: false, error: targetInfo.warning, code: 'target_misconfigured' }
   }
   const token = String(env.REPLICATION_TARGET_TOKEN ?? '').trim()
   if (!token) {
@@ -383,6 +470,7 @@ export async function pushReplicationToPostgres(env: any) {
   const maxRounds = parseManualPushMaxRounds(await getAdminSetting(db, 'manual_push_max_rounds'))
 
   const totals = { users: 0, subscriptions: 0, videos: 0, adminSettings: 0 }
+  const ingestTotals = { applied: 0, skipped: 0 }
   let roundsExecuted = 0
 
   for (let roundIndex = 0; roundIndex < maxRounds; roundIndex += 1) {
@@ -399,6 +487,7 @@ export async function pushReplicationToPostgres(env: any) {
     totals.subscriptions += round.counts.subscriptions
     totals.videos += round.counts.videos
     totals.adminSettings += round.counts.adminSettings
+    mergeIngestTotals(ingestTotals, round.ingest)
     const pushed = totals.users + totals.subscriptions + totals.videos + totals.adminSettings
     const roundTotal = round.counts.users + round.counts.subscriptions + round.counts.videos + round.counts.adminSettings
     if (roundTotal === 0) break
@@ -409,6 +498,7 @@ export async function pushReplicationToPostgres(env: any) {
         message: `Stopped after ${maxRounds} rounds; more rows may remain.`,
         rounds: roundsExecuted,
         totals,
+        ingest: ingestTotals,
         pushed,
       }
     }
@@ -420,6 +510,7 @@ export async function pushReplicationToPostgres(env: any) {
     partial: false,
     rounds: roundsExecuted,
     totals,
+    ingest: ingestTotals,
     pushed,
   }
 }
@@ -438,7 +529,11 @@ export async function enqueueReplicationBatch(env: any) {
 }
 
 export async function handleReplicationQueue(batch: any, env: any) {
-  await postReplicationEventsToTarget(env, batch.messages.map((message: any) => message.body))
+  const events = batch.messages.map((message: any) => message.body)
+  await postReplicationEventsToTarget(env, events)
+  const db = getDb(env)
+  await ensureReplicationStateTable(db)
+  await advanceStreamCursorsFromEvents(db, events)
   for (const message of batch.messages) {
     message.ack()
   }
@@ -480,6 +575,20 @@ export async function handleAdminReplicationSettings(request: Request, env: any,
       getAdminSetting(db, 'replication_batch_size'),
       Promise.resolve(String(env.REPLICATION_TARGET_URL ?? '').trim()),
     ])
+    const target = describeReplicationTarget(targetUrlRaw)
+    const url = new URL(request.url)
+    let targetProbe: { ok: boolean; error?: string } | undefined
+    if (url.searchParams.get('probe') === '1' && target.configured && !target.warning) {
+      try {
+        await postReplicationEventsToTarget(env, [])
+        targetProbe = { ok: true }
+      } catch (err) {
+        targetProbe = {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Replication target probe failed',
+        }
+      }
+    }
     const cursorRows = await db.prepare(`
       SELECT stream_name, cursor_value, updated_at
       FROM replication_sync_state
@@ -489,7 +598,11 @@ export async function handleAdminReplicationSettings(request: Request, env: any,
       mode: parseDirection(modeRaw ?? DEFAULT_DIRECTION),
       epoch: parseEpoch(epochRaw),
       batchSize: parseBatchSize(batchSizeRaw),
-      targetConfigured: Boolean(targetUrlRaw),
+      targetConfigured: target.configured,
+      targetIngestPathOk: target.ingestPathOk,
+      targetResolvedPath: target.resolvedPath,
+      targetWarning: target.warning ?? null,
+      targetProbe: targetProbe ?? null,
       streams: cursorRows?.results ?? [],
     }, 200, corsHeaders)
   }
