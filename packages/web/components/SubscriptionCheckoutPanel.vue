@@ -75,9 +75,30 @@
       {{ strings.checkoutPricesLoadFailed }}
     </div>
 
-    <p v-if="checkoutError" class="text-red-400 text-sm mb-3">
+    <div
+      v-if="!loadingPrices && !priceError && showPaymentTabs"
+      class="flex rounded-lg p-1 mb-4"
+      :class="embedded ? 'bg-gray-100 dark:bg-gray-800' : 'bg-gray-800'"
+      role="tablist"
+      :aria-label="strings.checkoutPaymentMethodTabs"
+    >
+      <button
+        v-for="tab in visiblePaymentTabs"
+        :key="tab.id"
+        type="button"
+        role="tab"
+        class="flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors"
+        :class="paymentTabClass(tab.id)"
+        :aria-selected="activePaymentTab === tab.id"
+        @click="activePaymentTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div v-if="checkoutError" class="text-red-400 text-sm mb-3">
       {{ checkoutError }}
-    </p>
+    </div>
 
     <div class="mb-3 text-left">
       <label class="text-xs uppercase tracking-wide block mb-1" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
@@ -118,18 +139,27 @@
       </p>
     </div>
 
-    <div class="space-y-2">
+    <div v-if="!loadingPrices && !priceError && stripeCheckoutActive" class="mb-4">
+      <StripeEmbeddedCheckout
+        :plan-type="selectedPlan"
+        :promo-code="promoApplied?.code ?? ''"
+        :return-path="returnPath"
+        :embedded="embedded"
+        :active-tab="activeStripeTab"
+        :card-pay-label="strings.checkoutPayWithCard(formatPrice(providerPlanPrice('stripe', selectedPlan)))"
+        @wallet-available="onWalletAvailable"
+      />
+    </div>
+
+    <div v-else-if="!loadingPrices && !priceError && activePaymentTab === 'bank'" class="space-y-2">
       <button
-        v-for="provider in availableProviders"
-        :key="provider"
         type="button"
-        class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        :class="providerButtonClass(provider)"
-        :disabled="checkingOut || loadingPrices || !providerPlanPrice(provider, selectedPlan)"
-        @click="handleSubscribe(provider)"
+        class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
+        :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
+        @click="handleSubscribe('gocardless')"
       >
-        <span v-if="checkingOut && selectedProvider === provider">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ providerButtonLabel(provider) }}</span>
+        <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
+        <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
       </button>
     </div>
 
@@ -175,6 +205,7 @@ const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'gocardless'
+type PaymentTab = 'wallet' | 'card' | 'bank'
 
 interface Prices { monthly: number; yearly: number; club: number }
 interface ProviderPriceMap { stripe: Prices; gocardless: Prices }
@@ -189,6 +220,8 @@ const priceError = ref(false)
 const selectedPlan = ref<PlanType>('monthly')
 const availableProviders = ref<PaymentProvider[]>(['stripe'])
 const selectedProvider = ref<PaymentProvider>('stripe')
+const activePaymentTab = ref<PaymentTab>('card')
+const walletTabAvailable = ref(false)
 const checkingOut = ref(false)
 const checkoutError = ref<string | null>(null)
 const promoCodeInput = ref('')
@@ -207,6 +240,60 @@ const planPriceClass = computed(() =>
 const planSubtextClass = computed(() =>
   props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500',
 )
+
+const stripeEnabled = computed(() => availableProviders.value.includes('stripe'))
+const gocardlessEnabled = computed(() => availableProviders.value.includes('gocardless'))
+const showPaymentTabs = computed(() => stripeEnabled.value || gocardlessEnabled.value)
+
+const visiblePaymentTabs = computed(() => {
+  const tabs: { id: PaymentTab; label: string }[] = []
+  if (stripeEnabled.value) {
+    if (walletTabAvailable.value) {
+      tabs.push({ id: 'wallet', label: strings.checkoutTabWallet })
+    }
+    tabs.push({ id: 'card', label: strings.checkoutTabCard })
+  }
+  if (gocardlessEnabled.value) {
+    tabs.push({ id: 'bank', label: strings.checkoutTabBank })
+  }
+  return tabs
+})
+
+const stripeCheckoutActive = computed(() =>
+  stripeEnabled.value && (activePaymentTab.value === 'wallet' || activePaymentTab.value === 'card'),
+)
+
+const activeStripeTab = computed<'wallet' | 'card'>(() =>
+  activePaymentTab.value === 'wallet' ? 'wallet' : 'card',
+)
+
+function paymentTabClass(tab: PaymentTab): string {
+  const selected = activePaymentTab.value === tab
+  if (props.embedded) {
+    return selected
+      ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
+      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+  }
+  return selected
+    ? 'bg-gray-700 text-white'
+    : 'text-gray-400 hover:text-white'
+}
+
+function onWalletAvailable(available: boolean) {
+  walletTabAvailable.value = available
+  if (available && activePaymentTab.value === 'card') {
+    activePaymentTab.value = 'wallet'
+  }
+  if (!available && activePaymentTab.value === 'wallet') {
+    activePaymentTab.value = 'card'
+  }
+}
+
+watch(visiblePaymentTabs, (tabs) => {
+  if (!tabs.some((t) => t.id === activePaymentTab.value)) {
+    activePaymentTab.value = tabs[0]?.id ?? 'card'
+  }
+}, { immediate: true })
 
 function planButtonClass(plan: PlanType): string {
   const selected = selectedPlan.value === plan
@@ -235,31 +322,21 @@ function primaryPlanPrice(plan: PlanType): number | null {
   return providerPlanPrice(first, plan)
 }
 
-function providerButtonLabel(provider: PaymentProvider): string {
-  const amount = providerPlanPrice(provider, selectedPlan.value)
-  const priceText = formatPrice(amount)
-  if (provider === 'gocardless') return strings.checkoutPayWithBank(priceText)
-  return strings.checkoutPayWithCard(priceText)
-}
-
-function providerButtonClass(provider: PaymentProvider): string {
-  if (provider === 'gocardless') {
-    return 'bg-emerald-600 hover:bg-emerald-700'
-  }
-  return 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
+function promoProviderForTab(): PaymentProvider {
+  return activePaymentTab.value === 'bank' ? 'gocardless' : 'stripe'
 }
 
 const checkoutBlurb = computed(() => {
-  if (!availableProviders.value.length) {
-    return strings.checkoutBlurbDefault
+  if (stripeEnabled.value && gocardlessEnabled.value) {
+    return strings.checkoutBlurbBoth
   }
-  if (availableProviders.value.length === 1) {
-    const provider = availableProviders.value[0]
-    return provider === 'gocardless'
-      ? strings.checkoutBlurbGoCardless
-      : strings.checkoutBlurbStripe
+  if (gocardlessEnabled.value) {
+    return strings.checkoutBlurbGoCardless
   }
-  return strings.checkoutBlurbBoth
+  if (stripeEnabled.value) {
+    return strings.checkoutBlurbEmbedded
+  }
+  return strings.checkoutBlurbDefault
 })
 
 function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
@@ -324,15 +401,15 @@ async function loadPrices() {
   }
 }
 
-async function handleSubscribe(provider?: PaymentProvider) {
+async function handleSubscribe(provider: PaymentProvider) {
   if (!isLoggedIn.value) {
-    const selected = provider ?? availableProviders.value[0] ?? 'stripe'
-    await startLoginFlow(buildLoginRedirect(selectedPlan.value, selected))
+    await startLoginFlow(buildLoginRedirect(selectedPlan.value, provider))
     return
   }
 
-  const selected = provider ?? availableProviders.value[0] ?? 'stripe'
-  selectedProvider.value = selected
+  if (provider !== 'gocardless') return
+
+  selectedProvider.value = provider
   checkingOut.value = true
   checkoutError.value = null
   const promoCode = promoApplied.value?.code || ''
@@ -341,7 +418,12 @@ async function handleSubscribe(provider?: PaymentProvider) {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ planType: selectedPlan.value, provider: selected, promoCode }),
+      body: JSON.stringify({
+        planType: selectedPlan.value,
+        provider,
+        promoCode,
+        returnPath: props.returnPath,
+      }),
     })
     const data = await res.json()
     if (!res.ok || !data.checkoutUrl) {
@@ -367,7 +449,7 @@ function isStalePromoValidation(
   codeAtRequest: string,
 ): boolean {
   if (generation !== promoValidationGeneration) return true
-  if (selectedProvider.value !== providerAtRequest) return true
+  if (promoProviderForTab() !== providerAtRequest) return true
   if (selectedPlan.value !== planAtRequest) return true
   if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true
   return false
@@ -386,7 +468,7 @@ async function validatePromoCode() {
   }
 
   const generation = ++promoValidationGeneration
-  const providerAtRequest = selectedProvider.value
+  const providerAtRequest = promoProviderForTab()
   const planAtRequest = selectedPlan.value
 
   promoValidating.value = true
@@ -448,6 +530,15 @@ watch(() => props.active, (isActive) => {
 watch(selectedPlan, () => {
   promoApplied.value = null
   promoError.value = null
+})
+
+watch(activePaymentTab, (tab) => {
+  selectedProvider.value = tab === 'bank' ? 'gocardless' : 'stripe'
+  promoApplied.value = null
+  promoError.value = null
+  if (promoCodeInput.value.trim() && isLoggedIn.value) {
+    void validatePromoCode()
+  }
 })
 
 watch(selectedProvider, () => {

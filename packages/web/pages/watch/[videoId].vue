@@ -516,6 +516,11 @@ const ensureMoqModules = async () => {
 // correct hasAccess / playlistUrl for their plan.
 const { isLoggedIn, authHeader } = useAuth()
 const { startLoginFlow } = useLoginFlow()
+const {
+  returningFromStripe,
+  completeStripeCheckoutReturn,
+  clearStripeSessionQuery,
+} = useStripeCheckoutReturn()
 
 type MediaLikeElement = HTMLElement & {
   src: string
@@ -766,8 +771,22 @@ const enforcePreviewLimit = (video: HTMLVideoElement) => {
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-onMounted(() => {
+onMounted(async () => {
   measureDescriptionClamp()
+
+  if (returningFromStripe.value) {
+    const result = await completeStripeCheckoutReturn()
+    if (result.ok) {
+      showPremiumOverlay.value = false
+      await loadVideoForRoute(videoId.value)
+      await clearStripeSessionQuery()
+    }
+    return
+  }
+
+  if (route.query.showPremium === '1') {
+    showPremiumOverlay.value = true
+  }
 })
 
 if (import.meta.client && typeof ResizeObserver !== 'undefined') {

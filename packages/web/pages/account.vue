@@ -4,6 +4,13 @@
 
     <div class="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-6">
 
+      <div
+        v-if="stripeCompletionError"
+        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
+      >
+        {{ stripeCompletionError }}
+      </div>
+
       <!-- Welcome banner (shown after successful checkout redirect) -->
       <div
         v-if="showWelcomeBanner && !gocardlessCompletionError"
@@ -315,6 +322,13 @@ const showWelcomeBanner = ref(
   route.query.subscribed === '1' || route.query.gocardless_complete === '1',
 )
 
+const {
+  returningFromStripe,
+  completeStripeCheckoutReturn,
+  clearStripeSessionQuery,
+} = useStripeCheckoutReturn()
+const stripeCompletionError = ref<string | null>(null)
+
 const showTotpDisable   = ref(false)
 const totpDisableCode   = ref('')
 const totpDisabling     = ref(false)
@@ -361,9 +375,19 @@ const rssPersonalUrl    = ref('')
 const copiedWhich       = ref<'personal' | null>(null)
 
 onMounted(async () => {
+  if (returningFromStripe.value) {
+    const result = await completeStripeCheckoutReturn()
+    if (result.ok) {
+      showWelcomeBanner.value = true
+      await clearStripeSessionQuery({ subscribed: '1' })
+    } else {
+      stripeCompletionError.value = result.error ?? strings.checkoutStartFailed
+    }
+  }
+
   await maybeCompleteGoCardlessCheckout()
 
-  if (showWelcomeBanner.value || returningFromGoCardless.value) {
+  if (showWelcomeBanner.value || returningFromGoCardless.value || returningFromStripe.value) {
     // After checkout redirect the webhook may not have fired yet.
     // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
     const MAX_ATTEMPTS = 5
