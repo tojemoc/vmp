@@ -1434,16 +1434,37 @@
                 </p>
               </div>
               <div v-if="replicationMessage" class="rounded-lg border px-4 py-3 text-sm" :class="replicationMessageClass">{{ replicationMessage }}</div>
+              <p
+                v-if="replicationStatus?.targetWarning"
+                class="text-xs rounded-lg border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100"
+              >
+                {{ replicationStatus.targetWarning }}
+              </p>
+              <p
+                v-else-if="replicationStatus?.targetProbe && !replicationStatus.targetProbe.ok"
+                class="text-xs rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-2 dark:bg-red-950 dark:border-red-700 dark:text-red-200"
+              >
+                Ingest probe failed: {{ replicationStatus.targetProbe.error }}
+              </p>
               <dl v-if="replicationStatus" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <div><dt class="inline text-gray-500 dark:text-gray-400">Mode:</dt> <dd class="inline font-mono">{{ replicationStatus.mode }}</dd></div>
-                <div><dt class="inline text-gray-500 dark:text-gray-400">Ingest target:</dt> <dd class="inline">{{ replicationStatus.targetConfigured ? 'Configured' : 'Not configured' }}</dd></div>
+                <div>
+                  <dt class="inline text-gray-500 dark:text-gray-400">Ingest target:</dt>
+                  <dd class="inline">
+                    {{ replicationStatus.targetConfigured ? (replicationStatus.targetProbe?.ok ? 'Reachable' : 'Configured') : 'Not configured' }}
+                  </dd>
+                </div>
+                <div v-if="replicationStatus.targetResolvedPath" class="sm:col-span-2">
+                  <dt class="inline text-gray-500 dark:text-gray-400">Ingest path:</dt>
+                  <dd class="inline font-mono text-xs">{{ replicationStatus.targetResolvedPath }}</dd>
+                </div>
                 <div><dt class="inline text-gray-500 dark:text-gray-400">Batch size:</dt> <dd class="inline font-mono">{{ replicationStatus.batchSize }}</dd></div>
               </dl>
               <div class="flex flex-wrap gap-2">
                 <button
                   type="button"
                   class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="replicationPushing || !replicationStatus?.targetConfigured"
+                  :disabled="replicationPushing || !replicationCanPush"
                   @click="pushReplicationToDeno"
                 >
                   {{ replicationPushing ? 'Pushing…' : 'Push DB to Deno Postgres' }}
@@ -1452,13 +1473,21 @@
                   type="button"
                   class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
                   :disabled="replicationPushing"
-                  @click="() => loadReplicationStatus()"
+                  @click="() => loadReplicationStatus({ probe: true })"
                 >
                   Refresh status
                 </button>
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                  :disabled="replicationPushing || replicationResetting"
+                  @click="resetReplicationCursors"
+                >
+                  {{ replicationResetting ? 'Resetting…' : 'Reset sync cursors' }}
+                </button>
               </div>
               <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
-                Set <code class="font-mono">REPLICATION_TARGET_URL</code> and <code class="font-mono">REPLICATION_TARGET_TOKEN</code> on the Cloudflare Worker to enable manual push.
+                Set <code class="font-mono">REPLICATION_TARGET_URL</code> to your <strong>Deno Deploy api-node</strong> URL (ending in <code class="font-mono">/api/internal/replication/ingest</code>) and <code class="font-mono">REPLICATION_TARGET_TOKEN</code> on the Cloudflare Worker. Do not use the Workers API URL.
               </p>
             </div>
 
@@ -2843,11 +2872,23 @@ const replicationStatus = ref<{
   mode: string
   batchSize: number
   targetConfigured: boolean
+  targetIngestPathOk?: boolean
+  targetResolvedPath?: string
+  targetWarning?: string | null
+  targetProbe?: { ok: boolean; error?: string } | null
   streams?: { stream_name: string; cursor_value: string; updated_at: string }[]
 } | null>(null)
 const replicationPushing = ref(false)
+const replicationResetting = ref(false)
 const replicationMessage = ref('')
 const replicationMessageClass = ref('')
+const replicationCanPush = computed(() => {
+  const status = replicationStatus.value
+  if (!status?.targetConfigured) return false
+  if (status.targetWarning) return false
+  if (status.targetProbe && !status.targetProbe.ok) return false
+  return true
+})
 const promotionsLoading = ref(false)
 const promotionsSaving = ref(false)
 const promoCampaigns = ref<PromoCampaign[]>([])
@@ -4069,24 +4110,55 @@ const saveSystemFeatures = async () => {
   }
 }
 
-const loadReplicationStatus = async (options?: { preserveMessage?: boolean }) => {
+const loadReplicationStatus = async (options?: { preserveMessage?: boolean; probe?: boolean }) => {
   if (!isAdmin.value) return
   if (!options?.preserveMessage) {
     replicationMessage.value = ''
   }
   try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, { headers: authHeader() })
+    const probeQuery = options?.probe ? '?probe=1' : ''
+    const res = await fetch(`${config.public.apiUrl}/api/admin/replication${probeQuery}`, { headers: authHeader() })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     replicationStatus.value = {
       mode: String(data.mode || 'd1_to_pg'),
       batchSize: Number(data.batchSize) || 100,
       targetConfigured: Boolean(data.targetConfigured),
+      targetIngestPathOk: data.targetIngestPathOk !== false,
+      targetResolvedPath: data.targetResolvedPath ? String(data.targetResolvedPath) : undefined,
+      targetWarning: data.targetWarning ? String(data.targetWarning) : null,
+      targetProbe: data.targetProbe && typeof data.targetProbe === 'object'
+        ? { ok: Boolean(data.targetProbe.ok), error: data.targetProbe.error ? String(data.targetProbe.error) : undefined }
+        : null,
       streams: Array.isArray(data.streams) ? data.streams : [],
     }
   } catch (e: any) {
     replicationMessage.value = `Could not load replication status: ${e.message}`
     replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  }
+}
+
+const resetReplicationCursors = async () => {
+  if (!isAdmin.value) return
+  if (!import.meta.client || !window.confirm('Reset replication sync cursors? The next push will re-send all rows from D1.')) return
+  replicationResetting.value = true
+  replicationMessage.value = ''
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ resetCursors: true }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    replicationMessage.value = 'Replication cursors reset. Run Push DB to Deno Postgres to re-sync.'
+    replicationMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
+    await loadReplicationStatus({ preserveMessage: true, probe: true })
+  } catch (e: any) {
+    replicationMessage.value = e.message || 'Failed to reset cursors'
+    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+  } finally {
+    replicationResetting.value = false
   }
 }
 
@@ -4109,9 +4181,13 @@ const pushReplicationToDeno = async () => {
       t.adminSettings ? `${t.adminSettings} settings` : '',
     ].filter(Boolean)
     const detail = parts.length ? parts.join(', ') : 'no new rows'
+    const ingest = data.ingest
+    const ingestNote = ingest && (ingest.applied > 0 || ingest.skipped > 0)
+      ? ` Postgres applied ${ingest.applied ?? 0}, skipped ${ingest.skipped ?? 0}.`
+      : ''
     replicationMessage.value = data.partial
-      ? `${data.message || 'Partial push.'} Synced: ${detail}.`
-      : `Push complete (${data.rounds ?? 0} round(s)). Synced: ${detail}.`
+      ? `${data.message || 'Partial push.'} Read from D1: ${detail}.${ingestNote}`
+      : `Push complete (${data.rounds ?? 0} round(s)). Read from D1: ${detail}.${ingestNote}`
     replicationMessageClass.value = data.partial
       ? 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
       : 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
@@ -5387,7 +5463,7 @@ const reloadAll = async () => {
     await loadNewsletterSettings()
     await loadNewsletterTemplates()
     await loadSystemFeatures()
-    await loadReplicationStatus()
+    await loadReplicationStatus({ probe: true })
     await loadMediaConvertSystemSettings()
     await loadPaymentSettings()
     if (systemFeatures.value.promotionsEnabled) await loadPromotions()
