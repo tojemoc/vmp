@@ -346,7 +346,7 @@ function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): str
 
 async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
   const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
     '720p/playlist.m3u8',
   ])
   await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
@@ -354,14 +354,27 @@ async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise
 
 async function writePhase2MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
   const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080',
+    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
     '1080p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
     '720p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480',
+    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480,CODECS="avc1.640028,mp4a.40.2"',
     '480p/playlist.m3u8',
   ])
   await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
+}
+
+/** Prefer shaka-packager master (CODECS + fMP4 version); hand-written master is fallback only. */
+async function adoptShakaMasterM3u8(tmpDir: string, hasAudio: boolean, phase: 1 | 2): Promise<void> {
+  const shakaMaster = path.join(tmpDir, 'master.m3u8.shaka')
+  const master = path.join(tmpDir, 'master.m3u8')
+  if (existsSync(shakaMaster)) {
+    await rename(shakaMaster, master)
+    return
+  }
+  log(`⚠️ shaka master missing for phase${phase}; using fallback master writer`)
+  if (phase === 1) await writePhase1MasterM3u8(tmpDir, hasAudio)
+  else await writePhase2MasterM3u8(tmpDir, hasAudio)
 }
 
 async function encodeRendition(
@@ -420,7 +433,7 @@ async function packagePhase1Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase1')
-  await writePhase1MasterM3u8(tmpDir, hasAudio)
+  await adoptShakaMasterM3u8(tmpDir, hasAudio, 1)
 }
 
 async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void> {
@@ -443,7 +456,7 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase2')
-  await writePhase2MasterM3u8(tmpDir, hasAudio)
+  await adoptShakaMasterM3u8(tmpDir, hasAudio, 2)
 }
 
 async function rcloneCopyDir(localDir: string, r2Dest: string, label: string): Promise<void> {
