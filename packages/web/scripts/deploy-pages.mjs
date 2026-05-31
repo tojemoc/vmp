@@ -1,4 +1,8 @@
 import { execSync, spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 function readGitValue(command, fallback = '') {
   try {
@@ -23,11 +27,11 @@ const commitHash = process.env.GITHUB_SHA || readGitValue('git rev-parse HEAD');
 const rawMessage = process.env.GITHUB_EVENT_HEAD_COMMIT_MESSAGE || readGitValue('git log -1 --pretty=%B');
 const commitMessage = sanitizeCommitMessage(rawMessage);
 
+// `pages_build_output_dir` in wrangler.toml supplies dist/; deploy from packages/web so config is loaded.
 const args = [
   'wrangler',
   'pages',
   'deploy',
-  'dist/',
   '--project-name',
   'vmp-fe',
   '--branch',
@@ -40,5 +44,5 @@ if (commitHash) {
   args.push('--commit-hash', commitHash);
 }
 
-const result = spawnSync('npx', args, { stdio: 'inherit' });
+const result = spawnSync('npx', args, { stdio: 'inherit', cwd: webRoot });
 process.exit(result.status ?? 1);
