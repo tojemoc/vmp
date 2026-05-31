@@ -6,7 +6,7 @@
     <div class="relative bg-gray-900 rounded-xl p-8 max-w-lg w-full mx-4 text-center shadow-2xl">
       <button
         type="button"
-        aria-label="Close subscription popup"
+        :aria-label="strings.premiumOverlayClose"
         class="absolute top-3 right-3 inline-flex items-center justify-center w-8 h-8 rounded-full text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
         @click="emit('close')"
       >
@@ -26,6 +26,8 @@
 </template>
 
 <script setup lang="ts">
+import strings from '~/utils/strings'
+
 const props = defineProps<{
   show: boolean
   videoId: string

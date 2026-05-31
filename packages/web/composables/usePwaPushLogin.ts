@@ -1,4 +1,5 @@
 import { getOrCreatePwaDeviceToken } from '~/utils/pwa'
+import strings from '~/utils/strings'
 
 type PwaPushDeliverFailureCode = 'attempt_not_found' | 'no_push_subscription' | 'push_failed'
 type PwaPushDeliverCode = 'requires_2fa' | PwaPushDeliverFailureCode
@@ -19,7 +20,7 @@ export function usePwaPushLogin() {
       body: JSON.stringify({ email, deviceToken }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Could not start sign-in')
+    if (!res.ok) throw new Error(data.error || strings.pwaPushStartFailed)
   }
 
   async function subscribeWithPushSubscription(subscription: PushSubscriptionJSON): Promise<{ emailSent: boolean }> {
@@ -30,7 +31,7 @@ export function usePwaPushLogin() {
       body: JSON.stringify({ deviceToken, subscription }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Could not register for sign-in')
+    if (!res.ok) throw new Error(data.error || strings.pwaPushRegisterFailed)
     return { emailSent: !!data.emailSent }
   }
 
@@ -51,7 +52,7 @@ export function usePwaPushLogin() {
     if (isDeliverFailureCode(data.code)) {
       return { delivered: false, code: data.code }
     }
-    if (!res.ok) throw new Error(data.error || 'Could not deliver sign-in to the app')
+    if (!res.ok) throw new Error(data.error || strings.pwaPushDeliverFailed)
     return { delivered: !!data.delivered }
   }
 

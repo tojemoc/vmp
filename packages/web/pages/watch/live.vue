@@ -231,7 +231,7 @@ const error = ref<string | null>(null)
 const recommendations = ref<any[]>([])
 
 const liveVideo = ref<{ id: string; title: string; description: string } | null>(null)
-const liveTitle = computed(() => liveVideo.value?.title?.trim() || 'Live Stream')
+const liveTitle = computed(() => liveVideo.value?.title?.trim() || strings.liveStreamTitle)
 const liveDescription = computed(() => liveVideo.value?.description?.trim() || strings.noDescription)
 const liveDescriptionHtml = computed(() => renderMarkdownToHtml(liveDescription.value))
 
@@ -240,7 +240,7 @@ let watchModule: Awaited<typeof import('@moq/watch')> | null = null
 
 const ensureMoqModules = async () => {
   if (import.meta.server) {
-    throw new Error('Livestream playback is only available in the browser.')
+    throw new Error(strings.liveBrowserOnly)
   }
   if (!moqModule || !watchModule) {
     const [moq, watch] = await Promise.all([
@@ -348,19 +348,19 @@ onMounted(async () => {
     const accessResponse = await fetch(`${config.public.apiUrl}/api/video-access/live`)
     if (!isMounted) return
     if (!accessResponse.ok) {
-      throw new Error('Failed to load livestream access')
+      throw new Error(strings.liveAccessLoadFailed)
     }
     const accessData = await accessResponse.json()
     if (!isMounted) return
     const resolvedVideoId = typeof accessData?.videoId === 'string' ? accessData.videoId : 'live'
     if (resolvedVideoId === 'live') {
-      throw new Error('Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.')
+      throw new Error(strings.liveRouteNotConfigured)
     }
     videoId = resolvedVideoId
     const hasAccess = Boolean(accessData?.hasAccess)
     liveVideo.value = {
       id: resolvedVideoId,
-      title: typeof accessData?.video?.title === 'string' ? accessData.video.title : 'Live Stream',
+      title: typeof accessData?.video?.title === 'string' ? accessData.video.title : strings.liveStreamTitle,
       description: typeof accessData?.video?.description === 'string' ? accessData.video.description : '',
     }
     const moqEndpoint = typeof accessData?.video?.livestreamMoqEndpoint === 'string'
@@ -370,7 +370,7 @@ onMounted(async () => {
       ? accessData.video.livestreamMoqBroadcast.trim()
       : ''
     if (!hasAccess) {
-      throw new Error('You do not have access to this livestream.')
+      throw new Error(strings.liveNoAccess)
     }
     if (!moqEndpoint || !moqBroadcast) {
       throw new Error(strings.livestreamUnavailableDetail)
@@ -383,7 +383,7 @@ onMounted(async () => {
     if (!isMounted) return
     const canvasEl = canvas.value
     if (!canvasEl) {
-      throw new Error('Live player failed to initialize.')
+      throw new Error(strings.livePlayerInitFailed)
     }
 
     // A MoQ connection that is automatically re-established on drop.
