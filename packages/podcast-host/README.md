@@ -115,6 +115,10 @@ node packages/podcast-host/scripts/ttp-report.mjs /var/log/vmp-ttp.jsonl
 
 Ratios in `ttp_summary` are wall-clock seconds divided by source duration (e.g. `0.35` ≈ 35% of video length to reach minimal publish).
 
+### Encode progress (dashboard)
+
+During ffmpeg encodes the pipeline emits `VMP_PIPELINE_PROGRESS` JSON lines (parsed by the supervisor, shown as progress bars on `:8788`). Progress uses ffmpeg `time=` vs probed source duration for each rendition, combined into an overall 0–100% estimate across pipeline stages.
+
 ### Migration note (legacy `.sh` overrides)
 
 If your deployment previously set `VMP_PIPELINE_SCRIPT` or `VMP_RENDER_SCRIPT` to legacy `.sh` files, update them to the compiled `.js` paths in `dist/`. The shell scripts were removed.
