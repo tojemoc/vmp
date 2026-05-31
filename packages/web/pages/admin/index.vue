@@ -550,11 +550,11 @@
                         <span v-if="video.livestream_provider" class="block text-[11px] text-purple-600 dark:text-purple-300">
                           stream: {{ video.livestream_status || 'draft' }}
                         </span>
-                        <span v-if="video.livestream_ingest_url" class="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-[18rem]" :title="video.livestream_ingest_url">
-                          endpoint: {{ video.livestream_ingest_url }}
+                        <span v-if="video.livestream_moq_endpoint" class="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-[18rem]" :title="video.livestream_moq_endpoint">
+                          MoQ endpoint: {{ video.livestream_moq_endpoint }}
                         </span>
-                        <span v-if="video.livestream_stream_key" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
-                          broadcast: {{ video.livestream_stream_key }}
+                        <span v-if="video.livestream_moq_broadcast" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
+                          MoQ broadcast: {{ video.livestream_moq_broadcast }}
                         </span>
                         <span v-if="video.ingest_status" class="block text-[11px] text-blue-600 dark:text-blue-300">
                           ingest: {{ video.ingest_status }}
@@ -562,13 +562,6 @@
                             · {{ Number(video.media_convert_usage.normalized_minutes_est).toFixed(2) }} norm-min
                           </template>
                         </span>
-                        <button
-                          v-if="video.livestream_provider && video.livestream_status === 'failed' && !retryingLivestreamProvision[video.id]"
-                          class="block text-[11px] text-red-600 dark:text-red-300 hover:underline"
-                          @click="retryLivestreamProvision(video)"
-                        >
-                          refresh status
-                        </button>
                       </div>
                     </td>
                     <td class="py-3 pr-4">
@@ -2508,12 +2501,8 @@ interface Video {
   total_views?: number
   livestream_provider?: string | null
   livestream_status?: string | null
-  livestream_stream_id?: string | null
-  livestream_stream_key?: string | null
-  livestream_ingest_url?: string | null
   livestream_moq_endpoint?: string | null
   livestream_moq_broadcast?: string | null
-  livestream_playback_url?: string | null
   livestream_recording_video_id?: string | null
   ingest_status?: 'uploaded' | 'queued' | 'transcoding' | 'packaging' | 'uploading' | 'completed' | 'failed' | null
   media_convert_usage?: {
@@ -2631,7 +2620,6 @@ const publishedTextDraft = ref<Record<string, string>>({})
 const uploadDateEditDraft = ref<Record<string, string>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
-const retryingLivestreamProvision = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
 const mediaConvertConfig = ref({
   enabled: false,
@@ -3592,25 +3580,6 @@ const createLivestream = async () => {
     livestreamModal.value.error = e.message || 'Failed to create livestream'
   } finally {
     livestreamModal.value.saving = false
-  }
-}
-
-const retryLivestreamProvision = async (video: Video) => {
-  if (retryingLivestreamProvision.value[video.id]) return
-  retryingLivestreamProvision.value[video.id] = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/livestream/provision`, {
-      method: 'POST',
-      headers: { ...authHeader() },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    showToast('success', 'Livestream status refreshed.')
-    await loadVideos()
-  } catch (e: any) {
-    showToast('error', e.message || 'Failed to refresh livestream status.')
-  } finally {
-    retryingLivestreamProvision.value[video.id] = false
   }
 }
 
