@@ -1452,7 +1452,7 @@
                   type="button"
                   class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
                   :disabled="replicationPushing"
-                  @click="loadReplicationStatus"
+                  @click="() => loadReplicationStatus()"
                 >
                   Refresh status
                 </button>
