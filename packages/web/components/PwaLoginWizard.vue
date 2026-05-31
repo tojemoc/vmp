@@ -15,7 +15,7 @@
         <button
           type="button"
           class="text-gray-500 hover:text-gray-300 text-sm shrink-0"
-          aria-label="Close"
+          :aria-label="strings.close"
           @click="emit('dismiss')"
         >
           ✕
@@ -23,12 +23,12 @@
       </div>
 
       <div class="px-5 py-3 text-xs text-gray-500">
-        Step {{ step }} of 3
+        {{ strings.pwaLoginStepOf(step, PWA_LOGIN_STEPS) }}
       </div>
 
       <!-- Step 1: email -->
       <div v-if="step === 1" class="px-5 pb-5 space-y-4">
-        <label for="pwa-login-email" class="block text-sm font-medium text-gray-300">Email address</label>
+        <label for="pwa-login-email" class="block text-sm font-medium text-gray-300">{{ strings.pwaLoginEmailLabel }}</label>
         <input
           id="pwa-login-email"
           v-model="email"
@@ -45,7 +45,7 @@
           :disabled="loading || !email"
           @click="goStep2"
         >
-          {{ loading ? 'Saving…' : 'Continue' }}
+          {{ loading ? strings.saving : strings.continue }}
         </button>
       </div>
 
@@ -64,7 +64,7 @@
           :disabled="loading"
           @click="requestPushAndSubscribe"
         >
-          {{ loading ? 'Working…' : (pushAlreadyGranted ? strings.pwaLoginResendEmail : 'Allow notifications') }}
+          {{ loading ? strings.pwaLoginWorking : (pushAlreadyGranted ? strings.pwaLoginResendEmail : strings.pwaLoginAllowNotifications) }}
         </button>
         <button
           v-if="pushAlreadyGranted"
@@ -81,7 +81,7 @@
           class="w-full py-2.5 border border-gray-600 text-gray-200 rounded-lg text-sm"
           @click="emit('dismiss')"
         >
-          Use regular sign-in instead
+          {{ strings.pwaLoginUseRegularSignIn }}
         </button>
       </div>
 
@@ -94,7 +94,7 @@
           class="w-full py-2.5 border border-gray-600 text-gray-200 rounded-lg text-sm"
           @click="emit('dismiss')"
         >
-          Done
+          {{ strings.pwaLoginDone }}
         </button>
       </div>
     </div>
@@ -104,6 +104,8 @@
 <script setup lang="ts">
 import strings from '~/utils/strings'
 import { getOrCreatePwaDeviceToken, PWA_LOGIN_EMAIL_KEY } from '~/utils/pwa'
+
+const PWA_LOGIN_STEPS = 3
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ dismiss: [] }>()
@@ -142,7 +144,7 @@ async function turnOffPushPermission() {
     pushAlreadyGranted.value = false
     try { localStorage.removeItem(PWA_LOGIN_EMAIL_KEY) } catch { /* ignore */ }
   } catch (e: unknown) {
-    errorMessage.value = e instanceof Error ? e.message : 'Could not turn off notifications'
+    errorMessage.value = e instanceof Error ? e.message : strings.pwaLoginTurnOffFailed
   } finally {
     loading.value = false
   }
@@ -174,7 +176,7 @@ async function goStep2() {
     await detectPushAlreadyGranted()
     step.value = 2
   } catch (e: unknown) {
-    errorMessage.value = e instanceof Error ? e.message : 'Something went wrong'
+    errorMessage.value = e instanceof Error ? e.message : strings.pwaLoginErrorGeneric
   } finally {
     loading.value = false
   }
@@ -194,7 +196,7 @@ async function requestPushAndSubscribe() {
     }
 
     const vapidRes = await fetch(`${apiUrl}/api/push/vapid-public-key`)
-    if (!vapidRes.ok) throw new Error('Push is not configured on the server')
+    if (!vapidRes.ok) throw new Error(strings.pwaLoginPushNotConfigured)
     const { publicKey } = await vapidRes.json() as { publicKey: string }
 
     const reg = await getServiceWorkerRegistration()
@@ -215,12 +217,12 @@ async function requestPushAndSubscribe() {
       },
     })
     if (!emailSent) {
-      errorMessage.value = 'We could not send the sign-in email. Please try again.'
+      errorMessage.value = strings.pwaLoginEmailSendFailed
       return
     }
     step.value = 3
   } catch (e: unknown) {
-    errorMessage.value = e instanceof Error ? e.message : 'Could not enable notifications'
+    errorMessage.value = e instanceof Error ? e.message : strings.notificationsEnableFailed
   } finally {
     loading.value = false
   }

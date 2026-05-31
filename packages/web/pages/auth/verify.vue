@@ -175,11 +175,11 @@ async function finishInSafari() {
   try {
     const redirect = safeRedirect(route.query.redirect, '/')
     await redeemPwaHandoff(code)
-    if (!user.value) throw new Error('Sign-in incomplete')
+    if (!user.value) throw new Error(strings.authVerifySignInIncomplete)
     await navigateAfterFullSession(redirect)
   } catch (e: any) {
     state.value = 'error'
-    errorMessage.value = e?.message || 'Something went wrong. Please request a new sign-in link.'
+    errorMessage.value = e?.message || strings.authVerifyErrorGeneric
   }
 }
 
@@ -280,7 +280,7 @@ async function runNormalTokenVerify(token: string) {
     await navigateTo(redirect)
   } catch (err: unknown) {
     state.value = 'error'
-    errorMessage.value = err instanceof Error ? err.message : 'Something went wrong. Please request a new sign-in link.'
+    errorMessage.value = err instanceof Error ? err.message : strings.authVerifyErrorGeneric
   }
 }
 
@@ -327,18 +327,18 @@ watch(
       }
       try {
         await redeemPwaHandoff(handoff)
-        if (!user.value) throw new Error('Sign-in incomplete')
+        if (!user.value) throw new Error(strings.authVerifySignInIncomplete)
         await navigateAfterFullSession(redirect)
       } catch (e: any) {
         state.value = 'error'
-        errorMessage.value = e?.message || 'Something went wrong. Please request a new sign-in link.'
+        errorMessage.value = e?.message || strings.authVerifyErrorGeneric
       }
       return
     }
 
     if (!token) {
       state.value = 'error'
-      errorMessage.value = 'No token found in the URL. Try clicking the link in your email again.'
+      errorMessage.value = strings.authVerifyNoToken
       return
     }
 

@@ -30,7 +30,7 @@
       <!-- Loading -->
       <div v-if="state === 'loading'" class="text-center py-12 space-y-3">
         <div class="inline-block w-8 h-8 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
-        <p class="text-gray-500 text-sm">Generating your secret…</p>
+        <p class="text-gray-500 text-sm">{{ strings.totpSetupGenerating }}</p>
       </div>
 
       <!-- Error loading setup -->
@@ -44,14 +44,14 @@
           class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
           @click="loadSetup"
         >
-          Try again
+          {{ strings.totpSetupTryAgain }}
         </button>
         <NuxtLink
           v-else
           to="/account"
           class="inline-block px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
         >
-          Back to account
+          {{ strings.totpSetupBackToAccount }}
         </NuxtLink>
       </div>
 
@@ -86,7 +86,7 @@
               inputmode="numeric"
               autocomplete="one-time-code"
               maxlength="6"
-              placeholder="000000"
+              :placeholder="strings.totpCodePlaceholder"
               :disabled="confirming"
               class="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
             />
@@ -203,7 +203,7 @@ async function loadSetup() {
       return
     }
 
-    if (!res.ok) throw new Error(data.error || 'Failed to load setup')
+    if (!res.ok) throw new Error(data.error || strings.totpSetupLoadFailed)
 
     secret.value     = data.secret
     otpAuthUrl.value = data.otpAuthUrl
@@ -218,7 +218,7 @@ async function loadSetup() {
       })
     }
   } catch (err: any) {
-    loadError.value = err.message || 'Failed to load setup. Please refresh.'
+    loadError.value = err.message || strings.totpSetupFailedLoad
     state.value     = 'loadError'
   }
 }
@@ -237,7 +237,7 @@ async function confirm() {
       body:        JSON.stringify({ secret: secret.value, code: confirmCode.value }),
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Confirmation failed')
+    if (!res.ok) throw new Error(data.error || strings.totpSetupConfirmationFailed)
 
     if (data.accessToken && data.user) {
       applyNewSession(data.accessToken, data.user)
@@ -248,7 +248,7 @@ async function confirm() {
 
     redirectTimer = setTimeout(() => navigateTo(postSetupRedirect.value), 1500)
   } catch (err: any) {
-    confirmError.value = err.message || 'Invalid code. Please try again.'
+    confirmError.value = err.message || strings.totpInvalidCode
     confirmCode.value  = ''
   } finally {
     confirming.value = false

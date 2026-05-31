@@ -26,7 +26,7 @@
             </button>
             <button
               class="p-1 rounded-md hover:bg-blue-500 transition-colors"
-              aria-label="Dismiss"
+              :aria-label="strings.dismiss"
               @click="dismissPwaBanner"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,7 +68,7 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              >Open graph</a>
+              >{{ strings.openGraph }}</a>
             </div>
           </div>
         </div>
@@ -342,7 +342,7 @@ onMounted(async () => {
       loadPlacement(),
       loadPills(),
     ])
-    if (!videosRes.ok) throw new Error('Failed to load videos')
+    if (!videosRes.ok) throw new Error(strings.failedToLoadVideos)
     const data = await videosRes.json()
     videos.value = data.videos || []
   } catch (e: any) {
