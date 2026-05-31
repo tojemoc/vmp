@@ -2,6 +2,7 @@
 const sw = globalThis;
 const PWA_AUTH_IDB = 'vmp-pwa-auth';
 const PWA_AUTH_STORE = 'handoffs';
+const registeredPwaAuthClientIds = new Set();
 function openIdb() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(PWA_AUTH_IDB, 1);
@@ -23,7 +24,7 @@ async function storeHandoffCode(db, handoffCode) {
         tx.objectStore(PWA_AUTH_STORE).put(handoffCode, 'pending');
     });
 }
-function isAppShellClient(client) {
+function isSameOriginNonAuthClient(client) {
     try {
         const url = new URL(client.url);
         if (url.origin !== sw.location.origin)
@@ -36,12 +37,24 @@ function isAppShellClient(client) {
         return false;
     }
 }
+function isRegisteredPwaAuthClient(client) {
+    return isSameOriginNonAuthClient(client) && registeredPwaAuthClientIds.has(client.id);
+}
 function pickAppShellClient(clients) {
-    const validated = clients.filter(isAppShellClient);
+    const validated = clients.filter(isRegisteredPwaAuthClient);
     if (validated.length === 0)
         return undefined;
     return validated.find((c) => c.focused) ?? validated[0];
 }
+sw.addEventListener('message', (event) => {
+    const data = event.data;
+    if (data?.type !== 'pwa_auth_register_client')
+        return;
+    const source = event.source;
+    if (source && 'id' in source && typeof source.id === 'string') {
+        registeredPwaAuthClientIds.add(source.id);
+    }
+});
 async function persistHandoffAndOpen(handoffCode) {
     const db = await openIdb();
     await storeHandoffCode(db, handoffCode);

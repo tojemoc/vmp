@@ -656,8 +656,26 @@ const descriptionRef = ref<HTMLElement | null>(null)
 const descriptionExpanded = ref(false)
 const descriptionClamped = ref(false)
 
-/** Matches `.watch-description-collapsed { max-height: 6.5rem }` */
-const DESCRIPTION_COLLAPSED_MAX_PX = 6.5 * 16
+function cssLengthToPx(length: string, context: HTMLElement): number {
+  const trimmed = length.trim()
+  if (!trimmed || trimmed === 'none') return 0
+  if (trimmed.endsWith('px')) return Number.parseFloat(trimmed) || 0
+  const probe = document.createElement('div')
+  probe.style.cssText = `position:absolute;visibility:hidden;height:${trimmed};width:0;overflow:hidden;`
+  context.appendChild(probe)
+  const px = probe.offsetHeight
+  context.removeChild(probe)
+  return px
+}
+
+/** Read `.watch-description-collapsed` max-height in the element's rem/px context. */
+function getDescriptionCollapsedMaxPx(el: HTMLElement): number {
+  const hadClass = el.classList.contains('watch-description-collapsed')
+  if (!hadClass) el.classList.add('watch-description-collapsed')
+  const collapsedMaxPx = cssLengthToPx(getComputedStyle(el).maxHeight, el)
+  if (!hadClass) el.classList.remove('watch-description-collapsed')
+  return collapsedMaxPx
+}
 
 function measureDescriptionClamp(options?: { resetExpanded?: boolean }) {
   if (options?.resetExpanded) descriptionExpanded.value = false
@@ -667,8 +685,9 @@ function measureDescriptionClamp(options?: { resetExpanded?: boolean }) {
       descriptionClamped.value = false
       return
     }
+    const collapsedMaxPx = getDescriptionCollapsedMaxPx(el)
     if (descriptionExpanded.value) {
-      descriptionClamped.value = el.scrollHeight > DESCRIPTION_COLLAPSED_MAX_PX + 2
+      descriptionClamped.value = el.scrollHeight > collapsedMaxPx + 2
     } else {
       descriptionClamped.value = el.scrollHeight > el.clientHeight + 2
     }

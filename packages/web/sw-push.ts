@@ -4,6 +4,9 @@ const sw = globalThis as unknown as ServiceWorkerGlobalScope & typeof globalThis
 const PWA_AUTH_IDB = 'vmp-pwa-auth'
 const PWA_AUTH_STORE = 'handoffs'
 
+/** Window clients that posted `pwa_auth_register_client` (installed PWA). */
+const registeredPwaAuthClientIds = new Set<string>()
+
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(PWA_AUTH_IDB, 1)
@@ -27,8 +30,7 @@ async function storeHandoffCode(db: IDBDatabase, handoffCode: string): Promise<v
   })
 }
 
-/** Same-origin app window — exclude Safari magic-link tabs that could consume a one-time handoff. */
-function isAppShellClient(client: Client): boolean {
+function isSameOriginNonAuthClient(client: Client): boolean {
   try {
     const url = new URL(client.url)
     if (url.origin !== sw.location.origin) return false
@@ -39,11 +41,24 @@ function isAppShellClient(client: Client): boolean {
   }
 }
 
+function isRegisteredPwaAuthClient(client: Client): boolean {
+  return isSameOriginNonAuthClient(client) && registeredPwaAuthClientIds.has(client.id)
+}
+
 function pickAppShellClient(clients: readonly Client[]): WindowClient | undefined {
-  const validated = clients.filter(isAppShellClient) as WindowClient[]
+  const validated = clients.filter(isRegisteredPwaAuthClient) as WindowClient[]
   if (validated.length === 0) return undefined
   return validated.find((c) => c.focused) ?? validated[0]
 }
+
+sw.addEventListener('message', (event: ExtendableMessageEvent) => {
+  const data = event.data as { type?: string } | null
+  if (data?.type !== 'pwa_auth_register_client') return
+  const source = event.source
+  if (source && 'id' in source && typeof source.id === 'string') {
+    registeredPwaAuthClientIds.add(source.id)
+  }
+})
 
 async function persistHandoffAndOpen(handoffCode: string): Promise<void> {
   const db = await openIdb()

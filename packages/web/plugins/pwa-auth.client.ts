@@ -2,6 +2,7 @@
  * Listens for PWA push-login handoff codes (service worker message, URL param, IDB).
  */
 import { readStoredPwaHandoffCode, clearStoredPwaHandoffCode } from '~/utils/pwa-auth-idb'
+import { isInstalledPwa } from '~/utils/pwa'
 
 export default defineNuxtPlugin(() => {
   const route = useRoute()
@@ -63,7 +64,15 @@ export default defineNuxtPlugin(() => {
     }
   }
 
+  function registerPwaAuthClientWithSw() {
+    if (!isInstalledPwa() || !('serviceWorker' in navigator)) return
+    void navigator.serviceWorker.ready.then((registration) => {
+      registration.active?.postMessage({ type: 'pwa_auth_register_client' })
+    })
+  }
+
   if ('serviceWorker' in navigator) {
+    registerPwaAuthClientWithSw()
     navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
       const data = event.data as { type?: string; handoffCode?: string } | null
       if (data?.type === 'pwa_auth_handoff' && typeof data.handoffCode === 'string') {
@@ -87,7 +96,10 @@ export default defineNuxtPlugin(() => {
 
   if (import.meta.client) {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void onAppVisible()
+      if (document.visibilityState === 'visible') {
+        registerPwaAuthClientWithSw()
+        void onAppVisible()
+      }
     })
     window.addEventListener('pageshow', (event) => {
       if (event.persisted) void onAppVisible()
