@@ -85,7 +85,9 @@ usePageSeo(
     const count = total.value
     return {
       title: name,
-      description: count > 0 ? `${count} videos in ${name}` : `Videos in ${name}`,
+      description: count > 0
+        ? strings.categorySeoVideosIn(count, name)
+        : strings.categorySeoVideosInName(name),
     }
   }),
 )

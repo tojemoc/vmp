@@ -98,6 +98,18 @@ const strings = {
   pwaLoginCheckEmail: 'Check your email. Tap the link to continue.',
   pwaLoginCheckEmailHint:
     'When prompted in Safari, choose to sign into the Home Screen app. Then switch back here — you should be signed in automatically.',
+  pwaLoginStepOf: (step: number, total: number) => `Step ${step} of ${total}`,
+  pwaLoginUseRegularSignIn: 'Use regular sign-in instead',
+  pwaLoginDone: 'Done',
+  pwaLoginErrorGeneric: 'Something went wrong',
+  pwaLoginTurnOffFailed: 'Could not turn off notifications',
+  pwaLoginPushNotConfigured: 'Push is not configured on the server',
+  pwaLoginEmailSendFailed: 'We could not send the sign-in email. Please try again.',
+
+  close: 'Close',
+  continue: 'Continue',
+  saving: 'Saving…',
+  done: 'Done',
 
   authVerifyPwaPushTitle: 'Are you signing into the app on your home screen?',
   authVerifyPwaPushSending: 'Sending…',
@@ -185,6 +197,8 @@ const strings = {
   categoryNext: 'Next',
   categoryPage: (n: number) => `Page ${n}`,
   categoryLoadFailed: 'Failed to load category',
+  categorySeoVideosIn: (count: number, name: string) => `${count} videos in ${name}`,
+  categorySeoVideosInName: (name: string) => `Videos in ${name}`,
 
   // ── Watch page ─────────────────────────────────────────────────────────────
   loadingVideo: 'Loading video...',

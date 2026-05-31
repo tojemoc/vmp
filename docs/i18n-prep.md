@@ -85,11 +85,36 @@ Neither requires `@nuxtjs/i18n` initially — sync translated JSON into `locales
 
 ## Verifying coverage
 
-After changes, search for leftover viewer copy:
+After changes, search for leftover viewer copy. No single regex catches everything.
+
+**Long template text (letter-first, 9+ chars):**
 
 ```bash
 rg -n ">[A-Za-z][^<{]{8,}<" packages/web/pages packages/web/components \
   --glob '*.vue' --glob '!admin/**'
 ```
+
+**Shorter labels (5–8 chars) — catches `Close`, `Done`, `Step`, etc.:**
+
+```bash
+rg -n ">[A-Za-z][^<{]{4,7}<" packages/web/pages packages/web/components \
+  --glob '*.vue' --glob '!admin/**'
+```
+
+**Non-letter starts** (numbers, punctuation, `&`, quotes):
+
+```bash
+rg -n ">[^<{][^<{]{4,}<" packages/web/pages packages/web/components \
+  --glob '*.vue' --glob '!admin/**'
+```
+
+**Multi-line template text** (text split across lines inside tags):
+
+```bash
+rg -n -U ">\\s*\\n\\s*[A-Za-z]" packages/web/pages packages/web/components \
+  --glob '*.vue' --glob '!admin/**'
+```
+
+On older `rg`, use `-P` instead of `-U` for multiline, or open the file when the line-based patterns look clean but UX still shows English literals.
 
 Some matches will be icons, layout, or dynamic API fields — manual review is still needed.
