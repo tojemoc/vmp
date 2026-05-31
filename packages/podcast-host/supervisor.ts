@@ -61,6 +61,15 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
       `Use the Node script (${defaultScriptName}) instead.`
     )
   }
+  if (basename.endsWith('.ts')) {
+    const distDir = path.join(path.dirname(resolved), 'dist')
+    throw new Error(
+      `${label} script points to TypeScript source ${resolved}. ` +
+      `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
+      `Run \`npm run build --workspace=@vmp/podcast-host\`, then set ${envVarName} to ` +
+      `${path.join(distDir, defaultScriptName)} or remove the override.`
+    )
+  }
   return resolved
 }
 

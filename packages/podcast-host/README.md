@@ -22,18 +22,43 @@ npm install
 
 Point `WorkingDirectory` at the monorepo root. **`dist/` is gitignored** — run `npm run build --workspace=@vmp/podcast-host` after every `git pull` that touches `packages/podcast-host/` (auto-upgrade does this when `VMP_AUTO_UPGRADE=1`).
 
+**Do not** point `ExecStart` or `VMP_*_SCRIPT` at `.ts` source files. Even on Node 24 (native type stripping), compiled imports such as `./ttpLog.js` resolve only under `dist/`.
+
+Example unit (adjust paths and secrets):
+
 ```ini
+[Unit]
+Description=Video Pipeline Watcher Service
+After=network.target
+
 [Service]
 Type=simple
-WorkingDirectory=/opt/vmp
-Environment=VMP_WEBHOOK_SECRET=your-long-shared-secret
+WorkingDirectory=/root/vmp
+Environment=VMP_WEBHOOK_SECRET=your-secret
 Environment=INBOX_DIR=/mnt/videos/inbox
 Environment=TMP_DIR_BASE=/mnt/tmp/video_pipeline
-Environment=R2_BUCKET=vmp-videos
-# Rebuild before start if you pulled without auto-upgrade:
-# ExecStartPre=/usr/bin/npm run build --workspace=@vmp/podcast-host
-ExecStart=/usr/bin/node /opt/vmp/packages/podcast-host/dist/supervisor.js
+Environment=R2_BUCKET_NAME=vmp-videos
+Environment=RCLONE_REMOTE=vmp-videos
+Environment=VMP_UI_HOST=0.0.0.0
+# Omit VMP_PIPELINE_SCRIPT / VMP_RENDER_SCRIPT to use dist/*.js defaults next to supervisor.js
+ExecStartPre=/usr/bin/npm run build --workspace=@vmp/podcast-host
+ExecStart=/root/.nvm/versions/node/v24.14.1/bin/node /root/vmp/packages/podcast-host/dist/supervisor.js
 Restart=always
+User=root
+Group=root
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Minimal fix if you already built manually — only change the three paths from `.ts` to `dist/*.js` and drop the script overrides:
+
+```ini
+ExecStart=/root/.nvm/versions/node/v24.14.1/bin/node /root/vmp/packages/podcast-host/dist/supervisor.js
+# Remove these lines (defaults are correct when ExecStart uses dist/supervisor.js):
+# Environment=VMP_PIPELINE_SCRIPT=...
+# Environment=VMP_RENDER_SCRIPT=...
 ```
 
 Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with auth). In the admin UI, set the webhook URL to:
