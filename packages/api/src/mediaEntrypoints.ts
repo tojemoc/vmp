@@ -5,7 +5,7 @@
  * proxy URLs that point at /api/video-proxy.
  */
 
-import { getRequestPublicOrigin } from './requestPublicOrigin.js'
+import { getRequestPublicOrigin, normalizePublicOrigin, normalizePublicUrl } from './requestPublicOrigin.js'
 
 export function buildEntrypointCandidates(base: any, videoId: any, options: any = {}) {
   const preferPodcast = options?.preferPodcast === true
@@ -64,7 +64,7 @@ export function buildProxyPlaylistUrl(
   request: any,
   playlistUrl: any,
   previewUntilSeconds: any,
-  env?: { API_PUBLIC_URL?: string },
+  env?: { API_PUBLIC_URL?: string; API_URL?: string },
 ) {
   const origin = getRequestPublicOrigin(request, env)
   const upstream = new URL(playlistUrl)
@@ -72,7 +72,7 @@ export function buildProxyPlaylistUrl(
   if (typeof previewUntilSeconds === 'number' && previewUntilSeconds >= 0) {
     u.searchParams.set('previewUntil', String(Math.floor(previewUntilSeconds)))
   }
-  return u.toString()
+  return normalizePublicUrl(u.toString())
 }
 
 async function canLoadEntrypoint(url: any) {

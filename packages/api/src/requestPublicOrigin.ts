@@ -3,8 +3,16 @@
  *
  * Behind TLS-terminating proxies (Deno, Vercel, nginx), `request.url` may still be
  * `http://` if the adapter did not honor X-Forwarded-Proto. Prefer explicit
- * `API_PUBLIC_URL`, then forwarded headers, then request.url.
+ * `API_PUBLIC_URL` / `API_URL`, then forwarded headers, then request.url.
+ * Public (non-local) hosts are always upgraded to HTTPS to prevent mixed-content
+ * playback when TLS terminates in front of api-node.
  */
+
+export type PublicOriginEnv = {
+  API_PUBLIC_URL?: string
+  /** Deno / ops often set API_URL; treat as alias for API_PUBLIC_URL on api-node. */
+  API_URL?: string
+}
 
 function firstHeaderValue(value: string | null | undefined): string | null {
   if (!value) return null
@@ -12,14 +20,61 @@ function firstHeaderValue(value: string | null | undefined): string | null {
   return trimmed || null
 }
 
-function originFromApiPublicUrl(env?: { API_PUBLIC_URL?: string }): string | null {
-  const raw = typeof env?.API_PUBLIC_URL === 'string' ? env.API_PUBLIC_URL.trim() : ''
-  if (!raw) return null
+function isLocalDevHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return (
+    host === 'localhost'
+    || host === '127.0.0.1'
+    || host === '0.0.0.0'
+    || host === '[::1]'
+    || host.endsWith('.local')
+  )
+}
+
+function originFromConfiguredUrl(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
   try {
-    const u = new URL(raw.includes('://') ? raw : `https://${raw}`)
+    const u = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`)
     return u.origin
   } catch {
     return null
+  }
+}
+
+/** Explicit public API origin from env (API_PUBLIC_URL, then API_URL). */
+export function resolveExplicitPublicOrigin(env?: PublicOriginEnv): string | null {
+  for (const key of ['API_PUBLIC_URL', 'API_URL'] as const) {
+    const raw = typeof env?.[key] === 'string' ? env[key] : ''
+    const origin = originFromConfiguredUrl(raw)
+    if (origin) return normalizePublicOrigin(origin)
+  }
+  return null
+}
+
+/** Upgrade http→https for public hosts; keeps localhost/http dev unchanged. */
+export function normalizePublicOrigin(origin: string): string {
+  try {
+    const u = new URL(origin)
+    if (u.protocol === 'https:') return u.origin
+    if (isLocalDevHost(u.hostname)) return u.origin
+    u.protocol = 'https:'
+    return u.origin
+  } catch {
+    return origin
+  }
+}
+
+/** Like normalizePublicOrigin but preserves path and query on full request URLs. */
+export function normalizePublicUrl(urlString: string): string {
+  try {
+    const u = new URL(urlString)
+    if (u.protocol === 'https:') return u.toString()
+    if (isLocalDevHost(u.hostname)) return u.toString()
+    u.protocol = 'https:'
+    return u.toString()
+  } catch {
+    return urlString
   }
 }
 
@@ -43,23 +98,24 @@ function headerSourceFromNodeHeaders(headers: Record<string, string | string[] |
 export function getRequestPublicOriginFromHeaders(
   headers: HeaderSource,
   fallbackOrigin: string,
-  env?: { API_PUBLIC_URL?: string },
+  env?: PublicOriginEnv,
 ): string {
-  const explicit = originFromApiPublicUrl(env)
+  const explicit = resolveExplicitPublicOrigin(env)
   if (explicit) return explicit
 
   const forwardedProto = firstHeaderValue(headers.get('x-forwarded-proto'))
   const forwardedHost = firstHeaderValue(headers.get('x-forwarded-host'))
   const host = forwardedHost || firstHeaderValue(headers.get('host'))
 
-  if (forwardedProto && host) {
-    return `${forwardedProto}://${host}`
+  if (host) {
+    const proto = forwardedProto || 'https'
+    return normalizePublicOrigin(`${proto}://${host}`)
   }
 
-  return fallbackOrigin
+  return normalizePublicOrigin(fallbackOrigin)
 }
 
-export function getRequestPublicOrigin(request: Request, env?: { API_PUBLIC_URL?: string }): string {
+export function getRequestPublicOrigin(request: Request, env?: PublicOriginEnv): string {
   const fallback = new URL(request.url).origin
   return getRequestPublicOriginFromHeaders(request.headers, fallback, env)
 }
@@ -69,35 +125,31 @@ export function getRequestPublicOrigin(request: Request, env?: { API_PUBLIC_URL?
  */
 export function buildNodeIncomingRequestUrl(
   req: { headers: Record<string, string | string[] | undefined>; url?: string | null },
-  options?: { defaultPort?: number; env?: { API_PUBLIC_URL?: string } },
+  options?: { defaultPort?: number; env?: PublicOriginEnv },
 ): string {
+  const path = req.url ?? '/'
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+  const explicit = resolveExplicitPublicOrigin(options?.env)
+  if (explicit) {
+    return `${explicit}${normalizedPath}`
+  }
+
   const port = options?.defaultPort ?? 8787
   const headers = headerSourceFromNodeHeaders(req.headers)
   const host =
-    firstHeaderValue(headers.get('x-forwarded-host')) ||
-    firstHeaderValue(headers.get('host')) ||
-    `localhost:${port}`
+    firstHeaderValue(headers.get('x-forwarded-host'))
+    || firstHeaderValue(headers.get('host'))
+    || `localhost:${port}`
 
   let proto = firstHeaderValue(headers.get('x-forwarded-proto'))
-  if (!proto && options?.env?.API_PUBLIC_URL) {
-    try {
-      proto = new URL(
-        options.env.API_PUBLIC_URL.includes('://')
-          ? options.env.API_PUBLIC_URL
-          : `https://${options.env.API_PUBLIC_URL}`,
-      ).protocol.replace(':', '')
-    } catch {
-      /* ignore */
-    }
-  }
   if (!proto) proto = 'http'
 
-  const path = req.url ?? '/'
-  return `${proto}://${host}${path}`
+  return normalizePublicUrl(`${proto}://${host}${normalizedPath}`)
 }
 
 /** True when url points at this host's /api/video-proxy (any resolved public/internal origin). */
-export function isLocalVideoProxyUrl(request: Request, urlString: string, env?: { API_PUBLIC_URL?: string }): boolean {
+export function isLocalVideoProxyUrl(request: Request, urlString: string, env?: PublicOriginEnv): boolean {
   if (typeof urlString !== 'string' || !urlString) return false
   let pathname: string
   let origin: string
@@ -111,6 +163,10 @@ export function isLocalVideoProxyUrl(request: Request, urlString: string, env?: 
   if (!pathname.startsWith('/api/video-proxy')) return false
 
   const publicOrigin = getRequestPublicOrigin(request, env)
-  const requestOrigin = new URL(request.url).origin
-  return origin === publicOrigin || origin === requestOrigin
+  const requestOrigin = normalizePublicOrigin(new URL(request.url).origin)
+  const normalizedUrlOrigin = normalizePublicOrigin(origin)
+  return normalizedUrlOrigin === publicOrigin
+    || normalizedUrlOrigin === requestOrigin
+    || origin === publicOrigin
+    || origin === new URL(request.url).origin
 }

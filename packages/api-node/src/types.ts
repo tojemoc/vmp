@@ -16,6 +16,8 @@ export interface CFEnvShape {
   FRONTEND_URL?: string
   /** Canonical public API base (e.g. https://vmp-backup-api.tjm.sk) for proxy/RSS URLs behind TLS. */
   API_PUBLIC_URL?: string
+  /** Alias read by api-node when API_PUBLIC_URL is unset (common on Deno Deploy). */
+  API_URL?: string
   ALLOWED_ORIGINS?: string
   R2_BASE_URL?: string
   SENDER_EMAIL?: string
