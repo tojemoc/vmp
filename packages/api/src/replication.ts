@@ -63,6 +63,7 @@ const QUEUE_SEND_BATCH_MAX = 100
 
 type StreamContext = { direction: ReplicationDirection, epoch: number, batchSize: number }
 type DeliveryMode = 'queue' | 'direct'
+const STREAM_USERS = 'users'
 const STREAM_SUBSCRIPTIONS = 'subscriptions'
 const STREAM_VIDEOS = 'videos'
 const STREAM_ADMIN_SETTINGS = 'admin_settings'
