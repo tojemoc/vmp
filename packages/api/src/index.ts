@@ -45,6 +45,7 @@ import {
 } from './payments.js'
 import { isAdministrativeRole } from './roles.js'
 import { buildEntrypointCandidates, resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
+import { isLocalVideoProxyUrl } from './requestPublicOrigin.js'
 import { handleThumbnailUpload, handleThumbnailDelete } from './thumbnails.js'
 import {
   handleAdminNewsletterSend,
@@ -963,7 +964,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     )
     const basePlaylistUrl = isBunnyCdnPlayback
       ? resolvedEntrypointUrl
-      : buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration)
+      : buildProxyPlaylistUrl(request, resolvedEntrypointUrl, hasPremiumAccess ? null : previewDuration, env)
     // Unify duration logic with the frontend: if D1 has 0/unknown duration,
     // attempt to resolve from the HLS playlist stored in R2.
     let fullDuration = video?.full_duration ?? previewDuration
@@ -1011,7 +1012,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
       }
     }
     if (env.JWT_SECRET) {
-      const shouldSignProxyUrl = typeof playlistUrl === 'string' && playlistUrl.startsWith(new URL(request.url).origin)
+      const shouldSignProxyUrl = isLocalVideoProxyUrl(request, playlistUrl, env)
       if (shouldSignProxyUrl && playlistUrl) {
         const vt = await signVideoToken(effectiveUserId, playbackVideoId, env.JWT_SECRET, hasPremiumAccess ? null : previewDuration)
         playlistUrl = playlistUrl.includes('?')
