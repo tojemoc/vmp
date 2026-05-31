@@ -89,6 +89,9 @@ const MAX_PIPELINE_FAILED_JOBS = 200
 /** @type {string[]} */
 const logLines = []
 const MAX_LOG = 400
+/** @type {{ videoId: string, minimalMs: number|null, fullMs: number|null, totalMs: number, minimalRatio: number|null, fullRatio: number|null, at: string }[]} */
+const ttpSummaries = []
+const MAX_TTP_SUMMARIES = 50
 
 function pushLog(line) {
   const ts = new Date().toISOString()
@@ -162,6 +165,27 @@ function upsertPipelineJob(event) {
   pipelineActiveJobs.set(event.videoId, row)
 }
 
+function consumeTtpLine(line) {
+  if (!line.startsWith('VMP_TTP\t')) return false
+  try {
+    const row = JSON.parse(line.slice('VMP_TTP\t'.length))
+    if (row.type !== 'ttp_summary') return true
+    ttpSummaries.unshift({
+      videoId: String(row.videoId || ''),
+      minimalMs: row.minimalPublishReadyElapsedMs ?? null,
+      fullMs: row.fullRenditionsReadyElapsedMs ?? null,
+      totalMs: row.totalElapsedMs ?? 0,
+      minimalRatio: row.minimalPublishReadyRatioOfSourceDuration ?? null,
+      fullRatio: row.fullRenditionsReadyRatioOfSourceDuration ?? null,
+      at: String(row.at || new Date().toISOString()),
+    })
+    while (ttpSummaries.length > MAX_TTP_SUMMARIES) ttpSummaries.pop()
+  } catch {
+    // ignore malformed TTP JSON
+  }
+  return true
+}
+
 function consumePipelineLine(line) {
   if (!line.startsWith('VMP_PIPELINE_EVENT\t')) return false
   const parts = line.split('\t', 5)
@@ -217,6 +241,7 @@ function startPipeline() {
 
     for (const line of completeLines) {
       if (!line.trim()) continue
+      if (consumeTtpLine(line)) continue
       if (consumePipelineLine(line)) continue
       pushLog(`[pipeline] ${line}`)
     }
@@ -236,7 +261,7 @@ function startPipeline() {
 
   const flushBuffers = () => {
     if (stdoutBuffer.trim()) {
-      if (consumePipelineLine(stdoutBuffer)) {
+      if (consumeTtpLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
         stdoutBuffer = ''
         return
       }
@@ -244,7 +269,7 @@ function startPipeline() {
       stdoutBuffer = ''
     }
     if (stderrBuffer.trim()) {
-      if (consumePipelineLine(stderrBuffer)) {
+      if (consumeTtpLine(stderrBuffer) || consumePipelineLine(stderrBuffer)) {
         stderrBuffer = ''
         return
       }
@@ -444,6 +469,10 @@ function dashboardHtml() {
     <div id="pipeline-success">Loading…</div>
   </section>
   <section>
+    <h2>TTP summaries (time to publish)</h2>
+    <div id="ttp">Loading…</div>
+  </section>
+  <section>
     <h2>Recent log</h2>
     <pre id="log">Loading…</pre>
   </section>
@@ -480,6 +509,10 @@ function dashboardHtml() {
           '<tr><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.finishedAt || '') + '</td></tr>'
         ).join('')
         document.getElementById('pipeline-success').innerHTML = '<table><thead><tr><th>Video</th><th>Final stage</th><th>Detail</th><th>Finished</th></tr></thead><tbody>' + successRows + '</tbody></table>'
+        const ttpRows = (d.ttpSummaries || []).map(s =>
+          '<tr><td>' + escapeHtml(s.videoId || '') + '</td><td>' + escapeHtml(s.minimalMs != null ? (s.minimalMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.fullMs != null ? (s.fullMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.minimalRatio != null ? Number(s.minimalRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.fullRatio != null ? Number(s.fullRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.at || '') + '</td></tr>'
+        ).join('')
+        document.getElementById('ttp').innerHTML = '<table><thead><tr><th>Video</th><th>Minimal (720p)</th><th>Full renditions</th><th>Ratio minimal</th><th>Ratio full</th><th>At</th></tr></thead><tbody>' + ttpRows + '</tbody></table>'
         document.getElementById('log').textContent = (d.logLines || []).join('\\n')
       } catch (e) {
         document.getElementById('pipeline').textContent = 'Error: ' + e
@@ -539,6 +572,7 @@ const server = http.createServer(async (req, res) => {
       pipelineActiveJobs: activeRows,
       pipelineSuccessfulJobs: successRows,
       failedPipelineJobs: failedRows,
+      ttpSummaries,
       logLines,
     })
     return

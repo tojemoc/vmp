@@ -4,6 +4,12 @@ import { mkdir, readdir, rm, rename, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import {
+  beginTtpJob,
+  emitTtp,
+  emitTtpSummary,
+  setTtpSourceDuration,
+} from './ttpLog.js'
 
 type PipelineStatus = 'active' | 'success' | 'failed'
 type PipelineStage =
@@ -126,13 +132,28 @@ async function waitStableSize(filePath: string): Promise<void> {
   throw new Error(`wait_stable_timeout after ${WAIT_STABLE_TIMEOUT_MS}ms`)
 }
 
-async function detectHasAudio(filePath: string): Promise<boolean> {
+async function probeSource(filePath: string): Promise<{ hasAudio: boolean, durationSec: number | null }> {
+  let hasAudio = false
   try {
     const { stdout } = await run('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath], 'ffprobe audio', { capture: true })
-    return stdout.trim().length > 0
+    hasAudio = stdout.trim().length > 0
   } catch {
-    return false
+    hasAudio = false
   }
+  let durationSec: number | null = null
+  try {
+    const { stdout } = await run(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+      'ffprobe duration',
+      { capture: true },
+    )
+    const parsed = Number.parseFloat(stdout.trim())
+    if (Number.isFinite(parsed) && parsed > 0) durationSec = parsed
+  } catch {
+    durationSec = null
+  }
+  return { hasAudio, durationSec }
 }
 
 function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): string[] {
@@ -299,6 +320,11 @@ async function notifyVideoAvailable(
         const text = await res.text().catch(() => '')
         throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`)
       }
+      if (stage === 'preview_ready') {
+        await emitTtp(videoId, 'api_minimal_publish_ready', { httpStatus: res.status })
+      } else if (stage === 'fully_processed') {
+        await emitTtp(videoId, 'api_full_renditions_ready', { httpStatus: res.status })
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!retry) {
@@ -321,14 +347,17 @@ async function phase1EncodeAndPublish(
   tmpDir: string,
   hasAudio: boolean,
 ): Promise<Phase1Result> {
+  await emitTtp(videoId, 'phase1_encode_start', { initialRendition: '720p' })
   emitPipelineEvent(videoId, 'phase1_encode', 'active', '720p')
   const audioTmpPath = await encodeRendition(videoId, inputPath, tmpDir, '720p', { includeAudio: hasAudio, stage: 'phase1_encode' })
   emitPipelineEvent(videoId, 'phase1_encode', 'active', 'done')
+  await emitTtp(videoId, 'phase1_encode_done', { initialRendition: '720p' })
 
   emitPipelineEvent(videoId, 'phase1_encode', 'active', 'packaging_hls')
   await packagePhase1Hls(tmpDir, hasAudio)
 
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'start')
+  await emitTtp(videoId, 'phase1_upload_start', {})
   const r2Base = r2Path(`videos/${videoId}`)
   await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1')
   if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
@@ -344,9 +373,11 @@ async function phase1EncodeAndPublish(
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase1')
   await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase1')
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'done')
+  await emitTtp(videoId, 'phase1_upload_done', {})
 
   await notifyVideoAvailable(videoId, 'preview_ready', ['720p'])
   emitPipelineEvent(videoId, 'phase1_available', 'success', 'preview_ready')
+  await emitTtp(videoId, 'minimal_publish_ready', { renditionsOnR2: ['720p'], masterManifest: `videos/${videoId}/master.m3u8` })
 
   return { audioTmpPath: hasAudio ? audioTmpPath : null, hasAudio }
 }
@@ -357,16 +388,19 @@ async function phase2RemainingRenditions(
   tmpDir: string,
   hasAudio: boolean,
 ): Promise<void> {
+  await emitTtp(videoId, 'phase2_encode_start', { renditions: ['1080p', '480p'] })
   emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
   await encodeRendition(videoId, inputPath, tmpDir, '1080p', { includeAudio: false, stage: 'phase2_encode' })
   await encodeRendition(videoId, inputPath, tmpDir, '480p', { includeAudio: false, stage: 'phase2_encode' })
   emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
+  await emitTtp(videoId, 'phase2_encode_done', {})
 
   emitPipelineEvent(videoId, 'phase2_package', 'active', 'start')
   await packagePhase2Hls(tmpDir, hasAudio)
   emitPipelineEvent(videoId, 'phase2_package', 'active', 'done')
 
   emitPipelineEvent(videoId, 'phase2_upload', 'active', 'start')
+  await emitTtp(videoId, 'phase2_upload_start', {})
   const r2Base = r2Path(`videos/${videoId}`)
   await rcloneCopyDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone upload 1080p phase2')
   await rcloneCopyDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone upload 480p phase2')
@@ -388,9 +422,11 @@ async function phase2RemainingRenditions(
   emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
   await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase2')
   emitPipelineEvent(videoId, 'phase2_upload', 'active', 'done')
+  await emitTtp(videoId, 'phase2_upload_done', {})
 
   await notifyVideoAvailable(videoId, 'fully_processed', ['1080p', '720p', '480p'])
   emitPipelineEvent(videoId, 'multi_rendition_ready', 'success', 'fully_processed')
+  await emitTtp(videoId, 'full_renditions_ready', { renditionsOnR2: ['1080p', '720p', '480p'] })
 }
 
 async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: string): Promise<void> {
@@ -416,25 +452,36 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     return
   }
   await writeFile(lockFile, String(process.pid))
+  await emitTtp(videoId, 'processing_started', {})
   emitPipelineEvent(videoId, 'detected', 'active', `source=${source}`)
   try {
     emitPipelineEvent(videoId, 'wait_upload_complete', 'active', 'waiting_for_file_stability')
     await waitStableSize(inputPath)
     emitPipelineEvent(videoId, 'wait_upload_complete', 'active', 'stable')
+    await emitTtp(videoId, 'file_stable', {})
 
     emitPipelineEvent(videoId, 'probe', 'active', 'probing_streams')
-    const hasAudio = await detectHasAudio(inputPath)
-    emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}`)
+    const { hasAudio, durationSec } = await probeSource(inputPath)
+    if (durationSec != null) setTtpSourceDuration(videoId, durationSec)
+    await emitTtp(videoId, 'probe_complete', { hasAudio })
+    emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
 
     await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
     emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
 
     const podcastTask = hasAudio
-      ? encodePodcastMp3(videoId, inputPath, tmpDir).catch((err) => {
-        log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
-        emitPipelineEvent(videoId, 'podcast_mp3', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
-      })
-      : (emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio'), Promise.resolve())
+      ? encodePodcastMp3(videoId, inputPath, tmpDir)
+        .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
+        .catch(async (err) => {
+          const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
+          log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
+          emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
+          await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
+        })
+      : (async () => {
+        emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
+        await emitTtp(videoId, 'podcast_mp3_skipped', {})
+      })()
 
     const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
       log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
@@ -476,8 +523,10 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
         await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata')
       }
       emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
+      await emitTtp(videoId, 'preview_mp3_done', { previewSeconds: PREVIEW_MP3_SECONDS })
     } else {
       emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
+      await emitTtp(videoId, 'preview_mp3_skipped', {})
     }
 
     emitPipelineEvent(videoId, 'cleanup', 'active', 'start')
@@ -485,8 +534,13 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     await rm(inputPath, { force: true })
     await rm(tmpDir, { recursive: true, force: true })
     emitPipelineEvent(videoId, 'done', 'success', 'watchfolder_and_tmp_cleared')
+    await emitTtp(videoId, 'pipeline_done', {})
+    await emitTtpSummary(videoId, 'success')
   } catch (err) {
-    emitPipelineEvent(videoId, 'failed', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+    const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
+    emitPipelineEvent(videoId, 'failed', 'failed', detail)
+    await emitTtp(videoId, 'pipeline_failed', { error: detail })
+    await emitTtpSummary(videoId, 'failed', detail)
     log(`❌ ${videoId} failed: ${err instanceof Error ? err.message : String(err)}`)
     await rm(lockFile, { force: true })
     throw err
@@ -497,6 +551,7 @@ const queue: QueueJob[] = []
 let running = 0
 
 function enqueue(videoId: string, inputPath: string, source: string): void {
+  beginTtpJob(videoId, source, inputPath)
   queue.push({ videoId, inputPath, source })
   drain()
 }

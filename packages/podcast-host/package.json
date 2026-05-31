@@ -11,7 +11,8 @@
     "supervisor": "npm run build && node ./dist/supervisor.js",
     "pipeline": "npm run build && node ./dist/pipeline_watch.js",
     "migrate:r2-video-prefixes": "bash ./bin/video_id_r2_prefix_migrate.sh",
-    "render": "npm run build && node ./dist/render_podcast_preview_mp3.js"
+    "render": "npm run build && node ./dist/render_podcast_preview_mp3.js",
+    "ttp-report": "node ./scripts/ttp-report.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
