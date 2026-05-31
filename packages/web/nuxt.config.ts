@@ -2,7 +2,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@saslavik/nuxt-gtm'],
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@saslavik/nuxt-gtm', '@vercel/analytics'],
 
   gtm: {
     id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
