@@ -120,7 +120,8 @@ function getStripe() {
       .then((res) => res.json())
       .then((data) => {
         if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured)
-        return loadStripe(data.publishableKey)
+        const options = data.apiVersion ? { apiVersion: String(data.apiVersion) } : undefined
+        return loadStripe(data.publishableKey, options)
       })
       .catch((err) => {
         stripePromise = null
