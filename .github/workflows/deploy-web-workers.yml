@@ -18,7 +18,7 @@ on:
 
 jobs:
   deploy-web-workers:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
     defaults:
       run:
