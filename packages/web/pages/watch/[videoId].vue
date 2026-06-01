@@ -757,12 +757,12 @@ onMounted(async () => {
 
   if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()
-    if (result.ok) {
+    if (result.ok || result.pending) {
       showPremiumOverlay.value = false
       await loadVideoForRoute(videoId.value)
       await clearStripeSessionQuery()
+      return
     }
-    return
   }
 
   if (route.query.showPremium === '1') {

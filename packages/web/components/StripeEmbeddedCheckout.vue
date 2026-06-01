@@ -122,6 +122,10 @@ function getStripe() {
         if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured)
         return loadStripe(data.publishableKey)
       })
+      .catch((err) => {
+        stripePromise = null
+        throw err
+      })
   }
   return stripePromise
 }

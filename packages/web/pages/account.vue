@@ -377,7 +377,7 @@ const copiedWhich       = ref<'personal' | null>(null)
 onMounted(async () => {
   if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()
-    if (result.ok) {
+    if (result.ok || result.pending) {
       showWelcomeBanner.value = true
       await clearStripeSessionQuery({ subscribed: '1' })
     } else {

@@ -392,7 +392,8 @@ function normalizeReturnPath(input: unknown, fallback = '/account'): string {
   const raw = String(input ?? fallback).trim()
   if (!raw.startsWith('/')) return fallback
   if (raw.startsWith('//')) return fallback
-  return raw.split('?')[0] || fallback
+  const pathOnly = raw.split('#')[0].split('?')[0]
+  return pathOnly || fallback
 }
 
 /**
@@ -439,7 +440,7 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
     }
 
     const sessionUserId = String(session.metadata?.userId ?? '').trim()
-    if (sessionUserId && sessionUserId !== user.sub) {
+    if (!sessionUserId || sessionUserId !== user.sub) {
       return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
     }
 

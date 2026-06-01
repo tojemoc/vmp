@@ -139,7 +139,7 @@
       </p>
     </div>
 
-    <div v-if="!loadingPrices && !priceError && stripeCheckoutActive" class="mb-4">
+    <div v-if="!loadingPrices && !priceError && stripeCheckoutActive && isLoggedIn" class="mb-4">
       <StripeEmbeddedCheckout
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
@@ -514,6 +514,7 @@ function applyCheckoutIntentFromRoute() {
   const prov = q.checkout_provider
   if (prov === 'stripe' || prov === 'gocardless') {
     selectedProvider.value = prov
+    activePaymentTab.value = prov === 'gocardless' ? 'bank' : 'card'
   }
 }
 
@@ -534,14 +535,6 @@ watch(selectedPlan, () => {
 
 watch(activePaymentTab, (tab) => {
   selectedProvider.value = tab === 'bank' ? 'gocardless' : 'stripe'
-  promoApplied.value = null
-  promoError.value = null
-  if (promoCodeInput.value.trim() && isLoggedIn.value) {
-    void validatePromoCode()
-  }
-})
-
-watch(selectedProvider, () => {
   promoApplied.value = null
   promoError.value = null
   if (promoCodeInput.value.trim() && isLoggedIn.value) {

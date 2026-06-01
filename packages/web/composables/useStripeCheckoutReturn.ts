@@ -17,7 +17,7 @@ export function useStripeCheckoutReturn() {
 
   const returningFromStripe = computed(() => stripeSessionId.value.length > 0)
 
-  async function completeStripeCheckoutReturn(): Promise<{ ok: boolean; error?: string }> {
+  async function completeStripeCheckoutReturn(): Promise<{ ok: boolean; pending?: boolean; error?: string }> {
     const sessionId = stripeSessionId.value
     if (!sessionId) return { ok: false }
 
@@ -46,8 +46,7 @@ export function useStripeCheckoutReturn() {
         }
       }
 
-      // Session complete but webhook may still be in flight — treat as success for UX.
-      return { ok: true }
+      return { ok: false, pending: true }
     } catch {
       return { ok: false, error: strings.networkError }
     }
