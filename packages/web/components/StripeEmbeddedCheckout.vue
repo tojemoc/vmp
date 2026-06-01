@@ -39,6 +39,7 @@
 
 <script setup lang="ts">
 import { loadStripe, type Stripe } from '@stripe/stripe-js'
+
 import strings from '~/utils/strings'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
