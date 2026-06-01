@@ -4,6 +4,7 @@ import { normalizeLivestreamStatus } from '../src/livestreams.js'
 
 describe('normalizeLivestreamStatus', () => {
   it('accepts known lifecycle values', () => {
+    assert.equal(normalizeLivestreamStatus('provisioning'), 'provisioning')
     assert.equal(normalizeLivestreamStatus('live'), 'live')
     assert.equal(normalizeLivestreamStatus('ended'), 'ended')
     assert.equal(normalizeLivestreamStatus('vod_attached'), 'vod_attached')
