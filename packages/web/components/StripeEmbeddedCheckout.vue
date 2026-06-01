@@ -62,10 +62,34 @@ interface StripeCheckoutSdk {
   destroy?: () => void
 }
 
+type StripeExpressCheckoutEvent =
+  | 'ready'
+  | 'focus'
+  | 'blur'
+  | 'escape'
+  | 'loaderror'
+  | 'confirm'
+  | 'cancel'
+
 interface StripeExpressCheckoutElement {
   mount: (selector: string | HTMLElement) => void
   unmount: () => void
-  on: (event: string, handler: (payload: unknown) => void) => void
+  on: (event: StripeExpressCheckoutEvent, handler: (payload: unknown) => void) => void
+}
+
+/** Checkout Elements SDK ready payload (availablePaymentMethods is deprecated but still sent). */
+function expressWalletMethodsAvailable(payload: unknown): boolean {
+  const event = payload as {
+    availablePaymentMethods?: Record<string, { available?: boolean } | boolean>
+    paymentMethods?: Record<string, { available?: boolean }>
+  }
+  const methods = event.paymentMethods ?? event.availablePaymentMethods
+  if (!methods || typeof methods !== 'object') return false
+  return Object.values(methods).some((entry) => {
+    if (typeof entry === 'boolean') return entry
+    if (entry && typeof entry === 'object' && 'available' in entry) return Boolean(entry.available)
+    return true
+  })
 }
 
 interface StripePaymentElement {
@@ -209,14 +233,25 @@ async function setupCheckout() {
           applePay: 'subscribe',
           googlePay: 'subscribe',
         },
+        paymentMethods: {
+          applePay: 'auto',
+          googlePay: 'auto',
+          link: 'never',
+          paypal: 'never',
+          amazonPay: 'never',
+          klarna: 'never',
+        },
       })
 
-      expressElement.on('availablepaymentmethodschange', (payload: unknown) => {
-        const methods = (payload as { paymentMethods?: unknown })?.paymentMethods
-        const available = Boolean(methods && typeof methods === 'object' && Object.keys(methods as object).length > 0)
+      const syncWalletAvailability = (payload: unknown) => {
+        const available = expressWalletMethodsAvailable(payload)
         walletAvailable.value = available
         emit('walletAvailable', available)
-      })
+      }
+
+      // Checkout Elements SDK (Dahlia): ready/loaderror only — not availablepaymentmethodschange.
+      expressElement.on('ready', syncWalletAvailability)
+      expressElement.on('loaderror', () => syncWalletAvailability(null))
 
       expressElement.on('confirm', (event: unknown) => {
         void confirmExpress(event)
