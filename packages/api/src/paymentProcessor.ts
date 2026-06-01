@@ -558,6 +558,11 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       const sessionPayload: any = {
         mode: 'subscription',
         ui_mode: 'elements',
+        // Curated list for the Payment Element (not dynamic payment methods): limits
+        // the "Pay by card" path to card + PayPal + SEPA debit. Omitting
+        // payment_method_types would surface every method enabled in the Stripe Dashboard
+        // (e.g. Bancontact, Revolut Pay). Prices are EUR; sepa_debit requires EUR.
+        payment_method_types: ['card', 'paypal', 'sepa_debit'],
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: user.email,
         metadata: {
