@@ -227,14 +227,8 @@ const strings = {
   videoPlaybackError: 'Video playback error. The HLS stream could not be loaded.',
   livestreamUnavailable: 'Livestream feed unavailable',
   livestreamUnavailableDetail:
-    'The stream is not currently connected. Attach a recording or update the livestream playback URL in admin.',
-  liveStreamTitle: 'Live Stream',
+    'The stream is not currently connected. Add MoQ endpoint and broadcast in admin, or attach a recording.',
   liveBrowserOnly: 'Livestream playback is only available in the browser.',
-  liveAccessLoadFailed: 'Failed to load livestream access',
-  liveRouteNotConfigured:
-    'Livestream route is not configured. Create a livestream video with slug "live" or use /watch/:videoId.',
-  liveNoAccess: 'You do not have access to this livestream.',
-  livePlayerInitFailed: 'Live player failed to initialize.',
   videoLoadFailed: 'Failed to load video data',
   rateLimitExceeded: 'Too many requests. Please try again later.',
   mediaFailedToLoad: 'Media failed to load',
