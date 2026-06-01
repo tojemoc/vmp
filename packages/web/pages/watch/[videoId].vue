@@ -137,6 +137,15 @@
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
 
+              <media-playback-rate-menu
+                hidden
+                anchor="auto"
+                class="watch-playback-rate-menu"
+                rates="0.5 0.75 1 1.25 1.5 2"
+              >
+                <span slot="header">{{ strings.playbackSpeed }}</span>
+              </media-playback-rate-menu>
+
               <media-settings-menu hidden anchor="auto" class="watch-settings-menu">
                 <media-playback-rate-menu rates="0.5 0.75 1 1.25 1.5 2">
                   <span slot="header">{{ strings.playbackSpeed }}</span>
@@ -202,23 +211,7 @@
                   <media-volume-range class="hidden sm:inline-flex"></media-volume-range>
                   <media-cast-button class="watch-cast-button"></media-cast-button>
                   <media-airplay-button class="watch-airplay-button"></media-airplay-button>
-                  <label class="watch-playback-rate-wrap hidden sm:inline-flex">
-                    <span class="sr-only">{{ strings.playbackSpeed }}</span>
-                    <select
-                      class="watch-playback-rate-select"
-                      :aria-label="strings.playbackSpeed"
-                      :value="String(playbackRate)"
-                      @change="handlePlaybackRateChange"
-                    >
-                      <option
-                        v-for="opt in PLAYBACK_RATE_OPTIONS"
-                        :key="opt.value"
-                        :value="String(opt.value)"
-                      >
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                  </label>
+                  <media-playback-rate-menu-button class="watch-playback-rate-menu-button hidden sm:inline-flex"></media-playback-rate-menu-button>
                   <media-settings-menu-button class="watch-settings-menu-button sm:hidden"></media-settings-menu-button>
                   <media-fullscreen-button></media-fullscreen-button>
                 </media-control-bar>
@@ -451,10 +444,7 @@ import 'videojs-video-element'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
-import {
-  PLAYBACK_RATE_OPTIONS,
-  usePlaybackRate,
-} from '~/composables/usePlaybackRate'
+import { usePlaybackRate } from '~/composables/usePlaybackRate'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
@@ -532,18 +522,9 @@ type MediaLikeElement = HTMLElement & {
 }
 
 const {
-  playbackRate,
   applyPlaybackRate,
   setPlaybackRate,
 } = usePlaybackRate()
-
-const handlePlaybackRateChange = (event: Event) => {
-  const select = event.target as HTMLSelectElement
-  const rate = Number.parseFloat(select.value)
-  if (!Number.isFinite(rate)) return
-  setPlaybackRate(rate)
-  applyPlaybackRate(videoElement.value)
-}
 
 const videoElement        = ref<MediaLikeElement | null>(null)
 const loading             = ref(true)
@@ -1296,32 +1277,19 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
   --media-control-background: transparent;
 }
 
-.watch-playback-rate-wrap {
-  align-items: center;
-  margin: 0 0.15rem;
-}
-
-.watch-playback-rate-select {
+.watch-playback-rate-menu-button {
+  --media-control-background: transparent;
+  --media-control-hover-background: rgba(255, 255, 255, 0.12);
   min-width: 3.25rem;
-  padding: 0.2rem 0.35rem;
   font-size: 0.8125rem;
   font-weight: 600;
-  line-height: 1.25;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.25rem;
-  cursor: pointer;
-  transition: background 0.15s ease;
 }
 
-.watch-playback-rate-select:hover {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.watch-playback-rate-select:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: 2px;
+.watch-playback-rate-menu {
+  --media-menu-background: rgba(20, 20, 30, 0.95);
+  --media-primary-color: #fff;
+  --media-menu-border-radius: 0.375rem;
+  --media-menu-item-checked-background: rgba(255, 255, 255, 0.15);
 }
 
 .watch-cast-button[mediacastunavailable],
