@@ -15,7 +15,6 @@ import {
 } from './promotions.js'
 import {
   normalizeStripeStatus,
-  STRIPE_API_VERSION,
   stripeGet,
   stripePost,
   stripeSubscriptionPeriodEndIso,
@@ -414,7 +413,7 @@ export async function handleGetStripeConfig(_request: any, env: any, corsHeaders
       code: 'stripe_not_configured',
     }, 503, corsHeaders)
   }
-  return jsonResponse({ publishableKey, apiVersion: STRIPE_API_VERSION }, 200, corsHeaders)
+  return jsonResponse({ publishableKey }, 200, corsHeaders)
 }
 
 /**
