@@ -1,73 +1,90 @@
 <template>
   <div :class="embedded ? 'text-left' : 'text-center'">
     <div
-      class="w-16 h-16 mb-4 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center"
-      :class="embedded ? '' : 'mx-auto'"
+      class="bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center"
+      :class="[
+        embedded ? 'w-16 h-16 mb-4' : compact ? 'w-12 h-12 mb-3 mx-auto' : 'w-16 h-16 mb-4 mx-auto',
+      ]"
     >
-      <svg class="w-8 h-8 text-gray-900" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+      <svg
+        class="text-gray-900"
+        :class="compact ? 'w-6 h-6' : 'w-8 h-8'"
+        fill="currentColor"
+        viewBox="0 0 20 20"
+        aria-hidden="true"
+      >
         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
       </svg>
     </div>
 
     <h3
-      class="text-2xl font-bold mb-2"
-      :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'"
+      class="font-bold mb-1"
+      :class="[
+        compact ? 'text-xl' : 'text-2xl mb-2',
+        embedded ? 'text-gray-900 dark:text-white' : 'text-white',
+      ]"
     >
       {{ strings.checkoutPremiumTitle }}
     </h3>
     <p
-      class="mb-6"
-      :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
+      :class="[
+        compact ? 'mb-4 text-sm' : 'mb-6',
+        embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
+      ]"
     >
       {{ strings.checkoutPremiumSubtitle }}
     </p>
 
-    <div v-if="loadingPrices" class="flex gap-3 mb-6">
+    <div
+      v-if="loadingPrices"
+      class="grid gap-2 mb-4"
+      :class="planGridClass"
+    >
       <div
         v-for="i in 3"
         :key="i"
-        class="flex-1 h-28 rounded-lg animate-pulse"
+        class="h-[4.5rem] rounded-lg animate-pulse"
         :class="embedded ? 'bg-gray-200 dark:bg-gray-800' : 'bg-gray-800'"
       />
     </div>
 
-    <div v-else-if="!priceError" class="flex flex-col sm:flex-row gap-3 mb-6">
+    <div v-else-if="!priceError" class="grid gap-2 mb-4" :class="planGridClass">
       <button
         type="button"
-        class="flex-1 relative rounded-lg border-2 p-4 text-left transition-all cursor-pointer"
-        :class="planButtonClass('monthly')"
+        class="relative min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
+        :class="[planButtonClass('monthly'), compact ? 'pt-3.5' : 'pt-4']"
         @click="selectedPlan = 'monthly'"
       >
         <div
-          class="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+          class="absolute -top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[10px] font-semibold px-1.5 py-px rounded-full whitespace-nowrap leading-tight"
         >
           {{ strings.checkoutMostPopular }}
         </div>
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanMonthly }}</p>
-        <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('monthly')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerMonth }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanMonthly }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('monthly')) }}</p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerMonth }}</p>
       </button>
 
       <button
         type="button"
-        class="flex-1 rounded-lg border-2 p-4 text-left transition-all cursor-pointer"
+        class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('yearly')"
         @click="selectedPlan = 'yearly'"
       >
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanYearly }}</p>
-        <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('yearly')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanYearly }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('yearly')) }}</p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
 
       <button
         type="button"
-        class="flex-1 rounded-lg border-2 p-4 text-left transition-all cursor-pointer"
+        class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('club')"
         @click="selectedPlan = 'club'"
       >
-        <p class="text-xs uppercase tracking-wide mb-1" :class="planLabelClass">{{ strings.checkoutPlanClub }}</p>
-        <p class="text-xl font-bold" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('club')) }}</p>
-        <p class="text-xs mt-0.5" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanClub }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('club')) }}</p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
     </div>
 
@@ -233,10 +250,13 @@ const props = withDefaults(defineProps<{
   active?: boolean
   /** Use account-page styling instead of dark modal styling. */
   embedded?: boolean
+  /** Tighter layout for the watch-page premium overlay. */
+  compact?: boolean
 }>(), {
   reopenPremiumOnReturn: false,
   active: true,
   embedded: false,
+  compact: false,
 })
 
 const config = useRuntimeConfig()
@@ -284,6 +304,11 @@ const planPriceClass = computed(() =>
 )
 const planSubtextClass = computed(() =>
   props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500',
+)
+
+/** Three columns by default; stack only on very narrow viewports where columns would crowd. */
+const planGridClass = computed(() =>
+  'grid-cols-3 max-[22rem]:grid-cols-1',
 )
 
 const stripeEnabled = computed(() => availableProviders.value.includes('stripe'))

@@ -186,6 +186,10 @@ function mountExpressElement() {
       applePay: 'subscribe',
       googlePay: 'subscribe',
     },
+    layout: {
+      maxColumns: 2,
+      maxRows: 2,
+    },
     paymentMethods: {
       applePay: 'auto',
       googlePay: 'auto',
@@ -219,7 +223,13 @@ function unmountExpressElement() {
 
 function mountPaymentElement() {
   if (!checkoutInstance || !paymentMountRef.value || paymentElement) return
-  paymentElement = checkoutInstance.createPaymentElement()
+  paymentElement = checkoutInstance.createPaymentElement({
+    layout: {
+      type: 'accordion',
+      spacedAccordionItems: true,
+      defaultCollapsed: false,
+    },
+  })
   paymentElement.mount(paymentMountRef.value)
   cardReady.value = true
 }

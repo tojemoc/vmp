@@ -1,9 +1,11 @@
 <template>
   <div
     v-if="show"
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 sm:p-6"
   >
-    <div class="relative bg-gray-900 rounded-xl p-8 max-w-lg w-full mx-4 text-center shadow-2xl">
+    <div
+      class="relative bg-gray-900 rounded-xl p-5 sm:p-6 max-w-lg w-full text-center shadow-2xl max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+    >
       <button
         type="button"
         :aria-label="strings.premiumOverlayClose"
@@ -20,6 +22,7 @@
         reopen-premium-on-return
         :active="show"
         :embedded="false"
+        compact
       />
     </div>
   </div>
