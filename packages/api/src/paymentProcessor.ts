@@ -388,10 +388,89 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
   }
 }
 
+function normalizeReturnPath(input: unknown, fallback = '/account'): string {
+  const raw = String(input ?? fallback).trim()
+  if (!raw.startsWith('/')) return fallback
+  if (raw.startsWith('//')) return fallback
+  const [beforeHash = ''] = raw.split('#')
+  const [pathOnly = ''] = beforeHash.split('?')
+  return pathOnly || fallback
+}
+
+/**
+ * GET /api/payments/stripe-config — PUBLIC
+ * Returns the Stripe publishable key for client-side Elements.
+ */
+export async function handleGetStripeConfig(_request: any, env: any, corsHeaders: any) {
+  const publishableKey = String(env.STRIPE_PUBLISHABLE_KEY ?? '').trim()
+  if (!publishableKey) {
+    return jsonResponse({
+      error: 'Stripe is not configured on the server.',
+      code: 'stripe_not_configured',
+    }, 503, corsHeaders)
+  }
+  return jsonResponse({ publishableKey }, 200, corsHeaders)
+}
+
+/**
+ * GET /api/payments/session-status?session_id=cs_... — protected
+ * Returns Checkout Session status after embedded checkout return.
+ */
+export async function handleSessionStatus(request: any, env: any, corsHeaders: any) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const url = new URL(request.url)
+  const sessionId = String(url.searchParams.get('session_id') ?? '').trim()
+  if (!sessionId.startsWith('cs_')) {
+    return jsonResponse({ error: 'session_id is required' }, 400, corsHeaders)
+  }
+
+  try {
+    const session = await stripeGet(
+      `/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=payment_intent&expand[]=subscription`,
+      env,
+    )
+    if (session.error) {
+      console.error('Stripe session retrieve error:', session.error)
+      return jsonResponse({ error: 'Failed to retrieve checkout session' }, 502, corsHeaders)
+    }
+
+    const sessionUserId = String(session.metadata?.userId ?? '').trim()
+    if (!sessionUserId || sessionUserId !== user.sub) {
+      return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
+    }
+
+    const paymentIntent = session.payment_intent && typeof session.payment_intent === 'object'
+      ? session.payment_intent
+      : null
+    const subscription = session.subscription && typeof session.subscription === 'object'
+      ? session.subscription
+      : null
+
+    return jsonResponse({
+      status: session.status ?? null,
+      paymentStatus: session.payment_status ?? null,
+      paymentIntentId: paymentIntent?.id ?? null,
+      paymentIntentStatus: paymentIntent?.status ?? null,
+      subscriptionId: subscription?.id ?? (typeof session.subscription === 'string' ? session.subscription : null),
+      subscriptionStatus: subscription?.status ?? null,
+    }, 200, corsHeaders)
+  } catch (err) {
+    console.error('handleSessionStatus error:', err)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+  }
+}
+
 /**
  * POST /api/payments/checkout — protected
- * Body: { planType: 'monthly'|'yearly'|'club' }
- * Creates a Stripe Checkout Session and returns { checkoutUrl }.
+ * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath? }
+ * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
+ * GoCardless: hosted redirect → { checkoutUrl }.
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user
@@ -461,7 +540,8 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 409, corsHeaders)
     }
 
-    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000'
+    const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+    const returnPath = normalizeReturnPath(body?.returnPath)
     if (provider === 'stripe') {
       const priceId = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 })
       if (!priceId) {
@@ -473,6 +553,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
       const sessionPayload: any = {
         mode: 'subscription',
+        ui_mode: 'elements',
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: user.email,
         metadata: {
@@ -483,15 +564,14 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
           promoCode: promoMeta?.promoCode ?? '',
           promoRewardType: promoMeta?.rewardType ?? '',
         },
-        success_url: `${frontendUrl}/account?subscribed=1`,
-        cancel_url: frontendUrl,
+        return_url: `${frontendUrl}${returnPath}?session_id={CHECKOUT_SESSION_ID}`,
       }
       if (promoMeta?.stripeCouponId) {
         sessionPayload.discounts = [{ coupon: promoMeta.stripeCouponId }]
       }
       const session = await stripePost('/checkout/sessions', sessionPayload, env)
 
-      if (session.error || !session.url) {
+      if (session.error || !session.client_secret) {
         const stripeMessage = typeof session.error?.message === 'string'
           ? session.error.message
           : null
@@ -503,7 +583,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         }, stripeStatus, corsHeaders)
       }
 
-      return jsonResponse({ checkoutUrl: session.url, provider }, 200, corsHeaders)
+      return jsonResponse({ clientSecret: session.client_secret, provider }, 200, corsHeaders)
     }
 
     const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''

@@ -99,9 +99,6 @@ Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 - `TOTP_ENCRYPTION_KEY`
 - `VAPID_PRIVATE_KEY`
 - `RSS_SECRET`
-- `CF_ACCOUNT_ID`
-- `CF_API_TOKEN`
-- `CF_STREAM_CUSTOMER_CODE`
 
 1. Re-apply database migrations in order
 
@@ -177,17 +174,9 @@ Use the smallest rollback that restores service:
 - If staging deploy is unstable, pause merges to `main` until smoke checks are green.
 - If production deploy is unstable, disable further production tags and roll back first, then investigate.
 
-## Livestream provider notes (Cloudflare Stream Live)
+## Livestream notes (Media over QUIC)
 
-- Livestream entries are stored as standard `videos` rows plus `livestreams` metadata rows.
-- On livestream creation (`POST /api/admin/videos/livestreams`), the API provisions Cloudflare Stream Live ingest via `POST /stream/live_inputs` and stores:
-  - `stream_id` (Cloudflare `uid`)
-  - `ingest_url` (RTMPS ingest URL)
-  - `stream_key`
-  - `playback_url` (HLS URL, from `playback.hls` in the API response; if missing, the system falls back to constructing it from `CF_STREAM_CUSTOMER_CODE`)
-- If provisioning fails, the row remains in D1 with status `failed`. Admins can retry manually via `POST /api/admin/videos/:videoId/livestream/provision`.
-- Fresh environments must configure `CF_STREAM_CUSTOMER_CODE` to successfully provision livestreams and generate playback URLs when the Cloudflare API does not return `playback.hls`.
-- Cloudflare HLS playback URLs are consumed directly on the watch page for premium/staff viewers while live/ready.
-- Direct provider playback currently does not support the same proxy tokenization and preview truncation controls used for VOD HLS in `/api/video-proxy`.
-- Rewind/time-shift capability depends on provider playlist configuration; this integration assumes live-edge playback first, with explicit VOD handoff through admin swap once recording is available.
-- To preserve durable playback and existing proxy protections, finalize streams by swapping in an uploaded VOD (`/api/admin/videos/:id/swap`) once recording is available.
+- Livestream entries are standard `videos` rows plus a `livestreams` metadata row (`provider = moq`).
+- Admins create livestreams from **Admin → Videos → Create new livestream**, supplying MoQ endpoint URL and broadcast name (no hardcoded URLs in code).
+- Playback runs in `/watch/:videoId` via `@moq/watch` when `moq_endpoint` and `moq_broadcast` are set.
+- After a stream ends, attach a recorded VOD via `recording_video_id` on the livestream row (or swap in admin) so `/watch/:videoId` serves the uploaded HLS asset.
