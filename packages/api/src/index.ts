@@ -2741,7 +2741,7 @@ export function getVideoProxyCacheControl(objectPath: any, manifestType: any) {
   return null
 }
 
-function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: any, objectPath = '', vt: string | null = null) {
+export function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: any, objectPath = '', vt: string | null = null) {
   const lines = manifest.split('\n')
   const hasPreviewLimit = typeof previewUntilSeconds === 'number' && previewUntilSeconds >= 0
   const isMediaPlaylist = lines.some((l: any) => l.trim().startsWith('#EXTINF:'))
@@ -2768,28 +2768,26 @@ function rewriteManifestForProxyWithPreview(manifest: any, previewUntilSeconds: 
     return rewriteSegmentPath(path, query, manifestDir)
   }
 
-  // Helper to rewrite URLs in HLS tag attributes
-  function rewriteTagAttributes(line: any, query: any) {
-    // Handle #EXT-X-MAP:URI="..."
-    line = line.replace(/(#EXT-X-MAP:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match: any, prefix: any, url: any, suffix: any) => {
-      return prefix + proxySegmentPath(url, query) + suffix
-    })
-    // Handle #EXT-X-KEY:URI="..."
-    line = line.replace(/(#EXT-X-KEY:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match: any, prefix: any, url: any, suffix: any) => {
+  // Rewrite URI= in HLS tags regardless of attribute order (quoted GROUP-ID/CODECS may precede URI).
+  function rewriteTagUriAttribute(line: string, tagName: string, query: string | null) {
+    const prefix = `#${tagName}:`
+    if (!line.trimStart().startsWith(prefix)) return line
+    return line.replace(/\bURI=(?:"([^"]*)"|([^",\s]+))/i, (full, quoted, unquoted) => {
+      const url = (quoted ?? unquoted ?? '').trim()
+      if (!url) return full
       // Preserve custom-scheme URIs (skd://, data:, etc.) - only rewrite scheme-less paths
-      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
-        return prefix + url + suffix
+      if (tagName === 'EXT-X-KEY' && /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) && !/^https?:\/\//i.test(url)) {
+        return full
       }
-      return prefix + proxySegmentPath(url, query) + suffix
+      const rewritten = proxySegmentPath(url, query)
+      return quoted !== undefined ? `URI="${rewritten}"` : `URI=${rewritten}`
     })
-    // Handle #EXT-X-MEDIA:URI="..."
-    line = line.replace(/(#EXT-X-MEDIA:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match: any, prefix: any, url: any, suffix: any) => {
-      return prefix + proxySegmentPath(url, query) + suffix
-    })
-    // Handle #EXT-X-I-FRAME-STREAM-INF:URI="..."
-    line = line.replace(/(#EXT-X-I-FRAME-STREAM-INF:[^"'\n]*URI=["'])([^"']+)(["'])/gi, (match: any, prefix: any, url: any, suffix: any) => {
-      return prefix + proxySegmentPath(url, query) + suffix
-    })
+  }
+
+  function rewriteTagAttributes(line: any, query: any) {
+    for (const tag of ['EXT-X-MAP', 'EXT-X-KEY', 'EXT-X-MEDIA', 'EXT-X-I-FRAME-STREAM-INF']) {
+      line = rewriteTagUriAttribute(line, tag, query)
+    }
     return line
   }
 
