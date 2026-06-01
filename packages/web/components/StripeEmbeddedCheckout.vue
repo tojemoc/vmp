@@ -212,6 +212,7 @@ async function createCheckoutSession(): Promise<string> {
 }
 
 function destroyElements() {
+  clearWalletDetectionTimer()
   expressElement?.unmount()
   paymentElement?.unmount()
   expressElement = null
