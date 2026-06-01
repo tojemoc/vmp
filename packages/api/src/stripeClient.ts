@@ -141,6 +141,24 @@ export async function verifyStripeWebhook(rawBody: any, sigHeader: any, secret: 
   return false
 }
 
+/**
+ * Subscription period end (Unix seconds). Dahlia+ API may omit top-level
+ * `current_period_end`; fall back to the first subscription item.
+ */
+export function stripeSubscriptionPeriodEndUnix(stripeSub: {
+  current_period_end?: number | null
+  items?: { data?: Array<{ current_period_end?: number | null }> }
+} | null | undefined): number | null {
+  const end = stripeSub?.current_period_end ?? stripeSub?.items?.data?.[0]?.current_period_end
+  return typeof end === 'number' ? end : null
+}
+
+/** ISO-8601 period end for D1 / promo redemption, or null when unavailable. */
+export function stripeSubscriptionPeriodEndIso(stripeSub: Parameters<typeof stripeSubscriptionPeriodEndUnix>[0]): string | null {
+  const end = stripeSubscriptionPeriodEndUnix(stripeSub)
+  return end != null ? new Date(end * 1000).toISOString() : null
+}
+
 /** Map Stripe subscription statuses to our internal values. */
 export function normalizeStripeStatus(stripeStatus: string): SubscriptionStatus {
   const statusMap: Record<string, SubscriptionStatus> = {

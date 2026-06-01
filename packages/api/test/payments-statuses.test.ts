@@ -1,7 +1,36 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeGoCardlessStatus } from '../src/gocardless.js'
-import { normalizeStripeStatus } from '../src/stripeClient.js'
+import { normalizeStripeStatus, stripeSubscriptionPeriodEndIso, stripeSubscriptionPeriodEndUnix } from '../src/stripeClient.js'
+
+describe('stripeSubscriptionPeriodEndUnix', () => {
+  it('prefers top-level current_period_end', () => {
+    assert.equal(stripeSubscriptionPeriodEndUnix({ current_period_end: 1_700_000_000 }), 1_700_000_000)
+  })
+
+  it('falls back to first item current_period_end', () => {
+    assert.equal(
+      stripeSubscriptionPeriodEndUnix({
+        current_period_end: null,
+        items: { data: [{ current_period_end: 1_800_000_000 }] },
+      }),
+      1_800_000_000,
+    )
+  })
+
+  it('returns null when no period end is present', () => {
+    assert.equal(stripeSubscriptionPeriodEndUnix({ items: { data: [{}] } }), null)
+  })
+})
+
+describe('stripeSubscriptionPeriodEndIso', () => {
+  it('converts Unix seconds to ISO-8601', () => {
+    assert.equal(
+      stripeSubscriptionPeriodEndIso({ current_period_end: 1_700_000_000 }),
+      new Date(1_700_000_000 * 1000).toISOString(),
+    )
+  })
+})
 
 describe('normalizeStripeStatus', () => {
   it('maps active lifecycle statuses', () => {
