@@ -5,11 +5,12 @@
         {{ strings.checkoutStripeLoading }}
       </div>
 
-      <div v-else-if="initError" class="text-sm text-red-400">
+      <div v-if="initError" class="text-sm text-red-400">
         {{ initError }}
       </div>
 
-      <template v-else>
+      <!-- v-show (not v-if) so mount refs exist while loading is true -->
+      <div v-show="!loading && !initError" class="space-y-4">
         <div
           v-show="showWallet"
           ref="expressMountRef"
@@ -39,7 +40,7 @@
             {{ confirming ? strings.checkoutStripeProcessing : cardPayLabel }}
           </button>
         </div>
-      </template>
+      </div>
 
       <p v-if="confirmError" class="text-sm text-red-400">{{ confirmError }}</p>
     </div>
@@ -196,8 +197,11 @@ async function setupCheckout() {
     }
     confirmActions = loadActionsResult.actions
 
+    loading.value = false
     await nextTick()
     if (generation !== teardownGeneration) return
+
+    let mountedAny = false
 
     if (expressMountRef.value) {
       expressElement = checkoutInstance.createExpressCheckoutElement({
@@ -219,18 +223,24 @@ async function setupCheckout() {
       })
 
       expressElement.mount(expressMountRef.value)
+      mountedAny = true
     }
 
     if (paymentMountRef.value) {
       paymentElement = checkoutInstance.createPaymentElement()
       paymentElement.mount(paymentMountRef.value)
       cardReady.value = true
+      mountedAny = true
+    }
+
+    if (!mountedAny) {
+      throw new Error(strings.checkoutStartFailed)
     }
   } catch (err: unknown) {
     if (generation !== teardownGeneration) return
     initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed
   } finally {
-    if (generation === teardownGeneration) {
+    if (generation === teardownGeneration && loading.value) {
       loading.value = false
     }
   }
