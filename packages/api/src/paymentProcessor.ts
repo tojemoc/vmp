@@ -392,7 +392,8 @@ function normalizeReturnPath(input: unknown, fallback = '/account'): string {
   const raw = String(input ?? fallback).trim()
   if (!raw.startsWith('/')) return fallback
   if (raw.startsWith('//')) return fallback
-  const pathOnly = raw.split('#')[0].split('?')[0]
+  const [beforeHash = ''] = raw.split('#')
+  const [pathOnly = ''] = beforeHash.split('?')
   return pathOnly || fallback
 }
 
