@@ -61,13 +61,40 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
       `Use the Node script (${defaultScriptName}) instead.`
     )
   }
+  if (basename.endsWith('.ts')) {
+    const distDir = path.join(path.dirname(resolved), 'dist')
+    throw new Error(
+      `${label} script points to TypeScript source ${resolved}. ` +
+      `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
+      `Run \`npm run build --workspace=@vmp/podcast-host\`, then set ${envVarName} to ` +
+      `${path.join(distDir, defaultScriptName)} or remove the override.`
+    )
+  }
   return resolved
+}
+
+/** Ensure compiled pipeline_watch.js sibling imports (e.g. ttpLog.js) exist after git pull. */
+function validatePipelineBundle(resolvedPipelineScript) {
+  const dir = path.dirname(resolvedPipelineScript)
+  const content = fs.readFileSync(resolvedPipelineScript, 'utf8')
+  const importRe = /from\s+['"]\.\/([^'"]+\.js)['"]/g
+  const missing = []
+  for (const match of content.matchAll(importRe)) {
+    const depPath = path.join(dir, match[1])
+    if (!fs.existsSync(depPath)) missing.push(match[1])
+  }
+  if (missing.length === 0) return
+  throw new Error(
+    `Pipeline script ${resolvedPipelineScript} imports missing module(s): ${missing.join(', ')}. ` +
+    'dist/ is not committed — run `npm run build --workspace=@vmp/podcast-host` after pulling changes.',
+  )
 }
 
 let resolvedPipelineScript = pipelineScript
 let resolvedRenderScript = renderScript
 try {
   resolvedPipelineScript = validateScriptPath(pipelineScript, 'Pipeline', 'VMP_PIPELINE_SCRIPT', 'pipeline_watch.js')
+  validatePipelineBundle(resolvedPipelineScript)
   resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err)
@@ -89,6 +116,9 @@ const MAX_PIPELINE_FAILED_JOBS = 200
 /** @type {string[]} */
 const logLines = []
 const MAX_LOG = 400
+/** @type {{ videoId: string, minimalMs: number|null, fullMs: number|null, totalMs: number, minimalRatio: number|null, fullRatio: number|null, at: string }[]} */
+const ttpSummaries = []
+const MAX_TTP_SUMMARIES = 50
 
 function pushLog(line) {
   const ts = new Date().toISOString()
@@ -141,6 +171,12 @@ function upsertPipelineJob(event) {
     startedAt,
     updatedAt: now,
     finishedAt: undefined,
+    progressOverall: existing?.progressOverall ?? null,
+    progressStage: existing?.progressStage ?? event.stage,
+    progressRendition: existing?.progressRendition ?? '',
+    progressStagePct: existing?.progressStagePct ?? null,
+    progressSpeed: existing?.progressSpeed ?? null,
+    progressEtaSec: existing?.progressEtaSec ?? null,
   }
   if (event.stage === 'done' && event.status === 'success') {
     pipelineActiveJobs.delete(event.videoId)
@@ -160,6 +196,64 @@ function upsertPipelineJob(event) {
     return
   }
   pipelineActiveJobs.set(event.videoId, row)
+}
+
+function consumeTtpLine(line) {
+  if (!line.startsWith('VMP_TTP\t')) return false
+  try {
+    const row = JSON.parse(line.slice('VMP_TTP\t'.length))
+    if (row.type !== 'ttp_summary') return true
+    ttpSummaries.unshift({
+      videoId: String(row.videoId || ''),
+      minimalMs: row.minimalPublishReadyElapsedMs ?? null,
+      fullMs: row.fullRenditionsReadyElapsedMs ?? null,
+      totalMs: row.totalElapsedMs ?? 0,
+      minimalRatio: row.minimalPublishReadyRatioOfSourceDuration ?? null,
+      fullRatio: row.fullRenditionsReadyRatioOfSourceDuration ?? null,
+      at: String(row.at || new Date().toISOString()),
+    })
+    while (ttpSummaries.length > MAX_TTP_SUMMARIES) ttpSummaries.pop()
+  } catch {
+    // ignore malformed TTP JSON
+  }
+  return true
+}
+
+function consumePipelineProgressLine(line) {
+  if (!line.startsWith('VMP_PIPELINE_PROGRESS\t')) return false
+  try {
+    const row = JSON.parse(line.slice('VMP_PIPELINE_PROGRESS\t'.length))
+    const videoId = String(row.videoId || '')
+    if (!videoId) return true
+    const existing = pipelineActiveJobs.get(videoId)
+    const now = new Date().toISOString()
+    const base = existing || {
+      id: crypto.randomUUID(),
+      type: 'pipeline',
+      videoId,
+      source: 'watchfolder',
+      stage: String(row.stage || 'detected'),
+      status: 'active',
+      detail: '',
+      startedAt: now,
+      updatedAt: now,
+    }
+    pipelineActiveJobs.set(videoId, {
+      ...base,
+      stage: String(row.stage || base.stage),
+      progressOverall: typeof row.overallProgress === 'number' ? row.overallProgress : base.progressOverall,
+      progressStage: String(row.stage || base.progressStage || ''),
+      progressRendition: String(row.rendition || base.progressRendition || ''),
+      progressStagePct: typeof row.stageProgress === 'number' ? row.stageProgress : base.progressStagePct,
+      progressSpeed: typeof row.speed === 'number' ? row.speed : base.progressSpeed,
+      progressEtaSec: typeof row.etaSec === 'number' ? row.etaSec : base.progressEtaSec,
+      detail: row.detail ? String(row.detail) : base.detail,
+      updatedAt: now,
+    })
+  } catch {
+    // ignore malformed progress JSON
+  }
+  return true
 }
 
 function consumePipelineLine(line) {
@@ -217,6 +311,8 @@ function startPipeline() {
 
     for (const line of completeLines) {
       if (!line.trim()) continue
+      if (consumeTtpLine(line)) continue
+      if (consumePipelineProgressLine(line)) continue
       if (consumePipelineLine(line)) continue
       pushLog(`[pipeline] ${line}`)
     }
@@ -236,20 +332,20 @@ function startPipeline() {
 
   const flushBuffers = () => {
     if (stdoutBuffer.trim()) {
-      if (consumePipelineLine(stdoutBuffer)) {
+      if (consumeTtpLine(stdoutBuffer) || consumePipelineProgressLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
         stdoutBuffer = ''
-        return
+      } else {
+        pushLog(`[pipeline] ${stdoutBuffer}`)
+        stdoutBuffer = ''
       }
-      pushLog(`[pipeline] ${stdoutBuffer}`)
-      stdoutBuffer = ''
     }
     if (stderrBuffer.trim()) {
-      if (consumePipelineLine(stderrBuffer)) {
+      if (consumeTtpLine(stderrBuffer) || consumePipelineProgressLine(stderrBuffer) || consumePipelineLine(stderrBuffer)) {
         stderrBuffer = ''
-        return
+      } else {
+        pushLog(`[pipeline] ${stderrBuffer}`)
+        stderrBuffer = ''
       }
-      pushLog(`[pipeline] ${stderrBuffer}`)
-      stderrBuffer = ''
     }
   }
 
@@ -381,6 +477,7 @@ function runCommandCapture(command: string, args: string[], cwd: string): Promis
 
 async function checkAndApplyPodcastHostUpgrade() {
   if (!autoUpgradeEnabled) return
+  let pulled = false
   try {
     await runCommandCapture('git', ['fetch', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
     const local = await runCommandCapture('git', ['rev-parse', 'HEAD'], autoUpgradeRepoDir)
@@ -396,10 +493,17 @@ async function checkAndApplyPodcastHostUpgrade() {
     if (!changed.stdout.trim()) return
     pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
     await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
-    pushLog('[upgrade] pull successful; exiting for container/service restart')
+    pulled = true
+    pushLog('[upgrade] pull successful; rebuilding @vmp/podcast-host')
+    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/podcast-host'], autoUpgradeRepoDir)
+    pushLog('[upgrade] build successful; exiting for container/service restart')
     process.exit(0)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    if (pulled) {
+      pushLog(`[upgrade] build failed after pull; exiting for systemd restart: ${msg}`)
+      process.exit(1)
+    }
     pushLog(`[upgrade] check failed: ${msg}`)
   }
 }
@@ -420,6 +524,9 @@ function dashboardHtml() {
     .ok { color: #4ade80; }
     .fail { color: #f87171; }
     .run { color: #fbbf24; }
+    .progress { background: #334155; border-radius: 4px; height: 10px; overflow: hidden; min-width: 120px; }
+    .progress > span { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #4ade80); transition: width 0.4s ease; }
+    .progress-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 0.15rem; }
     pre { white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; max-height: 16rem; overflow: auto; background: #0f172a; padding: 0.75rem; border-radius: 6px; }
     code { font-size: 0.8rem; }
   </style>
@@ -444,6 +551,10 @@ function dashboardHtml() {
     <div id="pipeline-success">Loading…</div>
   </section>
   <section>
+    <h2>TTP summaries (time to publish)</h2>
+    <div id="ttp">Loading…</div>
+  </section>
+  <section>
     <h2>Recent log</h2>
     <pre id="log">Loading…</pre>
   </section>
@@ -455,6 +566,27 @@ function dashboardHtml() {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
+    }
+    function formatEta(sec) {
+      if (sec == null || !Number.isFinite(sec) || sec <= 0) return ''
+      const m = Math.floor(sec / 60)
+      const s = Math.floor(sec - m * 60)
+      return m > 0 ? m + 'm ' + s + 's' : s + 's'
+    }
+    function progressCell(j) {
+      const pct = typeof j.progressOverall === 'number' ? j.progressOverall : null
+      if (pct == null) return '—'
+      const n = Math.round(Math.max(0, Math.min(1, pct)) * 100)
+      const stagePct = typeof j.progressStagePct === 'number'
+        ? Math.round(Math.max(0, Math.min(1, j.progressStagePct)) * 100)
+        : null
+      const meta = []
+      if (j.progressRendition) meta.push(j.progressRendition + (stagePct != null ? ' ' + stagePct + '%' : ''))
+      if (j.progressSpeed) meta.push(Number(j.progressSpeed).toFixed(1) + '×')
+      const eta = formatEta(j.progressEtaSec)
+      if (eta) meta.push('ETA ' + eta)
+      return '<div class="progress" title="' + n + '% overall"><span style="width:' + n + '%"></span></div>' +
+        (meta.length ? '<div class="progress-meta">' + escapeHtml(meta.join(' · ')) + '</div>' : '')
     }
     async function tick() {
       try {
@@ -469,9 +601,9 @@ function dashboardHtml() {
           (p.exited ? ('exited code ' + escapeHtml(p.code) + (p.signal ? ' signal ' + escapeHtml(p.signal) : '')) : 'running') +
           '</p>'
         const pipelineRows = (d.pipelineActiveJobs || []).map(j =>
-          '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td><td>' + escapeHtml(j.updatedAt || '') + '</td></tr>'
+          '<tr><td>' + progressCell(j) + '</td><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td><td>' + escapeHtml(j.updatedAt || '') + '</td></tr>'
         ).join('')
-        document.getElementById('pipeline-jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Video</th><th>Stage</th><th>Detail</th><th>Source</th><th>Updated</th></tr></thead><tbody>' + pipelineRows + '</tbody></table>'
+        document.getElementById('pipeline-jobs').innerHTML = '<table><thead><tr><th>Progress</th><th>Status</th><th>Video</th><th>Stage</th><th>Detail</th><th>Source</th><th>Updated</th></tr></thead><tbody>' + pipelineRows + '</tbody></table>'
         const rows = (d.jobs || []).map(j =>
           '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.type || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td></tr>'
         ).join('')
@@ -480,6 +612,10 @@ function dashboardHtml() {
           '<tr><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.finishedAt || '') + '</td></tr>'
         ).join('')
         document.getElementById('pipeline-success').innerHTML = '<table><thead><tr><th>Video</th><th>Final stage</th><th>Detail</th><th>Finished</th></tr></thead><tbody>' + successRows + '</tbody></table>'
+        const ttpRows = (d.ttpSummaries || []).map(s =>
+          '<tr><td>' + escapeHtml(s.videoId || '') + '</td><td>' + escapeHtml(s.minimalMs != null ? (s.minimalMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.fullMs != null ? (s.fullMs / 1000).toFixed(1) + 's' : '—') + '</td><td>' + escapeHtml(s.minimalRatio != null ? Number(s.minimalRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.fullRatio != null ? Number(s.fullRatio).toFixed(2) + '×' : '—') + '</td><td>' + escapeHtml(s.at || '') + '</td></tr>'
+        ).join('')
+        document.getElementById('ttp').innerHTML = '<table><thead><tr><th>Video</th><th>Minimal (720p)</th><th>Full renditions</th><th>Ratio minimal</th><th>Ratio full</th><th>At</th></tr></thead><tbody>' + ttpRows + '</tbody></table>'
         document.getElementById('log').textContent = (d.logLines || []).join('\\n')
       } catch (e) {
         document.getElementById('pipeline').textContent = 'Error: ' + e
@@ -539,6 +675,7 @@ const server = http.createServer(async (req, res) => {
       pipelineActiveJobs: activeRows,
       pipelineSuccessfulJobs: successRows,
       failedPipelineJobs: failedRows,
+      ttpSummaries,
       logLines,
     })
     return
