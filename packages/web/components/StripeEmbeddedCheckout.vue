@@ -66,19 +66,28 @@ interface StripeExpressCheckoutElement {
   on: (event: StripeExpressCheckoutEvent, handler: (payload: unknown) => void) => void
 }
 
-/** Checkout Elements SDK ready payload (availablePaymentMethods is deprecated but still sent). */
+const EXPRESS_WALLET_KEYS = ['applePay', 'googlePay'] as const
+
+function expressMethodAvailable(
+  methods: Record<string, { available?: boolean } | boolean>,
+  key: string,
+): boolean {
+  const entry = methods[key]
+  if (entry === undefined) return false
+  if (typeof entry === 'boolean') return entry
+  if (entry && typeof entry === 'object' && 'available' in entry) return Boolean(entry.available)
+  return false
+}
+
+/** True when Apple Pay or Google Pay can render in Express Checkout (not card/PayPal/SEPA). */
 function expressWalletMethodsAvailable(payload: unknown): boolean {
   const event = payload as {
     availablePaymentMethods?: Record<string, { available?: boolean } | boolean>
-    paymentMethods?: Record<string, { available?: boolean }>
+    paymentMethods?: Record<string, { available?: boolean } | boolean>
   }
   const methods = event.paymentMethods ?? event.availablePaymentMethods
   if (!methods || typeof methods !== 'object') return false
-  return Object.values(methods).some((entry) => {
-    if (typeof entry === 'boolean') return entry
-    if (entry && typeof entry === 'object' && 'available' in entry) return Boolean(entry.available)
-    return true
-  })
+  return EXPRESS_WALLET_KEYS.some((key) => expressMethodAvailable(methods, key))
 }
 
 interface StripePaymentElement {
@@ -95,6 +104,8 @@ const props = defineProps<{
   showWalletSurface: boolean
   /** Mount card / PayPal / SEPA payment element. */
   showCardSurface: boolean
+  /** Hide Apple/Google Pay inside Payment Element when Express Checkout shows them. */
+  hidePaymentWallets?: boolean
   cardConfirmLabel?: string
 }>()
 
@@ -131,6 +142,39 @@ let paymentElement: StripePaymentElement | null = null
 let confirmActions: { confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }> } | null = null
 let sessionKey = ''
 let teardownGeneration = 0
+let expressReadyWithWallets = false
+let walletDetectionEmitted = false
+let walletDetectionTimer: ReturnType<typeof setTimeout> | null = null
+
+const WALLET_DETECTION_TIMEOUT_MS = 8000
+
+function clearWalletDetectionTimer() {
+  if (walletDetectionTimer) {
+    clearTimeout(walletDetectionTimer)
+    walletDetectionTimer = null
+  }
+}
+
+function finishWalletDetection(available: boolean) {
+  clearWalletDetectionTimer()
+  if (walletDetectionEmitted) {
+    if (available && !walletAvailable.value) {
+      walletAvailable.value = true
+      emit('walletAvailable', true)
+    }
+    return
+  }
+  walletDetectionEmitted = true
+  walletAvailable.value = available
+  emit('walletAvailable', available)
+}
+
+function startWalletDetectionTimer() {
+  clearWalletDetectionTimer()
+  walletDetectionTimer = setTimeout(() => {
+    if (!walletDetectionEmitted) finishWalletDetection(false)
+  }, WALLET_DETECTION_TIMEOUT_MS)
+}
 
 function getStripe() {
   if (!stripePromise) {
@@ -191,8 +235,8 @@ function mountExpressElement() {
       maxRows: 2,
     },
     paymentMethods: {
-      applePay: 'auto',
-      googlePay: 'auto',
+      applePay: 'always',
+      googlePay: 'always',
       link: 'never',
       paypal: 'never',
       amazonPay: 'never',
@@ -202,34 +246,42 @@ function mountExpressElement() {
 
   const syncWalletAvailability = (payload: unknown) => {
     const available = expressWalletMethodsAvailable(payload)
-    walletAvailable.value = available
-    emit('walletAvailable', available)
+    if (available) expressReadyWithWallets = true
+    finishWalletDetection(available)
   }
 
   expressElement.on('ready', syncWalletAvailability)
-  expressElement.on('loaderror', () => syncWalletAvailability(null))
+  expressElement.on('loaderror', () => {
+    if (!expressReadyWithWallets) finishWalletDetection(false)
+  })
   expressElement.on('confirm', (event: unknown) => {
     void confirmExpress(event)
   })
   expressElement.mount(expressMountRef.value)
+  startWalletDetectionTimer()
 }
 
 function unmountExpressElement() {
   expressElement?.unmount()
   expressElement = null
+  expressReadyWithWallets = false
+  clearWalletDetectionTimer()
   walletAvailable.value = false
-  emit('walletAvailable', false)
 }
 
 function mountPaymentElement() {
   if (!checkoutInstance || !paymentMountRef.value || paymentElement) return
-  paymentElement = checkoutInstance.createPaymentElement({
+  const paymentOptions: Record<string, unknown> = {
     layout: {
       type: 'accordion',
       spacedAccordionItems: true,
-      defaultCollapsed: false,
+      defaultCollapsed: true,
     },
-  })
+  }
+  if (props.hidePaymentWallets) {
+    paymentOptions.wallets = { applePay: 'never', googlePay: 'never' }
+  }
+  paymentElement = checkoutInstance.createPaymentElement(paymentOptions)
   paymentElement.mount(paymentMountRef.value)
   cardReady.value = true
 }
@@ -264,7 +316,9 @@ async function setupCheckout() {
   initError.value = null
   confirmError.value = null
   walletAvailable.value = false
-  emit('walletAvailable', false)
+  expressReadyWithWallets = false
+  walletDetectionEmitted = false
+  clearWalletDetectionTimer()
 
   const nextKey = `${props.planType}:${props.promoCode}:${props.returnPath}`
   sessionKey = nextKey
@@ -345,6 +399,15 @@ watch(
   () => [props.showWalletSurface, props.showCardSurface] as const,
   () => {
     void syncMountedSurfaces()
+  },
+)
+
+watch(
+  () => props.hidePaymentWallets,
+  () => {
+    if (!paymentElement) return
+    unmountPaymentElement()
+    if (props.showCardSurface) void syncMountedSurfaces()
   },
 )
 

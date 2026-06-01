@@ -147,6 +147,7 @@
         :embedded="embedded"
         :show-wallet-surface="showWalletSurface"
         :show-card-surface="showCardSurface"
+        :hide-payment-wallets="walletAvailable"
         @wallet-available="onWalletAvailable"
       >
         <div v-if="showMoreToggle" class="space-y-3">
@@ -167,7 +168,6 @@
             :aria-label="strings.checkoutMorePaymentMethods"
           >
             <button
-              v-if="walletAvailable"
               type="button"
               class="w-full text-left rounded-lg border-2 p-4 transition-all"
               :class="moreOptionClass('card')"
@@ -183,7 +183,6 @@
 
             <template v-if="gocardlessEnabled">
               <button
-                v-if="walletAvailable"
                 type="button"
                 class="w-full text-left rounded-lg border-2 p-4 transition-all"
                 :class="moreOptionClass('bank')"
@@ -195,7 +194,7 @@
               </button>
 
               <button
-                v-if="walletAvailable && moreMethod === 'bank'"
+                v-if="moreMethod === 'bank'"
                 type="button"
                 class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
                 :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
@@ -323,20 +322,16 @@ const showWalletSurface = computed(() => {
   return walletAvailable.value
 })
 
-/**
- * Card / PayPal / SEPA form: primary when no wallet, or after user picks "Pay by card" under More.
- */
+/** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
 const showCardSurface = computed(() => {
   if (!stripeEnabled.value || !walletDetectionDone.value) return false
-  if (!walletAvailable.value) return true
   return moreExpanded.value && moreMethod.value === 'card'
 })
 
-/** More toggle when wallet is primary and at least one alternate method exists. */
+/** Card, PayPal, SEPA (and bank when enabled) stay behind More even when wallets are unavailable. */
 const showMoreToggle = computed(() => {
-  if (!walletDetectionDone.value || !walletAvailable.value) return false
-  if (gocardlessEnabled.value) return true
-  return stripeEnabled.value
+  if (!walletDetectionDone.value || !stripeEnabled.value) return false
+  return true
 })
 
 const moreToggleClass = computed(() => {
