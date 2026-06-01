@@ -26,6 +26,7 @@
     "@moq/lite": "0.2.2",
     "@moq/watch": "^0.2.10",
     "@nuxtjs/color-mode": "^4.0.0",
+    "@stripe/stripe-js": "^9.7.0",
     "@vercel/analytics": "^2.0.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vmp/shared": "*",

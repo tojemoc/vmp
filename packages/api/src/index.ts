@@ -35,12 +35,14 @@ import { sendPushNotification } from './webpush.js'
 import {
   handleAdminPaymentSettings,
   handleGetPricing,
+  handleGetStripeConfig,
   handleCheckout,
   handleWebhook,
   handleGoCardlessWebhook,
   handleGoCardlessComplete,
   handleGoCardlessRetry,
   handleGetSubscription,
+  handleSessionStatus,
   handlePortal,
 } from './payments.js'
 import { isAdministrativeRole } from './roles.js'
@@ -515,8 +517,14 @@ export default {
     if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
       return handleGetPricing(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/payments/stripe-config' && request.method === 'GET') {
+      return handleGetStripeConfig(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/payments/checkout' && request.method === 'POST') {
       return handleCheckout(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/session-status' && request.method === 'GET') {
+      return handleSessionStatus(request, env, corsHeaders)
     }
     if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
       return handleWebhook(request, env, corsHeaders)
