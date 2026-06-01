@@ -125,7 +125,7 @@ function parseArgs(argv: string[]): ProbeOptions {
     broadcast: process.env.MOQ_BROADCAST ?? '',
     groups: Number.parseInt(process.env.MOQ_PROBE_GROUPS ?? '3', 10),
     framesPerGroup: Number.parseInt(process.env.MOQ_PROBE_FRAMES_PER_GROUP ?? '4', 10),
-    catalogFormat: (process.env.MOQ_CATALOG_FORMAT as CatalogFormat | undefined) ?? 'auto',
+    catalogFormat: parseCatalogFormatOrDefault(process.env.MOQ_CATALOG_FORMAT),
     output: 'markdown',
     timeoutMs: Number.parseInt(process.env.MOQ_PROBE_TIMEOUT_MS ?? '10000', 10),
     trackFilters: [],
@@ -177,6 +177,11 @@ function parseCatalogFormat(value: string): CatalogFormat {
   throw new Error('--catalog-format must be one of: auto, hang, msf')
 }
 
+function parseCatalogFormatOrDefault(value: string | undefined): CatalogFormat {
+  if (value === 'auto' || value === 'hang' || value === 'msf') return value
+  return 'auto'
+}
+
 function printUsage(): void {
   process.stderr.write(`MoQ Recorder Probe
 
@@ -210,8 +215,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 function runtimeReport(): RuntimeReport {
-  const hasNativeWebTransport = typeof globalThis.WebTransport === 'function'
-  const hasNativeWebSocket = typeof globalThis.WebSocket === 'function'
+  const globals = globalThis as Record<string, unknown>
+  const hasNativeWebTransport = typeof globals.WebTransport === 'function'
+  const hasNativeWebSocket = typeof globals.WebSocket === 'function'
   const transportFindings = [
     hasNativeWebTransport
       ? 'globalThis.WebTransport is available.'
@@ -561,10 +567,10 @@ function findTfdtBaseMediaDecodeTime(payload: Uint8Array, start: number, end: nu
 }
 
 function readUint32(payload: Uint8Array, offset: number): number {
-  return ((payload[offset] ?? 0) << 24)
+  return (((payload[offset] ?? 0) << 24)
     | ((payload[offset + 1] ?? 0) << 16)
     | ((payload[offset + 2] ?? 0) << 8)
-    | (payload[offset + 3] ?? 0)
+    | (payload[offset + 3] ?? 0)) >>> 0
 }
 
 function isBoxType(value: string): boolean {
