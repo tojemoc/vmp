@@ -2,7 +2,17 @@
  * Stripe HTTP client, webhook verification, and subscription status normalization.
  */
 
+/** Required for Checkout Sessions with `ui_mode: "elements"` (embedded Express Checkout). */
+export const STRIPE_API_VERSION = '2026-03-25.dahlia'
+
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
+
+function stripeRequestHeaders(env: { STRIPE_SECRET_KEY?: string }) {
+  return {
+    Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+    'Stripe-Version': STRIPE_API_VERSION,
+  }
+}
 
 /**
  * Recursively URL-encode an object into Stripe's expected format.
@@ -40,7 +50,7 @@ export async function stripePost(path: any, body: any, env: any): Promise<any> {
     const res = await fetch(`https://api.stripe.com/v1${path}`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+        ...stripeRequestHeaders(env),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: encodeStripeBody(body),
@@ -64,7 +74,7 @@ export async function stripeGet(path: any, env: any): Promise<any> {
   const timeout = setTimeout(() => controller.abort(), 10_000)
   try {
     const res = await fetch(`https://api.stripe.com/v1${path}`, {
-      headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
+      headers: stripeRequestHeaders(env),
       signal: controller.signal,
     })
     return (await res.json()) as any

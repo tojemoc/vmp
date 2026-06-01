@@ -13,7 +13,7 @@ import {
   applyPromoRedemption,
   resolvePromoCodeForCheckout,
 } from './promotions.js'
-import { normalizeStripeStatus, stripeGet, stripePost, verifyStripeWebhook } from './stripeClient.js'
+import { normalizeStripeStatus, STRIPE_API_VERSION, stripeGet, stripePost, verifyStripeWebhook } from './stripeClient.js'
 export { normalizeStripeStatus } from './stripeClient.js'
 import {
   buildGoCardlessBillingRequestFlowCreatePayload,
@@ -409,7 +409,7 @@ export async function handleGetStripeConfig(_request: any, env: any, corsHeaders
       code: 'stripe_not_configured',
     }, 503, corsHeaders)
   }
-  return jsonResponse({ publishableKey }, 200, corsHeaders)
+  return jsonResponse({ publishableKey, apiVersion: STRIPE_API_VERSION }, 200, corsHeaders)
 }
 
 /**
