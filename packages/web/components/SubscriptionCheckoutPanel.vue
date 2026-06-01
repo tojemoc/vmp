@@ -75,27 +75,6 @@
       {{ strings.checkoutPricesLoadFailed }}
     </div>
 
-    <div
-      v-if="!loadingPrices && !priceError && showPaymentTabs"
-      class="flex rounded-lg p-1 mb-4"
-      :class="embedded ? 'bg-gray-100 dark:bg-gray-800' : 'bg-gray-800'"
-      role="tablist"
-      :aria-label="strings.checkoutPaymentMethodTabs"
-    >
-      <button
-        v-for="tab in visiblePaymentTabs"
-        :key="tab.id"
-        type="button"
-        role="tab"
-        class="flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors"
-        :class="paymentTabClass(tab.id)"
-        :aria-selected="activePaymentTab === tab.id"
-        @click="activePaymentTab = tab.id"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
-
     <div v-if="checkoutError" class="text-red-400 text-sm mb-3">
       {{ checkoutError }}
     </div>
@@ -139,28 +118,91 @@
       </p>
     </div>
 
-    <div v-if="!loadingPrices && !priceError && stripeCheckoutActive && isLoggedIn" class="mb-4">
+    <div
+      v-if="!loadingPrices && !priceError && isLoggedIn && (stripeEnabled || gocardlessEnabled)"
+      class="mb-4 text-left"
+    >
       <StripeEmbeddedCheckout
+        v-if="stripeEnabled && stripeCheckoutMounted"
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
         :embedded="embedded"
-        :active-tab="activeStripeTab"
-        :card-pay-label="strings.checkoutPayWithCard(formatPrice(providerPlanPrice('stripe', selectedPlan)))"
+        :show-wallet-surface="showWalletSurface"
+        :show-card-surface="showCardSurface"
         @wallet-available="onWalletAvailable"
-      />
-    </div>
-
-    <div v-else-if="!loadingPrices && !priceError && activePaymentTab === 'bank'" class="space-y-2">
-      <button
-        type="button"
-        class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
-        :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
-        @click="handleSubscribe('gocardless')"
       >
-        <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
-      </button>
+        <div v-if="showMoreToggle" class="space-y-3">
+          <button
+            type="button"
+            class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors"
+            :class="moreToggleClass"
+            :aria-expanded="moreExpanded"
+            @click="toggleMore"
+          >
+            {{ moreExpanded ? strings.checkoutHidePaymentMethods : strings.checkoutMorePaymentMethods }}
+          </button>
+
+          <div
+            v-if="moreExpanded"
+            class="space-y-2"
+            role="region"
+            :aria-label="strings.checkoutMorePaymentMethods"
+          >
+            <button
+              v-if="walletAvailable"
+              type="button"
+              class="w-full text-left rounded-lg border-2 p-4 transition-all"
+              :class="moreOptionClass('card')"
+              @click="selectMoreMethod('card')"
+            >
+              <p class="font-semibold" :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'">
+                {{ strings.checkoutPayByCard }}
+              </p>
+              <p class="text-xs mt-0.5" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'">
+                {{ strings.checkoutPayByCardHint }}
+              </p>
+            </button>
+
+            <template v-if="gocardlessEnabled">
+              <button
+                v-if="walletAvailable"
+                type="button"
+                class="w-full text-left rounded-lg border-2 p-4 transition-all"
+                :class="moreOptionClass('bank')"
+                @click="selectMoreMethod('bank')"
+              >
+                <p class="font-semibold" :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'">
+                  {{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}
+                </p>
+              </button>
+
+              <button
+                v-if="walletAvailable && moreMethod === 'bank'"
+                type="button"
+                class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
+                :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
+                @click="handleSubscribe('gocardless')"
+              >
+                <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
+                <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </StripeEmbeddedCheckout>
+
+      <div v-else-if="gocardlessEnabled && !stripeEnabled" class="space-y-2">
+        <button
+          type="button"
+          class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
+          :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
+          @click="handleSubscribe('gocardless')"
+        >
+          <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
+        </button>
+      </div>
     </div>
 
     <p class="text-xs mt-3" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
@@ -205,7 +247,7 @@ const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'gocardless'
-type PaymentTab = 'wallet' | 'card' | 'bank'
+type MorePaymentMethod = 'card' | 'bank'
 
 interface Prices { monthly: number; yearly: number; club: number }
 interface ProviderPriceMap { stripe: Prices; gocardless: Prices }
@@ -220,8 +262,11 @@ const priceError = ref(false)
 const selectedPlan = ref<PlanType>('monthly')
 const availableProviders = ref<PaymentProvider[]>(['stripe'])
 const selectedProvider = ref<PaymentProvider>('stripe')
-const activePaymentTab = ref<PaymentTab>('card')
-const walletTabAvailable = ref(false)
+const walletAvailable = ref(false)
+/** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
+const walletDetectionDone = ref(false)
+const moreExpanded = ref(false)
+const moreMethod = ref<MorePaymentMethod | null>(null)
 const checkingOut = ref(false)
 const checkoutError = ref<string | null>(null)
 const promoCodeInput = ref('')
@@ -243,57 +288,79 @@ const planSubtextClass = computed(() =>
 
 const stripeEnabled = computed(() => availableProviders.value.includes('stripe'))
 const gocardlessEnabled = computed(() => availableProviders.value.includes('gocardless'))
-const showPaymentTabs = computed(() => stripeEnabled.value || gocardlessEnabled.value)
 
-const visiblePaymentTabs = computed(() => {
-  const tabs: { id: PaymentTab; label: string }[] = []
-  if (stripeEnabled.value) {
-    if (walletTabAvailable.value) {
-      tabs.push({ id: 'wallet', label: strings.checkoutTabWallet })
-    }
-    tabs.push({ id: 'card', label: strings.checkoutTabCard })
-  }
-  if (gocardlessEnabled.value) {
-    tabs.push({ id: 'bank', label: strings.checkoutTabBank })
-  }
-  return tabs
+const stripeCheckoutMounted = computed(() => stripeEnabled.value)
+
+/** Apple / Google Pay above the fold (mount express until detection finishes). */
+const showWalletSurface = computed(() => {
+  if (!stripeEnabled.value) return false
+  if (!walletDetectionDone.value) return true
+  return walletAvailable.value
 })
 
-const stripeCheckoutActive = computed(() =>
-  stripeEnabled.value && (activePaymentTab.value === 'wallet' || activePaymentTab.value === 'card'),
-)
+/**
+ * Card / PayPal / SEPA form: primary when no wallet, or after user picks "Pay by card" under More.
+ */
+const showCardSurface = computed(() => {
+  if (!stripeEnabled.value || !walletDetectionDone.value) return false
+  if (!walletAvailable.value) return true
+  return moreExpanded.value && moreMethod.value === 'card'
+})
 
-const activeStripeTab = computed<'wallet' | 'card'>(() =>
-  activePaymentTab.value === 'wallet' ? 'wallet' : 'card',
-)
+/** More toggle when wallet is primary and at least one alternate method exists. */
+const showMoreToggle = computed(() => {
+  if (!walletDetectionDone.value || !walletAvailable.value) return false
+  if (gocardlessEnabled.value) return true
+  return stripeEnabled.value
+})
 
-function paymentTabClass(tab: PaymentTab): string {
-  const selected = activePaymentTab.value === tab
+const moreToggleClass = computed(() => {
+  if (props.embedded) {
+    return moreExpanded.value
+      ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white'
+      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500'
+  }
+  return moreExpanded.value
+    ? 'border-gray-500 bg-gray-800 text-white'
+    : 'border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500 hover:text-white'
+})
+
+function moreOptionClass(method: MorePaymentMethod): string {
+  const selected = moreMethod.value === method
   if (props.embedded) {
     return selected
-      ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
-      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+      ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
   }
   return selected
-    ? 'bg-gray-700 text-white'
-    : 'text-gray-400 hover:text-white'
+    ? 'border-blue-500 bg-blue-500/10'
+    : 'border-gray-700 bg-gray-800 hover:border-gray-500'
 }
 
 function onWalletAvailable(available: boolean) {
-  walletTabAvailable.value = available
-  if (available && activePaymentTab.value === 'card') {
-    activePaymentTab.value = 'wallet'
-  }
-  if (!available && activePaymentTab.value === 'wallet') {
-    activePaymentTab.value = 'card'
+  walletDetectionDone.value = true
+  walletAvailable.value = available
+  if (!available) {
+    moreExpanded.value = false
+    moreMethod.value = null
   }
 }
 
-watch(visiblePaymentTabs, (tabs) => {
-  if (!tabs.some((t) => t.id === activePaymentTab.value)) {
-    activePaymentTab.value = tabs[0]?.id ?? 'card'
+function toggleMore() {
+  moreExpanded.value = !moreExpanded.value
+  if (!moreExpanded.value) {
+    moreMethod.value = null
   }
-}, { immediate: true })
+}
+
+function selectMoreMethod(method: MorePaymentMethod) {
+  moreMethod.value = method
+  if (method === 'bank') {
+    selectedProvider.value = 'gocardless'
+  } else {
+    selectedProvider.value = 'stripe'
+  }
+}
 
 function planButtonClass(plan: PlanType): string {
   const selected = selectedPlan.value === plan
@@ -322,8 +389,9 @@ function primaryPlanPrice(plan: PlanType): number | null {
   return providerPlanPrice(first, plan)
 }
 
-function promoProviderForTab(): PaymentProvider {
-  return activePaymentTab.value === 'bank' ? 'gocardless' : 'stripe'
+function promoProviderForCheckout(): PaymentProvider {
+  if (moreMethod.value === 'bank') return 'gocardless'
+  return 'stripe'
 }
 
 const checkoutBlurb = computed(() => {
@@ -449,7 +517,7 @@ function isStalePromoValidation(
   codeAtRequest: string,
 ): boolean {
   if (generation !== promoValidationGeneration) return true
-  if (promoProviderForTab() !== providerAtRequest) return true
+  if (promoProviderForCheckout() !== providerAtRequest) return true
   if (selectedPlan.value !== planAtRequest) return true
   if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true
   return false
@@ -468,7 +536,7 @@ async function validatePromoCode() {
   }
 
   const generation = ++promoValidationGeneration
-  const providerAtRequest = promoProviderForTab()
+  const providerAtRequest = promoProviderForCheckout()
   const planAtRequest = selectedPlan.value
 
   promoValidating.value = true
@@ -514,7 +582,10 @@ function applyCheckoutIntentFromRoute() {
   const prov = q.checkout_provider
   if (prov === 'stripe' || prov === 'gocardless') {
     selectedProvider.value = prov
-    activePaymentTab.value = prov === 'gocardless' ? 'bank' : 'card'
+    if (prov === 'gocardless') {
+      moreExpanded.value = true
+      moreMethod.value = 'bank'
+    }
   }
 }
 
@@ -531,10 +602,14 @@ watch(() => props.active, (isActive) => {
 watch(selectedPlan, () => {
   promoApplied.value = null
   promoError.value = null
+  walletDetectionDone.value = false
+  walletAvailable.value = false
+  moreExpanded.value = false
+  moreMethod.value = null
 })
 
-watch(activePaymentTab, (tab) => {
-  selectedProvider.value = tab === 'bank' ? 'gocardless' : 'stripe'
+watch(moreMethod, () => {
+  selectedProvider.value = moreMethod.value === 'bank' ? 'gocardless' : 'stripe'
   promoApplied.value = null
   promoError.value = null
   if (promoCodeInput.value.trim() && isLoggedIn.value) {

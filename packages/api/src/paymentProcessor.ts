@@ -558,6 +558,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       const sessionPayload: any = {
         mode: 'subscription',
         ui_mode: 'elements',
+        payment_method_types: ['card', 'paypal', 'sepa_debit'],
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: user.email,
         metadata: {

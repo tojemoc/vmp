@@ -9,26 +9,16 @@
         {{ initError }}
       </div>
 
-      <!-- v-show (not v-if) so mount refs exist while loading is true -->
       <div v-show="!loading && !initError" class="space-y-4">
         <div
-          v-show="showWallet"
+          v-show="showWalletSurface"
           ref="expressMountRef"
           class="min-h-[44px]"
         />
 
-        <div v-if="showWallet && showCard" class="relative py-1">
-          <div class="absolute inset-0 flex items-center" aria-hidden="true">
-            <div class="w-full border-t" :class="embedded ? 'border-gray-200 dark:border-gray-700' : 'border-gray-700'" />
-          </div>
-          <div class="relative flex justify-center text-xs uppercase">
-            <span class="px-2" :class="embedded ? 'bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400' : 'bg-gray-900 text-gray-500'">
-              {{ strings.checkoutStripeOrPayWithCard }}
-            </span>
-          </div>
-        </div>
+        <slot />
 
-        <div v-show="showCard">
+        <div v-show="showCardSurface">
           <div ref="paymentMountRef" />
           <button
             v-if="cardReady"
@@ -37,7 +27,7 @@
             :disabled="confirming"
             @click="confirmCardPayment"
           >
-            {{ confirming ? strings.checkoutStripeProcessing : cardPayLabel }}
+            {{ confirming ? strings.checkoutStripeProcessing : cardConfirmLabel }}
           </button>
         </div>
       </div>
@@ -52,7 +42,6 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js'
 import strings from '~/utils/strings'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type StripeCheckoutTab = 'wallet' | 'card'
 
 /** Minimal Checkout Elements SDK surface (runtime API from js.stripe.com). */
 interface StripeCheckoutSdk {
@@ -102,8 +91,11 @@ const props = defineProps<{
   promoCode: string
   returnPath: string
   embedded?: boolean
-  activeTab: StripeCheckoutTab
-  cardPayLabel: string
+  /** Mount Apple Pay / Google Pay express buttons. */
+  showWalletSurface: boolean
+  /** Mount card / PayPal / SEPA payment element. */
+  showCardSurface: boolean
+  cardConfirmLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -124,12 +116,13 @@ const walletAvailable = ref(false)
 const expressMountRef = ref<HTMLElement | null>(null)
 const paymentMountRef = ref<HTMLElement | null>(null)
 
+const cardConfirmLabel = computed(
+  () => props.cardConfirmLabel ?? strings.checkoutSubscribeWithCard,
+)
+
 const mutedClass = computed(() =>
   props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
 )
-
-const showWallet = computed(() => props.activeTab === 'wallet' && walletAvailable.value)
-const showCard = computed(() => props.activeTab === 'card' || (props.activeTab === 'wallet' && !walletAvailable.value))
 
 let stripePromise: Promise<Stripe | null> | null = null
 let checkoutInstance: StripeCheckoutSdk | null = null
@@ -145,7 +138,6 @@ function getStripe() {
       .then((res) => res.json())
       .then((data) => {
         if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured)
-        // Dahlia Stripe.js is version-pinned; loadStripe() rejects apiVersion.
         return loadStripe(data.publishableKey)
       })
       .catch((err) => {
@@ -186,6 +178,75 @@ function destroyElements() {
   cardReady.value = false
 }
 
+function mountExpressElement() {
+  if (!checkoutInstance || !expressMountRef.value || expressElement) return
+
+  expressElement = checkoutInstance.createExpressCheckoutElement({
+    buttonType: {
+      applePay: 'subscribe',
+      googlePay: 'subscribe',
+    },
+    paymentMethods: {
+      applePay: 'auto',
+      googlePay: 'auto',
+      link: 'never',
+      paypal: 'never',
+      amazonPay: 'never',
+      klarna: 'never',
+    },
+  })
+
+  const syncWalletAvailability = (payload: unknown) => {
+    const available = expressWalletMethodsAvailable(payload)
+    walletAvailable.value = available
+    emit('walletAvailable', available)
+  }
+
+  expressElement.on('ready', syncWalletAvailability)
+  expressElement.on('loaderror', () => syncWalletAvailability(null))
+  expressElement.on('confirm', (event: unknown) => {
+    void confirmExpress(event)
+  })
+  expressElement.mount(expressMountRef.value)
+}
+
+function unmountExpressElement() {
+  expressElement?.unmount()
+  expressElement = null
+  walletAvailable.value = false
+  emit('walletAvailable', false)
+}
+
+function mountPaymentElement() {
+  if (!checkoutInstance || !paymentMountRef.value || paymentElement) return
+  paymentElement = checkoutInstance.createPaymentElement()
+  paymentElement.mount(paymentMountRef.value)
+  cardReady.value = true
+}
+
+function unmountPaymentElement() {
+  paymentElement?.unmount()
+  paymentElement = null
+  cardReady.value = false
+}
+
+async function syncMountedSurfaces() {
+  if (!checkoutInstance || loading.value) return
+  await nextTick()
+
+  if (props.showWalletSurface) {
+    mountExpressElement()
+  } else {
+    unmountExpressElement()
+  }
+
+  if (props.showCardSurface) {
+    mountPaymentElement()
+  } else {
+    unmountPaymentElement()
+  }
+}
+
 async function setupCheckout() {
   const generation = ++teardownGeneration
   destroyElements()
@@ -222,55 +283,8 @@ async function setupCheckout() {
     confirmActions = loadActionsResult.actions
 
     loading.value = false
-    await nextTick()
+    await syncMountedSurfaces()
     if (generation !== teardownGeneration) return
-
-    let mountedAny = false
-
-    if (expressMountRef.value) {
-      expressElement = checkoutInstance.createExpressCheckoutElement({
-        buttonType: {
-          applePay: 'subscribe',
-          googlePay: 'subscribe',
-        },
-        paymentMethods: {
-          applePay: 'auto',
-          googlePay: 'auto',
-          link: 'never',
-          paypal: 'never',
-          amazonPay: 'never',
-          klarna: 'never',
-        },
-      })
-
-      const syncWalletAvailability = (payload: unknown) => {
-        const available = expressWalletMethodsAvailable(payload)
-        walletAvailable.value = available
-        emit('walletAvailable', available)
-      }
-
-      // Checkout Elements SDK (Dahlia): ready/loaderror only — not availablepaymentmethodschange.
-      expressElement.on('ready', syncWalletAvailability)
-      expressElement.on('loaderror', () => syncWalletAvailability(null))
-
-      expressElement.on('confirm', (event: unknown) => {
-        void confirmExpress(event)
-      })
-
-      expressElement.mount(expressMountRef.value)
-      mountedAny = true
-    }
-
-    if (paymentMountRef.value) {
-      paymentElement = checkoutInstance.createPaymentElement()
-      paymentElement.mount(paymentMountRef.value)
-      cardReady.value = true
-      mountedAny = true
-    }
-
-    if (!mountedAny) {
-      throw new Error(strings.checkoutStartFailed)
-    }
   } catch (err: unknown) {
     if (generation !== teardownGeneration) return
     initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed
@@ -315,6 +329,13 @@ watch(
     void setupCheckout()
   },
   { immediate: true },
+)
+
+watch(
+  () => [props.showWalletSurface, props.showCardSurface] as const,
+  () => {
+    void syncMountedSurfaces()
+  },
 )
 
 onBeforeUnmount(() => {
