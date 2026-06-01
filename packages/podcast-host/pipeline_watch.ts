@@ -68,6 +68,151 @@ function emitPipelineEvent(videoId: string, stage: PipelineStage, status: Pipeli
   process.stdout.write(`VMP_PIPELINE_EVENT\t${videoId}\t${stage}\t${status}\t${detail}\n`)
 }
 
+/** Cumulative overall progress checkpoints (0–1) for non-encode stages. */
+const PROGRESS = {
+  PROBE: 0.02,
+  P1_ENCODE: { base: 0.02, span: 0.25 },
+  P1_DONE: 0.30,
+  P2_1080: { base: 0.30, span: 0.20 },
+  P2_480: { base: 0.50, span: 0.12 },
+  P2_DONE: 0.80,
+  PODCAST: { base: 0.80, span: 0.08 },
+  PREVIEW: { base: 0.88, span: 0.09 },
+  DONE: 0.99,
+} as const
+
+const videoDurations = new Map<string, number>()
+const progressEmitState = new Map<string, { lastAt: number, lastOverall: number }>()
+
+type PipelineProgressPayload = {
+  videoId: string
+  stage: string
+  rendition: string
+  stageProgress: number
+  overallProgress: number
+  speed?: number | null
+  etaSec?: number | null
+  timeSec?: number | null
+  detail?: string
+}
+
+function emitPipelineProgress(payload: PipelineProgressPayload): void {
+  process.stdout.write(`VMP_PIPELINE_PROGRESS\t${JSON.stringify(payload)}\n`)
+}
+
+function emitProgressCheckpoint(
+  videoId: string,
+  stage: PipelineStage,
+  overallProgress: number,
+  detail = '',
+  rendition = '',
+): void {
+  emitPipelineProgress({
+    videoId,
+    stage,
+    rendition,
+    stageProgress: 1,
+    overallProgress,
+    detail,
+  })
+  progressEmitState.set(videoId, { lastAt: Date.now(), lastOverall: overallProgress })
+}
+
+function maybeEmitEncodeProgress(
+  videoId: string,
+  stage: PipelineStage,
+  rendition: string,
+  timeSec: number,
+  durationSec: number,
+  overallBase: number,
+  overallSpan: number,
+  speed: number | null,
+): void {
+  const stageProgress = Math.min(1, Math.max(0, timeSec / durationSec))
+  const overallProgress = Math.min(0.99, overallBase + overallSpan * stageProgress)
+  const state = progressEmitState.get(videoId) ?? { lastAt: 0, lastOverall: -1 }
+  const now = Date.now()
+  if (now - state.lastAt < 2000 && overallProgress - state.lastOverall < 0.005) return
+  progressEmitState.set(videoId, { lastAt: now, lastOverall: overallProgress })
+  const etaSec = speed != null && speed > 0
+    ? Math.max(0, Math.round((durationSec - timeSec) / speed))
+    : null
+  emitPipelineProgress({
+    videoId,
+    stage,
+    rendition,
+    stageProgress,
+    overallProgress,
+    speed,
+    etaSec,
+    timeSec,
+  })
+}
+
+function parseFfmpegTime(text: string): number | null {
+  const m = text.match(/\btime=(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)\b/)
+  if (!m) return null
+  const sec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
+  return Number.isFinite(sec) ? sec : null
+}
+
+function parseFfmpegSpeed(text: string): number | null {
+  const m = text.match(/\bspeed=\s*([\d.]+)x\b/)
+  if (!m) return null
+  const v = Number.parseFloat(m[1])
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
+type FfmpegProgressOptions = {
+  videoId: string
+  stage: PipelineStage
+  rendition: string
+  durationSec: number | null
+  overallBase: number
+  overallSpan: number
+}
+
+function runFfmpeg(args: string[], label: string, progress: FfmpegProgressOptions): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = trackChild(spawn('ffmpeg', args, { env: process.env, stdio: ['ignore', 'ignore', 'pipe'] }))
+    let stderrBuf = ''
+
+    const onProgressText = (text: string) => {
+      process.stderr.write(text)
+      const durationSec = progress.durationSec
+      if (durationSec == null || durationSec <= 0) return
+      const timeSec = parseFfmpegTime(text)
+      if (timeSec == null) return
+      maybeEmitEncodeProgress(
+        progress.videoId,
+        progress.stage,
+        progress.rendition,
+        timeSec,
+        durationSec,
+        progress.overallBase,
+        progress.overallSpan,
+        parseFfmpegSpeed(text),
+      )
+    }
+
+    child.stderr.on('data', (d) => {
+      stderrBuf += d.toString()
+      const parts = stderrBuf.split(/\r|\n/)
+      stderrBuf = parts.pop() ?? ''
+      for (const part of parts) {
+        if (part.trim()) onProgressText(`${part}\n`)
+      }
+    })
+
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (stderrBuf.trim()) onProgressText(`${stderrBuf}\n`)
+      if (code === 0) return resolve()
+      reject(new Error(`${label} failed exit=${code}`))
+    })
+  })
+}
+
 function run(command: string, args: string[], label: string, { capture = false }: RunOptions = {}): Promise<RunResult> {
   return new Promise<RunResult>((resolve, reject) => {
     const child = trackChild(spawn(command, args, { env: process.env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'inherit'] }))
@@ -95,6 +240,32 @@ function r2Root(): string {
 
 function r2Path(relativePath: string): string {
   return `${r2Root().replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
+}
+
+const RCLONE_TRANSFERS = Math.max(1, Number.parseInt(process.env.RCLONE_TRANSFERS || '4', 10) || 4)
+const RCLONE_CHECKERS = Math.max(1, Number.parseInt(process.env.RCLONE_CHECKERS || '8', 10) || 8)
+const RCLONE_UPLOAD_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RCLONE_UPLOAD_CONCURRENCY || '2', 10) || 2)
+
+/** R2-safe rclone flags; extend with space-separated RCLONE_EXTRA_ARGS. */
+function rcloneBaseArgs(): string[] {
+  const args = [
+    '--s3-no-check-bucket',
+    `--s3-upload-concurrency=${RCLONE_UPLOAD_CONCURRENCY}`,
+    '--retries', '5',
+    '--low-level-retries', '10',
+    '--log-level', process.env.RCLONE_LOG_LEVEL || 'NOTICE',
+  ]
+  const extra = (process.env.RCLONE_EXTRA_ARGS || '').trim()
+  if (extra) args.push(...extra.split(/\s+/).filter(Boolean))
+  return args
+}
+
+function rcloneTransferArgs(): string[] {
+  return [
+    ...rcloneBaseArgs(),
+    '--transfers', String(RCLONE_TRANSFERS),
+    '--checkers', String(RCLONE_CHECKERS),
+  ]
 }
 
 function hash8(value: string): string {
@@ -175,7 +346,7 @@ function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): str
 
 async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
   const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
     '720p/playlist.m3u8',
   ])
   await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
@@ -183,14 +354,27 @@ async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise
 
 async function writePhase2MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
   const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080',
+    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
     '1080p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
     '720p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480',
+    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480,CODECS="avc1.640028,mp4a.40.2"',
     '480p/playlist.m3u8',
   ])
   await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
+}
+
+/** Prefer shaka-packager master (CODECS + fMP4 version); hand-written master is fallback only. */
+async function adoptShakaMasterM3u8(tmpDir: string, hasAudio: boolean, phase: 1 | 2): Promise<void> {
+  const shakaMaster = path.join(tmpDir, 'master.m3u8.shaka')
+  const master = path.join(tmpDir, 'master.m3u8')
+  if (existsSync(shakaMaster)) {
+    await rename(shakaMaster, master)
+    return
+  }
+  log(`⚠️ shaka master missing for phase${phase}; using fallback master writer`)
+  if (phase === 1) await writePhase1MasterM3u8(tmpDir, hasAudio)
+  else await writePhase2MasterM3u8(tmpDir, hasAudio)
 }
 
 async function encodeRendition(
@@ -198,7 +382,7 @@ async function encodeRendition(
   inputPath: string,
   tmpDir: string,
   key: RenditionKey,
-  options: { includeAudio: boolean, stage: PipelineStage },
+  options: { includeAudio: boolean, stage: PipelineStage, overallBase: number, overallSpan: number },
 ): Promise<string> {
   const r = RENDITION_CONFIG[key]
   emitPipelineEvent(videoId, options.stage, 'active', r.out)
@@ -219,7 +403,15 @@ async function encodeRendition(
     '-f', 'mp4',
     outPath,
   )
-  await run('ffmpeg', args, `encode ${r.out}`)
+  await runFfmpeg(args, `encode ${r.out}`, {
+    videoId,
+    stage: options.stage,
+    rendition: key,
+    durationSec: videoDurations.get(videoId) ?? null,
+    overallBase: options.overallBase,
+    overallSpan: options.overallSpan,
+  })
+  emitProgressCheckpoint(videoId, options.stage, options.overallBase + options.overallSpan, `${key} done`, key)
   const finalPath = path.join(tmpDir, r.out)
   await rename(outPath, finalPath)
   return finalPath
@@ -241,7 +433,7 @@ async function packagePhase1Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase1')
-  await writePhase1MasterM3u8(tmpDir, hasAudio)
+  await adoptShakaMasterM3u8(tmpDir, hasAudio, 1)
 }
 
 async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void> {
@@ -264,19 +456,36 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean): Promise<void
     '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
   )
   await run('shaka-packager', shakaArgs, 'shaka-packager phase2')
-  await writePhase2MasterM3u8(tmpDir, hasAudio)
+  await adoptShakaMasterM3u8(tmpDir, hasAudio, 2)
 }
 
 async function rcloneCopyDir(localDir: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['copy', localDir, r2Dest, '--transfers', '8', '--checkers', '16'], label)
+  await run('rclone', ['copy', localDir, r2Dest, ...rcloneTransferArgs()], label)
 }
 
 async function rcloneCopyFile(localFile: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['copyto', localFile, r2Dest, '--checkers', '16'], label)
+  await run('rclone', ['copyto', localFile, r2Dest, ...rcloneTransferArgs()], label)
+}
+
+async function rcloneCopySharedAudioAssets(tmpDir: string, r2Base: string, label: string): Promise<void> {
+  const hasInit = existsSync(path.join(tmpDir, 'init_audio.mp4'))
+  const hasPlaylist = existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))
+  const entries = await readdir(tmpDir)
+  const hasSegments = entries.some((f) => /^seg_audio_\d+\.m4s$/.test(f))
+  if (!hasInit && !hasPlaylist && !hasSegments) return
+
+  await run('rclone', [
+    'copy', tmpDir, r2Base,
+    '--max-depth', '1',
+    '--include', 'init_audio.mp4',
+    '--include', HLS_AUDIO_PLAYLIST,
+    '--include', 'seg_audio_*.m4s',
+    ...rcloneTransferArgs(),
+  ], label)
 }
 
 async function rcloneCheckDir(localDir: string, r2Dest: string, label: string): Promise<void> {
-  await run('rclone', ['check', localDir, r2Dest, '--one-way'], label)
+  await run('rclone', ['check', localDir, r2Dest, '--one-way', ...rcloneBaseArgs()], label)
 }
 
 async function notifyVideoAvailable(
@@ -349,31 +558,31 @@ async function phase1EncodeAndPublish(
 ): Promise<Phase1Result> {
   await emitTtp(videoId, 'phase1_encode_start', { initialRendition: '720p' })
   emitPipelineEvent(videoId, 'phase1_encode', 'active', '720p')
-  const audioTmpPath = await encodeRendition(videoId, inputPath, tmpDir, '720p', { includeAudio: hasAudio, stage: 'phase1_encode' })
+  const audioTmpPath = await encodeRendition(videoId, inputPath, tmpDir, '720p', {
+    includeAudio: hasAudio,
+    stage: 'phase1_encode',
+    overallBase: PROGRESS.P1_ENCODE.base,
+    overallSpan: PROGRESS.P1_ENCODE.span,
+  })
   emitPipelineEvent(videoId, 'phase1_encode', 'active', 'done')
   await emitTtp(videoId, 'phase1_encode_done', { initialRendition: '720p' })
 
   emitPipelineEvent(videoId, 'phase1_encode', 'active', 'packaging_hls')
   await packagePhase1Hls(tmpDir, hasAudio)
+  emitProgressCheckpoint(videoId, 'phase1_encode', PROGRESS.P1_DONE - 0.02, 'packaged')
 
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'start')
   await emitTtp(videoId, 'phase1_upload_start', {})
   const r2Base = r2Path(`videos/${videoId}`)
   await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1')
-  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
-    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase1')
-    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
-      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase1')
-    }
-    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
-    for (const seg of audioSegs) {
-      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase1`)
-    }
+  if (hasAudio) {
+    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase1')
   }
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase1')
   await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase1')
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'done')
   await emitTtp(videoId, 'phase1_upload_done', {})
+  emitProgressCheckpoint(videoId, 'phase1_upload', PROGRESS.P1_DONE, '720p on R2')
 
   await notifyVideoAvailable(videoId, 'preview_ready', ['720p'])
   emitPipelineEvent(videoId, 'phase1_available', 'success', 'preview_ready')
@@ -390,8 +599,18 @@ async function phase2RemainingRenditions(
 ): Promise<void> {
   await emitTtp(videoId, 'phase2_encode_start', { renditions: ['1080p', '480p'] })
   emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
-  await encodeRendition(videoId, inputPath, tmpDir, '1080p', { includeAudio: false, stage: 'phase2_encode' })
-  await encodeRendition(videoId, inputPath, tmpDir, '480p', { includeAudio: false, stage: 'phase2_encode' })
+  await encodeRendition(videoId, inputPath, tmpDir, '1080p', {
+    includeAudio: false,
+    stage: 'phase2_encode',
+    overallBase: PROGRESS.P2_1080.base,
+    overallSpan: PROGRESS.P2_1080.span,
+  })
+  await encodeRendition(videoId, inputPath, tmpDir, '480p', {
+    includeAudio: false,
+    stage: 'phase2_encode',
+    overallBase: PROGRESS.P2_480.base,
+    overallSpan: PROGRESS.P2_480.span,
+  })
   emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
   await emitTtp(videoId, 'phase2_encode_done', {})
 
@@ -408,21 +627,15 @@ async function phase2RemainingRenditions(
   await rcloneCheckDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone check 1080p phase2')
   await rcloneCheckDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone check 480p phase2')
   await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase2')
-  if (hasAudio && existsSync(path.join(tmpDir, 'init_audio.mp4'))) {
-    await rcloneCopyFile(path.join(tmpDir, 'init_audio.mp4'), `${r2Base}/init_audio.mp4`, 'rclone upload init_audio phase2')
-    if (existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))) {
-      await rcloneCopyFile(path.join(tmpDir, HLS_AUDIO_PLAYLIST), `${r2Base}/${HLS_AUDIO_PLAYLIST}`, 'rclone upload audio playlist phase2')
-    }
-    const audioSegs = (await readdir(tmpDir)).filter((f) => /^seg_audio_\d+\.m4s$/.test(f))
-    for (const seg of audioSegs) {
-      await rcloneCopyFile(path.join(tmpDir, seg), `${r2Base}/${seg}`, `rclone upload ${seg} phase2`)
-    }
+  if (hasAudio) {
+    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase2')
   }
 
   emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
   await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase2')
   emitPipelineEvent(videoId, 'phase2_upload', 'active', 'done')
   await emitTtp(videoId, 'phase2_upload_done', {})
+  emitProgressCheckpoint(videoId, 'phase2_upload', PROGRESS.P2_DONE, 'all renditions on R2')
 
   await notifyVideoAvailable(videoId, 'fully_processed', ['1080p', '720p', '480p'])
   emitPipelineEvent(videoId, 'multi_rendition_ready', 'success', 'fully_processed')
@@ -432,10 +645,22 @@ async function phase2RemainingRenditions(
 async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: string): Promise<void> {
   emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'start')
   const mp3Tmp = path.join(tmpDir, `podcast.mp3.tmp.${process.pid}`)
-  await run('ffmpeg', ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', mp3Tmp], 'encode podcast mp3')
+  await runFfmpeg(
+    ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', mp3Tmp],
+    'encode podcast mp3',
+    {
+      videoId,
+      stage: 'podcast_mp3',
+      rendition: 'mp3',
+      durationSec: videoDurations.get(videoId) ?? null,
+      overallBase: PROGRESS.PODCAST.base,
+      overallSpan: PROGRESS.PODCAST.span,
+    },
+  )
   await rename(mp3Tmp, path.join(tmpDir, 'podcast.mp3'))
   await run('rclone', ['copyto', path.join(tmpDir, 'podcast.mp3'), r2Path(`videos/${videoId}/podcast.mp3`)], 'upload podcast mp3')
   emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'done')
+  emitProgressCheckpoint(videoId, 'podcast_mp3', PROGRESS.PODCAST.base + PROGRESS.PODCAST.span, 'podcast.mp3 on R2', 'mp3')
 }
 
 async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
@@ -462,9 +687,13 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
 
     emitPipelineEvent(videoId, 'probe', 'active', 'probing_streams')
     const { hasAudio, durationSec } = await probeSource(inputPath)
-    if (durationSec != null) setTtpSourceDuration(videoId, durationSec)
+    if (durationSec != null) {
+      setTtpSourceDuration(videoId, durationSec)
+      videoDurations.set(videoId, durationSec)
+    }
     await emitTtp(videoId, 'probe_complete', { hasAudio })
     emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
+    emitProgressCheckpoint(videoId, 'probe', PROGRESS.PROBE, 'probe complete')
 
     await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
     emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
@@ -497,7 +726,18 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
       }
       emitPipelineEvent(videoId, 'preview_render', 'active', `${PREVIEW_MP3_SECONDS}s`)
       const prevTmp = path.join(tmpDir, `podcast_preview.mp3.tmp.${process.pid}`)
-      await run('ffmpeg', ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp], 'encode preview mp3')
+      await runFfmpeg(
+        ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp],
+        'encode preview mp3',
+        {
+          videoId,
+          stage: 'preview_render',
+          rendition: 'preview_mp3',
+          durationSec: PREVIEW_MP3_SECONDS,
+          overallBase: PROGRESS.PREVIEW.base,
+          overallSpan: PROGRESS.PREVIEW.span,
+        },
+      )
       await rename(prevTmp, path.join(tmpDir, 'podcast_preview.mp3'))
       const probe = await run(
         'ffprobe',
@@ -523,6 +763,7 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
         await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata')
       }
       emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
+      emitProgressCheckpoint(videoId, 'preview_upload', PROGRESS.PREVIEW.base + PROGRESS.PREVIEW.span, 'preview on R2', 'preview_mp3')
       await emitTtp(videoId, 'preview_mp3_done', { previewSeconds: PREVIEW_MP3_SECONDS })
     } else {
       emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
@@ -534,8 +775,11 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     await rm(inputPath, { force: true })
     await rm(tmpDir, { recursive: true, force: true })
     emitPipelineEvent(videoId, 'done', 'success', 'watchfolder_and_tmp_cleared')
+    emitProgressCheckpoint(videoId, 'done', PROGRESS.DONE, 'complete')
     await emitTtp(videoId, 'pipeline_done', {})
     await emitTtpSummary(videoId, 'success')
+    videoDurations.delete(videoId)
+    progressEmitState.delete(videoId)
   } catch (err) {
     const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
     emitPipelineEvent(videoId, 'failed', 'failed', detail)
@@ -543,6 +787,8 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     await emitTtpSummary(videoId, 'failed', detail)
     log(`❌ ${videoId} failed: ${err instanceof Error ? err.message : String(err)}`)
     await rm(lockFile, { force: true })
+    videoDurations.delete(videoId)
+    progressEmitState.delete(videoId)
     throw err
   }
 }

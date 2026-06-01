@@ -406,9 +406,6 @@ export default {
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream$/) && request.method === 'PATCH') {
       return handleAdminLivestreamUpdate(request, env, corsHeaders)
     }
-    if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream\/provision$/) && request.method === 'POST') {
-      return handleAdminLivestreamProvision(request, env, corsHeaders)
-    }
     if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
       return handleAdminVideoUpdate(request, env, ctx, corsHeaders)
     }
@@ -719,7 +716,6 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
                 vc.slug AS category_slug,
                 ls.provider AS livestream_provider,
                 ls.status AS livestream_status,
-                ls.playback_url AS livestream_playback_url,
                 ls.recording_video_id AS livestream_recording_video_id
          FROM videos v
          LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -734,7 +730,6 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
                 vc.slug AS category_slug,
                 ls.provider AS livestream_provider,
                 ls.status AS livestream_status,
-                ls.playback_url AS livestream_playback_url,
                 ls.recording_video_id AS livestream_recording_video_id
          FROM videos v
          LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -928,12 +923,9 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0
     const isLivestream = Boolean(livestream)
     const livestreamStatus = deriveEffectiveLivestreamStatus(livestream?.status, video?.publish_status)
-    const hasLivestreamPlaybackUrl = typeof livestream?.playback_url === 'string' && livestream.playback_url.trim().length > 0
-    const livestreamPlaybackUrl = hasLivestreamPlaybackUrl ? livestream.playback_url.trim() : null
-    const isMoqLivestream = livestream?.provider === 'moq'
-    const hasLivestreamMoqEndpoint = isMoqLivestream && typeof livestream?.moq_endpoint === 'string' && livestream.moq_endpoint.trim().length > 0
+    const hasLivestreamMoqEndpoint = typeof livestream?.moq_endpoint === 'string' && livestream.moq_endpoint.trim().length > 0
     const livestreamMoqEndpoint = hasLivestreamMoqEndpoint ? livestream.moq_endpoint.trim() : null
-    const hasLivestreamMoqBroadcast = isMoqLivestream && typeof livestream?.moq_broadcast === 'string' && livestream.moq_broadcast.trim().length > 0
+    const hasLivestreamMoqBroadcast = typeof livestream?.moq_broadcast === 'string' && livestream.moq_broadcast.trim().length > 0
     const livestreamMoqBroadcast = hasLivestreamMoqBroadcast ? livestream.moq_broadcast.trim() : null
     const livestreamRecordingId = typeof livestream?.recording_video_id === 'string' && livestream.recording_video_id.trim().length > 0
       ? livestream.recording_video_id.trim()
@@ -1008,16 +1000,9 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
     // authenticate every subsequent manifest and segment request.
     const effectiveUserId = authUser?.sub ?? userId ?? 'anonymous'
     let playlistUrl: string | null = basePlaylistUrl ?? null
-    if (isLivestream) {
-      const shouldUseLivePlayback = ['live', 'ready', 'provisioning', 'scheduled', 'draft'].includes(livestreamStatus)
-      const hasRealtimePlaybackSource = Boolean(livestreamPlaybackUrl) || Boolean(livestreamMoqEndpoint && livestreamMoqBroadcast)
-      if (shouldUseLivePlayback && livestreamPlaybackUrl && hasPremiumAccess) {
-        playlistUrl = livestreamPlaybackUrl
-      } else if (!shouldPreferVodRecording && hasRealtimePlaybackSource) {
-        // For active realtime livestream inputs, playback happens in the frontend
-        // runtime (MoQ) or dedicated live HLS endpoint, not via stored VOD media.
-        playlistUrl = null
-      }
+    if (isLivestream && !shouldPreferVodRecording && livestreamMoqEndpoint && livestreamMoqBroadcast) {
+      // Active MoQ livestreams play in the frontend runtime, not via stored VOD media.
+      playlistUrl = null
     }
     if (env.JWT_SECRET && playlistUrl) {
       const shouldSignProxyUrl = isLocalVideoProxyUrl(request, playlistUrl, env)
@@ -1047,16 +1032,15 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
         isLivestream,
         livestreamStatus,
         livestreamProvider: livestream?.provider ?? null,
-        livestreamPlaybackUrl,
         livestreamMoqEndpoint,
         livestreamMoqBroadcast,
         livestreamRecordingVideoId: livestreamRecordingId,
         livestreamUnavailableReason: (() => {
           if (!isLivestream || playlistUrl) return null
-          if (livestream?.provider === 'moq' && !(livestreamMoqEndpoint && livestreamMoqBroadcast)) {
+          if (!(livestreamMoqEndpoint && livestreamMoqBroadcast)) {
             return 'Live stream is not configured. Add MoQ endpoint + broadcast, or attach a recorded VOD.'
           }
-          return 'Live stream is not configured. Provide playback or ingest credentials, or attach a recorded VOD.'
+          return null
         })(),
       },
       chapters: [
@@ -1560,12 +1544,8 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              lm.cost_est_usd AS media_convert_cost_est_usd,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
-             ls.stream_id AS livestream_stream_id,
-             ls.stream_key AS livestream_stream_key,
-             ls.ingest_url AS livestream_ingest_url,
              ls.moq_endpoint AS livestream_moq_endpoint,
              ls.moq_broadcast AS livestream_moq_broadcast,
-             ls.playback_url AS livestream_playback_url,
              ls.recording_video_id AS livestream_recording_video_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -1601,12 +1581,8 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              NULL AS media_convert_cost_est_usd,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
-             ls.stream_id AS livestream_stream_id,
-             ls.stream_key AS livestream_stream_key,
-             ls.ingest_url AS livestream_ingest_url,
              ls.moq_endpoint AS livestream_moq_endpoint,
              ls.moq_broadcast AS livestream_moq_broadcast,
-             ls.playback_url AS livestream_playback_url,
              ls.recording_video_id AS livestream_recording_video_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -1729,12 +1705,8 @@ async function getAdminVideoById(db: any, videoId: string) {
            v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug, vca.category_id,
            ls.provider AS livestream_provider,
            ls.status AS livestream_status,
-           ls.stream_id AS livestream_stream_id,
-           ls.stream_key AS livestream_stream_key,
-           ls.ingest_url AS livestream_ingest_url,
            ls.moq_endpoint AS livestream_moq_endpoint,
            ls.moq_broadcast AS livestream_moq_broadcast,
-           ls.playback_url AS livestream_playback_url,
            ls.recording_video_id AS livestream_recording_video_id
     FROM videos v
     LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -1758,32 +1730,8 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
   const body = await request.json().catch(() => null)
   if (!body || typeof body !== 'object') return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
 
-  const allowedProviders = new Set(['moq', 'cloudflare_realtime', 'realtimekit'])
   const updates = []
   const values = []
-  if (typeof body.provider === 'string') {
-    const provider = body.provider.trim()
-    if (!provider) {
-      return jsonResponse({ error: 'provider must not be empty when provided' }, 400, corsHeaders)
-    }
-    if (!allowedProviders.has(provider)) {
-      return jsonResponse({ error: `provider must be one of: ${Array.from(allowedProviders).join(', ')}` }, 400, corsHeaders)
-    }
-    updates.push('provider = ?')
-    values.push(provider)
-  }
-  if (Object.prototype.hasOwnProperty.call(body, 'streamId')) {
-    updates.push('stream_id = ?')
-    values.push(typeof body.streamId === 'string' && body.streamId.trim() ? body.streamId.trim() : null)
-  }
-  if (Object.prototype.hasOwnProperty.call(body, 'streamKey')) {
-    updates.push('stream_key = ?')
-    values.push(typeof body.streamKey === 'string' && body.streamKey.trim() ? body.streamKey.trim() : null)
-  }
-  if (Object.prototype.hasOwnProperty.call(body, 'ingestUrl')) {
-    updates.push('ingest_url = ?')
-    values.push(typeof body.ingestUrl === 'string' && body.ingestUrl.trim() ? body.ingestUrl.trim() : null)
-  }
   if (Object.prototype.hasOwnProperty.call(body, 'moqEndpoint')) {
     const moqEndpoint = typeof body.moqEndpoint === 'string' && body.moqEndpoint.trim() ? body.moqEndpoint.trim() : null
     if (moqEndpoint !== null) {
@@ -1801,19 +1749,6 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
     }
     updates.push('moq_broadcast = ?')
     values.push(moqBroadcast)
-  }
-  if (Object.prototype.hasOwnProperty.call(body, 'playbackUrl')) {
-    const playbackUrl = typeof body.playbackUrl === 'string' && body.playbackUrl.trim() ? body.playbackUrl.trim() : null
-    if (playbackUrl) {
-      try {
-        const parsed = new URL(playbackUrl)
-        if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('invalid_protocol')
-      } catch {
-        return jsonResponse({ error: 'playbackUrl must be a valid http(s) URL' }, 400, corsHeaders)
-      }
-    }
-    updates.push('playback_url = ?')
-    values.push(playbackUrl)
   }
   if (Object.prototype.hasOwnProperty.call(body, 'status')) {
     updates.push('status = ?')
@@ -1850,55 +1785,6 @@ async function handleAdminLivestreamUpdate(request: any, env: any, corsHeaders: 
   const livestreamVideo = await getAdminVideoById(db, videoId)
 
   return jsonResponse({ ok: true, video: livestreamVideo }, 200, corsHeaders)
-}
-
-async function handleAdminLivestreamProvision(request: any, env: any, corsHeaders: any) {
-  try {
-    await requireRole(request, env, 'editor', 'admin', 'super_admin')
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
-  }
-  const url = new URL(request.url)
-  const videoId = getAdminVideoIdFromPath(url.pathname)
-  if (!videoId) return jsonResponse({ error: 'Missing videoId' }, 400, corsHeaders)
-
-  const db = getDatabaseBinding(env)
-  const video = await db.prepare('SELECT id, title FROM videos WHERE id = ? LIMIT 1').bind(videoId).first()
-  if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
-  const livestream = await db.prepare(`
-    SELECT video_id, provider, stream_key, ingest_url, moq_broadcast, moq_endpoint
-    FROM livestreams
-    WHERE video_id = ?
-    LIMIT 1
-  `).bind(videoId).first()
-  if (!livestream) return jsonResponse({ error: 'Livestream not found' }, 404, corsHeaders)
-
-  const provider = typeof livestream.provider === 'string' ? livestream.provider.trim().toLowerCase() : ''
-  const endpointField = provider === 'moq'
-    ? (typeof livestream.moq_endpoint === 'string' ? livestream.moq_endpoint : null)
-    : (typeof livestream.ingest_url === 'string' ? livestream.ingest_url : null)
-  const broadcastField = provider === 'moq'
-    ? (typeof livestream.moq_broadcast === 'string' ? livestream.moq_broadcast : null)
-    : (typeof livestream.stream_key === 'string' ? livestream.stream_key : null)
-  const endpoint = endpointField?.trim() || ''
-  const broadcast = broadcastField?.trim() || ''
-  if (!endpoint || !broadcast) {
-    const currentVideo = await getAdminVideoById(db, videoId)
-    return jsonResponse({
-      error: 'Cannot mark livestream ready: missing ingest_url/stream_key (MoQ endpoint/broadcast).',
-      code: 'livestream_config_missing',
-      video: currentVideo,
-    }, 422, corsHeaders)
-  }
-
-  await db.prepare(`
-    UPDATE livestreams
-    SET status = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE video_id = ?
-  `).bind('ready', videoId).run()
-  const updatedVideo = await getAdminVideoById(db, videoId)
-  const mode = provider ? `manual_${provider}` : 'manual_unknown'
-  return jsonResponse({ ok: true, skipped: true, mode, video: updatedVideo }, 200, corsHeaders)
 }
 
 async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHeaders: any) {
@@ -2174,12 +2060,8 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
       SELECT v.id, v.title, v.description, v.status, v.publish_status, v.published_at, v.scheduled_publish_at, v.notified_at, v.updated_at, v.slug, v.legacy_slug, v.upload_date, vca.category_id,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
-             ls.stream_id AS livestream_stream_id,
-             ls.stream_key AS livestream_stream_key,
-             ls.ingest_url AS livestream_ingest_url,
              ls.moq_endpoint AS livestream_moq_endpoint,
              ls.moq_broadcast AS livestream_moq_broadcast,
-             ls.playback_url AS livestream_playback_url,
              ls.recording_video_id AS livestream_recording_video_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id

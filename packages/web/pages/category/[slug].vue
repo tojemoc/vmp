@@ -23,7 +23,7 @@
         </div>
         <div class="flex items-center justify-center gap-3">
           <button
-            class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 disabled:opacity-40"
+            class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
             :disabled="page <= 1 || loadingMore"
             @click="loadPage(page - 1)"
           >
@@ -31,7 +31,7 @@
           </button>
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ strings.categoryPage(page) }}</span>
           <button
-            class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 disabled:opacity-40"
+            class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 transition-colors"
             :disabled="!hasMore || loadingMore"
             @click="loadPage(page + 1)"
           >
