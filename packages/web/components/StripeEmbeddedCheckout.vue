@@ -120,8 +120,8 @@ function getStripe() {
       .then((res) => res.json())
       .then((data) => {
         if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured)
-        const options = data.apiVersion ? { apiVersion: String(data.apiVersion) } : undefined
-        return loadStripe(data.publishableKey, options)
+        // Dahlia Stripe.js is version-pinned; loadStripe() rejects apiVersion.
+        return loadStripe(data.publishableKey)
       })
       .catch((err) => {
         stripePromise = null
