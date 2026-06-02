@@ -39,6 +39,7 @@
 
 <script setup lang="ts">
 import { loadStripe, type Stripe } from '@stripe/stripe-js'
+
 import strings from '~/utils/strings'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
@@ -102,7 +103,7 @@ const props = defineProps<{
   embedded?: boolean
   /** Mount Apple Pay / Google Pay express buttons. */
   showWalletSurface: boolean
-  /** Mount card / PayPal / SEPA payment element. */
+  /** Show card / PayPal / SEPA payment element. */
   showCardSurface: boolean
   /** Hide Apple/Google Pay inside Payment Element when Express Checkout shows them. */
   hidePaymentWallets?: boolean
@@ -305,9 +306,9 @@ async function syncMountedSurfaces() {
 
   if (props.showCardSurface) {
     mountPaymentElement()
-  } else {
-    unmountPaymentElement()
   }
+  // Keep the Payment Element mounted while hidden; recreating it on the same
+  // Checkout instance can leave Stripe with an empty mount after method toggles.
 }
 
 async function setupCheckout() {
