@@ -244,7 +244,7 @@
                     v-if="airplayAvailable"
                     type="button"
                     class="watch-icon-button watch-airplay-button"
-                    aria-label="Start AirPlay"
+                    :aria-label="strings.startAirPlay"
                     @click.stop="handleAirplayButtonClick"
                   >
                     <svg viewBox="0 0 26 24" fill="currentColor" aria-hidden="true">
@@ -257,7 +257,7 @@
                     class="watch-icon-button watch-settings-menu-button sm:hidden"
                     aria-haspopup="menu"
                     :aria-expanded="mobileSettingsOpen"
-                    aria-label="Settings"
+                    :aria-label="strings.settings"
                     @click.stop="toggleMobileSettings"
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -267,7 +267,7 @@
                   <button
                     type="button"
                     class="watch-icon-button watch-fullscreen-button"
-                    :aria-label="isPlayerFullscreen ? 'Exit fullscreen mode' : 'Enter fullscreen mode'"
+                    :aria-label="isPlayerFullscreen ? strings.exitFullscreen : strings.enterFullscreen"
                     @click.stop="handleFullscreenButtonClick"
                   >
                     <svg v-if="isPlayerFullscreen" viewBox="0 0 26 24" fill="currentColor" aria-hidden="true">
@@ -958,9 +958,7 @@ const closeMobileSettingsFromDocument = (event: MouseEvent | PointerEvent | Touc
   const target = event.target
   if (!(target instanceof Node)) return
   if (mobileSettingsMenuRef.value?.contains(target)) return
-  const targetElement = target instanceof HTMLElement ? target : target.parentNode
-  if (!(targetElement instanceof HTMLElement)) return
-  if (targetElement?.closest('.watch-settings-menu-button')) return
+  if (target instanceof Element && target.closest('.watch-settings-menu-button')) return
   mobileSettingsOpen.value = false
 }
 
