@@ -121,9 +121,14 @@
             <media-controller
               v-if="!videoData.video.isLivestream"
               id="watch-media-controller"
+              ref="mediaControllerRef"
               class="watch-media-controller group/controls block w-full aspect-video relative"
+              :class="{ 'watch-video-fill': videoFillMode === 'cover' }"
               @click.capture="handleUserPlaybackInteraction"
               @pointerdown="handleUserPlaybackInteraction"
+              @touchstart.passive="handlePlayerTouchStart"
+              @touchmove.passive="handlePlayerTouchMove"
+              @touchend.passive="handlePlayerTouchEnd"
             >
               <videojs-video
                 ref="videoElement"
@@ -146,11 +151,36 @@
                 <span slot="header">{{ strings.playbackSpeed }}</span>
               </media-playback-rate-menu>
 
-              <media-settings-menu hidden anchor="auto" class="watch-settings-menu">
-                <media-playback-rate-menu rates="0.5 0.75 1 1.25 1.5 2">
-                  <span slot="header">{{ strings.playbackSpeed }}</span>
-                </media-playback-rate-menu>
-              </media-settings-menu>
+              <div
+                v-show="mobileSettingsOpen"
+                ref="mobileSettingsMenuRef"
+                class="watch-mobile-settings-menu sm:hidden"
+                role="menu"
+                :aria-label="strings.playbackSpeed"
+                @click.stop
+              >
+                <p class="watch-mobile-settings-title">{{ strings.playbackSpeed }}</p>
+                <button
+                  v-for="option in playbackRateOptions"
+                  :key="option.value"
+                  type="button"
+                  class="watch-mobile-settings-item"
+                  role="menuitemradio"
+                  :aria-checked="isPlaybackRateSelected(option.value)"
+                  @click="handleMobilePlaybackRate(option.value)"
+                >
+                  <span>{{ option.label }}</span>
+                  <svg
+                    v-if="isPlaybackRateSelected(option.value)"
+                    class="w-4 h-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+              </div>
 
               <!-- Custom Control Bar — stacked: seekbar on top, buttons below -->
               <div class="watch-controls-container">
@@ -210,10 +240,43 @@
                   <media-mute-button></media-mute-button>
                   <media-volume-range class="hidden sm:inline-flex"></media-volume-range>
                   <media-cast-button class="watch-cast-button"></media-cast-button>
-                  <media-airplay-button class="watch-airplay-button"></media-airplay-button>
+                  <button
+                    v-if="airplayAvailable"
+                    type="button"
+                    class="watch-icon-button watch-airplay-button"
+                    :aria-label="strings.startAirPlay"
+                    @click.stop="handleAirplayButtonClick"
+                  >
+                    <svg viewBox="0 0 26 24" fill="currentColor" aria-hidden="true">
+                      <path d="M22.13 3H3.87a.87.87 0 00-.87.87v13.26c0 .48.39.87.87.87h3.4L9 16H5V5h16v11h-4l1.72 2h3.4c.48 0 .87-.39.87-.87V3.87A.87.87 0 0022.13 3zm-8.75 11.44a.5.5 0 00-.76 0l-4.91 5.73a.5.5 0 00.38.83h9.82a.5.5 0 00.38-.83l-4.91-5.73z" />
+                    </svg>
+                  </button>
                   <media-playback-rate-menu-button class="watch-playback-rate-menu-button hidden sm:inline-flex"></media-playback-rate-menu-button>
-                  <media-settings-menu-button class="watch-settings-menu-button sm:hidden"></media-settings-menu-button>
-                  <media-fullscreen-button></media-fullscreen-button>
+                  <button
+                    type="button"
+                    class="watch-icon-button watch-settings-menu-button sm:hidden"
+                    aria-haspopup="menu"
+                    :aria-expanded="mobileSettingsOpen"
+                    :aria-label="strings.settings"
+                    @click.stop="toggleMobileSettings"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M4.5 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zm7.5 0a2.5 2.5 0 100-5 2.5 2.5 0 000 5zm7.5 0a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="watch-icon-button watch-fullscreen-button"
+                    :aria-label="isPlayerFullscreen ? strings.exitFullscreen : strings.enterFullscreen"
+                    @click.stop="handleFullscreenButtonClick"
+                  >
+                    <svg v-if="isPlayerFullscreen" viewBox="0 0 26 24" fill="currentColor" aria-hidden="true">
+                      <path d="M18.5 6.5V3H16v6h6V6.5h-3.5zM16 21h2.5v-3.5H22V15h-6v6zM4 17.5h3.5V21H10v-6H4v2.5zm3.5-11H4V9h6V3H7.5v3.5z" />
+                    </svg>
+                    <svg v-else viewBox="0 0 26 24" fill="currentColor" aria-hidden="true">
+                      <path d="M16 3v2.5h3.5V9H22V3h-6zM4 9h2.5V5.5H10V3H4v6zm15.5 9.5H16V21h6v-6h-2.5v3.5zM6.5 15H4v6h6v-2.5H6.5V15z" />
+                    </svg>
+                  </button>
                 </media-control-bar>
               </div>
             </media-controller>
@@ -444,7 +507,7 @@ import 'videojs-video-element'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
-import { usePlaybackRate } from '~/composables/usePlaybackRate'
+import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
@@ -524,14 +587,44 @@ type MediaLikeElement = HTMLElement & {
   setAttribute: (name: string, value: string) => void
   addEventListener: HTMLElement['addEventListener']
   removeEventListener: HTMLElement['removeEventListener']
+  nativeEl?: HTMLVideoElement
+  webkitEnterFullscreen?: () => void
+  webkitShowPlaybackTargetPicker?: () => void
+}
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null
+  webkitExitFullscreen?: () => Promise<void> | void
+  webkitCancelFullScreen?: () => Promise<void> | void
+}
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
+  webkitRequestFullScreen?: () => Promise<void> | void
+}
+
+type WebKitVideoElement = HTMLVideoElement & {
+  webkitEnterFullscreen?: () => void
+  webkitSetPresentationMode?: (mode: 'fullscreen' | 'inline' | 'picture-in-picture') => void
+  webkitShowPlaybackTargetPicker?: () => void
+}
+
+type ScreenWithOrientationLock = Screen & {
+  orientation?: ScreenOrientation & {
+    lock?: (orientation: OrientationLockType) => Promise<void>
+    unlock?: () => void
+  }
 }
 
 const {
+  playbackRate,
   applyPlaybackRate,
   setPlaybackRate,
 } = usePlaybackRate()
 
 const videoElement        = ref<MediaLikeElement | null>(null)
+const mediaControllerRef  = ref<FullscreenElement | null>(null)
+const mobileSettingsMenuRef = ref<HTMLElement | null>(null)
 const loading             = ref(true)
 const error               = ref<string | null>(null)
 const videoData           = ref<any>(null)
@@ -546,7 +639,12 @@ const rateLimitLimit      = ref(0)
 const autoplayBlocked     = ref(false)
 const autoplayMuting      = ref(false)
 const autoplayPlayError   = ref(false)
+const airplayAvailable    = ref(false)
+const isPlayerFullscreen  = ref(false)
+const mobileSettingsOpen  = ref(false)
+const videoFillMode       = ref<'contain' | 'cover'>('contain')
 const liveCanvas = ref<HTMLCanvasElement | null>(null)
+const playbackRateOptions = PLAYBACK_RATE_OPTIONS
 
 async function handleRateLimitSignIn() {
   await startLoginFlow(`/watch/${encodeURIComponent(videoId.value)}`)
@@ -699,6 +797,240 @@ const formatRetryAfter = (seconds: number) => {
   return m > 0 ? `${m}m ${s}s` : `${s}s`
 }
 
+const getNativeVideoElement = (media: MediaLikeElement | null = videoElement.value): WebKitVideoElement | null => {
+  if (!media || import.meta.server) return null
+  if (media.nativeEl instanceof HTMLVideoElement) return media.nativeEl
+  const shadowVideo = media.shadowRoot?.querySelector('video')
+  return shadowVideo instanceof HTMLVideoElement ? shadowVideo : null
+}
+
+const isIosLikeDevice = () => {
+  if (import.meta.server) return false
+  const nav = navigator
+  return /iPad|iPhone|iPod/.test(nav.userAgent) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1)
+}
+
+const configureNativeVideoFeatures = (nativeVideo: HTMLVideoElement | null) => {
+  if (!nativeVideo) return
+  nativeVideo.setAttribute('x-webkit-airplay', 'allow')
+  ;(nativeVideo as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false
+  nativeVideo.style.objectFit = videoFillMode.value
+}
+
+const updateAirplayAvailability = () => {
+  const nativeVideo = getNativeVideoElement()
+  airplayAvailable.value = Boolean(
+    nativeVideo?.webkitShowPlaybackTargetPicker &&
+    (isIosLikeDevice() || typeof (window as Window & { WebKitPlaybackTargetAvailabilityEvent?: unknown }).WebKitPlaybackTargetAvailabilityEvent !== 'undefined')
+  )
+}
+
+const handleAirplayButtonClick = () => {
+  const nativeVideo = getNativeVideoElement()
+  if (!nativeVideo?.webkitShowPlaybackTargetPicker) {
+    airplayAvailable.value = false
+    return
+  }
+  nativeVideo.webkitShowPlaybackTargetPicker()
+}
+
+const getDocumentFullscreenElement = () => {
+  if (import.meta.server) return null
+  const fullscreenDocument = document as FullscreenDocument
+  return document.fullscreenElement || fullscreenDocument.webkitFullscreenElement || null
+}
+
+const updatePlayerFullscreenState = () => {
+  const fullscreenElement = getDocumentFullscreenElement()
+  isPlayerFullscreen.value = Boolean(
+    fullscreenElement &&
+    (fullscreenElement === mediaControllerRef.value || mediaControllerRef.value?.contains(fullscreenElement))
+  )
+  if (!isPlayerFullscreen.value) {
+    mobileSettingsOpen.value = false
+    unlockLandscapeOrientation()
+  }
+}
+
+const lockLandscapeOrientation = async () => {
+  const orientation = (screen as ScreenWithOrientationLock | undefined)?.orientation
+  if (!orientation?.lock) return
+  try {
+    await orientation.lock('landscape')
+  } catch {
+    // Browser support varies; fullscreen still works when orientation lock is denied.
+  }
+}
+
+const unlockLandscapeOrientation = () => {
+  const orientation = (screen as ScreenWithOrientationLock | undefined)?.orientation
+  try {
+    orientation?.unlock?.()
+  } catch {
+    // Ignore unsupported unlocks.
+  }
+}
+
+const requestElementFullscreen = async (element: FullscreenElement) => {
+  if (element.requestFullscreen) {
+    await element.requestFullscreen({ navigationUI: 'hide' })
+    return true
+  }
+  if (element.webkitRequestFullscreen) {
+    await element.webkitRequestFullscreen()
+    return true
+  }
+  if (element.webkitRequestFullScreen) {
+    await element.webkitRequestFullScreen()
+    return true
+  }
+  return false
+}
+
+const exitElementFullscreen = async () => {
+  const fullscreenDocument = document as FullscreenDocument
+  if (document.exitFullscreen) {
+    await document.exitFullscreen()
+  } else if (fullscreenDocument.webkitExitFullscreen) {
+    await fullscreenDocument.webkitExitFullscreen()
+  } else if (fullscreenDocument.webkitCancelFullScreen) {
+    await fullscreenDocument.webkitCancelFullScreen()
+  }
+  unlockLandscapeOrientation()
+  updatePlayerFullscreenState()
+}
+
+const enterNativeVideoFullscreen = () => {
+  const nativeVideo = getNativeVideoElement()
+  if (!nativeVideo) return false
+  if (nativeVideo.webkitEnterFullscreen) {
+    nativeVideo.webkitEnterFullscreen()
+    return true
+  }
+  if (nativeVideo.webkitSetPresentationMode) {
+    nativeVideo.webkitSetPresentationMode('fullscreen')
+    return true
+  }
+  return false
+}
+
+const handleFullscreenButtonClick = async () => {
+  mobileSettingsOpen.value = false
+  if (isPlayerFullscreen.value || getDocumentFullscreenElement()) {
+    await exitElementFullscreen()
+    return
+  }
+
+  if (isIosLikeDevice() && enterNativeVideoFullscreen()) {
+    return
+  }
+
+  const target = mediaControllerRef.value ?? videoElement.value
+  if (!target) return
+
+  try {
+    const entered = await requestElementFullscreen(target)
+    if (!entered && enterNativeVideoFullscreen()) return
+    updatePlayerFullscreenState()
+    if (getDocumentFullscreenElement()) await lockLandscapeOrientation()
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn('Fullscreen request failed', err)
+    }
+  }
+}
+
+const toggleMobileSettings = () => {
+  mobileSettingsOpen.value = !mobileSettingsOpen.value
+}
+
+const handleMobilePlaybackRate = (rate: number) => {
+  setPlaybackRate(rate)
+  const video = videoElement.value
+  if (video) video.playbackRate = rate
+  mobileSettingsOpen.value = false
+}
+
+const isPlaybackRateSelected = (rate: number) => Math.abs(playbackRate.value - rate) < 0.001
+
+const closeMobileSettingsFromDocument = (event: MouseEvent | PointerEvent | TouchEvent) => {
+  if (!mobileSettingsOpen.value) return
+  const target = event.target
+  if (!(target instanceof Node)) return
+  if (mobileSettingsMenuRef.value?.contains(target)) return
+  if (target instanceof Element && target.closest('.watch-settings-menu-button')) return
+  mobileSettingsOpen.value = false
+}
+
+const applyVideoFillMode = () => {
+  const nativeVideo = getNativeVideoElement()
+  if (nativeVideo) nativeVideo.style.objectFit = videoFillMode.value
+}
+
+const getTouchDistance = (touches: TouchList) => {
+  if (touches.length < 2) return null
+  const [first, second] = [touches.item(0), touches.item(1)]
+  if (!first || !second) return null
+  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY)
+}
+
+let touchStartY = 0
+let touchStartX = 0
+let pinchStartDistance: number | null = null
+let swipeExitInProgress = false
+
+const handlePlayerTouchStart = (event: TouchEvent) => {
+  if (!isPlayerFullscreen.value) return
+  if (event.touches.length === 2) {
+    pinchStartDistance = getTouchDistance(event.touches)
+    return
+  }
+  if (event.touches.length === 1) {
+    const touch = event.touches.item(0)
+    if (!touch) return
+    touchStartY = touch.clientY
+    touchStartX = touch.clientX
+  }
+}
+
+const handlePlayerTouchMove = (event: TouchEvent) => {
+  if (!isPlayerFullscreen.value) return
+  if (event.touches.length === 2 && pinchStartDistance) {
+    const distance = getTouchDistance(event.touches)
+    if (!distance) return
+    const delta = distance - pinchStartDistance
+    if (delta > 36 && videoFillMode.value !== 'cover') {
+      videoFillMode.value = 'cover'
+      applyVideoFillMode()
+    } else if (delta < -36 && videoFillMode.value !== 'contain') {
+      videoFillMode.value = 'contain'
+      applyVideoFillMode()
+    }
+    return
+  }
+  if (event.touches.length !== 1 || swipeExitInProgress) return
+  const touch = event.touches.item(0)
+  if (!touch) return
+  const deltaY = touch.clientY - touchStartY
+  const deltaX = Math.abs(touch.clientX - touchStartX)
+  if (deltaY > 90 && deltaX < 80) {
+    swipeExitInProgress = true
+    exitElementFullscreen().finally(() => {
+      swipeExitInProgress = false
+    })
+  }
+}
+
+const handlePlayerTouchEnd = () => {
+  pinchStartDistance = null
+  touchStartY = 0
+  touchStartX = 0
+}
+
+const handleDocumentFullscreenChange = () => {
+  updatePlayerFullscreenState()
+}
+
 // ── Event handlers ────────────────────────────────────────────────────────────
 
 const handleTimeUpdate = (event: Event) => {
@@ -753,6 +1085,11 @@ const enforcePreviewLimit = (video: HTMLVideoElement) => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  document.addEventListener('fullscreenchange', handleDocumentFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', handleDocumentFullscreenChange)
+  document.addEventListener('click', closeMobileSettingsFromDocument)
+  document.addEventListener('touchstart', closeMobileSettingsFromDocument)
+
   measureDescriptionClamp()
 
   if (returningFromStripe.value) {
@@ -786,6 +1123,10 @@ if (import.meta.client && typeof ResizeObserver !== 'undefined') {
 }
 
 onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', handleDocumentFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', handleDocumentFullscreenChange)
+  document.removeEventListener('click', closeMobileSettingsFromDocument)
+  document.removeEventListener('touchstart', closeMobileSettingsFromDocument)
   descriptionClampResizeObserver?.disconnect()
   descriptionClampResizeObserver = null
   teardownVideoListeners()
@@ -798,6 +1139,9 @@ let handleWaiting:        (() => void) | null = null
 let handlePlaying:        (() => void) | null = null
 let handleCanPlay:        (() => void) | null = null
 let handleRateChange:     (() => void) | null = null
+let handleNativeBeginFullscreen: (() => void) | null = null
+let handleNativeEndFullscreen:   (() => void) | null = null
+let nativeVideoWithListeners: HTMLVideoElement | null = null
 type Closable = { close?: () => void }
 type LivestreamRuntime = {
   connection: Closable | null
@@ -1101,6 +1445,22 @@ const initializeVideoElement = async (
   video.addEventListener('playing', handlePlaying)
   video.addEventListener('canplay', handleCanPlay)
   video.addEventListener('ratechange', handleRateChange)
+  const nativeVideo = getNativeVideoElement(video)
+  configureNativeVideoFeatures(nativeVideo)
+  if (nativeVideo) {
+    nativeVideoWithListeners = nativeVideo
+    handleNativeBeginFullscreen = () => {
+      isPlayerFullscreen.value = true
+      mobileSettingsOpen.value = false
+    }
+    handleNativeEndFullscreen = () => {
+      isPlayerFullscreen.value = false
+      mobileSettingsOpen.value = false
+      unlockLandscapeOrientation()
+    }
+    nativeVideo.addEventListener('webkitbeginfullscreen', handleNativeBeginFullscreen)
+    nativeVideo.addEventListener('webkitendfullscreen', handleNativeEndFullscreen)
+  }
   ensureActive()
 
   buffering.value = true
@@ -1112,6 +1472,8 @@ const initializeVideoElement = async (
   video.setAttribute('preload', 'auto')
   // videojs-video-element load() is async; await it so Video.js is initialized before play().
   await (video as HTMLMediaElement & { load(): Promise<void> }).load()
+  configureNativeVideoFeatures(getNativeVideoElement(video))
+  updateAirplayAvailability()
 
   // Check if video is already ready to avoid hanging on canplay
   if (video.readyState >= 3) { // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
@@ -1225,13 +1587,28 @@ watch(
 
 function teardownVideoListeners() {
   const video = videoElement.value
-  if (!video) return
-  if (handleLoadedMetadata) { video.removeEventListener('loadedmetadata', handleLoadedMetadata); handleLoadedMetadata = null }
-  if (handleMediaError)     { video.removeEventListener('error', handleMediaError);               handleMediaError     = null }
-  if (handleWaiting)        { video.removeEventListener('waiting', handleWaiting);                handleWaiting        = null }
-  if (handlePlaying)        { video.removeEventListener('playing', handlePlaying);                handlePlaying        = null }
-  if (handleCanPlay)        { video.removeEventListener('canplay', handleCanPlay);                handleCanPlay        = null }
-  if (handleRateChange)     { video.removeEventListener('ratechange', handleRateChange);          handleRateChange     = null }
+  if (video) {
+    if (handleLoadedMetadata) { video.removeEventListener('loadedmetadata', handleLoadedMetadata); handleLoadedMetadata = null }
+    if (handleMediaError)     { video.removeEventListener('error', handleMediaError);               handleMediaError     = null }
+    if (handleWaiting)        { video.removeEventListener('waiting', handleWaiting);                handleWaiting        = null }
+    if (handlePlaying)        { video.removeEventListener('playing', handlePlaying);                handlePlaying        = null }
+    if (handleCanPlay)        { video.removeEventListener('canplay', handleCanPlay);                handleCanPlay        = null }
+    if (handleRateChange)     { video.removeEventListener('ratechange', handleRateChange);          handleRateChange     = null }
+  }
+  if (nativeVideoWithListeners) {
+    if (handleNativeBeginFullscreen) {
+      nativeVideoWithListeners.removeEventListener('webkitbeginfullscreen', handleNativeBeginFullscreen)
+      handleNativeBeginFullscreen = null
+    }
+    if (handleNativeEndFullscreen) {
+      nativeVideoWithListeners.removeEventListener('webkitendfullscreen', handleNativeEndFullscreen)
+      handleNativeEndFullscreen = null
+    }
+    nativeVideoWithListeners = null
+  }
+  airplayAvailable.value = false
+  isPlayerFullscreen.value = false
+  mobileSettingsOpen.value = false
 }
 
 function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) {
@@ -1258,8 +1635,26 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
 .watch-media-controller {
   --media-control-background: transparent;
   --media-control-color: #ffffff;
+  background: #000;
+  touch-action: manipulation;
 }
 .watch-media-element { position: relative; z-index: 1; }
+
+.watch-media-controller:fullscreen,
+.watch-media-controller:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: auto;
+  background: #000;
+}
+
+.watch-media-controller:fullscreen .watch-media-element,
+.watch-media-controller:-webkit-full-screen .watch-media-element {
+  width: 100%;
+  height: 100%;
+}
 
 .watch-controls-container {
   position: absolute;
@@ -1296,6 +1691,30 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
   --media-control-background: transparent;
 }
 
+.watch-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--media-control-height, 2.25rem);
+  min-height: var(--media-control-height, 2.25rem);
+  padding: 0.25rem;
+  color: #fff;
+  border-radius: 0.25rem;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.watch-icon-button:hover,
+.watch-icon-button:focus-visible,
+.watch-settings-menu-button[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.watch-icon-button svg {
+  width: 1.625rem;
+  height: 1.5rem;
+}
+
 .watch-playback-rate-menu-button {
   --media-control-background: transparent;
   --media-control-hover-background: rgba(255, 255, 255, 0.12);
@@ -1316,13 +1735,47 @@ function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) 
   display: none;
 }
 
-.watch-settings-menu {
-  --media-menu-background: rgba(20, 20, 30, 0.95);
-  --media-primary-color: #fff;
-}
-
 .watch-settings-menu-button {
   --media-control-background: transparent;
+}
+
+.watch-mobile-settings-menu {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 3.25rem;
+  z-index: 40;
+  min-width: 10rem;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: rgba(20, 20, 30, 0.97);
+  color: #fff;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.watch-mobile-settings-title {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.watch-mobile-settings-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  text-align: left;
+  background: transparent;
+}
+
+.watch-mobile-settings-item:hover,
+.watch-mobile-settings-item:focus-visible,
+.watch-mobile-settings-item[aria-checked="true"] {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .watch-description-collapsed {
