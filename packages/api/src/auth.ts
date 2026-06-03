@@ -452,7 +452,11 @@ export async function issueTotpPendingForMagicLink(
   return { ok: true, pendingToken }
 }
 
-export async function consumeMagicLinkForUser(env: any, rawToken: string): Promise<MagicLinkConsumeResult> {
+export async function consumeMagicLinkForUser(
+  env: any,
+  rawToken: string,
+  options?: { totpAlreadyVerified?: boolean },
+): Promise<MagicLinkConsumeResult> {
   const db = getDb(env)
   const tokenHash = await hashToken(rawToken)
   const record = await loadMagicLinkRecord(db, tokenHash)
@@ -483,7 +487,7 @@ export async function consumeMagicLinkForUser(env: any, rawToken: string): Promi
   }
   const totpRequired = shouldRequireTotpEnrollment(user, env)
 
-  if (totpRequired && user.totp_enabled) {
+  if (totpRequired && user.totp_enabled && !options?.totpAlreadyVerified) {
     const now = Math.floor(Date.now() / 1000)
     const jti = crypto.randomUUID()
     const expiresAt = new Date((now + PENDING_2FA_TTL) * 1000).toISOString()

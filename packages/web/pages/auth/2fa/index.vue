@@ -136,6 +136,12 @@ async function submit() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || strings.totpVerificationFailed)
+      if (data.requiresTwoFactor) {
+        throw new Error(strings.totpVerificationFailed)
+      }
+      if (!data.delivered) {
+        throw new Error(data.error || strings.pwaPushDeliverFailed)
+      }
       try { sessionStorage.removeItem('vmp_pwa_magic_token') } catch { /* ignore */ }
       await navigateTo({
         path: '/auth/verify',

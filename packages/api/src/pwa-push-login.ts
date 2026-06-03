@@ -447,6 +447,7 @@ async function sendPwaAuthPushAndConsumeMagicLink(
   attempt: { device_token: string, push_subscription_json: string },
   linkRow: { user_id: string },
   rawToken: string,
+  options?: { totpAlreadyVerified?: boolean },
 ) {
   let pushSub: { endpoint: string; keys: { p256dh: string; auth: string } }
   try {
@@ -498,7 +499,7 @@ async function sendPwaAuthPushAndConsumeMagicLink(
     return authJson({ error: 'Push delivery failed', code: 'push_failed' }, 502, corsHeaders)
   }
 
-  const phase = await consumeMagicLinkForUser(env, rawToken)
+  const phase = await consumeMagicLinkForUser(env, rawToken, options)
   if (phase.tag === 'invalid') {
     await db.prepare('DELETE FROM pwa_handoffs WHERE code = ?').bind(codeHash).run()
     return authJson({ error: phase.message }, 401, corsHeaders)
@@ -576,5 +577,7 @@ export async function handlePwaPushLoginVerify2fa(request: any, env: any, corsHe
     return authJson({ error: 'Sign-in session mismatch. Start again from the app.' }, 401, corsHeaders)
   }
 
-  return sendPwaAuthPushAndConsumeMagicLink(db, env, corsHeaders, attempt, linkRow, rawToken)
+  return sendPwaAuthPushAndConsumeMagicLink(db, env, corsHeaders, attempt, linkRow, rawToken, {
+    totpAlreadyVerified: true,
+  })
 }
