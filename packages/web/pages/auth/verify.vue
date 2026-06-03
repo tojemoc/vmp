@@ -11,20 +11,23 @@
     <div class="w-full max-w-sm text-center">
 
       <!-- Verifying -->
-      <div v-if="state === 'verifying'" class="space-y-4">
-        <div class="inline-block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
+      <div v-if="state === 'verifying'" class="flex flex-col items-center gap-4">
+        <span
+          class="block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin shrink-0"
+          role="status"
+          aria-hidden="true"
+        />
         <p class="text-gray-400 text-sm">{{ strings.authVerifySigningIn }}</p>
       </div>
 
       <!-- PWA push-login: sending sign-in to installed app -->
-      <div v-else-if="state === 'pwa_push_sending'" class="space-y-4">
-        <div class="flex justify-center" role="status" :aria-label="strings.authVerifyPwaPushSending">
-          <span
-            class="inline-block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"
-            aria-hidden="true"
-          ></span>
-        </div>
-        <p class="text-gray-400 text-sm">{{ strings.authVerifyPwaPushSending }}</p>
+      <div v-else-if="state === 'pwa_push_sending'" class="flex flex-col items-center gap-4">
+        <span
+          class="block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin shrink-0"
+          role="status"
+          :aria-label="strings.authVerifyPwaPushSending"
+        />
+        <p class="text-gray-400 text-sm" aria-hidden="true">{{ strings.authVerifyPwaPushSending }}</p>
       </div>
 
       <!-- PWA push-login: confirm signing into Home Screen app -->
@@ -152,7 +155,16 @@ function firstQueryString(v: unknown): string {
 }
 
 type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_sending' | 'pwa_push_done' | 'pwa_2fa_done'
-const state = ref<State>('verifying')
+
+function initialVerifyState(): State {
+  if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done'
+  if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait'
+  const token = firstQueryString(route.query.token)
+  if (token && isPwaPushLoginLink()) return 'pwa_push_prompt'
+  return 'verifying'
+}
+
+const state = ref<State>(initialVerifyState())
 const errorMessage = ref('')
 const copyHint = ref<string>(strings.authVerifyHandoffCopyLink)
 const handoffCodeForSafari = ref<string | null>(null)
@@ -308,7 +320,6 @@ watch(
   async () => {
     if (import.meta.server) return
 
-    state.value = 'verifying'
     errorMessage.value = ''
 
     const redirect = safeRedirect(firstQueryString(route.query.redirect) || undefined, '/')
@@ -327,6 +338,7 @@ watch(
         state.value = 'handoff_wait'
         return
       }
+      state.value = 'verifying'
       try {
         await redeemPwaHandoff(handoff)
         if (!user.value) throw new Error(strings.authVerifySignInIncomplete)
@@ -351,6 +363,7 @@ watch(
       return
     }
 
+    state.value = 'verifying'
     await runNormalTokenVerify(token)
   },
   { immediate: true },
