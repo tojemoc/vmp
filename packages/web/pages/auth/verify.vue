@@ -11,23 +11,31 @@
     <div class="w-full max-w-sm text-center">
 
       <!-- Verifying -->
-      <div v-if="state === 'verifying'" class="flex flex-col items-center gap-4">
+      <div
+        v-if="state === 'verifying'"
+        class="flex flex-col items-center gap-4"
+        role="status"
+        aria-live="polite"
+      >
         <span
           class="block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin shrink-0"
-          role="status"
           aria-hidden="true"
         />
         <p class="text-gray-400 text-sm">{{ strings.authVerifySigningIn }}</p>
       </div>
 
       <!-- PWA push-login: sending sign-in to installed app -->
-      <div v-else-if="state === 'pwa_push_sending'" class="flex flex-col items-center gap-4">
+      <div
+        v-else-if="state === 'pwa_push_sending'"
+        class="flex flex-col items-center gap-4"
+        role="status"
+        aria-live="polite"
+      >
         <span
           class="block w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin shrink-0"
-          role="status"
-          :aria-label="strings.authVerifyPwaPushSending"
+          aria-hidden="true"
         />
-        <p class="text-gray-400 text-sm" aria-hidden="true">{{ strings.authVerifyPwaPushSending }}</p>
+        <p class="text-gray-400 text-sm">{{ strings.authVerifyPwaPushSending }}</p>
       </div>
 
       <!-- PWA push-login: confirm signing into Home Screen app -->
