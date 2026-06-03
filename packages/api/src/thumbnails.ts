@@ -34,6 +34,9 @@ const SIZES = [
   { key: 'small',  width:  320, height: 180, quality: 80 },
 ]
 
+/** Edge-cache thumbnails aggressively; ?v= on URLs busts cache after re-upload. */
+export const THUMBNAIL_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
 interface ThumbUrls {
   original?: string
   large?: string
@@ -198,7 +201,9 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
 
   try {
     // Store the original with its actual MIME type / extension.
-    await env.BUCKET.put(origKey, sourceBuffer, { httpMetadata: { contentType: origContentType } })
+    await env.BUCKET.put(origKey, sourceBuffer, {
+      httpMetadata: { contentType: origContentType, cacheControl: THUMBNAIL_CACHE_CONTROL },
+    })
     writtenKeys.push(origKey)
     thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`
 
@@ -221,7 +226,12 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
         await blob.arrayBuffer(),
         // Use the blob's actual MIME type so the fallback (PNG source) is served
         // with the correct Content-Type header, not a hardcoded image/jpeg.
-        { httpMetadata: { contentType: blob.type || 'image/jpeg' } },
+        {
+          httpMetadata: {
+            contentType: blob.type || 'image/jpeg',
+            cacheControl: THUMBNAIL_CACHE_CONTROL,
+          },
+        },
       )
       writtenKeys.push(variantKey)
       thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`

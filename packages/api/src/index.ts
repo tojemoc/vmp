@@ -48,7 +48,7 @@ import {
 import { isAdministrativeRole } from './roles.js'
 import { buildEntrypointCandidates, resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js'
-import { handleThumbnailUpload, handleThumbnailDelete } from './thumbnails.js'
+import { handleThumbnailUpload, handleThumbnailDelete, THUMBNAIL_CACHE_CONTROL } from './thumbnails.js'
 import {
   handleAdminNewsletterSend,
   handleAdminNewsletterSettings,
@@ -2360,7 +2360,12 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
       const dstKey = `thumbnails/${draftId}/${file}`
       const obj = await env.BUCKET.get(srcKey)
       if (obj) {
-        await env.BUCKET.put(dstKey, obj.body, { httpMetadata: obj.httpMetadata })
+        await env.BUCKET.put(dstKey, obj.body, {
+          httpMetadata: {
+            ...obj.httpMetadata,
+            cacheControl: obj.httpMetadata?.cacheControl ?? THUMBNAIL_CACHE_CONTROL,
+          },
+        })
         return true
       }
       return false
