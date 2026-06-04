@@ -1,0 +1,23 @@
+[Unit]
+Description=VMP media host supervisor (dashboard + webhook + job queue)
+After=network.target
+
+[Service]
+Type=notify
+WatchdogSec=60
+NotifyAccess=main
+# Defaults; override NODE_BIN/NPM_BIN/VMP_ROOT in /etc/vmp/env (NVM: set NODE_BIN to a stable path or symlink)
+Environment=VMP_ROOT=/root/vmp
+Environment=NODE_BIN=/usr/bin/node
+Environment=NPM_BIN=/usr/bin/npm
+EnvironmentFile=-/etc/vmp/env
+# ExecStart uses absolute script path under VMP_ROOT (no WorkingDirectory required)
+ExecStart=/bin/bash -c 'exec "${NODE_BIN}" "${VMP_ROOT}/packages/podcast-host/dist/supervisor.js"'
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
