@@ -17,7 +17,7 @@
 import http from 'node:http'
 import crypto from 'node:crypto'
 import net from 'node:net'
-import { spawn } from 'node:child_process'
+import { spawn, execFile, execFileSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -655,16 +655,25 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown | null> 
   }
 }
 
-function sdNotify(state: string): void {
-  const sock = process.env.NOTIFY_SOCKET
-  if (!sock) return
-  void import('node:dgram').then((dgram) => {
-    // systemd NOTIFY_SOCKET uses unix_dgram; @types/node omits this socket type
-    // @ts-expect-error unix_dgram is valid at runtime for sd_notify
-    const client = dgram.createSocket('unix_dgram')
-    // @ts-expect-error path argument for unix_dgram send
-    client.send(state, 0, state.length, sock, () => client.close())
-  }).catch(() => {})
+/** sd_notify(3) via systemd-notify (AF_UNIX SOCK_DGRAM; node:dgram has no unix_dgram). */
+function sdNotify(state: string, sync = false): void {
+  if (!process.env.NOTIFY_SOCKET) return
+  const opts = { env: process.env, timeout: 2000 }
+  const logFailure = (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[vmp-podcast-host] sd_notify ${state}: ${msg}`)
+  }
+  try {
+    if (sync) {
+      execFileSync('systemd-notify', [state], opts)
+    } else {
+      execFile('systemd-notify', [state], opts, (err) => {
+        if (err) logFailure(err)
+      })
+    }
+  } catch (err) {
+    logFailure(err)
+  }
 }
 
 function hasStuckRunningJobs(): boolean {
@@ -1205,7 +1214,7 @@ server.listen(uiPort, uiHost, () => {
 
 const gracefulShutdown = async (signal) => {
   pushLog(`${signal} — stopping`)
-  sdNotify('STOPPING=1')
+  sdNotify('STOPPING=1', true)
   if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
   if (pipelineChild && !pipelineState.exited) {
     try {

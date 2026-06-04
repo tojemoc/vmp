@@ -124,4 +124,6 @@ Use restart when applying `/etc/vmp/env` or a new `dist/` build; use stop when y
 
 The unit uses `Type=notify` with `WatchdogSec=60`. The supervisor sends `READY=1` when the HTTP server is listening and `WATCHDOG=1` every 20 seconds while the `pipeline_watch` child is alive and **no** job has been stuck in `running` longer than `VMP_STUCK_JOB_MINUTES` (default 60).
 
+Notifications use `/usr/bin/systemd-notify` (from the `systemd` package). Node’s `node:dgram` module does not support Unix datagram sockets (`AF_UNIX` / `SOCK_DGRAM`), which `sd_notify(3)` requires.
+
 If a job exceeds that threshold, the supervisor **stops** sending `WATCHDOG=1`. Systemd then waits `WatchdogSec=60` before marking the unit failed. With `Restart=on-failure` and `RestartSec=5`, systemd starts a new process after the restart delay, so the typical gap before a fresh supervisor is **about `WatchdogSec` + `RestartSec` (~65 seconds)**, not 60 seconds alone. That recovery path is intentional for stuck encode/upload work.
