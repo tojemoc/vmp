@@ -655,25 +655,29 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown | null> 
   }
 }
 
+const SYSTEMD_NOTIFY_BIN = '/usr/bin/systemd-notify'
+
 /** sd_notify(3) via systemd-notify (AF_UNIX SOCK_DGRAM; node:dgram has no unix_dgram). */
-function sdNotify(state: string, sync = false): void {
-  if (!process.env.NOTIFY_SOCKET) return
+function sdNotify(state: string, sync = false): boolean {
+  if (!process.env.NOTIFY_SOCKET) return true
   const opts = { env: process.env, timeout: 2000 }
-  const logFailure = (err: unknown) => {
+  const logFailure = (err: unknown): false => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[vmp-podcast-host] sd_notify ${state}: ${msg}`)
+    return false
   }
-  try {
-    if (sync) {
-      execFileSync('systemd-notify', [state], opts)
-    } else {
-      execFile('systemd-notify', [state], opts, (err) => {
-        if (err) logFailure(err)
-      })
+  if (sync) {
+    try {
+      execFileSync(SYSTEMD_NOTIFY_BIN, [state], opts)
+      return true
+    } catch (err) {
+      return logFailure(err)
     }
-  } catch (err) {
-    logFailure(err)
   }
+  execFile(SYSTEMD_NOTIFY_BIN, [state], opts, (err) => {
+    if (err) logFailure(err)
+  })
+  return true
 }
 
 function hasStuckRunningJobs(): boolean {
@@ -1198,11 +1202,14 @@ server.listen(uiPort, uiHost, () => {
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
   )
   pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
-  sdNotify('READY=1')
+  if (!sdNotify('READY=1', true)) {
+    console.error('[vmp-podcast-host] failed to notify systemd READY=1; exiting')
+    process.exit(1)
+  }
   startPipeline()
   setInterval(() => {
     if (pipelineChild && !pipelineState.exited && !hasStuckRunningJobs()) {
-      sdNotify('WATCHDOG=1')
+      void sdNotify('WATCHDOG=1')
     }
   }, 20_000)
   if (autoUpgradeEnabled) {
