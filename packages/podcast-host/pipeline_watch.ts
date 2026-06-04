@@ -89,6 +89,9 @@ function trackChild<T extends ChildProcess>(child: T, videoId?: string): T {
   if (videoId) {
     const handle = ensureJobHandle(videoId)
     handle.children.add(child)
+    if (handle.status === 'paused' || handle.status === 'stopping') {
+      try { child.kill('SIGSTOP') } catch {}
+    }
     const clear = () => handle.children.delete(child)
     child.once('close', clear)
     child.once('error', clear)
@@ -103,6 +106,36 @@ function trackChild<T extends ChildProcess>(child: T, videoId?: string): T {
 
 function isJobStopped(videoId: string): boolean {
   return stoppedVideos.has(videoId) || jobHandles.get(videoId)?.status === 'stopping'
+}
+
+function isJobPaused(videoId: string): boolean {
+  return jobHandles.get(videoId)?.status === 'paused'
+}
+
+class JobStoppedError extends Error {
+  constructor(readonly videoId: string) {
+    super(`Job stopped: ${videoId}`)
+    this.name = 'JobStoppedError'
+  }
+}
+
+function assertNotStopped(videoId: string): void {
+  if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
+}
+
+async function waitWhilePaused(videoId: string): Promise<void> {
+  while (isJobPaused(videoId)) {
+    assertNotStopped(videoId)
+    await new Promise((r) => setTimeout(r, 500))
+  }
+}
+
+async function cleanupCancelledJob(videoId: string, lockFile: string): Promise<void> {
+  await rm(lockFile, { force: true })
+  videoDurations.delete(videoId)
+  progressEmitState.delete(videoId)
+  jobHandles.delete(videoId)
+  stoppedVideos.delete(videoId)
 }
 
 export function pauseJob(videoId: string): void {
@@ -147,15 +180,20 @@ async function waitForChildrenExit(children: Set<ChildProcess>, timeoutMs: numbe
 }
 
 export async function stopJob(videoId: string): Promise<void> {
-  const handle = jobHandles.get(videoId)
-  if (!handle) return
   stoppedVideos.add(videoId)
+  removeQueuedJobs(videoId)
+  const handle = jobHandles.get(videoId)
+  const tmpDir = path.join(TMP_DIR_BASE, videoId)
+  if (!handle) {
+    await rm(tmpDir, { recursive: true, force: true })
+    emitPipelineEvent(videoId, 'stopped', 'failed', 'stopped_by_user')
+    return
+  }
   handle.status = 'stopping'
   for (const child of handle.children) {
     try { child.kill('SIGTERM') } catch {}
   }
   await waitForChildrenExit(handle.children, 5000)
-  const tmpDir = path.join(TMP_DIR_BASE, videoId)
   await rm(tmpDir, { recursive: true, force: true })
   emitPipelineEvent(videoId, 'stopped', 'failed', 'stopped_by_user')
   jobHandles.delete(videoId)
@@ -789,10 +827,11 @@ async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: stri
 }
 
 async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
-  if (isJobStopped(videoId)) return
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   const doneFlag = path.join(tmpDir, '.done')
   const lockFile = path.join(tmpDir, '.lock')
+  let cancelled = false
+  if (isJobStopped(videoId)) return
   await mkdir(tmpDir, { recursive: true })
   if (existsSync(doneFlag)) {
     emitPipelineEvent(videoId, 'done', 'success', 'already_done')
@@ -807,16 +846,19 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
   await emitTtp(videoId, 'processing_started', {})
   emitPipelineEvent(videoId, 'detected', 'active', `source=${source}`)
   try {
-    if (isJobStopped(videoId)) return
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
     emitPipelineEvent(videoId, 'wait_upload_complete', 'active', 'waiting_for_file_stability')
     await waitStableSize(inputPath)
-    if (isJobStopped(videoId)) return
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
     emitPipelineEvent(videoId, 'wait_upload_complete', 'active', 'stable')
     await emitTtp(videoId, 'file_stable', {})
 
     emitPipelineEvent(videoId, 'probe', 'active', 'probing_streams')
     const { hasAudio, durationSec } = await probeSource(inputPath, videoId)
-    if (isJobStopped(videoId)) return
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
     if (durationSec != null) {
       setTtpSourceDuration(videoId, durationSec)
       videoDurations.set(videoId, durationSec)
@@ -826,14 +868,15 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitProgressCheckpoint(videoId, 'probe', PROGRESS.PROBE, 'probe complete')
 
     await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
-    if (isJobStopped(videoId)) return
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
     emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
 
     const podcastTask = hasAudio
       ? encodePodcastMp3(videoId, inputPath, tmpDir)
         .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
         .catch(async (err) => {
-          if (isJobStopped(videoId)) return
+          if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
           const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
           log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
           emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
@@ -845,16 +888,19 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
       })()
 
     const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
-      if (isJobStopped(videoId)) return
+      if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
       log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
       emitPipelineEvent(videoId, 'phase2_upload', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
     })
 
     await Promise.all([podcastTask, phase2Task])
-    if (isJobStopped(videoId)) return
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
 
     if (PREVIEW_MP3_ENABLED && hasAudio && existsSync(path.join(tmpDir, 'podcast.mp3'))) {
       setJobPhase(videoId, 'preview')
+      assertNotStopped(videoId)
+      await waitWhilePaused(videoId)
       if (PREVIEW_MP3_LOCK_SECONDS > 0) {
         emitPipelineEvent(videoId, 'preview_wait', 'active', `${PREVIEW_MP3_LOCK_SECONDS}s`)
         await new Promise((r) => setTimeout(r, PREVIEW_MP3_LOCK_SECONDS * 1000))
@@ -920,11 +966,8 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     jobHandles.delete(videoId)
     stoppedVideos.delete(videoId)
   } catch (err) {
-    if (isJobStopped(videoId)) {
-      await rm(lockFile, { force: true })
-      videoDurations.delete(videoId)
-      progressEmitState.delete(videoId)
-      stoppedVideos.delete(videoId)
+    if (err instanceof JobStoppedError || isJobStopped(videoId)) {
+      cancelled = true
       return
     }
     const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
@@ -936,6 +979,10 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     videoDurations.delete(videoId)
     progressEmitState.delete(videoId)
     throw err
+  } finally {
+    if (cancelled) {
+      await cleanupCancelledJob(videoId, lockFile)
+    }
   }
 }
 
@@ -943,6 +990,12 @@ const queue: QueueJob[] = []
 let running = 0
 let ipcServer: net.Server | null = null
 const ipcSocketPath = `/tmp/vmp-pipeline-${process.pid}.sock`
+
+function removeQueuedJobs(videoId: string): void {
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (queue[i]?.videoId === videoId) queue.splice(i, 1)
+  }
+}
 
 function reorderQueue(order: string[]): void {
   const orderMap = new Map(order.map((id, index) => [id, index]))
@@ -1028,6 +1081,7 @@ async function stopIpcServer(): Promise<void> {
 }
 
 function enqueue(videoId: string, inputPath: string, source: string): void {
+  if (isJobStopped(videoId)) return
   beginTtpJob(videoId, source, inputPath)
   queue.push({ videoId, inputPath, source })
   drain()
@@ -1081,6 +1135,7 @@ function drain(): void {
   while (!shuttingDown && running < MAX_JOBS && queue.length > 0) {
     const job = queue.shift()
     if (!job) break
+    if (isJobStopped(job.videoId)) continue
     running += 1
     processVideo(job.videoId, job.inputPath, job.source)
       .catch(() => {})

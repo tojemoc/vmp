@@ -127,6 +127,14 @@ const jobQueue: QueuedJob[] = []
 const jobsById = new Map<string, QueuedJob>()
 /** @type {Map<string, QueuedJob>} */
 const jobsByVideoId = new Map<string, QueuedJob>()
+
+function jobRegistryKey(type: QueuedJob['type'], videoId: string): string {
+  return `${type}:${videoId}`
+}
+
+function getQueuedJob(type: QueuedJob['type'], videoId: string): QueuedJob | undefined {
+  return jobsByVideoId.get(jobRegistryKey(type, videoId))
+}
 /** @type {Map<string, { id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt?: string }>} */
 const pipelineActiveJobs = new Map()
 /** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
@@ -190,14 +198,17 @@ function sortJobQueue(): void {
 
 function registerQueuedJob(job: QueuedJob): void {
   jobsById.set(job.id, job)
-  jobsByVideoId.set(job.videoId, job)
+  jobsByVideoId.set(jobRegistryKey(job.type, job.videoId), job)
   const existingIdx = jobQueue.findIndex((q) => q.id === job.id)
   if (existingIdx >= 0) jobQueue[existingIdx] = job
   else jobQueue.push(job)
   sortJobQueue()
   while (jobQueue.length > 200) {
     const removed = jobQueue.pop()
-    if (removed) jobsById.delete(removed.id)
+    if (removed) {
+      jobsById.delete(removed.id)
+      jobsByVideoId.delete(jobRegistryKey(removed.type, removed.videoId))
+    }
   }
 }
 
@@ -266,7 +277,7 @@ function upsertPipelineJob(event) {
     priority: existing?.priority ?? 100,
     queuePosition: null,
   }
-  let queued = jobsByVideoId.get(event.videoId)
+  let queued = getQueuedJob('pipeline', event.videoId)
   if (!queued && event.stage === 'detected') {
     queued = {
       id: row.id,
@@ -369,7 +380,7 @@ function consumePipelineProgressLine(line) {
       progressPhase2Started: phaseProgress.phase2Started,
       detail: row.detail ? String(row.detail) : base.detail,
       updatedAt: now,
-      priority: jobsByVideoId.get(videoId)?.priority ?? 100,
+      priority: getQueuedJob('pipeline', videoId)?.priority ?? 100,
       queuePosition: getQueuePosition(videoId),
     })
     syncResourceSlots()
@@ -428,7 +439,7 @@ function sendPipelineCommand(
       resolve(result)
     }
     client.setTimeout(10_000, () => finish({ ok: false, error: 'timeout' }))
-    client.on('connect', () => client.write(message))
+    client.on('connect', () => client.end(message))
     client.on('data', (d) => { response += d.toString() })
     client.on('end', () => {
       try {
@@ -1103,7 +1114,7 @@ const server = http.createServer(async (req, res) => {
         json(res, { error: 'Invalid priority' }, 400)
         return
       }
-      const job = jobsByVideoId.get(videoId)
+      const job = getQueuedJob('pipeline', videoId)
       if (job) {
         job.priority = priority
         registerQueuedJob(job)
@@ -1115,7 +1126,11 @@ const server = http.createServer(async (req, res) => {
       return
     }
     const ipcResult = await sendPipelineCommand(action as 'pause' | 'resume' | 'stop', videoId)
-    const job = jobsByVideoId.get(videoId)
+    if (!ipcResult.ok) {
+      json(res, ipcResult, 502)
+      return
+    }
+    const job = getQueuedJob('pipeline', videoId)
     if (job) {
       if (action === 'pause') job.status = 'paused'
       else if (action === 'resume') job.status = 'running'
@@ -1130,10 +1145,6 @@ const server = http.createServer(async (req, res) => {
         active.status = 'failed'
         active.detail = 'stopped_by_user'
       }
-    }
-    if (!ipcResult.ok) {
-      json(res, ipcResult, 502)
-      return
     }
     json(res, { ok: true })
     return
@@ -1150,8 +1161,13 @@ const server = http.createServer(async (req, res) => {
       json(res, { error: 'Missing order array' }, 400)
       return
     }
+    const ipcResult = await sendPipelineCommand('reorder', undefined, { order: order.map(String) })
+    if (!ipcResult.ok) {
+      json(res, ipcResult, 502)
+      return
+    }
     order.forEach((videoId, index) => {
-      const job = jobsByVideoId.get(String(videoId))
+      const job = getQueuedJob('pipeline', String(videoId))
       if (job) {
         job.priority = index
         registerQueuedJob(job)
@@ -1160,11 +1176,6 @@ const server = http.createServer(async (req, res) => {
       if (active) active.priority = index
     })
     sortJobQueue()
-    const ipcResult = await sendPipelineCommand('reorder', undefined, { order: order.map(String) })
-    if (!ipcResult.ok) {
-      json(res, ipcResult, 502)
-      return
-    }
     json(res, { ok: true })
     return
   }

@@ -9,7 +9,36 @@ sudo cp packages/podcast-host/systemd/vmp-supervisor.service /etc/systemd/system
 sudo systemctl daemon-reload
 ```
 
-Adjust paths in the unit file if the repo is not at `/root/vmp` or Node is installed elsewhere.
+**Adjust paths** in the unit file (or in `/etc/vmp/env`) if the repo or Node binaries differ:
+
+| Field | Purpose | How to set |
+|-------|---------|------------|
+| `VMP_ROOT` | Repository root | e.g. `/root/vmp` or `/opt/vmp` |
+| `NODE_BIN` | Node binary | `which node` (system) or `~/.nvm/versions/node/$(nvm current)/bin/node` |
+| `NPM_BIN` | npm binary | `which npm` (system) or matching NVM `bin/npm` |
+| `WorkingDirectory` | Must match `VMP_ROOT` if you change it | Same as `VMP_ROOT` in the shipped unit |
+| `ExecStart` | Runs `packages/podcast-host/dist/supervisor.js` under `VMP_ROOT` | Uses `NODE_BIN` and `VMP_ROOT` from environment |
+
+Example overrides in `/etc/vmp/env` for a system Node install at `/opt/vmp`:
+
+```ini
+VMP_ROOT=/opt/vmp
+NODE_BIN=/usr/bin/node
+NPM_BIN=/usr/bin/npm
+```
+
+Stable symlinks (optional): `sudo ln -sf "$(which node)" /usr/local/bin/vmp-node` and set `NODE_BIN=/usr/local/bin/vmp-node` so upgrades do not require editing the unit.
+
+## Build before first start
+
+`dist/` is not committed. Build once after deploy or pull:
+
+```bash
+cd "${VMP_ROOT:-/root/vmp}"
+"${NPM_BIN:-npm}" run build --workspace=@vmp/podcast-host
+```
+
+The unit does **not** run `npm build` on every start (avoids latency and failures on restart).
 
 ## Environment file
 
@@ -50,16 +79,26 @@ journalctl -u vmp-supervisor -f
 
 ## Drain and restart
 
-Send SIGTERM so the supervisor shuts down preview children and the pipeline watcher cleanly:
+**Drain / stop without starting a new instance** (maintenance, drain queue):
 
 ```bash
+sudo systemctl stop vmp-supervisor
+# or signal only:
 sudo systemctl kill --signal=SIGTERM vmp-supervisor
 ```
 
-Or restart after config changes:
+Both send `SIGTERM` (`KillSignal=SIGTERM`) so the supervisor can shut down preview children and `pipeline_watch`. `Restart=on-failure` only applies after a **non-zero exit**; a clean stop does not auto-restart.
+
+**Restart after config or code changes** (graceful stop, then start a new process):
 
 ```bash
 sudo systemctl restart vmp-supervisor
 ```
 
-The unit uses `Type=notify` with a 60s watchdog. The supervisor sends `READY=1` when the HTTP server is listening and `WATCHDOG=1` every 20 seconds while the pipeline child is healthy and no job has been stuck in `running` longer than `VMP_STUCK_JOB_MINUTES` (default 60).
+Use restart when applying `/etc/vmp/env` or a new `dist/` build; use stop when you want the host idle.
+
+## Watchdog and stuck jobs
+
+The unit uses `Type=notify` with `WatchdogSec=60`. The supervisor sends `READY=1` when the HTTP server is listening and `WATCHDOG=1` every 20 seconds while the `pipeline_watch` child is alive and **no** job has been stuck in `running` longer than `VMP_STUCK_JOB_MINUTES` (default 60).
+
+If a job exceeds that threshold, the supervisor **stops** sending `WATCHDOG=1`. With `WatchdogSec=60`, systemd treats the service as failed and **automatically restarts it after 60 seconds**. That restart is intentional recovery from a stuck encode/upload.

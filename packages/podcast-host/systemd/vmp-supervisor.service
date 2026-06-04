@@ -6,10 +6,14 @@ After=network.target
 Type=notify
 WatchdogSec=60
 NotifyAccess=main
-WorkingDirectory=/root/vmp
+# Override via /etc/vmp/env (VMP_ROOT, NODE_BIN, NPM_BIN)
+Environment=VMP_ROOT=/root/vmp
+Environment=NODE_BIN=/root/.nvm/versions/node/v24.14.1/bin/node
+Environment=NPM_BIN=/root/.nvm/versions/node/v24.14.1/bin/npm
 EnvironmentFile=-/etc/vmp/env
-ExecStartPre=/root/.nvm/versions/node/v24.14.1/bin/npm run build --workspace=@vmp/podcast-host
-ExecStart=/root/.nvm/versions/node/v24.14.1/bin/node /root/vmp/packages/podcast-host/dist/supervisor.js
+WorkingDirectory=/root/vmp
+# Build dist/ during deployment (see systemd/README.md); not on every start
+ExecStart=/bin/bash -c 'exec "${NODE_BIN}" "${VMP_ROOT}/packages/podcast-host/dist/supervisor.js"'
 Restart=on-failure
 RestartSec=5s
 KillMode=mixed
