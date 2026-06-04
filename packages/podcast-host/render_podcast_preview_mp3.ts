@@ -129,6 +129,18 @@ async function main() {
     const sourceUsed = await copyFirstAvailableSource(root, videoId, localIn)
     console.log(`[preview] source=${sourceUsed}`)
 
+    const sourceDurationRaw = await runCapture(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', localIn],
+      'ffprobe source duration',
+    )
+    const sourceDurationSeconds = Number.parseFloat(sourceDurationRaw.trim())
+    if (Number.isFinite(sourceDurationSeconds) && sourceDurationSeconds > 0
+      && previewSeconds >= sourceDurationSeconds - 0.5) {
+      console.log(`[preview] skip full-unlock video=${videoId} (${previewSeconds}s >= ${Math.round(sourceDurationSeconds)}s source)`)
+      return
+    }
+
     await run(
       'ffmpeg',
       ['-hide_banner', '-y', '-i', localIn, '-t', String(previewSeconds), '-vn', '-c:a', 'libmp3lame', '-b:a', mp3Bitrate, '-f', 'mp3', localOut],

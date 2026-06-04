@@ -15,6 +15,7 @@ import { getRequestPublicOrigin } from './requestPublicOrigin.js'
 import { computeRssTokenHex } from './rssToken.js'
 import { getSetting } from './settingsStore.js'
 import { getReadSession, applySessionBookmark, getDb } from './d1Session.js'
+import { needsPodcastPreviewMp3 } from './podcastPreview.js'
  
 function xmlEscape(text: any) {
   if (text == null) return ''
@@ -207,12 +208,14 @@ async function buildRssEnclosureForVideo({
   const hasPreviewCap = previewUntilSeconds !== null
     && typeof previewUntilSeconds === 'number'
     && previewUntilSeconds > 0
+  const fullDuration = Number(v?.full_duration ?? 0) || 0
+  const usePreviewMp3 = hasPreviewCap && needsPodcastPreviewMp3(previewUntilSeconds, fullDuration)
 
   const entrypointUrl = await resolveMediaEntrypointUrl({
     env,
     videoId,
     preferPodcast: true,
-    rssPreview: hasPreviewCap,
+    rssPreview: usePreviewMp3,
   })
 
   const pathLower = entrypointPathnameLower(entrypointUrl)
@@ -235,7 +238,6 @@ async function buildRssEnclosureForVideo({
 
   let itunesDurationStr: string
   const previewDuration = Number(v.preview_duration ?? 0) || 0
-  const fullDuration = Number(v.full_duration ?? 0) || 0
   const mediaDuration = fullDuration > 0 ? fullDuration : previewDuration
   const previewMetaDuration = isMp3
     ? await fetchPreviewMetaDurationSeconds(

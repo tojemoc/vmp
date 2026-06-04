@@ -1077,8 +1077,13 @@ const server = http.createServer(async (req, res) => {
     for (const v of videos) {
       const id = v?.id
       const sec = Number(v?.previewDurationSeconds)
+      const fullSec = Number(v?.fullDurationSeconds)
       if (!id || !Number.isFinite(sec) || sec <= 0) {
         rejected.push({ id: String(id || ''), reason: 'invalid_preview_duration' })
+        continue
+      }
+      if (Number.isFinite(fullSec) && fullSec > 0 && sec >= fullSec - 0.5) {
+        rejected.push({ id: String(id), reason: 'full_unlock' })
         continue
       }
       // Reject path-like IDs to prevent directory traversal
