@@ -6,13 +6,12 @@ After=network.target
 Type=notify
 WatchdogSec=60
 NotifyAccess=main
-# Override via /etc/vmp/env (VMP_ROOT, NODE_BIN, NPM_BIN)
+# Defaults; override NODE_BIN/NPM_BIN/VMP_ROOT in /etc/vmp/env (NVM: set NODE_BIN to a stable path or symlink)
 Environment=VMP_ROOT=/root/vmp
-Environment=NODE_BIN=/root/.nvm/versions/node/v24.14.1/bin/node
-Environment=NPM_BIN=/root/.nvm/versions/node/v24.14.1/bin/npm
+Environment=NODE_BIN=/usr/bin/node
+Environment=NPM_BIN=/usr/bin/npm
 EnvironmentFile=-/etc/vmp/env
-WorkingDirectory=/root/vmp
-# Build dist/ during deployment (see systemd/README.md); not on every start
+# ExecStart uses absolute script path under VMP_ROOT (no WorkingDirectory required)
 ExecStart=/bin/bash -c 'exec "${NODE_BIN}" "${VMP_ROOT}/packages/podcast-host/dist/supervisor.js"'
 Restart=on-failure
 RestartSec=5s
