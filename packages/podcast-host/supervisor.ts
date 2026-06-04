@@ -17,7 +17,7 @@
 import http from 'node:http'
 import crypto from 'node:crypto'
 import net from 'node:net'
-import { spawn } from 'node:child_process'
+import { spawn, execFile, execFileSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -655,16 +655,29 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown | null> 
   }
 }
 
-function sdNotify(state: string): void {
-  const sock = process.env.NOTIFY_SOCKET
-  if (!sock) return
-  void import('node:dgram').then((dgram) => {
-    // systemd NOTIFY_SOCKET uses unix_dgram; @types/node omits this socket type
-    // @ts-expect-error unix_dgram is valid at runtime for sd_notify
-    const client = dgram.createSocket('unix_dgram')
-    // @ts-expect-error path argument for unix_dgram send
-    client.send(state, 0, state.length, sock, () => client.close())
-  }).catch(() => {})
+const SYSTEMD_NOTIFY_BIN = '/usr/bin/systemd-notify'
+
+/** sd_notify(3) via systemd-notify (AF_UNIX SOCK_DGRAM; node:dgram has no unix_dgram). */
+function sdNotify(state: string, sync = false): boolean {
+  if (!process.env.NOTIFY_SOCKET) return true
+  const opts = { env: process.env, timeout: 2000 }
+  const logFailure = (err: unknown): false => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[vmp-podcast-host] sd_notify ${state}: ${msg}`)
+    return false
+  }
+  if (sync) {
+    try {
+      execFileSync(SYSTEMD_NOTIFY_BIN, [state], opts)
+      return true
+    } catch (err) {
+      return logFailure(err)
+    }
+  }
+  execFile(SYSTEMD_NOTIFY_BIN, [state], opts, (err) => {
+    if (err) logFailure(err)
+  })
+  return true
 }
 
 function hasStuckRunningJobs(): boolean {
@@ -1189,11 +1202,14 @@ server.listen(uiPort, uiHost, () => {
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
   )
   pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
-  sdNotify('READY=1')
+  if (!sdNotify('READY=1', true)) {
+    console.error('[vmp-podcast-host] failed to notify systemd READY=1; exiting')
+    process.exit(1)
+  }
   startPipeline()
   setInterval(() => {
     if (pipelineChild && !pipelineState.exited && !hasStuckRunningJobs()) {
-      sdNotify('WATCHDOG=1')
+      void sdNotify('WATCHDOG=1')
     }
   }, 20_000)
   if (autoUpgradeEnabled) {
@@ -1205,7 +1221,7 @@ server.listen(uiPort, uiHost, () => {
 
 const gracefulShutdown = async (signal) => {
   pushLog(`${signal} — stopping`)
-  sdNotify('STOPPING=1')
+  sdNotify('STOPPING=1', true)
   if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
   if (pipelineChild && !pipelineState.exited) {
     try {
