@@ -16,6 +16,7 @@
 
 import http from 'node:http'
 import crypto from 'node:crypto'
+import net from 'node:net'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +39,12 @@ if (requireWebhookSecret && !secret) {
 const uiHost = process.env.VMP_UI_HOST || '127.0.0.1'
 const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10)
 const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
-const previewConcurrency = Math.max(1, Number.parseInt(process.env.VMP_PREVIEW_CONCURRENCY || '1', 10) || 1)
+const MAX_GPU_JOBS = Math.max(1, Number.parseInt(process.env.VMP_GPU_CONCURRENCY || '1', 10) || 1)
+const MAX_UPLOAD_JOBS = Math.max(1, Number.parseInt(process.env.VMP_UPLOAD_CONCURRENCY || '2', 10) || 2)
+const STUCK_JOB_MINUTES = Math.max(1, Number.parseInt(process.env.VMP_STUCK_JOB_MINUTES || '60', 10) || 60)
+const gpuSlots = { max: MAX_GPU_JOBS, current: 0 }
+const uploadSlots = { max: MAX_UPLOAD_JOBS, current: 0 }
+let previewGpuRunning = 0
 const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
 const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1'
 const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main'
@@ -103,8 +109,24 @@ try {
   process.exit(1)
 }
 
-/** @type {{ id: string, type: string, videoId?: string, status: string, detail?: string, source?: string, stage?: string, startedAt?: string, updatedAt?: string, finishedAt?: string }[]} */
-const jobs = []
+type QueuedJob = {
+  id: string
+  type: 'pipeline' | 'preview_mp3'
+  videoId: string
+  priority: number
+  enqueuedAt: string
+  status: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'stopped'
+  detail?: string
+  source?: string
+  previewSeconds?: number
+}
+
+/** @type {QueuedJob[]} */
+const jobQueue: QueuedJob[] = []
+/** @type {Map<string, QueuedJob>} */
+const jobsById = new Map<string, QueuedJob>()
+/** @type {Map<string, QueuedJob>} */
+const jobsByVideoId = new Map<string, QueuedJob>()
 /** @type {Map<string, { id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt?: string }>} */
 const pipelineActiveJobs = new Map()
 /** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
@@ -152,8 +174,68 @@ function stageLabel(stage) {
     cleanup: 'Cleanup',
     done: 'Done',
     failed: 'Failed',
+    paused: 'Paused',
+    resumed: 'Resumed',
+    stopped: 'Stopped',
   }
   return labels[stage] || stage
+}
+
+function sortJobQueue(): void {
+  jobQueue.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+    return a.enqueuedAt < b.enqueuedAt ? -1 : a.enqueuedAt > b.enqueuedAt ? 1 : 0
+  })
+}
+
+function registerQueuedJob(job: QueuedJob): void {
+  jobsById.set(job.id, job)
+  jobsByVideoId.set(job.videoId, job)
+  const existingIdx = jobQueue.findIndex((q) => q.id === job.id)
+  if (existingIdx >= 0) jobQueue[existingIdx] = job
+  else jobQueue.push(job)
+  sortJobQueue()
+  while (jobQueue.length > 200) {
+    const removed = jobQueue.pop()
+    if (removed) jobsById.delete(removed.id)
+  }
+}
+
+function getQueuePosition(videoId: string): number | null {
+  const idx = jobQueue.findIndex((j) => j.videoId === videoId && j.status === 'queued')
+  return idx >= 0 ? idx + 1 : null
+}
+
+function isEncodeStage(stage: string): boolean {
+  return /encode|podcast_mp3|preview_render|probe/.test(stage)
+}
+
+function isUploadStage(stage: string): boolean {
+  return /upload/.test(stage)
+}
+
+function syncResourceSlots(): void {
+  let gpu = previewGpuRunning
+  let upload = 0
+  for (const job of pipelineActiveJobs.values()) {
+    if (job.status === 'paused') continue
+    const stage = String(job.stage || '')
+    if (isEncodeStage(stage)) gpu += 1
+    if (isUploadStage(stage)) upload += 1
+  }
+  gpuSlots.current = gpu
+  uploadSlots.current = upload
+}
+
+function phaseProgressFromOverall(overall: number | null) {
+  if (overall == null || !Number.isFinite(overall)) {
+    return { phase1Pct: null, phase2Pct: null, phase2Started: false }
+  }
+  const clamped = Math.max(0, Math.min(1, overall))
+  const phase1Pct = Math.min(1, clamped / 0.30)
+  const phase2Started = clamped > 0.30
+  const phase2Pct = phase2Started ? Math.min(1, (clamped - 0.30) / 0.50) : 0
+  return { phase1Pct, phase2Pct, phase2Started }
 }
 
 function upsertPipelineJob(event) {
@@ -177,25 +259,56 @@ function upsertPipelineJob(event) {
     progressStagePct: existing?.progressStagePct ?? null,
     progressSpeed: existing?.progressSpeed ?? null,
     progressEtaSec: existing?.progressEtaSec ?? null,
+    progressPhase: existing?.progressPhase ?? '',
+    progressPhase1Pct: existing?.progressPhase1Pct ?? null,
+    progressPhase2Pct: existing?.progressPhase2Pct ?? null,
+    progressPhase2Started: existing?.progressPhase2Started ?? false,
+    priority: existing?.priority ?? 100,
+    queuePosition: null,
+  }
+  let queued = jobsByVideoId.get(event.videoId)
+  if (!queued && event.stage === 'detected') {
+    queued = {
+      id: row.id,
+      type: 'pipeline',
+      videoId: event.videoId,
+      priority: 100,
+      enqueuedAt: now,
+      status: 'running',
+      detail: event.detail,
+      source: row.source,
+    }
+    registerQueuedJob(queued)
+  }
+  if (queued) {
+    row.priority = queued.priority
+    if (event.stage === 'paused' || event.status === 'paused') queued.status = 'paused'
+    else if (event.stage === 'resumed') queued.status = 'running'
+    else if (event.stage === 'stopped' || event.detail === 'stopped_by_user') queued.status = 'stopped'
+    else if (event.stage === 'done' && event.status === 'success') queued.status = 'done'
+    else if (event.stage === 'failed' || event.status === 'failed') queued.status = 'failed'
+    else if (!['done', 'failed', 'stopped'].includes(queued.status)) queued.status = 'running'
+    registerQueuedJob(queued)
   }
   if (event.stage === 'done' && event.status === 'success') {
     pipelineActiveJobs.delete(event.videoId)
-    const doneRow = {
-      ...row,
-      finishedAt: now,
-    }
+    const doneRow = { ...row, finishedAt: now }
     pipelineSuccessfulJobs.unshift(doneRow)
     while (pipelineSuccessfulJobs.length > MAX_PIPELINE_SUCCESS_JOBS) pipelineSuccessfulJobs.pop()
+    syncResourceSlots()
     return
   }
-  if (event.stage === 'failed' || event.status === 'failed') {
+  if (event.stage === 'failed' || event.status === 'failed' || event.stage === 'stopped') {
     row.finishedAt = now
     pipelineActiveJobs.delete(event.videoId)
     failedPipelineJobs.unshift(row)
     while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
+    syncResourceSlots()
     return
   }
+  row.queuePosition = getQueuePosition(event.videoId)
   pipelineActiveJobs.set(event.videoId, row)
+  syncResourceSlots()
 }
 
 function consumeTtpLine(line) {
@@ -238,6 +351,9 @@ function consumePipelineProgressLine(line) {
       startedAt: now,
       updatedAt: now,
     }
+    const phaseProgress = phaseProgressFromOverall(
+      typeof row.overallProgress === 'number' ? row.overallProgress : base.progressOverall,
+    )
     pipelineActiveJobs.set(videoId, {
       ...base,
       stage: String(row.stage || base.stage),
@@ -247,9 +363,16 @@ function consumePipelineProgressLine(line) {
       progressStagePct: typeof row.stageProgress === 'number' ? row.stageProgress : base.progressStagePct,
       progressSpeed: typeof row.speed === 'number' ? row.speed : base.progressSpeed,
       progressEtaSec: typeof row.etaSec === 'number' ? row.etaSec : base.progressEtaSec,
+      progressPhase: String(row.phase || base.progressPhase || ''),
+      progressPhase1Pct: phaseProgress.phase1Pct,
+      progressPhase2Pct: phaseProgress.phase2Pct,
+      progressPhase2Started: phaseProgress.phase2Started,
       detail: row.detail ? String(row.detail) : base.detail,
       updatedAt: now,
+      priority: jobsByVideoId.get(videoId)?.priority ?? 100,
+      queuePosition: getQueuePosition(videoId),
     })
+    syncResourceSlots()
   } catch {
     // ignore malformed progress JSON
   }
@@ -284,6 +407,70 @@ const pipelineState = {
 }
 
 let pipelineChild = null
+let pipelineIpcPath: string | null = null
+let pipelineRestartTimer: ReturnType<typeof setTimeout> | null = null
+
+function sendPipelineCommand(
+  cmd: 'pause' | 'resume' | 'stop' | 'reorder',
+  videoId?: string,
+  payload?: { order?: string[] },
+): Promise<{ ok: boolean, error?: string }> {
+  return new Promise((resolve) => {
+    if (!pipelineIpcPath) {
+      resolve({ ok: false, error: 'ipc_not_ready' })
+      return
+    }
+    const client = net.createConnection(pipelineIpcPath)
+    const message = JSON.stringify({ cmd, videoId, payload })
+    let response = ''
+    const finish = (result: { ok: boolean, error?: string }) => {
+      try { client.destroy() } catch {}
+      resolve(result)
+    }
+    client.setTimeout(10_000, () => finish({ ok: false, error: 'timeout' }))
+    client.on('connect', () => client.write(message))
+    client.on('data', (d) => { response += d.toString() })
+    client.on('end', () => {
+      try {
+        finish(JSON.parse(response) as { ok: boolean, error?: string })
+      } catch {
+        finish({ ok: false, error: 'invalid_response' })
+      }
+    })
+    client.on('error', (err) => finish({ ok: false, error: err.message }))
+  })
+}
+
+function consumeIpcSocketLine(line: string): boolean {
+  if (!line.startsWith('VMP_IPC_SOCKET\t')) return false
+  pipelineIpcPath = line.slice('VMP_IPC_SOCKET\t'.length).trim() || null
+  pushLog(`Pipeline IPC socket: ${pipelineIpcPath ?? '—'}`)
+  return true
+}
+
+function markRunningJobsFailedOnPipelineCrash(): void {
+  const now = new Date().toISOString()
+  for (const job of jobsById.values()) {
+    if (job.status === 'running' && job.type === 'pipeline') {
+      job.status = 'failed'
+      job.detail = 'pipeline_restarted'
+      registerQueuedJob(job)
+    }
+  }
+  for (const [videoId, row] of pipelineActiveJobs.entries()) {
+    const failedRow = {
+      ...row,
+      stage: 'failed',
+      status: 'failed',
+      detail: 'pipeline_restarted',
+      finishedAt: now,
+    }
+    pipelineActiveJobs.delete(videoId)
+    failedPipelineJobs.unshift(failedRow)
+    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
+  }
+  syncResourceSlots()
+}
 
 function startPipeline() {
   if (!runPipeline) {
@@ -312,6 +499,7 @@ function startPipeline() {
     for (const line of completeLines) {
       if (!line.trim()) continue
       if (consumeTtpLine(line)) continue
+      if (consumeIpcSocketLine(line)) continue
       if (consumePipelineProgressLine(line)) continue
       if (consumePipelineLine(line)) continue
       pushLog(`[pipeline] ${line}`)
@@ -332,7 +520,7 @@ function startPipeline() {
 
   const flushBuffers = () => {
     if (stdoutBuffer.trim()) {
-      if (consumeTtpLine(stdoutBuffer) || consumePipelineProgressLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
+      if (consumeTtpLine(stdoutBuffer) || consumeIpcSocketLine(stdoutBuffer) || consumePipelineProgressLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
         stdoutBuffer = ''
       } else {
         pushLog(`[pipeline] ${stdoutBuffer}`)
@@ -363,50 +551,55 @@ function startPipeline() {
     pushLog(`Pipeline exited code=${code} signal=${signal ?? ''}`)
     pipelineChild = null
     pipelineState.pid = null
+    pipelineIpcPath = null
     if (runPipeline) {
-      pushLog('Pipeline process exited; supervisor exiting for systemd restart')
-      process.exit(1)
+      markRunningJobsFailedOnPipelineCrash()
+      pushLog('Pipeline process exited; restarting pipeline_watch in 3s')
+      if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
+      pipelineRestartTimer = setTimeout(() => {
+        pipelineRestartTimer = null
+        pipelineState.exited = false
+        pipelineState.code = null
+        pipelineState.signal = null
+        startPipeline()
+      }, 3000)
     }
   })
 }
 
-let previewRunning = 0
-const previewQueue = []
 const previewChildren = new Set<ChildProcess>()
 
-function enqueuePreview(videoId, previewSeconds, source = 'webhook') {
+function enqueuePreview(videoId: string, previewSeconds: number, source = 'webhook'): string {
   const id = crypto.randomUUID()
-  jobs.unshift({
+  const job: QueuedJob = {
     id,
     type: 'preview_mp3',
     videoId,
+    priority: 100,
+    enqueuedAt: new Date().toISOString(),
     status: 'queued',
     detail: `${previewSeconds}s`,
     source,
-    startedAt: undefined,
-    finishedAt: undefined,
-  })
-  trimJobs()
-  previewQueue.push({ id, videoId, previewSeconds })
-  drainPreviewQueue()
+    previewSeconds,
+  }
+  registerQueuedJob(job)
+  drainJobQueue()
   return id
 }
 
-function trimJobs() {
-  while (jobs.length > 200) jobs.pop()
-}
-
-function drainPreviewQueue() {
-  while (previewRunning < previewConcurrency && previewQueue.length) {
-    const task = previewQueue.shift()
-    if (!task) break
-    previewRunning++
-    const row = jobs.find((j) => j.id === task.id)
-    if (row) {
-      row.status = 'running'
-      row.startedAt = new Date().toISOString()
-    }
-    const child = spawn(process.execPath, [resolvedRenderScript, task.videoId, String(task.previewSeconds)], {
+function drainJobQueue(): void {
+  syncResourceSlots()
+  while (jobQueue.length > 0) {
+    const next = jobQueue.find((j) => j.type === 'preview_mp3' && j.status === 'queued')
+    if (!next || next.previewSeconds == null) break
+    if (previewGpuRunning + gpuSlots.current - previewGpuRunning >= gpuSlots.max) break
+    const idx = jobQueue.indexOf(next)
+    if (idx >= 0) jobQueue.splice(idx, 1)
+    next.status = 'running'
+    registerQueuedJob(next)
+    previewGpuRunning += 1
+    syncResourceSlots()
+    const child = spawn(process.execPath, [resolvedRenderScript, next.videoId, String(next.previewSeconds)], {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -415,24 +608,65 @@ function drainPreviewQueue() {
     child.stderr.on('data', (d) => { err += d.toString() })
     child.on('close', (code) => {
       previewChildren.delete(child)
-      previewRunning--
-      const r = jobs.find((j) => j.id === task.id)
-      if (r) {
-        r.status = code === 0 ? 'done' : 'failed'
-        r.finishedAt = new Date().toISOString()
-        if (code !== 0) r.detail = `${task.previewSeconds}s — ${err.slice(-400) || `exit ${code}`}`
-      }
+      previewGpuRunning = Math.max(0, previewGpuRunning - 1)
+      next.status = code === 0 ? 'done' : 'failed'
+      if (code !== 0) next.detail = `${next.previewSeconds}s — ${err.slice(-400) || `exit ${code}`}`
+      registerQueuedJob(next)
+      syncResourceSlots()
       pushLog(
         code === 0
-          ? `Preview MP3 ok: ${task.videoId} (${task.previewSeconds}s)`
-          : `Preview MP3 FAILED: ${task.videoId} (${task.previewSeconds}s) ${err.slice(-200)}`,
+          ? `Preview MP3 ok: ${next.videoId} (${next.previewSeconds}s)`
+          : `Preview MP3 FAILED: ${next.videoId} (${next.previewSeconds}s) ${err.slice(-200)}`,
       )
-      drainPreviewQueue()
+      drainJobQueue()
     })
     child.on('error', () => {
       previewChildren.delete(child)
+      previewGpuRunning = Math.max(0, previewGpuRunning - 1)
+      syncResourceSlots()
     })
   }
+}
+
+async function readJsonBody(req: http.IncomingMessage): Promise<unknown | null> {
+  const chunks: Buffer[] = []
+  let byteCount = 0
+  for await (const c of req) {
+    byteCount += c.length
+    if (byteCount > MAX_BODY_SIZE) return null
+    chunks.push(c)
+  }
+  if (chunks.length === 0) return {}
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    return null
+  }
+}
+
+function sdNotify(state: string): void {
+  const sock = process.env.NOTIFY_SOCKET
+  if (!sock) return
+  void import('node:dgram').then((dgram) => {
+    // systemd NOTIFY_SOCKET uses unix_dgram; @types/node omits this socket type
+    // @ts-expect-error unix_dgram is valid at runtime for sd_notify
+    const client = dgram.createSocket('unix_dgram')
+    // @ts-expect-error path argument for unix_dgram send
+    client.send(state, 0, state.length, sock, () => client.close())
+  }).catch(() => {})
+}
+
+function hasStuckRunningJobs(): boolean {
+  const thresholdMs = STUCK_JOB_MINUTES * 60 * 1000
+  const now = Date.now()
+  for (const job of jobsById.values()) {
+    if (job.status !== 'running') continue
+    const active = pipelineActiveJobs.get(job.videoId)
+    if (!active?.updatedAt) continue
+    const updated = Date.parse(active.updatedAt)
+    if (Number.isFinite(updated) && now - updated > thresholdMs) return true
+  }
+  return false
 }
 
 function verifySignature(rawBody, sigHeader, ts) {
@@ -528,7 +762,11 @@ function dashboardHtml() {
     .progress > span { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #4ade80); transition: width 0.4s ease; }
     .progress-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 0.15rem; }
     pre { white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; max-height: 16rem; overflow: auto; background: #0f172a; padding: 0.75rem; border-radius: 6px; }
-    code { font-size: 0.8rem; }
+    .btn { font-size: 0.75rem; padding: 0.2rem 0.45rem; margin-right: 0.25rem; cursor: pointer; border-radius: 4px; border: 1px solid #475569; background: #334155; color: #e2e8f0; }
+    .btn:hover { background: #475569; }
+    .btn-danger { border-color: #b91c1c; background: #7f1d1d; }
+    .badge { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.35rem; border-radius: 4px; background: #334155; color: #cbd5e1; cursor: pointer; }
+    .phase-label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.15rem; }
   </style>
 </head>
 <body>
@@ -573,21 +811,68 @@ function dashboardHtml() {
       const s = Math.floor(sec - m * 60)
       return m > 0 ? m + 'm ' + s + 's' : s + 's'
     }
-    function progressCell(j) {
-      const pct = typeof j.progressOverall === 'number' ? j.progressOverall : null
-      if (pct == null) return '—'
-      const n = Math.round(Math.max(0, Math.min(1, pct)) * 100)
-      const stagePct = typeof j.progressStagePct === 'number'
-        ? Math.round(Math.max(0, Math.min(1, j.progressStagePct)) * 100)
-        : null
+    function dualPhaseProgress(j) {
+      const p1 = typeof j.progressPhase1Pct === 'number' ? Math.round(j.progressPhase1Pct * 100) : null
+      const p2 = typeof j.progressPhase2Pct === 'number' ? Math.round(j.progressPhase2Pct * 100) : null
+      const showP2 = j.progressPhase2Started || (p2 != null && p2 > 0)
+      let html = '<div class="phase-label">Phase 1 (720p)</div>'
+      html += p1 != null
+        ? '<div class="progress" title="Phase 1 ' + p1 + '%"><span style="width:' + p1 + '%"></span></div>'
+        : '<div class="progress"><span style="width:0%"></span></div>'
+      if (showP2) {
+        html += '<div class="phase-label" style="margin-top:0.35rem">Phase 2 (full)</div>'
+        html += p2 != null
+          ? '<div class="progress" title="Phase 2 ' + p2 + '%"><span style="width:' + p2 + '%"></span></div>'
+          : '<div class="progress"><span style="width:0%"></span></div>'
+      }
       const meta = []
-      if (j.progressRendition) meta.push(j.progressRendition + (stagePct != null ? ' ' + stagePct + '%' : ''))
-      if (j.progressSpeed) meta.push(Number(j.progressSpeed).toFixed(1) + '×')
-      const eta = formatEta(j.progressEtaSec)
-      if (eta) meta.push('ETA ' + eta)
-      return '<div class="progress" title="' + n + '% overall"><span style="width:' + n + '%"></span></div>' +
-        (meta.length ? '<div class="progress-meta">' + escapeHtml(meta.join(' · ')) + '</div>' : '')
+      if (j.progressRendition) meta.push(j.progressRendition)
+      if (typeof j.progressOverall === 'number') meta.push('overall ' + Math.round(j.progressOverall * 100) + '%')
+      if (meta.length) html += '<div class="progress-meta">' + escapeHtml(meta.join(' · ')) + '</div>'
+      return html
     }
+    function jobControls(j) {
+      const vid = escapeHtml(j.videoId || '')
+      const paused = j.status === 'paused'
+      const btns = []
+      if (!paused) btns.push('<button class="btn" data-action="pause" data-video="' + vid + '">Pause</button>')
+      else btns.push('<button class="btn" data-action="resume" data-video="' + vid + '">Resume</button>')
+      btns.push('<button class="btn btn-danger" data-action="stop" data-video="' + vid + '">Stop</button>')
+      return btns.join('')
+    }
+    function priorityBadge(j) {
+      const p = j.priority != null ? j.priority : 100
+      return '<span class="badge" data-action="priority" data-video="' + escapeHtml(j.videoId || '') + '" title="Click to edit priority">' + p + '</span>'
+    }
+    async function postJob(path, body) {
+      await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    }
+    document.addEventListener('click', async (ev) => {
+      const el = ev.target
+      if (!(el instanceof HTMLElement)) return
+      const action = el.getAttribute('data-action')
+      const videoId = el.getAttribute('data-video')
+      if (!action || !videoId) return
+      if (action === 'pause') { await postJob('/api/jobs/' + encodeURIComponent(videoId) + '/pause'); return }
+      if (action === 'resume') { await postJob('/api/jobs/' + encodeURIComponent(videoId) + '/resume'); return }
+      if (action === 'priority') {
+        const next = window.prompt('Priority (lower = sooner)', el.textContent || '100')
+        if (next == null) return
+        const priority = Number.parseInt(next, 10)
+        if (!Number.isFinite(priority)) return
+        await postJob('/api/jobs/' + encodeURIComponent(videoId) + '/priority', { priority })
+        return
+      }
+      if (action === 'stop') {
+        if (el.getAttribute('data-confirm') !== '1') {
+          el.outerHTML = '<span>Confirm stop?</span> <button class="btn btn-danger" data-action="stop" data-confirm="1" data-video="' + escapeHtml(videoId) + '">Yes</button> <button class="btn" data-action="cancel-stop" data-video="' + escapeHtml(videoId) + '">Cancel</button>'
+          return
+        }
+        await postJob('/api/jobs/' + encodeURIComponent(videoId) + '/stop')
+        return
+      }
+      if (action === 'cancel-stop') { tick(); return }
+    })
     async function tick() {
       try {
         const r = await fetch('/api/status')
@@ -601,13 +886,19 @@ function dashboardHtml() {
           (p.exited ? ('exited code ' + escapeHtml(p.code) + (p.signal ? ' signal ' + escapeHtml(p.signal) : '')) : 'running') +
           '</p>'
         const pipelineRows = (d.pipelineActiveJobs || []).map(j =>
-          '<tr><td>' + progressCell(j) + '</td><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td><td>' + escapeHtml(j.updatedAt || '') + '</td></tr>'
+          '<tr><td>' + dualPhaseProgress(j) + '</td><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.videoId || '') +
+          '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + jobControls(j) + '</td><td>' + priorityBadge(j) +
+          '</td><td>' + (j.queuePosition != null ? escapeHtml(String(j.queuePosition)) : '—') + '</td><td>' + escapeHtml(j.detail || '') +
+          '</td><td>' + escapeHtml(j.source || '') + '</td><td>' + escapeHtml(j.updatedAt || '') + '</td></tr>'
         ).join('')
-        document.getElementById('pipeline-jobs').innerHTML = '<table><thead><tr><th>Progress</th><th>Status</th><th>Video</th><th>Stage</th><th>Detail</th><th>Source</th><th>Updated</th></tr></thead><tbody>' + pipelineRows + '</tbody></table>'
-        const rows = (d.jobs || []).map(j =>
-          '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.type || '') + '</td><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.source || '') + '</td></tr>'
+        document.getElementById('pipeline-jobs').innerHTML = '<table><thead><tr><th>Progress</th><th>Status</th><th>Video</th><th>Stage</th><th>Controls</th><th>Priority</th><th>Queue #</th><th>Detail</th><th>Source</th><th>Updated</th></tr></thead><tbody>' + pipelineRows + '</tbody></table>'
+        const queued = (d.jobQueue || []).filter(j => j.status === 'queued')
+        const rows = queued.map(j =>
+          '<tr><td>' + escapeHtml(j.status || '') + '</td><td>' + escapeHtml(j.type || '') + '</td><td>' + escapeHtml(j.videoId || '') +
+          '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + priorityBadge(j) + '</td><td>' + (j.queuePosition != null ? escapeHtml(String(j.queuePosition)) : '—') +
+          '</td><td>' + escapeHtml(j.source || '') + '</td></tr>'
         ).join('')
-        document.getElementById('jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Type</th><th>Video</th><th>Detail</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table>'
+        document.getElementById('jobs').innerHTML = '<table><thead><tr><th>Status</th><th>Type</th><th>Video</th><th>Detail</th><th>Priority</th><th>Queue #</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table>'
         const successRows = (d.pipelineSuccessfulJobs || []).map(j =>
           '<tr><td>' + escapeHtml(j.videoId || '') + '</td><td>' + escapeHtml(j.stageLabel || j.stage || '') + '</td><td>' + escapeHtml(j.detail || '') + '</td><td>' + escapeHtml(j.finishedAt || '') + '</td></tr>'
         ).join('')
@@ -649,6 +940,7 @@ const server = http.createServer(async (req, res) => {
       .map((job) => ({
         ...job,
         stageLabel: stageLabel(job.stage),
+        queuePosition: getQueuePosition(job.videoId),
       }))
     const successRows = pipelineSuccessfulJobs.map((job) => ({
       ...job,
@@ -658,6 +950,12 @@ const server = http.createServer(async (req, res) => {
       ...job,
       stageLabel: stageLabel(job.stage),
     }))
+    const queuedJobs = jobQueue
+      .filter((j) => j.status === 'queued')
+      .map((j, _i, arr) => {
+        sortJobQueue()
+        return { ...j, queuePosition: getQueuePosition(j.videoId) }
+      })
     json(res, {
       pipeline: {
         script: resolvedPipelineScript,
@@ -668,10 +966,13 @@ const server = http.createServer(async (req, res) => {
         exited: pipelineState.exited,
         code: pipelineState.code,
         signal: pipelineState.signal,
+        ipcPath: pipelineIpcPath,
       },
-      previewQueueLength: previewQueue.length,
-      previewRunning,
-      jobs,
+      gpuSlots,
+      uploadSlots,
+      previewGpuRunning,
+      jobQueue: jobQueue.map((j) => ({ ...j, queuePosition: getQueuePosition(j.videoId) })),
+      jobs: Array.from(jobsById.values()),
       pipelineActiveJobs: activeRows,
       pipelineSuccessfulJobs: successRows,
       failedPipelineJobs: failedRows,
@@ -787,6 +1088,87 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  const jobControlMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/(pause|resume|stop|priority)$/)
+  if (req.method === 'POST' && jobControlMatch) {
+    const videoId = decodeURIComponent(jobControlMatch[1])
+    const action = jobControlMatch[2]
+    if (action === 'priority') {
+      const body = await readJsonBody(req)
+      if (body === null) {
+        json(res, { error: 'Invalid JSON' }, 400)
+        return
+      }
+      const priority = Number((body as { priority?: number }).priority)
+      if (!Number.isFinite(priority)) {
+        json(res, { error: 'Invalid priority' }, 400)
+        return
+      }
+      const job = jobsByVideoId.get(videoId)
+      if (job) {
+        job.priority = priority
+        registerQueuedJob(job)
+      }
+      const active = pipelineActiveJobs.get(videoId)
+      if (active) active.priority = priority
+      sortJobQueue()
+      json(res, { ok: true, newPosition: getQueuePosition(videoId) })
+      return
+    }
+    const ipcResult = await sendPipelineCommand(action as 'pause' | 'resume' | 'stop', videoId)
+    const job = jobsByVideoId.get(videoId)
+    if (job) {
+      if (action === 'pause') job.status = 'paused'
+      else if (action === 'resume') job.status = 'running'
+      else if (action === 'stop') job.status = 'stopped'
+      registerQueuedJob(job)
+    }
+    const active = pipelineActiveJobs.get(videoId)
+    if (active) {
+      if (action === 'pause') active.status = 'paused'
+      else if (action === 'resume') active.status = 'active'
+      else if (action === 'stop') {
+        active.status = 'failed'
+        active.detail = 'stopped_by_user'
+      }
+    }
+    if (!ipcResult.ok) {
+      json(res, ipcResult, 502)
+      return
+    }
+    json(res, { ok: true })
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/jobs/reorder') {
+    const body = await readJsonBody(req)
+    if (body === null) {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return
+    }
+    const order = (body as { order?: string[] }).order
+    if (!Array.isArray(order)) {
+      json(res, { error: 'Missing order array' }, 400)
+      return
+    }
+    order.forEach((videoId, index) => {
+      const job = jobsByVideoId.get(String(videoId))
+      if (job) {
+        job.priority = index
+        registerQueuedJob(job)
+      }
+      const active = pipelineActiveJobs.get(String(videoId))
+      if (active) active.priority = index
+    })
+    sortJobQueue()
+    const ipcResult = await sendPipelineCommand('reorder', undefined, { order: order.map(String) })
+    if (!ipcResult.ok) {
+      json(res, ipcResult, 502)
+      return
+    }
+    json(res, { ok: true })
+    return
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'Not found' }))
 })
@@ -795,8 +1177,14 @@ server.listen(uiPort, uiHost, () => {
   pushLog(
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
   )
-  pushLog(`Config: runPipeline=${runPipeline} previewConcurrency=${previewConcurrency} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
+  pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
+  sdNotify('READY=1')
   startPipeline()
+  setInterval(() => {
+    if (pipelineChild && !pipelineState.exited && !hasStuckRunningJobs()) {
+      sdNotify('WATCHDOG=1')
+    }
+  }, 20_000)
   if (autoUpgradeEnabled) {
     pushLog(`[upgrade] enabled, watching ${autoUpgradePath} on ${autoUpgradeBranch} every ${Math.round(autoUpgradeCheckMs / 1000)}s`)
     void checkAndApplyPodcastHostUpgrade()
@@ -806,6 +1194,8 @@ server.listen(uiPort, uiHost, () => {
 
 const gracefulShutdown = async (signal) => {
   pushLog(`${signal} — stopping`)
+  sdNotify('STOPPING=1')
+  if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
   if (pipelineChild && !pipelineState.exited) {
     try {
       pipelineChild.kill('SIGTERM')
