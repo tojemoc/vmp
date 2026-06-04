@@ -438,6 +438,10 @@ function isUuidLike(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function isEnoent(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+}
+
 async function waitStableSize(filePath: string): Promise<void> {
   let prev = -1
   let idlePolls = 0
@@ -988,6 +992,67 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
 
 const queue: QueueJob[] = []
 let running = 0
+
+/** Original inbox basename (pre-rename) → resolved path/id; prevents duplicate renames. */
+const inboxIntakeByBasename = new Map<string, ResolveInputTargetPathResult>()
+/** Human-readable stem → resolved path/id after first rename. */
+const inboxResolvedByOriginalStem = new Map<string, ResolveInputTargetPathResult>()
+const enqueuedVideoIds = new Set<string>()
+let inboxIntakeChain: Promise<void> = Promise.resolve()
+
+function isInboxVideoBasename(file: string): boolean {
+  return /\.(mp4|mkv|mov)$/i.test(file)
+}
+
+function maybeEnqueueOnce(videoId: string, inputPath: string, source: string): void {
+  if (enqueuedVideoIds.has(videoId)) return
+  enqueuedVideoIds.add(videoId)
+  enqueue(videoId, inputPath, source)
+}
+
+function scheduleInboxIntake(file: string, source: string): void {
+  inboxIntakeChain = inboxIntakeChain
+    .then(() => intakeInboxBasename(file, source))
+    .catch((err) => {
+      log(`inbox intake failed for '${file}' (${source}): ${err instanceof Error ? err.message : String(err)}`)
+    })
+}
+
+async function intakeInboxBasename(file: string, source: string): Promise<void> {
+  if (!isInboxVideoBasename(file)) return
+
+  const cachedByFile = inboxIntakeByBasename.get(file)
+  if (cachedByFile) {
+    maybeEnqueueOnce(cachedByFile.videoId, cachedByFile.targetPath, source)
+    return
+  }
+
+  const stem = file.replace(/\.[^.]+$/, '')
+  const ext = file.split('.').pop() || 'mp4'
+  const oldPath = path.join(INBOX_DIR, file)
+
+  if (isUuidLike(stem) && enqueuedVideoIds.has(stem)) return
+
+  const cachedByStem = inboxResolvedByOriginalStem.get(stem)
+  if (cachedByStem && existsSync(cachedByStem.targetPath)) {
+    inboxIntakeByBasename.set(file, cachedByStem)
+    maybeEnqueueOnce(cachedByStem.videoId, cachedByStem.targetPath, source)
+    return
+  }
+
+  if (!existsSync(oldPath)) return
+
+  const result = await resolveInputTargetPath(stem, ext, oldPath, source)
+  inboxIntakeByBasename.set(file, result)
+  if (!isUuidLike(stem) || result.renamed) {
+    inboxResolvedByOriginalStem.set(stem, result)
+  }
+  if (result.renamed) {
+    const detail = result.reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
+    log(`🧼 ${detail} ${source}: '${stem}' -> '${result.videoId}'`)
+  }
+  maybeEnqueueOnce(result.videoId, result.targetPath, source)
+}
 let ipcServer: net.Server | null = null
 const ipcSocketPath = `/tmp/vmp-pipeline-${process.pid}.sock`
 
@@ -1088,6 +1153,11 @@ function enqueue(videoId: string, inputPath: string, source: string): void {
 }
 
 async function resolveInputTargetPath(stem: string, ext: string, oldPath: string, source: string): Promise<ResolveInputTargetPathResult> {
+  const priorByStem = inboxResolvedByOriginalStem.get(stem)
+  if (priorByStem && existsSync(priorByStem.targetPath)) {
+    return priorByStem
+  }
+
   if (VIDEO_ID_STRATEGY === 'filename') {
     const baseId = sanitizeVideoId(stem)
     if (baseId === stem) {
@@ -1101,7 +1171,13 @@ async function resolveInputTargetPath(stem: string, ext: string, oldPath: string
       const candidateFile = `${candidateId}.${ext}`
       const candidatePath = path.join(dir, candidateFile)
       if (!existsSync(candidatePath)) {
-        await rename(oldPath, candidatePath)
+        try {
+          await rename(oldPath, candidatePath)
+        } catch (err) {
+          const prior = inboxResolvedByOriginalStem.get(stem)
+          if (isEnoent(err) && prior && existsSync(prior.targetPath)) return prior
+          throw err
+        }
         if (attempt > 0) {
           log(`⚠️ Filename collision in ${source}: '${oldPath}' -> '${candidatePath}' (base '${baseId}' already existed)`)
         }
@@ -1123,7 +1199,13 @@ async function resolveInputTargetPath(stem: string, ext: string, oldPath: string
     const candidateFile = `${candidateId}.${ext}`
     const candidatePath = path.join(dir, candidateFile)
     if (!existsSync(candidatePath)) {
-      await rename(oldPath, candidatePath)
+      try {
+        await rename(oldPath, candidatePath)
+      } catch (err) {
+        const prior = inboxResolvedByOriginalStem.get(stem)
+        if (isEnoent(err) && prior && existsSync(prior.targetPath)) return prior
+        throw err
+      }
       return { videoId: candidateId, targetPath: candidatePath, renamed: true, reason: 'random_uuid' }
     }
     attempt += 1
@@ -1151,50 +1233,30 @@ async function startupScan(): Promise<void> {
   await mkdir(TMP_DIR_BASE, { recursive: true })
   const entries = await readdir(INBOX_DIR)
   for (const file of entries) {
-    if (!/\.(mp4|mkv|mov)$/i.test(file)) continue
-    const stem = file.replace(/\.[^.]+$/, '')
-    const oldPath = path.join(INBOX_DIR, file)
-    const ext = file.split('.').pop() || 'mp4'
-    const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'startup_scan')
-    if (renamed) {
-      const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
-      log(`🧼 ${detail} startup_scan: '${stem}' -> '${videoId}'`)
-    }
-    enqueue(videoId, targetPath, 'startup_scan')
+    await intakeInboxBasename(file, 'startup_scan')
   }
 }
 
 function startWatcher() {
   const child = trackChild(spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', INBOX_DIR], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] }))
   let stdoutBuffer = ''
-  const processLines = async (lines: string[]): Promise<void> => {
-    for (const file of lines) {
-      if (!/\.(mp4|mkv|mov)$/i.test(file)) continue
-      const stem = file.replace(/\.[^.]+$/, '')
-      const oldPath = path.join(INBOX_DIR, file)
-      const ext = file.split('.').pop() || 'mp4'
-      const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'watchfolder')
-      if (renamed) {
-        const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
-        log(`🧼 ${detail} watchfolder: '${stem}' -> '${videoId}'`)
-      }
-      enqueue(videoId, targetPath, 'watchfolder')
+  const processLines = (lines: string[]): void => {
+    const unique = [...new Set(lines.filter(Boolean))]
+    for (const file of unique) {
+      scheduleInboxIntake(file, 'watchfolder')
     }
   }
-  child.stdout.on('data', async (chunk) => {
+  child.stdout.on('data', (chunk) => {
     stdoutBuffer += chunk.toString()
     const parts = stdoutBuffer.split(/\r?\n/)
     stdoutBuffer = parts.pop() ?? ''
-    const lines = parts.filter(Boolean)
-    await processLines(lines)
+    processLines(parts.filter(Boolean))
   })
   child.on('close', (code) => {
     if (stdoutBuffer.trim()) {
       const trailing = stdoutBuffer.trim()
       stdoutBuffer = ''
-      processLines([trailing]).catch((err) => {
-        log(`watcher trailing line processing failed: ${err instanceof Error ? err.message : String(err)}`)
-      })
+      processLines([trailing])
     }
     if (!shuttingDown) {
       log(`inotifywait exited unexpectedly with code=${code ?? 'null'}`)
@@ -1214,16 +1276,8 @@ function startPollingWatcher() {
       const current = new Set(entries)
       for (const file of entries) {
         if (known.has(file)) continue
-        if (!/\.(mp4|mkv|mov)$/i.test(file)) continue
-        const stem = file.replace(/\.[^.]+$/, '')
-        const oldPath = path.join(INBOX_DIR, file)
-        const ext = file.split('.').pop() || 'mp4'
-        const { videoId, targetPath, renamed, reason } = await resolveInputTargetPath(stem, ext, oldPath, 'polling_watchfolder')
-        if (renamed) {
-          const detail = reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
-          log(`🧼 ${detail} polling_watchfolder: '${stem}' -> '${videoId}'`)
-        }
-        enqueue(videoId, targetPath, 'polling_watchfolder')
+        if (!isInboxVideoBasename(file)) continue
+        scheduleInboxIntake(file, 'polling_watchfolder')
       }
       known = current
     } catch (err) {
