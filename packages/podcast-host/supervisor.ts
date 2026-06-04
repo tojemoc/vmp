@@ -982,7 +982,7 @@ const server = http.createServer(async (req, res) => {
       gpuSlots,
       uploadSlots,
       previewGpuRunning,
-      jobQueue: jobQueue.map((j) => ({ ...j, queuePosition: getQueuePosition(j.videoId) })),
+      jobQueue: queuedJobs,
       jobs: Array.from(jobsById.values()),
       pipelineActiveJobs: activeRows,
       pipelineSuccessfulJobs: successRows,
