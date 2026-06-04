@@ -5389,7 +5389,21 @@ const saveAll = async () => {
       const err = await locksRes.json().catch(() => ({ error: `HTTP ${locksRes.status}` }))
       throw new Error(err.error || `Preview locks save failed (HTTP ${locksRes.status})`)
     }
-    saveMessage.value      = 'Changes saved to API database settings and preview lock durations.'
+    const locksData = await locksRes.json().catch(() => ({}))
+    const notify = locksData?.podcastPreviewNotify
+    let notifyNote = ''
+    if (notify?.delivered) {
+      notifyNote = ` Media host notified to re-render ${notify.eligibleCount ?? notify.acceptedCount ?? 0} preview MP3(s).`
+    } else if (notify?.code === 'nothing_to_rebuild') {
+      notifyNote = ' No trimmed preview MP3s needed (premium-only or unlock full).'
+    } else if (notify?.code === 'webhook_not_configured' || notify?.code === 'secret_not_configured') {
+      notifyNote = ' Configure the podcast rebuild webhook in System to auto-refresh preview MP3s after save.'
+    } else if (notify?.code === 'free_preview_disabled') {
+      notifyNote = ''
+    } else if (notify && !notify.delivered && notify.code) {
+      notifyNote = ` Preview MP3 host notify did not complete (${notify.code}).`
+    }
+    saveMessage.value      = `Changes saved to API database settings and preview lock durations.${notifyNote}`
     saveMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
     await reloadAll()
   } catch (e: any) {

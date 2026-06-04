@@ -64,7 +64,11 @@ import {
   handleAccountTransferSubscription,
   handleAdminTransferSubscription,
 } from './subscriptionTransfer.js'
-import { handleRssPodcastPreviewRebuildNotify, handleRssPodcastWebhookConfig } from './rssPodcastAdmin.js'
+import {
+  deliverPodcastPreviewRebuildWebhook,
+  handleRssPodcastPreviewRebuildNotify,
+  handleRssPodcastWebhookConfig,
+} from './rssPodcastAdmin.js'
 import { handleVideoPipelineStatus } from './pipelineStatus.js'
 import {
   handleHomepageContent,
@@ -1295,6 +1299,7 @@ async function handlePreviewLocks(request: any, env: any, corsHeaders: any) {
   const body = await request.json().catch(() => null)
   if (!Array.isArray(body?.locks)) return jsonResponse({ error: 'locks array is required' }, 400, corsHeaders)
   const db = getDatabaseBinding(env)
+  const updatedVideoIds: string[] = []
   for (const lockEntry of body.locks) {
     if (!lockEntry || typeof lockEntry.videoId !== 'string') continue
     const lockSeconds = Number.parseInt(lockEntry.previewDuration, 10)
@@ -1306,8 +1311,22 @@ async function handlePreviewLocks(request: any, env: any, corsHeaders: any) {
       SET preview_duration = CASE WHEN full_duration = 0 THEN ? ELSE MIN(full_duration, ?) END
       WHERE id = ?
     `).bind(lockSeconds, lockSeconds, lockEntry.videoId).run()
+    updatedVideoIds.push(lockEntry.videoId)
   }
-  return jsonResponse({ ok: true }, 200, corsHeaders)
+
+  let podcastPreviewNotify = null
+  if (updatedVideoIds.length) {
+    const uniqueIds = [...new Set(updatedVideoIds)]
+    const placeholders = uniqueIds.map(() => '?').join(',')
+    const rows = await db.prepare(`
+      SELECT id, preview_duration, full_duration, updated_at
+      FROM videos
+      WHERE id IN (${placeholders})
+    `).bind(...uniqueIds).all()
+    podcastPreviewNotify = await deliverPodcastPreviewRebuildWebhook(env, rows?.results ?? [])
+  }
+
+  return jsonResponse({ ok: true, podcastPreviewNotify }, 200, corsHeaders)
 }
 
 async function handleAdminCategories(request: any, env: any, corsHeaders: any) {

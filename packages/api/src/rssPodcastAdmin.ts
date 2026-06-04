@@ -5,6 +5,7 @@
 
 import { requireRole } from './auth.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
+import { needsPodcastPreviewMp3 } from './podcastPreview.js'
 import { getSetting, setSettings } from './settingsStore.js'
 
 function getDb(env: any) {
@@ -30,6 +31,131 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   )
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
   return Array.from(new Uint8Array(sig), b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function mapVideosForRebuildPayload(videos: any[]) {
+  return videos
+    .filter((v) => v?.id && needsPodcastPreviewMp3(v.preview_duration, v.full_duration))
+    .map((v: any) => ({
+      id: v.id,
+      previewDurationSeconds: Number(v.preview_duration) || 0,
+      fullDurationSeconds: Number(v.full_duration) || 0,
+      updatedAt: v.updated_at ?? null,
+    }))
+}
+
+/** POST signed rebuild payload to the media host (no HTTP response wrapper). */
+export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[]) {
+  const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+  if (!freePreviewEnabled) {
+    return {
+      delivered: false,
+      code: 'free_preview_disabled',
+      videoCount: 0,
+      eligibleCount: 0,
+      skippedFullUnlockCount: 0,
+    }
+  }
+
+  const webhookUrl = (await getSetting(env, 'podcast_rebuild_webhook_url', { defaultValue: '' }))?.trim()
+  const secret = (await getSetting(env, 'podcast_rebuild_webhook_secret', { defaultValue: '' }))?.trim()
+  if (!webhookUrl || !secret) {
+    return {
+      delivered: false,
+      code: !webhookUrl ? 'webhook_not_configured' : 'secret_not_configured',
+      videoCount: videos.length,
+      eligibleCount: 0,
+      skippedFullUnlockCount: videos.filter((v) =>
+        v?.id && !needsPodcastPreviewMp3(v.preview_duration, v.full_duration),
+      ).length,
+    }
+  }
+
+  const payloadVideos = mapVideosForRebuildPayload(videos)
+  const skippedFullUnlockCount = Math.max(0, videos.length - payloadVideos.length)
+  if (!payloadVideos.length) {
+    return {
+      delivered: false,
+      code: 'nothing_to_rebuild',
+      videoCount: videos.length,
+      eligibleCount: 0,
+      skippedFullUnlockCount,
+    }
+  }
+
+  const payload = {
+    event: 'podcast_preview_rebuild',
+    sentAt: new Date().toISOString(),
+    videos: payloadVideos,
+  }
+
+  const rawBody = JSON.stringify(payload)
+  const ts = String(Math.floor(Date.now() / 1000))
+  const signature = await hmacSha256Hex(secret, `${ts}.${rawBody}`)
+
+  const controller = new AbortController()
+  const timeoutMs = 10000
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-VMP-Signature': `sha256=${signature}`,
+        'X-VMP-Timestamp': ts,
+      },
+      body: rawBody,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+
+    const text = await res.text().catch(() => '')
+    const parsed = (() => {
+      try {
+        return text ? JSON.parse(text) : null
+      } catch {
+        return null
+      }
+    })()
+
+    if (!res.ok) {
+      return {
+        delivered: false,
+        code: 'webhook_failed',
+        videoCount: videos.length,
+        eligibleCount: payloadVideos.length,
+        skippedFullUnlockCount,
+        webhookStatus: res.status,
+        detail: typeof parsed?.error === 'string' ? parsed.error : text.slice(0, 500),
+      }
+    }
+
+    const acceptedNum = Number(parsed?.acceptedCount ?? payloadVideos.length)
+    const rejectedNum = Number(parsed?.rejectedCount ?? 0)
+    return {
+      delivered: true,
+      code: 'delivered',
+      videoCount: videos.length,
+      eligibleCount: payloadVideos.length,
+      skippedFullUnlockCount,
+      webhookStatus: res.status,
+      acceptedCount: Number.isFinite(acceptedNum) ? acceptedNum : 0,
+      rejectedCount: Number.isFinite(rejectedNum) ? rejectedNum : 0,
+      rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
+    }
+  } catch (err) {
+    clearTimeout(timeoutId)
+    const isAbort = err instanceof Error && err.name === 'AbortError'
+    console.error('deliverPodcastPreviewRebuildWebhook:', err)
+    return {
+      delivered: false,
+      code: isAbort ? 'webhook_timeout' : 'webhook_error',
+      videoCount: videos.length,
+      eligibleCount: payloadVideos.length,
+      skippedFullUnlockCount,
+    }
+  }
 }
 
 async function listPublishedVideosForRebuild(db: any) {
@@ -137,18 +263,9 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
     const db = getDb(env)
     await ensureAdminSettingsTable(db)
 
-    const webhookUrl = (await getSetting(env, 'podcast_rebuild_webhook_url', { defaultValue: '' }))?.trim()
     const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
     if (!freePreviewEnabled) {
       return jsonResponse({ error: 'Free podcast preview feed is disabled', code: 'free_preview_disabled' }, 400, corsHeaders)
-    }
-    if (!webhookUrl) {
-      return jsonResponse({ error: 'Podcast rebuild webhook URL is not configured', code: 'webhook_not_configured' }, 400, corsHeaders)
-    }
-
-    const secret = (await getSetting(env, 'podcast_rebuild_webhook_secret', { defaultValue: '' }))?.trim()
-    if (!secret) {
-      return jsonResponse({ error: 'Podcast rebuild webhook secret is not configured', code: 'secret_not_configured' }, 400, corsHeaders)
     }
 
     const body = await request.json().catch(() => ({}))
@@ -162,75 +279,41 @@ export async function handleRssPodcastPreviewRebuildNotify(request: any, env: an
       videos = videos.filter((v: { id?: string }) => v?.id && set.has(v.id))
     }
 
-    const payload = {
-      event: 'podcast_preview_rebuild',
-      sentAt: new Date().toISOString(),
-      videos: videos.map((v: any) => ({
-        id: v.id,
-        previewDurationSeconds: Number(v.preview_duration) || 0,
-        fullDurationSeconds: Number(v.full_duration) || 0,
-        updatedAt: v.updated_at ?? null,
-      })),
-    }
-
-    const rawBody = JSON.stringify(payload)
-    const ts = String(Math.floor(Date.now() / 1000))
-    const signature = await hmacSha256Hex(secret, `${ts}.${rawBody}`)
-
-    const controller = new AbortController()
-    const timeoutMs = 10000 // 10 seconds
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-    let res: Response
-    try {
-      res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-VMP-Signature': `sha256=${signature}`,
-          'X-VMP-Timestamp': ts,
-        },
-        body: rawBody,
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-    } catch (err) {
-      clearTimeout(timeoutId)
-      const isAbort = err instanceof Error && err.name === 'AbortError'
-      console.error('Webhook request error:', err)
-      return jsonResponse({
-        error: isAbort ? 'Webhook request timed out' : 'Webhook request failed',
-        code: isAbort ? 'webhook_timeout' : 'webhook_error',
-      }, 502, corsHeaders)
-    }
-
-    const text = await res.text().catch(() => '')
-    const parsed = (() => {
-      try {
-        return text ? JSON.parse(text) : null
-      } catch {
-        return null
+    const result = await deliverPodcastPreviewRebuildWebhook(env, videos)
+    if (!result.delivered) {
+      if (result.code === 'webhook_not_configured') {
+        return jsonResponse({ error: 'Podcast rebuild webhook URL is not configured', code: result.code }, 400, corsHeaders)
       }
-    })()
-    if (!res.ok) {
+      if (result.code === 'secret_not_configured') {
+        return jsonResponse({ error: 'Podcast rebuild webhook secret is not configured', code: result.code }, 400, corsHeaders)
+      }
+      if (result.code === 'nothing_to_rebuild') {
+        return jsonResponse({
+          ok: true,
+          delivered: false,
+          code: result.code,
+          videoCount: result.videoCount,
+          skippedFullUnlockCount: result.skippedFullUnlockCount,
+          message: 'No videos need a trimmed preview MP3 (premium-only or full unlock).',
+        }, 200, corsHeaders)
+      }
       return jsonResponse({
-        error: 'Webhook request failed',
-        code: 'webhook_failed',
-        status: res.status,
-        detail: typeof parsed?.error === 'string' ? parsed.error : text.slice(0, 500),
+        error: result.code === 'webhook_timeout' ? 'Webhook request timed out' : 'Webhook request failed',
+        code: result.code,
+        status: result.webhookStatus,
+        detail: result.detail,
       }, 502, corsHeaders)
     }
 
-    const acceptedNum = Number(parsed?.acceptedCount ?? payload.videos.length)
-    const rejectedNum = Number(parsed?.rejectedCount ?? 0)
     return jsonResponse({
       ok: true,
       delivered: true,
-      videoCount: payload.videos.length,
-      webhookStatus: res.status,
-      acceptedCount: Number.isFinite(acceptedNum) ? acceptedNum : 0,
-      rejectedCount: Number.isFinite(rejectedNum) ? rejectedNum : 0,
-      rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
+      videoCount: result.eligibleCount,
+      skippedFullUnlockCount: result.skippedFullUnlockCount,
+      webhookStatus: result.webhookStatus,
+      acceptedCount: result.acceptedCount,
+      rejectedCount: result.rejectedCount,
+      rejected: result.rejected,
     }, 200, corsHeaders)
   } catch (e) {
     console.error('handleRssPodcastPreviewRebuildNotify:', e)
