@@ -59,16 +59,9 @@ async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
   return providers.length > 0 ? providers : ['stripe', 'gocardless']
 }
 
-/** Gateways enabled in admin_settings (used for public pricing + UI). */
+/** Gateways enabled for new checkouts (Stripe only; GoCardless kept for existing subs via webhook). */
 async function getConfiguredProviders(env: any): Promise<PaymentProvider[]> {
-  const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' })
-  const raw = String(stored ?? 'stripe').trim()
-  let configured = (raw ? raw : 'stripe')
-    .split(',')
-    .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
-  if (configured.length === 0) configured = ['stripe']
-  return configured
+  return ['stripe']
 }
 
 /** Gateways that can actually run checkout in this environment (requires provider credentials). */
@@ -225,46 +218,19 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const configuredProviders = await getConfiguredProviders(env)
-    const providerOrder = await getPaymentProviderOrder(env)
-    const orderedEnabled = [
-      ...providerOrder.filter((p) => configuredProviders.includes(p)),
-      ...configuredProviders.filter((p) => !providerOrder.includes(p)),
-    ]
-    const enabledProviders = orderedEnabled
-    const [stripePricing, gocardlessPricing] = await Promise.all([
-      getEffectivePricingSettings(env, 'stripe'),
-      getEffectivePricingSettings(env, 'gocardless'),
-    ])
-    const primary = enabledProviders[0] ?? 'stripe'
-    const activePricing = primary === 'gocardless' ? gocardlessPricing : stripePricing
-    const pricingNotConfigured = configuredProviders.some((provider) => {
-      const pricing = provider === 'gocardless' ? gocardlessPricing : stripePricing
-      return pricing.monthly == null || pricing.yearly == null || pricing.club == null
-    })
-    if (pricingNotConfigured) {
-      return jsonResponse({
-        monthly: activePricing.monthly,
-        yearly: activePricing.yearly,
-        club: activePricing.club,
-        pricesByProvider: {
-          stripe: stripePricing,
-          gocardless: gocardlessPricing,
-        },
-        pricing_not_configured: true,
-        enabledProviders,
-      }, 200, corsHeaders)
-    }
-    return jsonResponse({
-      monthly: activePricing.monthly,
-      yearly: activePricing.yearly,
-      club: activePricing.club,
+    const stripePricing = await getEffectivePricingSettings(env, 'stripe')
+    const pricingNotConfigured = stripePricing.monthly == null || stripePricing.yearly == null || stripePricing.club == null
+    const payload = {
+      monthly: stripePricing.monthly,
+      yearly: stripePricing.yearly,
+      club: stripePricing.club,
       pricesByProvider: {
         stripe: stripePricing,
-        gocardless: gocardlessPricing,
       },
-      enabledProviders,
-    }, 200, corsHeaders)
+      enabledProviders: ['stripe'],
+      ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
+    }
+    return jsonResponse(payload, 200, corsHeaders)
   } catch (err) {
     console.error('handleGetPricing error:', err)
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)

@@ -61,7 +61,7 @@
           {{ strings.checkoutMostPopular }}
         </div>
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanMonthly }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('monthly')) }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('monthly')) }}</p>
         <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerMonth }}</p>
       </button>
 
@@ -72,7 +72,7 @@
         @click="selectedPlan = 'yearly'"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanYearly }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('yearly')) }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('yearly')) }}</p>
         <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
 
@@ -83,7 +83,7 @@
         @click="selectedPlan = 'club'"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanClub }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(primaryPlanPrice('club')) }}</p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('club')) }}</p>
         <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
       </button>
     </div>
@@ -136,11 +136,11 @@
     </div>
 
     <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && (stripeEnabled || gocardlessEnabled)"
+      v-if="!loadingPrices && !priceError && isLoggedIn"
       class="mb-4 text-left"
     >
       <StripeEmbeddedCheckout
-        v-if="stripeEnabled && stripeCheckoutMounted"
+        v-if="stripeCheckoutMounted"
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
@@ -170,8 +170,8 @@
             <button
               type="button"
               class="w-full text-left rounded-lg border-2 p-4 transition-all"
-              :class="moreOptionClass('card')"
-              @click="selectMoreMethod('card')"
+              :class="moreOptionClass"
+              @click="selectCardMethod"
             >
               <p class="font-semibold" :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'">
                 {{ strings.checkoutPayByCard }}
@@ -180,49 +180,13 @@
                 {{ strings.checkoutPayByCardHint }}
               </p>
             </button>
-
-            <template v-if="gocardlessEnabled">
-              <button
-                type="button"
-                class="w-full text-left rounded-lg border-2 p-4 transition-all"
-                :class="moreOptionClass('bank')"
-                @click="selectMoreMethod('bank')"
-              >
-                <p class="font-semibold" :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'">
-                  {{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}
-                </p>
-              </button>
-
-              <button
-                v-if="moreMethod === 'bank'"
-                type="button"
-                class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
-                :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
-                @click="handleSubscribe('gocardless')"
-              >
-                <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
-                <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
-              </button>
-            </template>
           </div>
         </div>
       </StripeEmbeddedCheckout>
-
-      <div v-else-if="gocardlessEnabled && !stripeEnabled" class="space-y-2">
-        <button
-          type="button"
-          class="w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700"
-          :disabled="checkingOut || !providerPlanPrice('gocardless', selectedPlan)"
-          @click="handleSubscribe('gocardless')"
-        >
-          <span v-if="checkingOut">{{ strings.checkoutRedirecting }}</span>
-          <span v-else>{{ strings.checkoutPayWithBank(formatPrice(providerPlanPrice('gocardless', selectedPlan))) }}</span>
-        </button>
-      </div>
     </div>
 
     <p class="text-xs mt-3" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
-      {{ checkoutBlurb }}
+      {{ strings.checkoutBlurbEmbedded }}
     </p>
     <p
       v-if="!isLoggedIn"
@@ -265,28 +229,19 @@ const { isLoggedIn, authHeader } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'gocardless'
-type MorePaymentMethod = 'card' | 'bank'
 
 interface Prices { monthly: number; yearly: number; club: number }
-interface ProviderPriceMap { stripe: Prices; gocardless: Prices }
 
 const defaultPrices: Prices = { monthly: 6.90, yearly: 74.90, club: 109.00 }
-const pricesByProvider = ref<ProviderPriceMap>({
-  stripe: { ...defaultPrices },
-  gocardless: { ...defaultPrices },
-})
+const prices = ref<Prices>({ ...defaultPrices })
 const loadingPrices = ref(false)
 const priceError = ref(false)
 const selectedPlan = ref<PlanType>('monthly')
-const availableProviders = ref<PaymentProvider[]>(['stripe'])
-const selectedProvider = ref<PaymentProvider>('stripe')
 const walletAvailable = ref(false)
 /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
 const walletDetectionDone = ref(false)
 const moreExpanded = ref(false)
-const moreMethod = ref<MorePaymentMethod | null>(null)
-const checkingOut = ref(false)
+const cardMethodSelected = ref(false)
 const checkoutError = ref<string | null>(null)
 const promoCodeInput = ref('')
 const promoValidating = ref(false)
@@ -310,29 +265,21 @@ const planGridClass = computed(() =>
   'grid-cols-3 max-[22rem]:grid-cols-1',
 )
 
-const stripeEnabled = computed(() => availableProviders.value.includes('stripe'))
-const gocardlessEnabled = computed(() => availableProviders.value.includes('gocardless'))
-
-const stripeCheckoutMounted = computed(() => stripeEnabled.value)
+const stripeCheckoutMounted = computed(() => true)
 
 /** Apple / Google Pay above the fold (mount express until detection finishes). */
 const showWalletSurface = computed(() => {
-  if (!stripeEnabled.value) return false
   if (!walletDetectionDone.value) return true
   return walletAvailable.value
 })
 
 /** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
 const showCardSurface = computed(() => {
-  if (!stripeEnabled.value || !walletDetectionDone.value) return false
-  return moreExpanded.value && moreMethod.value === 'card'
+  if (!walletDetectionDone.value) return false
+  return moreExpanded.value && cardMethodSelected.value
 })
 
-/** Card, PayPal, SEPA (and bank when enabled) stay behind More even when wallets are unavailable. */
-const showMoreToggle = computed(() => {
-  if (!walletDetectionDone.value || !stripeEnabled.value) return false
-  return true
-})
+const showMoreToggle = computed(() => walletDetectionDone.value)
 
 const moreToggleClass = computed(() => {
   if (props.embedded) {
@@ -345,41 +292,35 @@ const moreToggleClass = computed(() => {
     : 'border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500 hover:text-white'
 })
 
-function moreOptionClass(method: MorePaymentMethod): string {
-  const selected = moreMethod.value === method
+const moreOptionClass = computed(() => {
   if (props.embedded) {
-    return selected
+    return cardMethodSelected.value
       ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
       : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
   }
-  return selected
+  return cardMethodSelected.value
     ? 'border-blue-500 bg-blue-500/10'
     : 'border-gray-700 bg-gray-800 hover:border-gray-500'
-}
+})
 
 function onWalletAvailable(available: boolean) {
   walletDetectionDone.value = true
   walletAvailable.value = available
   if (!available) {
     moreExpanded.value = false
-    moreMethod.value = null
+    cardMethodSelected.value = false
   }
 }
 
 function toggleMore() {
   moreExpanded.value = !moreExpanded.value
   if (!moreExpanded.value) {
-    moreMethod.value = null
+    cardMethodSelected.value = false
   }
 }
 
-function selectMoreMethod(method: MorePaymentMethod) {
-  moreMethod.value = method
-  if (method === 'bank') {
-    selectedProvider.value = 'gocardless'
-  } else {
-    selectedProvider.value = 'stripe'
-  }
+function selectCardMethod() {
+  cardMethodSelected.value = true
 }
 
 function planButtonClass(plan: PlanType): string {
@@ -399,39 +340,16 @@ function formatPrice(amount: number | null | undefined): string {
   return `€${amount.toFixed(2)}`
 }
 
-function providerPlanPrice(provider: PaymentProvider, plan: PlanType): number | null {
-  const value = pricesByProvider.value[provider]?.[plan]
+function planPrice(plan: PlanType): number | null {
+  const value = prices.value[plan]
   return Number.isFinite(value) ? Number(value) : null
 }
 
-function primaryPlanPrice(plan: PlanType): number | null {
-  const first = availableProviders.value[0] ?? 'stripe'
-  return providerPlanPrice(first, plan)
-}
-
-function promoProviderForCheckout(): PaymentProvider {
-  if (moreMethod.value === 'bank') return 'gocardless'
-  return 'stripe'
-}
-
-const checkoutBlurb = computed(() => {
-  if (stripeEnabled.value && gocardlessEnabled.value) {
-    return strings.checkoutBlurbBoth
-  }
-  if (gocardlessEnabled.value) {
-    return strings.checkoutBlurbGoCardless
-  }
-  if (stripeEnabled.value) {
-    return strings.checkoutBlurbEmbedded
-  }
-  return strings.checkoutBlurbDefault
-})
-
-function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
+function buildLoginRedirect(plan: PlanType): string {
   const params = new URLSearchParams()
   if (props.reopenPremiumOnReturn) params.set('showPremium', '1')
   params.set('checkout_plan', plan)
-  params.set('checkout_provider', provider)
+  params.set('checkout_provider', 'stripe')
   const joiner = props.returnPath.includes('?') ? '&' : '?'
   return `${props.returnPath}${joiner}${params.toString()}`
 }
@@ -447,38 +365,20 @@ async function loadPrices() {
     }
 
     const data = await res.json()
-    const providers = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless')
-      : []
-    availableProviders.value = providers.length ? providers : ['stripe']
-
     const fallback: Prices = {
       monthly: Number(data.monthly ?? defaultPrices.monthly),
       yearly: Number(data.yearly ?? defaultPrices.yearly),
       club: Number(data.club ?? defaultPrices.club),
     }
 
-    const stripeRaw = data?.pricesByProvider?.stripe ?? {}
-    const gocardlessRaw = data?.pricesByProvider?.gocardless ?? {}
-
-    pricesByProvider.value = {
-      stripe: {
-        monthly: Number(stripeRaw.monthly ?? fallback.monthly),
-        yearly: Number(stripeRaw.yearly ?? fallback.yearly),
-        club: Number(stripeRaw.club ?? fallback.club),
-      },
-      gocardless: {
-        monthly: Number(gocardlessRaw.monthly ?? fallback.monthly),
-        yearly: Number(gocardlessRaw.yearly ?? fallback.yearly),
-        club: Number(gocardlessRaw.club ?? fallback.club),
-      },
+    const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {}
+    prices.value = {
+      monthly: Number(stripeRaw.monthly ?? fallback.monthly),
+      yearly: Number(stripeRaw.yearly ?? fallback.yearly),
+      club: Number(stripeRaw.club ?? fallback.club),
     }
 
-    if (!availableProviders.value.includes(selectedProvider.value)) {
-      selectedProvider.value = availableProviders.value[0] ?? 'stripe'
-    }
-
-    const hasVisiblePrice = availableProviders.value.some((provider) => providerPlanPrice(provider, selectedPlan.value) != null)
+    const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => planPrice(plan) != null)
     if (!hasVisiblePrice) {
       priceError.value = true
     }
@@ -489,55 +389,16 @@ async function loadPrices() {
   }
 }
 
-async function handleSubscribe(provider: PaymentProvider) {
-  if (!isLoggedIn.value) {
-    await startLoginFlow(buildLoginRedirect(selectedPlan.value, provider))
-    return
-  }
-
-  if (provider !== 'gocardless') return
-
-  selectedProvider.value = provider
-  checkingOut.value = true
-  checkoutError.value = null
-  const promoCode = promoApplied.value?.code || ''
-  try {
-    const res = await fetch(`${apiUrl}/api/payments/checkout`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        planType: selectedPlan.value,
-        provider,
-        promoCode,
-        returnPath: props.returnPath,
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok || !data.checkoutUrl) {
-      checkoutError.value = data.error ?? strings.checkoutStartFailed
-      return
-    }
-    window.location.href = data.checkoutUrl
-  } catch {
-    checkoutError.value = strings.networkError
-  } finally {
-    checkingOut.value = false
-  }
-}
-
 async function goToLogin() {
   await startLoginFlow(props.returnPath)
 }
 
 function isStalePromoValidation(
   generation: number,
-  providerAtRequest: PaymentProvider,
   planAtRequest: PlanType,
   codeAtRequest: string,
 ): boolean {
   if (generation !== promoValidationGeneration) return true
-  if (promoProviderForCheckout() !== providerAtRequest) return true
   if (selectedPlan.value !== planAtRequest) return true
   if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true
   return false
@@ -556,7 +417,6 @@ async function validatePromoCode() {
   }
 
   const generation = ++promoValidationGeneration
-  const providerAtRequest = promoProviderForCheckout()
   const planAtRequest = selectedPlan.value
 
   promoValidating.value = true
@@ -565,10 +425,10 @@ async function validatePromoCode() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ promoCode: code, planType: planAtRequest, provider: providerAtRequest }),
+      body: JSON.stringify({ promoCode: code, planType: planAtRequest, provider: 'stripe' }),
     })
     const data = await res.json().catch(() => ({}))
-    if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
+    if (isStalePromoValidation(generation, planAtRequest, code)) return
     if (!res.ok || !data?.valid) {
       promoError.value = data?.error || strings.checkoutPromoInvalid
       return
@@ -578,7 +438,7 @@ async function validatePromoCode() {
       rewardType: String(data?.promo?.rewardType || 'free_month'),
     }
   } catch {
-    if (isStalePromoValidation(generation, providerAtRequest, planAtRequest, code)) return
+    if (isStalePromoValidation(generation, planAtRequest, code)) return
     promoError.value = strings.checkoutPromoValidateNetworkError
   } finally {
     if (generation === promoValidationGeneration) {
@@ -599,14 +459,6 @@ function applyCheckoutIntentFromRoute() {
   if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
     selectedPlan.value = plan
   }
-  const prov = q.checkout_provider
-  if (prov === 'stripe' || prov === 'gocardless') {
-    selectedProvider.value = prov
-    if (prov === 'gocardless') {
-      moreExpanded.value = true
-      moreMethod.value = 'bank'
-    }
-  }
 }
 
 function activatePanel() {
@@ -625,16 +477,7 @@ watch(selectedPlan, () => {
   walletDetectionDone.value = false
   walletAvailable.value = false
   moreExpanded.value = false
-  moreMethod.value = null
-})
-
-watch(moreMethod, () => {
-  selectedProvider.value = moreMethod.value === 'bank' ? 'gocardless' : 'stripe'
-  promoApplied.value = null
-  promoError.value = null
-  if (promoCodeInput.value.trim() && isLoggedIn.value) {
-    void validatePromoCode()
-  }
+  cardMethodSelected.value = false
 })
 
 watch(promoCodeInput, (newInput) => {
