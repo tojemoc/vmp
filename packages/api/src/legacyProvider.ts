@@ -122,13 +122,49 @@ export async function getLegacyOrder(env: LegacyEnv, idOrder: string) {
 
 export function verifyLegacyWebhookSignature(
   env: LegacyEnv,
-  _rawBody: string,
+  rawBody: string,
   signatureHeader: string | null,
-): boolean {
+): Promise<boolean> {
+  return verifyLegacyWebhookSignatureAsync(env, rawBody, signatureHeader)
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let out = 0
+  for (let i = 0; i < a.length; i += 1) {
+    out |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return out === 0
+}
+
+function bytesToHex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function verifyLegacyWebhookSignatureAsync(
+  env: LegacyEnv,
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<boolean> {
   const secret = String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()
-  if (!secret) return false
-  if (!signatureHeader) return false
-  return signatureHeader.trim() === secret || signatureHeader.trim() === `sha256=${secret}`
+  if (!secret || !signatureHeader) return false
+
+  const provided = signatureHeader.trim()
+  const stripped = provided.replace(/^sha256=/i, '')
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const hex = bytesToHex(digest)
+
+  if (timingSafeEqual(provided, hex) || timingSafeEqual(stripped, hex)) return true
+  if (timingSafeEqual(provided, secret) || timingSafeEqual(stripped, secret)) return true
+  return false
 }
 
 export function normalizeLegacySubscriptionStatus(raw: unknown): 'active' | 'trialing' | 'past_due' | 'cancelled' {

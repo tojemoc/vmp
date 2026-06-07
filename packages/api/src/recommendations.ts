@@ -7,6 +7,11 @@ import { getDb } from './d1Session.js'
 type RecommendationVideo = {
   id: string
   slug?: string | null
+  title: string
+  description?: string | null
+  thumbnail_url?: string | null
+  full_duration?: number
+  preview_duration?: number
   category_id?: string | null
   published_at?: string | null
   upload_date?: string | null
@@ -39,6 +44,22 @@ function normalizeSettings(row: Record<string, unknown> | null | undefined): Cat
     recencyBias: Number.isFinite(recency) ? Math.max(0, recency) : 1,
     lowViewsBoost: Number.isFinite(boost) ? Math.max(0, boost) : 0,
     categoryLock: Number(row?.recommendation_category_lock) === 1,
+  }
+}
+
+export function mapRecommendationVideoRow(row: Record<string, unknown>): RecommendationVideo {
+  return {
+    id: String(row.id ?? ''),
+    slug: row.slug != null ? String(row.slug) : null,
+    title: String(row.title ?? ''),
+    description: row.description != null ? String(row.description) : null,
+    thumbnail_url: row.thumbnail_url != null ? String(row.thumbnail_url) : null,
+    full_duration: Number(row.full_duration) || 0,
+    preview_duration: Number(row.preview_duration) || 0,
+    category_id: row.category_id != null ? String(row.category_id) : null,
+    published_at: row.published_at != null ? String(row.published_at) : null,
+    upload_date: row.upload_date != null ? String(row.upload_date) : null,
+    view_count: Number(row.view_count) || 0,
   }
 }
 
@@ -137,7 +158,9 @@ export async function handleVideoRecommendations(request: Request, env: any, cor
     }
 
     const list = await db.prepare(`
-      SELECT v.id, v.slug, v.published_at, v.upload_date, vca.category_id,
+      SELECT v.id, v.slug, v.title, v.description, v.thumbnail_url,
+             v.full_duration, v.preview_duration,
+             v.published_at, v.upload_date, vca.category_id,
              COALESCE(vs.view_count, 0) AS view_count
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
@@ -152,7 +175,7 @@ export async function handleVideoRecommendations(request: Request, env: any, cor
     `).all()
 
     const ranked = scoreRecommendationVideos(
-      (list.results ?? []) as RecommendationVideo[],
+      (list.results ?? []).map((row) => mapRecommendationVideoRow(row as Record<string, unknown>)),
       String((current as any).id),
       settings,
     )

@@ -1270,7 +1270,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     recommendations.value = []
     try {
       const recsResponse = await fetch(
-        `${config.public.apiUrl}/api/recommendations?videoId=${encodeURIComponent(currentVideoId)}&limit=5`,
+        `${config.public.apiUrl}/api/recommendations?videoId=${encodeURIComponent(String(videoData.value?.videoId ?? targetVideoId))}&limit=5`,
         { signal: options.signal },
       )
       ensureCurrent()

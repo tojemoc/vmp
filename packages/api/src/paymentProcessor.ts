@@ -332,11 +332,11 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
   }
 
   try {
-    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'gocardless'])
+    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'gocardless', 'legacy'])
     if (!enabledProviders.length) {
       return jsonResponse({ error: 'At least one payment provider must be enabled' }, 400, corsHeaders)
     }
-    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'gocardless'])
+    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'gocardless', 'legacy'])
     const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
     const basePrices = body.basePrices ?? {}
     const providerPrices = body.providerPrices ?? {}

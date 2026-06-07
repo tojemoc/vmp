@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { scoreRecommendationVideos } from '../src/recommendations.js'
+import { mapRecommendationVideoRow, scoreRecommendationVideos } from '../src/recommendations.js'
 
 describe('scoreRecommendationVideos', () => {
   const videos = [
@@ -35,5 +35,24 @@ describe('scoreRecommendationVideos', () => {
       categoryLock: true,
     })
     assert.ok(ranked.every((v) => v.category_id === 'cat-a'))
+  })
+
+  it('mapRecommendationVideoRow includes UI fields for watch cards', () => {
+    const mapped = mapRecommendationVideoRow({
+      id: 'vid-1',
+      slug: 'my-slug',
+      title: 'Example title',
+      description: 'Example description',
+      thumbnail_url: 'https://cdn.example/thumb.jpg',
+      full_duration: 3600,
+      preview_duration: 120,
+      category_id: 'cat-a',
+      view_count: 12,
+    })
+    assert.equal(mapped.id, 'vid-1')
+    assert.equal(mapped.title, 'Example title')
+    assert.equal(mapped.thumbnail_url, 'https://cdn.example/thumb.jpg')
+    assert.equal(mapped.full_duration, 3600)
+    assert.equal(mapped.category_id, 'cat-a')
   })
 })

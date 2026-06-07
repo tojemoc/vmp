@@ -1,7 +1,7 @@
 /**
  * Loads GTM container from public site settings when configured in admin.
  */
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin(async () => {
   const config = useRuntimeConfig()
   const { siteSettings, fetchSiteSettings } = useSiteSettings()
 
@@ -18,15 +18,8 @@ export default defineNuxtPlugin(() => {
     document.head.appendChild(script)
   }
 
-  watch(
-    () => siteSettings.value.gtmContainerId,
-    (containerId) => {
-      const fromSettings = String(containerId ?? '').trim()
-      const fallback = String(config.public.gtm?.id ?? '').trim()
-      loadGtm(fromSettings || fallback)
-    },
-    { immediate: true },
-  )
-
-  void fetchSiteSettings()
+  await fetchSiteSettings()
+  const fromSettings = String(siteSettings.value.gtmContainerId ?? '').trim()
+  const fallback = String(config.public.gtm?.id ?? '').trim()
+  loadGtm(fromSettings || fallback)
 })

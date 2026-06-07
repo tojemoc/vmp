@@ -38,7 +38,12 @@ export function describeReplicationTarget(
 } {
   const trimmed = String(raw ?? '').trim()
   if (!trimmed) {
-    return { configured: false, tokenConfigured: false, ingestPathOk: false, resolvedPath: '' }
+    return {
+      configured: false,
+      tokenConfigured: options?.tokenConfigured === true,
+      ingestPathOk: false,
+      resolvedPath: '',
+    }
   }
 
   const resolved = resolveReplicationTargetUrl(trimmed)

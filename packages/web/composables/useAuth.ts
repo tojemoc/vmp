@@ -285,7 +285,9 @@ export function useAuth() {
       return refreshSession()
     }
     if (isAccessTokenExpired()) {
-      return refreshSession()
+      const ok = await refreshSession()
+      if (!ok) clearSession()
+      return ok
     }
     return true
   }

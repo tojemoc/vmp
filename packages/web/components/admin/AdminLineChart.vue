@@ -17,6 +17,17 @@
         class="stroke-gray-200 dark:stroke-gray-800"
         stroke-width="1"
       />
+      <text
+        v-for="(tick, index) in yTicks"
+        :key="`ylabel-${index}`"
+        :x="padding.left - 6"
+        :y="tick.y"
+        text-anchor="end"
+        dominant-baseline="middle"
+        class="fill-gray-500 dark:fill-gray-400 text-[10px]"
+      >
+        {{ tick.label }}
+      </text>
       <polyline
         v-if="points.length > 1"
         fill="none"
@@ -61,7 +72,7 @@ const props = withDefaults(defineProps<{
 
 const width = 640
 const height = computed(() => props.height)
-const padding = { top: 12, right: 12, bottom: 8, left: 12 }
+const padding = { top: 12, right: 12, bottom: 8, left: 44 }
 
 const values = computed(() => props.points.map((p) => Math.max(0, Number(p.value) || 0)))
 const maxValue = computed(() => Math.max(1, ...values.value, 0))

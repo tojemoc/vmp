@@ -3,6 +3,7 @@
  */
 
 import { requireAuth, requireRole } from './auth.js'
+import { syncNewsletterForStripeSubscription } from './brevo.js'
 import { getSetting } from './settingsStore.js'
 import {
   createLegacyOrder,
@@ -233,7 +234,7 @@ export async function handleLegacyWebhook(request: Request, env: any, corsHeader
     ?? request.headers.get('X-Webhook-Signature')
     ?? request.headers.get('Authorization')
 
-  if (!verifyLegacyWebhookSignature(env, rawBody, signature)) {
+  if (!await verifyLegacyWebhookSignature(env, rawBody, signature)) {
     return jsonResponse({ error: 'Invalid webhook signature' }, 401, corsHeaders)
   }
 
@@ -274,6 +275,12 @@ export async function handleLegacyWebhook(request: Request, env: any, corsHeader
     providerOrderId: orderId,
     periodEndIso: periodEnd ? String(periodEnd) : null,
   })
+
+  try {
+    await syncNewsletterForStripeSubscription(db, String((sub as any).user_id), status, env)
+  } catch (brevoErr) {
+    console.error('[legacy webhook] syncNewsletterForStripeSubscription failed', brevoErr)
+  }
 
   return jsonResponse({ ok: true }, 200, corsHeaders)
 }

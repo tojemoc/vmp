@@ -1415,10 +1415,13 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         updates.push('recommendation_low_views_boost = ?')
         values.push(value)
       }
-      if (Object.prototype.hasOwnProperty.call(body, 'recommendationCategoryLock')) {
-        updates.push('recommendation_category_lock = ?')
-        values.push(body.recommendationCategoryLock ? 1 : 0)
-      }
+  if (Object.prototype.hasOwnProperty.call(body, 'recommendationCategoryLock')) {
+    if (typeof body.recommendationCategoryLock !== 'boolean') {
+      return jsonResponse({ error: 'recommendationCategoryLock must be a boolean' }, 400, corsHeaders)
+    }
+    updates.push('recommendation_category_lock = ?')
+    values.push(body.recommendationCategoryLock ? 1 : 0)
+  }
       if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
       values.push(id)
       try {

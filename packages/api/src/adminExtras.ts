@@ -68,7 +68,9 @@ export async function handleHomepageContent(request: any, env: any, corsHeaders:
       const [homepageRow, categoryRows] = await Promise.all([
         db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
         db.prepare(`
-          SELECT id, slug, name, sort_order, direction, COUNT(vca.video_id) AS video_count
+          SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant,
+                 vc.recommendation_recency_bias, vc.recommendation_low_views_boost, vc.recommendation_category_lock,
+                 COUNT(vca.video_id) AS video_count
           FROM video_categories vc
           LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
           GROUP BY vc.id

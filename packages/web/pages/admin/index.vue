@@ -2594,7 +2594,7 @@ const newsletterCampaigns = ref<any[]>([])
 const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' })
 const newsletterEditingTemplateId = ref<string | null>(null)
 const newsletterTemplateSaving = ref(false)
-type PaymentProvider = 'stripe' | 'gocardless'
+type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type PlanType = 'monthly' | 'yearly' | 'club'
 interface PaymentPriceRow { monthly: string; yearly: string; club: string }
 interface PromoCampaign {
@@ -3568,7 +3568,13 @@ const loadHomepageState = async () => {
     return
   }
   if (Array.isArray(data?.categories) && data.categories.length) {
-    categories.value = data.categories
+    categories.value = data.categories.map((cat: any) => ({
+      ...cat,
+      homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
+    }))
   }
   const nextSlots = featuredIds
     .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
@@ -3872,8 +3878,12 @@ const loadPaymentSettings = async () => {
       throw new Error(err.error || `HTTP ${res.status}`)
     }
     const data = await res.json()
-    const enabled = Array.isArray(data.enabledProviders) ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless') : ['stripe']
-    const order = Array.isArray(data.providerOrder) ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'gocardless') : []
+    const enabled = Array.isArray(data.enabledProviders)
+      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
+      : ['stripe']
+    const order = Array.isArray(data.providerOrder)
+      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
+      : []
     const first: PaymentProvider = order[0] === 'gocardless' ? 'gocardless' : 'stripe'
     const second: PaymentProvider = order[1] === 'stripe' || order[1] === 'gocardless' ? order[1] : (first === 'stripe' ? 'gocardless' : 'stripe')
     const allowed = Array.isArray(data.allowedPlans) ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club') : ['monthly', 'yearly', 'club']
@@ -4314,8 +4324,8 @@ const savePaymentSettings = async () => {
   paymentSettingsMessage.value = ''
   try {
     const ps = paymentSettings.value
-    const enabledProviders: PaymentProvider[] = ['stripe']
-    const order: PaymentProvider[] = ['stripe']
+    const enabledProviders = [...ps.enabledProviders]
+    const order = [...ps.providerOrder]
     const hasAnyPlan = Array.isArray(ps.allowedPlans) && ps.allowedPlans.length > 0
     if (!hasAnyPlan) {
       throw new Error('Select at least one offered plan.')

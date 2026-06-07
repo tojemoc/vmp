@@ -136,7 +136,7 @@ async function cleanupJobArtifacts(videoId: string, lockFile?: string, inputPath
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   await rm(tmpDir, { recursive: true, force: true })
 
-  const inboxPath = inputPath ?? jobInputPaths.get(videoId)
+  const inboxPath = inputPath
   if (inboxPath) {
     await rm(inboxPath, { force: true })
     jobInputPaths.delete(videoId)
