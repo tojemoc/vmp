@@ -21,6 +21,8 @@ import {
   verifyStripeWebhook,
 } from './stripeClient.js'
 export { normalizeStripeStatus } from './stripeClient.js'
+import { isLegacyProviderConfigured } from './legacyProvider.js'
+import { startLegacyCheckout } from './legacyPayments.js'
 import {
   buildGoCardlessBillingRequestFlowCreatePayload,
   buildGoCardlessMandateBillingRequestPayload,
@@ -37,7 +39,7 @@ import {
 export { normalizeGoCardlessStatus } from './gocardlessCore.js'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'gocardless'
+type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -50,18 +52,25 @@ async function getAllowedPlans(env: any): Promise<PlanType[]> {
 }
 
 async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
-  const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,gocardless' })
-  const raw = String(stored ?? 'stripe,gocardless').trim()
-  const providers = (raw ? raw : 'stripe,gocardless')
+  const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,legacy' })
+  const raw = String(stored ?? 'stripe,legacy').trim()
+  const providers = (raw ? raw : 'stripe,legacy')
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
-  return providers.length > 0 ? providers : ['stripe', 'gocardless']
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless' || v === 'legacy')
+  return providers.length > 0 ? providers : ['stripe']
 }
 
-/** Gateways enabled for new checkouts (Stripe only; GoCardless kept for existing subs via webhook). */
+/** Gateways enabled for new checkouts. GoCardless removed from user-facing checkout; legacy optional. */
 async function getConfiguredProviders(env: any): Promise<PaymentProvider[]> {
-  return ['stripe']
+  const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' })
+  const raw = String(stored ?? 'stripe').trim()
+  let configured = (raw ? raw : 'stripe')
+    .split(',')
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'legacy')
+  if (configured.length === 0) configured = ['stripe']
+  return configured
 }
 
 /** Gateways that can actually run checkout in this environment (requires provider credentials). */
@@ -69,7 +78,8 @@ async function getRunnableProviders(env: any): Promise<PaymentProvider[]> {
   const configured = await getConfiguredProviders(env)
   const available = configured.filter((provider) => {
     if (provider === 'stripe') return Boolean(env.STRIPE_SECRET_KEY)
-    return Boolean(env.GOCARDLESS_ACCESS_TOKEN && env.GOCARDLESS_CREDITOR_ID)
+    if (provider === 'legacy') return isLegacyProviderConfigured(env)
+    return false
   })
   if (available.length > 0) return available
   return Boolean(env.STRIPE_SECRET_KEY) ? ['stripe'] : []
@@ -559,6 +569,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }
 
       return jsonResponse({ clientSecret: session.client_secret, provider }, 200, corsHeaders)
+    }
+
+    if (provider === 'legacy') {
+      return startLegacyCheckout(env, user, body, corsHeaders)
     }
 
     const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''

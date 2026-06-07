@@ -66,6 +66,8 @@ function log(msg: string): void {
 
 let shuttingDown = false
 const jobHandles = new Map<string, JobHandle>()
+/** Inbox MP4 path (original or renamed) per active/cancelled job — cleaned on stop/cancel. */
+const jobInputPaths = new Map<string, string>()
 const fallbackChildren = new Set<ChildProcess>()
 const stoppedVideos = new Set<string>()
 
@@ -130,8 +132,21 @@ async function waitWhilePaused(videoId: string): Promise<void> {
   }
 }
 
-async function cleanupCancelledJob(videoId: string, lockFile: string): Promise<void> {
-  await rm(lockFile, { force: true })
+async function cleanupJobArtifacts(videoId: string, lockFile?: string, inputPath?: string): Promise<void> {
+  const tmpDir = path.join(TMP_DIR_BASE, videoId)
+  await rm(tmpDir, { recursive: true, force: true })
+
+  const inboxPath = inputPath ?? jobInputPaths.get(videoId)
+  if (inboxPath) {
+    await rm(inboxPath, { force: true })
+    jobInputPaths.delete(videoId)
+  }
+
+  if (lockFile) await rm(lockFile, { force: true })
+}
+
+async function cleanupCancelledJob(videoId: string, lockFile: string, inputPath?: string): Promise<void> {
+  await cleanupJobArtifacts(videoId, lockFile, inputPath)
   videoDurations.delete(videoId)
   progressEmitState.delete(videoId)
   jobHandles.delete(videoId)
@@ -183,9 +198,9 @@ export async function stopJob(videoId: string): Promise<void> {
   stoppedVideos.add(videoId)
   removeQueuedJobs(videoId)
   const handle = jobHandles.get(videoId)
-  const tmpDir = path.join(TMP_DIR_BASE, videoId)
+  const inputPath = jobInputPaths.get(videoId)
   if (!handle) {
-    await rm(tmpDir, { recursive: true, force: true })
+    await cleanupJobArtifacts(videoId, undefined, inputPath)
     emitPipelineEvent(videoId, 'stopped', 'failed', 'stopped_by_user')
     return
   }
@@ -194,7 +209,7 @@ export async function stopJob(videoId: string): Promise<void> {
     try { child.kill('SIGTERM') } catch {}
   }
   await waitForChildrenExit(handle.children, 5000)
-  await rm(tmpDir, { recursive: true, force: true })
+  await cleanupJobArtifacts(videoId, undefined, inputPath)
   emitPipelineEvent(videoId, 'stopped', 'failed', 'stopped_by_user')
   jobHandles.delete(videoId)
 }
@@ -846,6 +861,7 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     return
   }
   await writeFile(lockFile, String(process.pid))
+  jobInputPaths.set(videoId, inputPath)
   ensureJobHandle(videoId, 'phase1')
   await emitTtp(videoId, 'processing_started', {})
   emitPipelineEvent(videoId, 'detected', 'active', `source=${source}`)
@@ -960,6 +976,7 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitPipelineEvent(videoId, 'cleanup', 'active', 'start')
     await writeFile(doneFlag, 'done')
     await rm(inputPath, { force: true })
+    jobInputPaths.delete(videoId)
     await rm(tmpDir, { recursive: true, force: true })
     emitPipelineEvent(videoId, 'done', 'success', 'watchfolder_and_tmp_cleared')
     emitProgressCheckpoint(videoId, 'done', PROGRESS.DONE, 'complete')
@@ -985,7 +1002,7 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     throw err
   } finally {
     if (cancelled) {
-      await cleanupCancelledJob(videoId, lockFile)
+      await cleanupCancelledJob(videoId, lockFile, inputPath)
     }
   }
 }

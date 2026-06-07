@@ -106,6 +106,13 @@ import {
   handleAdminReplicationPush,
   handleReplicationQueue,
 } from './replication.js'
+import { handleVideoRecommendations } from './recommendations.js'
+import {
+  handleLegacyCheckout,
+  handleLegacyComplete,
+  handleLegacyWebhook,
+  handleAdminLegacyPaymentSettings,
+} from './legacyPayments.js'
 import {
   createPushCampaignAndDeliveries,
   enqueueOverduePushDeliveries,
@@ -325,6 +332,9 @@ export default {
     }
 
     // ── Existing routes ───────────────────────────────────────────────────────
+    if (url.pathname === '/api/recommendations' && request.method === 'GET') {
+      return handleVideoRecommendations(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/videos') {
       return handleVideosList(request, env, corsHeaders)
     }
@@ -505,6 +515,18 @@ export default {
     }
     if (url.pathname === '/api/payments/webhook/gocardless' && request.method === 'POST') {
       return handleGoCardlessWebhook(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
+      return handleLegacyWebhook(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
+      return handleLegacyCheckout(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
+      return handleLegacyComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
+      return handleAdminLegacyPaymentSettings(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)
@@ -1306,7 +1328,9 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
       }
       const rows = await db.prepare(`
-        SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant, COUNT(vca.video_id) AS video_count
+        SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant,
+               vc.recommendation_recency_bias, vc.recommendation_low_views_boost, vc.recommendation_category_lock,
+               COUNT(vca.video_id) AS video_count
         FROM video_categories vc
         LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
         GROUP BY vc.id
@@ -1378,6 +1402,22 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
       if (Object.prototype.hasOwnProperty.call(body, 'homepageLayoutVariant')) {
         updates.push('homepage_layout_variant = ?')
         values.push(normalizeHomepageLayoutVariant(body.homepageLayoutVariant))
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'recommendationRecencyBias')) {
+        const value = Number(body.recommendationRecencyBias)
+        if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'recommendationRecencyBias must be a non-negative number' }, 400, corsHeaders)
+        updates.push('recommendation_recency_bias = ?')
+        values.push(value)
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'recommendationLowViewsBoost')) {
+        const value = Number(body.recommendationLowViewsBoost)
+        if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'recommendationLowViewsBoost must be a non-negative number' }, 400, corsHeaders)
+        updates.push('recommendation_low_views_boost = ?')
+        values.push(value)
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'recommendationCategoryLock')) {
+        updates.push('recommendation_category_lock = ?')
+        values.push(body.recommendationCategoryLock ? 1 : 0)
       }
       if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
       values.push(id)

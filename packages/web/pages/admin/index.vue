@@ -652,8 +652,9 @@
                 :key="category.id"
                 :data-category-id="category.id"
                 tabindex="-1"
-                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_170px_auto_auto] gap-2 items-center"
+                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2"
               >
+                <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_170px_auto_auto] gap-2 items-center">
                 <input v-model="category.name" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="category.slug" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model.number="category.sort_order" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
@@ -672,6 +673,19 @@
                 <div class="flex gap-2">
                   <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" @click="updateCategory(category)">Save</button>
                   <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium" @click="confirmDeleteCategory(category)">Delete</button>
+                </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <label class="text-gray-600 dark:text-gray-300">Rec. recency bias
+                    <input v-model.number="category.recommendation_recency_bias" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                  </label>
+                  <label class="text-gray-600 dark:text-gray-300">Rec. low-views boost
+                    <input v-model.number="category.recommendation_low_views_boost" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                  </label>
+                  <label class="inline-flex items-center gap-2 mt-5 text-gray-600 dark:text-gray-300">
+                    <input v-model="category.recommendation_category_lock" type="checkbox" :true-value="1" :false-value="0" class="rounded border-gray-300 dark:border-gray-600">
+                    Stay in category only
+                  </label>
                 </div>
               </div>
             </div>
@@ -1237,18 +1251,12 @@
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views over time</h3>
-              <div class="space-y-2">
-                <div v-for="row in analyticsViewsSeriesChartRows" :key="`v-${row.bucket}`" class="space-y-1">
-                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
-                    <span>{{ row.bucket }}</span>
-                    <span>{{ row.value }}</span>
-                  </div>
-                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
-                    <div class="h-2 rounded bg-blue-500" :style="{ width: `${row.percent}%` }"></div>
-                  </div>
-                </div>
-                <p v-if="!analyticsViewsSeriesChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
-              </div>
+              <AdminLineChart
+                v-if="analyticsViewsLineChartPoints.length"
+                :points="analyticsViewsLineChartPoints"
+                aria-label="Views over time line chart"
+              />
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic source split</h3>
@@ -1430,7 +1438,13 @@
                 </button>
               </div>
               <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
-                Set <code class="font-mono">REPLICATION_TARGET_URL</code> to your <strong>Deno Deploy api-node</strong> URL (ending in <code class="font-mono">/api/internal/replication/ingest</code>) and <code class="font-mono">REPLICATION_TARGET_TOKEN</code> on the Cloudflare Worker. Do not use the Workers API URL.
+                Replication ingest URL is not configured on the Worker (<code class="font-mono">REPLICATION_TARGET_URL</code> secret). Set it to your Deno api-node ingest endpoint.
+              </p>
+              <p
+                v-else-if="replicationStatus?.targetConfigured && replicationStatus.targetTokenConfigured === false"
+                class="text-xs text-amber-700 dark:text-amber-300"
+              >
+                Ingest URL is configured, but <code class="font-mono">REPLICATION_TARGET_TOKEN</code> is missing on the Worker. Add the shared bearer secret to match Deno <code class="font-mono">REPLICATION_INGEST_TOKEN</code>.
               </p>
             </div>
 
@@ -1471,6 +1485,11 @@
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   Podcast feed description
                   <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  Google Tag Manager container ID
+                  <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
                 </label>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -2315,6 +2334,7 @@ import { renderMarkdownToHtml } from '~/utils/markdown'
 // This single line is the only meaningful addition to this file.
 // The middleware checks auth + role before this component ever mounts.
 definePageMeta({ middleware: 'admin' })
+usePageSeo({ title: 'Admin' })
 
 // ── Everything below is unchanged from the previous version ──────────────────
 
@@ -2349,6 +2369,9 @@ interface Category {
   sort_order: number
   direction: 'asc' | 'desc'
   homepage_layout_variant?: 'three_by_one' | 'side_mini'
+  recommendation_recency_bias?: number
+  recommendation_low_views_boost?: number
+  recommendation_category_lock?: number
   video_count?: number
 }
 
@@ -2644,6 +2667,7 @@ const replicationStatus = ref<{
   mode: string
   batchSize: number
   targetConfigured: boolean
+  targetTokenConfigured?: boolean
   targetIngestPathOk?: boolean
   targetResolvedPath?: string
   targetWarning?: string | null
@@ -2657,6 +2681,7 @@ const replicationMessageClass = ref('')
 const replicationCanPush = computed(() => {
   const status = replicationStatus.value
   if (!status?.targetConfigured) return false
+  if (status.targetTokenConfigured === false) return false
   if (status.targetWarning) return false
   if (status.targetProbe && !status.targetProbe.ok) return false
   return true
@@ -2714,6 +2739,7 @@ const siteBranding = ref({
   site_favicon_url: '',
   podcast_title: '',
   podcast_description: '',
+  gtm_container_id: '',
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -2852,6 +2878,13 @@ function normalizeChartRows(values: number[]) {
   const max = values.length ? Math.max(...values) : 0
   return { max: max > 0 ? max : 1 }
 }
+
+const analyticsViewsLineChartPoints = computed(() =>
+  (analytics.value.views?.series ?? []).map((row) => ({
+    label: String(row.bucket),
+    value: Number(row.uniqueSessions || 0),
+  })),
+)
 
 const analyticsViewsSeriesChartRows = computed(() => {
   const rows = (analytics.value.views?.series ?? []).map((row) => ({ bucket: String(row.bucket), value: Number(row.uniqueSessions || 0) }))
@@ -3390,6 +3423,9 @@ const loadCategories = async () => {
     categories.value = loaded.map((cat: any) => ({
       ...cat,
       homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
     }))
   } catch (e: any) {
     saveMessage.value = `Failed to load categories: ${e.message}`
@@ -3465,6 +3501,9 @@ const updateCategory = async (category: Category) => {
         sortOrder: category.sort_order,
         direction: category.direction,
         homepageLayoutVariant: category.homepage_layout_variant || 'three_by_one',
+        recommendationRecencyBias: Number(category.recommendation_recency_bias ?? 1),
+        recommendationLowViewsBoost: Number(category.recommendation_low_views_boost ?? 0),
+        recommendationCategoryLock: Number(category.recommendation_category_lock ?? 0) === 1,
       }),
     })
     if (!res.ok) {
@@ -3744,6 +3783,7 @@ const loadReplicationStatus = async (options?: { preserveMessage?: boolean; prob
       mode: String(data.mode || 'd1_to_pg'),
       batchSize: Number(data.batchSize) || 100,
       targetConfigured: Boolean(data.targetConfigured),
+      targetTokenConfigured: data.targetTokenConfigured !== false,
       targetIngestPathOk: data.targetIngestPathOk !== false,
       targetResolvedPath: data.targetResolvedPath ? String(data.targetResolvedPath) : undefined,
       targetWarning: data.targetWarning ? String(data.targetWarning) : null,
@@ -4137,6 +4177,7 @@ const loadSiteBranding = async () => {
       site_favicon_url: data.site_favicon_url || '',
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
+      gtm_container_id: data.gtm_container_id || '',
     }
   } catch (e: any) {
     siteBrandingMessage.value = `Could not load site branding: ${e.message}`

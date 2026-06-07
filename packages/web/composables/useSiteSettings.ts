@@ -11,6 +11,7 @@ interface SiteSettings {
   siteDescription: string
   logoUrl: string
   faviconUrl: string
+  gtmContainerId: string
 }
 
 function defaultSiteSettings(): SiteSettings {
@@ -20,6 +21,7 @@ function defaultSiteSettings(): SiteSettings {
     siteDescription: strings.siteDescription,
     logoUrl: '',
     faviconUrl: '',
+    gtmContainerId: '',
   }
 }
 
@@ -31,6 +33,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     siteDescription: String(data.site_description || strings.siteDescription),
     logoUrl: String(data.site_logo_url || ''),
     faviconUrl: String(data.site_favicon_url || ''),
+    gtmContainerId: String(data.gtm_container_id || ''),
   }
 }
 

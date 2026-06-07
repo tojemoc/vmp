@@ -101,6 +101,14 @@ export function useAuth() {
     }
   }
 
+  function isAccessTokenExpired(): boolean {
+    const token = accessToken.value
+    if (!token) return true
+    const payload = parseJwtPayload(token)
+    if (!payload?.exp || typeof payload.exp !== 'number') return false
+    return payload.exp * 1000 <= Date.now() + 30_000
+  }
+
   function clearSession() {
     sessionVersion++
     user.value = null
@@ -237,7 +245,10 @@ export function useAuth() {
         })
         if (res.status === 204) return false
         if (!res.ok) {
-          if (versionAtStart === sessionVersion) clearSession()
+          // Only clear on explicit auth failure — transient/network errors should not log the user out.
+          if (versionAtStart === sessionVersion && (res.status === 401 || res.status === 403)) {
+            clearSession()
+          }
           return false
         }
         if (versionAtStart !== sessionVersion) return false
@@ -248,7 +259,7 @@ export function useAuth() {
         setAccessToken(data.accessToken, data.user)
         return versionAtStart === sessionVersion
       } catch {
-        if (versionAtStart === sessionVersion) clearSession()
+        // Network blip while backgrounded (common on iOS PWAs) — keep session for retry on focus.
         return false
       }
     })()
@@ -262,7 +273,21 @@ export function useAuth() {
 
   async function silentRefresh() {
     const ok = await refreshSession()
-    if (!ok) clearSession()  // cookie expired or was revoked
+    if (!ok && isAccessTokenExpired()) {
+      // JWT already expired and refresh failed — session is unusable.
+      clearSession()
+    }
+  }
+
+  /** Refresh when the app returns to foreground or before a protected API call. */
+  async function ensureFreshSession(): Promise<boolean> {
+    if (!user.value && !accessToken.value) {
+      return refreshSession()
+    }
+    if (isAccessTokenExpired()) {
+      return refreshSession()
+    }
+    return true
   }
 
   /**
@@ -361,6 +386,7 @@ export function useAuth() {
     redeemPwaHandoff,
     verifyTotp,
     refreshSession,
+    ensureFreshSession,
     fetchSubscription,
     logout,
     authHeader,

@@ -1,4 +1,4 @@
-import { isInstalledPwa } from '~/utils/pwa'
+import { isIosInstalledPwa } from '~/utils/pwa'
 
 function safeRedirect(value: string | undefined): string | undefined {
   if (!value) return undefined
@@ -40,7 +40,7 @@ export function useLoginFlow() {
 
     const authenticated = isLoggedIn.value
     const initialized = initialised.value
-    const standalone = isInstalledPwa()
+    const standalone = isIosInstalledPwa()
     const route = import.meta.client ? window.location.pathname : '/login'
 
     console.log('[AUTH ENTRY]', {
@@ -61,7 +61,7 @@ export function useLoginFlow() {
     const goLogin = () => navigateTo({ path: '/login', query })
 
     if (!authenticated && standalone) {
-      console.log('[AUTH ENTRY] launching PWA wizard')
+      console.log('[AUTH ENTRY] launching iOS PWA wizard')
       openPwaPushLoginWizard()
       if (route !== '/login') {
         return nuxtApp.runWithContext(goLogin)

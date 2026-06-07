@@ -511,7 +511,6 @@ import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybac
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
-import { buildWatchRecommendations } from '~/utils/watchRecommendations'
 import { usePushAttribution } from '~/composables/usePushAttribution'
 
 const route  = useRoute()
@@ -1270,20 +1269,16 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
     recommendations.value = []
     try {
-      const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, {
-        signal: options.signal
-      })
+      const recsResponse = await fetch(
+        `${config.public.apiUrl}/api/recommendations?videoId=${encodeURIComponent(currentVideoId)}&limit=5`,
+        { signal: options.signal },
+      )
       ensureCurrent()
 
       if (recsResponse.ok) {
         const recommendationsData = await recsResponse.json()
         ensureCurrent()
-        const currentVideoId = String(videoData.value?.videoId ?? targetVideoId)
-        recommendations.value = buildWatchRecommendations(recommendationsData.videos || [], {
-          currentVideoId,
-          routeVideoKey: targetVideoId,
-          limit: 5
-        })
+        recommendations.value = recommendationsData.videos || []
       }
     } catch (e: any) {
       if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) throw e
