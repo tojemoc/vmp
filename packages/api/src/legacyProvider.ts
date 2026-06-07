@@ -7,6 +7,42 @@ type LegacyEnv = {
   LEGACY_ESHOP_MERCHANT_ID?: string
   LEGACY_ESHOP_API_KEY?: string
   LEGACY_ESHOP_WEBHOOK_SECRET?: string
+  LEGACY_ESHOP_FETCH_TIMEOUT_MS?: string
+}
+
+const DEFAULT_LEGACY_FETCH_TIMEOUT_MS = 5000
+
+function legacyFetchTimeoutMs(env: LegacyEnv): number {
+  const raw = env.LEGACY_ESHOP_FETCH_TIMEOUT_MS
+  const parsed = raw != null && String(raw).trim() !== '' ? Number.parseInt(String(raw).trim(), 10) : DEFAULT_LEGACY_FETCH_TIMEOUT_MS
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 120_000) : DEFAULT_LEGACY_FETCH_TIMEOUT_MS
+}
+
+export function isLegacyFetchTimeout(err: unknown): boolean {
+  if (err instanceof Error && err.name === 'AbortError') return true
+  return Boolean(err && typeof err === 'object' && (err as { code?: string }).code === 'legacy_timeout')
+}
+
+async function legacyFetch(
+  env: LegacyEnv,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutMs = legacyFetchTimeoutMs(env)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutErr = new Error('Legacy billing API request timed out')
+      Object.assign(timeoutErr, { code: 'legacy_timeout' })
+      throw timeoutErr
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 function trimTrailingSlashes(value: string): string {
@@ -43,7 +79,7 @@ export async function legacyPost<T = Record<string, unknown>>(
   if (!base) throw new Error('Legacy billing API is not configured')
 
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
-  const response = await fetch(url, {
+  const response = await legacyFetch(env, url, {
     method: 'POST',
     headers: legacyHeaders(env),
     body: JSON.stringify(body),
@@ -72,7 +108,7 @@ export async function legacyGet<T = Record<string, unknown>>(
   if (!base) throw new Error('Legacy billing API is not configured')
 
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
-  const response = await fetch(url, {
+  const response = await legacyFetch(env, url, {
     method: 'GET',
     headers: legacyHeaders(env),
   })

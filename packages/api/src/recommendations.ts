@@ -157,19 +157,15 @@ export async function handleVideoRecommendations(request: Request, env: any, cor
       settings = normalizeSettings(categoryRow as Record<string, unknown> | null)
     }
 
+    // view_count from video_view_counts (incremental updates in logSegmentEvent — adminExtras.ts; backfill migration 0030).
     const list = await db.prepare(`
       SELECT v.id, v.slug, v.title, v.description, v.thumbnail_url,
              v.full_duration, v.preview_duration,
              v.published_at, v.upload_date, vca.category_id,
-             COALESCE(vs.view_count, 0) AS view_count
+             COALESCE(vvc.view_count, 0) AS view_count
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-      LEFT JOIN (
-        SELECT video_id, COUNT(DISTINCT session_id) AS view_count
-        FROM video_segment_events
-        WHERE event_type = 'segment'
-        GROUP BY video_id
-      ) vs ON vs.video_id = v.id
+      LEFT JOIN video_view_counts vvc ON vvc.video_id = v.id
       WHERE v.publish_status = 'published'
         AND (v.scheduled_publish_at IS NULL OR datetime(v.scheduled_publish_at) <= CURRENT_TIMESTAMP)
     `).all()

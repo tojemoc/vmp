@@ -8,6 +8,7 @@ import { getSetting } from './settingsStore.js'
 import {
   createLegacyOrder,
   getLegacyOrder,
+  isLegacyFetchTimeout,
   isLegacyProviderConfigured,
   normalizeLegacySubscriptionStatus,
   processLegacyOrder,
@@ -176,7 +177,9 @@ export async function startLegacyCheckout(
     }, 200, corsHeaders)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Legacy checkout failed'
-    return jsonResponse({ error: message, code: 'legacy_checkout_failed' }, 502, corsHeaders)
+    const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_checkout_failed'
+    const status = isLegacyFetchTimeout(err) ? 504 : 502
+    return jsonResponse({ error: message, code }, status, corsHeaders)
   }
 }
 
@@ -224,7 +227,9 @@ export async function handleLegacyComplete(request: Request, env: any, corsHeade
     return jsonResponse({ ok: true, status, purchaseId }, 200, corsHeaders)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Legacy completion failed'
-    return jsonResponse({ error: message }, 502, corsHeaders)
+    const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_completion_failed'
+    const status = isLegacyFetchTimeout(err) ? 504 : 502
+    return jsonResponse({ error: message, code }, status, corsHeaders)
   }
 }
 

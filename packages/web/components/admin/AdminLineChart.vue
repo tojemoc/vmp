@@ -47,8 +47,16 @@
         fill="currentColor"
       />
     </svg>
-    <div class="mt-2 flex justify-between gap-2 text-[10px] text-gray-500 dark:text-gray-400">
-      <span v-for="(label, index) in xLabels" :key="`xl-${index}`" class="truncate">{{ label }}</span>
+    <div class="relative mt-2 h-4 text-[10px] text-gray-500 dark:text-gray-400">
+      <span
+        v-for="(item, index) in xLabelPositions"
+        :key="`xl-${index}`"
+        class="absolute max-w-[33%] truncate"
+        :style="{
+          left: `${item.leftPercent}%`,
+          transform: item.anchor === 'start' ? 'none' : item.anchor === 'end' ? 'translateX(-100%)' : 'translateX(-50%)',
+        }"
+      >{{ item.label }}</span>
     </div>
   </div>
 </template>
@@ -102,10 +110,29 @@ const yTicks = computed(() => {
   }))
 })
 
-const xLabels = computed(() => {
-  const labels = props.points.map((p) => p.label)
-  if (labels.length <= 4) return labels
-  const picks = [0, Math.floor(labels.length / 2), labels.length - 1]
-  return [...new Set(picks)].map((i) => labels[i] ?? '')
+function xToPercent(x: number): number {
+  return (x / width) * 100
+}
+
+const xLabelPositions = computed(() => {
+  const pts = chartPoints.value
+  if (pts.length === 0) return []
+
+  const toPosition = (index: number) => {
+    const point = pts[index]
+    const anchor = index === 0 ? 'start' : index === pts.length - 1 ? 'end' : 'center'
+    return {
+      label: point?.label ?? '',
+      leftPercent: xToPercent(point?.x ?? padding.left),
+      anchor: anchor as 'start' | 'center' | 'end',
+    }
+  }
+
+  if (pts.length <= 4) {
+    return pts.map((_, index) => toPosition(index))
+  }
+
+  const picks = [0, Math.floor(pts.length / 2), pts.length - 1]
+  return [...new Set(picks)].map((index) => toPosition(index))
 })
 </script>
