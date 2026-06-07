@@ -9,8 +9,14 @@ type LegacyEnv = {
   LEGACY_ESHOP_WEBHOOK_SECRET?: string
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end -= 1
+  return value.slice(0, end)
+}
+
 export function getLegacyApiBase(env: LegacyEnv): string {
-  return String(env.LEGACY_ESHOP_API_URL ?? '').trim().replace(/\/+$/, '')
+  return trimTrailingSlashes(String(env.LEGACY_ESHOP_API_URL ?? '').trim())
 }
 
 export function isLegacyProviderConfigured(env: LegacyEnv): boolean {
