@@ -17,6 +17,17 @@ import {
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 
+type LegacyCheckoutRequestBody = {
+  planType?: unknown
+  returnPath?: unknown
+  purchaseId?: unknown
+}
+
+type LegacyCompleteRequestBody = {
+  orderId?: unknown
+  planType?: unknown
+}
+
 function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
@@ -190,7 +201,7 @@ export async function handleLegacyCheckout(request: Request, env: any, corsHeade
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
-  const body = await request.json().catch(() => ({}))
+  const body = (await request.json().catch(() => ({}))) as LegacyCheckoutRequestBody
   return startLegacyCheckout(env, user, body, corsHeaders)
 }
 
@@ -202,7 +213,7 @@ export async function handleLegacyComplete(request: Request, env: any, corsHeade
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
 
-  const body = await request.json().catch(() => null)
+  const body = (await request.json().catch(() => null)) as LegacyCompleteRequestBody | null
   const orderId = String(body?.orderId ?? '').trim()
   if (!orderId) {
     return jsonResponse({ error: 'orderId is required' }, 400, corsHeaders)
