@@ -21,17 +21,15 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
   }
 
   if (request.method === 'GET') {
-    const [promotionsEnabled, isicEnabled, freePodcastPreviewEnabled, videoUploaderEnabled] = await Promise.all([
+    const [promotionsEnabled, isicEnabled, freePodcastPreviewEnabled] = await Promise.all([
       getSetting(env, 'promotions_enabled', { defaultValue: '1' }),
       getSetting(env, 'isic_api_enabled', { defaultValue: '0' }),
       getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }),
-      getSetting(env, 'video_uploader_enabled', { defaultValue: '1' }),
     ])
     return jsonResponse({
       promotionsEnabled: toBoolSetting(promotionsEnabled, true),
       isicEnabled: toBoolSetting(isicEnabled, false),
       freePodcastPreviewEnabled: toBoolSetting(freePodcastPreviewEnabled, true),
-      videoUploaderEnabled: toBoolSetting(videoUploaderEnabled, true),
     }, 200, corsHeaders)
   }
 
@@ -53,9 +51,6 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
   }
   if (Object.prototype.hasOwnProperty.call(body, 'freePodcastPreviewEnabled')) {
     updates.push(['rss_free_preview_enabled', body.freePodcastPreviewEnabled === true ? '1' : '0'])
-  }
-  if (Object.prototype.hasOwnProperty.call(body, 'videoUploaderEnabled')) {
-    updates.push(['video_uploader_enabled', body.videoUploaderEnabled === true ? '1' : '0'])
   }
   if (!updates.length) {
     return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)

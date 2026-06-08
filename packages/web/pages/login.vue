@@ -86,7 +86,7 @@
 
 <script setup lang="ts">
 import strings from '~/utils/strings'
-import { isInstalledPwa } from '~/utils/pwa'
+import { isIosInstalledPwa } from '~/utils/pwa'
 
 usePageSeo({ title: strings.loginTitle, noIndex: true })
 
@@ -121,15 +121,15 @@ onMounted(() => {
   void (async () => {
     await waitForAuthInitialised()
     const authenticated = isLoggedIn.value
-    const standalone = isInstalledPwa()
+    const iosPwa = isIosInstalledPwa()
 
     console.log('[PWA WIZARD] auto-open check', {
       authenticated,
-      standalone,
+      iosPwa,
       route: window.location.pathname,
     })
 
-    if (!authenticated && standalone) {
+    if (!authenticated && iosPwa) {
       openPwaPushLoginWizard()
     }
   })()

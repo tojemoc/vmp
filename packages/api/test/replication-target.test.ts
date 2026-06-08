@@ -36,6 +36,12 @@ describe('describeReplicationTarget', () => {
     assert.equal(info.configured, true)
     assert.match(info.warning ?? '', /Workers/i)
   })
+
+  it('preserves tokenConfigured when URL is empty', () => {
+    const info = describeReplicationTarget('', { tokenConfigured: true })
+    assert.equal(info.configured, false)
+    assert.equal(info.tokenConfigured, true)
+  })
 })
 
 describe('parseReplicationIngestResponse', () => {

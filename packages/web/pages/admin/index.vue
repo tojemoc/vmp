@@ -296,46 +296,6 @@
               Create new livestream
             </button>
           </div>
-          <div v-if="systemFeatures.videoUploaderEnabled" class="mb-4 rounded-lg border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-950/40">
-            <div class="flex flex-wrap items-center gap-2 mb-2">
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Direct source upload (MediaConvert)</h3>
-              <span v-if="!mediaConvertConfig.enabled" class="text-[11px] px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300">disabled</span>
-              <span v-else-if="!mediaConvertConfig.configured" class="text-[11px] px-2 py-0.5 rounded bg-amber-200 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">not configured</span>
-              <span v-else class="text-[11px] px-2 py-0.5 rounded bg-emerald-200 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">enabled</span>
-            </div>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">
-              Optional cloud path. Existing local/rclone workflow remains unchanged.
-            </p>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input v-model="mediaUpload.title" type="text" placeholder="Video title" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm" />
-              <input v-model="mediaUpload.description" type="text" placeholder="Description (optional)" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm md:col-span-2" />
-              <input type="file" accept="video/*" :disabled="mediaUpload.busy" class="px-2 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 file:text-gray-900 dark:file:text-gray-100 file:bg-transparent text-sm disabled:opacity-60 disabled:cursor-not-allowed" @change="onMediaUploadFileChange" />
-            </div>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50"
-                :disabled="mediaUpload.busy || !mediaUpload.file || !mediaConvertConfig.enabled || !mediaConvertConfig.configured || !mediaConvertConfig.tusConfigured"
-                @click="startMediaConvertUpload"
-              >
-                {{ mediaUpload.busy ? 'Uploading…' : 'Upload & transcode' }}
-              </button>
-              <span class="text-xs text-gray-600 dark:text-gray-300">
-                status: <strong>{{ mediaUpload.status }}</strong>
-              </span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">
-                {{ mediaUpload.progress }}%
-              </span>
-            </div>
-            <div class="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800 overflow-hidden">
-              <div class="h-full bg-blue-600 transition-all" :style="{ width: `${mediaUpload.progress}%` }"></div>
-            </div>
-            <p v-if="mediaUpload.message" class="mt-2 text-xs" :class="mediaUpload.error ? 'text-red-600 dark:text-red-300' : 'text-gray-600 dark:text-gray-300'">
-              {{ mediaUpload.message }}
-            </p>
-          </div>
-          <div v-else class="mb-4 rounded-lg border border-amber-200 dark:border-amber-900 p-3 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-800 dark:text-amber-200">
-            Video uploader is disabled by system feature toggle.
-          </div>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set preview lock per video: 0s means premium-only access, while matching full duration unlocks the full video.</p>
           <div>
             <div v-if="videosLoading" class="space-y-3">
@@ -556,12 +516,6 @@
                         <span v-if="video.livestream_moq_broadcast" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
                           MoQ broadcast: {{ video.livestream_moq_broadcast }}
                         </span>
-                        <span v-if="video.ingest_status" class="block text-[11px] text-blue-600 dark:text-blue-300">
-                          ingest: {{ video.ingest_status }}
-                          <template v-if="video.media_convert_usage?.normalized_minutes_est !== null && video.media_convert_usage?.normalized_minutes_est !== undefined">
-                            · {{ Number(video.media_convert_usage.normalized_minutes_est).toFixed(2) }} norm-min
-                          </template>
-                        </span>
                       </div>
                     </td>
                     <td class="py-3 pr-4">
@@ -698,8 +652,9 @@
                 :key="category.id"
                 :data-category-id="category.id"
                 tabindex="-1"
-                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_170px_auto_auto] gap-2 items-center"
+                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2"
               >
+                <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_170px_auto_auto] gap-2 items-center">
                 <input v-model="category.name" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="category.slug" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model.number="category.sort_order" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
@@ -718,6 +673,19 @@
                 <div class="flex gap-2">
                   <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" @click="updateCategory(category)">Save</button>
                   <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium" @click="confirmDeleteCategory(category)">Delete</button>
+                </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <label class="text-gray-600 dark:text-gray-300">Rec. recency bias
+                    <input v-model.number="category.recommendation_recency_bias" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                  </label>
+                  <label class="text-gray-600 dark:text-gray-300">Rec. low-views boost
+                    <input v-model.number="category.recommendation_low_views_boost" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+                  </label>
+                  <label class="inline-flex items-center gap-2 mt-5 text-gray-600 dark:text-gray-300">
+                    <input v-model="category.recommendation_category_lock" type="checkbox" :true-value="1" :false-value="0" class="rounded border-gray-300 dark:border-gray-600">
+                    Stay in category only
+                  </label>
                 </div>
               </div>
             </div>
@@ -1283,18 +1251,12 @@
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views over time</h3>
-              <div class="space-y-2">
-                <div v-for="row in analyticsViewsSeriesChartRows" :key="`v-${row.bucket}`" class="space-y-1">
-                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
-                    <span>{{ row.bucket }}</span>
-                    <span>{{ row.value }}</span>
-                  </div>
-                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
-                    <div class="h-2 rounded bg-blue-500" :style="{ width: `${row.percent}%` }"></div>
-                  </div>
-                </div>
-                <p v-if="!analyticsViewsSeriesChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
-              </div>
+              <AdminLineChart
+                v-if="analyticsViewsLineChartPoints.length"
+                :points="analyticsViewsLineChartPoints"
+                aria-label="Views over time line chart"
+              />
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic source split</h3>
@@ -1402,10 +1364,6 @@
                   <input v-model="systemFeatures.freePodcastPreviewEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
                   Free podcast preview feed
                 </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="systemFeatures.videoUploaderEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  Video uploader (MediaConvert)
-                </label>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -1480,80 +1438,14 @@
                 </button>
               </div>
               <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
-                Set <code class="font-mono">REPLICATION_TARGET_URL</code> to your <strong>Deno Deploy api-node</strong> URL (ending in <code class="font-mono">/api/internal/replication/ingest</code>) and <code class="font-mono">REPLICATION_TARGET_TOKEN</code> on the Cloudflare Worker. Do not use the Workers API URL.
+                Replication ingest URL is not configured on the Worker (<code class="font-mono">REPLICATION_TARGET_URL</code> secret). Set it to your Deno api-node ingest endpoint.
               </p>
-            </div>
-
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-              <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">AWS MediaConvert + TUS</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Manage MediaConvert credentials and TUS resumable upload endpoint for source ingest.</p>
-              </div>
-              <div v-if="mediaConvertSystemMessage" class="rounded-lg border px-4 py-3 text-sm" :class="mediaConvertSystemMessageClass">{{ mediaConvertSystemMessage }}</div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  <span class="inline-flex items-center gap-2">
-                    <input v-model="mediaConvertSystem.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                    MediaConvert pipeline enabled
-                  </span>
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  AWS region
-                  <input v-model="mediaConvertSystem.awsRegion" type="text" placeholder="eu-central-1" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  AWS access key ID
-                  <input v-model="mediaConvertSystem.awsAccessKeyId" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  AWS secret access key
-                  <input v-model="mediaConvertSystem.awsSecretAccessKey" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p v-if="mediaConvertSystem.hasAwsSecret" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  AWS session token (optional)
-                  <input v-model="mediaConvertSystem.awsSessionToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p v-if="mediaConvertSystem.hasAwsSession" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  MediaConvert endpoint
-                  <input v-model="mediaConvertSystem.endpoint" type="url" placeholder="https://abcd.mediaconvert.eu-central-1.amazonaws.com" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  MediaConvert role ARN
-                  <input v-model="mediaConvertSystem.roleArn" type="text" placeholder="arn:aws:iam::123456789012:role/MediaConvertRole" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Input bucket
-                  <input v-model="mediaConvertSystem.inputBucket" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Output bucket
-                  <input v-model="mediaConvertSystem.outputBucket" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Input prefix
-                  <input v-model="mediaConvertSystem.inputPrefix" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Output prefix
-                  <input v-model="mediaConvertSystem.outputPrefix" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  TUS endpoint
-                  <input v-model="mediaConvertSystem.tusEndpoint" type="url" placeholder="https://tus.your-domain.example/files" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  TUS auth token (optional)
-                  <input v-model="mediaConvertSystem.tusAuthToken" type="password" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p v-if="mediaConvertSystem.hasTusAuth" class="mt-1 text-xs text-gray-500 dark:text-gray-400">Configured. Enter a new value to rotate.</p>
-                </label>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50" :disabled="mediaConvertSystemSaving" @click="saveMediaConvertSystemSettings">
-                  {{ mediaConvertSystemSaving ? 'Saving…' : 'Save MediaConvert settings' }}
-                </button>
-              </div>
+              <p
+                v-else-if="replicationStatus?.targetConfigured && replicationStatus.targetTokenConfigured === false"
+                class="text-xs text-amber-700 dark:text-amber-300"
+              >
+                Ingest URL is configured, but <code class="font-mono">REPLICATION_TARGET_TOKEN</code> is missing on the Worker. Add the shared bearer secret to match Deno <code class="font-mono">REPLICATION_INGEST_TOKEN</code>.
+              </p>
             </div>
 
             <!-- Site Branding -->
@@ -1594,6 +1486,11 @@
                   Podcast feed description
                   <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  Google Tag Manager container ID
+                  <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
+                </label>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -1612,32 +1509,8 @@
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
               <h3 class="font-semibold text-gray-900 dark:text-white">Payments</h3>
               <p class="text-sm text-gray-600 dark:text-gray-400">
-                Configure which gateways appear at checkout, per-gateway prices shown in the premium overlay, and Stripe price IDs used for Stripe Checkout.
+                Configure Stripe checkout prices and Stripe price IDs used for Checkout.
               </p>
-
-              <div class="flex flex-wrap gap-4">
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="paymentSettings.enabledProviders" type="checkbox" value="stripe" class="rounded border-gray-300 dark:border-gray-600">
-                  Stripe (card)
-                </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="paymentSettings.enabledProviders" type="checkbox" value="gocardless" class="rounded border-gray-300 dark:border-gray-600">
-                  GoCardless (bank debit)
-                </label>
-              </div>
-
-              <div>
-                <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Primary checkout provider</p>
-                <div class="flex flex-wrap gap-3 items-end">
-                  <label class="text-sm text-gray-700 dark:text-gray-300">Primary
-                    <select v-model="paymentPrimaryProvider" class="mt-1 block px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                      <option value="stripe">Stripe</option>
-                      <option value="gocardless">GoCardless</option>
-                    </select>
-                  </label>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">The primary provider is shown first at checkout.</p>
-                </div>
-              </div>
 
               <div>
                 <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Plans offered</p>
@@ -1673,7 +1546,7 @@
                     </label>
                   </div>
                 </div>
-                <div v-if="paymentSettings.enabledProviders.includes('stripe')" class="space-y-2">
+                <div class="space-y-2">
                   <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe price IDs</h4>
                   <p class="text-xs text-gray-500 dark:text-gray-400">From Stripe Dashboard → Products → Price IDs.</p>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Monthly price ID
@@ -1688,34 +1561,18 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div v-if="paymentSettings.enabledProviders.includes('stripe')" class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe display prices (EUR)</h4>
-                  <div class="grid grid-cols-3 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
-                      <input v-model="paymentSettings.providerPrices.stripe.monthly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Yearly
-                      <input v-model="paymentSettings.providerPrices.stripe.yearly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Club
-                      <input v-model="paymentSettings.providerPrices.stripe.club" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                  </div>
-                </div>
-                <div v-if="paymentSettings.enabledProviders.includes('gocardless')" class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">GoCardless display prices (EUR)</h4>
-                  <div class="grid grid-cols-3 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
-                      <input v-model="paymentSettings.providerPrices.gocardless.monthly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Yearly
-                      <input v-model="paymentSettings.providerPrices.gocardless.yearly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Club
-                      <input v-model="paymentSettings.providerPrices.gocardless.club" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                  </div>
+              <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe display prices (EUR)</h4>
+                <div class="grid grid-cols-3 gap-2">
+                  <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
+                    <input v-model="paymentSettings.providerPrices.stripe.monthly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                  </label>
+                  <label class="text-xs text-gray-600 dark:text-gray-300">Yearly
+                    <input v-model="paymentSettings.providerPrices.stripe.yearly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                  </label>
+                  <label class="text-xs text-gray-600 dark:text-gray-300">Club
+                    <input v-model="paymentSettings.providerPrices.stripe.club" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                  </label>
                 </div>
               </div>
 
@@ -2473,12 +2330,11 @@ import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolli
 import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
 import { renderMarkdownToHtml } from '~/utils/markdown'
-import { Upload as TusUpload } from 'tus-js-client'
-
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
 // The middleware checks auth + role before this component ever mounts.
 definePageMeta({ middleware: 'admin' })
+usePageSeo({ title: 'Admin' })
 
 // ── Everything below is unchanged from the previous version ──────────────────
 
@@ -2504,12 +2360,6 @@ interface Video {
   livestream_moq_endpoint?: string | null
   livestream_moq_broadcast?: string | null
   livestream_recording_video_id?: string | null
-  ingest_status?: 'uploaded' | 'queued' | 'transcoding' | 'packaging' | 'uploading' | 'completed' | 'failed' | null
-  media_convert_usage?: {
-    input_duration_seconds?: number
-    normalized_minutes_est?: number
-    estimated_cost_usd?: number
-  } | null
 }
 
 interface Category {
@@ -2519,6 +2369,9 @@ interface Category {
   sort_order: number
   direction: 'asc' | 'desc'
   homepage_layout_variant?: 'three_by_one' | 'side_mini'
+  recommendation_recency_bias?: number
+  recommendation_low_views_boost?: number
+  recommendation_category_lock?: number
   video_count?: number
 }
 
@@ -2621,30 +2474,6 @@ const uploadDateEditDraft = ref<Record<string, string>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
-const mediaConvertConfig = ref({
-  enabled: false,
-  configured: false,
-  tusConfigured: false,
-})
-const mediaUpload = ref<{
-  file: File | null
-  title: string
-  description: string
-  progress: number
-  status: 'uploaded' | 'queued' | 'transcoding' | 'packaging' | 'uploading' | 'completed' | 'failed'
-  busy: boolean
-  message: string
-  error: boolean
-}>({
-  file: null,
-  title: '',
-  description: '',
-  progress: 0,
-  status: 'uploaded',
-  busy: false,
-  message: '',
-  error: false,
-})
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
@@ -2765,7 +2594,7 @@ const newsletterCampaigns = ref<any[]>([])
 const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' })
 const newsletterEditingTemplateId = ref<string | null>(null)
 const newsletterTemplateSaving = ref(false)
-type PaymentProvider = 'stripe' | 'gocardless'
+type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type PlanType = 'monthly' | 'yearly' | 'club'
 interface PaymentPriceRow { monthly: string; yearly: string; club: string }
 interface PromoCampaign {
@@ -2830,36 +2659,15 @@ const systemFeatures = ref({
   promotionsEnabled: true,
   isicEnabled: false,
   freePodcastPreviewEnabled: true,
-  videoUploaderEnabled: true,
 })
 const systemFeaturesSaving = ref(false)
 const systemFeaturesMessage = ref('')
 const systemFeaturesMessageClass = ref('')
-const mediaConvertSystem = ref({
-  enabled: false,
-  awsRegion: '',
-  awsAccessKeyId: '',
-  awsSecretAccessKey: '',
-  hasAwsSecret: false,
-  awsSessionToken: '',
-  hasAwsSession: false,
-  endpoint: '',
-  roleArn: '',
-  inputBucket: '',
-  outputBucket: '',
-  inputPrefix: 'mediaconvert-input',
-  outputPrefix: 'mediaconvert-output',
-  tusEndpoint: '',
-  tusAuthToken: '',
-  hasTusAuth: false,
-})
-const mediaConvertSystemSaving = ref(false)
-const mediaConvertSystemMessage = ref('')
-const mediaConvertSystemMessageClass = ref('')
 const replicationStatus = ref<{
   mode: string
   batchSize: number
   targetConfigured: boolean
+  targetTokenConfigured?: boolean
   targetIngestPathOk?: boolean
   targetResolvedPath?: string
   targetWarning?: string | null
@@ -2873,6 +2681,7 @@ const replicationMessageClass = ref('')
 const replicationCanPush = computed(() => {
   const status = replicationStatus.value
   if (!status?.targetConfigured) return false
+  if (status.targetTokenConfigured === false) return false
   if (status.targetWarning) return false
   if (status.targetProbe && !status.targetProbe.ok) return false
   return true
@@ -2930,6 +2739,7 @@ const siteBranding = ref({
   site_favicon_url: '',
   podcast_title: '',
   podcast_description: '',
+  gtm_container_id: '',
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -2941,17 +2751,6 @@ const rssPodcastWebhookSaving = ref(false)
 const rssPodcastNotifySending = ref(false)
 const rssPodcastMessage = ref('')
 const rssPodcastMessageClass = ref('')
-
-const paymentPrimaryProvider = computed<PaymentProvider>({
-  get() {
-    return paymentSettings.value.providerOrder[0] === 'gocardless' ? 'gocardless' : 'stripe'
-  },
-  set(next) {
-    paymentSettings.value.providerOrder = next === 'gocardless'
-      ? ['gocardless', 'stripe']
-      : ['stripe', 'gocardless']
-  },
-})
 
 let usersLoadRequestId = 0
 const users = ref<AdminUserRow[]>([])
@@ -3079,6 +2878,13 @@ function normalizeChartRows(values: number[]) {
   const max = values.length ? Math.max(...values) : 0
   return { max: max > 0 ? max : 1 }
 }
+
+const analyticsViewsLineChartPoints = computed(() =>
+  (analytics.value.views?.series ?? []).map((row) => ({
+    label: String(row.bucket),
+    value: Number(row.uniqueSessions || 0),
+  })),
+)
 
 const analyticsViewsSeriesChartRows = computed(() => {
   const rows = (analytics.value.views?.series ?? []).map((row) => ({ bucket: String(row.bucket), value: Number(row.uniqueSessions || 0) }))
@@ -3583,127 +3389,6 @@ const createLivestream = async () => {
   }
 }
 
-const loadMediaConvertConfig = async () => {
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/config`, {
-      headers: authHeader(),
-    })
-    if (!res.ok) {
-      mediaConvertConfig.value = { enabled: false, configured: false, tusConfigured: false }
-      return
-    }
-    const data = await res.json().catch(() => ({}))
-    mediaConvertConfig.value = {
-      enabled: Boolean(data?.enabled),
-      configured: Boolean(data?.configured),
-      tusConfigured: Boolean(data?.tusConfigured),
-    }
-  } catch {
-    mediaConvertConfig.value = { enabled: false, configured: false, tusConfigured: false }
-  }
-}
-
-const onMediaUploadFileChange = (event: Event) => {
-  if (mediaUpload.value.busy) return
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0] ?? null
-  mediaUpload.value.file = file
-  mediaUpload.value.error = false
-  mediaUpload.value.progress = 0
-  mediaUpload.value.status = 'uploaded'
-  mediaUpload.value.message = ''
-  if (!file) return
-  if (!mediaUpload.value.title.trim()) {
-    mediaUpload.value.title = file.name.replace(/\.[^.]+$/, '')
-  }
-}
-
-const startMediaConvertUpload = async () => {
-  const file = mediaUpload.value.file
-  if (!file) {
-    showToast('error', 'Select a source video first.')
-    return
-  }
-  mediaUpload.value.busy = true
-  mediaUpload.value.error = false
-  mediaUpload.value.message = ''
-  mediaUpload.value.progress = 0
-  mediaUpload.value.status = 'uploading'
-  try {
-    const prepareRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        fileName: file.name,
-        fileType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-        title: mediaUpload.value.title.trim() || file.name.replace(/\.[^.]+$/, ''),
-        description: mediaUpload.value.description.trim(),
-        durationSeconds: 0,
-      }),
-    })
-    const prepareData = await prepareRes.json().catch(() => ({}))
-    if (!prepareRes.ok) throw new Error(prepareData.error || `HTTP ${prepareRes.status}`)
-    if (!prepareData?.upload?.endpoint || !prepareData?.job?.id) {
-      throw new Error('Upload session could not be created.')
-    }
-    const uploadInputKey = String(prepareData.upload?.metadata?.inputkey || '')
-    const uploadVideoId = String(prepareData.upload?.metadata?.videoid || '')
-    const uploadJobId = String(prepareData.job?.id || '')
-    const uploadFingerprintScope = uploadInputKey || uploadVideoId || uploadJobId
-
-    await new Promise<void>((resolve, reject) => {
-      const upload = new TusUpload(file, {
-        endpoint: String(prepareData.upload.endpoint),
-        retryDelays: [0, 1000, 3000, 5000],
-        chunkSize: 8 * 1024 * 1024,
-        fingerprint: async (currentFile) => `${currentFile.name}-${currentFile.type}-${currentFile.size}-${currentFile.lastModified}-${uploadFingerprintScope}`,
-        metadata: {
-          filename: String(prepareData.upload?.metadata?.filename || file.name),
-          filetype: String(prepareData.upload?.metadata?.filetype || file.type || 'application/octet-stream'),
-          inputkey: uploadInputKey,
-          videoid: uploadVideoId,
-        },
-        headers: (prepareData.upload?.headers && typeof prepareData.upload.headers === 'object')
-          ? prepareData.upload.headers
-          : {},
-        onError: (error) => reject(error),
-        onProgress: (uploaded, total) => {
-          if (!total) return
-          mediaUpload.value.progress = Math.min(100, Math.round((uploaded / total) * 100))
-        },
-        onSuccess: () => {
-          mediaUpload.value.progress = 100
-          resolve()
-        },
-      })
-      upload.findPreviousUploads().then((previousUploads) => {
-        if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]!)
-        upload.start()
-      }).catch(reject)
-    })
-
-    mediaUpload.value.status = 'uploaded'
-    const completeRes = await fetch(`${config.public.apiUrl}/api/admin/videos/uploads/mediaconvert/complete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ jobId: prepareData.job.id }),
-    })
-    const completeData = await completeRes.json().catch(() => ({}))
-    if (!completeRes.ok) throw new Error(completeData.error || `HTTP ${completeRes.status}`)
-    mediaUpload.value.message = `Queued MediaConvert job ${completeData?.awsJobId || ''}`.trim()
-    await loadVideos()
-    showToast('success', 'Source uploaded and queued for MediaConvert.')
-  } catch (error: any) {
-    mediaUpload.value.error = true
-    mediaUpload.value.status = 'failed'
-    mediaUpload.value.message = error?.message || 'Upload failed'
-    showToast('error', mediaUpload.value.message)
-  } finally {
-    mediaUpload.value.busy = false
-  }
-}
-
 const loadVideos = async () => {
   videosLoading.value = true
   try {
@@ -3738,6 +3423,9 @@ const loadCategories = async () => {
     categories.value = loaded.map((cat: any) => ({
       ...cat,
       homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
     }))
   } catch (e: any) {
     saveMessage.value = `Failed to load categories: ${e.message}`
@@ -3813,6 +3501,9 @@ const updateCategory = async (category: Category) => {
         sortOrder: category.sort_order,
         direction: category.direction,
         homepageLayoutVariant: category.homepage_layout_variant || 'three_by_one',
+        recommendationRecencyBias: Number(category.recommendation_recency_bias ?? 1),
+        recommendationLowViewsBoost: Number(category.recommendation_low_views_boost ?? 0),
+        recommendationCategoryLock: Number(category.recommendation_category_lock ?? 0) === 1,
       }),
     })
     if (!res.ok) {
@@ -3877,7 +3568,13 @@ const loadHomepageState = async () => {
     return
   }
   if (Array.isArray(data?.categories) && data.categories.length) {
-    categories.value = data.categories
+    categories.value = data.categories.map((cat: any) => ({
+      ...cat,
+      homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
+    }))
   }
   const nextSlots = featuredIds
     .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
@@ -4046,7 +3743,6 @@ const loadSystemFeatures = async () => {
       promotionsEnabled: Boolean(data.promotionsEnabled),
       isicEnabled: Boolean(data.isicEnabled),
       freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
-      videoUploaderEnabled: data.videoUploaderEnabled !== false,
     }
     // Keep ISIC API enable checkbox in sync with feature toggle.
     isicApiConfig.value.enabled = systemFeatures.value.isicEnabled
@@ -4093,6 +3789,7 @@ const loadReplicationStatus = async (options?: { preserveMessage?: boolean; prob
       mode: String(data.mode || 'd1_to_pg'),
       batchSize: Number(data.batchSize) || 100,
       targetConfigured: Boolean(data.targetConfigured),
+      targetTokenConfigured: data.targetTokenConfigured !== false,
       targetIngestPathOk: data.targetIngestPathOk !== false,
       targetResolvedPath: data.targetResolvedPath ? String(data.targetResolvedPath) : undefined,
       targetWarning: data.targetWarning ? String(data.targetWarning) : null,
@@ -4171,75 +3868,6 @@ const pushReplicationToDeno = async () => {
   }
 }
 
-const loadMediaConvertSystemSettings = async () => {
-  if (!isAdmin.value) return
-  mediaConvertSystemMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/system/mediaconvert`, { headers: authHeader() })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    mediaConvertSystem.value = {
-      enabled: Boolean(data.enabled),
-      awsRegion: String(data.awsRegion || ''),
-      awsAccessKeyId: String(data.awsAccessKeyId || ''),
-      awsSecretAccessKey: '',
-      hasAwsSecret: Boolean(data?.secrets?.awsSecretAccessKeyMasked),
-      awsSessionToken: '',
-      hasAwsSession: Boolean(data?.secrets?.awsSessionTokenMasked),
-      endpoint: String(data.endpoint || ''),
-      roleArn: String(data.roleArn || ''),
-      inputBucket: String(data.inputBucket || ''),
-      outputBucket: String(data.outputBucket || ''),
-      inputPrefix: String(data.inputPrefix || 'mediaconvert-input'),
-      outputPrefix: String(data.outputPrefix || 'mediaconvert-output'),
-      tusEndpoint: String(data.tusEndpoint || ''),
-      tusAuthToken: '',
-      hasTusAuth: Boolean(data?.secrets?.tusAuthTokenMasked),
-    }
-  } catch (e: any) {
-    mediaConvertSystemMessage.value = `Could not load MediaConvert settings: ${e.message}`
-    mediaConvertSystemMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const saveMediaConvertSystemSettings = async () => {
-  if (!isAdmin.value) return
-  mediaConvertSystemSaving.value = true
-  mediaConvertSystemMessage.value = ''
-  try {
-    const payload: Record<string, unknown> = {
-      enabled: mediaConvertSystem.value.enabled,
-      awsRegion: mediaConvertSystem.value.awsRegion,
-      awsAccessKeyId: mediaConvertSystem.value.awsAccessKeyId,
-      endpoint: mediaConvertSystem.value.endpoint,
-      roleArn: mediaConvertSystem.value.roleArn,
-      inputBucket: mediaConvertSystem.value.inputBucket,
-      outputBucket: mediaConvertSystem.value.outputBucket,
-      inputPrefix: mediaConvertSystem.value.inputPrefix,
-      outputPrefix: mediaConvertSystem.value.outputPrefix,
-      tusEndpoint: mediaConvertSystem.value.tusEndpoint,
-    }
-    if (mediaConvertSystem.value.awsSecretAccessKey.trim()) payload.awsSecretAccessKey = mediaConvertSystem.value.awsSecretAccessKey.trim()
-    if (mediaConvertSystem.value.awsSessionToken.trim()) payload.awsSessionToken = mediaConvertSystem.value.awsSessionToken.trim()
-    if (mediaConvertSystem.value.tusAuthToken.trim()) payload.tusAuthToken = mediaConvertSystem.value.tusAuthToken.trim()
-    const res = await fetch(`${config.public.apiUrl}/api/admin/system/mediaconvert`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    mediaConvertSystemMessage.value = 'MediaConvert settings saved.'
-    mediaConvertSystemMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await Promise.all([loadMediaConvertSystemSettings(), loadMediaConvertConfig()])
-  } catch (e: any) {
-    mediaConvertSystemMessage.value = e.message || 'Failed to save MediaConvert settings'
-    mediaConvertSystemMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    mediaConvertSystemSaving.value = false
-  }
-}
-
 const loadPaymentSettings = async () => {
   if (!isAdmin.value) return
   paymentSettingsMessage.value = ''
@@ -4250,8 +3878,12 @@ const loadPaymentSettings = async () => {
       throw new Error(err.error || `HTTP ${res.status}`)
     }
     const data = await res.json()
-    const enabled = Array.isArray(data.enabledProviders) ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless') : ['stripe']
-    const order = Array.isArray(data.providerOrder) ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'gocardless') : []
+    const enabled = Array.isArray(data.enabledProviders)
+      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
+      : ['stripe']
+    const order = Array.isArray(data.providerOrder)
+      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
+      : []
     const first: PaymentProvider = order[0] === 'gocardless' ? 'gocardless' : 'stripe'
     const second: PaymentProvider = order[1] === 'stripe' || order[1] === 'gocardless' ? order[1] : (first === 'stripe' ? 'gocardless' : 'stripe')
     const allowed = Array.isArray(data.allowedPlans) ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club') : ['monthly', 'yearly', 'club']
@@ -4555,6 +4187,7 @@ const loadSiteBranding = async () => {
       site_favicon_url: data.site_favicon_url || '',
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
+      gtm_container_id: data.gtm_container_id || '',
     }
   } catch (e: any) {
     siteBrandingMessage.value = `Could not load site branding: ${e.message}`
@@ -4691,28 +4324,15 @@ const savePaymentSettings = async () => {
   paymentSettingsMessage.value = ''
   try {
     const ps = paymentSettings.value
-    const enabledProviders = (ps.enabledProviders || []).filter((provider): provider is PaymentProvider =>
-      provider === 'stripe' || provider === 'gocardless',
-    )
-    if (!enabledProviders.length) {
-      throw new Error('Enable at least one payment gateway.')
-    }
-    if (!enabledProviders.includes(paymentPrimaryProvider.value)) {
-      throw new Error('Primary payment provider must also be enabled.')
-    }
-    const secondary = paymentPrimaryProvider.value === 'stripe' ? 'gocardless' : 'stripe'
-    const order: PaymentProvider[] = enabledProviders.includes(secondary)
-      ? [paymentPrimaryProvider.value, secondary]
-      : [paymentPrimaryProvider.value]
+    const enabledProviders = [...ps.enabledProviders]
+    const order = [...ps.providerOrder]
     const hasAnyPlan = Array.isArray(ps.allowedPlans) && ps.allowedPlans.length > 0
     if (!hasAnyPlan) {
       throw new Error('Select at least one offered plan.')
     }
-    if (enabledProviders.includes('stripe')) {
-      const missingStripePriceIds = ps.allowedPlans.filter((plan) => !String(ps.stripePriceIds?.[plan] || '').trim())
-      if (missingStripePriceIds.length) {
-        throw new Error(`Stripe price IDs are required for enabled plans: ${missingStripePriceIds.join(', ')}`)
-      }
+    const missingStripePriceIds = ps.allowedPlans.filter((plan) => !String(ps.stripePriceIds?.[plan] || '').trim())
+    if (missingStripePriceIds.length) {
+      throw new Error(`Stripe price IDs are required for enabled plans: ${missingStripePriceIds.join(', ')}`)
     }
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
       method: 'PATCH',
@@ -5441,7 +5061,6 @@ const reloadAll = async () => {
   loading.value = true
   try {
     await loadVideos()
-    await loadMediaConvertConfig()
     await loadCategories()
     await loadHomepageState()
     await loadHomepagePlacement()
@@ -5449,7 +5068,6 @@ const reloadAll = async () => {
     await loadNewsletterTemplates()
     await loadSystemFeatures()
     await loadReplicationStatus({ probe: true })
-    await loadMediaConvertSystemSettings()
     await loadPaymentSettings()
     if (systemFeatures.value.promotionsEnabled) await loadPromotions()
     if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()

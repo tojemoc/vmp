@@ -101,23 +101,18 @@ import { compareVideosNewestFirst } from '@vmp/shared'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
-  handleAdminMediaConvertUpload,
-  handleAdminMediaConvertUploadComplete,
-  handleAdminMediaConvertConfig,
-  handleAdminMediaConvertSystemSettings,
-  pollMediaConvertJobs,
-  enrichVideosWithMediaConvert,
-} from './mediaconvert.js'
-import {
-  handleAdminBunnyStreamUpload,
-  handleAdminBunnyStreamUploadComplete,
-} from './bunnyStream.js'
-import {
   enqueueReplicationBatch,
   handleAdminReplicationSettings,
   handleAdminReplicationPush,
   handleReplicationQueue,
 } from './replication.js'
+import { handleVideoRecommendations } from './recommendations.js'
+import {
+  handleLegacyCheckout,
+  handleLegacyComplete,
+  handleLegacyWebhook,
+  handleAdminLegacyPaymentSettings,
+} from './legacyPayments.js'
 import {
   createPushCampaignAndDeliveries,
   enqueueOverduePushDeliveries,
@@ -337,6 +332,9 @@ export default {
     }
 
     // ── Existing routes ───────────────────────────────────────────────────────
+    if (url.pathname === '/api/recommendations' && request.method === 'GET') {
+      return handleVideoRecommendations(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/videos') {
       return handleVideosList(request, env, corsHeaders)
     }
@@ -382,24 +380,6 @@ export default {
     }
     if (url.pathname === '/api/admin/videos/livestreams' && request.method === 'POST') {
       return handleAdminLivestreamCreate(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/videos/uploads/mediaconvert' && request.method === 'POST') {
-      return handleAdminMediaConvertUpload(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/videos/uploads/mediaconvert/complete' && request.method === 'POST') {
-      return handleAdminMediaConvertUploadComplete(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/videos/uploads/bunnystream' && request.method === 'POST') {
-      return handleAdminBunnyStreamUpload(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/videos/uploads/bunnystream/complete' && request.method === 'POST') {
-      return handleAdminBunnyStreamUploadComplete(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/videos/uploads/mediaconvert/config' && request.method === 'GET') {
-      return handleAdminMediaConvertConfig(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/admin/system/mediaconvert' && ['GET', 'PATCH'].includes(request.method)) {
-      return handleAdminMediaConvertSystemSettings(request, env, corsHeaders)
     }
     if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) && request.method === 'POST') {
       return handleThumbnailUpload(request, env, corsHeaders)
@@ -536,6 +516,18 @@ export default {
     if (url.pathname === '/api/payments/webhook/gocardless' && request.method === 'POST') {
       return handleGoCardlessWebhook(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
+      return handleLegacyWebhook(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
+      return handleLegacyCheckout(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
+      return handleLegacyComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
+      return handleAdminLegacyPaymentSettings(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)
     }
@@ -589,11 +581,6 @@ export default {
       await syncScheduledPublishHint(env)
     } catch (err) {
       console.error('Scheduled publish sweep failed:', err)
-    }
-    try {
-      await pollMediaConvertJobs(env)
-    } catch (err) {
-      console.error('MediaConvert poll sweep failed:', err)
     }
     try {
       await enqueueReplicationBatch(env)
@@ -1341,7 +1328,9 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
       }
       const rows = await db.prepare(`
-        SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant, COUNT(vca.video_id) AS video_count
+        SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant,
+               vc.recommendation_recency_bias, vc.recommendation_low_views_boost, vc.recommendation_category_lock,
+               COUNT(vca.video_id) AS video_count
         FROM video_categories vc
         LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
         GROUP BY vc.id
@@ -1414,6 +1403,25 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         updates.push('homepage_layout_variant = ?')
         values.push(normalizeHomepageLayoutVariant(body.homepageLayoutVariant))
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'recommendationRecencyBias')) {
+        const value = Number(body.recommendationRecencyBias)
+        if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'recommendationRecencyBias must be a non-negative number' }, 400, corsHeaders)
+        updates.push('recommendation_recency_bias = ?')
+        values.push(value)
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'recommendationLowViewsBoost')) {
+        const value = Number(body.recommendationLowViewsBoost)
+        if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'recommendationLowViewsBoost must be a non-negative number' }, 400, corsHeaders)
+        updates.push('recommendation_low_views_boost = ?')
+        values.push(value)
+      }
+  if (Object.prototype.hasOwnProperty.call(body, 'recommendationCategoryLock')) {
+    if (typeof body.recommendationCategoryLock !== 'boolean') {
+      return jsonResponse({ error: 'recommendationCategoryLock must be a boolean' }, 400, corsHeaders)
+    }
+    updates.push('recommendation_category_lock = ?')
+    values.push(body.recommendationCategoryLock ? 1 : 0)
+  }
       if (!updates.length) return jsonResponse({ error: 'No category fields to update' }, 400, corsHeaders)
       values.push(id)
       try {
@@ -1493,14 +1501,6 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
   const db = getDatabaseBinding(env)
   try {
-    const mediaConvertJobsTable = await db.prepare(`
-      SELECT name
-      FROM sqlite_master
-      WHERE type = 'table' AND name = 'media_convert_jobs'
-      LIMIT 1
-    `).first()
-    const hasMediaConvertJobsTable = Boolean(mediaConvertJobsTable?.name)
-
     // ── 1. Auto-register any R2 uploads that have no D1 row ──────────────────
     if (env.BUCKET) {
       const listed = await env.BUCKET.list({ prefix: 'videos/', delimiter: '/' })
@@ -1522,59 +1522,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
     }
 
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
-    let videos
-    if (hasMediaConvertJobsTable) {
-      videos = await db.prepare(`
-      WITH view_counts AS (
-        SELECT
-          video_id,
-          COUNT(DISTINCT COALESCE(
-            session_key,
-            CASE
-              WHEN user_id IS NOT NULL THEN 'u:' || user_id
-              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
-              ELSE 'path:' || request_path
-            END
-          )) AS total_views
-        FROM video_segment_events
-        WHERE event_type = 'segment'
-        GROUP BY video_id
-      ),
-      latest_mc AS (
-        SELECT *
-        FROM (
-          SELECT
-            m.*,
-            ROW_NUMBER() OVER (
-              PARTITION BY m.video_id
-              ORDER BY m.created_at DESC, m.id DESC
-            ) AS rn
-          FROM media_convert_jobs m
-        ) ranked
-        WHERE ranked.rn = 1
-      )
-      SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
-             v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
-             v.scheduled_publish_at, v.notified_at,
-             vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
-             lm.status AS media_convert_status,
-             lm.input_duration_seconds AS media_convert_input_duration_seconds,
-             lm.normalized_minutes_est AS media_convert_normalized_minutes_est,
-             lm.cost_est_usd AS media_convert_cost_est_usd,
-             ls.provider AS livestream_provider,
-             ls.status AS livestream_status,
-             ls.moq_endpoint AS livestream_moq_endpoint,
-             ls.moq_broadcast AS livestream_moq_broadcast,
-             ls.recording_video_id AS livestream_recording_video_id
-      FROM videos v
-      LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-      LEFT JOIN view_counts vc ON vc.video_id = v.id
-      LEFT JOIN latest_mc lm ON lm.video_id = v.id
-      LEFT JOIN livestreams ls ON ls.video_id = v.id
-      ORDER BY v.upload_date DESC
-    `).all()
-    } else {
-      videos = await db.prepare(`
+    const videos = await db.prepare(`
       WITH view_counts AS (
         SELECT
           video_id,
@@ -1594,10 +1542,6 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
              v.scheduled_publish_at, v.notified_at,
              vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
-             NULL AS media_convert_status,
-             NULL AS media_convert_input_duration_seconds,
-             NULL AS media_convert_normalized_minutes_est,
-             NULL AS media_convert_cost_est_usd,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.moq_endpoint AS livestream_moq_endpoint,
@@ -1609,7 +1553,6 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       LEFT JOIN livestreams ls ON ls.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()
-    }
 
     // ── 3. Annotate each row with r2_exists ──────────────────────────────────
     const annotated = await Promise.all((videos.results || []).map(async (video: any) => {
@@ -1629,7 +1572,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       }
     }))
 
-    return jsonResponse({ videos: enrichVideosWithMediaConvert(annotated) }, 200, corsHeaders)
+    return jsonResponse({ videos: annotated }, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)

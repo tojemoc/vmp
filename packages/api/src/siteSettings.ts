@@ -24,6 +24,7 @@ const SITE_KEYS = [
   'site_favicon_url',
   'podcast_title',
   'podcast_description',
+  'gtm_container_id',
 ] as const
 
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {

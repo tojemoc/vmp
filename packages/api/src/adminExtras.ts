@@ -68,7 +68,9 @@ export async function handleHomepageContent(request: any, env: any, corsHeaders:
       const [homepageRow, categoryRows] = await Promise.all([
         db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
         db.prepare(`
-          SELECT id, slug, name, sort_order, direction, COUNT(vca.video_id) AS video_count
+          SELECT vc.id, vc.slug, vc.name, vc.sort_order, vc.direction, vc.homepage_layout_variant,
+                 vc.recommendation_recency_bias, vc.recommendation_low_views_boost, vc.recommendation_category_lock,
+                 COUNT(vca.video_id) AS video_count
           FROM video_categories vc
           LEFT JOIN video_category_assignments vca ON vca.category_id = vc.id
           GROUP BY vc.id
@@ -1914,6 +1916,7 @@ export async function logSegmentEvent(env: any, payload: any) {
     segmentDurationSeconds: segmentDuration,
   })
   const sessionKey = buildSegmentSessionKey(payload)
+  const videoId = payload.videoId || 'unknown'
   await db.prepare(`
     INSERT INTO video_segment_events (
       id, video_id, user_id, request_path, event_type, position_seconds, referer, source_host, ip_hash,
@@ -1922,7 +1925,7 @@ export async function logSegmentEvent(env: any, payload: any) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     crypto.randomUUID(),
-    payload.videoId || 'unknown',
+    videoId,
     payload.userId || null,
     requestPath,
     eventType,
@@ -1939,4 +1942,19 @@ export async function logSegmentEvent(env: any, payload: any) {
     source.campaignSource,
     source.campaignMedium,
   ).run()
+
+  if (eventType === 'segment' && videoId !== 'unknown') {
+    const sessionInsert = await db.prepare(`
+      INSERT OR IGNORE INTO video_view_count_sessions (video_id, session_id) VALUES (?, ?)
+    `).bind(videoId, sessionKey).run()
+    if ((sessionInsert.meta?.changes ?? 0) > 0) {
+      await db.prepare(`
+        INSERT INTO video_view_counts (video_id, view_count, updated_at)
+        VALUES (?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(video_id) DO UPDATE SET
+          view_count = view_count + 1,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(videoId).run()
+    }
+  }
 }

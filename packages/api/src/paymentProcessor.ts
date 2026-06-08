@@ -21,6 +21,8 @@ import {
   verifyStripeWebhook,
 } from './stripeClient.js'
 export { normalizeStripeStatus } from './stripeClient.js'
+import { isLegacyProviderConfigured } from './legacyProvider.js'
+import { startLegacyCheckout } from './legacyPayments.js'
 import {
   buildGoCardlessBillingRequestFlowCreatePayload,
   buildGoCardlessMandateBillingRequestPayload,
@@ -37,7 +39,7 @@ import {
 export { normalizeGoCardlessStatus } from './gocardlessCore.js'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'gocardless'
+type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -50,23 +52,23 @@ async function getAllowedPlans(env: any): Promise<PlanType[]> {
 }
 
 async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
-  const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,gocardless' })
-  const raw = String(stored ?? 'stripe,gocardless').trim()
-  const providers = (raw ? raw : 'stripe,gocardless')
+  const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,legacy' })
+  const raw = String(stored ?? 'stripe,legacy').trim()
+  const providers = (raw ? raw : 'stripe,legacy')
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
-  return providers.length > 0 ? providers : ['stripe', 'gocardless']
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless' || v === 'legacy')
+  return providers.length > 0 ? providers : ['stripe']
 }
 
-/** Gateways enabled in admin_settings (used for public pricing + UI). */
+/** Gateways enabled for new checkouts. GoCardless removed from user-facing checkout; legacy optional. */
 async function getConfiguredProviders(env: any): Promise<PaymentProvider[]> {
   const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' })
   const raw = String(stored ?? 'stripe').trim()
   let configured = (raw ? raw : 'stripe')
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless')
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'legacy')
   if (configured.length === 0) configured = ['stripe']
   return configured
 }
@@ -76,7 +78,8 @@ async function getRunnableProviders(env: any): Promise<PaymentProvider[]> {
   const configured = await getConfiguredProviders(env)
   const available = configured.filter((provider) => {
     if (provider === 'stripe') return Boolean(env.STRIPE_SECRET_KEY)
-    return Boolean(env.GOCARDLESS_ACCESS_TOKEN && env.GOCARDLESS_CREDITOR_ID)
+    if (provider === 'legacy') return isLegacyProviderConfigured(env)
+    return false
   })
   if (available.length > 0) return available
   return Boolean(env.STRIPE_SECRET_KEY) ? ['stripe'] : []
@@ -225,46 +228,19 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const configuredProviders = await getConfiguredProviders(env)
-    const providerOrder = await getPaymentProviderOrder(env)
-    const orderedEnabled = [
-      ...providerOrder.filter((p) => configuredProviders.includes(p)),
-      ...configuredProviders.filter((p) => !providerOrder.includes(p)),
-    ]
-    const enabledProviders = orderedEnabled
-    const [stripePricing, gocardlessPricing] = await Promise.all([
-      getEffectivePricingSettings(env, 'stripe'),
-      getEffectivePricingSettings(env, 'gocardless'),
-    ])
-    const primary = enabledProviders[0] ?? 'stripe'
-    const activePricing = primary === 'gocardless' ? gocardlessPricing : stripePricing
-    const pricingNotConfigured = configuredProviders.some((provider) => {
-      const pricing = provider === 'gocardless' ? gocardlessPricing : stripePricing
-      return pricing.monthly == null || pricing.yearly == null || pricing.club == null
-    })
-    if (pricingNotConfigured) {
-      return jsonResponse({
-        monthly: activePricing.monthly,
-        yearly: activePricing.yearly,
-        club: activePricing.club,
-        pricesByProvider: {
-          stripe: stripePricing,
-          gocardless: gocardlessPricing,
-        },
-        pricing_not_configured: true,
-        enabledProviders,
-      }, 200, corsHeaders)
-    }
-    return jsonResponse({
-      monthly: activePricing.monthly,
-      yearly: activePricing.yearly,
-      club: activePricing.club,
+    const stripePricing = await getEffectivePricingSettings(env, 'stripe')
+    const pricingNotConfigured = stripePricing.monthly == null || stripePricing.yearly == null || stripePricing.club == null
+    const payload = {
+      monthly: stripePricing.monthly,
+      yearly: stripePricing.yearly,
+      club: stripePricing.club,
       pricesByProvider: {
         stripe: stripePricing,
-        gocardless: gocardlessPricing,
       },
-      enabledProviders,
-    }, 200, corsHeaders)
+      enabledProviders: ['stripe'],
+      ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
+    }
+    return jsonResponse(payload, 200, corsHeaders)
   } catch (err) {
     console.error('handleGetPricing error:', err)
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
@@ -356,11 +332,11 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
   }
 
   try {
-    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'gocardless'])
+    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'gocardless', 'legacy'])
     if (!enabledProviders.length) {
       return jsonResponse({ error: 'At least one payment provider must be enabled' }, 400, corsHeaders)
     }
-    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'gocardless'])
+    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'gocardless', 'legacy'])
     const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
     const basePrices = body.basePrices ?? {}
     const providerPrices = body.providerPrices ?? {}
@@ -593,6 +569,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }
 
       return jsonResponse({ clientSecret: session.client_secret, provider }, 200, corsHeaders)
+    }
+
+    if (provider === 'legacy') {
+      return startLegacyCheckout(env, user, body, corsHeaders)
     }
 
     const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''

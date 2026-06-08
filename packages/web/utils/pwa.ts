@@ -1,3 +1,16 @@
+/** True on iPhone/iPad (including iPadOS desktop UA). */
+export function isIosLike(): boolean {
+  if (typeof window === 'undefined') return false
+  const ua = window.navigator.userAgent
+  const touchMac = window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1
+  return /iPad|iPhone|iPod/.test(ua) || touchMac
+}
+
+/** Installed PWA on iOS — push-login handoff is required there; Android/Chromium can use normal magic links. */
+export function isIosInstalledPwa(): boolean {
+  return isInstalledPwa() && isIosLike()
+}
+
 /** True when running as an installed Home Screen / standalone PWA. */
 export function isInstalledPwa(): boolean {
   if (typeof window === 'undefined') return false

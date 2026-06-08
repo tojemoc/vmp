@@ -7,7 +7,7 @@ import { isInstalledPwa } from '~/utils/pwa'
 export default defineNuxtPlugin(() => {
   const route = useRoute()
   const router = useRouter()
-  const { redeemPwaHandoff, isLoggedIn, initialised, refreshSession } = useAuth()
+  const { redeemPwaHandoff, isLoggedIn, initialised, refreshSession, ensureFreshSession } = useAuth()
 
   let redeemInFlight = false
   let onAppVisibleInFlight = false
@@ -52,12 +52,14 @@ export default defineNuxtPlugin(() => {
   }
 
   async function onAppVisible() {
-    if (!initialised.value || isLoggedIn.value || onAppVisibleInFlight) return
+    if (!initialised.value || onAppVisibleInFlight) return
     onAppVisibleInFlight = true
     try {
       await tryRedeemFromUrlOrIdb()
       if (!isLoggedIn.value) {
         await refreshSession()
+      } else {
+        await ensureFreshSession()
       }
     } finally {
       onAppVisibleInFlight = false

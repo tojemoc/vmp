@@ -13,7 +13,7 @@
 
       <!-- Welcome banner (shown after successful checkout redirect) -->
       <div
-        v-if="showWelcomeBanner && !gocardlessCompletionError"
+        v-if="showWelcomeBanner"
         class="flex items-start gap-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4"
       >
         <svg class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -43,41 +43,9 @@
         <div class="h-4 w-24 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
       </div>
 
-      <div
-        v-if="gocardlessCompletionError"
-        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 space-y-3 text-sm text-red-700 dark:text-red-300"
-      >
-        <p>{{ gocardlessCompletionError }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-          :disabled="retryingGoCardless"
-          @click="retryGoCardlessCheckout"
-        >
-          {{ retryingGoCardless ? strings.gocardlessOpening : strings.gocardlessRetrySetup }}
-        </button>
-        <p v-if="gocardlessRetryError" class="text-xs">{{ gocardlessRetryError }}</p>
-      </div>
-
-      <div
-        v-else-if="showGoCardlessRetryBanner"
-        class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 p-4 space-y-3 text-sm text-amber-900 dark:text-amber-200"
-      >
-        <p>{{ strings.gocardlessRetryBanner }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-          :disabled="retryingGoCardless"
-          @click="retryGoCardlessCheckout"
-        >
-          {{ retryingGoCardless ? strings.gocardlessOpening : strings.gocardlessContinueSetup }}
-        </button>
-        <p v-if="gocardlessRetryError" class="text-xs text-red-600 dark:text-red-400">{{ gocardlessRetryError }}</p>
-      </div>
-
       <!-- Subscription (active or empty — never both) -->
       <div
-        v-else-if="!loadingSub && !gocardlessCompletionError"
+        v-else-if="!loadingSub"
         class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
       >
         <template v-if="hasActiveSubscription && subscription">
@@ -312,15 +280,7 @@ if (import.meta.client) {
 const loadingSub        = ref(true)
 const openingPortal     = ref(false)
 const portalError       = ref<string | null>(null)
-const returningFromGoCardless = computed(() => {
-  const token = typeof route.query.gocardless_checkout_token === 'string'
-    ? route.query.gocardless_checkout_token.trim()
-    : ''
-  return token.length > 0
-})
-const showWelcomeBanner = ref(
-  route.query.subscribed === '1' || route.query.gocardless_complete === '1',
-)
+const showWelcomeBanner = ref(route.query.subscribed === '1')
 
 const {
   returningFromStripe,
@@ -362,12 +322,6 @@ async function disableTotp() {
     totpDisabling.value = false
   }
 }
-const gocardlessCompletionError = ref<string | null>(null)
-const gocardlessRetryError = ref<string | null>(null)
-const retryingGoCardless = ref(false)
-const showGoCardlessRetryBanner = computed(() =>
-  route.query.gocardless_retry === '1' && !gocardlessCompletionError.value,
-)
 const loadingRss        = ref(true)
 const rssError          = ref<string | null>(null)
 const copyError         = ref<string | null>(null)
@@ -385,9 +339,7 @@ onMounted(async () => {
     }
   }
 
-  await maybeCompleteGoCardlessCheckout()
-
-  if (showWelcomeBanner.value || returningFromGoCardless.value || returningFromStripe.value) {
+  if (showWelcomeBanner.value || returningFromStripe.value) {
     // After checkout redirect the webhook may not have fired yet.
     // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
     const MAX_ATTEMPTS = 5
@@ -437,93 +389,6 @@ async function openPortal() {
     portalError.value = strings.networkError
   } finally {
     openingPortal.value = false
-  }
-}
-
-async function retryGoCardlessCheckout() {
-  retryingGoCardless.value = true
-  gocardlessRetryError.value = null
-  const checkoutToken = (
-    (typeof route.query.gocardless_checkout_token === 'string' ? route.query.gocardless_checkout_token : '') ||
-    ''
-  ).trim()
-  try {
-    const res = await fetch(`${apiUrl}/api/payments/gocardless/retry`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(checkoutToken ? { checkoutToken } : {}),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok || !data.checkoutUrl) {
-      gocardlessRetryError.value = data.error ?? strings.gocardlessCheckoutFailed
-      return
-    }
-    window.location.href = data.checkoutUrl
-  } catch {
-    gocardlessRetryError.value = strings.networkError
-  } finally {
-    retryingGoCardless.value = false
-  }
-}
-
-async function maybeCompleteGoCardlessCheckout() {
-  const searchParams = import.meta.client
-    ? new URLSearchParams(window.location.search)
-    : null
-  const routeId = typeof route.query.id === 'string' ? route.query.id.trim() : ''
-  const searchId = (searchParams?.get('id') || '').trim()
-  const billingRequestFlowIdFromId = routeId.startsWith('BRF')
-    ? routeId
-    : (searchId.startsWith('BRF') ? searchId : '')
-  const billingRequestFlowId = (
-    (typeof route.query.gocardless_billing_request_flow_id === 'string' ? route.query.gocardless_billing_request_flow_id : '') ||
-    (typeof route.query.billing_request_flow_id === 'string' ? route.query.billing_request_flow_id : '') ||
-    (typeof route.query.gocardless_redirect_flow_id === 'string' ? route.query.gocardless_redirect_flow_id : '') ||
-    billingRequestFlowIdFromId ||
-    searchParams?.get('gocardless_billing_request_flow_id') ||
-    searchParams?.get('billing_request_flow_id') ||
-    searchParams?.get('gocardless_redirect_flow_id') ||
-    ''
-  ).trim()
-  const checkoutToken = (
-    (typeof route.query.gocardless_checkout_token === 'string' ? route.query.gocardless_checkout_token : '') ||
-    searchParams?.get('gocardless_checkout_token') ||
-    ''
-  ).trim()
-  if (!checkoutToken) return
-
-  let completed = false
-  try {
-    const payload: { checkoutToken: string; billingRequestFlowId?: string } = { checkoutToken }
-    if (billingRequestFlowId) payload.billingRequestFlowId = billingRequestFlowId
-
-    const res = await fetch(`${apiUrl}/api/payments/gocardless/complete`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok && !data.alreadyCompleted) {
-      gocardlessCompletionError.value = data.error ?? strings.gocardlessFinalizeFailed
-      return
-    }
-    showWelcomeBanner.value = true
-    completed = true
-  } catch {
-    gocardlessCompletionError.value = strings.gocardlessFinalizeNetworkError
-  } finally {
-    if (completed) {
-      const nextQuery = { ...route.query }
-      delete nextQuery.gocardless_billing_request_flow_id
-      delete nextQuery.billing_request_flow_id
-      delete nextQuery.gocardless_redirect_flow_id
-      delete nextQuery.gocardless_checkout_token
-      delete nextQuery.id
-      nextQuery.gocardless_complete = '1'
-      await navigateTo({ path: '/account', query: nextQuery }, { replace: true })
-    }
   }
 }
 

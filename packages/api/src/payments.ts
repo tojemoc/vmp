@@ -7,6 +7,13 @@ export {
   handlePortal,
   handleSessionStatus,
 } from './paymentProcessor.js'
+export {
+  handleLegacyCheckout,
+  handleLegacyComplete,
+  handleLegacyWebhook,
+  handleAdminLegacyPaymentSettings,
+  startLegacyCheckout,
+} from './legacyPayments.js'
 export { handleWebhook } from './stripe.js'
 export {
   handleGoCardlessComplete,

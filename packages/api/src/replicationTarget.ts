@@ -26,15 +26,24 @@ export function resolveReplicationTargetUrl(raw: string): string {
   }
 }
 
-export function describeReplicationTarget(raw: string): {
+export function describeReplicationTarget(
+  raw: string,
+  options?: { tokenConfigured?: boolean },
+): {
   configured: boolean
+  tokenConfigured: boolean
   ingestPathOk: boolean
   resolvedPath: string
   warning?: string
 } {
   const trimmed = String(raw ?? '').trim()
   if (!trimmed) {
-    return { configured: false, ingestPathOk: false, resolvedPath: '' }
+    return {
+      configured: false,
+      tokenConfigured: options?.tokenConfigured === true,
+      ingestPathOk: false,
+      resolvedPath: '',
+    }
   }
 
   const resolved = resolveReplicationTargetUrl(trimmed)
@@ -61,6 +70,7 @@ export function describeReplicationTarget(raw: string): {
 
   return {
     configured: true,
+    tokenConfigured: options?.tokenConfigured === true,
     ingestPathOk,
     resolvedPath,
     ...(warning !== undefined ? { warning } : {}),

@@ -572,13 +572,14 @@ export async function handleAdminReplicationSettings(request: Request, env: any,
   const db = getDb(env)
   await ensureReplicationStateTable(db)
   if (request.method === 'GET') {
-    const [modeRaw, epochRaw, batchSizeRaw, targetUrlRaw] = await Promise.all([
+    const [modeRaw, epochRaw, batchSizeRaw] = await Promise.all([
       getAdminSetting(db, 'replication_mode'),
       getAdminSetting(db, 'replication_epoch'),
       getAdminSetting(db, 'replication_batch_size'),
-      Promise.resolve(String(env.REPLICATION_TARGET_URL ?? '').trim()),
     ])
-    const target = describeReplicationTarget(targetUrlRaw)
+    const targetUrlRaw = String(env.REPLICATION_TARGET_URL ?? '').trim()
+    const tokenConfigured = Boolean(String(env.REPLICATION_TARGET_TOKEN ?? '').trim())
+    const target = describeReplicationTarget(targetUrlRaw, { tokenConfigured })
     const url = new URL(request.url)
     let targetProbe: { ok: boolean; error?: string } | undefined
     if (url.searchParams.get('probe') === '1' && target.configured && !target.warning) {
@@ -602,6 +603,7 @@ export async function handleAdminReplicationSettings(request: Request, env: any,
       epoch: parseEpoch(epochRaw),
       batchSize: parseBatchSize(batchSizeRaw),
       targetConfigured: target.configured,
+      targetTokenConfigured: target.tokenConfigured,
       targetIngestPathOk: target.ingestPathOk,
       targetResolvedPath: target.resolvedPath,
       targetWarning: target.warning ?? null,
