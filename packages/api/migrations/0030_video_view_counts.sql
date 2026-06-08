@@ -1,5 +1,19 @@
--- Corrective backfill for environments where 0030 failed on orphan video_segment_events
--- (no FK to videos). Idempotent: safe when 0030 already backfilled successfully.
+-- Precomputed per-video view counts (distinct playback sessions).
+-- Incrementally maintained in logSegmentEvent (adminExtras.ts); backfilled below.
+
+CREATE TABLE IF NOT EXISTS video_view_count_sessions (
+  video_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  PRIMARY KEY (video_id, session_id),
+  FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS video_view_counts (
+  video_id TEXT PRIMARY KEY,
+  view_count INTEGER NOT NULL DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+);
 
 INSERT OR IGNORE INTO video_view_count_sessions (video_id, session_id)
 SELECT
