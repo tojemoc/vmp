@@ -171,7 +171,7 @@ export async function handleVideoRecommendations(request: Request, env: any, cor
     `).all()
 
     const ranked = scoreRecommendationVideos(
-      (list.results ?? []).map((row) => mapRecommendationVideoRow(row as Record<string, unknown>)),
+      (list.results ?? []).map((row: Record<string, unknown>) => mapRecommendationVideoRow(row)),
       String((current as any).id),
       settings,
     )
