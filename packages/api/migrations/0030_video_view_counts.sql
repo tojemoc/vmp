@@ -15,19 +15,23 @@ CREATE TABLE IF NOT EXISTS video_view_counts (
   FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
 );
 
+-- video_segment_events has no FK to videos; skip deleted/orphan ids and the
+-- runtime sentinel so backfill does not violate video_view_count_sessions FK.
 INSERT OR IGNORE INTO video_view_count_sessions (video_id, session_id)
 SELECT
-  video_id,
+  vse.video_id,
   COALESCE(
-    session_key,
+    vse.session_key,
     CASE
-      WHEN user_id IS NOT NULL THEN 'u:' || user_id
-      WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
-      ELSE 'path:' || request_path
+      WHEN vse.user_id IS NOT NULL THEN 'u:' || vse.user_id
+      WHEN vse.ip_hash IS NOT NULL THEN 'i:' || vse.ip_hash
+      ELSE 'path:' || vse.request_path
     END
   )
-FROM video_segment_events
-WHERE event_type = 'segment';
+FROM video_segment_events vse
+INNER JOIN videos v ON v.id = vse.video_id
+WHERE vse.event_type = 'segment'
+  AND vse.video_id != 'unknown';
 
 INSERT INTO video_view_counts (video_id, view_count, updated_at)
 SELECT video_id, COUNT(*), CURRENT_TIMESTAMP
