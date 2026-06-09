@@ -3,7 +3,7 @@
  */
 
 import { requireRole } from './auth.js'
-import { getPushDeliveryQueue } from './queueBindings.js'
+import { getPushDeliveryQueue, QUEUE_SEND_BATCH_MAX } from './queueBindings.js'
 import { getSetting, setSettings } from './settingsStore.js'
 import { sendPushNotification } from './webpush.js'
 
@@ -391,42 +391,120 @@ export async function executePushDelivery(deliveryId: string, env: any, db: any)
   }
 }
 
+/** Hours after which a pending delivery with queued_at may be re-enqueued (stale queue claim). */
+const STALE_PUSH_QUEUE_CLAIM_HOURS = 1
+
+function d1Changes(result: { meta?: { changes?: number }; changes?: number }) {
+  return Number(result.meta?.changes ?? result.changes ?? 0)
+}
+
+export async function claimPushDeliveryForQueue(db: any, deliveryId: string) {
+  const result = await db.prepare(`
+    UPDATE push_deliveries
+    SET queued_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND status = 'pending'
+      AND (
+        queued_at IS NULL
+        OR datetime(queued_at) <= datetime('now', ?)
+      )
+  `).bind(deliveryId, `-${STALE_PUSH_QUEUE_CLAIM_HOURS} hours`).run()
+  return d1Changes(result) > 0
+}
+
+export async function releasePushDeliveryQueueClaim(db: any, deliveryId: string) {
+  await db.prepare(`
+    UPDATE push_deliveries
+    SET queued_at = NULL
+    WHERE id = ? AND status = 'pending'
+  `).bind(deliveryId).run()
+}
+
 export async function enqueuePushDelivery(env: any, deliveryId: string, delaySeconds: number) {
   const queue = getPushDeliveryQueue(env)
   if (!queue) return false
+  const db = getDb(env)
+  if (!(await claimPushDeliveryForQueue(db, deliveryId))) return false
   const capped = Math.max(0, Math.min(86400, Math.floor(delaySeconds)))
-  await queue.send({ deliveryId }, { delaySeconds: capped })
-  return true
+  try {
+    await queue.send({ deliveryId }, { delaySeconds: capped })
+    return true
+  } catch (err) {
+    await releasePushDeliveryQueueClaim(db, deliveryId)
+    throw err
+  }
+}
+
+function computePushDelaySeconds(scheduledAt: unknown) {
+  const scheduledMs = Date.parse(String(scheduledAt))
+  const now = Date.now()
+  if (!Number.isFinite(scheduledMs)) return 0
+  if (scheduledMs <= now) return 0
+  return Math.max(0, Math.min(86400, Math.floor((scheduledMs - now) / 1000)))
 }
 
 export async function enqueueOverduePushDeliveries(env: any) {
   const db = getDb(env)
+  const queue = getPushDeliveryQueue(env)
   const rows = await db.prepare(`
     SELECT id, delay_seconds, scheduled_at
     FROM push_deliveries
     WHERE status = 'pending'
       AND datetime(scheduled_at) <= datetime('now')
+      AND (
+        queued_at IS NULL
+        OR datetime(queued_at) <= datetime('now', ?)
+      )
     ORDER BY scheduled_at ASC
     LIMIT 100
-  `).all()
+  `).bind(`-${STALE_PUSH_QUEUE_CLAIM_HOURS} hours`).all()
   const deliveries = rows?.results ?? []
   if (!deliveries.length) return 0
 
-  let enqueued = 0
-  for (const row of deliveries as any[]) {
-    if (getPushDeliveryQueue(env)) {
-      const scheduledMs = Date.parse(String(row.scheduled_at))
-      const now = Date.now()
-      const delaySeconds = Number.isFinite(scheduledMs)
-        ? scheduledMs <= now
-          ? 0
-          : Math.max(0, Math.min(86400, Math.floor((scheduledMs - now) / 1000)))
-        : 0
-      await enqueuePushDelivery(env, row.id, delaySeconds)
-      enqueued++
-    } else {
+  if (!queue) {
+    let executed = 0
+    for (const row of deliveries as any[]) {
       await executePushDelivery(row.id, env, db)
-      enqueued++
+      executed++
+    }
+    return executed
+  }
+
+  const claimed: { deliveryId: string; delaySeconds: number }[] = []
+  for (const row of deliveries as any[]) {
+    if (await claimPushDeliveryForQueue(db, row.id)) {
+      claimed.push({
+        deliveryId: row.id,
+        delaySeconds: computePushDelaySeconds(row.scheduled_at),
+      })
+    }
+  }
+  if (!claimed.length) return 0
+
+  let enqueued = 0
+  for (let i = 0; i < claimed.length; i += QUEUE_SEND_BATCH_MAX) {
+    const slice = claimed.slice(i, i + QUEUE_SEND_BATCH_MAX)
+    try {
+      if (queue.sendBatch) {
+        await queue.sendBatch(slice.map((item) => ({
+          body: { deliveryId: item.deliveryId },
+          delaySeconds: item.delaySeconds,
+        })))
+      } else {
+        for (const item of slice) {
+          await queue.send({ deliveryId: item.deliveryId }, { delaySeconds: item.delaySeconds })
+        }
+      }
+      enqueued += slice.length
+    } catch (err) {
+      for (const item of slice) {
+        try {
+          await releasePushDeliveryQueueClaim(db, item.deliveryId)
+        } catch (releaseErr) {
+          console.error('Failed to release push delivery queue claim:', releaseErr)
+        }
+      }
+      throw err
     }
   }
   return enqueued
