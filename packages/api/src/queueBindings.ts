@@ -17,7 +17,11 @@ export function getReplicationQueue(env: {
 export function getPushDeliveryQueue(env: {
   vmp_push_delivery?: {
     send: (body: unknown, options?: { delaySeconds?: number }) => Promise<unknown>
+    sendBatch?: (messages: Iterable<{ body: unknown; delaySeconds?: number }>) => Promise<unknown>
   }
 }) {
   return env.vmp_push_delivery
 }
+
+/** Cloudflare Queues sendBatch limit per call. */
+export const QUEUE_SEND_BATCH_MAX = 100

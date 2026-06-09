@@ -576,24 +576,32 @@ export default {
   },
 
   async scheduled(event: any, env: any, ctx: ExecutionContext) {
-    try {
-      await runScheduledPublishJobs(env)
-      await syncScheduledPublishHint(env)
-    } catch (err) {
-      console.error('Scheduled publish sweep failed:', err)
+    const cron = String(event?.cron ?? '*/5 * * * *')
+    const runReplication = cron === '*/15 * * * *'
+
+    if (!runReplication) {
+      try {
+        await runScheduledPublishJobs(env)
+        await syncScheduledPublishHint(env)
+      } catch (err) {
+        console.error('Scheduled publish sweep failed:', err)
+      }
+      try {
+        await ensurePushTierDefaultSettings(env)
+        await enqueueOverduePushDeliveries(env)
+        await syncPushEngagementProfiles(env)
+        await finalizeStalePushWatchSessions(env)
+      } catch (err) {
+        console.error('Push engagement sweep failed:', err)
+      }
     }
-    try {
-      await enqueueReplicationBatch(env)
-    } catch (err) {
-      console.error('Replication enqueue sweep failed:', err)
-    }
-    try {
-      await ensurePushTierDefaultSettings(env)
-      await enqueueOverduePushDeliveries(env)
-      await syncPushEngagementProfiles(env)
-      await finalizeStalePushWatchSessions(env)
-    } catch (err) {
-      console.error('Push engagement sweep failed:', err)
+
+    if (runReplication) {
+      try {
+        await enqueueReplicationBatch(env)
+      } catch (err) {
+        console.error('Replication enqueue sweep failed:', err)
+      }
     }
   },
 

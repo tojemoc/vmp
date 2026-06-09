@@ -288,10 +288,8 @@ async function enqueueStreamUsers(
   const queue = getReplicationQueue(env)
   if (mode === 'queue' && !queue) throw new Error('Replication queue binding not found (vmp_replication_events)')
   const ingest = await publishReplicationMessages(env, messages, mode)
-  if (mode === 'direct') {
-    const last = selected[selected.length - 1]
-    await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
-  }
+  const last = selected[selected.length - 1]
+  await setStreamCursor(db, stream, rowCursor(last.created_at, last.id))
   return { enqueued: selected.length, ingest }
 }
 
@@ -326,10 +324,8 @@ async function enqueueStreamSubscriptions(
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
   const ingest = await publishReplicationMessages(env, messages, mode)
-  if (mode === 'direct') {
-    const last = selected[selected.length - 1]
-    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
-  }
+  const last = selected[selected.length - 1]
+  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return { enqueued: selected.length, ingest }
 }
 
@@ -364,10 +360,8 @@ async function enqueueStreamVideos(
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
   const ingest = await publishReplicationMessages(env, messages, mode)
-  if (mode === 'direct') {
-    const last = selected[selected.length - 1]
-    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
-  }
+  const last = selected[selected.length - 1]
+  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.id))
   return { enqueued: selected.length, ingest }
 }
 
@@ -405,10 +399,8 @@ async function enqueueStreamAdminSettings(
     throw new Error('Replication queue binding not found (vmp_replication_events)')
   }
   const ingest = await publishReplicationMessages(env, messages, mode)
-  if (mode === 'direct') {
-    const last = selected[selected.length - 1]
-    await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
-  }
+  const last = selected[selected.length - 1]
+  await setStreamCursor(db, stream, rowCursor(last.updated_at, last.key))
   return { enqueued: selected.length, ingest }
 }
 
