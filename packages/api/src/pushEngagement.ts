@@ -498,7 +498,11 @@ export async function enqueueOverduePushDeliveries(env: any) {
       enqueued += slice.length
     } catch (err) {
       for (const item of slice) {
-        await releasePushDeliveryQueueClaim(db, item.deliveryId)
+        try {
+          await releasePushDeliveryQueueClaim(db, item.deliveryId)
+        } catch (releaseErr) {
+          console.error('Failed to release push delivery queue claim:', releaseErr)
+        }
       }
       throw err
     }

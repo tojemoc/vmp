@@ -1,5 +1,5 @@
 import { requireRole } from './auth.js'
-import { getReplicationQueue } from './queueBindings.js'
+import { getReplicationQueue, QUEUE_SEND_BATCH_MAX } from './queueBindings.js'
 import {
   assertReplicationIngestAccepted,
   describeReplicationTarget,
@@ -116,9 +116,6 @@ async function publishReplicationMessages(
   }
   return postReplicationEventsToTarget(env, messages)
 }
-
-/** Cloudflare Queues sendBatch limit per call. */
-const QUEUE_SEND_BATCH_MAX = 100
 
 type StreamContext = { direction: ReplicationDirection, epoch: number, batchSize: number }
 type DeliveryMode = 'queue' | 'direct'
