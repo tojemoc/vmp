@@ -61,13 +61,14 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
     options.environment = config.environment
   }
 
-  if (config.enableLogs) {
-    options.beforeSend = (event) => {
-      if (event.request?.headers) {
-        event.request.headers = redactRecord(event.request.headers as Record<string, unknown>) as Record<string, string>
-      }
-      return event
+  options.beforeSend = (event) => {
+    if (event.request?.headers) {
+      event.request.headers = redactRecord(event.request.headers as Record<string, unknown>) as Record<string, string>
     }
+    return event
+  }
+
+  if (config.enableLogs) {
     options.beforeSendLog = (log) => {
       if (log.attributes) {
         log.attributes = redactRecord(log.attributes as Record<string, unknown>) as Log['attributes']
