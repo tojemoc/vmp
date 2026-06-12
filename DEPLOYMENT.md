@@ -50,11 +50,17 @@ Required environment variables (GitHub Environments/Repository Variables):
   - `FRONTEND_URL_STAGING`
   - `ALLOWED_ORIGINS_STAGING`
   - `CF_PAGES_PROJECT_NAME_STAGING`
+  - `NUXT_PUBLIC_SENTRY_DSN` (frontend Sentry project DSN, embedded at build time)
 - Production:
   - `API_URL_PROD`
   - `FRONTEND_URL_PROD`
   - `ALLOWED_ORIGINS_PROD`
   - `CF_PAGES_PROJECT_NAME_PROD`
+  - `NUXT_PUBLIC_SENTRY_DSN` (frontend Sentry project DSN, embedded at build time)
+
+Optional repository secret for Sentry source map uploads during web builds:
+
+- `SENTRY_AUTH_TOKEN` (org token with `project:releases` + `org:read`)
 
 The hardened workflows now enforce:
 
@@ -99,6 +105,7 @@ Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 - `TOTP_ENCRYPTION_KEY`
 - `VAPID_PRIVATE_KEY`
 - `RSS_SECRET`
+- `SENTRY_DSN` (Worker API project DSN for `@sentry/cloudflare`)
 
 1. Re-apply database migrations in order
 

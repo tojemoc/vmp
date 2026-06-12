@@ -211,6 +211,7 @@ npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Pages p
 
 ```text
 JWT_SECRET              — 32+ random chars
+SENTRY_DSN              — Sentry DSN for the API Worker (`@sentry/cloudflare`)
 BREVO_API_KEY           — from brevo.com
 STRIPE_SECRET_KEY       — from stripe.com dashboard
 STRIPE_WEBHOOK_SECRET   — from stripe webhook registration

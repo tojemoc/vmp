@@ -1,8 +1,25 @@
+import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@saslavik/nuxt-gtm', '@vercel/analytics'],
+  sourcemap: { client: 'hidden' },
+
+  modules: [
+    '@nuxtjs/tailwindcss',
+    '@nuxtjs/color-mode',
+    '@vite-pwa/nuxt',
+    '@saslavik/nuxt-gtm',
+    '@vercel/analytics',
+    '@sentry/nuxt/module',
+  ],
+
+  sentry: {
+    org: 'tojemoc',
+    project: 'vmp-fe-primary',
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+  },
 
   gtm: {
     id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
@@ -44,6 +61,12 @@ export default defineNuxtConfig({
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
       gtm: {
         id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
+      },
+      sentry: {
+        dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
+        tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
+        environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
+        enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
       },
     },
   },

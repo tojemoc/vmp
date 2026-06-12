@@ -15,6 +15,7 @@ packages/web/public/sw-push.js
 .env.local
 .env.*.local
 .dev.vars
+.env.sentry-build-plugin
 
 # Logs
 *.log

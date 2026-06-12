@@ -20,6 +20,7 @@
     "db:migration-verify": "bash ./scripts/migration_integrity_check.sh"
   },
   "dependencies": {
+    "@sentry/cloudflare": "^10.57.0",
     "@vmp/shared": "*"
   },
   "devDependencies": {
