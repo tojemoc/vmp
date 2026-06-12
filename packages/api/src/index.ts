@@ -128,6 +128,7 @@ import {
   normalizeLivestreamStatus,
 } from './livestreams.js'
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types'
+import * as Sentry from '@sentry/cloudflare'
 
 type CorsHeaders = Record<string, string>
 
@@ -199,7 +200,7 @@ interface SegmentRateLimitBody {
 // Binding is configured in wrangler.json under durable_objects.bindings.
 // Used conditionally: only active when env.SEGMENT_RATE_LIMITER is present.
 
-export class SegmentRateLimiterDO {
+class SegmentRateLimiterDOBase {
   env: Record<string, unknown>
   state: DurableObjectState
   constructor(state: DurableObjectState, env: Record<string, unknown>) {
@@ -251,7 +252,32 @@ export class SegmentRateLimiterDO {
   }
 }
 
-export default {
+function buildSentryOptions(env: Record<string, unknown>) {
+  const dsn = typeof env.SENTRY_DSN === 'string' ? env.SENTRY_DSN.trim() : ''
+  if (!dsn) {
+    return { enabled: false }
+  }
+
+  const tracesSampleRateRaw = env.SENTRY_TRACES_SAMPLE_RATE
+  const tracesSampleRate = typeof tracesSampleRateRaw === 'string'
+    ? Number.parseFloat(tracesSampleRateRaw)
+    : 1.0
+
+  return {
+    dsn,
+    tracesSampleRate: Number.isFinite(tracesSampleRate) ? tracesSampleRate : 1.0,
+    enableLogs: true,
+    environment: typeof env.SENTRY_ENVIRONMENT === 'string' ? env.SENTRY_ENVIRONMENT : undefined,
+  }
+}
+
+export const SegmentRateLimiterDO = Sentry.instrumentDurableObjectWithSentry(
+  (env) => buildSentryOptions(env as Record<string, unknown>),
+  // Sentry bundles its own workers-types; cast avoids duplicate-type friction in tsc.
+  SegmentRateLimiterDOBase as never,
+)
+
+const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
     ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env))
@@ -614,6 +640,11 @@ export default {
     await handleReplicationQueue(batch, env)
   },
 }
+
+export default Sentry.withSentry(
+  (env) => buildSentryOptions(env as Record<string, unknown>),
+  workerHandler as never,
+)
 
 // ─── CORS helpers ─────────────────────────────────────────────────────────────
 

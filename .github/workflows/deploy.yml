@@ -55,6 +55,8 @@ jobs:
       - run: npm exec nx -- run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Validate staging env/domain wiring
         run: |
@@ -145,6 +147,8 @@ jobs:
       - run: npm exec nx -- run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Validate production env/domain wiring
         run: |

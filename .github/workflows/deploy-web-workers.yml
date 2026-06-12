@@ -44,6 +44,8 @@ jobs:
         env:
           API_URL: ${{ vars.API_URL_STAGING }}
           NODE_ENV: production
+          NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: npm run build:workers
 
       - name: Deploy Worker (experimental)
