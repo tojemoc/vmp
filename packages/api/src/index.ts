@@ -252,23 +252,70 @@ class SegmentRateLimiterDOBase {
   }
 }
 
+const SENTRY_SENSITIVE_KEYS = new Set([
+  'authorization',
+  'cookie',
+  'password',
+  'token',
+  'secret',
+  'api_key',
+  'apikey',
+  'x-smoke-token',
+])
+
+function parseSentryTracesSampleRate(value: unknown): number {
+  if (typeof value !== 'string' || !value.trim()) return 0.1
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) return 0.1
+  return Math.min(1, Math.max(0, parsed))
+}
+
+function parseSentryEnvBoolean(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === '1' || normalized === 'true' || normalized === 'yes'
+}
+
+function redactSentryRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const redacted: Record<string, unknown> = { ...record }
+  for (const key of Object.keys(redacted)) {
+    if (SENTRY_SENSITIVE_KEYS.has(key.toLowerCase())) {
+      redacted[key] = '[Redacted]'
+    }
+  }
+  return redacted
+}
+
 function buildSentryOptions(env: Record<string, unknown>) {
   const dsn = typeof env.SENTRY_DSN === 'string' ? env.SENTRY_DSN.trim() : ''
   if (!dsn) {
     return { enabled: false }
   }
 
-  const tracesSampleRateRaw = env.SENTRY_TRACES_SAMPLE_RATE
-  const tracesSampleRate = typeof tracesSampleRateRaw === 'string'
-    ? Number.parseFloat(tracesSampleRateRaw)
-    : 1.0
-
-  return {
+  const enableLogs = parseSentryEnvBoolean(env.SENTRY_ENABLE_LOGS)
+  const options: Record<string, unknown> = {
     dsn,
-    tracesSampleRate: Number.isFinite(tracesSampleRate) ? tracesSampleRate : 1.0,
-    enableLogs: true,
+    tracesSampleRate: parseSentryTracesSampleRate(env.SENTRY_TRACES_SAMPLE_RATE),
+    enableLogs,
     environment: typeof env.SENTRY_ENVIRONMENT === 'string' ? env.SENTRY_ENVIRONMENT : undefined,
   }
+
+  if (enableLogs) {
+    options.beforeSend = (event: { request?: { headers?: Record<string, string> } }) => {
+      if (event.request?.headers) {
+        event.request.headers = redactSentryRecord(event.request.headers) as Record<string, string>
+      }
+      return event
+    }
+    options.beforeSendLog = (log: { attributes?: Record<string, unknown> }) => {
+      if (log.attributes) {
+        log.attributes = redactSentryRecord(log.attributes)
+      }
+      return log
+    }
+  }
+
+  return options
 }
 
 export const SegmentRateLimiterDO = Sentry.instrumentDurableObjectWithSentry(

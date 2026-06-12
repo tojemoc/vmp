@@ -11,8 +11,8 @@ These are read in `nuxt.config.ts` via `process.env` and embedded into the clien
 | `API_URL` | `runtimeConfig.public.apiUrl` | `vars.API_URL_STAGING` / prod via `deploy.yml` | `vars.API_URL_STAGING` on `main` |
 | `NUXT_PUBLIC_SITE_URL` | `runtimeConfig.public.siteUrl` | Not set (defaults to `https://vmp.tjm.sk`) | Not set — **document gap** |
 | `NUXT_PUBLIC_GTM_ID` | GTM module + `runtimeConfig.public.gtm.id` | Not set (default in config) | Not set |
-| `NUXT_PUBLIC_SENTRY_DSN` | `runtimeConfig.public.sentry.dsn` (`@sentry/nuxt`) | Not set (Sentry disabled) | `vars.NUXT_PUBLIC_SENTRY_DSN` |
-| `SENTRY_AUTH_TOKEN` | Source map upload during build | Not set | `secrets.SENTRY_AUTH_TOKEN` |
+| `NUXT_PUBLIC_SENTRY_DSN` | `runtimeConfig.public.sentry.dsn` (`@sentry/nuxt`) | `vars.NUXT_PUBLIC_SENTRY_DSN` (via `deploy.yml`) | `vars.NUXT_PUBLIC_SENTRY_DSN` |
+| `SENTRY_AUTH_TOKEN` | Source map upload during build | `secrets.SENTRY_AUTH_TOKEN` (via `deploy.yml`) | `secrets.SENTRY_AUTH_TOKEN` |
 | `NODE_ENV` | GTM debug flag | `production` in CI | `production` in CI |
 
 ## Wrangler `[vars]` / secrets (runtime on Worker)

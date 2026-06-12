@@ -1,3 +1,5 @@
+import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
@@ -62,6 +64,9 @@ export default defineNuxtConfig({
       },
       sentry: {
         dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
+        tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
+        environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
+        enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
       },
     },
   },

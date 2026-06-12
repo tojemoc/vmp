@@ -1,12 +1,9 @@
 import * as Sentry from '@sentry/nuxt'
+import { buildSentryInitOptions } from './utils/sentryOptions'
 
 const config = useRuntimeConfig()
-const dsn = config.public.sentry.dsn
+const initOptions = buildSentryInitOptions(config.public.sentry)
 
-if (dsn) {
-  Sentry.init({
-    dsn,
-    tracesSampleRate: 1.0,
-    enableLogs: true,
-  })
+if (initOptions) {
+  Sentry.init(initOptions)
 }

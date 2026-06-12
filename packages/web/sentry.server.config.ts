@@ -1,11 +1,13 @@
 import * as Sentry from '@sentry/nuxt'
+import { buildSentryInitOptions, parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
 
-const dsn = process.env.SENTRY_DSN || process.env.NUXT_PUBLIC_SENTRY_DSN
+const initOptions = buildSentryInitOptions({
+  dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
+  tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
+  environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
+  enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
+})
 
-if (dsn) {
-  Sentry.init({
-    dsn,
-    tracesSampleRate: 1.0,
-    enableLogs: true,
-  })
+if (initOptions) {
+  Sentry.init(initOptions)
 }
