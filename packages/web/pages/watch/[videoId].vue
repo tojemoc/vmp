@@ -544,7 +544,7 @@ usePageSeo(
   })),
 )
 
-let moqModule: Awaited<typeof import('@moq/lite')> | null = null
+let moqModule: Awaited<typeof import('@moq/net')> | null = null
 let watchModule: Awaited<typeof import('@moq/watch')> | null = null
 
 const ensureMoqModules = async () => {
@@ -553,7 +553,7 @@ const ensureMoqModules = async () => {
   }
   if (!moqModule || !watchModule) {
     const [moq, watch] = await Promise.all([
-      import('@moq/lite'),
+      import('@moq/net'),
       import('@moq/watch')
     ])
     moqModule = moq
