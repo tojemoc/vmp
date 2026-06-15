@@ -230,6 +230,7 @@ describe('segment analytics persistence + snapshot', () => {
       granularity: 'day',
       dataset: 'all',
       format: 'json',
+      videoId: null,
     })
     assert.equal(snapshot.kpis.totalUniqueViews, 9)
     assert.equal(snapshot.kpis.totalWatchSeconds, 2400)
