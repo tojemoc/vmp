@@ -5629,10 +5629,11 @@ const importUsersFromCsv = async () => {
 }
 
 const loadLegacyPaymentStatus = async () => {
+  if (!isAdmin.value) return
   legacyPaymentStatusLoading.value = true
   try {
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/legacy`, {
-      headers: authHeader(),
+      headers: { ...authHeader() },
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)

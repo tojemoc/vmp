@@ -40,4 +40,13 @@ user@example.com,two`)
     assert.equal(rows[0].email, 'user@example.com')
     assert.equal(rows[0].purchaseId, 'one')
   })
+
+  it('merges structured rows with emails embedded in free text', () => {
+    const rows = parseCsvUserRows(`user@example.com,legacy-99
+Also contact embedded@example.com for follow-up`)
+    assert.deepEqual(rows, [
+      { email: 'user@example.com', purchaseId: 'legacy-99' },
+      { email: 'embedded@example.com', purchaseId: null },
+    ])
+  })
 })

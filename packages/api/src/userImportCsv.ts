@@ -116,6 +116,17 @@ function parseUnstructuredCsvEmails(csvText: string, maxRows: number): CsvUserIm
 export function parseCsvUserRows(csvText: string, maxRows = 10000): CsvUserImportRow[] {
   const safeMaxRows = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 10000
   const structured = parseStructuredCsvRows(csvText, safeMaxRows)
-  if (structured.length) return structured
-  return parseUnstructuredCsvEmails(csvText, safeMaxRows)
+  const unstructured = parseUnstructuredCsvEmails(csvText, safeMaxRows)
+  if (!structured.length) return unstructured
+
+  const byEmail = new Map<string, CsvUserImportRow>()
+  for (const row of structured) {
+    byEmail.set(row.email, row)
+  }
+  for (const row of unstructured) {
+    if (!byEmail.has(row.email)) {
+      byEmail.set(row.email, row)
+    }
+  }
+  return [...byEmail.values()].slice(0, safeMaxRows)
 }
