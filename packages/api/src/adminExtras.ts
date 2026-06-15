@@ -7,6 +7,7 @@ import {
   evaluateSubscriptionStatusChange,
   isValidRoleName,
 } from './adminUserPolicy.js'
+import { parseCsvUserRows } from './userImportCsv.js'
 
 const PILLS_KEY_HASH_PREFIX = 'pbkdf2'
 const PILLS_KEY_HASH_LEGACY_PREFIX = 'sha256'
@@ -1122,21 +1123,6 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
   return jsonResponse({ error: 'role or subscriptionStatus is required' }, 400, corsHeaders)
 }
 
-function parseCsvEmails(csvText: string, maxEmails = 10000) {
-  const emails = new Set<string>()
-  if (!csvText) return emails
-  const safeMaxEmails = Number.isFinite(maxEmails) && maxEmails > 0 ? Math.floor(maxEmails) : 10000
-  const emailRegex = /(?:^|[\s,;'"<>()\[\]{}])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?=$|[\s,;'"<>()\[\]{}])/gi
-  const matches = csvText.matchAll(emailRegex)
-  for (const match of matches) {
-    if (emails.size >= safeMaxEmails) break
-    const lower = (match[1] || '').toLowerCase()
-    if (!lower) continue
-    emails.add(lower)
-  }
-  return emails
-}
-
 export async function handleAdminUserImportCsv(request: any, env: any, corsHeaders: any) {
   let actor
   try {
@@ -1150,6 +1136,7 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
   const body = await request.json().catch(() => null)
   const csv = typeof body?.csv === 'string' ? body.csv : ''
   const mailingListId = typeof body?.mailingListId === 'string' ? body.mailingListId.trim() : ''
+  const requirePurchaseId = body?.requirePurchaseId === true
   if (!csv.trim()) return jsonResponse({ error: 'csv is required' }, 400, corsHeaders)
   if (!mailingListId) return jsonResponse({ error: 'mailingListId is required' }, 400, corsHeaders)
 
@@ -1165,16 +1152,31 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
     ? rawImportPlan.trim()
     : 'monthly'
 
-  const emails = parseCsvEmails(csv, maxEmails)
-  if (!emails.size) {
+  const rows = parseCsvUserRows(csv, maxEmails)
+  if (!rows.length) {
     return jsonResponse({ error: 'No valid emails found in csv payload' }, 400, corsHeaders)
+  }
+  if (requirePurchaseId && rows.some((row) => !row.purchaseId)) {
+    return jsonResponse({
+      error: 'Every CSV row must include a purchaseId (or clientId) when requirePurchaseId is enabled',
+      code: 'missing_purchase_id',
+    }, 400, corsHeaders)
+  }
+
+  const purchaseIds = rows.map((row) => row.purchaseId).filter((value): value is string => Boolean(value))
+  const duplicatePurchaseIds = purchaseIds.filter((id, index) => purchaseIds.indexOf(id) !== index)
+  if (duplicatePurchaseIds.length) {
+    return jsonResponse({
+      error: `Duplicate purchase IDs in CSV: ${[...new Set(duplicatePurchaseIds)].slice(0, 5).join(', ')}`,
+      code: 'duplicate_purchase_id',
+    }, 400, corsHeaders)
   }
 
   const nowIso = new Date().toISOString()
   const actorUserId = typeof actor?.sub === 'string' ? actor.sub : 'system'
 
   // Bulk lookup existing users
-  const emailsArray = Array.from(emails)
+  const emailsArray = rows.map((row) => row.email)
   const existingUsersMap = new Map<string, string>()
 
   // Split emailsArray into chunks of 90 to avoid D1's 100-parameter limit
@@ -1201,16 +1203,32 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
   // See settings users_relink_mailing_list_id and users_relink_imported_at.
   const subUpsert = db.prepare(`
     INSERT INTO subscriptions (
-      id, user_id, plan_type, status, stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
+      id, user_id, plan_type, status, provider, stripe_subscription_id, stripe_customer_id,
+      purchase_id, current_period_end, created_at, updated_at
     )
-    VALUES (?, ?, ?, 'needs_relink', NULL, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, 'needs_relink', 'stripe', NULL, ?, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO NOTHING
+  `)
+  const subUpsertLegacy = db.prepare(`
+    INSERT INTO subscriptions (
+      id, user_id, plan_type, status, provider, stripe_subscription_id, stripe_customer_id,
+      purchase_id, current_period_end, created_at, updated_at
+    )
+    VALUES (?, ?, ?, 'needs_relink', 'legacy', NULL, ?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      provider = excluded.provider,
+      purchase_id = excluded.purchase_id,
+      status = excluded.status,
+      plan_type = excluded.plan_type,
+      updated_at = CURRENT_TIMESTAMP
   `)
 
   let imported = 0
   let existing = 0
+  let withPurchaseId = 0
   const statements = []
-  for (const email of emails) {
+  for (const row of rows) {
+    const email = row.email
     let userId = existingUsersMap.get(email)
     if (!userId) {
       userId = crypto.randomUUID()
@@ -1220,14 +1238,26 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
       existing += 1
     }
     const subscriptionId = `import-${mailingListId}-${userId}`
-    statements.push(subUpsert.bind(subscriptionId, userId, importPlan, `import-list:${mailingListId}`))
+    const importCustomerRef = `import-list:${mailingListId}`
+    if (row.purchaseId) {
+      withPurchaseId += 1
+      statements.push(subUpsertLegacy.bind(
+        subscriptionId,
+        userId,
+        importPlan,
+        importCustomerRef,
+        row.purchaseId,
+      ))
+    } else {
+      statements.push(subUpsert.bind(subscriptionId, userId, importPlan, importCustomerRef))
+    }
   }
 
   statements.push(buildAdminAuditLogStatement(db, {
     actorUserId,
     actionType: 'user_import_csv',
     targetUserId: null,
-    detail: { mailingListId, imported, existing, totalEmails: emails.size },
+    detail: { mailingListId, imported, existing, withPurchaseId, totalEmails: rows.length, requirePurchaseId },
   }))
 
   // Execute statements in chunks to avoid D1 batch size and parameter limits
@@ -1245,7 +1275,9 @@ export async function handleAdminUserImportCsv(request: any, env: any, corsHeade
     mailingListId,
     imported,
     existing,
-    totalEmails: emails.size,
+    totalEmails: rows.length,
+    withPurchaseId,
+    requirePurchaseId,
     requiresRelinkStatus: 'needs_relink',
   }, 200, corsHeaders)
 }
