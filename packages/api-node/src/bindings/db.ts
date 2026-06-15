@@ -6,6 +6,7 @@ import type { D1ExecResult, D1Result } from '@cloudflare/workers-types'
 import {
   bindQuestionMarks,
   isPostgresDuplicateObjectError,
+  splitQuestionMarks,
   translateSqliteDdl,
   translateSqliteToPostgres,
 } from './sqlDialect.js'
@@ -38,6 +39,10 @@ function metaFromRun(changes: number, lastRowId: number): D1Result['meta'] {
 }
 
 type SqlParams = Parameters<Sql['unsafe']>[1]
+
+type SqlExecResult = {
+  count: number
+} & unknown[]
 
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = []
@@ -151,20 +156,49 @@ function translateAndBind(sql: string, params: unknown[]): { text: string; value
   return { text, values: params as SqlParams }
 }
 
+function templateStringsForParams(sql: string, paramCount: number): TemplateStringsArray {
+  const parts = splitQuestionMarks(sql)
+  const placeholderCount = parts.length - 1
+  if (placeholderCount !== paramCount) {
+    throw new Error(`SQL has ${placeholderCount} ? placeholders but ${paramCount} parameters were bound`)
+  }
+  return Object.assign(parts, { raw: parts }) as unknown as TemplateStringsArray
+}
+
+/**
+ * Run translated D1 SQL on postgres.js.
+ * Parameterized queries use tagged templates — Deno Deploy's npm compat breaks on sql.unsafe(text, args).
+ */
+async function executeTranslatedSql(
+  sqlHandle: Sql,
+  translatedSql: string,
+  boundArgs: unknown[],
+): Promise<SqlExecResult> {
+  if (boundArgs.length === 0) {
+    return (await sqlHandle.unsafe(translatedSql)) as SqlExecResult
+  }
+  const strings = templateStringsForParams(translatedSql, boundArgs.length)
+  const sqlTagged = sqlHandle as unknown as (
+    strings: TemplateStringsArray,
+    ...args: unknown[]
+  ) => Promise<SqlExecResult>
+  return sqlTagged(strings, ...boundArgs)
+}
+
 async function runOnSql(
   sqlHandle: Sql,
   sourceSql: string,
   boundArgs: unknown[],
 ): Promise<{ changes: number; lastRowId: number }> {
-  const { text, values } = translateAndBind(sourceSql, boundArgs)
+  const translated = translateSqliteToPostgres(sourceSql)
   const isWrite = WRITE_SQL_RE.test(sourceSql)
 
   if (!isWrite) {
-    await sqlHandle.unsafe(text, values)
+    await executeTranslatedSql(sqlHandle, translated, boundArgs)
     return { changes: 0, lastRowId: 0 }
   }
 
-  const result = await sqlHandle.unsafe(text, values)
+  const result = await executeTranslatedSql(sqlHandle, translated, boundArgs)
   return { changes: result.count, lastRowId: 0 }
 }
 
@@ -222,8 +256,8 @@ export class PostgresPreparedStatement {
 
   private async executeRows<T>(sqlHandle?: Sql): Promise<T[]> {
     const handle = sqlHandle ?? this.dbAdapter.sql
-    const { text, values } = translateAndBind(this.sourceSql, this.boundArgs)
-    return (await handle.unsafe(text, values)) as T[]
+    const translated = translateSqliteToPostgres(this.sourceSql)
+    return (await executeTranslatedSql(handle, translated, this.boundArgs)) as unknown as T[]
   }
 }
 
@@ -372,11 +406,11 @@ export class PostgresD1Adapter {
     if (/failover_write_log/i.test(sql)) return
     const trimmed = sql.trim()
     const { text, values } = translateAndBind(trimmed, params)
-    void this.sql
-      .unsafe(`INSERT INTO failover_write_log (sql, params_json) VALUES ($1, $2)`, [
-        text,
-        JSON.stringify(values),
-      ])
+    void executeTranslatedSql(
+      this.sql,
+      'INSERT INTO failover_write_log (sql, params_json) VALUES (?, ?)',
+      [text, JSON.stringify(values)],
+    )
       .catch((err) => {
         console.error('[db] write log insert failed:', err)
       })

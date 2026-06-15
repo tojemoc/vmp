@@ -1,6 +1,19 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { bindQuestionMarks, translateSqliteToPostgres } from '../src/bindings/sqlDialect.js'
+import { bindQuestionMarks, splitQuestionMarks, translateSqliteToPostgres } from '../src/bindings/sqlDialect.js'
+
+describe('splitQuestionMarks', () => {
+  it('splits placeholders outside quoted strings', () => {
+    const parts = splitQuestionMarks(`SELECT * FROM users WHERE id = ? AND email = ?`)
+    assert.deepEqual(parts, ['SELECT * FROM users WHERE id = ', ' AND email = ', ''])
+    assert.equal(bindQuestionMarks(parts.join('?'), 2), 'SELECT * FROM users WHERE id = $1 AND email = $2')
+  })
+
+  it('ignores question marks inside string literals', () => {
+    const parts = splitQuestionMarks(`WHERE note = 'a?b' AND id = ?`)
+    assert.deepEqual(parts, [`WHERE note = 'a?b' AND id = `, ''])
+  })
+})
 
 describe('translateSqliteToPostgres datetime', () => {
   it('translates datetime(?) for replication cursors', () => {
