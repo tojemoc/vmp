@@ -24,3 +24,17 @@ describe('translateSqliteToPostgres datetime', () => {
     assert.doesNotMatch(bound, /datetime\s*\(/i)
   })
 })
+
+describe('translateSqliteToPostgres rowid', () => {
+  it('maps SQLite rowid to Postgres ctid for dedup migrations', () => {
+    const sql = `UPDATE subscriptions SET purchase_id = NULL
+WHERE purchase_id IS NOT NULL
+  AND rowid NOT IN (
+    SELECT MIN(rowid) FROM subscriptions WHERE purchase_id IS NOT NULL GROUP BY purchase_id
+  )`
+    const out = translateSqliteToPostgres(sql)
+    assert.match(out, /\bctid\b/)
+    assert.doesNotMatch(out, /\browid\b/i)
+    assert.match(out, /MIN\(ctid\)/i)
+  })
+})

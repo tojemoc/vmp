@@ -140,6 +140,9 @@ export function translateSqliteToPostgres(sql: string): string {
   // SQLite trim() accepts any type; Postgres trim/btrim is text-only (TIMESTAMPTZ → 42883).
   s = s.replace(/\btrim\s*\(\s*([^)]+)\s*\)/gi, 'btrim(($1)::text)')
 
+  // SQLite implicit rowid (e.g. migration 0029 dedup) → Postgres ctid system column.
+  s = s.replace(/\browid\b/gi, 'ctid')
+
   return s
 }
 
