@@ -61,7 +61,10 @@ function parseStructuredCsvRows(csvText: string, maxRows: number): CsvUserImport
     .filter(Boolean)
   if (!lines.length) return []
 
-  const firstCells = parseCsvLine(lines[0])
+  const firstLine = lines[0]
+  if (!firstLine) return []
+
+  const firstCells = parseCsvLine(firstLine)
   const emailIndex = firstCells.findIndex((cell) => isEmailHeader(cell))
   const purchaseIdIndex = firstCells.findIndex((cell) => isPurchaseIdHeader(cell))
   const hasHeader = emailIndex >= 0
@@ -71,7 +74,8 @@ function parseStructuredCsvRows(csvText: string, maxRows: number): CsvUserImport
     ? purchaseIdIndex
     : (firstCells.length > 1 ? 1 : -1)
 
-  if (!hasHeader && firstCells.length === 1 && !EMAIL_REGEX.test(firstCells[0])) {
+  const firstEmailCandidate = firstCells[0]
+  if (!hasHeader && firstCells.length === 1 && (!firstEmailCandidate || !EMAIL_REGEX.test(firstEmailCandidate))) {
     return []
   }
 
