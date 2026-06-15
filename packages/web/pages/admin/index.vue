@@ -992,7 +992,27 @@
           </p>
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">Mass import users from CSV</h3>
-            <p class="text-xs text-gray-500 dark:text-gray-400">Imports emails as viewer accounts and marks subscriptions as relink-required for gateway reattachment outreach.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Imports emails as viewer accounts and marks subscriptions as relink-required. For legacy eshop migration, include a
+              <code class="font-mono">purchaseId</code> or <code class="font-mono">clientId</code> column so webhooks and checkout can link the account.
+            </p>
+            <div class="rounded border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+              <p class="font-medium">Legacy eshop sandbox</p>
+              <p v-if="legacyPaymentStatusLoading">Checking worker secrets…</p>
+              <p v-else-if="legacyPaymentStatus">
+                API configured: {{ legacyPaymentStatus.configured ? 'yes' : 'no' }}
+                <span v-if="legacyPaymentStatus.merchantId"> · merchant {{ legacyPaymentStatus.merchantId }}</span>
+                <span v-if="legacyPaymentStatus.hasApiKey"> · API key set</span>
+                <span v-if="legacyPaymentStatus.hasWebhookSecret"> · webhook secret set</span>
+              </p>
+              <button
+                type="button"
+                class="text-amber-800 dark:text-amber-300 underline hover:no-underline"
+                @click="loadLegacyPaymentStatus"
+              >
+                Refresh legacy config status
+              </button>
+            </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
               <input
                 v-model="usersImportMailingListId"
@@ -1000,6 +1020,10 @@
                 placeholder="Dedicated relink mailing list ID"
                 class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
               />
+              <label class="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
+                <input v-model="usersImportRequirePurchaseId" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                Require purchaseId / clientId on every row
+              </label>
               <button
                 class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
                 :disabled="usersImporting"
@@ -1012,10 +1036,12 @@
               v-model="usersImportCsv"
               rows="6"
               class="w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-              :placeholder="`email\nuser@example.com\nsecond@example.com`"
+              :placeholder="`email,purchaseId\nuser@example.com,legacy-client-123\nsecond@example.com,legacy-client-456`"
             />
             <p v-if="usersImportResult" class="text-xs text-emerald-700 dark:text-emerald-300">
-              Imported {{ usersImportResult.imported }}, existing {{ usersImportResult.existing }}, total parsed {{ usersImportResult.totalEmails }} · list {{ usersImportResult.mailingListId }}.
+              Imported {{ usersImportResult.imported }}, existing {{ usersImportResult.existing }}, total parsed {{ usersImportResult.totalEmails }}
+              <span v-if="usersImportResult.withPurchaseId"> · {{ usersImportResult.withPurchaseId }} with legacy purchase ID</span>
+              · list {{ usersImportResult.mailingListId }}.
             </p>
           </div>
           <div class="flex flex-col lg:flex-row lg:flex-wrap gap-3 items-stretch lg:items-end">
@@ -2863,8 +2889,22 @@ const usersSubscriptionFilter = ref('all')
 let usersSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const usersImportCsv = ref('')
 const usersImportMailingListId = ref('')
+const usersImportRequirePurchaseId = ref(false)
 const usersImporting = ref(false)
-const usersImportResult = ref<{ imported: number; existing: number; totalEmails: number; mailingListId: string } | null>(null)
+const usersImportResult = ref<{
+  imported: number
+  existing: number
+  totalEmails: number
+  withPurchaseId: number
+  mailingListId: string
+} | null>(null)
+const legacyPaymentStatus = ref<{
+  configured: boolean
+  merchantId: string | null
+  hasApiKey: boolean
+  hasWebhookSecret: boolean
+} | null>(null)
+const legacyPaymentStatusLoading = ref(false)
 
 const ROLE_ORDER = ['viewer', 'moderator', 'analyst', 'editor', 'admin', 'super_admin'] as const
 function roleRank(role: string): number {
@@ -3084,6 +3124,12 @@ const analyticsCashflowRows = computed(() =>
 watch([analyticsRange, analyticsGranularity], () => {
   if (activeAdminTab.value === 'analytics') {
     void loadAnalytics()
+  }
+})
+
+watch(activeAdminTab, (tab) => {
+  if (tab === 'users' && !legacyPaymentStatus.value && !legacyPaymentStatusLoading.value) {
+    void loadLegacyPaymentStatus()
   }
 })
 /** Stable per send attempt until success — retries reuse the same key for server idempotency. */
@@ -5558,7 +5604,11 @@ const importUsersFromCsv = async () => {
     const res = await fetch(`${config.public.apiUrl}/api/admin/users/import-csv`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ csv, mailingListId }),
+      body: JSON.stringify({
+        csv,
+        mailingListId,
+        requirePurchaseId: usersImportRequirePurchaseId.value,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
@@ -5566,6 +5616,7 @@ const importUsersFromCsv = async () => {
       imported: Number(data.imported || 0),
       existing: Number(data.existing || 0),
       totalEmails: Number(data.totalEmails || 0),
+      withPurchaseId: Number(data.withPurchaseId || 0),
       mailingListId: String(data.mailingListId || mailingListId),
     }
     showToast('success', 'CSV users imported successfully.')
@@ -5574,6 +5625,29 @@ const importUsersFromCsv = async () => {
     showToast('error', `CSV import failed: ${e.message}`)
   } finally {
     usersImporting.value = false
+  }
+}
+
+const loadLegacyPaymentStatus = async () => {
+  if (!isAdmin.value) return
+  legacyPaymentStatusLoading.value = true
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/legacy`, {
+      headers: { ...authHeader() },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    legacyPaymentStatus.value = {
+      configured: Boolean(data.configured),
+      merchantId: typeof data.merchantId === 'string' ? data.merchantId : null,
+      hasApiKey: Boolean(data.hasApiKey),
+      hasWebhookSecret: Boolean(data.hasWebhookSecret),
+    }
+  } catch (e: any) {
+    legacyPaymentStatus.value = null
+    showToast('error', `Legacy payment status: ${e.message}`)
+  } finally {
+    legacyPaymentStatusLoading.value = false
   }
 }
 
