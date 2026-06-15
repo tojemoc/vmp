@@ -1165,7 +1165,7 @@
 
         <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Video retention, views over time, traffic sources, subscription trends, and cashflow estimates. Audience analytics run via Google Tag Manager.</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400">Playback starts, watch time, retention heatmaps, country breakdown, traffic sources, and subscription trends — modeled after industry stream analytics (views per session, cumulative watch time, engagement score).</p>
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">View counting strategy</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1202,6 +1202,7 @@
                 class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
                 @change="loadAnalytics"
               >
+                <option value="hour">Hourly</option>
                 <option value="day">Daily</option>
                 <option value="week">Weekly</option>
                 <option value="month">Monthly</option>
@@ -1235,13 +1236,29 @@
               type="button"
               class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
               :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('watchtime')"
+            >
+              {{ analyticsExporting === 'watchtime' ? 'Exporting…' : 'Export watch time CSV' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('countries')"
+            >
+              {{ analyticsExporting === 'countries' ? 'Exporting…' : 'Export countries CSV' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
               @click="exportAnalytics('retention')"
             >
               {{ analyticsExporting === 'retention' ? 'Exporting…' : 'Export retention CSV' }}
             </button>
           </div>
           <p v-if="analyticsError" class="text-sm text-red-600 dark:text-red-400">{{ analyticsError }}</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" v-for="item in analyticsKpiCards" :key="item.key">
               <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.label }}</p>
               <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ item.value }}</p>
@@ -1251,12 +1268,24 @@
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views over time</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Playback starts per UTC interval (one per viewer session per video).</p>
               <AdminLineChart
                 v-if="analyticsViewsLineChartPoints.length"
                 :points="analyticsViewsLineChartPoints"
                 aria-label="Views over time line chart"
               />
               <p v-else class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Watch time over time</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Cumulative seconds watched per interval; rewatches add to the total.</p>
+              <AdminLineChart
+                v-if="analyticsWatchTimeLineChartPoints.length"
+                :points="analyticsWatchTimeLineChartPoints"
+                stroke-class="stroke-emerald-500 text-emerald-500"
+                aria-label="Watch time over time line chart"
+              />
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">No watch time for selected range.</p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic source split</h3>
@@ -1273,18 +1302,62 @@
                 <p v-if="!analyticsTrafficChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No source events for selected range.</p>
               </div>
             </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views by country</h3>
+              <div class="space-y-2">
+                <div v-for="row in analyticsCountryViewsChartRows" :key="`cv-${row.country}`" class="space-y-1">
+                  <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                    <span>{{ row.country }}</span>
+                    <span>{{ row.value }}</span>
+                  </div>
+                  <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
+                    <div class="h-2 rounded bg-sky-500" :style="{ width: `${row.percent}%` }"></div>
+                  </div>
+                </div>
+                <p v-if="!analyticsCountryViewsChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No country data yet (requires CF-IPCountry on segment requests).</p>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+            <div class="flex flex-wrap items-end gap-3 justify-between">
+              <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white">Engagement heatmap</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Timeline attention for one video — brighter segments were watched or rewatched more.</p>
+              </div>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block min-w-[16rem]">
+                Video
+                <select
+                  v-model="analyticsHeatmapVideoId"
+                  class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  @change="loadAnalytics"
+                >
+                  <option value="">Select a published video…</option>
+                  <option v-for="row in analyticsVideoStatsRows" :key="`hm-opt-${row.videoId}`" :value="row.videoId">
+                    {{ row.title || row.videoId }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <AdminHeatmap
+              v-if="analyticsHeatmapBuckets.length"
+              :buckets="analyticsHeatmapBuckets"
+              aria-label="Video engagement heatmap by timeline position"
+            />
+            <p v-else class="text-sm text-gray-500 dark:text-gray-400">Select a video to load its heatmap for the current range.</p>
           </div>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 xl:col-span-2">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Published videos</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Average max watch-through per qualified session. Videos without duration are excluded from retention averages.</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Per-video playback starts, watch time, retention, and engagement score (0–100).</p>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                   <thead>
                     <tr class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                       <th class="py-2 pr-4">Title</th>
                       <th class="py-2 pr-4">Views</th>
+                      <th class="py-2 pr-4">Watch time</th>
                       <th class="py-2 pr-4">Avg retention</th>
+                      <th class="py-2 pr-4">Engagement</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1293,10 +1366,12 @@
                         <a :href="videoWatchHref(row)" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">{{ row.title || row.videoId }}</a>
                       </td>
                       <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ row.viewCount }}</td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatWatchSeconds(row.totalWatchSeconds) }}</td>
                       <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatVideoRetention(row.averageRetentionPercent) }}</td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatEngagementScore(row.engagementScore) }}</td>
                     </tr>
                     <tr v-if="!analyticsVideoStatsRows.length">
-                      <td colspan="3" class="py-3 text-gray-500 dark:text-gray-400">No published videos.</td>
+                      <td colspan="5" class="py-3 text-gray-500 dark:text-gray-400">No published videos.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2394,12 +2469,13 @@ type LeafBlockType = 'featured_row' | 'category' | 'top_video'
 type LayoutBlock = HomepageLayoutBlock
 
 type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d'
-type AnalyticsGranularity = 'day' | 'week' | 'month'
-type AnalyticsDataset = 'all' | 'overview' | 'views' | 'retention' | 'sources' | 'subscriptions' | 'cashflow'
+type AnalyticsGranularity = 'hour' | 'day' | 'week' | 'month'
+type AnalyticsDataset = 'all' | 'overview' | 'views' | 'watchtime' | 'retention' | 'sources' | 'countries' | 'subscriptions' | 'cashflow'
 
 interface AnalyticsSeriesPoint {
   bucket: string
   uniqueSessions?: number
+  totalWatchSeconds?: number
   newSubscriptions?: number
   churnedSubscriptions?: number
   expiringSubscriptions?: number
@@ -2411,12 +2487,16 @@ interface AnalyticsResponse {
   meta?: {
     range?: AnalyticsRange
     granularity?: AnalyticsGranularity
+    videoId?: string | null
     generatedAt?: string
     startAt?: string
     endAt?: string
   }
   kpis?: {
     totalUniqueViews?: number
+    totalWatchSeconds?: number
+    totalWatchTimeLabel?: string
+    segmentRequests?: number
     averageRetentionPercent?: number
     activeSubscribers?: number
     churnRatePercent?: number
@@ -2427,6 +2507,21 @@ interface AnalyticsResponse {
     totalUniqueSessions?: number
     series?: AnalyticsSeriesPoint[]
   }
+  watchTime?: {
+    totalSeconds?: number
+    totalLabel?: string
+    series?: AnalyticsSeriesPoint[]
+  }
+  countries?: {
+    views?: Array<{ country: string, uniqueSessions: number }>
+    watchTime?: Array<{ country: string, totalWatchSeconds: number }>
+  }
+  heatmap?: {
+    videoId: string
+    bucketCount: number
+    maxWatchSeconds: number
+    buckets: Array<{ positionPercent: number, watchSeconds: number, segmentHits: number }>
+  } | null
   trafficSources?: Array<{ source: string, unique_sessions?: number, hits?: number }>
   videoStats?: Array<{
     videoId: string
@@ -2434,7 +2529,9 @@ interface AnalyticsResponse {
     slug: string | null
     publishedAt: string | null
     viewCount: number
+    totalWatchSeconds?: number
     averageRetentionPercent: number | null
+    engagementScore?: number | null
   }>
   subscriptions?: Array<{ status: string, count: number }>
   subscriptionOverview?: {
@@ -2827,6 +2924,7 @@ const analytics = ref<AnalyticsResponse>({
 const analyticsExporting = ref<AnalyticsDataset | null>(null)
 const analyticsSettingsSaving = ref(false)
 const analyticsSettingsInitialized = ref(false)
+const analyticsHeatmapVideoId = ref('')
 const analyticsViewCounting = ref({
   minSegmentsPerSession: 1,
   minWatchSeconds: 15,
@@ -2855,10 +2953,18 @@ const analyticsStatusRows = computed(() => {
   return []
 })
 
-function formatMetricValue(key: string, value: number | undefined) {
+function formatMetricValue(key: string, value: number | string | undefined) {
+  if (key === 'totalWatchTimeLabel' && typeof value === 'string') return value
   const numeric = Number(value ?? 0)
   if (key === 'estimatedActiveMrrEur') return `€${numeric.toFixed(2)}`
   if (key.toLowerCase().includes('percent') || key === 'churnRatePercent') return `${numeric.toFixed(2)}%`
+  if (key === 'totalWatchSeconds') {
+    const seconds = Math.max(0, Math.round(numeric))
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.round((seconds % 3600) / 60)
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
+  }
   return String(Math.round(numeric))
 }
 
@@ -2866,7 +2972,9 @@ const analyticsKpiCards = computed(() => {
   const kpis = analytics.value.kpis ?? {}
   const defs = analytics.value.definitions ?? {}
   return [
-    { key: 'totalUniqueViews', label: 'Unique views', value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews), help: defs.totalUniqueViews || 'Distinct sessions in selected range.' },
+    { key: 'totalUniqueViews', label: 'Playback starts', value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews), help: defs.totalUniqueViews || 'One per viewer session per video.' },
+    { key: 'totalWatchTimeLabel', label: 'Total watch time', value: formatMetricValue('totalWatchTimeLabel', kpis.totalWatchTimeLabel || formatMetricValue('totalWatchSeconds', kpis.totalWatchSeconds)), help: defs.totalWatchSeconds || 'Cumulative seconds watched.' },
+    { key: 'segmentRequests', label: 'Segment requests', value: formatMetricValue('segmentRequests', kpis.segmentRequests), help: defs.segmentRequests || 'HLS segment requests served.' },
     { key: 'averageRetentionPercent', label: 'Avg retention', value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent), help: defs.averageRetentionPercent || 'Average max watch-through across qualified sessions.' },
     { key: 'activeSubscribers', label: 'Active subscribers', value: formatMetricValue('activeSubscribers', kpis.activeSubscribers), help: defs.activeSubscribers || 'Latest active/trialing subscription rows.' },
     { key: 'churnRatePercent', label: 'Churn rate', value: formatMetricValue('churnRatePercent', kpis.churnRatePercent), help: defs.churnRatePercent || 'Churned divided by new subscriptions.' },
@@ -2885,6 +2993,24 @@ const analyticsViewsLineChartPoints = computed(() =>
     value: Number(row.uniqueSessions || 0),
   })),
 )
+
+const analyticsWatchTimeLineChartPoints = computed(() =>
+  (analytics.value.watchTime?.series ?? []).map((row) => ({
+    label: String(row.bucket),
+    value: Number(row.totalWatchSeconds || 0),
+  })),
+)
+
+const analyticsCountryViewsChartRows = computed(() => {
+  const rows = (analytics.value.countries?.views ?? []).map((row) => ({
+    country: row.country,
+    value: Number(row.uniqueSessions || 0),
+  }))
+  const norm = normalizeChartRows(rows.map((row) => row.value))
+  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
+})
+
+const analyticsHeatmapBuckets = computed(() => analytics.value.heatmap?.buckets ?? [])
 
 const analyticsViewsSeriesChartRows = computed(() => {
   const rows = (analytics.value.views?.series ?? []).map((row) => ({ bucket: String(row.bucket), value: Number(row.uniqueSessions || 0) }))
@@ -2907,9 +3033,26 @@ const analyticsVideoStatsRows = computed(() =>
     title: row.title,
     slug: row.slug,
     viewCount: Number(row.viewCount || 0),
+    totalWatchSeconds: Number(row.totalWatchSeconds || 0),
     averageRetentionPercent: row.averageRetentionPercent,
+    engagementScore: row.engagementScore ?? null,
   })),
 )
+
+function formatWatchSeconds(value: number | null | undefined) {
+  const seconds = Math.max(0, Math.round(Number(value || 0)))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remMinutes = minutes % 60
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`
+}
+
+function formatEngagementScore(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return '—'
+  return String(Math.round(Number(value)))
+}
 
 function formatVideoRetention(value: number | null | undefined) {
   if (value == null || !Number.isFinite(Number(value))) return '—'
@@ -4599,6 +4742,9 @@ const loadAnalytics = async () => {
       dataset: 'all',
       format: 'json',
     })
+    if (analyticsHeatmapVideoId.value) {
+      params.set('videoId', analyticsHeatmapVideoId.value)
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, { headers: authHeader() })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)

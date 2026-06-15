@@ -5,9 +5,32 @@ import {
   buildSegmentAnalyticsSnapshotWithOptions,
   buildSegmentSessionKey,
   classifySegmentSource,
+  computeEngagementScore,
   derivePlaybackPositionSeconds,
   logSegmentEvent,
+  normalizeCountryCode,
 } from '../src/adminExtras.js'
+
+describe('country code normalization', () => {
+  it('accepts valid ISO country codes', () => {
+    assert.equal(normalizeCountryCode('sk'), 'SK')
+    assert.equal(normalizeCountryCode(' CZ '), 'CZ')
+  })
+
+  it('rejects unknown or invalid country codes', () => {
+    assert.equal(normalizeCountryCode('XX'), null)
+    assert.equal(normalizeCountryCode('T1'), null)
+    assert.equal(normalizeCountryCode(''), null)
+    assert.equal(normalizeCountryCode('USA'), null)
+  })
+})
+
+describe('engagement score', () => {
+  it('weights retention and completion', () => {
+    assert.equal(computeEngagementScore(80, 40), 70)
+    assert.equal(computeEngagementScore(null, 40), null)
+  })
+})
 
 describe('segment analytics source classification', () => {
   it('classifies campaign from UTM params', () => {
@@ -130,27 +153,35 @@ describe('segment analytics persistence + snapshot', () => {
       segmentDurationSeconds: 6,
       referer: 'https://news.example.com/post?utm_source=launch&utm_medium=social',
       ipHash: 'hash123',
+      countryCode: 'SK',
       timestampMs: 1_700_000_000_000,
     })
-    assert.equal(captured.length, 1)
-    const args = captured[0]?.args || []
+    assert.ok(captured.length >= 1)
+    const insert = captured.find((entry) => String(entry.sql).includes('INSERT INTO video_segment_events'))
+    const args = insert?.args || []
     assert.equal(args[5], 12)
     assert.equal(args[10], 6)
     assert.equal(args[11], 72)
     assert.equal(args[13], 'campaign')
     assert.equal(args[15], 'launch')
     assert.equal(args[16], 'social')
+    assert.equal(args[17], 'SK')
     assert.match(String(args[12]), /^video-1:i:hash123:/)
   })
 
   it('builds analytics snapshot from session-based aggregations', async () => {
     const db = buildDbStub([
-      { match: 'AS total', response: { first: { total: 4 } } },
+      { match: 'COUNT(DISTINCT session_id) AS total', response: { first: { total: 4 } } },
       { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'search', unique_sessions: 3 }, { source: 'direct', unique_sessions: 1 }] } } },
       { match: 'SELECT AVG(session_retention_pct) AS average_retention_percent', response: { first: { average_retention_percent: 55.5 } } },
-      { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: 'test', published_at: '2026-01-01', view_count: 2, average_retention_percent: 55.5 }] } } },
+      { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: 'test', published_at: '2026-01-01', full_duration: 100, view_count: 2, average_retention_percent: 55.5, completion_rate_percent: 20, total_watch_seconds: 300 }] } } },
       { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 5 }] } } },
-      { match: 'AS unique_sessions\n      FROM session_rollup', response: { all: { results: [] } } },
+      { match: 'SELECT\n        bucket,\n        COUNT(DISTINCT session_id) AS unique_sessions', response: { all: { results: [] } } },
+      { match: 'AS bucket,\n        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds', response: { all: { results: [{ bucket: '2026-04-01', total_watch_seconds: 600 }] } } },
+      { match: 'SELECT SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds\n      FROM video_segment_events\n      WHERE event_type = \'segment\'\n        AND datetime(created_at) >= datetime(?)', response: { first: { total_watch_seconds: 1200 } } },
+      { match: 'SELECT COUNT(*) AS total\n      FROM video_segment_events', response: { first: { total: 42 } } },
+      { match: 'SELECT\n        country_code AS country,\n        COUNT(DISTINCT session_id) AS unique_sessions', response: { all: { results: [{ country: 'SK', unique_sessions: 2 }] } } },
+      { match: 'SELECT\n        country_code AS country,\n        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds', response: { all: { results: [{ country: 'SK', total_watch_seconds: 900 }] } } },
       { match: 'AS new_subscriptions', response: { all: { results: [] } } },
       { match: 'AS churned_subscriptions', response: { all: { results: [] } } },
       { match: 'AS expiring_subscriptions', response: { all: { results: [] } } },
@@ -161,18 +192,26 @@ describe('segment analytics persistence + snapshot', () => {
     assert.equal(snapshot.trafficSources[0].source, 'search')
     assert.equal(snapshot.kpis.averageRetentionPercent, 55.5)
     assert.equal(snapshot.videoStats[0].videoId, 'video-1')
+    assert.equal(snapshot.videoStats[0].engagementScore, 47)
+    assert.equal(snapshot.watchTime.totalSeconds, 1200)
+    assert.equal(snapshot.countries.views[0].country, 'SK')
     assert.equal(snapshot.subscriptionsLegacy[0].status, 'active')
   })
 
   it('builds analytics snapshot with time-series options and overview sections', async () => {
     const env = {
       DB: buildDbStub([
-        { match: 'AS total', response: { first: { total: 9 } } },
+        { match: 'COUNT(DISTINCT session_id) AS total', response: { first: { total: 9 } } },
         { match: 'COALESCE(source_category', response: { all: { results: [{ source: 'social', unique_sessions: 5 }] } } },
         { match: 'SELECT AVG(session_retention_pct) AS average_retention_percent', response: { first: { average_retention_percent: 42 } } },
-        { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: null, published_at: null, view_count: 4, average_retention_percent: 42 }] } } },
+        { match: 'per_video AS', response: { all: { results: [{ video_id: 'video-1', title: 'Test', slug: null, published_at: null, full_duration: 100, view_count: 4, average_retention_percent: 42, completion_rate_percent: 10, total_watch_seconds: 500 }] } } },
         { match: 'SELECT COALESCE(status, ', response: { all: { results: [{ status: 'active', count: 8 }] } } },
-        { match: 'AS unique_sessions\n      FROM session_rollup', response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 3 }] } } },
+        { match: 'SELECT\n        bucket,\n        COUNT(DISTINCT session_id) AS unique_sessions', response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 3 }] } } },
+        { match: 'AS bucket,\n        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds', response: { all: { results: [{ bucket: '2026-04-01', total_watch_seconds: 800 }] } } },
+        { match: 'SELECT SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds\n      FROM video_segment_events\n      WHERE event_type = \'segment\'\n        AND datetime(created_at) >= datetime(?)', response: { first: { total_watch_seconds: 2400 } } },
+        { match: 'SELECT COUNT(*) AS total\n      FROM video_segment_events', response: { first: { total: 99 } } },
+        { match: 'SELECT\n        country_code AS country,\n        COUNT(DISTINCT session_id) AS unique_sessions', response: { all: { results: [{ country: 'CZ', unique_sessions: 1 }] } } },
+        { match: 'SELECT\n        country_code AS country,\n        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds', response: { all: { results: [{ country: 'CZ', total_watch_seconds: 700 }] } } },
         { match: 'AS new_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', new_subscriptions: 2 }] } } },
         { match: 'AS churned_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', churned_subscriptions: 1 }] } } },
         { match: 'AS expiring_subscriptions', response: { all: { results: [{ bucket: '2026-04-01', expiring_subscriptions: 1 }] } } },
@@ -191,10 +230,14 @@ describe('segment analytics persistence + snapshot', () => {
       granularity: 'day',
       dataset: 'all',
       format: 'json',
+      videoId: null,
     })
     assert.equal(snapshot.kpis.totalUniqueViews, 9)
+    assert.equal(snapshot.kpis.totalWatchSeconds, 2400)
+    assert.equal(snapshot.kpis.segmentRequests, 99)
     assert.equal(snapshot.trafficSources[0].source, 'social')
     assert.equal(snapshot.views.series[0].bucket, '2026-04-01')
+    assert.equal(snapshot.watchTime.series[0].totalWatchSeconds, 800)
     assert.equal(snapshot.subscriptionOverview.statusBreakdown[0].status, 'active')
     assert.equal(snapshot.subscriptionOverview.trends[0].newSubscriptions, 2)
     assert.equal(snapshot.cashflow.trend[0].estimatedNetNewEur, 12)

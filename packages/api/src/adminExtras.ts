@@ -1324,12 +1324,13 @@ export async function buildSegmentAnalyticsSnapshot(db: any) {
     granularity: 'day',
     dataset: 'all',
     format: 'json',
+    videoId: null,
   })
 }
 
 type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d'
-type AnalyticsGranularity = 'day' | 'week' | 'month'
-type AnalyticsDataset = 'all' | 'overview' | 'views' | 'retention' | 'sources' | 'subscriptions' | 'cashflow'
+type AnalyticsGranularity = 'hour' | 'day' | 'week' | 'month'
+type AnalyticsDataset = 'all' | 'overview' | 'views' | 'watchtime' | 'retention' | 'sources' | 'countries' | 'subscriptions' | 'cashflow'
 type AnalyticsFormat = 'json' | 'csv'
 
 interface AnalyticsQueryOptions {
@@ -1337,6 +1338,7 @@ interface AnalyticsQueryOptions {
   granularity: AnalyticsGranularity
   dataset: AnalyticsDataset
   format: AnalyticsFormat
+  videoId: string | null
 }
 
 function parseAnalyticsQuery(url: URL): { options: AnalyticsQueryOptions, error?: string } {
@@ -1344,20 +1346,22 @@ function parseAnalyticsQuery(url: URL): { options: AnalyticsQueryOptions, error?
   const granularity = (url.searchParams.get('granularity') || 'day') as AnalyticsGranularity
   const dataset = (url.searchParams.get('dataset') || 'all') as AnalyticsDataset
   const format = (url.searchParams.get('format') || 'json') as AnalyticsFormat
+  const videoIdRaw = url.searchParams.get('videoId')
+  const videoId = typeof videoIdRaw === 'string' && videoIdRaw.trim() ? videoIdRaw.trim() : null
 
   const ranges: AnalyticsRange[] = ['7d', '30d', '90d', '180d', '365d']
-  const granularities: AnalyticsGranularity[] = ['day', 'week', 'month']
-  const datasets: AnalyticsDataset[] = ['all', 'overview', 'views', 'retention', 'sources', 'subscriptions', 'cashflow']
+  const granularities: AnalyticsGranularity[] = ['hour', 'day', 'week', 'month']
+  const datasets: AnalyticsDataset[] = ['all', 'overview', 'views', 'watchtime', 'retention', 'sources', 'countries', 'subscriptions', 'cashflow']
   const formats: AnalyticsFormat[] = ['json', 'csv']
 
   if (!ranges.includes(range)) return { options: fallbackAnalyticsOptions(), error: 'range must be one of 7d, 30d, 90d, 180d, 365d' }
-  if (!granularities.includes(granularity)) return { options: fallbackAnalyticsOptions(), error: 'granularity must be one of day, week, month' }
-  if (!datasets.includes(dataset)) return { options: fallbackAnalyticsOptions(), error: 'dataset must be one of all, overview, views, retention, sources, subscriptions, cashflow' }
+  if (!granularities.includes(granularity)) return { options: fallbackAnalyticsOptions(), error: 'granularity must be one of hour, day, week, month' }
+  if (!datasets.includes(dataset)) return { options: fallbackAnalyticsOptions(), error: 'dataset must be one of all, overview, views, watchtime, retention, sources, countries, subscriptions, cashflow' }
   if (!formats.includes(format)) return { options: fallbackAnalyticsOptions(), error: 'format must be json or csv' }
   if (format === 'csv' && dataset === 'all') {
     return { options: fallbackAnalyticsOptions(), error: 'dataset must be specified when format=csv' }
   }
-  return { options: { range, granularity, dataset, format } }
+  return { options: { range, granularity, dataset, format, videoId } }
 }
 
 function fallbackAnalyticsOptions(): AnalyticsQueryOptions {
@@ -1366,6 +1370,7 @@ function fallbackAnalyticsOptions(): AnalyticsQueryOptions {
     granularity: 'day',
     dataset: 'all',
     format: 'json',
+    videoId: null,
   }
 }
 
@@ -1378,9 +1383,56 @@ function daysForRange(range: AnalyticsRange) {
 }
 
 function bucketExpr(column: string, granularity: AnalyticsGranularity) {
+  if (granularity === 'hour') return `strftime('%Y-%m-%d %H:00', datetime(${column}))`
   if (granularity === 'week') return `strftime('%Y-W%W', datetime(${column}))`
   if (granularity === 'month') return `strftime('%Y-%m', datetime(${column}))`
   return `date(datetime(${column}))`
+}
+
+const INVALID_COUNTRY_CODES = new Set(['', 'XX', 'T1'])
+
+export function normalizeCountryCode(raw: unknown) {
+  if (typeof raw !== 'string') return null
+  const code = raw.trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code) || INVALID_COUNTRY_CODES.has(code)) return null
+  return code
+}
+
+export function computeEngagementScore(averageRetentionPercent: number | null, completionRatePercent: number | null) {
+  if (averageRetentionPercent == null) return null
+  const retention = Math.max(0, Math.min(100, averageRetentionPercent))
+  const completion = completionRatePercent == null ? 0 : Math.max(0, Math.min(100, completionRatePercent))
+  return Math.round(Math.min(100, retention * 0.75 + completion * 0.25))
+}
+
+function formatWatchSeconds(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remMinutes = minutes % 60
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`
+}
+
+function buildHeatmapSeries(rows: Array<{ bucket_pct: number, watch_seconds: number, segment_hits: number }>, bucketCount = 100) {
+  const byBucket = new Map<number, { watchSeconds: number, segmentHits: number }>()
+  for (const row of rows) {
+    const bucket = Number(row.bucket_pct)
+    if (!Number.isFinite(bucket) || bucket < 0 || bucket >= bucketCount) continue
+    const current = byBucket.get(bucket) || { watchSeconds: 0, segmentHits: 0 }
+    current.watchSeconds += Number(row.watch_seconds || 0)
+    current.segmentHits += Number(row.segment_hits || 0)
+    byBucket.set(bucket, current)
+  }
+  return Array.from({ length: bucketCount }, (_, bucketPct) => {
+    const entry = byBucket.get(bucketPct)
+    return {
+      positionPercent: bucketPct,
+      watchSeconds: Number((entry?.watchSeconds ?? 0).toFixed(2)),
+      segmentHits: entry?.segmentHits ?? 0,
+    }
+  })
 }
 
 function parseNumericSetting(raw: unknown, fallbackValue: number) {
@@ -1472,7 +1524,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const minSegmentsPerView = parseNonNegativeInt(minSegmentsRaw, 1)
   const minWatchSecondsPerView = parseNonNegativeInt(minWatchSecondsRaw, 15)
 
-  const [views, sourceRows, globalRetentionRow, videoStatsRows, subsStatusRows, viewsSeriesRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
+  const [views, sourceRows, globalRetentionRow, videoStatsRows, subsStatusRows, viewsSeriesRows, watchTimeTotalRow, watchTimeSeriesRows, segmentRequestsRow, countryViewsRows, countryWatchTimeRows, subscriptionNewRows, subscriptionChurnRows, subscriptionExpiringRows, planBreakdownRows] = await Promise.all([
     db.prepare(`
       WITH session_rollup AS (
         SELECT
@@ -1523,8 +1575,24 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
         SELECT
           video_id,
           COUNT(DISTINCT session_id) AS view_count,
-          AVG(session_retention_pct) AS average_retention_percent
+          AVG(session_retention_pct) AS average_retention_percent,
+          AVG(CASE WHEN session_retention_pct >= 90 THEN 100.0 ELSE 0.0 END) AS completion_rate_percent,
+          SUM(
+            CASE
+              WHEN session_retention_pct IS NULL THEN 0
+              ELSE session_retention_pct
+            END
+          ) AS retention_score_sum
         FROM session_retention
+        GROUP BY video_id
+      ),
+      watch_time AS (
+        SELECT
+          video_id,
+          SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
         GROUP BY video_id
       )
       SELECT
@@ -1532,13 +1600,17 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
         v.title AS title,
         v.slug AS slug,
         v.published_at AS published_at,
+        v.full_duration AS full_duration,
         COALESCE(pv.view_count, 0) AS view_count,
-        pv.average_retention_percent AS average_retention_percent
+        pv.average_retention_percent AS average_retention_percent,
+        pv.completion_rate_percent AS completion_rate_percent,
+        COALESCE(wt.total_watch_seconds, 0) AS total_watch_seconds
       FROM videos v
       LEFT JOIN per_video pv ON pv.video_id = v.id
+      LEFT JOIN watch_time wt ON wt.video_id = v.id
       WHERE v.publish_status = 'published'
       ORDER BY view_count DESC, title ASC
-    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView, startAt).all(),
     db.prepare(`
       WITH latest_subscription AS (
         SELECT s.*
@@ -1575,6 +1647,77 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       GROUP BY bucket
       ORDER BY bucket ASC
     `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
+    db.prepare(`
+      SELECT SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds
+      FROM video_segment_events
+      WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
+    `).bind(startAt).first(),
+    db.prepare(`
+      SELECT
+        ${bucketByCreated} AS bucket,
+        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds
+      FROM video_segment_events
+      WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `).bind(startAt).all(),
+    db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM video_segment_events
+      WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
+    `).bind(startAt).first(),
+    db.prepare(`
+      WITH base AS (
+        SELECT
+          ${sessionExpr} AS session_id,
+          video_id,
+          country_code,
+          playback_position_seconds,
+          position_seconds,
+          created_at,
+          ROW_NUMBER() OVER (PARTITION BY ${sessionExpr}, video_id ORDER BY datetime(created_at) ASC) AS event_rank
+        FROM video_segment_events
+        WHERE event_type = 'segment'
+          AND datetime(created_at) >= datetime(?)
+      ),
+      session_rollup AS (
+        SELECT
+          session_id,
+          video_id,
+          MAX(CASE WHEN event_rank = 1 THEN country_code END) AS country_code,
+          COUNT(*) AS segment_hits,
+          MAX(COALESCE(playback_position_seconds, position_seconds, 0)) AS max_watch_seconds
+        FROM base
+        GROUP BY session_id, video_id
+      )
+      SELECT
+        country_code AS country,
+        COUNT(DISTINCT session_id) AS unique_sessions
+      FROM session_rollup
+      WHERE segment_hits >= ?
+        AND max_watch_seconds >= ?
+        AND country_code IS NOT NULL
+        AND country_code NOT IN ('XX', 'T1', '')
+      GROUP BY country_code
+      ORDER BY unique_sessions DESC
+      LIMIT 20
+    `).bind(startAt, minSegmentsPerView, minWatchSecondsPerView).all(),
+    db.prepare(`
+      SELECT
+        country_code AS country,
+        SUM(COALESCE(segment_duration_seconds, 6)) AS total_watch_seconds
+      FROM video_segment_events
+      WHERE event_type = 'segment'
+        AND datetime(created_at) >= datetime(?)
+        AND country_code IS NOT NULL
+        AND country_code NOT IN ('XX', 'T1', '')
+      GROUP BY country_code
+      ORDER BY total_watch_seconds DESC
+      LIMIT 20
+    `).bind(startAt).all(),
     db.prepare(`
       SELECT
         ${bucketByCreated} AS bucket,
@@ -1629,6 +1772,73 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       uniqueSessions: Number(row.unique_sessions || 0),
     }))
     : []
+
+  const watchTimeSeries = Array.isArray(watchTimeSeriesRows?.results)
+    ? watchTimeSeriesRows.results.map((row: any) => ({
+      bucket: String(row.bucket),
+      totalWatchSeconds: Number(row.total_watch_seconds || 0),
+    }))
+    : []
+
+  const totalWatchSeconds = Number(watchTimeTotalRow?.total_watch_seconds || 0)
+  const segmentRequests = Number(segmentRequestsRow?.total || 0)
+
+  const countryViews = (countryViewsRows?.results ?? []).map((row: any) => ({
+    country: String(row.country),
+    uniqueSessions: Number(row.unique_sessions || 0),
+  }))
+
+  const countryWatchTime = (countryWatchTimeRows?.results ?? []).map((row: any) => ({
+    country: String(row.country),
+    totalWatchSeconds: Number(row.total_watch_seconds || 0),
+  }))
+
+  let heatmap: {
+    videoId: string
+    bucketCount: number
+    buckets: ReturnType<typeof buildHeatmapSeries>
+    maxWatchSeconds: number
+  } | null = null
+  if (options.videoId) {
+    const heatmapRows = await db.prepare(`
+      WITH events AS (
+        SELECT
+          e.playback_position_seconds,
+          e.position_seconds,
+          e.segment_duration_seconds,
+          v.full_duration
+        FROM video_segment_events e
+        INNER JOIN videos v ON v.id = e.video_id
+        WHERE e.event_type = 'segment'
+          AND e.video_id = ?
+          AND datetime(e.created_at) >= datetime(?)
+      )
+      SELECT
+        CASE
+          WHEN full_duration IS NULL OR full_duration <= 0 THEN NULL
+          WHEN playback_position_seconds IS NOT NULL THEN MIN(99, MAX(0, CAST(playback_position_seconds * 100.0 / full_duration AS INTEGER)))
+          WHEN position_seconds IS NOT NULL THEN MIN(99, MAX(0, CAST(position_seconds * 100.0 / full_duration AS INTEGER)))
+          ELSE NULL
+        END AS bucket_pct,
+        SUM(COALESCE(segment_duration_seconds, 6)) AS watch_seconds,
+        COUNT(*) AS segment_hits
+      FROM events
+      GROUP BY bucket_pct
+      HAVING bucket_pct IS NOT NULL
+      ORDER BY bucket_pct ASC
+    `).bind(options.videoId, startAt).all()
+    const buckets = buildHeatmapSeries((heatmapRows?.results ?? []).map((row: any) => ({
+      bucket_pct: Number(row.bucket_pct),
+      watch_seconds: Number(row.watch_seconds || 0),
+      segment_hits: Number(row.segment_hits || 0),
+    })))
+    heatmap = {
+      videoId: options.videoId,
+      bucketCount: buckets.length,
+      buckets,
+      maxWatchSeconds: buckets.reduce((max, bucket) => Math.max(max, bucket.watchSeconds), 0),
+    }
+  }
 
   const subscriptionTrendsMap = new Map<string, { bucket: string, newSubscriptions: number, churnedSubscriptions: number, expiringSubscriptions: number }>()
   for (const row of (subscriptionNewRows?.results ?? [])) {
@@ -1693,19 +1903,31 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   const churnRate = totalNewSubscriptions > 0 ? Number(((totalChurnedSubscriptions / totalNewSubscriptions) * 100).toFixed(2)) : 0
   const averageRetentionPercent = Number(Number(globalRetentionRow?.average_retention_percent ?? 0).toFixed(2))
 
-  const videoStats = (videoStatsRows?.results ?? []).map((row: any) => ({
-    videoId: String(row.video_id),
-    title: String(row.title ?? ''),
-    slug: row.slug ? String(row.slug) : null,
-    publishedAt: row.published_at ? String(row.published_at) : null,
-    viewCount: Number(row.view_count || 0),
-    averageRetentionPercent: row.average_retention_percent == null
+  const videoStats = (videoStatsRows?.results ?? []).map((row: any) => {
+    const averageRetentionPercent = row.average_retention_percent == null
       ? null
-      : Number(Number(row.average_retention_percent).toFixed(2)),
-  }))
+      : Number(Number(row.average_retention_percent).toFixed(2))
+    const completionRatePercent = row.completion_rate_percent == null
+      ? null
+      : Number(Number(row.completion_rate_percent).toFixed(2))
+    return {
+      videoId: String(row.video_id),
+      title: String(row.title ?? ''),
+      slug: row.slug ? String(row.slug) : null,
+      publishedAt: row.published_at ? String(row.published_at) : null,
+      viewCount: Number(row.view_count || 0),
+      totalWatchSeconds: Number(row.total_watch_seconds || 0),
+      averageRetentionPercent,
+      completionRatePercent,
+      engagementScore: computeEngagementScore(averageRetentionPercent, completionRatePercent),
+    }
+  })
 
   const kpis = {
     totalUniqueViews: totalViews,
+    totalWatchSeconds,
+    totalWatchTimeLabel: formatWatchSeconds(totalWatchSeconds),
+    segmentRequests,
     averageRetentionPercent,
     activeSubscribers: Number((planBreakdownRows?.results ?? []).reduce((sum: number, row: any) => sum + Number(row.active_count || 0), 0)),
     churnRatePercent: churnRate,
@@ -1713,11 +1935,17 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
   }
 
   const definitions = {
-    totalUniqueViews: 'Distinct session keys with at least one segment request in selected range.',
-    averageRetentionPercent: 'Average max watch-through percent across all qualified sessions in selected range.',
+    totalUniqueViews: 'Playback starts counted once per viewer session per video after min segment/watch thresholds.',
+    totalWatchSeconds: 'Cumulative seconds watched across all segment requests; rewatches and repeat visits add to the total.',
+    segmentRequests: 'Total HLS segment requests served in the selected range.',
+    averageRetentionPercent: 'Average max watch-through percent across qualified sessions in the selected range.',
     activeSubscribers: 'Users whose latest subscription status is active or trialing.',
-    churnRatePercent: 'Churned subscriptions divided by new subscriptions in selected range.',
+    churnRatePercent: 'Churned subscriptions divided by new subscriptions in the selected range.',
     estimatedActiveMrrEur: 'Approximate monthly recurring revenue from active/trialing users using admin configured prices.',
+    engagementScore: 'Video-level score from 0–100 based on retention depth and completion rate (sessions reaching 90%+ watch-through).',
+    countryViews: 'Playback starts by country using IP geolocation at the first segment request in each session.',
+    countryWatchTime: 'Cumulative watch seconds by country; rewatches add to the total.',
+    heatmap: 'Timeline engagement for one video: watch intensity by position percent (0–99).',
   }
 
   return {
@@ -1725,6 +1953,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       range: options.range,
       granularity: options.granularity,
       dataset: options.dataset,
+      videoId: options.videoId,
       startAt,
       endAt: now.toISOString(),
       generatedAt: now.toISOString(),
@@ -1735,6 +1964,16 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(db: any, env: any
       totalUniqueSessions: totalViews,
       series: viewSeries,
     },
+    watchTime: {
+      totalSeconds: totalWatchSeconds,
+      totalLabel: formatWatchSeconds(totalWatchSeconds),
+      series: watchTimeSeries,
+    },
+    countries: {
+      views: countryViews,
+      watchTime: countryWatchTime,
+    },
+    heatmap,
     trafficSources: sourceRows?.results ?? [],
     videoStats,
     subscriptionOverview: {
@@ -1770,11 +2009,18 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
     }
     return rows.join('\n')
   }
+  if (dataset === 'watchtime') {
+    rows.push('bucket,total_watch_seconds')
+    for (const row of (snapshot.watchTime?.series ?? [])) {
+      rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.totalWatchSeconds)}`)
+    }
+    return rows.join('\n')
+  }
   if (dataset === 'retention') {
     rows.push('format:retention_per_video_v1')
-    rows.push('video_id,title,view_count,average_retention_percent')
+    rows.push('video_id,title,view_count,total_watch_seconds,average_retention_percent,engagement_score')
     for (const row of (snapshot.videoStats ?? [])) {
-      rows.push(`${escapeCsvCell(row.videoId)},${escapeCsvCell(row.title)},${escapeCsvCell(row.viewCount)},${escapeCsvCell(row.averageRetentionPercent ?? '')}`)
+      rows.push(`${escapeCsvCell(row.videoId)},${escapeCsvCell(row.title)},${escapeCsvCell(row.viewCount)},${escapeCsvCell(row.totalWatchSeconds ?? 0)},${escapeCsvCell(row.averageRetentionPercent ?? '')},${escapeCsvCell(row.engagementScore ?? '')}`)
     }
     return rows.join('\n')
   }
@@ -1782,6 +2028,22 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
     rows.push('source,unique_sessions')
     for (const row of (snapshot.trafficSources ?? [])) {
       rows.push(`${escapeCsvCell(row.source)},${escapeCsvCell(row.unique_sessions)}`)
+    }
+    return rows.join('\n')
+  }
+  if (dataset === 'countries') {
+    rows.push('country,unique_sessions,total_watch_seconds')
+    const watchByCountry = new Map<string, number>()
+    for (const row of (snapshot.countries?.watchTime ?? [])) {
+      watchByCountry.set(String(row.country), Number(row.totalWatchSeconds || 0))
+    }
+    const countries = new Set<string>([
+      ...(snapshot.countries?.views ?? []).map((row: any) => String(row.country)),
+      ...(snapshot.countries?.watchTime ?? []).map((row: any) => String(row.country)),
+    ])
+    for (const country of Array.from(countries).sort()) {
+      const viewsRow = (snapshot.countries?.views ?? []).find((row: any) => String(row.country) === country)
+      rows.push(`${escapeCsvCell(country)},${escapeCsvCell(viewsRow?.uniqueSessions ?? 0)},${escapeCsvCell(watchByCountry.get(country) ?? 0)}`)
     }
     return rows.join('\n')
   }
@@ -1917,12 +2179,13 @@ export async function logSegmentEvent(env: any, payload: any) {
   })
   const sessionKey = buildSegmentSessionKey(payload)
   const videoId = payload.videoId || 'unknown'
+  const countryCode = normalizeCountryCode(payload?.countryCode)
   await db.prepare(`
     INSERT INTO video_segment_events (
       id, video_id, user_id, request_path, event_type, position_seconds, referer, source_host, ip_hash,
       segment_index, segment_duration_seconds, playback_position_seconds, session_key,
-      source_category, source_detail, campaign_source, campaign_medium, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      source_category, source_detail, campaign_source, campaign_medium, country_code, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `).bind(
     crypto.randomUUID(),
     videoId,
@@ -1941,6 +2204,7 @@ export async function logSegmentEvent(env: any, payload: any) {
     source.detail,
     source.campaignSource,
     source.campaignMedium,
+    countryCode,
   ).run()
 
   if (eventType === 'segment' && videoId !== 'unknown') {
