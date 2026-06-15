@@ -1265,6 +1265,7 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     const segmentIndex = segmentMatch ? Number(segmentMatch[1]) : null
     const rawIp = request.headers.get('CF-Connecting-IP')
     const ipHash = rawIp ? await sha256Hex(rawIp) : null
+    const countryCode = request.headers.get('CF-IPCountry')
     ctx?.waitUntil?.(logSegmentEvent(env, {
       videoId: proxyVideoId,
       userId: tokenClaims?.userId || null,
@@ -1275,6 +1276,7 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
       referer,
       sourceHost,
       ipHash,
+      countryCode,
     }))
   }
 
