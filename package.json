@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "node scripts/patch-transitive-deps.mjs",
     "dev": "npm run dev --workspaces --if-present",
     "podcast-host": "npm run start --workspace=@vmp/podcast-host",
     "media-host": "npm run start --workspace=@vmp/podcast-host",
@@ -39,7 +40,8 @@
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.1",
-    "vue-eslint-parser": "^10.4.0"
+    "vue-eslint-parser": "^10.4.0",
+    "ws": "8.21.0"
   },
   "packageManager": "npm@11.15.0",
   "engines": {
@@ -51,6 +53,8 @@
     "serialize-javascript": ">=7.0.3",
     "brace-expansion": ">=5.0.6",
     "better-sqlite3": "^12.10.0",
-    "tmp": ">=0.2.6"
+    "tmp": ">=0.2.6",
+    "form-data": "4.0.6",
+    "ws": "8.21.0"
   }
 }
