@@ -10,6 +10,7 @@ import {
   getLegacyOrder,
   isLegacyFetchTimeout,
   isLegacyProviderConfigured,
+  isLegacySandboxConfigured,
   normalizeLegacySubscriptionStatus,
   processLegacyOrder,
   verifyLegacyWebhookSignature,
@@ -152,7 +153,18 @@ export async function startLegacyCheckout(
   }
 
   const idOrder = crypto.randomUUID()
-  const purchaseId = String(body?.purchaseId ?? idOrder).trim() || idOrder
+  let purchaseId = String(body?.purchaseId ?? '').trim()
+  if (!purchaseId) {
+    const legacySub = await db.prepare(`
+      SELECT purchase_id FROM subscriptions
+      WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
+        AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+      ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+      LIMIT 1
+    `).bind(user.sub).first()
+    purchaseId = String(legacySub?.purchase_id ?? '').trim()
+  }
+  if (!purchaseId) purchaseId = idOrder
   const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
   const returnUrl = `${frontendUrl}${returnPath}?legacy_order=${encodeURIComponent(idOrder)}`
 
@@ -173,14 +185,27 @@ export async function startLegacyCheckout(
       ) VALUES (?, ?, 'legacy', ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).bind(crypto.randomUUID(), user.sub, planType, idOrder).run()
 
-    const checkoutUrl = String(created.paymentUrl ?? created.checkoutUrl ?? created.redirectUrl ?? '').trim()
+    const checkoutUrl = String(
+      created.webPaymentGatewayLink ??
+      created.gatewayLink ??
+      created.paymentUrl ??
+      created.checkoutUrl ??
+      created.redirectUrl ??
+      '',
+    ).trim()
     if (checkoutUrl) {
       return jsonResponse({ checkoutUrl, provider: 'legacy', orderId: idOrder }, 200, corsHeaders)
     }
 
     await processLegacyOrder(env, idOrder)
     const processed = await getLegacyOrder(env, idOrder) as Record<string, unknown>
-    const payUrl = String(processed.paymentUrl ?? processed.checkoutUrl ?? '').trim()
+    const payUrl = String(
+      processed.webPaymentGatewayLink ??
+      processed.gatewayLink ??
+      processed.paymentUrl ??
+      processed.checkoutUrl ??
+      '',
+    ).trim()
     return jsonResponse({
       checkoutUrl: payUrl || returnUrl,
       provider: 'legacy',
@@ -311,6 +336,7 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
   if (request.method === 'GET') {
     return jsonResponse({
       configured: isLegacyProviderConfigured(env),
+      sandboxConfigured: isLegacySandboxConfigured(env),
       merchantId: String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() || null,
       hasApiKey: Boolean(String(env.LEGACY_ESHOP_API_KEY ?? '').trim()),
       hasWebhookSecret: Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()),

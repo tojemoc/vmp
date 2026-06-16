@@ -1089,6 +1089,7 @@
                 <option value="cancelled">cancelled</option>
                 <option value="unpaid">unpaid</option>
                 <option value="incomplete">incomplete</option>
+                <option value="needs_relink">needs_relink</option>
               </select>
             </div>
             <div>
@@ -1155,6 +1156,7 @@
                 >
                   <option value="none">none</option>
                   <template v-if="hasAdminUserSubscriptionRow(u)">
+                    <option v-if="u.subscription_status === 'needs_relink'" value="needs_relink">needs_relink</option>
                     <option value="active">active</option>
                     <option value="trialing">trialing</option>
                     <option value="past_due">past_due</option>
@@ -1186,6 +1188,182 @@
             >
               Next
             </button>
+          </div>
+        </div>
+
+        <div v-if="activeAdminTab === 'legacy_migration'" id="legacy-migration-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
+          <div>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Legacy migration</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Health metrics and sandbox/production validation for Qerko CardOnFile tokens imported as <code class="font-mono text-xs">purchase_id</code>.
+            </p>
+          </div>
+
+          <div v-if="legacyMigrationStatsLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading migration stats…</div>
+          <div v-else-if="legacyMigrationStats" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total imported</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.total_imported }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">All users migrated from old platform</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Needs relink</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.needs_relink }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Not yet validated or still pending relink</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Active</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.active }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Successfully billing on legacy provider</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Failed validation</p>
+              <p class="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{{ legacyMigrationStats.failed }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Purchase ID not recognized by provider</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Migration success</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationSuccessPct }}%</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Of validated users (active vs failed)</p>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <h3 class="font-semibold text-gray-900 dark:text-white">Sandbox validation</h3>
+            <p v-if="legacyMigrationStats" class="text-xs text-gray-600 dark:text-gray-400">
+              API in use for stats:
+              <span class="font-mono">{{ legacyMigrationStats.validationApiBase || 'not configured' }}</span>
+              <span v-if="legacyMigrationStats.sandboxConfigured"> · sandbox URL configured</span>
+              <span v-else> · set <code class="font-mono">LEGACY_ESHOP_SANDBOX_API_URL</code> for safe integration testing</span>
+            </p>
+            <div class="flex flex-wrap gap-3 items-end">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">
+                Batch size
+                <select v-model.number="legacyValidationBatchSize" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+                  <option :value="10">10</option>
+                  <option :value="25">25</option>
+                  <option :value="50">50</option>
+                  <option :value="100">100</option>
+                </select>
+              </label>
+              <label class="text-xs text-gray-600 dark:text-gray-300 block">
+                Target
+                <select v-model="legacyValidationTarget" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+                  <option value="production">Production (real tokens)</option>
+                  <option value="sandbox">Sandbox</option>
+                </select>
+              </label>
+              <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input v-model="legacyValidationDryRun" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+                Dry run (preview without saving)
+              </label>
+              <button
+                type="button"
+                class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+                :disabled="legacyValidationRunning"
+                @click="runLegacyValidationBatch"
+              >
+                {{ legacyValidationRunning ? 'Validating…' : 'Validate batch' }}
+              </button>
+            </div>
+            <p v-if="legacyValidationRunning" class="text-sm text-gray-600 dark:text-gray-400">
+              Validating subscriptions against {{ legacyValidationTarget }} Qerko API…
+            </p>
+            <div v-if="legacyValidationResult" class="space-y-2">
+              <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ legacyValidationResult.valid }} valid, {{ legacyValidationResult.invalid }} invalid, {{ legacyValidationResult.errors }} errors.
+                Reload stats to update totals.
+              </p>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                      <th class="py-2 pr-3">purchase_id</th>
+                      <th class="py-2 pr-3">Result</th>
+                      <th class="py-2 pr-3">HTTP</th>
+                      <th class="py-2">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in legacyValidationResult.details" :key="row.subscriptionId" class="border-b border-gray-100 dark:border-gray-800">
+                      <td class="py-2 pr-3 font-mono">{{ row.purchaseId }}</td>
+                      <td class="py-2 pr-3">
+                        <span v-if="row.result === 'valid'" class="text-emerald-600">✓ valid</span>
+                        <span v-else-if="row.result === 'invalid'" class="text-red-600">✗ invalid</span>
+                        <span v-else class="text-amber-600">⚠ error</span>
+                      </td>
+                      <td class="py-2 pr-3">{{ row.httpStatus ?? '—' }}</td>
+                      <td class="py-2 text-gray-600 dark:text-gray-400">{{ row.errorMessage || '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="font-semibold text-gray-900 dark:text-white">Relink candidates</h3>
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm"
+                @click="exportLegacyRelinkCandidatesCsv"
+              >
+                Export CSV
+              </button>
+            </div>
+            <div v-if="legacyRelinkLoading" class="text-sm text-gray-500">Loading…</div>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                    <th class="py-2 pr-3"><input type="checkbox" :checked="legacyRelinkAllOnPageSelected" @change="toggleLegacyRelinkSelectAll"></th>
+                    <th class="py-2 pr-3">Email</th>
+                    <th class="py-2 pr-3">Imported</th>
+                    <th class="py-2 pr-3">Validation</th>
+                    <th class="py-2">Validated at</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in legacyRelinkCandidates" :key="row.userId" class="border-b border-gray-100 dark:border-gray-800">
+                    <td class="py-2 pr-3">
+                      <input v-model="legacyRelinkSelected" type="checkbox" :value="row.userId">
+                    </td>
+                    <td class="py-2 pr-3">{{ row.email }}</td>
+                    <td class="py-2 pr-3">{{ row.importedAt }}</td>
+                    <td class="py-2 pr-3">{{ row.validationStatus || '—' }}</td>
+                    <td class="py-2">{{ row.validatedAt || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50"
+                :disabled="!legacyRelinkSelected.length || legacyRelinkSending"
+                @click="openLegacyRelinkEmailConfirm"
+              >
+                Send relink email to selected ({{ legacyRelinkSelected.length }})
+              </button>
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+                :disabled="legacyRelinkPage <= 1 || legacyRelinkLoading"
+                @click="legacyRelinkPage -= 1; loadLegacyRelinkCandidates()"
+              >
+                Previous
+              </button>
+              <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ legacyRelinkPage }}</span>
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+                :disabled="legacyRelinkCandidates.length < legacyRelinkPageSize || legacyRelinkLoading"
+                @click="legacyRelinkPage += 1; loadLegacyRelinkCandidates()"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2597,7 +2775,7 @@ const uploadDateEditDraft = ref<Record<string, string>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
-const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system'>('videos')
+const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'categories' as const, label: 'Categories' },
@@ -2606,11 +2784,15 @@ const baseAdminTabs = [
   { id: 'notifications' as const, label: 'Notifications' },
   { id: 'newsletter' as const, label: 'Newsletter' },
   { id: 'users' as const, label: 'Users & roles' },
+  { id: 'legacy_migration' as const, label: 'Legacy migration' },
   { id: 'analytics' as const, label: 'Analytics' },
   { id: 'system' as const, label: 'System' },
 ]
 const adminTabs = computed(() =>
-  baseAdminTabs.filter(tab => tab.id !== 'pills' || isAdmin.value)
+  baseAdminTabs.filter((tab) => {
+    if (tab.id === 'pills' || tab.id === 'legacy_migration') return isAdmin.value
+    return true
+  })
 )
 const editingTitle = ref<{ id: string; value: string } | null>(null)
 const titleInputEl = ref<HTMLInputElement | null>(null)
@@ -2900,11 +3082,69 @@ const usersImportResult = ref<{
 } | null>(null)
 const legacyPaymentStatus = ref<{
   configured: boolean
+  sandboxConfigured?: boolean
   merchantId: string | null
   hasApiKey: boolean
   hasWebhookSecret: boolean
 } | null>(null)
 const legacyPaymentStatusLoading = ref(false)
+
+type LegacyMigrationStats = {
+  total_imported: number
+  needs_relink: number
+  active: number
+  failed: number
+  not_validated: number
+  churn_rate_pct: number
+  sandboxConfigured: boolean
+  productionConfigured: boolean
+  validationApiBase: string | null
+}
+const legacyMigrationStats = ref<LegacyMigrationStats | null>(null)
+const legacyMigrationStatsLoading = ref(false)
+const legacyValidationBatchSize = ref(25)
+const legacyValidationTarget = ref<'sandbox' | 'production'>('production')
+const legacyValidationDryRun = ref(false)
+const legacyValidationRunning = ref(false)
+const legacyValidationResult = ref<{
+  valid: number
+  invalid: number
+  errors: number
+  details: Array<{
+    subscriptionId: string
+    userId: string
+    purchaseId: string
+    result: 'valid' | 'invalid' | 'error'
+    httpStatus?: number
+    errorMessage?: string
+  }>
+} | null>(null)
+const legacyRelinkCandidates = ref<Array<{
+  userId: string
+  email: string
+  purchaseId: string | null
+  validationStatus: string | null
+  validatedAt: string | null
+  importedAt: string
+}>>([])
+const legacyRelinkLoading = ref(false)
+const legacyRelinkPage = ref(1)
+const legacyRelinkPageSize = ref(25)
+const legacyRelinkSelected = ref<string[]>([])
+const legacyRelinkSending = ref(false)
+
+const legacyMigrationSuccessPct = computed(() => {
+  const stats = legacyMigrationStats.value
+  if (!stats) return 0
+  const denom = stats.active + stats.failed
+  if (!denom) return 0
+  return Math.round((stats.active / denom) * 1000) / 10
+})
+
+const legacyRelinkAllOnPageSelected = computed(() => {
+  const ids = legacyRelinkCandidates.value.map((row) => row.userId)
+  return ids.length > 0 && ids.every((id) => legacyRelinkSelected.value.includes(id))
+})
 
 const ROLE_ORDER = ['viewer', 'moderator', 'analyst', 'editor', 'admin', 'super_admin'] as const
 function roleRank(role: string): number {
@@ -3130,6 +3370,14 @@ watch([analyticsRange, analyticsGranularity], () => {
 watch(activeAdminTab, (tab) => {
   if (tab === 'users' && !legacyPaymentStatus.value && !legacyPaymentStatusLoading.value) {
     void loadLegacyPaymentStatus()
+  }
+  if (tab === 'legacy_migration') {
+    if (!legacyMigrationStats.value && !legacyMigrationStatsLoading.value) {
+      void loadLegacyMigrationStats()
+    }
+    if (!legacyRelinkCandidates.value.length && !legacyRelinkLoading.value) {
+      void loadLegacyRelinkCandidates()
+    }
   }
 })
 /** Stable per send attempt until success — retries reuse the same key for server idempotency. */
@@ -5639,6 +5887,7 @@ const loadLegacyPaymentStatus = async () => {
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     legacyPaymentStatus.value = {
       configured: Boolean(data.configured),
+      sandboxConfigured: Boolean(data.sandboxConfigured),
       merchantId: typeof data.merchantId === 'string' ? data.merchantId : null,
       hasApiKey: Boolean(data.hasApiKey),
       hasWebhookSecret: Boolean(data.hasWebhookSecret),
@@ -5648,6 +5897,137 @@ const loadLegacyPaymentStatus = async () => {
     showToast('error', `Legacy payment status: ${e.message}`)
   } finally {
     legacyPaymentStatusLoading.value = false
+  }
+}
+
+const loadLegacyMigrationStats = async () => {
+  if (!isAdmin.value) return
+  legacyMigrationStatsLoading.value = true
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/stats`, {
+      headers: { ...authHeader() },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    legacyMigrationStats.value = data as LegacyMigrationStats
+  } catch (e: any) {
+    legacyMigrationStats.value = null
+    showToast('error', `Legacy migration stats: ${e.message}`)
+  } finally {
+    legacyMigrationStatsLoading.value = false
+  }
+}
+
+const runLegacyValidationBatch = async () => {
+  legacyValidationRunning.value = true
+  legacyValidationResult.value = null
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/validate-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        batchSize: legacyValidationBatchSize.value,
+        dryRun: legacyValidationDryRun.value,
+        validationTarget: legacyValidationTarget.value,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    legacyValidationResult.value = data
+    showToast('success', `Validated ${data.processed ?? 0} subscription(s).`)
+    if (!legacyValidationDryRun.value) {
+      await loadLegacyMigrationStats()
+    }
+  } catch (e: any) {
+    showToast('error', `Validation batch failed: ${e.message}`)
+  } finally {
+    legacyValidationRunning.value = false
+  }
+}
+
+const loadLegacyRelinkCandidates = async () => {
+  if (!isAdmin.value) return
+  legacyRelinkLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      page: String(legacyRelinkPage.value),
+      pageSize: String(legacyRelinkPageSize.value),
+    })
+    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?${params}`, {
+      headers: { ...authHeader() },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    legacyRelinkCandidates.value = Array.isArray(data.users) ? data.users : []
+    legacyRelinkSelected.value = legacyRelinkSelected.value.filter((id) =>
+      legacyRelinkCandidates.value.some((row) => row.userId === id),
+    )
+  } catch (e: any) {
+    legacyRelinkCandidates.value = []
+    showToast('error', `Relink candidates: ${e.message}`)
+  } finally {
+    legacyRelinkLoading.value = false
+  }
+}
+
+const exportLegacyRelinkCandidatesCsv = async () => {
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?export=csv`, {
+      headers: { ...authHeader() },
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || `HTTP ${res.status}`)
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'legacy-relink-candidates.csv'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (e: any) {
+    showToast('error', `CSV export failed: ${e.message}`)
+  }
+}
+
+function toggleLegacyRelinkSelectAll(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  const pageIds = legacyRelinkCandidates.value.map((row) => row.userId)
+  if (checked) {
+    legacyRelinkSelected.value = [...new Set([...legacyRelinkSelected.value, ...pageIds])]
+  } else {
+    legacyRelinkSelected.value = legacyRelinkSelected.value.filter((id) => !pageIds.includes(id))
+  }
+}
+
+function openLegacyRelinkEmailConfirm() {
+  const count = legacyRelinkSelected.value.length
+  if (!count) return
+  confirmModal.value = {
+    open: true,
+    mode: 'legacy_relink_email',
+    userIds: [...legacyRelinkSelected.value],
+    impactText: `This will send a relink email to ${count} user(s). They will receive a link to /account?relink=1. Continue?`,
+  }
+}
+
+async function sendLegacyRelinkEmails(userIds: string[]) {
+  legacyRelinkSending.value = true
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/send-relink-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ userIds }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    showToast('success', `Sent ${data.sent ?? 0} relink email(s).`)
+    legacyRelinkSelected.value = []
+  } catch (e: any) {
+    showToast('error', `Relink email failed: ${e.message}`)
+  } finally {
+    legacyRelinkSending.value = false
   }
 }
 
@@ -5767,6 +6147,13 @@ type ConfirmModalState =
       impactText: string
     }
 
+  | {
+      open: true
+      mode: 'legacy_relink_email'
+      userIds: string[]
+      impactText: string
+    }
+
 const confirmModal = ref<ConfirmModalState>({ open: false })
 
 const confirmModalTitle = computed(() => {
@@ -5774,6 +6161,7 @@ const confirmModalTitle = computed(() => {
   if (!m.open) return ''
   if (m.mode === 'video') return m.action === 'trash' ? 'Permanently delete video?' : 'Revert video to draft?'
   if (m.mode === 'user_role') return 'Confirm role change'
+  if (m.mode === 'legacy_relink_email') return 'Send relink emails?'
   return 'Confirm subscription change'
 })
 
@@ -5858,6 +6246,12 @@ function openConfirmModal(
 async function runConfirmedAction() {
   const current = confirmModal.value
   if (!current.open) return
+  if (current.mode === 'legacy_relink_email') {
+    const userIds = [...current.userIds]
+    closeConfirmModal()
+    await sendLegacyRelinkEmails(userIds)
+    return
+  }
   if (current.mode === 'video') {
     closeConfirmModal()
     if (current.action === 'trash') {

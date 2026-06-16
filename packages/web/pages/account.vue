@@ -5,6 +5,35 @@
     <div class="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-6">
 
       <div
+        v-if="showRelinkBanner"
+        class="flex items-start gap-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4"
+      >
+        <div class="flex-1">
+          <p class="font-semibold text-amber-900 dark:text-amber-200">Link your payment method</p>
+          <p class="text-sm text-amber-800 dark:text-amber-300 mt-0.5">
+            Your subscription was migrated from our previous platform. To ensure uninterrupted access,
+            please link a payment method.
+          </p>
+          <NuxtLink
+            to="/pricing"
+            class="inline-flex items-center mt-3 text-sm font-semibold text-amber-900 dark:text-amber-100 hover:underline"
+          >
+            Link payment method →
+          </NuxtLink>
+        </div>
+        <button
+          type="button"
+          class="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
+          @click="dismissRelinkBanner"
+        >
+          <span class="sr-only">Dismiss</span>
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
+      <div
         v-if="stripeCompletionError"
         class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
       >
@@ -258,6 +287,23 @@ const hasActiveSubscription = computed(() => {
   return sub.status === 'active' || sub.status === 'trialing'
 })
 
+const relinkBannerDismissed = ref(false)
+
+const showRelinkBanner = computed(() => {
+  if (relinkBannerDismissed.value) return false
+  if (route.query.relink !== '1') return false
+  const sub = subscription.value
+  if (!sub) return false
+  return sub.provider === 'legacy' && (sub.status === 'needs_relink' || sub.status === 'cancelled' || sub.status === 'past_due')
+})
+
+function dismissRelinkBanner() {
+  relinkBannerDismissed.value = true
+  if (import.meta.client) {
+    sessionStorage.setItem('vmp_relink_banner_dismissed', '1')
+  }
+}
+
 const roleRequires2fa = computed(() => {
   const role = user.value?.role
   return !!role && (ROLES_REQUIRING_2FA as readonly string[]).includes(role)
@@ -329,6 +375,10 @@ const rssPersonalUrl    = ref('')
 const copiedWhich       = ref<'personal' | null>(null)
 
 onMounted(async () => {
+  if (import.meta.client && sessionStorage.getItem('vmp_relink_banner_dismissed') === '1') {
+    relinkBannerDismissed.value = true
+  }
+
   if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()
     if (result.ok || result.pending) {
@@ -354,6 +404,12 @@ onMounted(async () => {
   loadingSub.value = false
 
   await fetchRssUrls()
+})
+
+watch(subscription, (sub) => {
+  if (sub && sub.provider !== 'legacy') {
+    relinkBannerDismissed.value = true
+  }
 })
 
 function statusBadgeClass(status: string): string {
