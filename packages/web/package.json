@@ -23,8 +23,8 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/lite": "0.2.2",
-    "@moq/watch": "^0.2.10",
+    "@moq/net": "^0.1.4",
+    "@moq/watch": "^0.2.16",
     "@nuxtjs/color-mode": "^4.0.0",
     "@sentry/nuxt": "^10.57.0",
     "@stripe/stripe-js": "^9.8.0",
