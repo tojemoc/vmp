@@ -7,7 +7,6 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-transitive-deps.mjs",
     "dev": "npm run dev --workspaces --if-present",
     "podcast-host": "npm run start --workspace=@vmp/podcast-host",
     "media-host": "npm run start --workspace=@vmp/podcast-host",
