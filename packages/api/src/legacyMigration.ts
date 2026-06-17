@@ -61,6 +61,8 @@ type DbBinding = D1Database
 const DEFAULT_RELINK_STALE_DAYS = 30
 const MAX_RELINK_EMAILS_PER_CALL = 50
 const VALIDATION_DELAY_MS = 100
+const BREVO_EMAIL_TIMEOUT_MS = 15_000
+const CSV_EXPORT_MAX_PAGES = 200
 
 function getDb(env: LegacyMigrationEnv): DbBinding {
   const db = env.DB ?? env.video_subscription_db
@@ -185,8 +187,8 @@ export async function validateLegacyBatch(
   dryRun: boolean,
   validationTarget: 'sandbox' | 'production' = 'production',
 ): Promise<ValidateLegacyBatchResult> {
-  if (!isLegacyProviderConfigured(env)) {
-    throw new Error('Legacy billing is not configured')
+  if (!isLegacyProviderConfigured(env, validationTarget)) {
+    throw new Error(`Legacy billing is not configured for ${validationTarget}`)
   }
 
   const apiBase = getLegacyValidationApiBase(env, validationTarget)
@@ -351,6 +353,7 @@ async function sendRelinkEmail(to: string, link: string, env: LegacyMigrationEnv
       'Content-Type': 'application/json',
       'api-key': String(env.BREVO_API_KEY ?? ''),
     },
+    signal: AbortSignal.timeout(BREVO_EMAIL_TIMEOUT_MS),
     body: JSON.stringify({
       sender: {
         email: env.SENDER_EMAIL || 'noreply@example.com',
@@ -395,12 +398,14 @@ export async function sendRelinkEmails(
     throw new Error(`Maximum ${MAX_RELINK_EMAILS_PER_CALL} emails per request`)
   }
 
-  const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const frontendUrl = String(env.FRONTEND_URL ?? '').trim().replace(/\/$/, '')
+  if (!frontendUrl) {
+    throw new Error('FRONTEND_URL is not configured')
+  }
   const relinkUrl = `${frontendUrl}/account?relink=1`
 
   let sent = 0
   let skipped = 0
-  const statements = []
 
   for (const userId of uniqueIds) {
     const row = await db.prepare(`
@@ -417,17 +422,13 @@ export async function sendRelinkEmails(
     }
 
     await sendRelinkEmail(String(row.email), relinkUrl, env)
-    sent += 1
-    statements.push(buildAdminAuditLogStatement(db, {
+    await buildAdminAuditLogStatement(db, {
       actorUserId,
       actionType: 'legacy_relink_email_sent',
       targetUserId: userId,
       detail: { relinkUrl },
-    }))
-  }
-
-  if (statements.length) {
-    await db.batch(statements)
+    }).run()
+    sent += 1
   }
 
   return { sent, skipped }
@@ -517,7 +518,13 @@ export async function handleAdminLegacyMigrationRelinkCandidates(request: Reques
         total = pageResult.total
         allUsers.push(...pageResult.users)
         pageCursor += 1
-      } while (allUsers.length < total && pageCursor < 200)
+      } while (allUsers.length < total && pageCursor < CSV_EXPORT_MAX_PAGES)
+
+      if (allUsers.length < total) {
+        throw new Error(
+          `CSV export truncated: fetched ${allUsers.length} of ${total} candidates (max ${CSV_EXPORT_MAX_PAGES} pages)`,
+        )
+      }
 
       const csv = relinkCandidatesToCsv(allUsers)
       return new Response(csv, {

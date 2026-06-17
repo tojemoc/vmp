@@ -16,7 +16,12 @@ export type LegacyEnv = {
 }
 
 const DEFAULT_LEGACY_FETCH_TIMEOUT_MS = 5000
-const DEFAULT_API_URL = 'https://vmp-api.tjm.sk'
+
+function requireConfiguredUrl(value: string | undefined, name: string): string {
+  const trimmed = trimTrailingSlashes(String(value ?? '').trim())
+  if (!trimmed) throw new Error(`${name} is not configured`)
+  return trimmed
+}
 
 function legacyFetchTimeoutMs(env: LegacyEnv): number {
   const raw = env.LEGACY_ESHOP_FETCH_TIMEOUT_MS
@@ -80,9 +85,13 @@ export function getLegacyValidationApiBase(env: LegacyEnv, target: 'sandbox' | '
   return production
 }
 
-export function isLegacyProviderConfigured(env: LegacyEnv): boolean {
+export function isLegacyProviderConfigured(
+  env: LegacyEnv,
+  target: 'sandbox' | 'production' = 'production',
+): boolean {
+  const base = target === 'sandbox' ? getLegacySandboxApiBase(env) : getLegacyApiBase(env)
   return Boolean(
-    getLegacyApiBase(env) &&
+    base &&
     String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() &&
     String(env.LEGACY_ESHOP_API_KEY ?? '').trim(),
   )
@@ -187,7 +196,7 @@ export function formatLegacyBillPrice(amountMinor: number): string {
 }
 
 export function getLegacyNotifyUrl(env: LegacyEnv): string {
-  const apiBase = trimTrailingSlashes(String(env.API_URL ?? DEFAULT_API_URL).trim())
+  const apiBase = requireConfiguredUrl(env.API_URL, 'API_URL')
   return `${apiBase}/api/payments/webhook/legacy`
 }
 
@@ -265,14 +274,9 @@ export function interpretLegacyValidationResponse(
   }
   const reason = typeof parsed.reason === 'string' ? parsed.reason : null
   const message = typeof parsed.message === 'string' ? parsed.message : `HTTP ${status}`
-  const combined = `${message} ${reason ?? ''}`.toLowerCase()
   if (
     status === 400 &&
-  (reason === 'cardOnFile' ||
-    combined.includes('cardonfile') ||
-    combined.includes('not found') ||
-    combined.includes('unknown') ||
-    combined.includes('invalid'))
+    (reason === 'cardOnFile' || message.toLowerCase().includes('cardonfile'))
   ) {
     return { result: 'invalid', httpStatus: status, errorMessage: message, reason }
   }
@@ -285,7 +289,7 @@ export async function probeLegacyCardOnFile(
   input: LegacyValidationProbeInput,
 ): Promise<LegacyValidationProbeResult> {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim()
-  const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const frontendUrl = requireConfiguredUrl(env.FRONTEND_URL, 'FRONTEND_URL')
   const amountMinor = input.amountMinor ?? 100
   const body = {
     idMerchant,

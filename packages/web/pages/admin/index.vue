@@ -5937,6 +5937,7 @@ const runLegacyValidationBatch = async () => {
     showToast('success', `Validated ${data.processed ?? 0} subscription(s).`)
     if (!legacyValidationDryRun.value) {
       await loadLegacyMigrationStats()
+      await loadLegacyRelinkCandidates()
     }
   } catch (e: any) {
     showToast('error', `Validation batch failed: ${e.message}`)
@@ -5959,9 +5960,6 @@ const loadLegacyRelinkCandidates = async () => {
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
     legacyRelinkCandidates.value = Array.isArray(data.users) ? data.users : []
-    legacyRelinkSelected.value = legacyRelinkSelected.value.filter((id) =>
-      legacyRelinkCandidates.value.some((row) => row.userId === id),
-    )
   } catch (e: any) {
     legacyRelinkCandidates.value = []
     showToast('error', `Relink candidates: ${e.message}`)
@@ -6441,7 +6439,7 @@ const descriptionDialogRef = ref<HTMLElement | null>(null)
 const transferSubDialogRef = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
-function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'analytics' | 'system') {
+function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
   router.replace({ query: { ...route.query, tab } })
 }
 

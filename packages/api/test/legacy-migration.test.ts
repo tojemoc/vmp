@@ -123,7 +123,11 @@ describe('getMigrationStats', () => {
       { provider: 'legacy', status: 'active', legacy_validation_status: 'valid' },
       { provider: 'stripe', status: 'active', legacy_validation_status: null },
     ]) as any
-    const env = { LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop' }
+    const env = {
+      LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
+      FRONTEND_URL: 'https://app.example.com',
+      API_URL: 'https://api.example.com',
+    }
     const stats = await getMigrationStatsFromModule(db, env)
     assert.equal(stats.total_imported, 3)
     assert.equal(stats.needs_relink, 2)
@@ -166,6 +170,8 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      FRONTEND_URL: 'https://app.example.com',
+      API_URL: 'https://api.example.com',
     }
     const result = await validateLegacyBatchFromModule(db, env, 10, false, 'production')
     assert.equal(result.processed, 1)
@@ -195,6 +201,8 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      FRONTEND_URL: 'https://app.example.com',
+      API_URL: 'https://api.example.com',
     }
     const result = await validateLegacyBatchFromModule(db, env, 10, false, 'production')
     assert.equal(result.invalid, 1)
@@ -238,6 +246,8 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      FRONTEND_URL: 'https://app.example.com',
+      API_URL: 'https://api.example.com',
     }
     await validateLegacyBatchFromModule(db as any, env, 10, true, 'production')
     assert.equal(updateCalls, 0)

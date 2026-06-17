@@ -222,7 +222,8 @@ legacy_invalid_unresolved=0
 if table_exists "subscriptions" \
   && column_exists "subscriptions" "provider" \
   && column_exists "subscriptions" "legacy_validation_status" \
-  && column_exists "subscriptions" "legacy_validated_at"; then
+  && column_exists "subscriptions" "legacy_validated_at" \
+  && column_exists "subscriptions" "legacy_validation_error"; then
   legacy_invalid_unresolved="$(run_scalar "SELECT COUNT(*) AS n
     FROM subscriptions
     WHERE provider = 'legacy'

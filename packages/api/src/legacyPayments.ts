@@ -10,7 +10,6 @@ import {
   getLegacyOrder,
   isLegacyFetchTimeout,
   isLegacyProviderConfigured,
-  isLegacySandboxConfigured,
   normalizeLegacySubscriptionStatus,
   processLegacyOrder,
   verifyLegacyWebhookSignature,
@@ -153,19 +152,32 @@ export async function startLegacyCheckout(
   }
 
   const idOrder = crypto.randomUUID()
-  let purchaseId = String(body?.purchaseId ?? '').trim()
-  if (!purchaseId) {
-    const legacySub = await db.prepare(`
-      SELECT purchase_id FROM subscriptions
-      WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
-        AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
-      ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
-      LIMIT 1
-    `).bind(user.sub).first()
-    purchaseId = String(legacySub?.purchase_id ?? '').trim()
+  const legacySub = await db.prepare(`
+    SELECT purchase_id FROM subscriptions
+    WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
+      AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+    ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+    LIMIT 1
+  `).bind(user.sub).first()
+  const dbPurchaseId = String(legacySub?.purchase_id ?? '').trim()
+  const bodyPurchaseId = String(body?.purchaseId ?? '').trim()
+  if (bodyPurchaseId && dbPurchaseId && bodyPurchaseId !== dbPurchaseId) {
+    return jsonResponse({
+      error: 'purchaseId does not match your account',
+      code: 'invalid_purchase_id',
+    }, 400, corsHeaders)
   }
-  if (!purchaseId) purchaseId = idOrder
-  const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  if (bodyPurchaseId && !dbPurchaseId) {
+    return jsonResponse({
+      error: 'purchaseId cannot be supplied without a matching imported subscription',
+      code: 'invalid_purchase_id',
+    }, 400, corsHeaders)
+  }
+  const purchaseId = dbPurchaseId || idOrder
+  const frontendUrl = String(env.FRONTEND_URL ?? '').trim().replace(/\/$/, '')
+  if (!frontendUrl) {
+    return jsonResponse({ error: 'FRONTEND_URL is not configured', code: 'misconfigured' }, 503, corsHeaders)
+  }
   const returnUrl = `${frontendUrl}${returnPath}?legacy_order=${encodeURIComponent(idOrder)}`
 
   try {
@@ -186,11 +198,12 @@ export async function startLegacyCheckout(
     `).bind(crypto.randomUUID(), user.sub, planType, idOrder).run()
 
     const checkoutUrl = String(
-      created.webPaymentGatewayLink ??
-      created.gatewayLink ??
-      created.paymentUrl ??
-      created.checkoutUrl ??
-      created.redirectUrl ??
+      created.webPaymentGatewayLink ||
+      created.gatewayLink ||
+      created.paymentUrl ||
+      created.checkoutUrl ||
+      created.redirectUrl ||
+      created.returnUrl ||
       '',
     ).trim()
     if (checkoutUrl) {
@@ -200,10 +213,11 @@ export async function startLegacyCheckout(
     await processLegacyOrder(env, idOrder)
     const processed = await getLegacyOrder(env, idOrder) as Record<string, unknown>
     const payUrl = String(
-      processed.webPaymentGatewayLink ??
-      processed.gatewayLink ??
-      processed.paymentUrl ??
-      processed.checkoutUrl ??
+      processed.webPaymentGatewayLink ||
+      processed.gatewayLink ||
+      processed.paymentUrl ||
+      processed.checkoutUrl ||
+      processed.returnUrl ||
       '',
     ).trim()
     return jsonResponse({
@@ -335,8 +349,8 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
 
   if (request.method === 'GET') {
     return jsonResponse({
-      configured: isLegacyProviderConfigured(env),
-      sandboxConfigured: isLegacySandboxConfigured(env),
+      configured: isLegacyProviderConfigured(env, 'production'),
+      sandboxConfigured: isLegacyProviderConfigured(env, 'sandbox'),
       merchantId: String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() || null,
       hasApiKey: Boolean(String(env.LEGACY_ESHOP_API_KEY ?? '').trim()),
       hasWebhookSecret: Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()),

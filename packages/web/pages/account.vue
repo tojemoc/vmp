@@ -297,10 +297,14 @@ const showRelinkBanner = computed(() => {
   return sub.provider === 'legacy' && (sub.status === 'needs_relink' || sub.status === 'cancelled' || sub.status === 'past_due')
 })
 
+function relinkBannerStorageKey(userId: string | undefined): string {
+  return `vmp_relink_banner_dismissed:${userId ?? 'anonymous'}`
+}
+
 function dismissRelinkBanner() {
   relinkBannerDismissed.value = true
   if (import.meta.client) {
-    sessionStorage.setItem('vmp_relink_banner_dismissed', '1')
+    sessionStorage.setItem(relinkBannerStorageKey(user.value?.id), '1')
   }
 }
 
@@ -375,7 +379,7 @@ const rssPersonalUrl    = ref('')
 const copiedWhich       = ref<'personal' | null>(null)
 
 onMounted(async () => {
-  if (import.meta.client && sessionStorage.getItem('vmp_relink_banner_dismissed') === '1') {
+  if (import.meta.client && sessionStorage.getItem(relinkBannerStorageKey(user.value?.id)) === '1') {
     relinkBannerDismissed.value = true
   }
 
