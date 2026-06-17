@@ -1104,6 +1104,20 @@
               </select>
             </div>
           </div>
+          <div
+            v-if="usersError"
+            class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+          >
+            <span>{{ usersError }}</span>
+            <button
+              type="button"
+              class="self-start sm:self-auto px-3 py-1 rounded border border-red-300 dark:border-red-700 text-xs font-medium disabled:opacity-50"
+              :disabled="usersLoading"
+              @click="loadUsers()"
+            >
+              Retry
+            </button>
+          </div>
           <p class="text-xs text-gray-500 dark:text-gray-500">
             Showing {{ users.length ? (usersPage - 1) * usersPageSize + 1 : 0 }}–{{ Math.min(usersPage * usersPageSize, usersTotal) }} of {{ usersTotal }} users
           </p>
@@ -1165,7 +1179,7 @@
                 </select>
               </div>
             </div>
-            <p v-if="!users.length && !usersLoading" class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users match these filters.</p>
+            <p v-if="!users.length && !usersLoading && !usersError" class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users match these filters.</p>
             <p v-if="usersLoading" class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Loading…</p>
           </div>
           <div v-if="usersTotalPages > 1" class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -2878,6 +2892,7 @@ const rssPodcastMessageClass = ref('')
 let usersLoadRequestId = 0
 const users = ref<AdminUserRow[]>([])
 const usersLoading = ref(false)
+const usersError = ref('')
 const usersPage = ref(1)
 const usersPageSize = ref(25)
 const usersTotal = ref(0)
@@ -4554,6 +4569,7 @@ const loadUsers = async () => {
   if (!isAdmin.value) return
   const reqId = ++usersLoadRequestId
   usersLoading.value = true
+  usersError.value = ''
   try {
     const params = new URLSearchParams({
       page: String(usersPage.value),
@@ -4564,7 +4580,12 @@ const loadUsers = async () => {
     })
     const res = await fetch(`${config.public.apiUrl}/api/admin/users?${params.toString()}`, { headers: authHeader() })
     if (reqId !== usersLoadRequestId) return
-    if (!res.ok) return
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      const detail = typeof err?.error === 'string' ? err.error : `HTTP ${res.status}`
+      usersError.value = `Failed to load users: ${detail}`
+      return
+    }
     const data = await res.json()
     if (reqId !== usersLoadRequestId) return
     users.value = ((data.users || []) as AdminUserRow[]).map((row) => ({
@@ -4574,6 +4595,11 @@ const loadUsers = async () => {
     }))
     usersTotal.value = Number(data.total) || 0
     usersTotalPages.value = Math.max(1, Number(data.totalPages) || 1)
+  } catch (e: unknown) {
+    if (reqId !== usersLoadRequestId) return
+    usersError.value = e instanceof Error
+      ? `Failed to load users: ${e.message}`
+      : 'Failed to load users: network error'
   }
   finally {
     if (reqId === usersLoadRequestId) usersLoading.value = false
