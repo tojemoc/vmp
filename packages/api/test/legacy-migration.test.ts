@@ -123,7 +123,7 @@ describe('getMigrationStats', () => {
       { provider: 'legacy', status: 'active', legacy_validation_status: 'valid' },
       { provider: 'stripe', status: 'active', legacy_validation_status: null },
     ]) as any
-    const env = { LEGACY_ESHOP_API_URL: 'https://qerko.com/api/v2/eshop' }
+    const env = { LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop' }
     const stats = await getMigrationStatsFromModule(db, env)
     assert.equal(stats.total_imported, 3)
     assert.equal(stats.needs_relink, 2)
@@ -147,7 +147,7 @@ describe('validateLegacyBatch', () => {
 
   it('marks rows valid when probe returns 200', async () => {
     globalThis.fetch = mock.fn(async () => new Response(JSON.stringify({
-      gatewayLink: 'https://sandbox.qerko.com/pay',
+      gatewayLink: 'https://legacy-sandbox.example.com/pay',
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
     const rows = [
@@ -163,7 +163,7 @@ describe('validateLegacyBatch', () => {
     ]
     const db = createMockDb(rows) as any
     const env = {
-      LEGACY_ESHOP_API_URL: 'https://qerko.com/api/v2/eshop',
+      LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
     }
@@ -192,7 +192,7 @@ describe('validateLegacyBatch', () => {
     ]
     const db = createMockDb(rows) as any
     const env = {
-      LEGACY_ESHOP_API_URL: 'https://qerko.com/api/v2/eshop',
+      LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
     }
@@ -235,7 +235,7 @@ describe('validateLegacyBatch', () => {
       headers: { 'Content-Type': 'application/json' },
     }))
     const env = {
-      LEGACY_ESHOP_API_URL: 'https://qerko.com/api/v2/eshop',
+      LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
     }

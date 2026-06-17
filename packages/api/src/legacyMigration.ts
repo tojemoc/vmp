@@ -6,9 +6,9 @@
  * ### a) purchase_id lifecycle
  * - Stored on CSV import (provider=legacy, status=needs_relink) and after checkout/webhook.
  * - Unique partial index on purchase_id (migration 0029) prevents duplicate tokens.
- * - After relink: provider_customer_id and purchase_id converge; provider_subscription_id = Qerko idOrder.
+ * - After relink: provider_customer_id and purchase_id converge; provider_subscription_id = legacy provider idOrder.
  * - Import rows use provider_customer_id = import-list:{mailingListId} until relink.
- * - Qerko maps purchase_id → cardOnFile on POST /order (not purchaseId field).
+ * - Legacy provider maps purchase_id → cardOnFile on POST /order (not purchaseId field).
  *
  * ### b) needs_relink sentinel
  * - Written only by handleAdminUserImportCsv. Not in SUBSCRIPTION_STATUSES.
@@ -28,7 +28,7 @@
  * - needs_relink not in subscription select options; policy blocks transitions without reset to none.
  * - Legacy migration admin tab provides health metrics and validation tooling.
  *
- * ### f) Validation signal (Qerko sandbox/production probes)
+ * ### f) Validation signal (legacy sandbox/production probes)
  * - POST /order with cardOnFile: synchronous 400 reason=cardOnFile → invalid token.
  * - 200 with gateway links → token accepted (not proof of successful charge).
  */
@@ -191,7 +191,7 @@ export async function validateLegacyBatch(
 
   const apiBase = getLegacyValidationApiBase(env, validationTarget)
   if (validationTarget === 'production') {
-    console.warn('[legacy-migration] Validating against production Qerko API — probe orders may be created.')
+    console.warn('[legacy-migration] Validating against production legacy billing API — probe orders may be created.')
   }
 
   const limit = Math.min(Math.max(batchSize, 1), 100)

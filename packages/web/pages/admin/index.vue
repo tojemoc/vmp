@@ -1195,7 +1195,7 @@
           <div>
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Legacy migration</h2>
             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Health metrics and sandbox/production validation for Qerko CardOnFile tokens imported as <code class="font-mono text-xs">purchase_id</code>.
+              Health metrics and sandbox/production validation for legacy CardOnFile tokens imported as <code class="font-mono text-xs">purchase_id</code>.
             </p>
           </div>
 
@@ -1267,7 +1267,7 @@
               </button>
             </div>
             <p v-if="legacyValidationRunning" class="text-sm text-gray-600 dark:text-gray-400">
-              Validating subscriptions against {{ legacyValidationTarget }} Qerko API…
+              Validating subscriptions against {{ legacyValidationTarget }} legacy billing API…
             </p>
             <div v-if="legacyValidationResult" class="space-y-2">
               <p class="text-sm text-gray-700 dark:text-gray-300">

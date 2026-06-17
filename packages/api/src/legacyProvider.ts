@@ -1,5 +1,5 @@
 /**
- * Legacy eshop billing provider (Qerko E-shop API v2).
+ * Legacy eshop billing provider (external E-shop API v2).
  *
  * API base URL from LEGACY_ESHOP_API_URL (production) or LEGACY_ESHOP_SANDBOX_API_URL (testing).
  */
