@@ -59,6 +59,8 @@ export default defineNuxtConfig({
       apiUrl: process.env.API_URL || 'https://vmp-api.tjm.sk',
       /** Canonical site origin for og:url and absolute og:image (defaults to request origin). */
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
+      /** UI language for this deployment: `en`, `sk`, or `cs` (one locale per instance). */
+      uiLocale: process.env.NUXT_PUBLIC_UI_LOCALE || 'en',
       gtm: {
         id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
       },

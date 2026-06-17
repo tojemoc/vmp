@@ -11,4 +11,11 @@
 
 <script setup lang="ts">
 const { isPwaPushLoginWizardOpen, closePwaPushLoginWizard } = usePwaLoginWizardState()
+const { htmlLang } = useUiLocale()
+
+useHead({
+  htmlAttrs: {
+    lang: htmlLang,
+  },
+})
 </script>
