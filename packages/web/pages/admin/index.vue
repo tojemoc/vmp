@@ -5523,31 +5523,67 @@ watch(
   { deep: true },
 )
 
+type AdminLoaderResult =
+  | { ok: true }
+  | { ok: false; label: string; message: string }
+
+const adminLoaderFailureMessage = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : (typeof error === 'string' && error.trim() ? error : 'network error')
+
+const reportAdminReloadFailures = (failures: Array<{ label: string; message: string }>) => {
+  if (!failures.length) return
+  const labels = failures.map((failure) => failure.label).join(', ')
+  saveMessage.value = `Could not load: ${labels}`
+  saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+}
+
+const runAdminLoader = async (label: string, loader: () => Promise<unknown>): Promise<AdminLoaderResult> => {
+  try {
+    await loader()
+    return { ok: true }
+  } catch (error: unknown) {
+    console.warn(`[admin] Failed to load ${label}`, error)
+    return { ok: false, label, message: adminLoaderFailureMessage(error) }
+  }
+}
+
 const reloadAll = async () => {
   if (!user.value || !canEditContent.value) {
     loading.value = false
     return
   }
   loading.value = true
-  try {
-    await loadVideos()
-    await loadCategories()
-    await loadHomepageState()
-    await loadHomepagePlacement()
-    await loadNewsletterSettings()
-    await loadNewsletterTemplates()
-    await loadSystemFeatures()
-    await loadReplicationStatus({ probe: true })
-    await loadPaymentSettings()
-    if (systemFeatures.value.promotionsEnabled) await loadPromotions()
-    if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()
-    await loadSiteBranding()
-    if (systemFeatures.value.freePodcastPreviewEnabled) await loadRssPodcastWebhookSettings()
-    await loadUsers()
-    await loadAnalytics()
-    await loadAdminPills()
+  const failures: Array<{ label: string; message: string }> = []
+  const trackLoader = async (label: string, loader: () => Promise<unknown>) => {
+    const result = await runAdminLoader(label, loader)
+    if (!result.ok) failures.push({ label: result.label, message: result.message })
   }
-  finally { loading.value = false }
+  try {
+    await trackLoader('videos', loadVideos)
+    await trackLoader('categories', loadCategories)
+    await trackLoader('homepage state', loadHomepageState)
+    await trackLoader('homepage placement', loadHomepagePlacement)
+    await trackLoader('newsletter settings', loadNewsletterSettings)
+    await trackLoader('newsletter templates', loadNewsletterTemplates)
+    await trackLoader('system features', loadSystemFeatures)
+    await trackLoader('replication status', () => loadReplicationStatus({ probe: true }))
+    await trackLoader('payment settings', loadPaymentSettings)
+    if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions)
+    if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns)
+    await trackLoader('site branding', loadSiteBranding)
+    if (systemFeatures.value.freePodcastPreviewEnabled) await trackLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings)
+    await trackLoader('users', loadUsers)
+    await trackLoader('analytics', loadAnalytics)
+    await trackLoader('pills', loadAdminPills)
+  } catch (error: unknown) {
+    console.warn('[admin] Failed to load admin data', error)
+    failures.push({ label: 'admin data', message: adminLoaderFailureMessage(error) })
+  } finally {
+    reportAdminReloadFailures(failures)
+    loading.value = false
+  }
 }
 
 function statusBadgeClass(status: string | null) {
