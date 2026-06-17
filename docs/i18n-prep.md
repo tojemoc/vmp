@@ -44,6 +44,34 @@ NUXT_PUBLIC_UI_LOCALE=sk API_URL=https://api.example.sk npm run build --workspac
 
 To add an in-app switcher later, use `@nuxtjs/i18n` with locale-prefixed routes — not required for white-label instances.
 
+## Manual translation validation (SK / CZ)
+
+Slovak and Czech copy in `locales/sk/` and `locales/cs/` is a **draft** for in-context review. Declension, register, and UI fit matter more than literal translation — validate in real flows, not in isolation.
+
+### Local dev workflow
+
+1. Start the web app: `API_URL=http://localhost:8787 npm run dev --workspace=@vmp/web`
+2. Use the **Locale preview** bar (bottom-left, dev only) to switch `EN` / `SK` / `CS`, or open any page with `?uiLocale=sk` once (sets a dev cookie, then drops the query param).
+3. Edit strings in `packages/web/locales/sk/strings.ts` or `locales/cs/personalData.ts` — Vite HMR reloads copy while you keep browsing.
+4. Walk the flows where declension shows up:
+   - Login / magic-link / PWA handoff (`/login`, `/auth/verify`)
+   - 2FA setup and verify
+   - Watch page (preview limit, player chrome, checkout overlay)
+   - Account + billing + GoCardless retry states
+   - `/personal-data` (legal tone + table labels)
+   - PWA install prompt and push-notification errors
+5. **Reset** on the preview bar returns to the build default (`NUXT_PUBLIC_UI_LOCALE` or `en`).
+
+The preview bar and cookie override exist **only in `import.meta.dev`**. Production builds ignore them and use `NUXT_PUBLIC_UI_LOCALE` exclusively.
+
+### Production instance check
+
+Before shipping a Slovak or Czech client, set the env on that deployment and smoke-test once without the dev bar:
+
+```bash
+NUXT_PUBLIC_UI_LOCALE=sk npm run build --workspace=@vmp/web
+```
+
 ## String inventory (approximate)
 
 | Area | Keys in `strings.ts` | Wired in SFCs |

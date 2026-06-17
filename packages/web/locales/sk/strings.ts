@@ -1,5 +1,7 @@
 import type { StringsDefinition } from '../types'
 
+/** Draft catalog — validate in context (declension, register). See docs/i18n-prep.md. */
+
 export const strings: StringsDefinition = {
   // ── Site-wide ──────────────────────────────────────────────────────────────
   siteName: 'Video Monetization Platform',

@@ -85,13 +85,17 @@
 </template>
 
 <script setup lang="ts">
-import strings from '~/utils/strings'
-import { personalDataPage } from '~/utils/personalDataProcessing'
+import { getPersonalDataPage } from '~/utils/personalDataProcessing'
 
-usePageSeo({
-  title: personalDataPage.metaTitle,
-  description: personalDataPage.metaDescription,
-})
+const { strings, personalData } = useStrings()
+const personalDataPage = computed(() => personalData.value ?? getPersonalDataPage())
+
+usePageSeo(
+  computed(() => ({
+    title: personalDataPage.value.metaTitle,
+    description: personalDataPage.value.metaDescription,
+  })),
+)
 
 const { acknowledgeNotice } = usePersonalDataNotice()
 
