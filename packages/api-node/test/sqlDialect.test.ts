@@ -1,6 +1,32 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { bindQuestionMarks, translateSqliteToPostgres } from '../src/bindings/sqlDialect.js'
+import { bindQuestionMarks, splitQuestionMarks, translateSqliteToPostgres } from '../src/bindings/sqlDialect.js'
+
+describe('splitQuestionMarks', () => {
+  it('splits placeholders outside quoted strings', () => {
+    const parts = splitQuestionMarks(`SELECT * FROM users WHERE id = ? AND email = ?`)
+    assert.deepEqual(parts, ['SELECT * FROM users WHERE id = ', ' AND email = ', ''])
+    assert.equal(bindQuestionMarks(parts.join('?'), 2), 'SELECT * FROM users WHERE id = $1 AND email = $2')
+  })
+
+  it('ignores question marks inside string literals', () => {
+    const parts = splitQuestionMarks(`WHERE note = 'a?b' AND id = ?`)
+    assert.deepEqual(parts, [`WHERE note = 'a?b' AND id = `, ''])
+  })
+
+  it('handles escaped single and double quote pairs without splitting on them', () => {
+    const sql = `WHERE a = 'it''s' AND b = "w""z" AND c = ?`
+    const parts = splitQuestionMarks(sql)
+    assert.deepEqual(parts, [`WHERE a = 'it''s' AND b = "w""z" AND c = `, ''])
+    assert.equal(bindQuestionMarks(parts.join('?'), 1), `WHERE a = 'it''s' AND b = "w""z" AND c = $1`)
+  })
+
+  it('ignores question marks inside double-quoted string literals', () => {
+    const parts = splitQuestionMarks(`WHERE col = "a?b" AND id = ?`)
+    assert.deepEqual(parts, [`WHERE col = "a?b" AND id = `, ''])
+    assert.equal(bindQuestionMarks(parts.join('?'), 1), 'WHERE col = "a?b" AND id = $1')
+  })
+})
 
 describe('translateSqliteToPostgres datetime', () => {
   it('translates datetime(?) for replication cursors', () => {

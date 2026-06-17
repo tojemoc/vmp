@@ -3,6 +3,45 @@
  * Deno Deploy cannot load native addons (better-sqlite3); the Worker code stays unchanged.
  */
 
+/** Split SQL on `?` placeholders outside string literals (for postgres.js tagged templates). */
+export function splitQuestionMarks(sql: string): string[] {
+  const parts: string[] = ['']
+  let partIndex = 0
+  let inSingle = false
+  let inDouble = false
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i]!
+    const nextCh = sql[i + 1]
+    if (ch === "'" && !inDouble) {
+      if (nextCh === "'") {
+        parts[partIndex]! += "''"
+        i += 1
+        continue
+      }
+      inSingle = !inSingle
+      parts[partIndex]! += ch
+      continue
+    }
+    if (ch === '"' && !inSingle) {
+      if (nextCh === '"') {
+        parts[partIndex]! += '""'
+        i += 1
+        continue
+      }
+      inDouble = !inDouble
+      parts[partIndex]! += ch
+      continue
+    }
+    if (ch === '?' && !inSingle && !inDouble) {
+      parts.push('')
+      partIndex += 1
+      continue
+    }
+    parts[partIndex]! += ch
+  }
+  return parts
+}
+
 /** Replace `?` placeholders outside string literals with `$1`, `$2`, … */
 export function bindQuestionMarks(sql: string, paramCount: number): string {
   if (paramCount === 0) return sql
