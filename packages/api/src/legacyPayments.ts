@@ -217,6 +217,7 @@ export async function startLegacyCheckout(
       processed.gatewayLink ||
       processed.paymentUrl ||
       processed.checkoutUrl ||
+      processed.redirectUrl ||
       processed.returnUrl ||
       '',
     ).trim()
