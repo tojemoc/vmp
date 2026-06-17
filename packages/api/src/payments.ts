@@ -1,5 +1,6 @@
 export {
   handleAdminPaymentSettings,
+  handleAdminPaymentPlans,
   handleCheckout,
   handleGetPricing,
   handleGetStripeConfig,

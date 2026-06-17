@@ -48,7 +48,66 @@ async function getAllowedPlans(env: any): Promise<PlanType[]> {
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
     .filter((v: string): v is PlanType => v === 'monthly' || v === 'yearly' || v === 'club')
-  return plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
+  const base = plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
+  const enabled: PlanType[] = []
+  for (const plan of base) {
+    const flag = await getSetting(env, `${plan}_enabled`, { defaultValue: '1', ttlSeconds: 300 })
+    if (String(flag ?? '1') !== '0') enabled.push(plan)
+  }
+  return enabled.length > 0 ? enabled : base
+}
+
+const CORE_PLAN_SLUGS = ['monthly', 'yearly', 'club'] as const
+
+async function discoverPlanSlugs(env: any): Promise<string[]> {
+  const slugs = new Set<string>(CORE_PLAN_SLUGS)
+  try {
+    const db = getDb(env)
+    const rows = await db.prepare(`SELECT key FROM admin_settings WHERE key LIKE '%_price_eur'`).all()
+    for (const row of rows?.results ?? []) {
+      const key = String(row?.key ?? '')
+      const m = key.match(/^([a-z][a-z0-9_]*)_price_eur$/)
+      if (!m?.[1]) continue
+      const slug = m[1]
+      if (slug.startsWith('stripe_') || slug.startsWith('gocardless_')) continue
+      slugs.add(slug)
+    }
+  } catch {
+    // fall back to core plans only
+  }
+  return Array.from(slugs)
+}
+
+async function buildAdminPlanList(env: any) {
+  const slugs = await discoverPlanSlugs(env)
+  const plans = []
+  for (const id of slugs) {
+    const [
+      stripePriceId,
+      amountRaw,
+      label,
+      interval,
+      enabledRaw,
+    ] = await Promise.all([
+      getSetting(env, `stripe_price_${id}`, { ttlSeconds: 300 }),
+      getSetting(env, `${id}_price_eur`, { ttlSeconds: 300 }),
+      getSetting(env, `${id}_label`, { ttlSeconds: 300 }),
+      getSetting(env, `${id}_interval`, { ttlSeconds: 300 }),
+      getSetting(env, `${id}_enabled`, { defaultValue: '1', ttlSeconds: 300 }),
+    ])
+    const defaultLabel = id === 'monthly' ? 'Monthly' : id === 'yearly' ? 'Yearly' : id === 'club' ? 'Club' : id
+    const defaultInterval = id === 'monthly' ? 'month' : 'year'
+    const amountEur = parseConfiguredPrice(amountRaw)
+    plans.push({
+      id,
+      label: String(label ?? defaultLabel),
+      stripePriceId: String(stripePriceId ?? ''),
+      amountEur,
+      interval: String(interval ?? defaultInterval),
+      enabled: String(enabledRaw ?? '1') !== '0',
+    })
+  }
+  return plans
 }
 
 async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
@@ -229,11 +288,13 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
     const stripePricing = await getEffectivePricingSettings(env, 'stripe')
+    const allowedPlans = await getAllowedPlans(env)
     const pricingNotConfigured = stripePricing.monthly == null || stripePricing.yearly == null || stripePricing.club == null
     const payload = {
-      monthly: stripePricing.monthly,
-      yearly: stripePricing.yearly,
-      club: stripePricing.club,
+      monthly: allowedPlans.includes('monthly') ? stripePricing.monthly : null,
+      yearly: allowedPlans.includes('yearly') ? stripePricing.yearly : null,
+      club: allowedPlans.includes('club') ? stripePricing.club : null,
+      allowedPlans,
       pricesByProvider: {
         stripe: stripePricing,
       },
@@ -364,6 +425,117 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
     return jsonResponse({ ok: true }, 200, corsHeaders)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid settings'
+    return jsonResponse({ error: message }, 400, corsHeaders)
+  }
+}
+
+function slugifyPlanLabel(label: string): string {
+  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'plan'
+}
+
+/**
+ * GET /api/admin/payments/plans — list configurable subscription plans
+ * PATCH — update or create a plan row
+ */
+export async function handleAdminPaymentPlans(request: any, env: any, corsHeaders: any) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  if (request.method === 'GET') {
+    const plans = await buildAdminPlanList(env)
+    const [
+      legacyManageUrl,
+      legacyProviderName,
+      legacyShowManageButton,
+      legacyConfigured,
+    ] = await Promise.all([
+      getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
+      getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
+      getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
+      Promise.resolve(isLegacyProviderConfigured(env)),
+    ])
+    return jsonResponse({
+      plans,
+      legacy: {
+        configured: legacyConfigured,
+        manageSubscriptionUrl: String(legacyManageUrl ?? ''),
+        providerName: String(legacyProviderName ?? ''),
+        showManageButton: String(legacyShowManageButton ?? '0') === '1',
+      },
+    }, 200, corsHeaders)
+  }
+
+  if (request.method !== 'PATCH') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  if (!body || typeof body !== 'object') {
+    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+  }
+
+  try {
+    if (body.legacy && typeof body.legacy === 'object') {
+      const legacy = body.legacy
+      const updates: [string, string][] = []
+      if (typeof legacy.manageSubscriptionUrl === 'string') {
+        updates.push(['legacy_manage_subscription_url', legacy.manageSubscriptionUrl.trim()])
+      }
+      if (typeof legacy.providerName === 'string') {
+        updates.push(['legacy_provider_name', legacy.providerName.trim()])
+      }
+      if (typeof legacy.showManageButton === 'boolean') {
+        updates.push(['legacy_show_manage_button', legacy.showManageButton ? '1' : '0'])
+      }
+      if (updates.length) await setSettings(env, updates)
+    }
+
+    const plan = body.plan
+    if (plan && typeof plan === 'object') {
+      let id = typeof plan.id === 'string' ? plan.id.trim().toLowerCase() : ''
+      if (!id && typeof plan.label === 'string') id = slugifyPlanLabel(plan.label)
+      if (!id) return jsonResponse({ error: 'plan.id or plan.label is required' }, 400, corsHeaders)
+
+      const updates: [string, string][] = []
+      if (typeof plan.label === 'string' && plan.label.trim()) {
+        updates.push([`${id}_label`, plan.label.trim()])
+      }
+      if (typeof plan.stripePriceId === 'string') {
+        updates.push([`stripe_price_${id}`, plan.stripePriceId.trim()])
+      }
+      if (plan.amountEur != null && plan.amountEur !== '') {
+        updates.push([`${id}_price_eur`, parseOptionalPositiveNumber(plan.amountEur)])
+      }
+      if (typeof plan.interval === 'string' && plan.interval.trim()) {
+        updates.push([`${id}_interval`, plan.interval.trim()])
+      }
+      if (typeof plan.enabled === 'boolean') {
+        updates.push([`${id}_enabled`, plan.enabled ? '1' : '0'])
+      }
+
+      if (!updates.length) {
+        return jsonResponse({ error: 'No plan fields to update' }, 400, corsHeaders)
+      }
+
+      const allowedRaw = await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' })
+      const allowed = parseCsvList(allowedRaw ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
+      if (!allowed.includes(id) && CORE_PLAN_SLUGS.includes(id as typeof CORE_PLAN_SLUGS[number])) {
+        // core plan — ok
+      } else if (!allowed.includes(id) && !CORE_PLAN_SLUGS.includes(id as typeof CORE_PLAN_SLUGS[number])) {
+        const nextAllowed = [...allowed, id]
+        updates.push(['allowed_plans', nextAllowed.join(',')])
+      }
+
+      await setSettings(env, updates)
+    }
+
+    const plans = await buildAdminPlanList(env)
+    return jsonResponse({ ok: true, plans }, 200, corsHeaders)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid plan'
     return jsonResponse({ error: message }, 400, corsHeaders)
   }
 }
@@ -1308,17 +1480,32 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
       return jsonResponse({ subscription: null }, 200, corsHeaders)
     }
 
+    const provider = sub.provider ?? 'stripe'
+    let legacyManageUrl: string | null = null
+    let showLegacyManageButton = false
+    if (provider === 'legacy') {
+      const [urlRaw, showRaw] = await Promise.all([
+        getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
+        getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
+      ])
+      const url = String(urlRaw ?? '').trim()
+      legacyManageUrl = url || null
+      showLegacyManageButton = String(showRaw ?? '0') === '1' && Boolean(url)
+    }
+
     return jsonResponse({
       subscription: {
         id:                  sub.id,
         planType:            sub.plan_type,
         status:              sub.status,
-        provider:            sub.provider ?? 'stripe',
+        provider,
         providerCustomerId:  sub.provider_customer_id ?? null,
         stripeCustomerId:    sub.stripe_customer_id,
         currentPeriodEnd:    sub.current_period_end,
         createdAt:           sub.created_at,
         updatedAt:           sub.updated_at,
+        legacyManageUrl,
+        showLegacyManageButton,
       },
     }, 200, corsHeaders)
   } catch (err) {

@@ -83,8 +83,8 @@ export function evaluateSelfRoleChange({
   return { ok: true }
 }
 
-/** Stripe-style subscription statuses we persist in D1. */
-export const SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'cancelled', 'unpaid', 'incomplete']
+/** Subscription statuses we persist in D1 (Stripe-style plus legacy migration sentinel). */
+export const SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'cancelled', 'unpaid', 'incomplete', 'needs_relink']
 
 export function normalizeSubscriptionStatusForPolicy(raw: any) {
   if (raw === null || raw === undefined || raw === 'none' || raw === '') return 'none'

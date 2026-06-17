@@ -18,6 +18,9 @@ export interface HomepageLayoutBlock {
   body?: string
   categoryId?: string | null
   rightRailWithNextSideMini?: boolean
+  width?: 'full' | 'half'
+  mobileHidden?: boolean
+  mobileOrder?: number
   childBlocks?: HomepageLayoutChildBlock[]
 }
 
@@ -82,6 +85,22 @@ export function isSplitRenderBlock(block: HomepageRenderBlock): block is Homepag
 
 export function isLeafRenderBlock(block: HomepageRenderBlock): block is HomepageRenderLeafBlock {
   return block.type === 'featured_row' || block.type === 'category' || block.type === 'top_video'
+}
+
+export function orderLayoutBlocksForViewport(
+  blocks: HomepageLayoutBlock[],
+  isMobile: boolean,
+): HomepageLayoutBlock[] {
+  if (!isMobile) return blocks
+  return blocks
+    .map((block, index) => ({ block, index }))
+    .filter(({ block }) => block.mobileHidden !== true)
+    .sort((a, b) => {
+      const ao = Number.isFinite(Number(a.block.mobileOrder)) ? Number(a.block.mobileOrder) : a.index
+      const bo = Number.isFinite(Number(b.block.mobileOrder)) ? Number(b.block.mobileOrder) : b.index
+      return ao - bo
+    })
+    .map(({ block }) => block)
 }
 
 export function buildHomepageRenderModel({
@@ -193,9 +212,8 @@ export function buildHomepageRenderModel({
     if (shouldPairRightRail) {
       const next = renderedBlocks[idx + 1]
       const nextLeaf = next ? buildLeafBlock(next as HomepageLayoutChildBlock, next.id) : null
-      const primaryIsThreeByOne = leaf.categorySection?.variant === 'three_by_one'
       const nextIsSideMiniCategory = next?.type === 'category' && nextLeaf?.categorySection?.variant === 'side_mini'
-      if (primaryIsThreeByOne && nextIsSideMiniCategory && nextLeaf) {
+      if (nextIsSideMiniCategory && nextLeaf) {
         const primaryCategorySection = leaf.categorySection
         const pairedPrimary: HomepageRenderLeafBlock = {
           ...leaf,

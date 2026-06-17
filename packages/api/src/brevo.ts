@@ -1128,3 +1128,236 @@ export async function handleAdminNewsletterSync(request: any, env: any, corsHead
     return jsonResponse({ ok: false, error: message || 'sync_failed', code: 'newsletter_sync_failed' }, status, corsHeaders)
   }
 }
+
+async function ensureNewsletterDraftsTable(db: any) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS newsletter_drafts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      html_body TEXT NOT NULL,
+      scheduled_at DATETIME,
+      brevo_campaign_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run()
+}
+
+function mapNewsletterDraftRow(row: any) {
+  if (!row) return null
+  return {
+    id: row.id,
+    name: row.name,
+    subject: row.subject,
+    htmlBody: row.html_body,
+    scheduledAt: row.scheduled_at ?? null,
+    brevoCampaignId: row.brevo_campaign_id != null ? Number(row.brevo_campaign_id) : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+/**
+ * GET/POST /api/admin/newsletter/drafts
+ * PATCH/DELETE /api/admin/newsletter/drafts/:id
+ */
+export async function handleAdminNewsletterDrafts(request: any, env: any, corsHeaders: any, draftId?: string) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const db = getDb(env)
+  await ensureNewsletterDraftsTable(db)
+
+  if (draftId) {
+    if (request.method === 'PATCH') {
+      const body = await request.json().catch(() => null)
+      const updates: string[] = []
+      const values: unknown[] = []
+      if (typeof body?.name === 'string' && body.name.trim()) {
+        updates.push('name = ?')
+        values.push(body.name.trim())
+      }
+      if (typeof body?.subject === 'string') {
+        updates.push('subject = ?')
+        values.push(body.subject.trim())
+      }
+      if (typeof body?.htmlBody === 'string') {
+        updates.push('html_body = ?')
+        values.push(body.htmlBody)
+      }
+      if (body?.scheduledAt === null) {
+        updates.push('scheduled_at = NULL')
+      } else if (typeof body?.scheduledAt === 'string' && body.scheduledAt.trim()) {
+        updates.push('scheduled_at = ?')
+        values.push(body.scheduledAt.trim())
+      }
+      if (body?.brevoCampaignId != null && Number.isFinite(Number(body.brevoCampaignId))) {
+        updates.push('brevo_campaign_id = ?')
+        values.push(Number(body.brevoCampaignId))
+      }
+      if (!updates.length) {
+        return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
+      }
+      updates.push('updated_at = CURRENT_TIMESTAMP')
+      values.push(draftId)
+      const run = await db.prepare(`UPDATE newsletter_drafts SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run()
+      const changed = run.meta?.changes ?? run.changes ?? 0
+      if (!changed) return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
+      const row = await db.prepare('SELECT * FROM newsletter_drafts WHERE id = ? LIMIT 1').bind(draftId).first()
+      return jsonResponse({ ok: true, draft: mapNewsletterDraftRow(row) }, 200, corsHeaders)
+    }
+    if (request.method === 'DELETE') {
+      const run = await db.prepare('DELETE FROM newsletter_drafts WHERE id = ?').bind(draftId).run()
+      const changed = run.meta?.changes ?? run.changes ?? 0
+      if (!changed) return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
+      return jsonResponse({ ok: true }, 200, corsHeaders)
+    }
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  }
+
+  if (request.method === 'GET') {
+    const rows = await db.prepare(`
+      SELECT id, name, subject, html_body, scheduled_at, brevo_campaign_id, created_at, updated_at
+      FROM newsletter_drafts
+      ORDER BY datetime(updated_at) DESC, datetime(created_at) DESC
+    `).all()
+    const drafts = (rows?.results ?? []).map((row: any) => mapNewsletterDraftRow(row))
+    return jsonResponse({ drafts }, 200, corsHeaders)
+  }
+
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => null)
+    const name = typeof body?.name === 'string' ? body.name.trim() : ''
+    const subject = typeof body?.subject === 'string' ? body.subject.trim() : ''
+    const htmlBody = typeof body?.htmlBody === 'string' ? body.htmlBody : ''
+    if (!name || !subject || !htmlBody.trim()) {
+      return jsonResponse({ error: 'name, subject, and htmlBody are required', code: 'validation' }, 400, corsHeaders)
+    }
+    const id = crypto.randomUUID()
+    const scheduledAt = typeof body?.scheduledAt === 'string' && body.scheduledAt.trim() ? body.scheduledAt.trim() : null
+    await db.prepare(`
+      INSERT INTO newsletter_drafts (id, name, subject, html_body, scheduled_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(id, name, subject, htmlBody, scheduledAt).run()
+    const row = await db.prepare('SELECT * FROM newsletter_drafts WHERE id = ? LIMIT 1').bind(id).first()
+    return jsonResponse({ ok: true, draft: mapNewsletterDraftRow(row) }, 201, corsHeaders)
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+}
+
+/**
+ * POST /api/admin/newsletter/schedule
+ * Body: { draftId?: string, subject, htmlBody, scheduledAt, dedupeKey? }
+ * Creates a Brevo campaign (without sendNow) and schedules it.
+ */
+export async function handleAdminNewsletterSchedule(request: any, env: any, corsHeaders: any) {
+  const correlationId = correlationFromRequest(request) || crypto.randomUUID()
+  try {
+    await requireRole(request, env, 'admin', 'super_admin')
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+  if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  if (!env.BREVO_API_KEY) {
+    return jsonResponse({ error: 'Brevo is not configured (missing BREVO_API_KEY)', code: 'brevo_not_configured' }, 503, corsHeaders)
+  }
+
+  const body = await request.json().catch(() => null)
+  const subject = typeof body?.subject === 'string' ? body.subject.trim() : ''
+  const htmlBody = typeof body?.htmlBody === 'string' ? body.htmlBody : ''
+  const scheduledAt = typeof body?.scheduledAt === 'string' ? body.scheduledAt.trim() : ''
+  const draftId = typeof body?.draftId === 'string' ? body.draftId.trim() : ''
+  if (!subject || !htmlBody.trim() || !scheduledAt) {
+    return jsonResponse({ error: 'subject, htmlBody, and scheduledAt are required', code: 'validation' }, 400, corsHeaders)
+  }
+
+  const db = getDb(env)
+  await ensureNewsletterDraftsTable(db)
+
+  const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id')
+  const listId = listIdRaw != null && String(listIdRaw).trim() !== '' ? Number.parseInt(String(listIdRaw).trim(), 10) : NaN
+  if (!Number.isFinite(listId) || listId <= 0) {
+    return jsonResponse({ error: 'Configure brevoSubscriberListId in newsletter settings first', code: 'list_not_configured' }, 422, corsHeaders)
+  }
+
+  const senderEmailRaw = await getAdminSetting(db, 'brevo_campaign_sender_email')
+  const senderEmail = senderEmailRaw ? String(senderEmailRaw).trim().toLowerCase() : ''
+  if (!senderEmail || !EMAIL_RE.test(senderEmail)) {
+    return jsonResponse({ error: 'Configure a verified brevoCampaignSenderEmail in newsletter settings', code: 'sender_not_configured' }, 422, corsHeaders)
+  }
+  const senderNameRaw = await getAdminSetting(db, 'brevo_campaign_sender_name')
+  const senderName = senderNameRaw ? String(senderNameRaw).trim() : ''
+
+  let campaignId: number | null = null
+  if (draftId) {
+    const draft = await db.prepare('SELECT brevo_campaign_id FROM newsletter_drafts WHERE id = ? LIMIT 1').bind(draftId).first()
+    if (draft?.brevo_campaign_id != null && Number.isFinite(Number(draft.brevo_campaign_id))) {
+      campaignId = Number(draft.brevo_campaign_id)
+    }
+  }
+
+  if (!campaignId) {
+    const campaignPayload = {
+      name: `VMP Scheduled ${new Date().toISOString()}`,
+      subject,
+      type: 'classic',
+      sender: senderName ? { email: senderEmail, name: senderName } : { email: senderEmail },
+      htmlContent: htmlBody,
+      recipients: { listIds: [listId] },
+    }
+    const createRes = await brevoFetch('/emailCampaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(campaignPayload),
+    }, env)
+    if (!createRes.ok) {
+      const err = asRecord(await createRes.json().catch(() => null))
+      return jsonResponse({
+        error: recordString(err, 'message') || 'Failed to create email campaign',
+        code: 'brevo_campaign_error',
+        brevoStatus: createRes.status,
+      }, createRes.status >= 400 && createRes.status < 600 ? createRes.status : 502, corsHeaders)
+    }
+    const created = asRecord(await createRes.json().catch(() => null))
+    const newId = created.id
+    if (newId == null || !Number.isFinite(Number(newId))) {
+      return jsonResponse({ error: 'Unexpected response creating campaign', code: 'brevo_campaign_error' }, 502, corsHeaders)
+    }
+    campaignId = Number(newId)
+    if (draftId) {
+      await db.prepare(`
+        UPDATE newsletter_drafts SET brevo_campaign_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(campaignId, draftId).run()
+    }
+  }
+
+  const scheduleRes = await brevoFetch(`/emailCampaigns/${campaignId}/schedule`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scheduledAt }),
+  }, env)
+  if (!scheduleRes.ok && scheduleRes.status !== 204) {
+    const err = asRecord(await scheduleRes.json().catch(() => null))
+    newsletterLog('schedule_failed', { correlationId, campaignId, httpStatus: scheduleRes.status })
+    return jsonResponse({
+      error: recordString(err, 'message') || 'Failed to schedule campaign',
+      code: 'brevo_schedule_failed',
+      campaignId,
+      brevoStatus: scheduleRes.status,
+    }, scheduleRes.status >= 400 && scheduleRes.status < 600 ? scheduleRes.status : 502, corsHeaders)
+  }
+
+  if (draftId) {
+    await db.prepare(`
+      UPDATE newsletter_drafts SET scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).bind(scheduledAt, draftId).run()
+  }
+
+  newsletterLog('schedule_ok', { correlationId, campaignId })
+  return jsonResponse({ ok: true, campaignId, scheduledAt }, 200, corsHeaders)
+}
