@@ -2767,7 +2767,7 @@ interface AnalyticsResponse {
 }
 
 const config = useRuntimeConfig()
-const { authHeader, isAdmin, user } = useAuth()
+const { authHeader, canEditContent, isAdmin, user } = useAuth()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(true)
@@ -5524,6 +5524,10 @@ watch(
 )
 
 const reloadAll = async () => {
+  if (!user.value || !canEditContent.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     await loadVideos()
