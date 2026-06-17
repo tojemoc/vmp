@@ -1,4 +1,4 @@
-import { DEV_UI_LOCALE_COOKIE, clearDevUiLocalePreview, setDevUiLocalePreview } from '~/utils/resolveUiLocale'
+import { DEV_UI_LOCALE_COOKIE } from '~/utils/resolveUiLocale'
 import type { UiLocale } from '~/locales'
 
 /** Dev only: `?uiLocale=sk` seeds the preview cookie, then redirects without the query param. */
