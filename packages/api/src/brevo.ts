@@ -1182,10 +1182,16 @@ export async function handleAdminNewsletterDrafts(request: any, env: any, corsHe
         values.push(body.name.trim())
       }
       if (typeof body?.subject === 'string') {
+        if (!body.subject.trim()) {
+          return jsonResponse({ error: 'subject cannot be empty', code: 'validation' }, 400, corsHeaders)
+        }
         updates.push('subject = ?')
         values.push(body.subject.trim())
       }
       if (typeof body?.htmlBody === 'string') {
+        if (!body.htmlBody.trim()) {
+          return jsonResponse({ error: 'htmlBody cannot be empty', code: 'validation' }, 400, corsHeaders)
+        }
         updates.push('html_body = ?')
         values.push(body.htmlBody)
       }
@@ -1194,10 +1200,6 @@ export async function handleAdminNewsletterDrafts(request: any, env: any, corsHe
       } else if (typeof body?.scheduledAt === 'string' && body.scheduledAt.trim()) {
         updates.push('scheduled_at = ?')
         values.push(body.scheduledAt.trim())
-      }
-      if (body?.brevoCampaignId != null && Number.isFinite(Number(body.brevoCampaignId))) {
-        updates.push('brevo_campaign_id = ?')
-        values.push(Number(body.brevoCampaignId))
       }
       if (!updates.length) {
         return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders)
@@ -1293,46 +1295,47 @@ export async function handleAdminNewsletterSchedule(request: any, env: any, cors
   const senderNameRaw = await getAdminSetting(db, 'brevo_campaign_sender_name')
   const senderName = senderNameRaw ? String(senderNameRaw).trim() : ''
 
-  let campaignId: number | null = null
   if (draftId) {
-    const draft = await db.prepare('SELECT brevo_campaign_id FROM newsletter_drafts WHERE id = ? LIMIT 1').bind(draftId).first()
-    if (draft?.brevo_campaign_id != null && Number.isFinite(Number(draft.brevo_campaign_id))) {
-      campaignId = Number(draft.brevo_campaign_id)
+    const draft = await db.prepare('SELECT id FROM newsletter_drafts WHERE id = ? LIMIT 1').bind(draftId).first()
+    if (!draft?.id) {
+      return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
     }
   }
 
-  if (!campaignId) {
-    const campaignPayload = {
-      name: `VMP Scheduled ${new Date().toISOString()}`,
-      subject,
-      type: 'classic',
-      sender: senderName ? { email: senderEmail, name: senderName } : { email: senderEmail },
-      htmlContent: htmlBody,
-      recipients: { listIds: [listId] },
-    }
-    const createRes = await brevoFetch('/emailCampaigns', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(campaignPayload),
-    }, env)
-    if (!createRes.ok) {
-      const err = asRecord(await createRes.json().catch(() => null))
-      return jsonResponse({
-        error: recordString(err, 'message') || 'Failed to create email campaign',
-        code: 'brevo_campaign_error',
-        brevoStatus: createRes.status,
-      }, createRes.status >= 400 && createRes.status < 600 ? createRes.status : 502, corsHeaders)
-    }
-    const created = asRecord(await createRes.json().catch(() => null))
-    const newId = created.id
-    if (newId == null || !Number.isFinite(Number(newId))) {
-      return jsonResponse({ error: 'Unexpected response creating campaign', code: 'brevo_campaign_error' }, 502, corsHeaders)
-    }
-    campaignId = Number(newId)
-    if (draftId) {
-      await db.prepare(`
-        UPDATE newsletter_drafts SET brevo_campaign_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `).bind(campaignId, draftId).run()
+  const campaignPayload = {
+    name: `VMP Scheduled ${new Date().toISOString()}`,
+    subject,
+    type: 'classic',
+    sender: senderName ? { email: senderEmail, name: senderName } : { email: senderEmail },
+    htmlContent: htmlBody,
+    recipients: { listIds: [listId] },
+  }
+  const createRes = await brevoFetch('/emailCampaigns', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(campaignPayload),
+  }, env)
+  if (!createRes.ok) {
+    const err = asRecord(await createRes.json().catch(() => null))
+    return jsonResponse({
+      error: recordString(err, 'message') || 'Failed to create email campaign',
+      code: 'brevo_campaign_error',
+      brevoStatus: createRes.status,
+    }, createRes.status >= 400 && createRes.status < 600 ? createRes.status : 502, corsHeaders)
+  }
+  const created = asRecord(await createRes.json().catch(() => null))
+  const newId = created.id
+  if (newId == null || !Number.isFinite(Number(newId))) {
+    return jsonResponse({ error: 'Unexpected response creating campaign', code: 'brevo_campaign_error' }, 502, corsHeaders)
+  }
+  const campaignId = Number(newId)
+  if (draftId) {
+    const run = await db.prepare(`
+      UPDATE newsletter_drafts SET brevo_campaign_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).bind(campaignId, draftId).run()
+    const changed = run.meta?.changes ?? run.changes ?? 0
+    if (!changed) {
+      return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
     }
   }
 
@@ -1353,9 +1356,13 @@ export async function handleAdminNewsletterSchedule(request: any, env: any, cors
   }
 
   if (draftId) {
-    await db.prepare(`
+    const run = await db.prepare(`
       UPDATE newsletter_drafts SET scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).bind(scheduledAt, draftId).run()
+    const changed = run.meta?.changes ?? run.changes ?? 0
+    if (!changed) {
+      return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
+    }
   }
 
   newsletterLog('schedule_ok', { correlationId, campaignId })

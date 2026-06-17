@@ -210,10 +210,11 @@ function onDrop(targetIndex: number) {
   const [moved] = reordered.splice(from, 1)
   if (!moved) return
   reordered.splice(insertAt, 0, moved)
-  reordered.forEach((b, i) => {
-    if (!Number.isFinite(Number(b.mobileOrder))) b.mobileOrder = i
-  })
-  blocks.value = reordered
+  if (mobileOrderMode.value) {
+    reordered.forEach((b, i) => { b.mobileOrder = i })
+  } else {
+    blocks.value = reordered
+  }
   draggingIndex.value = null
   dragOverIndex.value = null
   dropIndicatorIndex.value = null

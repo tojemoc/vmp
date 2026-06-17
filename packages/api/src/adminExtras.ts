@@ -1111,9 +1111,6 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
       return jsonResponse({ ok: true }, 200, corsHeaders)
     }
     if (!latest?.id) {
-      if (transition.next === 'none') {
-        return jsonResponse({ error: 'User has no subscription to cancel', code: 'no_subscription' }, 400, corsHeaders)
-      }
       const createSub = body?.createSubscription
       const planTypeRaw = typeof createSub?.planType === 'string'
         ? createSub.planType

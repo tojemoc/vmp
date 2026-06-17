@@ -229,8 +229,8 @@ function savePlan(id: string) {
   })
 }
 
-function addPlan() {
-  void patchPlan({
+async function addPlan() {
+  await patchPlan({
     label: addForm.value.label,
     amountEur: addForm.value.amountEur,
     interval: addForm.value.interval,

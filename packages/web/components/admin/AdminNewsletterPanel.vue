@@ -371,7 +371,7 @@ async function saveDraft() {
 
 function buildDedupeKey(): string {
   const base = `${subject.value}:${htmlBodyForApi().length}`
-  return `admin-send:${base.slice(0, 200)}:${Date.now()}`
+  return `admin-send:${base.slice(0, 200)}`
 }
 
 async function sendNow() {

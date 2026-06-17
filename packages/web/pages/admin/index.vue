@@ -600,7 +600,27 @@
                 <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.direction }}</span>
                 <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.homepage_layout_variant === 'side_mini' ? 'side_mini' : '3×1' }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ category.video_count ?? 0 }} videos</span>
-                <button type="button" class="ml-auto px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
+                <div class="ml-auto flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    :disabled="categoryIndex === 0"
+                    aria-label="Move category up"
+                    @click="moveCategoryUp(categoryIndex)"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    :disabled="categoryIndex === categories.length - 1"
+                    aria-label="Move category down"
+                    @click="moveCategoryDown(categoryIndex)"
+                  >
+                    Move down
+                  </button>
+                  <button type="button" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
+                </div>
               </div>
             </div>
 
@@ -935,13 +955,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 </select>
                 <select
                   v-if="!hasAdminUserSubscriptionRow(u)"
-                  :value="adminUserPendingPlanType[u.id] || 'monthly'"
+                  :value="adminUserPendingPlanType[u.id] || defaultAdminPlanId"
                   class="w-full px-2 py-1 rounded border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white text-xs"
                   @change="(e) => setAdminUserPendingPlanType(u.id, (e.target as HTMLSelectElement).value)"
                 >
-                  <option value="monthly">plan: monthly</option>
-                  <option value="yearly">plan: yearly</option>
-                  <option value="club">plan: club</option>
+                  <option v-for="plan in enabledAdminPaymentPlans" :key="`user-plan-${u.id}-${plan.id}`" :value="plan.id">plan: {{ plan.label }}</option>
                 </select>
               </div>
             </div>
@@ -2604,6 +2622,11 @@ const newsletterEditingTemplateId = ref<string | null>(null)
 const newsletterTemplateSaving = ref(false)
 type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type PlanType = 'monthly' | 'yearly' | 'club'
+interface AdminPaymentPlanRow {
+  id: string
+  label: string
+  enabled: boolean
+}
 interface PaymentPriceRow { monthly: string; yearly: string; club: string }
 interface PromoCampaign {
   id: string
@@ -2663,6 +2686,9 @@ const paymentSettings = ref<{
 const paymentSettingsSaving = ref(false)
 const paymentSettingsMessage = ref('')
 const paymentSettingsMessageClass = ref('')
+const adminPaymentPlans = ref<AdminPaymentPlanRow[]>([])
+const enabledAdminPaymentPlans = computed(() => adminPaymentPlans.value.filter((p) => p.enabled))
+const defaultAdminPlanId = computed(() => enabledAdminPaymentPlans.value[0]?.id ?? 'monthly')
 const systemFeatures = ref({
   promotionsEnabled: true,
   isicEnabled: false,
@@ -3400,9 +3426,22 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
         title: typeof child.title === 'string' ? child.title : '',
         body: typeof child.body === 'string' ? child.body : '',
         categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
+        width: child.width === 'half' || child.width === 'full' ? child.width : undefined,
+        mobileHidden: child.mobileHidden === true,
+        mobileOrder: Number.isFinite(Number(child.mobileOrder)) ? Number(child.mobileOrder) : undefined,
       }))
       .slice(0, 2)
-    while (normalizedChildren.length < 2) normalizedChildren.push({ type: 'top_video', title: '', body: '', categoryId: '' })
+    while (normalizedChildren.length < 2) {
+      normalizedChildren.push({
+        type: 'top_video',
+        title: '',
+        body: '',
+        categoryId: '',
+        width: undefined,
+        mobileHidden: false,
+        mobileOrder: undefined,
+      })
+    }
     return { id, type, title, body, childBlocks: normalizedChildren }
   }
   return {
@@ -3452,6 +3491,25 @@ const applyHomepageBaseline = () => {
   homepageBaseline.value = serializeHomepageState()
 }
 
+const buildCategoryOrderPayload = (reordered: Category[]) => {
+  let nextStandardOrder = 1
+  return reordered.map((c) => ({
+    id: c.id,
+    sortOrder: c.sort_order <= 0 ? c.sort_order : nextStandardOrder++,
+  }))
+}
+
+const persistCategoryOrder = async (reordered: Category[]) => {
+  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ categoryOrder: buildCategoryOrderPayload(reordered) }),
+  })
+  if (!res.ok) throw new Error('Reorder failed')
+  await loadCategories()
+  showToast('success', 'Category order updated.')
+}
+
 const onCategoryDragStart = (index: number) => { categoryDraggingIndex.value = index }
 const onCategoryDrop = async (targetIndex: number) => {
   const from = categoryDraggingIndex.value
@@ -3463,20 +3521,36 @@ const onCategoryDrop = async (targetIndex: number) => {
   categories.value = reordered
   categoryDraggingIndex.value = null
   try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        categoryOrder: reordered.map((c, i) => ({ id: c.id, sortOrder: i + 1 })),
-      }),
-    })
-    if (!res.ok) throw new Error('Reorder failed')
-    await loadCategories()
-    showToast('success', 'Category order updated.')
+    await persistCategoryOrder(reordered)
   } catch (e: unknown) {
     showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
     await loadCategories()
   }
+}
+
+async function reorderCategoryByIndex(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= categories.value.length || to >= categories.value.length) return
+  const reordered = [...categories.value]
+  const [moved] = reordered.splice(from, 1)
+  if (!moved) return
+  reordered.splice(to, 0, moved)
+  categories.value = reordered
+  try {
+    await persistCategoryOrder(reordered)
+  } catch (e: unknown) {
+    showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
+    await loadCategories()
+  }
+}
+
+function moveCategoryUp(index: number) {
+  if (index <= 0) return
+  void reorderCategoryByIndex(index, index - 1)
+}
+
+function moveCategoryDown(index: number) {
+  if (index >= categories.value.length - 1) return
+  void reorderCategoryByIndex(index, index + 1)
 }
 
 function openCategoryDrawer(category: Category) {
@@ -4047,6 +4121,24 @@ const pushReplicationToDeno = async () => {
   }
 }
 
+const loadAdminPaymentPlans = async () => {
+  if (!isAdmin.value) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, { headers: authHeader() })
+    if (!res.ok) return
+    const data = await res.json()
+    adminPaymentPlans.value = Array.isArray(data.plans)
+      ? data.plans.map((p: { id?: string; label?: string; enabled?: boolean }) => ({
+        id: String(p.id ?? ''),
+        label: String(p.label ?? p.id ?? ''),
+        enabled: p.enabled !== false,
+      })).filter((p: AdminPaymentPlanRow) => p.id)
+      : []
+  } catch {
+    adminPaymentPlans.value = []
+  }
+}
+
 const loadPaymentSettings = async () => {
   if (!isAdmin.value) return
   paymentSettingsMessage.value = ''
@@ -4532,6 +4624,7 @@ const savePaymentSettings = async () => {
     paymentSettingsMessage.value = 'Payment settings saved.'
     paymentSettingsMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
     await loadPaymentSettings()
+    await loadAdminPaymentPlans()
   } catch (e: any) {
     paymentSettingsMessage.value = e.message || 'Failed to save payment settings'
     paymentSettingsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
@@ -4790,7 +4883,7 @@ function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
     nextSubscription: next,
     impactText: hasAdminUserSubscriptionRow(u)
       ? `Change subscription status for ${u.email} from ${prev} to ${next}? This updates their latest subscription row in the database (not Stripe).`
-      : `Create a manual ${adminUserPendingPlanType.value[u.id] || 'monthly'} subscription for ${u.email} with status ${next}?`,
+      : `Create a manual ${adminUserPendingPlanType.value[u.id] || defaultAdminPlanId.value} subscription for ${u.email} with status ${next}?`,
   })
 }
 
@@ -5278,6 +5371,7 @@ const reloadAll = async () => {
     await loadSystemFeatures()
     await loadReplicationStatus({ probe: true })
     await loadPaymentSettings()
+    await loadAdminPaymentPlans()
     if (systemFeatures.value.promotionsEnabled) await loadPromotions()
     if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()
     await loadSiteBranding()
@@ -6037,7 +6131,7 @@ async function runConfirmedAction() {
   if (snap.mode === 'user_subscription' && snap.nextSubscription !== 'none') {
     const row = users.value.find((x) => x.id === snap.userId)
     if (row && !hasAdminUserSubscriptionRow(row)) {
-      const planType = adminUserPendingPlanType.value[snap.userId] || 'monthly'
+      const planType = adminUserPendingPlanType.value[snap.userId] || defaultAdminPlanId.value
       const ok = await updateUser(snap.userId, patch, { createSubscription: { status: snap.nextSubscription, planType } })
       if (!ok) {
         patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })

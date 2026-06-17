@@ -63,12 +63,22 @@ async function discoverPlanSlugs(env: any): Promise<string[]> {
   const slugs = new Set<string>(CORE_PLAN_SLUGS)
   try {
     const db = getDb(env)
-    const rows = await db.prepare(`SELECT key FROM admin_settings WHERE key LIKE '%_price_eur'`).all()
+    const rows = await db.prepare(`
+      SELECT key FROM admin_settings
+      WHERE key LIKE '%_price_eur'
+         OR key LIKE '%_label'
+         OR key LIKE '%_interval'
+         OR key LIKE '%_enabled'
+         OR key LIKE 'stripe_price_%'
+    `).all()
     for (const row of rows?.results ?? []) {
       const key = String(row?.key ?? '')
-      const m = key.match(/^([a-z][a-z0-9_]*)_price_eur$/)
-      if (!m?.[1]) continue
-      const slug = m[1]
+      let slug: string | null = null
+      const planKey = key.match(/^([a-z][a-z0-9_]*)_(?:price_eur|label|interval|enabled)$/)
+      if (planKey?.[1]) slug = planKey[1]
+      const stripePrice = key.match(/^stripe_price_([a-z][a-z0-9_]*)$/)
+      if (stripePrice?.[1]) slug = stripePrice[1]
+      if (!slug) continue
       if (slug.startsWith('stripe_') || slug.startsWith('gocardless_')) continue
       slugs.add(slug)
     }
@@ -289,7 +299,11 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
   try {
     const stripePricing = await getEffectivePricingSettings(env, 'stripe')
     const allowedPlans = await getAllowedPlans(env)
-    const pricingNotConfigured = stripePricing.monthly == null || stripePricing.yearly == null || stripePricing.club == null
+    const pricingNotConfigured = (
+      (allowedPlans.includes('monthly') && stripePricing.monthly == null)
+      || (allowedPlans.includes('yearly') && stripePricing.yearly == null)
+      || (allowedPlans.includes('club') && stripePricing.club == null)
+    )
     const payload = {
       monthly: allowedPlans.includes('monthly') ? stripePricing.monthly : null,
       yearly: allowedPlans.includes('yearly') ? stripePricing.yearly : null,
