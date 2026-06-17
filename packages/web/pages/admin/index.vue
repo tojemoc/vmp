@@ -5523,27 +5523,45 @@ watch(
   { deep: true },
 )
 
+const reportAdminLoaderFailure = (label: string, error: unknown) => {
+  const message = error instanceof Error
+    ? error.message
+    : (typeof error === 'string' && error.trim() ? error : 'network error')
+  console.warn(`[admin] Failed to load ${label}`, error)
+  saveMessage.value = `Could not load ${label}: ${message}`
+  saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
+}
+
+const runAdminLoader = async (label: string, loader: () => Promise<unknown>) => {
+  try {
+    await loader()
+  } catch (error: unknown) {
+    reportAdminLoaderFailure(label, error)
+  }
+}
+
 const reloadAll = async () => {
   loading.value = true
   try {
-    await loadVideos()
-    await loadCategories()
-    await loadHomepageState()
-    await loadHomepagePlacement()
-    await loadNewsletterSettings()
-    await loadNewsletterTemplates()
-    await loadSystemFeatures()
-    await loadReplicationStatus({ probe: true })
-    await loadPaymentSettings()
-    if (systemFeatures.value.promotionsEnabled) await loadPromotions()
-    if (systemFeatures.value.isicEnabled) await loadIsicCampaigns()
-    await loadSiteBranding()
-    if (systemFeatures.value.freePodcastPreviewEnabled) await loadRssPodcastWebhookSettings()
-    await loadUsers()
-    await loadAnalytics()
-    await loadAdminPills()
-  }
-  finally { loading.value = false }
+    await runAdminLoader('videos', loadVideos)
+    await runAdminLoader('categories', loadCategories)
+    await runAdminLoader('homepage state', loadHomepageState)
+    await runAdminLoader('homepage placement', loadHomepagePlacement)
+    await runAdminLoader('newsletter settings', loadNewsletterSettings)
+    await runAdminLoader('newsletter templates', loadNewsletterTemplates)
+    await runAdminLoader('system features', loadSystemFeatures)
+    await runAdminLoader('replication status', () => loadReplicationStatus({ probe: true }))
+    await runAdminLoader('payment settings', loadPaymentSettings)
+    if (systemFeatures.value.promotionsEnabled) await runAdminLoader('promotions', loadPromotions)
+    if (systemFeatures.value.isicEnabled) await runAdminLoader('ISIC campaigns', loadIsicCampaigns)
+    await runAdminLoader('site branding', loadSiteBranding)
+    if (systemFeatures.value.freePodcastPreviewEnabled) await runAdminLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings)
+    await runAdminLoader('users', loadUsers)
+    await runAdminLoader('analytics', loadAnalytics)
+    await runAdminLoader('pills', loadAdminPills)
+  } catch (error: unknown) {
+    reportAdminLoaderFailure('admin data', error)
+  } finally { loading.value = false }
 }
 
 function statusBadgeClass(status: string | null) {
