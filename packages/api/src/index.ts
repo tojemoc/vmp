@@ -114,6 +114,12 @@ import {
   handleAdminLegacyPaymentSettings,
 } from './legacyPayments.js'
 import {
+  handleAdminLegacyMigrationRelinkCandidates,
+  handleAdminLegacyMigrationSendRelinkEmail,
+  handleAdminLegacyMigrationStats,
+  handleAdminLegacyMigrationValidateBatch,
+} from './legacyMigration.js'
+import {
   createPushCampaignAndDeliveries,
   enqueueOverduePushDeliveries,
   ensurePushTierDefaultSettings,
@@ -600,6 +606,18 @@ const workerHandler = {
     }
     if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
       return handleAdminLegacyPaymentSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/legacy-migration/stats' && request.method === 'GET') {
+      return handleAdminLegacyMigrationStats(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/legacy-migration/validate-batch' && request.method === 'POST') {
+      return handleAdminLegacyMigrationValidateBatch(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/legacy-migration/relink-candidates' && request.method === 'GET') {
+      return handleAdminLegacyMigrationRelinkCandidates(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/legacy-migration/send-relink-email' && request.method === 'POST') {
+      return handleAdminLegacyMigrationSendRelinkEmail(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)

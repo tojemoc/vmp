@@ -104,6 +104,7 @@ orphan_category_assignments_video=0
 orphan_category_assignments_category=0
 orphan_livestream_video=0
 orphan_checkout_users=0
+legacy_invalid_unresolved=0
 
 if table_exists "subscriptions" && column_exists "subscriptions" "provider"; then
   bad_provider="$(run_scalar "SELECT COUNT(*) AS n FROM subscriptions WHERE provider IS NULL OR trim(provider) = '';")"
@@ -217,6 +218,25 @@ else
   schema_failures=$((schema_failures + 1))
 fi
 
+legacy_invalid_unresolved=0
+if table_exists "subscriptions" \
+  && column_exists "subscriptions" "provider" \
+  && column_exists "subscriptions" "legacy_validation_status" \
+  && column_exists "subscriptions" "legacy_validated_at" \
+  && column_exists "subscriptions" "legacy_validation_error"; then
+  legacy_invalid_unresolved="$(run_scalar "SELECT COUNT(*) AS n
+    FROM subscriptions
+    WHERE provider = 'legacy'
+      AND legacy_validation_status = 'invalid'
+      AND (
+        legacy_validated_at IS NULL
+        OR datetime(legacy_validated_at) <= datetime('now', '-30 days')
+      );")"
+else
+  echo "[verify] schema_missing.subscriptions.legacy_validation_columns"
+  schema_failures=$((schema_failures + 1))
+fi
+
 print_check "check.bad_provider" "$bad_provider"
 print_check "check.bad_provider_mapping" "$bad_provider_mapping"
 print_check "check.bad_brevo_missing_campaign" "$bad_brevo_missing_campaign"
@@ -229,6 +249,7 @@ print_check "check.orphan_category_assignments_video" "$orphan_category_assignme
 print_check "check.orphan_category_assignments_category" "$orphan_category_assignments_category"
 print_check "check.orphan_livestream_video" "$orphan_livestream_video"
 print_check "check.orphan_checkout_users" "$orphan_checkout_users"
+print_check "check.legacy_invalid_unresolved" "$legacy_invalid_unresolved"
 
 failures=0
 for value in \
@@ -243,7 +264,8 @@ for value in \
   "$orphan_category_assignments_video" \
   "$orphan_category_assignments_category" \
   "$orphan_livestream_video" \
-  "$orphan_checkout_users"; do
+  "$orphan_checkout_users" \
+  "$legacy_invalid_unresolved"; do
   if [[ "$value" != "0" ]]; then
     failures=$((failures + 1))
   fi

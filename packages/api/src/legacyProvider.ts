@@ -1,16 +1,27 @@
 /**
- * Legacy eshop billing provider (API base URL from LEGACY_ESHOP_API_URL env var).
+ * Legacy eshop billing provider (external E-shop API v2).
+ *
+ * API base URL from LEGACY_ESHOP_API_URL (production) or LEGACY_ESHOP_SANDBOX_API_URL (testing).
  */
 
-type LegacyEnv = {
+export type LegacyEnv = {
   LEGACY_ESHOP_API_URL?: string
+  LEGACY_ESHOP_SANDBOX_API_URL?: string
   LEGACY_ESHOP_MERCHANT_ID?: string
   LEGACY_ESHOP_API_KEY?: string
   LEGACY_ESHOP_WEBHOOK_SECRET?: string
   LEGACY_ESHOP_FETCH_TIMEOUT_MS?: string
+  FRONTEND_URL?: string
+  API_URL?: string
 }
 
 const DEFAULT_LEGACY_FETCH_TIMEOUT_MS = 5000
+
+function requireConfiguredUrl(value: string | undefined, name: string): string {
+  const trimmed = trimTrailingSlashes(String(value ?? '').trim())
+  if (!trimmed) throw new Error(`${name} is not configured`)
+  return trimmed
+}
 
 function legacyFetchTimeoutMs(env: LegacyEnv): number {
   const raw = env.LEGACY_ESHOP_FETCH_TIMEOUT_MS
@@ -55,9 +66,32 @@ export function getLegacyApiBase(env: LegacyEnv): string {
   return trimTrailingSlashes(String(env.LEGACY_ESHOP_API_URL ?? '').trim())
 }
 
-export function isLegacyProviderConfigured(env: LegacyEnv): boolean {
+export function getLegacySandboxApiBase(env: LegacyEnv): string {
+  return trimTrailingSlashes(String(env.LEGACY_ESHOP_SANDBOX_API_URL ?? '').trim())
+}
+
+export function isLegacySandboxConfigured(env: LegacyEnv): boolean {
+  return Boolean(getLegacySandboxApiBase(env))
+}
+
+export function getLegacyValidationApiBase(env: LegacyEnv, target: 'sandbox' | 'production'): string {
+  if (target === 'sandbox') {
+    const sandbox = getLegacySandboxApiBase(env)
+    if (!sandbox) throw new Error('LEGACY_ESHOP_SANDBOX_API_URL is not configured')
+    return sandbox
+  }
+  const production = getLegacyApiBase(env)
+  if (!production) throw new Error('LEGACY_ESHOP_API_URL is not configured')
+  return production
+}
+
+export function isLegacyProviderConfigured(
+  env: LegacyEnv,
+  target: 'sandbox' | 'production' = 'production',
+): boolean {
+  const base = target === 'sandbox' ? getLegacySandboxApiBase(env) : getLegacyApiBase(env)
   return Boolean(
-    getLegacyApiBase(env) &&
+    base &&
     String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() &&
     String(env.LEGACY_ESHOP_API_KEY ?? '').trim(),
   )
@@ -70,15 +104,23 @@ function legacyHeaders(env: LegacyEnv): Record<string, string> {
   }
 }
 
-export async function legacyPost<T = Record<string, unknown>>(
+export type LegacyPostResult<T = Record<string, unknown>> = {
+  ok: boolean
+  status: number
+  parsed: T
+  text: string
+}
+
+export async function legacyPostRaw<T = Record<string, unknown>>(
   env: LegacyEnv,
+  base: string,
   path: string,
   body: Record<string, unknown>,
-): Promise<T> {
-  const base = getLegacyApiBase(env)
-  if (!base) throw new Error('Legacy billing API is not configured')
+): Promise<LegacyPostResult<T>> {
+  const apiBase = trimTrailingSlashes(base)
+  if (!apiBase) throw new Error('Legacy billing API is not configured')
 
-  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`
   const response = await legacyFetch(env, url, {
     method: 'POST',
     headers: legacyHeaders(env),
@@ -87,27 +129,40 @@ export async function legacyPost<T = Record<string, unknown>>(
   const text = await response.text()
   let parsed: T
   try {
-    parsed = text ? JSON.parse(text) : {}
+    parsed = text ? JSON.parse(text) as T : {} as T
   } catch {
     throw new Error(`Legacy billing API returned invalid JSON (${response.status})`)
   }
-  if (!response.ok) {
-    const message = typeof (parsed as any)?.error === 'string'
-      ? (parsed as any).error
-      : `Legacy billing API error (${response.status})`
+  return { ok: response.ok, status: response.status, parsed, text }
+}
+
+async function legacyPost<T = Record<string, unknown>>(
+  env: LegacyEnv,
+  base: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const result = await legacyPostRaw<T>(env, base, path, body)
+  if (!result.ok) {
+    const message = typeof (result.parsed as { message?: string })?.message === 'string'
+      ? (result.parsed as { message: string }).message
+      : typeof (result.parsed as { error?: string })?.error === 'string'
+        ? (result.parsed as { error: string }).error
+        : `Legacy billing API error (${result.status})`
     throw new Error(message)
   }
-  return parsed
+  return result.parsed
 }
 
 export async function legacyGet<T = Record<string, unknown>>(
   env: LegacyEnv,
+  base: string,
   path: string,
 ): Promise<T> {
-  const base = getLegacyApiBase(env)
-  if (!base) throw new Error('Legacy billing API is not configured')
+  const apiBase = trimTrailingSlashes(base)
+  if (!apiBase) throw new Error('Legacy billing API is not configured')
 
-  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`
   const response = await legacyFetch(env, url, {
     method: 'GET',
     headers: legacyHeaders(env),
@@ -115,17 +170,34 @@ export async function legacyGet<T = Record<string, unknown>>(
   const text = await response.text()
   let parsed: T
   try {
-    parsed = text ? JSON.parse(text) : {}
+    parsed = text ? JSON.parse(text) as T : {} as T
   } catch {
     throw new Error(`Legacy billing API returned invalid JSON (${response.status})`)
   }
   if (!response.ok) {
-    const message = typeof (parsed as any)?.error === 'string'
-      ? (parsed as any).error
-      : `Legacy billing API error (${response.status})`
+    const message = typeof (parsed as { message?: string })?.message === 'string'
+      ? (parsed as { message: string }).message
+      : typeof (parsed as { error?: string })?.error === 'string'
+        ? (parsed as { error: string }).error
+        : `Legacy billing API error (${response.status})`
     throw new Error(message)
   }
   return parsed
+}
+
+export function mapPlanTypeToSubscriptionType(planType: string): 'monthly' | 'yearly' {
+  const plan = String(planType ?? '').trim().toLowerCase()
+  if (plan === 'yearly' || plan === 'club') return 'yearly'
+  return 'monthly'
+}
+
+export function formatLegacyBillPrice(amountMinor: number): string {
+  return (amountMinor / 100).toFixed(2)
+}
+
+export function getLegacyNotifyUrl(env: LegacyEnv): string {
+  const apiBase = requireConfiguredUrl(env.API_URL, 'API_URL')
+  return `${apiBase}/api/payments/webhook/legacy`
 }
 
 export type LegacyCreateOrderInput = {
@@ -138,28 +210,135 @@ export type LegacyCreateOrderInput = {
   returnUrl: string
 }
 
-export async function createLegacyOrder(env: LegacyEnv, input: LegacyCreateOrderInput) {
+export function buildLegacyOrderBody(env: LegacyEnv, input: LegacyCreateOrderInput): Record<string, unknown> {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim()
-  return legacyPost(env, '/order', {
+  const returnUrl = String(input.returnUrl ?? '').trim()
+  const successUrl = returnUrl.includes('legacy=')
+    ? returnUrl
+    : `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}legacy=success`
+  const failUrl = returnUrl.includes('legacy=')
+    ? returnUrl.replace('legacy=success', 'legacy=fail')
+    : `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}legacy=fail`
+
+  return {
     idMerchant,
     idOrder: input.idOrder,
-    purchaseId: input.purchaseId,
     customerEmail: input.email,
-    planType: input.planType,
-    amount: input.amountMinor,
-    currency: input.currency,
-    returnUrl: input.returnUrl,
-  })
+    successUrl,
+    failUrl,
+    notifyUrl: getLegacyNotifyUrl(env),
+    cardOnFile: input.purchaseId,
+    bill: {
+      id: `bill-${input.idOrder}`,
+      currency: input.currency,
+      subscriptionType: mapPlanTypeToSubscriptionType(input.planType),
+      subscriptionPeriodSize: 1,
+      items: [
+        {
+          name: `VMP ${input.planType}`,
+          price: formatLegacyBillPrice(input.amountMinor),
+          quantity: '1',
+        },
+      ],
+    },
+  }
+}
+
+export async function createLegacyOrder(env: LegacyEnv, input: LegacyCreateOrderInput) {
+  const base = getLegacyApiBase(env)
+  return legacyPost(env, base, '/order', buildLegacyOrderBody(env, input))
+}
+
+export type LegacyValidationProbeInput = {
+  purchaseId: string
+  idOrder: string
+  email?: string
+  planType?: string
+  amountMinor?: number
+  currency?: string
+}
+
+export type LegacyValidationProbeResult = {
+  result: 'valid' | 'invalid' | 'error'
+  httpStatus?: number
+  errorMessage?: string
+  reason?: string | null
+}
+
+export function interpretLegacyValidationResponse(
+  status: number,
+  parsed: Record<string, unknown>,
+): LegacyValidationProbeResult {
+  if (status >= 200 && status < 300) {
+    return { result: 'valid', httpStatus: status }
+  }
+  const reason = typeof parsed.reason === 'string' ? parsed.reason : null
+  const message = typeof parsed.message === 'string' ? parsed.message : `HTTP ${status}`
+  if (
+    status === 400 &&
+    (reason === 'cardOnFile' || message.toLowerCase().includes('cardonfile'))
+  ) {
+    return { result: 'invalid', httpStatus: status, errorMessage: message, reason }
+  }
+  return { result: 'error', httpStatus: status, errorMessage: message, reason }
+}
+
+export async function probeLegacyCardOnFile(
+  env: LegacyEnv,
+  base: string,
+  input: LegacyValidationProbeInput,
+): Promise<LegacyValidationProbeResult> {
+  const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim()
+  const frontendUrl = requireConfiguredUrl(env.FRONTEND_URL, 'FRONTEND_URL')
+  const amountMinor = input.amountMinor ?? 100
+  const body = {
+    idMerchant,
+    idOrder: input.idOrder,
+    customerEmail: input.email ?? 'migration-validation@example.com',
+    successUrl: `${frontendUrl}/account?legacy=success&probe=${encodeURIComponent(input.idOrder)}`,
+    failUrl: `${frontendUrl}/account?legacy=fail&probe=${encodeURIComponent(input.idOrder)}`,
+    notifyUrl: getLegacyNotifyUrl(env),
+    cardOnFile: input.purchaseId,
+    bill: {
+      id: `probe-${input.idOrder}`,
+      currency: input.currency ?? 'EUR',
+      subscriptionType: mapPlanTypeToSubscriptionType(input.planType ?? 'monthly'),
+      subscriptionPeriodSize: 1,
+      items: [
+        {
+          name: 'Migration validation probe',
+          price: formatLegacyBillPrice(amountMinor),
+          quantity: '1',
+        },
+      ],
+    },
+  }
+
+  try {
+    const response = await legacyPostRaw(env, base, '/order', body)
+    return interpretLegacyValidationResponse(
+      response.status,
+      response.parsed as Record<string, unknown>,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Legacy validation probe failed'
+    if (isLegacyFetchTimeout(err)) {
+      return { result: 'error', errorMessage: message }
+    }
+    return { result: 'error', errorMessage: message }
+  }
 }
 
 export async function processLegacyOrder(env: LegacyEnv, idOrder: string) {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim()
-  return legacyPost(env, '/order/process', { idMerchant, idOrder })
+  const base = getLegacyApiBase(env)
+  return legacyPost(env, base, '/order/process', { idMerchant, idOrder })
 }
 
 export async function getLegacyOrder(env: LegacyEnv, idOrder: string) {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim()
-  return legacyGet(env, `/order/${encodeURIComponent(idMerchant)}/${encodeURIComponent(idOrder)}`)
+  const base = getLegacyApiBase(env)
+  return legacyGet(env, base, `/order/${encodeURIComponent(idMerchant)}/${encodeURIComponent(idOrder)}`)
 }
 
 export function verifyLegacyWebhookSignature(

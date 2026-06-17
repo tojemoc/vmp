@@ -152,8 +152,32 @@ export async function startLegacyCheckout(
   }
 
   const idOrder = crypto.randomUUID()
-  const purchaseId = String(body?.purchaseId ?? idOrder).trim() || idOrder
-  const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+  const legacySub = await db.prepare(`
+    SELECT purchase_id FROM subscriptions
+    WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
+      AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+    ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+    LIMIT 1
+  `).bind(user.sub).first()
+  const dbPurchaseId = String(legacySub?.purchase_id ?? '').trim()
+  const bodyPurchaseId = String(body?.purchaseId ?? '').trim()
+  if (bodyPurchaseId && dbPurchaseId && bodyPurchaseId !== dbPurchaseId) {
+    return jsonResponse({
+      error: 'purchaseId does not match your account',
+      code: 'invalid_purchase_id',
+    }, 400, corsHeaders)
+  }
+  if (bodyPurchaseId && !dbPurchaseId) {
+    return jsonResponse({
+      error: 'purchaseId cannot be supplied without a matching imported subscription',
+      code: 'invalid_purchase_id',
+    }, 400, corsHeaders)
+  }
+  const purchaseId = dbPurchaseId || idOrder
+  const frontendUrl = String(env.FRONTEND_URL ?? '').trim().replace(/\/$/, '')
+  if (!frontendUrl) {
+    return jsonResponse({ error: 'FRONTEND_URL is not configured', code: 'misconfigured' }, 503, corsHeaders)
+  }
   const returnUrl = `${frontendUrl}${returnPath}?legacy_order=${encodeURIComponent(idOrder)}`
 
   try {
@@ -173,14 +197,30 @@ export async function startLegacyCheckout(
       ) VALUES (?, ?, 'legacy', ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).bind(crypto.randomUUID(), user.sub, planType, idOrder).run()
 
-    const checkoutUrl = String(created.paymentUrl ?? created.checkoutUrl ?? created.redirectUrl ?? '').trim()
+    const checkoutUrl = String(
+      created.webPaymentGatewayLink ||
+      created.gatewayLink ||
+      created.paymentUrl ||
+      created.checkoutUrl ||
+      created.redirectUrl ||
+      created.returnUrl ||
+      '',
+    ).trim()
     if (checkoutUrl) {
       return jsonResponse({ checkoutUrl, provider: 'legacy', orderId: idOrder }, 200, corsHeaders)
     }
 
     await processLegacyOrder(env, idOrder)
     const processed = await getLegacyOrder(env, idOrder) as Record<string, unknown>
-    const payUrl = String(processed.paymentUrl ?? processed.checkoutUrl ?? '').trim()
+    const payUrl = String(
+      processed.webPaymentGatewayLink ||
+      processed.gatewayLink ||
+      processed.paymentUrl ||
+      processed.checkoutUrl ||
+      processed.redirectUrl ||
+      processed.returnUrl ||
+      '',
+    ).trim()
     return jsonResponse({
       checkoutUrl: payUrl || returnUrl,
       provider: 'legacy',
@@ -310,7 +350,8 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
 
   if (request.method === 'GET') {
     return jsonResponse({
-      configured: isLegacyProviderConfigured(env),
+      configured: isLegacyProviderConfigured(env, 'production'),
+      sandboxConfigured: isLegacyProviderConfigured(env, 'sandbox'),
       merchantId: String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() || null,
       hasApiKey: Boolean(String(env.LEGACY_ESHOP_API_KEY ?? '').trim()),
       hasWebhookSecret: Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()),
