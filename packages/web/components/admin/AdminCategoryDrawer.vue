@@ -76,7 +76,7 @@
 
               <div class="flex flex-wrap gap-2 pt-2">
                 <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">Save</button>
-                <button type="button" class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm" @click="emit('close')">Cancel</button>
+                <button type="button" :class="secondaryButtonClass" @click="emit('close')">Cancel</button>
               </div>
 
               <div class="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
@@ -103,7 +103,7 @@
                     >
                       Confirm delete
                     </button>
-                    <button type="button" class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm" @click="confirmDelete = false">Cancel</button>
+                    <button type="button" :class="secondaryButtonSmClass" @click="confirmDelete = false">Cancel</button>
                   </div>
                 </template>
               </div>
@@ -141,7 +141,8 @@ const emit = defineEmits<{
   delete: [opts: { reassignToId?: string }]
 }>()
 
-const draft = ref<AdminCategoryRow | null>(null)
+const secondaryButtonClass = 'px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
+const secondaryButtonSmClass = 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
 const confirmDelete = ref(false)
 const reassignToId = ref('')
 

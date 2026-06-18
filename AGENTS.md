@@ -105,6 +105,12 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
 - **Error format**: all API errors return `{ error: string, code?: string }`.
 - **Secrets**: never commit secrets. Use `wrangler secret put` for sensitive values. Local dev secrets go in `packages/api/.dev.vars`.
 - **TypeScript in `@vmp/web`**: all new composables and pages should be `.ts` / `<script setup lang="ts">` with explicit prop and emit types.
+- **Light/dark text colors (`@vmp/web`)**: the app uses `@nuxtjs/color-mode`. Every visible label, button, link, and body text must set **both** light- and dark-theme Tailwind text (and background/border when needed) utilities — never rely on the browser default (black on dark backgrounds, white on light). Pairings used elsewhere in admin:
+  - Primary body: `text-gray-900 dark:text-white`
+  - Secondary/muted body: `text-gray-600 dark:text-gray-400` or `text-gray-700 dark:text-gray-300`
+  - Secondary outline button: `text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800`
+  - File inputs: add `text-gray-900 dark:text-gray-100` plus `file:` variant colors for the picker label
+  If you add a new control type, grep admin components for an existing pattern and match it — border-only buttons without `text-*` / `dark:text-*` are a common regression.
 - **SubtleCrypto over npm for crypto**: Workers have full WebCrypto. Don't add `crypto`, `jsonwebtoken`, `otplib`, `web-push` as Worker dependencies. Implement with SubtleCrypto directly.
 - **Prefer existing modules and dependencies** — Before writing custom infrastructure (plugins, wrappers, integrations), check whether the repo or ecosystem already ships a maintained solution:
   - **Nuxt / frontend:** search [Nuxt Modules](https://nuxt.com/modules) and `packages/web/package.json` dependencies (e.g. `@vite-pwa/nuxt`, `@nuxtjs/color-mode`). Use an official or well-maintained module when it covers the requirement.
