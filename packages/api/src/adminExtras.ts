@@ -180,9 +180,10 @@ function normalizeHomepageConfigForResponse(config: any) {
       }
       if (block.mobileHidden === true) normalized.mobileHidden = true
       if (Number.isFinite(Number(block.mobileOrder))) normalized.mobileOrder = Number(block.mobileOrder)
+      if (Number.isFinite(Number(block.gridRow))) normalized.gridRow = Number(block.gridRow)
+      if (Number.isFinite(Number(block.gridCol))) normalized.gridCol = Number(block.gridCol)
       if (type === 'category') {
         normalized.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
-        normalized.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
       }
       if (type === 'split_horizontal' || type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []

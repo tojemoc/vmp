@@ -17,25 +17,25 @@
       </button>
     </div>
 
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+      Use <strong class="font-medium">Half width</strong> for side-by-side rows. Two half blocks on the same row pair automatically — left is the main category (2×2), right is the side-mini column.
+    </p>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-      <template v-for="(block, index) in blocks" :key="block.id">
-        <div
-          v-if="dropIndicatorIndex === index"
-          class="col-span-1 lg:col-span-2 h-1 bg-blue-500 rounded-full"
-          aria-hidden="true"
-        />
+      <template v-for="block in sortedBlocks" :key="block.id">
         <div
           class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950"
-          :class="[blockColSpan(block), dragOverIndex === index ? 'ring-2 ring-blue-400' : '']"
+          :class="[blockColSpan(block), dragOverId === block.id ? 'ring-2 ring-blue-400' : '']"
           :draggable="!mobileOrderMode"
-          @dragstart="onDragStart(index)"
-          @dragover.prevent="onDragOver(index, $event)"
-          @dragleave="dragOverIndex = null"
-          @drop="onDrop(index)"
+          @dragstart="onDragStart(block.id)"
+          @dragover.prevent="onDragOver(block.id, $event)"
+          @dragleave="dragOverId = null"
+          @drop="onDrop(block.id)"
         >
-          <div class="flex items-center gap-3 mb-3">
+          <div class="flex items-center gap-3 mb-3 flex-wrap">
             <span v-if="!mobileOrderMode" class="cursor-move text-gray-500" title="Drag to reorder">⠿</span>
-            <span v-else class="cursor-move text-gray-500" :draggable="true" @dragstart.stop="onDragStart(index)" @dragover.prevent @drop.stop="onDrop(index)">☰</span>
+            <span v-else class="cursor-move text-gray-500" :draggable="true" @dragstart.stop="onDragStart(block.id)" @dragover.prevent @drop.stop="onDrop(block.id)">☰</span>
+            <span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ positionLabel(block) }}</span>
             <select
               v-model="block.type"
               aria-label="Homepage block type"
@@ -48,11 +48,18 @@
               v-if="!mobileOrderMode && block.type !== 'split_horizontal' && block.type !== 'split_vertical'"
               v-model="block.width"
               class="px-2 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs text-gray-900 dark:text-white"
+              @change="onWidthChange(block)"
             >
               <option value="full">Full width</option>
               <option value="half">Half width</option>
             </select>
-            <button type="button" class="ml-auto text-sm text-red-600 hover:underline" @click="removeBlock(block.id)">Remove</button>
+            <p
+              v-if="!mobileOrderMode && blockWouldExpand(block)"
+              class="text-xs text-amber-700 dark:text-amber-300"
+            >
+              Row partner empty — renders full width on homepage.
+            </p>
+            <button type="button" class="ml-auto text-sm text-red-600 dark:text-red-400 hover:underline" @click="removeBlock(block.id)">Remove</button>
           </div>
 
           <label v-if="mobileOrderMode" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-3">
@@ -71,16 +78,6 @@
               <option value="">Select category</option>
               <option v-for="cat in categories" :key="`block-cat-${block.id}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
             </select>
-            <label v-if="block.type === 'category'" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input v-model="block.rightRailWithNextSideMini" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-              Pair next side-mini category on right (2×2 + 2×1)
-            </label>
-            <p
-              v-if="block.type === 'category' && block.rightRailWithNextSideMini && !nextBlockIsSideMini(index)"
-              class="text-xs text-amber-700 dark:text-amber-300 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 py-1"
-            >
-              The next block is not a side-mini category — pairing will not apply on the public homepage.
-            </p>
             <div v-if="(block.type === 'split_horizontal' || block.type === 'split_vertical') && block.childBlocks" class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3">
               <div v-for="(child, childIndex) in block.childBlocks" :key="`${block.id}-child-${childIndex}`" class="grid gap-2 rounded border border-gray-200 dark:border-gray-700 p-2 bg-white dark:bg-gray-900">
                 <div class="text-xs font-semibold text-gray-600 dark:text-gray-400">Child block {{ childIndex + 1 }}</div>
@@ -98,17 +95,18 @@
           </div>
         </div>
       </template>
-      <div
-        v-if="dropIndicatorIndex === blocks.length"
-        class="col-span-1 lg:col-span-2 h-1 bg-blue-500 rounded-full"
-        aria-hidden="true"
-      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { HomepageLayoutBlock } from '~/composables/useHomepageLayout'
+import {
+  assignGridPositions,
+  ensureBlockGridPositions,
+  orderBlocksByGrid,
+  rowPartnerBlock,
+  type HomepageLayoutBlock,
+} from '~/composables/useHomepageLayout'
 
 type BlockType = HomepageLayoutBlock['type']
 type LeafBlockType = 'featured_row' | 'category' | 'top_video'
@@ -116,6 +114,7 @@ type LeafBlockType = 'featured_row' | 'category' | 'top_video'
 interface CategoryOption {
   id: string
   name: string
+  video_count?: number
   homepage_layout_variant?: 'three_by_one' | 'side_mini'
 }
 
@@ -126,9 +125,15 @@ const props = defineProps<{
 }>()
 
 const mobileOrderMode = ref(false)
-const draggingIndex = ref<number | null>(null)
-const dragOverIndex = ref<number | null>(null)
-const dropIndicatorIndex = ref<number | null>(null)
+const draggingId = ref<string | null>(null)
+const dragOverId = ref<string | null>(null)
+const dropBeforeId = ref<string | null>(null)
+
+const sortedBlocks = computed(() => orderBlocksByGrid(blocks.value))
+
+function syncGridPositions() {
+  blocks.value = assignGridPositions([...blocks.value])
+}
 
 function defaultWidth(type: BlockType): 'full' | 'half' {
   if (type === 'featured_row' || type === 'top_video') return 'full'
@@ -137,6 +142,30 @@ function defaultWidth(type: BlockType): 'full' | 'half' {
 
 function blockColSpan(block: HomepageLayoutBlock): string {
   return block.width === 'full' ? 'lg:col-span-2' : 'lg:col-span-1'
+}
+
+function positionLabel(block: HomepageLayoutBlock): string {
+  const positioned = ensureBlockGridPositions([block])[0]
+  return `row ${Number(positioned?.gridRow ?? 0)}, col ${Number(positioned?.gridCol ?? 0)}`
+}
+
+function categoryHasVideos(categoryId: string | null | undefined): boolean {
+  if (!categoryId) return false
+  const cat = props.categories.find((entry) => entry.id === categoryId)
+  return Number(cat?.video_count ?? 0) > 0
+}
+
+function partnerHasRenderableContent(block: HomepageLayoutBlock): boolean {
+  const partner = rowPartnerBlock(blocks.value, block)
+  if (!partner) return false
+  if (partner.type !== 'category') return true
+  return categoryHasVideos(partner.categoryId)
+}
+
+function blockWouldExpand(block: HomepageLayoutBlock): boolean {
+  if (block.width !== 'half') return false
+  if (block.type === 'category' && !categoryHasVideos(block.categoryId)) return false
+  return !partnerHasRenderableContent(block)
 }
 
 function blockTypeOptions(current: BlockType): BlockType[] {
@@ -151,18 +180,16 @@ function leafBlockTypeOptions(current: LeafBlockType): LeafBlockType[] {
 
 function onTypeChange(block: HomepageLayoutBlock) {
   if (!block.width) block.width = defaultWidth(block.type)
+  syncGridPositions()
 }
 
-function nextBlockIsSideMini(index: number): boolean {
-  const next = blocks.value[index + 1]
-  if (!next || next.type !== 'category' || !next.categoryId) return false
-  const c = props.categories.find((cat) => cat.id === next.categoryId)
-  return c?.homepage_layout_variant === 'side_mini'
+function onWidthChange(_block: HomepageLayoutBlock) {
+  syncGridPositions()
 }
 
 function addBlock(type: BlockType = 'top_video') {
   const id = crypto.randomUUID()
-  blocks.value = [
+  blocks.value = assignGridPositions([
     ...blocks.value,
     {
       id,
@@ -173,7 +200,6 @@ function addBlock(type: BlockType = 'top_video') {
       width: defaultWidth(type),
       mobileHidden: false,
       mobileOrder: blocks.value.length,
-      rightRailWithNextSideMini: false,
       ...(type === 'split_horizontal' || type === 'split_vertical'
         ? {
           childBlocks: [
@@ -183,41 +209,46 @@ function addBlock(type: BlockType = 'top_video') {
         }
         : {}),
     },
-  ]
+  ])
 }
 
 function removeBlock(id: string) {
-  blocks.value = blocks.value.filter((b) => b.id !== id)
+  blocks.value = assignGridPositions(blocks.value.filter((b) => b.id !== id))
 }
 
-function onDragStart(index: number) {
-  draggingIndex.value = index
+function onDragStart(id: string) {
+  draggingId.value = id
 }
 
-function onDragOver(index: number, event: DragEvent) {
-  dragOverIndex.value = index
+function onDragOver(id: string, event: DragEvent) {
+  dragOverId.value = id
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const mid = rect.top + rect.height / 2
-  dropIndicatorIndex.value = event.clientY < mid ? index : index + 1
+  dropBeforeId.value = event.clientY < mid ? id : null
 }
 
-function onDrop(targetIndex: number) {
-  const from = draggingIndex.value
-  if (from === null) return
-  let insertAt = dropIndicatorIndex.value ?? targetIndex
-  if (insertAt > from) insertAt -= 1
-  const reordered = [...blocks.value]
-  const [moved] = reordered.splice(from, 1)
+function onDrop(targetId: string) {
+  const fromId = draggingId.value
+  if (!fromId || fromId === targetId) return
+  const ordered = orderBlocksByGrid(blocks.value)
+  const fromIndex = ordered.findIndex((block) => block.id === fromId)
+  let targetIndex = ordered.findIndex((block) => block.id === targetId)
+  if (fromIndex < 0 || targetIndex < 0) return
+  if (dropBeforeId.value !== targetId && fromIndex < targetIndex) targetIndex += 1
+  const reordered = [...ordered]
+  const [moved] = reordered.splice(fromIndex, 1)
   if (!moved) return
-  reordered.splice(insertAt, 0, moved)
+  if (fromIndex < targetIndex) targetIndex -= 1
+  reordered.splice(targetIndex, 0, moved)
   if (mobileOrderMode.value) {
     reordered.forEach((b, i) => { b.mobileOrder = i })
-  } else {
     blocks.value = reordered
+  } else {
+    blocks.value = assignGridPositions(reordered)
   }
-  draggingIndex.value = null
-  dragOverIndex.value = null
-  dropIndicatorIndex.value = null
+  draggingId.value = null
+  dragOverId.value = null
+  dropBeforeId.value = null
 }
 
 watch(blocks, (list) => {
@@ -226,4 +257,8 @@ watch(blocks, (list) => {
     if (block.mobileHidden == null) block.mobileHidden = false
   }
 }, { deep: true, immediate: true })
+
+onMounted(() => {
+  syncGridPositions()
+})
 </script>

@@ -59,33 +59,19 @@ async function getAllowedPlans(env: any): Promise<PlanType[]> {
 
 const CORE_PLAN_SLUGS = ['monthly', 'yearly', 'club'] as const
 
-async function discoverPlanSlugs(env: any): Promise<string[]> {
+/** Plan slugs for admin UI — driven by `allowed_plans`, not broad admin_settings key scans. */
+export function parseAllowedPlanSlugs(raw: unknown): string[] {
   const slugs = new Set<string>(CORE_PLAN_SLUGS)
-  try {
-    const db = getDb(env)
-    const rows = await db.prepare(`
-      SELECT key FROM admin_settings
-      WHERE key LIKE '%_price_eur'
-         OR key LIKE '%_label'
-         OR key LIKE '%_interval'
-         OR key LIKE '%_enabled'
-         OR key LIKE 'stripe_price_%'
-    `).all()
-    for (const row of rows?.results ?? []) {
-      const key = String(row?.key ?? '')
-      let slug: string | null = null
-      const planKey = key.match(/^([a-z][a-z0-9_]*)_(?:price_eur|label|interval|enabled)$/)
-      if (planKey?.[1]) slug = planKey[1]
-      const stripePrice = key.match(/^stripe_price_([a-z][a-z0-9_]*)$/)
-      if (stripePrice?.[1]) slug = stripePrice[1]
-      if (!slug) continue
-      if (slug.startsWith('stripe_') || slug.startsWith('gocardless_')) continue
-      slugs.add(slug)
-    }
-  } catch {
-    // fall back to core plans only
+  for (const part of String(raw ?? 'monthly,yearly,club').split(',')) {
+    const slug = part.trim().toLowerCase()
+    if (slug && /^[a-z][a-z0-9_]*$/.test(slug)) slugs.add(slug)
   }
   return Array.from(slugs)
+}
+
+async function discoverPlanSlugs(env: any): Promise<string[]> {
+  const raw = await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' })
+  return parseAllowedPlanSlugs(raw)
 }
 
 async function buildAdminPlanList(env: any) {

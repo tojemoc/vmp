@@ -60,8 +60,8 @@
 
         <div class="flex items-center gap-2 text-sm">
           <span class="text-gray-600 dark:text-gray-400">Body format:</span>
-          <button type="button" class="px-2 py-1 rounded" :class="bodyMode === 'html' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600'" @click="setBodyMode('html')">HTML</button>
-          <button type="button" class="px-2 py-1 rounded" :class="bodyMode === 'markdown' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600'" @click="setBodyMode('markdown')">Markdown</button>
+          <button type="button" class="px-2 py-1 rounded" :class="bodyMode === 'html' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'" @click="setBodyMode('html')">HTML</button>
+          <button type="button" class="px-2 py-1 rounded" :class="bodyMode === 'markdown' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'" @click="setBodyMode('markdown')">Markdown</button>
         </div>
 
         <label class="block text-sm font-medium text-gray-900 dark:text-white">
@@ -78,7 +78,7 @@
         </label>
 
         <div class="flex flex-wrap gap-2">
-          <button type="button" class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold disabled:opacity-50" :disabled="draftSaving" @click="saveDraft">
+          <button type="button" class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50" :disabled="draftSaving" @click="saveDraft">
             {{ draftSaving ? 'Saving…' : 'Save as draft' }}
           </button>
           <div class="relative">

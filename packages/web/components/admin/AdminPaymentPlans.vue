@@ -5,7 +5,7 @@
         <h3 class="font-semibold text-gray-900 dark:text-white">Plans &amp; pricing</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Stripe is the default checkout provider. Configure plan amounts and Stripe price IDs.</p>
       </div>
-      <button type="button" class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm" :disabled="loading" @click="loadPlans">Reload</button>
+      <button type="button" class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" :disabled="loading" @click="loadPlans">Reload</button>
     </div>
 
     <div v-if="message" class="rounded-lg border px-4 py-3 text-sm" :class="messageClass">{{ message }}</div>
@@ -92,7 +92,7 @@
       </div>
       <div class="flex gap-2">
         <button type="button" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50" :disabled="saving || !addForm.stripePriceId.trim()" @click="addPlan">Save plan</button>
-        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm" @click="showAddForm = false">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="showAddForm = false">Cancel</button>
       </div>
     </div>
     <button v-else type="button" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline" @click="showAddForm = true">+ Add plan</button>
