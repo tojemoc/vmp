@@ -94,13 +94,13 @@
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-3">
             <NuxtLink
               to="/pricing"
-              class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
               {{ strings.accountRelinkPaymentMethod }}
             </NuxtLink>
             <a
               :href="supportMailto"
-              class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+              class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
               {{ strings.accountContactSupport }}
             </a>

@@ -28,7 +28,7 @@ function createMockDb(rows: Record<string, unknown>[]) {
             const legacy = rows.filter((r) => r.provider === 'legacy')
             return {
               total_imported: legacy.length,
-              needs_relink: legacy.filter((r) => r.status === 'needs_relink').length,
+              needs_relink: rows.filter((r) => r.status === 'needs_relink').length,
               active: legacy.filter((r) => r.status === 'active' || r.status === 'trialing').length,
               failed: legacy.filter((r) => r.legacy_validation_status === 'invalid').length,
               not_validated: legacy.filter((r) => r.status === 'needs_relink' && r.legacy_validation_status == null).length,
@@ -314,6 +314,9 @@ describe('getRelinkCandidates', () => {
     assert.equal(result.users.length, 4)
     assert.equal(result.users[0]?.validationStatus, 'invalid')
     assert.ok(result.users.some((u) => u.provider === 'stripe'))
+
+    const stats = await getMigrationStatsFromModule(db as any, {} as any)
+    assert.equal(stats.needs_relink, 4)
   })
 
   it('can limit needs_relink to stale imports when staleDays is set', async () => {

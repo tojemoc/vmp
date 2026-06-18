@@ -72,7 +72,7 @@
 
         <p class="text-center text-xs text-gray-500">
           {{ strings.totpLostAuthenticator }}
-          <a :href="supportMailto" class="text-blue-400 hover:underline">{{ strings.totpContactSupport }}</a>
+          <a :href="supportMailto" class="text-blue-600 dark:text-blue-400 hover:underline">{{ strings.totpContactSupport }}</a>
         </p>
       </form>
 
