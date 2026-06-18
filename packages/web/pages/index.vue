@@ -128,7 +128,6 @@
                 {{ strings.categoryMoreLink }}
               </NuxtLink>
             </div>
-            <p v-if="block.expandedFromHalf" class="text-xs text-amber-700 dark:text-amber-300">Shown full width — paired category has no published videos yet.</p>
             <div v-if="block.categorySection" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               <VideoCard
                 v-for="video in block.categorySection.visible"
