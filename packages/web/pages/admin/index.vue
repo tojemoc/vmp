@@ -2767,7 +2767,7 @@ interface AnalyticsResponse {
 }
 
 const config = useRuntimeConfig()
-const { authHeader, isAdmin, user } = useAuth()
+const { authHeader, canEditContent, isAdmin, user } = useAuth()
 const router = useRouter()
 const route = useRoute()
 const loading = ref(true)
@@ -5550,6 +5550,10 @@ const runAdminLoader = async (label: string, loader: () => Promise<unknown>): Pr
 }
 
 const reloadAll = async () => {
+  if (!user.value || !canEditContent.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   const failures: Array<{ label: string; message: string }> = []
   const trackLoader = async (label: string, loader: () => Promise<unknown>) => {
