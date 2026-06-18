@@ -42,7 +42,6 @@ Core API and web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.m
 | [packages/offloading/DEPLOYMENT.md](packages/offloading/DEPLOYMENT.md) | Docker/Compose deployment for offloading |
 | [packages/moq-probe/README.md](packages/moq-probe/README.md) | Live MoQ probe usage and recorder recommendations |
 | [.cursor/README.md](.cursor/README.md) | Cursor workspace git/deploy policy for agents |
-| [docs/gocardless-checkout-api.md](docs/gocardless-checkout-api.md) | GoCardless checkout outbound API payloads |
 | [docs/pills-external-update-api.md](docs/pills-external-update-api.md) | Pills external update API |
 
 ## Deployment model (high level)
@@ -138,7 +137,6 @@ Notes:
 
 ## API docs (`docs/`)
 
-- [GoCardless checkout — outbound API payloads](docs/gocardless-checkout-api.md)
 - [Pills external update API](docs/pills-external-update-api.md)
 
 ## Notes
