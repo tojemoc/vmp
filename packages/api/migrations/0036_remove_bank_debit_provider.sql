@@ -35,8 +35,10 @@ SELECT
   allowed_plan_types, stripe_coupon_id, expires_at, created_at, updated_at
 FROM promo_codes;
 
+-- POSTGRES: ALTER TABLE promo_redemptions DROP CONSTRAINT IF EXISTS promo_redemptions_promo_code_id_fkey;
 DROP TABLE promo_codes;
 ALTER TABLE promo_codes__v2 RENAME TO promo_codes;
+-- POSTGRES: ALTER TABLE promo_redemptions ADD CONSTRAINT promo_redemptions_promo_code_id_fkey FOREIGN KEY (promo_code_id) REFERENCES promo_codes(id) ON DELETE CASCADE;
 
 CREATE INDEX IF NOT EXISTS idx_promo_codes_campaign
   ON promo_codes(campaign_id, is_active);
