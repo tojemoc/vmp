@@ -140,5 +140,12 @@ export const personalData: PersonalDataPage = {
       lifetime: 'Kým sa karta nezatvorí',
       necessary: 'Áno — bezpečnosť počas prihlasovacích tokov',
     },
+    {
+      name: 'vmp_personal_data_notice_ack',
+      mechanism: 'localStorage',
+      purpose: 'Zapamätá, že ste zavreli banner s informáciou o spracovaní osobných údajov',
+      lifetime: 'Kým nevymažete údaje stránky',
+      necessary: 'Funkčné — až po potvrdení informácie',
+    },
   ],
 }

@@ -140,5 +140,12 @@ export const personalData: PersonalDataPage = {
       lifetime: 'Until tab closes',
       necessary: 'Yes — security during login flows',
     },
+    {
+      name: 'vmp_personal_data_notice_ack',
+      mechanism: 'localStorage',
+      purpose: 'Remembers that you dismissed the personal data notice banner',
+      lifetime: 'Until you clear site data',
+      necessary: 'Functional — only after you acknowledge the notice',
+    },
   ],
 }
