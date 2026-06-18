@@ -41,8 +41,8 @@ jobs:
 
       - name: Typecheck
         run: |
-          npm exec nx -- run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
-          npm exec nx -- run @vmp/web:typecheck:scripts
+          bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
 
-      - run: npx nx fix-ci
+      - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
