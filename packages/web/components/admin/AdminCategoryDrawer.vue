@@ -143,6 +143,7 @@ const emit = defineEmits<{
 
 const secondaryButtonClass = 'px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
 const secondaryButtonSmClass = 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
+const draft = ref<AdminCategoryRow | null>(null)
 const confirmDelete = ref(false)
 const reassignToId = ref('')
 
