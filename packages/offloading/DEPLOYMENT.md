@@ -1,5 +1,11 @@
 # Docker/Compose deployment recommendations
 
+## Contents
+
+- [Compose snippet](#compose-snippet)
+- [Persistence guidance](#persistence-guidance)
+- [Related documentation](#related-documentation)
+
 ## Compose snippet
 
 ```yaml
@@ -43,3 +49,11 @@ services:
 - Keep inbox/tmp bind-mounted to avoid data loss on restart.
 - Use non-root UID/GID in runtime environment where possible.
 - Keep hot/cold object stores on separate persistent volumes.
+
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../README.md) | Monorepo overview and documentation map |
+| [packages/offloading/README.md](README.md) | Garage compose, demote/promote scripts, env vars |
+| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline (often co-deployed on the same host) |

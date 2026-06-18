@@ -2,6 +2,17 @@
 
 The `vmp-supervisor` unit runs the podcast-host supervisor: local dashboard, preview MP3 webhook, and the `pipeline_watch` child process.
 
+## Contents
+
+- [Install the unit file](#install-the-unit-file)
+- [Build before first start](#build-before-first-start)
+- [Environment file](#environment-file)
+- [Enable and start](#enable-and-start)
+- [Logs](#logs)
+- [Drain and restart](#drain-and-restart)
+- [Watchdog and stuck jobs](#watchdog-and-stuck-jobs)
+- [Related documentation](#related-documentation)
+
 ## Install the unit file
 
 ```bash
@@ -85,7 +96,7 @@ EOF
 sudo chmod 600 /etc/vmp/env
 ```
 
-See `packages/podcast-host/README.md` and root `AGENTS.md` for the full list of optional settings (Brevo, Stripe callbacks, preview MP3, etc.).
+See [packages/podcast-host/README.md](../README.md) and root [AGENTS.md](../../../AGENTS.md) for the full list of optional settings (Brevo, Stripe callbacks, preview MP3, etc.).
 
 ## Enable and start
 
@@ -127,3 +138,11 @@ The unit uses `Type=notify` with `WatchdogSec=60`. The supervisor sends `READY=1
 Notifications use `/usr/bin/systemd-notify` (from the `systemd` package). Node’s `node:dgram` module does not support Unix datagram sockets (`AF_UNIX` / `SOCK_DGRAM`), which `sd_notify(3)` requires.
 
 If a job exceeds that threshold, the supervisor **stops** sending `WATCHDOG=1`. Systemd then waits `WatchdogSec=60` before marking the unit failed. With `Restart=on-failure` and `RestartSec=5`, systemd starts a new process after the restart delay, so the typical gap before a fresh supervisor is **about `WatchdogSec` + `RestartSec` (~65 seconds)**, not 60 seconds alone. That recovery path is intentional for stuck encode/upload work.
+
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../../README.md) | Monorepo overview and documentation map |
+| [packages/podcast-host/README.md](../README.md) | Pipeline, supervisor, webhooks, TTP logging, env reference |
+| [AGENTS.md](../../../AGENTS.md) | Worker secrets and pipeline callback endpoints |

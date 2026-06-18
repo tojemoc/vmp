@@ -35,7 +35,7 @@ export const personalData: PersonalDataPage = {
       id: 'storage-table',
       title: 'Cookies and browser storage we use',
       paragraphs: [
-        'The application code below is under our control. Third-party payment pages (Stripe, GoCardless) may set their own cookies when you start checkout on their surfaces.',
+        'The application code below is under our control. Third-party payment pages (Stripe) may set their own cookies when you start checkout on their surfaces.',
       ],
     },
     {
@@ -44,12 +44,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
         'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend). The Vercel deployment may load Vercel Web Analytics for operational traffic statistics on that hostname only.',
-        'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe and GoCardless for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
+        'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, security (global edge)',
         'Umami Cloud (EU region) — cookieless pageview statistics',
-        'Stripe / GoCardless — payment processing when you subscribe',
+        'Stripe — payment processing when you subscribe',
         'Brevo — magic-link and account email',
         'Sentry — error and stability monitoring (technical logs)',
         'Deno Deploy / Vercel — backup API and frontend deployments',
