@@ -244,7 +244,7 @@ export const strings: StringsDefinition = {
   accessUntil: 'Access until',
   planMonthly: 'Monthly',
   planYearly: 'Yearly',
-  planClub: 'Klubové predplatné',
+  planClub: 'Club membership',
   providerStripe: 'Stripe',
   providerGoCardless: 'GoCardless',
   billingPortalFailed: 'Could not open billing portal. Please try again.',

@@ -1,5 +1,5 @@
 import { getLocaleCatalog, parseUiLocale } from '~/locales'
-import { DEV_UI_LOCALE_COOKIE } from '~/utils/resolveUiLocale'
+import { getActiveUiLocale } from '~/utils/resolveUiLocale'
 
 /**
  * Active UI locale for this deployment (`runtimeConfig.public.uiLocale`),
@@ -7,25 +7,16 @@ import { DEV_UI_LOCALE_COOKIE } from '~/utils/resolveUiLocale'
  */
 export function useUiLocale() {
   const config = useRuntimeConfig()
-  const locale = computed(() => {
-    if (import.meta.dev) {
-      try {
-        const cookie = useCookie(DEV_UI_LOCALE_COOKIE)
-        if (cookie.value) return parseUiLocale(cookie.value)
-      } catch {
-        // ignore
-      }
-    }
-    return parseUiLocale(config.public.uiLocale as string)
-  })
+  const locale = computed(() => getActiveUiLocale())
   const catalog = computed(() => getLocaleCatalog(locale.value))
+  const buildLocale = computed(() => parseUiLocale(config.public.uiLocale as string))
 
   return {
     locale,
     htmlLang: computed(() => catalog.value.htmlLang),
     catalog,
     isDevLocalePreview: computed(
-      () => import.meta.dev && locale.value !== parseUiLocale(config.public.uiLocale as string),
+      () => import.meta.dev && locale.value !== buildLocale.value,
     ),
   }
 }

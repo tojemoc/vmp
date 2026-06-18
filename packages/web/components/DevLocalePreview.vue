@@ -39,10 +39,11 @@
 </template>
 
 <script setup lang="ts">
+import { SUPPORTED_UI_LOCALES } from '~/locales'
 import type { UiLocale } from '~/locales'
 import { clearDevUiLocalePreview, setDevUiLocalePreview } from '~/utils/resolveUiLocale'
 
-const locales: UiLocale[] = ['en', 'sk', 'cs']
+const locales = SUPPORTED_UI_LOCALES
 const { locale, isDevLocalePreview } = useUiLocale()
 
 function selectLocale(code: UiLocale) {
