@@ -338,7 +338,7 @@ const legacyManageUrl = computed(() => {
 })
 
 const showLegacyManageButton = computed(() => {
-  const sub = subscription.value as { showLegacyManageButton?: boolean; provider?: string } | null
+  const sub = subscription.value as { showLegacyManageButton?: boolean; provider?: string; status?: string } | null
   if (!sub || sub.provider !== 'legacy') return false
   if (sub.showLegacyManageButton === false) return false
   return Boolean(legacyManageUrl.value) && ['active', 'needs_relink', 'past_due'].includes(sub.status ?? '')
