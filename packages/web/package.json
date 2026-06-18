@@ -23,7 +23,7 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/net": "^0.1.4",
+    "@moq/net": "^0.1.5",
     "@moq/watch": "^0.2.16",
     "@nuxtjs/color-mode": "^4.0.0",
     "@sentry/nuxt": "^10.57.0",
@@ -42,7 +42,7 @@
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
     "@saslavik/nuxt-gtm": "^0.1.3",
-    "@types/node": "^25.7.0",
+    "@types/node": "^25.9.3",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
