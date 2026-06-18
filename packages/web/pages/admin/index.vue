@@ -87,82 +87,10 @@
         </div>
 
         <div v-if="activeAdminTab === 'homepage'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-          <div class="flex items-center justify-between mb-4">
+          <div class="mb-4">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Homepage blocks</h2>
-            <button class="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg" @click="addBlock('top_video')">
-              <span class="text-lg leading-none">+</span>
-              Add block
-            </button>
           </div>
-
-          <div class="space-y-3">
-            <div
-              v-for="(block, index) in layoutBlocks"
-              :key="block.id"
-              class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950"
-              draggable="true"
-              @dragstart="onDragStart(index)"
-              @dragover.prevent
-              @drop="onDrop(index)"
-            >
-              <div class="flex items-center gap-3 mb-3">
-                <span class="cursor-move text-gray-500">↕</span>
-                <select
-                  v-model="block.type"
-                  aria-label="Homepage block type"
-                  class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 dark:[color-scheme:dark] text-sm text-gray-900 dark:text-white"
-                >
-                  <option v-for="componentType in blockTypeOptions(block.type)" :key="componentType" :value="componentType">{{ componentType }}</option>
-                </select>
-                <button class="ml-auto text-sm text-red-600 hover:underline" @click="removeBlock(block.id)">Remove</button>
-              </div>
-              <div class="grid gap-3">
-                <input v-model="block.title" type="text" placeholder="Block title" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400" />
-                <textarea v-model="block.body" rows="3" placeholder="Block copy" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"></textarea>
-                <select
-                  v-if="block.type === 'category'"
-                  v-model="block.categoryId"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
-                >
-                  <option value="">Select category</option>
-                  <option v-for="cat in categories" :key="`block-cat-${block.id}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
-                </select>
-                <label v-if="block.type === 'category'" class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input v-model="block.rightRailWithNextSideMini" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  Pair next side-mini category on right (2x2 + 2x1)
-                </label>
-                <div
-                  v-if="(block.type === 'split_horizontal' || block.type === 'split_vertical') && block.childBlocks"
-                  class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3"
-                >
-                  <div
-                    v-for="(child, childIndex) in block.childBlocks"
-                    :key="`${block.id}-child-${childIndex}`"
-                    class="grid gap-2 rounded border border-gray-200 dark:border-gray-700 p-2 bg-white dark:bg-gray-900"
-                  >
-                    <div class="text-xs font-semibold text-gray-600 dark:text-gray-400">Child block {{ childIndex + 1 }}</div>
-                    <select
-                      v-model="child.type"
-                      aria-label="Homepage child block type"
-                      class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 dark:[color-scheme:dark] text-sm text-gray-900 dark:text-white"
-                    >
-                      <option v-for="componentType in leafBlockTypeOptions(child.type)" :key="`${block.id}-child-type-${componentType}`" :value="componentType">{{ componentType }}</option>
-                    </select>
-                    <input v-model="child.title" type="text" placeholder="Child block title" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400" />
-                    <textarea v-model="child.body" rows="2" placeholder="Child block copy" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"></textarea>
-                    <select
-                      v-if="child.type === 'category'"
-                      v-model="child.categoryId"
-                      class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
-                    >
-                      <option value="">Select category</option>
-                      <option v-for="cat in categories" :key="`block-child-cat-${block.id}-${childIndex}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AdminHomepageBlockEditor v-model="layoutBlocks" :categories="categories" />
         </div>
 
         <div v-if="activeAdminTab === 'homepage'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
@@ -626,8 +554,15 @@
           </div>
 
           <template v-else>
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white">Create category</h3>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+              @click="categoryCreateExpanded = !categoryCreateExpanded"
+            >
+              + New category
+            </button>
+
+            <div v-if="categoryCreateExpanded" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
               <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <input v-model="categoryForm.name" type="text" placeholder="Name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="categoryForm.slug" type="text" placeholder="slug-name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
@@ -644,51 +579,59 @@
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createCategory">Create category</button>
             </div>
 
-            <p class="text-xs text-gray-500 dark:text-gray-400">Ordering rule: categories with <code>sort_order &lt;= 0</code> are P0 and render before all standard categories.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">Ordering rule: categories with <code>sort_order &lt;= 0</code> are P0 and render before all standard categories. Drag rows to reorder.</p>
 
             <div class="space-y-2">
               <div
                 v-for="(category, categoryIndex) in categories"
                 :key="category.id"
-                :data-category-id="category.id"
-                tabindex="-1"
-                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2"
+                class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 flex flex-wrap items-center gap-3"
+                draggable="true"
+                @dragstart="onCategoryDragStart(categoryIndex)"
+                @dragover.prevent
+                @drop="onCategoryDrop(categoryIndex)"
               >
-                <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_120px_120px_170px_auto_auto] gap-2 items-center">
-                <input v-model="category.name" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <input v-model="category.slug" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <input v-model.number="category.sort_order" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <select v-model="category.direction" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="desc">desc</option>
-                  <option value="asc">asc</option>
-                </select>
-                <select v-model="category.homepage_layout_variant" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="three_by_one">3×1 block</option>
-                  <option value="side_mini">2×1 small block</option>
-                </select>
-                <div class="flex gap-2">
-                  <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-xs" :disabled="categoryIndex === 0" aria-label="Move category up" @click="nudgeCategoryOrder(categoryIndex, -1)">↑</button>
-                  <button class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-xs" :disabled="categoryIndex === categories.length - 1" aria-label="Move category down" @click="nudgeCategoryOrder(categoryIndex, 1)">↓</button>
-                </div>
-                <div class="flex gap-2">
-                  <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium" @click="updateCategory(category)">Save</button>
-                  <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium" @click="confirmDeleteCategory(category)">Delete</button>
-                </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                  <label class="text-gray-600 dark:text-gray-300">Rec. recency bias
-                    <input v-model.number="category.recommendation_recency_bias" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                  </label>
-                  <label class="text-gray-600 dark:text-gray-300">Rec. low-views boost
-                    <input v-model.number="category.recommendation_low_views_boost" type="number" min="0" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                  </label>
-                  <label class="inline-flex items-center gap-2 mt-5 text-gray-600 dark:text-gray-300">
-                    <input v-model="category.recommendation_category_lock" type="checkbox" :true-value="1" :false-value="0" class="rounded border-gray-300 dark:border-gray-600">
-                    Stay in category only
-                  </label>
+                <span class="cursor-move text-gray-400" title="Drag to reorder">⠿</span>
+                <span class="font-medium text-gray-900 dark:text-white min-w-[8rem]">{{ category.name }}</span>
+                <span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ category.slug }}</span>
+                <span class="px-2 py-0.5 rounded-full text-xs" :class="category.sort_order <= 0 ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'">
+                  {{ category.sort_order <= 0 ? 'P0' : `#${category.sort_order}` }}
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.direction }}</span>
+                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.homepage_layout_variant === 'side_mini' ? 'side_mini' : '3×1' }}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ category.video_count ?? 0 }} videos</span>
+                <div class="ml-auto flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    :disabled="categoryIndex === 0"
+                    aria-label="Move category up"
+                    @click="moveCategoryUp(categoryIndex)"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    :disabled="categoryIndex === categories.length - 1"
+                    aria-label="Move category down"
+                    @click="moveCategoryDown(categoryIndex)"
+                  >
+                    Move down
+                  </button>
+                  <button type="button" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
                 </div>
               </div>
             </div>
+
+            <AdminCategoryDrawer
+              :open="categoryDrawerOpen"
+              :category="categoryDrawerCategory"
+              :all-categories="categories"
+              @close="closeCategoryDrawer"
+              @save="saveCategoryFromDrawer"
+              @delete="deleteCategoryFromDrawer"
+            />
           </template>
         </div>
 
@@ -701,6 +644,35 @@
               Current key: <span class="font-mono">{{ pillsApiKeyMeta.maskedKey || 'not set' }}</span>
               <span v-if="pillsApiKeyMeta.managedByEnv" class="ml-2 text-amber-600 dark:text-amber-400">(managed by environment secret)</span>
             </p>
+            <details class="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/50">
+              <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">API reference</summary>
+              <pre class="px-3 pb-3 text-xs overflow-x-auto text-gray-800 dark:text-gray-200 font-mono whitespace-pre-wrap"><code>POST /api/pills/update
+Header: x-api-key: &lt;your-key&gt;
+Header: Content-Type: application/json
+
+Body:
+{
+  "pills": [
+    {
+      "id": "unique-pill-id",        // stable, you choose it
+      "label": "Subscribers",
+      "value": 4200,
+      "color": "#2563eb",
+      "sortOrder": 0,
+      "valueMode": "number",         // "number" | "percentage" | "agree_disagree" | "graph_embed"
+      "valueSecondary": null,        // required for agree_disagree (disagree count)
+      "graphEmbedUrl": null,         // for graph_embed: Flourish/iframe URL
+      "graphPayloadJson": null       // for graph_embed: custom chart JSON
+    }
+  ]
+}
+
+Rate limit: 2 requests per minute per IP+key (configurable via admin_settings.pills_update_rate_limit_per_minute).
+Minimum interval between updates: 30 s recommended to avoid hitting the limit.
+Response 200: { "ok": true, "updated": N }
+Response 401: invalid or missing x-api-key
+Response 429: rate limit exceeded — retry after the Retry-After header value (seconds)</code></pre>
+            </details>
             <div v-if="!pillsApiKeyMeta.managedByEnv" class="flex flex-wrap gap-2">
               <input v-model="pillsApiKey" type="text" placeholder="Enter new API key" class="min-w-[18rem] px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="savePillsApiKey">Save API key</button>
@@ -782,207 +754,11 @@
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'newsletter'" id="newsletter-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
-          <div>
-            <h2 class="text-xl font-bold text-gray-900 dark:text-white">Newsletter</h2>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Sync paying subscribers to a Brevo list (via Stripe webhooks) and send campaigns to that list.
-            </p>
-          </div>
-
+        <div v-if="activeAdminTab === 'newsletter'" id="newsletter-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
           <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
             Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.
           </div>
-
-          <template v-else>
-            <div v-if="newsletterMessage" class="rounded-lg border px-4 py-3 text-sm" :class="newsletterMessageClass">{{ newsletterMessage }}</div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <div class="space-y-2">
-                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="brevo-list-id">Brevo subscriber list ID</label>
-                <input
-                  id="brevo-list-id"
-                  v-model="newsletterListId"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  placeholder="e.g. 12"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                />
-                <p class="text-xs text-gray-500 dark:text-gray-400">Create a list in Brevo Contacts and paste its numeric ID.</p>
-              </div>
-              <div class="space-y-2">
-                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="brevo-sender-email">Campaign sender email</label>
-                <input
-                  id="brevo-sender-email"
-                  v-model="newsletterSenderEmail"
-                  type="email"
-                  autocomplete="email"
-                  placeholder="verified sender in Brevo"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                />
-                <label class="block text-sm font-medium text-gray-900 dark:text-white mt-3" for="brevo-sender-name">Sender display name (optional)</label>
-                <input
-                  id="brevo-sender-name"
-                  v-model="newsletterSenderName"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="e.g. Your Channel"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                />
-                <label class="block text-sm font-medium text-gray-900 dark:text-white mt-3" for="newsletter-poll-ms">Campaign list refresh interval (ms)</label>
-                <input
-                  id="newsletter-poll-ms"
-                  v-model.number="newsletterPollIntervalMs"
-                  type="number"
-                  min="60000"
-                  max="86400000"
-                  step="60000"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                />
-                <p class="text-xs text-gray-500 dark:text-gray-400">How often to refresh the recent campaigns list while this tab is open (60s–24h). Save settings to apply.</p>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                :disabled="newsletterSaving"
-                @click="saveNewsletterSettings"
-              >
-                {{ newsletterSaving ? 'Saving…' : 'Save newsletter settings' }}
-              </button>
-              <button
-                type="button"
-                class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
-                :disabled="newsletterSyncing"
-                @click="syncNewsletterRecipients"
-              >
-                {{ newsletterSyncing ? 'Syncing…' : 'Sync recipients' }}
-              </button>
-            </div>
-
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Saved templates</h3>
-              <p class="text-sm text-gray-600 dark:text-gray-400">Create and edit reusable HTML templates stored in the database. Sending still uses Brevo’s campaign API.</p>
-              <div class="grid gap-3 md:grid-cols-2">
-                <div class="space-y-2">
-                  <label class="block text-sm font-medium text-gray-900 dark:text-white" for="tpl-name">Name</label>
-                  <input id="tpl-name" v-model="newsletterTemplateForm.name" type="text" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                  <label class="block text-sm font-medium text-gray-900 dark:text-white" for="tpl-subject">Subject</label>
-                  <input id="tpl-subject" v-model="newsletterTemplateForm.subject" type="text" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </div>
-                <div class="space-y-2">
-                  <label class="block text-sm font-medium text-gray-900 dark:text-white" for="tpl-html">HTML body</label>
-                  <textarea id="tpl-html" v-model="newsletterTemplateForm.htmlBody" rows="6" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm" />
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm disabled:opacity-50"
-                      :disabled="newsletterTemplateSaving"
-                      @click="saveNewsletterTemplate"
-                    >
-                      {{ newsletterEditingTemplateId ? 'Update template' : 'Create template' }}
-                    </button>
-                    <button
-                      v-if="newsletterEditingTemplateId"
-                      type="button"
-                      class="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm"
-                      @click="resetNewsletterTemplateForm"
-                    >
-                      Cancel edit
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <ul class="divide-y divide-gray-200 dark:divide-gray-700 rounded-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-auto">
-                <li v-for="tpl in newsletterTemplates" :key="tpl.id" class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                  <span class="font-medium text-gray-900 dark:text-white">{{ tpl.name }}</span>
-                  <span class="flex gap-2">
-                    <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="startEditNewsletterTemplate(tpl)">Edit</button>
-                    <button type="button" class="text-red-600 dark:text-red-400 hover:underline" @click="deleteNewsletterTemplate(tpl.id, tpl.name)">Delete</button>
-                  </span>
-                </li>
-                <li v-if="!newsletterTemplates.length" class="px-3 py-4 text-gray-500 dark:text-gray-400 text-sm">No templates yet.</li>
-              </ul>
-            </div>
-
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Compose campaign</h3>
-              <div class="space-y-2">
-                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="newsletter-template">Template</label>
-                <select id="newsletter-template" v-model="newsletterTemplateId" class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="">No template (use manual subject/body)</option>
-                  <option v-for="tpl in newsletterTemplates" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
-                </select>
-                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="newsletter-subject">Subject</label>
-                <input
-                  id="newsletter-subject"
-                  v-model="newsletterSubject"
-                  type="text"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                  placeholder="Email subject line"
-                />
-              </div>
-              <div class="space-y-2">
-                <label class="block text-sm font-medium text-gray-900 dark:text-white" for="newsletter-body">HTML body</label>
-                <textarea
-                  id="newsletter-body"
-                  v-model="newsletterHtml"
-                  rows="12"
-                  class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm"
-                  placeholder="<p>Hello …</p>"
-                />
-              </div>
-              <div class="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">Preview</p>
-                  <iframe
-                    v-if="newsletterHtml.trim()"
-                    title="Newsletter HTML preview"
-                    class="w-full min-h-[12rem] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950"
-                    sandbox=""
-                    referrerpolicy="no-referrer"
-                    :srcdoc="newsletterPreviewSrcdoc"
-                  />
-                  <div
-                    v-else
-                    class="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 p-4 min-h-[12rem] flex items-center justify-center text-sm text-gray-400"
-                  >
-                    Preview appears here.
-                  </div>
-                </div>
-                <div class="flex flex-col justify-end gap-2">
-                  <button
-                    type="button"
-                    class="w-full sm:w-auto px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="newsletterSending"
-                    @click="sendNewsletterCampaign"
-                  >
-                    {{ newsletterSending ? 'Sending…' : 'Send to subscriber list' }}
-                  </button>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    Creates a campaign in Brevo and sends it immediately to the configured list. Ensure your API key has marketing permissions and credits.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Recent campaigns</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                <span v-if="lastCampaignsOkAt">Last refreshed: {{ new Date(lastCampaignsOkAt).toLocaleString() }}</span>
-                <span v-if="lastCampaignsError" class="text-red-600 dark:text-red-400"> · Poll error: {{ lastCampaignsError }}</span>
-              </p>
-              <div class="space-y-2 max-h-56 overflow-auto">
-                <div v-for="campaign in newsletterCampaigns" :key="campaign.id" class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ campaign.subject || campaign.name }}</p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">Status: {{ campaign.status }} · Sent: {{ campaign.sentDate || '—' }}</p>
-                </div>
-              </div>
-            </div>
-          </template>
+          <AdminNewsletterPanel v-else />
         </div>
 
         <div v-if="activeAdminTab === 'users'" id="users-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
@@ -1158,7 +934,7 @@
                   <option value="super_admin" :disabled="user?.role !== 'super_admin'">super_admin</option>
                 </select>
               </div>
-              <div>
+              <div class="flex flex-col gap-1">
                 <label class="sr-only" :for="`sub-${u.id}`">Subscription for {{ u.email }}</label>
                 <select
                   :id="`sub-${u.id}`"
@@ -1169,15 +945,21 @@
                   @change="(e) => onUserSubscriptionSelect(u, (e.target as HTMLSelectElement).value)"
                 >
                   <option value="none">none</option>
-                  <template v-if="hasAdminUserSubscriptionRow(u)">
-                    <option v-if="u.subscription_status === 'needs_relink'" value="needs_relink">needs_relink</option>
-                    <option value="active">active</option>
-                    <option value="trialing">trialing</option>
-                    <option value="past_due">past_due</option>
-                    <option value="cancelled">cancelled</option>
-                    <option value="unpaid">unpaid</option>
-                    <option value="incomplete">incomplete</option>
-                  </template>
+                  <option v-if="u.subscription_status === 'needs_relink'" value="needs_relink">needs_relink</option>
+                  <option value="active">active</option>
+                  <option value="trialing">trialing</option>
+                  <option value="past_due">past_due</option>
+                  <option value="cancelled">cancelled</option>
+                  <option value="unpaid">unpaid</option>
+                  <option value="incomplete">incomplete</option>
+                </select>
+                <select
+                  v-if="!hasAdminUserSubscriptionRow(u)"
+                  :value="adminUserPendingPlanType[u.id] || defaultAdminPlanId"
+                  class="w-full px-2 py-1 rounded border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white text-xs"
+                  @change="(e) => setAdminUserPendingPlanType(u.id, (e.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="plan in enabledAdminPaymentPlans" :key="`user-plan-${u.id}-${plan.id}`" :value="plan.id">plan: {{ plan.label }}</option>
                 </select>
               </div>
             </div>
@@ -1638,11 +1420,8 @@
           </div>
 
           <template v-else>
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-              <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">Feature toggles</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Enable/disable system modules and reveal their settings only when enabled.</p>
-              </div>
+            <AdminAccordionSection section-key="feature-toggles" title="Feature toggles">
+            <div class="space-y-4">
               <div v-if="systemFeaturesMessage" class="rounded-lg border px-4 py-3 text-sm" :class="systemFeaturesMessageClass">{{ systemFeaturesMessage }}</div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
@@ -1669,14 +1448,10 @@
                 </button>
               </div>
             </div>
+            </AdminAccordionSection>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-              <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">Deno Postgres failover</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Push D1 changes to the Deno Deploy Postgres backup (users, subscriptions, videos, admin settings).
-                </p>
-              </div>
+            <AdminAccordionSection section-key="deno-postgres" title="Deno Postgres failover">
+            <div class="space-y-4">
               <div v-if="replicationMessage" class="rounded-lg border px-4 py-3 text-sm" :class="replicationMessageClass">{{ replicationMessage }}</div>
               <p
                 v-if="replicationStatus?.targetWarning"
@@ -1740,9 +1515,10 @@
                 Ingest URL is configured, but <code class="font-mono">REPLICATION_TARGET_TOKEN</code> is missing on the Worker. Add the shared bearer secret to match Deno <code class="font-mono">REPLICATION_INGEST_TOKEN</code>.
               </p>
             </div>
+            </AdminAccordionSection>
 
-            <!-- Site Branding -->
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <AdminAccordionSection section-key="site-branding" title="Site branding">
+            <div class="space-y-4">
               <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">Site branding</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -1796,92 +1572,14 @@
                 </button>
               </div>
             </div>
+            </AdminAccordionSection>
 
-            <div v-if="paymentSettingsMessage" class="rounded-lg border px-4 py-3 text-sm" :class="paymentSettingsMessageClass">{{ paymentSettingsMessage }}</div>
+            <AdminAccordionSection section-key="payment-gateways" title="Payment gateways">
+              <AdminPaymentPlans />
+            </AdminAccordionSection>
 
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-              <h3 class="font-semibold text-gray-900 dark:text-white">Payments</h3>
-              <p class="text-sm text-gray-600 dark:text-gray-400">
-                Configure Stripe checkout prices and Stripe price IDs used for Checkout.
-              </p>
-
-              <div>
-                <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Plans offered</p>
-                <div class="flex flex-wrap gap-4">
-                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                    <input v-model="paymentSettings.allowedPlans" type="checkbox" value="monthly" class="rounded border-gray-300 dark:border-gray-600">
-                    Monthly
-                  </label>
-                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                    <input v-model="paymentSettings.allowedPlans" type="checkbox" value="yearly" class="rounded border-gray-300 dark:border-gray-600">
-                    Yearly
-                  </label>
-                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                    <input v-model="paymentSettings.allowedPlans" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">
-                    Club
-                  </label>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Fallback prices (EUR)</h4>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">Used when a provider-specific price is empty.</p>
-                  <div class="grid grid-cols-3 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
-                      <input v-model="paymentSettings.basePrices.monthly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" placeholder="e.g. 6.90">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Yearly
-                      <input v-model="paymentSettings.basePrices.yearly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" placeholder="e.g. 74.90">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300">Club
-                      <input v-model="paymentSettings.basePrices.club" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" placeholder="e.g. 109.00">
-                    </label>
-                  </div>
-                </div>
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe price IDs</h4>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">From Stripe Dashboard → Products → Price IDs.</p>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Monthly price ID
-                    <input v-model="paymentSettings.stripePriceIds.monthly" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" placeholder="price_...">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Yearly price ID
-                    <input v-model="paymentSettings.stripePriceIds.yearly" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" placeholder="price_...">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Club price ID
-                    <input v-model="paymentSettings.stripePriceIds.club" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" placeholder="price_...">
-                  </label>
-                </div>
-              </div>
-
-              <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
-                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Stripe display prices (EUR)</h4>
-                <div class="grid grid-cols-3 gap-2">
-                  <label class="text-xs text-gray-600 dark:text-gray-300">Monthly
-                    <input v-model="paymentSettings.providerPrices.stripe.monthly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300">Yearly
-                    <input v-model="paymentSettings.providerPrices.stripe.yearly" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300">Club
-                    <input v-model="paymentSettings.providerPrices.stripe.club" type="text" inputmode="decimal" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                </div>
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="paymentSettingsSaving"
-                  @click="savePaymentSettings"
-                >
-                  {{ paymentSettingsSaving ? 'Saving…' : 'Save payment settings' }}
-                </button>
-              </div>
-            </div>
-
-            <div v-if="systemFeatures.promotionsEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <AdminAccordionSection v-if="systemFeatures.promotionsEnabled" section-key="promo-campaigns" title="Promo campaigns & codes">
+            <div class="space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
@@ -2047,8 +1745,10 @@
                 </div>
               </div>
             </div>
+            </AdminAccordionSection>
 
-            <div v-if="systemFeatures.isicEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <AdminAccordionSection v-if="systemFeatures.isicEnabled" section-key="isic-campaigns" title="ISIC campaigns">
+            <div class="space-y-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold text-gray-900 dark:text-white">ISIC campaigns</h3>
@@ -2154,8 +1854,10 @@
                 </div>
               </div>
             </div>
+            </AdminAccordionSection>
 
-            <div v-if="systemFeatures.freePodcastPreviewEnabled" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <AdminAccordionSection v-if="systemFeatures.freePodcastPreviewEnabled" section-key="podcast-rebuild" title="Podcast rebuild webhook">
+            <div class="space-y-4">
               <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">Podcast preview (RSS)</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -2209,6 +1911,7 @@
               </div>
               <p v-if="rssPodcastSecretConfigured" class="text-xs text-gray-500 dark:text-gray-400">A webhook secret is configured on the server.</p>
             </div>
+            </AdminAccordionSection>
           </template>
         </div>
       </section>
@@ -2907,6 +2610,10 @@ const categoryForm = ref({
   direction: 'desc' as 'asc' | 'desc',
   homepageLayoutVariant: 'three_by_one' as 'three_by_one' | 'side_mini',
 })
+const categoryCreateExpanded = ref(false)
+const categoryDrawerOpen = ref(false)
+const categoryDrawerCategory = ref<Category | null>(null)
+const categoryDraggingIndex = ref<number | null>(null)
 const newsletterSyncing = ref(false)
 const newsletterTemplates = ref<any[]>([])
 const newsletterCampaigns = ref<any[]>([])
@@ -2915,6 +2622,11 @@ const newsletterEditingTemplateId = ref<string | null>(null)
 const newsletterTemplateSaving = ref(false)
 type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
 type PlanType = 'monthly' | 'yearly' | 'club'
+interface AdminPaymentPlanRow {
+  id: string
+  label: string
+  enabled: boolean
+}
 interface PaymentPriceRow { monthly: string; yearly: string; club: string }
 interface PromoCampaign {
   id: string
@@ -2974,6 +2686,9 @@ const paymentSettings = ref<{
 const paymentSettingsSaving = ref(false)
 const paymentSettingsMessage = ref('')
 const paymentSettingsMessageClass = ref('')
+const adminPaymentPlans = ref<AdminPaymentPlanRow[]>([])
+const enabledAdminPaymentPlans = computed(() => adminPaymentPlans.value.filter((p) => p.enabled))
+const defaultAdminPlanId = computed(() => enabledAdminPaymentPlans.value[0]?.id ?? 'monthly')
 const systemFeatures = ref({
   promotionsEnabled: true,
   isicEnabled: false,
@@ -3699,6 +3414,9 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
   const rightRailWithNextSideMini = raw.rightRailWithNextSideMini === true
+  const width = raw.width === 'half' || raw.width === 'full' ? raw.width : undefined
+  const mobileHidden = raw.mobileHidden === true
+  const mobileOrder = Number.isFinite(Number(raw.mobileOrder)) ? Number(raw.mobileOrder) : undefined
   if (type === 'split_horizontal' || type === 'split_vertical') {
     const children = Array.isArray(raw.childBlocks) ? raw.childBlocks : []
     const normalizedChildren = children
@@ -3708,9 +3426,22 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
         title: typeof child.title === 'string' ? child.title : '',
         body: typeof child.body === 'string' ? child.body : '',
         categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
+        width: child.width === 'half' || child.width === 'full' ? child.width : undefined,
+        mobileHidden: child.mobileHidden === true,
+        mobileOrder: Number.isFinite(Number(child.mobileOrder)) ? Number(child.mobileOrder) : undefined,
       }))
       .slice(0, 2)
-    while (normalizedChildren.length < 2) normalizedChildren.push({ type: 'top_video', title: '', body: '', categoryId: '' })
+    while (normalizedChildren.length < 2) {
+      normalizedChildren.push({
+        type: 'top_video',
+        title: '',
+        body: '',
+        categoryId: '',
+        width: undefined,
+        mobileHidden: false,
+        mobileOrder: undefined,
+      })
+    }
     return { id, type, title, body, childBlocks: normalizedChildren }
   }
   return {
@@ -3720,6 +3451,9 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     body,
     categoryId: type === 'category' ? categoryId : null,
     rightRailWithNextSideMini: type === 'category' ? rightRailWithNextSideMini : false,
+    width: width ?? (type === 'featured_row' || type === 'top_video' ? 'full' : 'half'),
+    mobileHidden,
+    mobileOrder,
   }
 }
 const sanitizeBlockForSave = (block: LayoutBlock) => {
@@ -3733,6 +3467,9 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
     payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
     payload.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
   }
+  if (block.width === 'half' || block.width === 'full') payload.width = block.width
+  if (block.mobileHidden === true) payload.mobileHidden = true
+  if (Number.isFinite(Number(block.mobileOrder))) payload.mobileOrder = Number(block.mobileOrder)
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
     payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
       type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
@@ -3754,20 +3491,88 @@ const applyHomepageBaseline = () => {
   homepageBaseline.value = serializeHomepageState()
 }
 
-const nudgeCategoryOrder = (idx: number, direction: -1 | 1) => {
-  const swapIdx = idx + direction
-  if (swapIdx < 0 || swapIdx >= categories.value.length) return
-  const next = [...categories.value]
-  const moved = next.splice(idx, 1)[0]
+const buildCategoryOrderPayload = (reordered: Category[]) => {
+  let nextStandardOrder = 1
+  return reordered.map((c) => ({
+    id: c.id,
+    sortOrder: c.sort_order <= 0 ? c.sort_order : nextStandardOrder++,
+  }))
+}
+
+const persistCategoryOrder = async (reordered: Category[]) => {
+  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ categoryOrder: buildCategoryOrderPayload(reordered) }),
+  })
+  if (!res.ok) throw new Error('Reorder failed')
+  await loadCategories()
+  showToast('success', 'Category order updated.')
+}
+
+const onCategoryDragStart = (index: number) => { categoryDraggingIndex.value = index }
+const onCategoryDrop = async (targetIndex: number) => {
+  const from = categoryDraggingIndex.value
+  if (from === null || from === targetIndex) return
+  const reordered = [...categories.value]
+  const [moved] = reordered.splice(from, 1)
   if (!moved) return
-  next.splice(swapIdx, 0, moved)
-  const itemAtIdx = next[idx]
-  const itemAtSwapIdx = next[swapIdx]
-  if (!itemAtIdx || !itemAtSwapIdx) return
-  const temp = itemAtIdx.sort_order
-  next[idx] = { ...itemAtIdx, sort_order: itemAtSwapIdx.sort_order }
-  next[swapIdx] = { ...itemAtSwapIdx, sort_order: temp }
-  categories.value = next
+  reordered.splice(targetIndex, 0, moved)
+  categories.value = reordered
+  categoryDraggingIndex.value = null
+  try {
+    await persistCategoryOrder(reordered)
+  } catch (e: unknown) {
+    showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
+    await loadCategories()
+  }
+}
+
+async function reorderCategoryByIndex(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= categories.value.length || to >= categories.value.length) return
+  const reordered = [...categories.value]
+  const [moved] = reordered.splice(from, 1)
+  if (!moved) return
+  reordered.splice(to, 0, moved)
+  categories.value = reordered
+  try {
+    await persistCategoryOrder(reordered)
+  } catch (e: unknown) {
+    showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
+    await loadCategories()
+  }
+}
+
+function moveCategoryUp(index: number) {
+  if (index <= 0) return
+  void reorderCategoryByIndex(index, index - 1)
+}
+
+function moveCategoryDown(index: number) {
+  if (index >= categories.value.length - 1) return
+  void reorderCategoryByIndex(index, index + 1)
+}
+
+function openCategoryDrawer(category: Category) {
+  categoryDrawerCategory.value = category
+  categoryDrawerOpen.value = true
+}
+
+function closeCategoryDrawer() {
+  categoryDrawerOpen.value = false
+  categoryDrawerCategory.value = null
+}
+
+async function saveCategoryFromDrawer(category: Category) {
+  await updateCategory(category)
+  closeCategoryDrawer()
+}
+
+async function deleteCategoryFromDrawer(opts: { reassignToId?: string }) {
+  const cat = categoryDrawerCategory.value
+  if (!cat) return
+  await deleteCategory(cat, opts.reassignToId)
+  closeCategoryDrawer()
 }
 
 const resetLivestreamModal = () => {
@@ -3970,12 +3775,14 @@ const updateCategory = async (category: Category) => {
   }
 }
 
-const deleteCategory = async (category: Category) => {
+const deleteCategory = async (category: Category, reassignToId?: string) => {
   try {
+    const body: Record<string, string> = { id: category.id }
+    if (reassignToId) body.reassignToId = reassignToId
     const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ id: category.id }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Unknown error' }))
@@ -3986,12 +3793,6 @@ const deleteCategory = async (category: Category) => {
   } catch (e: any) {
     showToast('error', `Failed to delete category: ${e.message}`)
   }
-}
-
-const confirmDeleteCategory = async (category: Category) => {
-  const confirmed = window.confirm(`Delete category "${category.name}"? This action cannot be undone.`)
-  if (!confirmed) return
-  await deleteCategory(category)
 }
 
 const loadHomepagePlacement = async () => {
@@ -4317,6 +4118,24 @@ const pushReplicationToDeno = async () => {
     replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
   } finally {
     replicationPushing.value = false
+  }
+}
+
+const loadAdminPaymentPlans = async () => {
+  if (!isAdmin.value) return
+  try {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, { headers: authHeader() })
+    if (!res.ok) return
+    const data = await res.json()
+    adminPaymentPlans.value = Array.isArray(data.plans)
+      ? data.plans.map((p: { id?: string; label?: string; enabled?: boolean }) => ({
+        id: String(p.id ?? ''),
+        label: String(p.label ?? p.id ?? ''),
+        enabled: p.enabled !== false,
+      })).filter((p: AdminPaymentPlanRow) => p.id)
+      : []
+  } catch {
+    adminPaymentPlans.value = []
   }
 }
 
@@ -4805,6 +4624,7 @@ const savePaymentSettings = async () => {
     paymentSettingsMessage.value = 'Payment settings saved.'
     paymentSettingsMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
     await loadPaymentSettings()
+    await loadAdminPaymentPlans()
   } catch (e: any) {
     paymentSettingsMessage.value = e.message || 'Failed to save payment settings'
     paymentSettingsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
@@ -4957,7 +4777,7 @@ async function executeTransferSubscription() {
 
 function adminUserSubscriptionSelectDisabled(u: AdminUserRow): boolean {
   if (user.value?.role !== 'super_admin' && u.role === 'super_admin') return true
-  return !hasAdminUserSubscriptionRow(u)
+  return false
 }
 
 function adminUserSubscriptionSelectTitle(u: AdminUserRow): string {
@@ -4965,9 +4785,15 @@ function adminUserSubscriptionSelectTitle(u: AdminUserRow): string {
     return 'Only a super admin may change this account'
   }
   if (!hasAdminUserSubscriptionRow(u)) {
-    return 'No subscription row — status cannot be edited'
+    return 'No subscription row — selecting a status will create a manual subscription'
   }
   return ''
+}
+
+const adminUserPendingPlanType = ref<Record<string, string>>({})
+
+function setAdminUserPendingPlanType(userId: string, planType: string) {
+  adminUserPendingPlanType.value = { ...adminUserPendingPlanType.value, [userId]: planType }
 }
 
 function patchUserRowById(userId: string, patch: Partial<AdminUserRow>) {
@@ -4977,12 +4803,20 @@ function patchUserRowById(userId: string, patch: Partial<AdminUserRow>) {
   users.value[i] = { ...cur, ...patch }
 }
 
-const updateUser = async (userId: string, patch: Record<string, string>) => {
+const updateUser = async (
+  userId: string,
+  patch: Record<string, string>,
+  options?: { createSubscription?: { status: string; planType: string } },
+) => {
   try {
+    const body: Record<string, unknown> = { userId, ...patch }
+    if (options?.createSubscription) {
+      body.createSubscription = options.createSubscription
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/users`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ userId, ...patch }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
@@ -5035,9 +4869,9 @@ function onUserRoleSelect(u: AdminUserRow, newRole: string) {
 }
 
 function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
-  if (!hasAdminUserSubscriptionRow(u)) return
   const prev = u.subscription_status || 'none'
   if (next === prev) return
+  if (!hasAdminUserSubscriptionRow(u) && next === 'none') return
   patchUserRowById(u.id, { uiSubscription: next })
   openConfirmModal({
     mode: 'user_subscription',
@@ -5047,7 +4881,9 @@ function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
     nextRole: u.role,
     prevSubscription: prev,
     nextSubscription: next,
-    impactText: `Change subscription status for ${u.email} from ${prev} to ${next}? This updates their latest subscription row in the database (not Stripe).`,
+    impactText: hasAdminUserSubscriptionRow(u)
+      ? `Change subscription status for ${u.email} from ${prev} to ${next}? This updates their latest subscription row in the database (not Stripe).`
+      : `Create a manual ${adminUserPendingPlanType.value[u.id] || defaultAdminPlanId.value} subscription for ${u.email} with status ${next}?`,
   })
 }
 
@@ -5570,6 +5406,7 @@ const reloadAll = async () => {
     await trackLoader('system features', loadSystemFeatures)
     await trackLoader('replication status', () => loadReplicationStatus({ probe: true }))
     await trackLoader('payment settings', loadPaymentSettings)
+    await trackLoader('payment plans', loadAdminPaymentPlans)
     if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions)
     if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns)
     await trackLoader('site branding', loadSiteBranding)
@@ -6331,6 +6168,18 @@ async function runConfirmedAction() {
     snap.mode === 'user_role'
       ? { role: snap.nextRole }
       : { subscriptionStatus: snap.nextSubscription }
+  if (snap.mode === 'user_subscription' && snap.nextSubscription !== 'none') {
+    const row = users.value.find((x) => x.id === snap.userId)
+    if (row && !hasAdminUserSubscriptionRow(row)) {
+      const planType = adminUserPendingPlanType.value[snap.userId] || defaultAdminPlanId.value
+      const ok = await updateUser(snap.userId, patch, { createSubscription: { status: snap.nextSubscription, planType } })
+      if (!ok) {
+        patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })
+        if (activeAdminTab.value === 'users') void loadUsers()
+      }
+      return
+    }
+  }
   const ok = await updateUser(snap.userId, patch)
   if (!ok) {
     patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })
