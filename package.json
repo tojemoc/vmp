@@ -25,7 +25,7 @@
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@nx/nuxt": "22.7.5",
     "@nx/vite": "22.7.5",
     "@vue/language-core": "^3.2.9",
@@ -38,7 +38,7 @@
     "nx": "22.7.5",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.60.1",
+    "typescript-eslint": "^8.61.1",
     "vue-eslint-parser": "^10.4.0",
     "ws": "8.21.0"
   },
