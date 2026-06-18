@@ -2,22 +2,59 @@
 
 VMP is a Cloudflare-based video subscription platform with a Worker API, Nuxt web app, and shared TypeScript types.
 
+## Contents
+
+- [Monorepo packages](#monorepo-packages)
+- [Documentation map](#documentation-map)
+- [Deployment model (high level)](#deployment-model-high-level)
+- [Prerequisites](#prerequisites)
+- [Local setup](#local-setup)
+- [Manual deploy commands](#manual-deploy-commands)
+- [Runtime secrets/vars](#runtime-secretsvars)
+  - [Optional MediaConvert pipeline](#optional-mediaconvert-pipeline-additive-to-local-rclone-flow)
+- [API docs (`docs/`)](#api-docs-docs)
+- [Notes](#notes)
+
 ## Monorepo packages
 
-- `@vmp/api` (`packages/api`) — Cloudflare Worker API + D1/R2/KV integrations.
-- `@vmp/web` (`packages/web`) — Nuxt 4 frontend deployed to Cloudflare Pages.
-- `@vmp/shared` (`packages/shared`) — shared TypeScript contracts.
-- `@vmp/podcast-host` (`packages/podcast-host`) — Node TypeScript media pipeline/supervisor for video processing and podcast preview jobs.
-- `@vmp/offloading` (`packages/offloading`) — Node TypeScript offloading service for R2↔Garage hot/cold tier orchestration.
+| Package | Path | Role |
+| --- | --- | --- |
+| `@vmp/api` | [`packages/api`](packages/api) | Cloudflare Worker API + D1/R2/KV integrations |
+| `@vmp/web` | [`packages/web`](packages/web) | Nuxt 4 frontend deployed to Cloudflare Pages |
+| `@vmp/shared` | [`packages/shared`](packages/shared) | Shared TypeScript contracts |
+| `@vmp/api-node` | [`packages/api-node`](packages/api-node) | Deno Deploy backup API (Postgres + S3 adapters) — see [README](packages/api-node/README.md) |
+| `@vmp/podcast-host` | [`packages/podcast-host`](packages/podcast-host) | Media VM pipeline, supervisor, preview jobs — see [README](packages/podcast-host/README.md) |
+| `@vmp/offloading` | [`packages/offloading`](packages/offloading) | R2↔Garage hot/cold tier orchestration — see [README](packages/offloading/README.md) |
+| `@vmp/moq-probe` | [`packages/moq-probe`](packages/moq-probe) | MoQ broadcast diagnostic probe — see [README](packages/moq-probe/README.md) |
+
+Core API and web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.md) for architecture, auth, schema, and local dev.
+
+## Documentation map
+
+| Document | Description |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | Canonical agent/dev guide: git workflow, D1 schema, auth, secrets, roadmap |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Environment variables, CI/CD, multi-domain deploy |
+| [packages/api-node/README.md](packages/api-node/README.md) | Deno Deploy API backup, Postgres replication ingest |
+| [packages/podcast-host/README.md](packages/podcast-host/README.md) | Media pipeline, supervisor dashboard, webhooks, TTP logging |
+| [packages/podcast-host/systemd/README.md](packages/podcast-host/systemd/README.md) | `vmp-supervisor` systemd unit install and ops |
+| [packages/offloading/README.md](packages/offloading/README.md) | Garage compose, demote/promote scripts |
+| [packages/offloading/DEPLOYMENT.md](packages/offloading/DEPLOYMENT.md) | Docker/Compose deployment for offloading |
+| [packages/moq-probe/README.md](packages/moq-probe/README.md) | Live MoQ probe usage and recorder recommendations |
+| [.cursor/README.md](.cursor/README.md) | Cursor workspace git/deploy policy for agents |
+| [docs/gocardless-checkout-api.md](docs/gocardless-checkout-api.md) | GoCardless checkout outbound API payloads |
+| [docs/pills-external-update-api.md](docs/pills-external-update-api.md) | Pills external update API |
 
 ## Deployment model (high level)
 
-- Pushes to `main` run staging deploy in `.github/workflows/deploy.yml`.
-- Version tags (`v*.*.*`) run production deploy in `.github/workflows/deploy.yml`.
+- Pushes to `main` run staging deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+- Version tags (`v*.*.*`) run production deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 - Deploy pipeline fails fast on type-checking before build/deploy:
   - `@vmp/shared` `tsc --noEmit`
   - `@vmp/api` `tsc --noEmit`
   - `@vmp/web` `nuxi prepare && nuxi typecheck`
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for env templates, secrets, and domain overrides.
 
 ## Prerequisites
 
@@ -44,6 +81,8 @@ VMP is a Cloudflare-based video subscription platform with a Worker API, Nuxt we
 3. Type-check everything:
    - `npm run typecheck`
 
+Full local dev (API on `:8787`, web on `:3000`, D1 migrations): [AGENTS.md → Cursor Cloud-specific instructions](AGENTS.md#cursor-cloud-specific-instructions).
+
 ## Manual deploy commands
 
 These are useful for controlled/manual rollouts outside GitHub Actions.
@@ -55,7 +94,7 @@ These are useful for controlled/manual rollouts outside GitHub Actions.
 
 ## Runtime secrets/vars
 
-Use Wrangler secrets for sensitive values (never commit secrets). Required values are documented in `AGENTS.md` and `DEPLOYMENT.md` (JWT, Stripe, Brevo, VAPID, RSS, TOTP encryption, etc.).
+Use Wrangler secrets for sensitive values (never commit secrets). Required values are documented in [AGENTS.md](AGENTS.md) and [DEPLOYMENT.md](DEPLOYMENT.md) (JWT, Stripe, Brevo, VAPID, RSS, TOTP encryption, etc.).
 
 ### Optional MediaConvert pipeline (additive to local rclone flow)
 
@@ -92,6 +131,7 @@ AWS setup checklist:
 5. Run migration `packages/api/migrations/0017_media_convert_jobs.sql`.
 
 Notes:
+
 - Current cloud profile is H.264/HLS with 720p only, fps capped at 30.
 - Architecture is rendition-based and supports future expansion (480p/1080p/4K, alternate codecs).
 - Usage/cost values are approximate normalized-minute estimates, not billing-grade accounting.
@@ -105,3 +145,4 @@ Notes:
 
 - API entrypoint is TypeScript (`packages/api/src/index.ts`) referenced by `packages/api/wrangler.json`.
 - Worker/service scripts that must remain JavaScript at runtime (for browser/service-worker execution) are generated from TypeScript sources during build.
+- Media encoding on a VM is handled by [`@vmp/podcast-host`](packages/podcast-host/README.md); optional Deno backup API by [`@vmp/api-node`](packages/api-node/README.md).

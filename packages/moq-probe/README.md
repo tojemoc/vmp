@@ -6,6 +6,15 @@ This is not a recorder. It does not upload to R2, generate manifests, create DVR
 state, or touch the existing frontend/API routes. Its only job is to inspect a
 live MoQ broadcast and report the media format being transported.
 
+## Contents
+
+- [Runtime findings](#runtime-findings)
+- [Usage](#usage)
+- [What it inspects](#what-it-inspects)
+- [Known API limitation](#known-api-limitation)
+- [Recorder recommendation matrix](#recorder-recommendation-matrix)
+- [Related documentation](#related-documentation)
+
 ## Runtime findings
 
 The current Cursor Cloud Node runtime reports:
@@ -90,3 +99,10 @@ MoQ subscriber probe/recorder
   -> Shaka-compatible playback
 ```
 
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../README.md) | Monorepo overview and documentation map |
+| [packages/podcast-host/README.md](../podcast-host/README.md) | Current HLS encode + R2 upload pipeline on the media VM |
+| [AGENTS.md](../../AGENTS.md) | Video access flow, R2 proxy, and platform architecture |
