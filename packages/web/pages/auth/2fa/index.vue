@@ -72,7 +72,7 @@
 
         <p class="text-center text-xs text-gray-500">
           {{ strings.totpLostAuthenticator }}
-          <a href="mailto:support@vmp.tjm.sk" class="text-blue-400 hover:underline">{{ strings.totpContactSupport }}</a>
+          <a :href="supportMailto" class="text-blue-400 hover:underline">{{ strings.totpContactSupport }}</a>
         </p>
       </form>
 
@@ -87,6 +87,12 @@ import strings from '~/utils/strings'
 const route = useRoute()
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
+const { siteSettings } = useSiteSettings()
+
+const supportMailto = computed(() => {
+  const email = siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk'
+  return `mailto:${email}`
+})
 const { verifyTotp } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 

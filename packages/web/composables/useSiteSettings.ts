@@ -11,8 +11,11 @@ interface SiteSettings {
   siteDescription: string
   logoUrl: string
   faviconUrl: string
+  supportEmail: string
   gtmContainerId: string
 }
+
+const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
 
 function defaultSiteSettings(): SiteSettings {
   return {
@@ -21,6 +24,7 @@ function defaultSiteSettings(): SiteSettings {
     siteDescription: strings.siteDescription,
     logoUrl: '',
     faviconUrl: '',
+    supportEmail: DEFAULT_SUPPORT_EMAIL,
     gtmContainerId: '',
   }
 }
@@ -33,6 +37,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     siteDescription: String(data.site_description || strings.siteDescription),
     logoUrl: String(data.site_logo_url || ''),
     faviconUrl: String(data.site_favicon_url || ''),
+    supportEmail: String(data.site_support_email || DEFAULT_SUPPORT_EMAIL),
     gtmContainerId: String(data.gtm_container_id || ''),
   }
 }

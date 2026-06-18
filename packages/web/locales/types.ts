@@ -234,6 +234,9 @@ export type StringsDefinition = {
   planClub: string
   providerStripe: string
   billingPortalFailed: string
+  accountContactSupport: string
+  accountRelinkPaymentMethod: string
+  accountManagePaymentMethod: string
   networkError: string
   podcastRssTitle: string
   podcastRssIntro: string

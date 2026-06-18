@@ -1106,9 +1106,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
             <p class="text-xs text-gray-600 dark:text-gray-400">
-              Lists legacy provider subscriptions only (<code class="font-mono">provider = legacy</code>) that are invalid or have had
-              <code class="font-mono">needs_relink</code> for at least 30 days. Users imported without a purchase ID get
-              <code class="font-mono">provider = stripe</code> and appear under Users but not here until they have a legacy row.
+              Lists every subscription with <code class="font-mono">needs_relink</code> (any provider), plus legacy rows marked
+              <code class="font-mono">invalid</code> during validation. Pass <code class="font-mono">staleDays=30</code> to limit
+              to imports older than 30 days when sending reminder emails at scale.
             </p>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h3 class="font-semibold text-gray-900 dark:text-white">Relink candidates</h3>
@@ -1127,6 +1127,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                     <th class="py-2 pr-3"><input type="checkbox" :checked="legacyRelinkAllOnPageSelected" @change="toggleLegacyRelinkSelectAll"></th>
                     <th class="py-2 pr-3">Email</th>
+                    <th class="py-2 pr-3">Provider</th>
+                    <th class="py-2 pr-3">Customer ref</th>
+                    <th class="py-2 pr-3">Purchase ID</th>
                     <th class="py-2 pr-3">Imported</th>
                     <th class="py-2 pr-3">Validation</th>
                     <th class="py-2">Validated at</th>
@@ -1138,6 +1141,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                       <input v-model="legacyRelinkSelected" type="checkbox" :value="row.userId">
                     </td>
                     <td class="py-2 pr-3">{{ row.email }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs">{{ row.provider || '—' }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs break-all">{{ row.providerCustomerId || '—' }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs">{{ row.purchaseId || '—' }}</td>
                     <td class="py-2 pr-3">{{ row.importedAt }}</td>
                     <td class="py-2 pr-3">{{ row.validationStatus || '—' }}</td>
                     <td class="py-2">{{ row.validatedAt || '—' }}</td>
@@ -1558,6 +1564,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   Favicon URL
                   <input v-model="siteBranding.site_favicon_url" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300">
+                  Support email
+                  <input v-model="siteBranding.site_support_email" type="email" placeholder="vmp@tjm.sk" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Used for mailto links on the account and 2FA pages.</p>
                 </label>
                 <label class="block text-sm text-gray-700 dark:text-gray-300">
                   Podcast feed title
@@ -2751,6 +2762,7 @@ const siteBranding = ref({
   site_description: '',
   site_logo_url: '',
   site_favicon_url: '',
+  site_support_email: '',
   podcast_title: '',
   podcast_description: '',
   gtm_container_id: '',
@@ -2832,7 +2844,9 @@ const legacyValidationResult = ref<{
 const legacyRelinkCandidates = ref<Array<{
   userId: string
   email: string
+  provider: string
   purchaseId: string | null
+  providerCustomerId: string | null
   validationStatus: string | null
   validatedAt: string | null
   importedAt: string
@@ -4424,6 +4438,7 @@ const loadSiteBranding = async () => {
       site_description: data.site_description || '',
       site_logo_url: data.site_logo_url || '',
       site_favicon_url: data.site_favicon_url || '',
+      site_support_email: data.site_support_email || 'vmp@tjm.sk',
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
       gtm_container_id: data.gtm_container_id || '',

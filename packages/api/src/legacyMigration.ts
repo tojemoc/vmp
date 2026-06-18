@@ -58,7 +58,7 @@ type LegacyMigrationEnv = {
 
 type DbBinding = D1Database
 
-const DEFAULT_RELINK_STALE_DAYS = 30
+const DEFAULT_RELINK_STALE_DAYS = 0
 const MAX_RELINK_EMAILS_PER_CALL = 50
 const VALIDATION_DELAY_MS = 100
 const BREVO_EMAIL_TIMEOUT_MS = 15_000
@@ -133,7 +133,7 @@ export async function getMigrationStats(db: DbBinding, env: LegacyMigrationEnv):
   const row = await db.prepare(`
     SELECT
       SUM(CASE WHEN provider = 'legacy' THEN 1 ELSE 0 END) AS total_imported,
-      SUM(CASE WHEN provider = 'legacy' AND status = 'needs_relink' THEN 1 ELSE 0 END) AS needs_relink,
+      SUM(CASE WHEN status = 'needs_relink' THEN 1 ELSE 0 END) AS needs_relink,
       SUM(CASE WHEN provider = 'legacy' AND status IN ('active', 'trialing') THEN 1 ELSE 0 END) AS active,
       SUM(CASE WHEN provider = 'legacy' AND legacy_validation_status = 'invalid' THEN 1 ELSE 0 END) AS failed,
       SUM(CASE WHEN provider = 'legacy' AND status = 'needs_relink' AND legacy_validation_status IS NULL THEN 1 ELSE 0 END) AS not_validated
@@ -273,7 +273,9 @@ export async function validateLegacyBatch(
 export type RelinkCandidate = {
   userId: string
   email: string
+  provider: string
   purchaseId: string | null
+  providerCustomerId: string | null
   validationStatus: string | null
   validatedAt: string | null
   importedAt: string
@@ -288,43 +290,67 @@ export async function getRelinkCandidates(
   const safePage = Math.max(1, page)
   const safePageSize = Math.min(Math.max(pageSize, 1), 100)
   const offset = (safePage - 1) * safePageSize
+  const safeStaleDays = Math.max(0, staleDays)
+
+  const staleClause = safeStaleDays > 0
+    ? `OR (
+          s.status = 'needs_relink'
+          AND datetime(s.created_at) <= datetime('now', ?)
+        )`
+    : `OR s.status = 'needs_relink'`
 
   const whereSql = `
     FROM subscriptions s
     INNER JOIN users u ON u.id = s.user_id
-    WHERE s.provider = 'legacy'
-      AND (
-        s.legacy_validation_status = 'invalid'
-        OR (
-          s.status = 'needs_relink'
-          AND datetime(s.created_at) <= datetime('now', ?)
-        )
-      )
+    WHERE (
+      (s.provider = 'legacy' AND s.legacy_validation_status = 'invalid')
+      ${staleClause}
+    )
   `
 
-  const staleModifier = `-${Math.max(1, staleDays)} days`
-  const countRow = await db.prepare(`SELECT COUNT(*) AS n ${whereSql}`)
-    .bind(staleModifier)
-    .first()
+  const countStmt = safeStaleDays > 0
+    ? db.prepare(`SELECT COUNT(*) AS n ${whereSql}`).bind(`-${safeStaleDays} days`)
+    : db.prepare(`SELECT COUNT(*) AS n ${whereSql}`)
+  const countRow = await countStmt.first()
   const total = Number(countRow?.n ?? 0)
 
-  const listRows = await db.prepare(`
+  const listStmt = safeStaleDays > 0
+    ? db.prepare(`
     SELECT
       s.user_id,
       u.email,
+      s.provider,
       s.purchase_id,
+      s.stripe_customer_id,
       s.legacy_validation_status,
       s.legacy_validated_at,
       s.created_at
     ${whereSql}
     ORDER BY datetime(s.created_at) ASC
     LIMIT ? OFFSET ?
-  `).bind(staleModifier, safePageSize, offset).all()
+  `).bind(`-${safeStaleDays} days`, safePageSize, offset)
+    : db.prepare(`
+    SELECT
+      s.user_id,
+      u.email,
+      s.provider,
+      s.purchase_id,
+      s.stripe_customer_id,
+      s.legacy_validation_status,
+      s.legacy_validated_at,
+      s.created_at
+    ${whereSql}
+    ORDER BY datetime(s.created_at) ASC
+    LIMIT ? OFFSET ?
+  `).bind(safePageSize, offset)
+  const listRows = await listStmt.all()
 
   const users = (listRows.results ?? []).map((row) => ({
     userId: String(row.user_id),
     email: maskEmail(String(row.email ?? '')),
+    provider: String(row.provider ?? ''),
     purchaseId: row.purchase_id ? truncatePurchaseId(String(row.purchase_id)) : null,
+    providerCustomerId: row.stripe_customer_id ? String(row.stripe_customer_id) : null,
     validationStatus: row.legacy_validation_status ? String(row.legacy_validation_status) : null,
     validatedAt: row.legacy_validated_at ? String(row.legacy_validated_at) : null,
     importedAt: String(row.created_at ?? ''),
@@ -334,11 +360,13 @@ export async function getRelinkCandidates(
 }
 
 export function relinkCandidatesToCsv(users: RelinkCandidate[]): string {
-  const header = 'user_id,email_masked,purchase_id,validation_status,validated_at,imported_at'
+  const header = 'user_id,email_masked,provider,purchase_id,provider_customer_id,validation_status,validated_at,imported_at'
   const lines = users.map((u) => [
     u.userId,
     u.email,
+    u.provider,
     u.purchaseId ?? '',
+    u.providerCustomerId ?? '',
     u.validationStatus ?? '',
     u.validatedAt ?? '',
     u.importedAt,
@@ -411,7 +439,7 @@ export async function sendRelinkEmails(
     const row = await db.prepare(`
       SELECT u.email
       FROM users u
-      INNER JOIN subscriptions s ON s.user_id = u.id AND s.provider = 'legacy'
+      INNER JOIN subscriptions s ON s.user_id = u.id AND s.status = 'needs_relink'
       WHERE u.id = ?
       LIMIT 1
     `).bind(userId).first()
