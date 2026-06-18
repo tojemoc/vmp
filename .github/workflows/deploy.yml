@@ -48,11 +48,11 @@ jobs:
       - run: npm ci
       - name: Type check (fail fast)
         run: |
-          npm exec nx -- run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
-          npm exec nx -- run @vmp/web:typecheck:scripts
-          npm exec nx -- run @vmp/web:build:sw-push
+          bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build:sw-push
       
-      - run: npm exec nx -- run @vmp/web:build
+      - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
           NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
@@ -68,13 +68,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-        run: npm exec nx -- run @vmp/api:deploy
+        run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
       
       - name: Deploy Web (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-        run: npm exec nx -- run @vmp/web:deploy
+        run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:deploy
 
       - name: Smoke check API health (staging)
         run: |
@@ -140,11 +140,11 @@ jobs:
       - run: npm ci
       - name: Type check (fail fast)
         run: |
-          npm exec nx -- run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
-          npm exec nx -- run @vmp/web:typecheck:scripts
-          npm exec nx -- run @vmp/web:build:sw-push
+          bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build:sw-push
       
-      - run: npm exec nx -- run @vmp/web:build
+      - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
           NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
@@ -160,7 +160,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-        run: npm exec nx -- run @vmp/api:deploy
+        run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
       
       - name: Deploy Web (production)
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
@@ -200,5 +200,5 @@ jobs:
         run: |
           curl -fsS "$FRONTEND_URL" >/dev/null
 
-      - run: npx nx fix-ci
+      - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
