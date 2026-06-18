@@ -1,7 +1,7 @@
 export type UiLocale = 'en' | 'sk' | 'cs'
 
 export type PlanType = 'monthly' | 'yearly' | 'club'
-export type PaymentProvider = 'stripe' | 'gocardless'
+export type PaymentProvider = 'stripe' | 'legacy'
 
 export type PersonalDataSection = {
   id: string
@@ -233,16 +233,8 @@ export type StringsDefinition = {
   planYearly: string
   planClub: string
   providerStripe: string
-  providerGoCardless: string
   billingPortalFailed: string
   networkError: string
-  gocardlessOpening: string
-  gocardlessRetrySetup: string
-  gocardlessContinueSetup: string
-  gocardlessRetryBanner: string
-  gocardlessCheckoutFailed: string
-  gocardlessFinalizeFailed: string
-  gocardlessFinalizeNetworkError: string
   podcastRssTitle: string
   podcastRssIntro: string
   podcastRssPersonalLabel: string
@@ -275,7 +267,6 @@ export type StringsDefinition = {
   checkoutBlurbEmbedded: string
   checkoutBlurbDefault: string
   checkoutBlurbStripe: string
-  checkoutBlurbGoCardless: string
   checkoutBlurbBoth: string
   checkoutStartFailed: string
   checkoutSignInBefore: string

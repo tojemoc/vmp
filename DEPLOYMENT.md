@@ -145,7 +145,7 @@ Run these commands after migrations and before promoting traffic:
 
 3) Targeted deterministic regression suite (Task 12)
 
-- `npm test --workspace=@vmp/api -- --test-name-pattern="clampNewsletterPollIntervalMs|isNewsletterSendFinished|fetchBrevoEmailCampaignsWithRetry|evaluateRoleChange|evaluateSelfRoleChange|evaluateSubscriptionStatusChange|segment analytics|normalizeLivestreamStatus|normalizeStripeStatus|normalizeGoCardlessStatus|placeHomepageVideos matrix|sortCategoriesForHomepage|placementTimestampMs"`
+- `npm test --workspace=@vmp/api -- --test-name-pattern="clampNewsletterPollIntervalMs|isNewsletterSendFinished|fetchBrevoEmailCampaignsWithRetry|evaluateRoleChange|evaluateSelfRoleChange|evaluateSubscriptionStatusChange|segment analytics|normalizeLivestreamStatus|normalizeStripeStatus|placeHomepageVideos matrix|sortCategoriesForHomepage|placementTimestampMs"`
 - Expected PASS signal:
   - Node test runner summary reports all listed suites passing, zero failed tests.
 - Failure interpretation:

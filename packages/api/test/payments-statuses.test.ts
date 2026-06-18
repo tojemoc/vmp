@@ -1,6 +1,5 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeGoCardlessStatus } from '../src/gocardless.js'
 import { normalizeStripeStatus, stripeSubscriptionPeriodEndIso, stripeSubscriptionPeriodEndUnix } from '../src/stripeClient.js'
 
 describe('stripeSubscriptionPeriodEndUnix', () => {
@@ -54,29 +53,5 @@ describe('normalizeStripeStatus', () => {
   it('falls back unknown or non-normalized values to cancelled', () => {
     assert.equal(normalizeStripeStatus('ACTIVE'), 'cancelled')
     assert.equal(normalizeStripeStatus('unexpected_state'), 'cancelled')
-  })
-})
-
-describe('normalizeGoCardlessStatus', () => {
-  it('maps approved and active subscriptions to active', () => {
-    assert.equal(normalizeGoCardlessStatus('active'), 'active')
-    assert.equal(normalizeGoCardlessStatus('customer_approval_granted'), 'active')
-  })
-
-  it('maps pre-activation states to trialing', () => {
-    assert.equal(normalizeGoCardlessStatus('pending_customer_approval'), 'trialing')
-    assert.equal(normalizeGoCardlessStatus('submitted'), 'trialing')
-  })
-
-  it('maps payment risk states to past_due', () => {
-    assert.equal(normalizeGoCardlessStatus('failed'), 'past_due')
-    assert.equal(normalizeGoCardlessStatus('late_failure_settled'), 'past_due')
-  })
-
-  it('maps terminal states to cancelled', () => {
-    assert.equal(normalizeGoCardlessStatus('cancelled'), 'cancelled')
-    assert.equal(normalizeGoCardlessStatus('finished'), 'cancelled')
-    assert.equal(normalizeGoCardlessStatus('unknown_state'), 'cancelled')
-    assert.equal(normalizeGoCardlessStatus('  CANCELED '), 'cancelled')
   })
 })

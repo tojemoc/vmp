@@ -44,7 +44,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Config format | `wrangler.json` (not `.toml`) |
 | Frontend | Nuxt 4, hls.js, media-chrome |
 | Email | Brevo Transactional API |
-| Payments | Stripe |
+| Payments | Stripe (card, PayPal, SEPA via Checkout); optional legacy provider for grandfathered subs |
 | Push notifications | Web Push / VAPID |
 
 ### Roles
