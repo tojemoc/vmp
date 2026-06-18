@@ -49,8 +49,8 @@
           @drop="onDrop(slot.block.id)"
         >
           <div class="flex items-center gap-3 mb-3 flex-wrap">
-            <span v-if="!mobileOrderMode" class="cursor-move text-gray-500" title="Drag to reorder">⠿</span>
-            <span v-else class="cursor-move text-gray-500" :draggable="true" @dragstart.stop="onDragStart(slot.block.id)" @dragover.prevent @drop.stop="onDrop(slot.block.id)">☰</span>
+            <span v-if="!mobileOrderMode" class="cursor-move text-gray-500 dark:text-gray-400" title="Drag to reorder">⠿</span>
+            <span v-else class="cursor-move text-gray-500 dark:text-gray-400" :draggable="true" @dragstart.stop="onDragStart(slot.block.id)" @dragover.prevent @drop.stop="onDrop(slot.block.id)">☰</span>
             <span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ positionLabel(slot.block) }}</span>
             <select
               v-model="slot.block.type"
