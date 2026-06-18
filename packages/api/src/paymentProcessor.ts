@@ -1,5 +1,5 @@
 /**
- * Provider-agnostic payments orchestration (Stripe + GoCardless).
+ * Provider-agnostic payments orchestration (Stripe + optional legacy).
  */
 
 import { requireAuth, requireRole } from './auth.js'
@@ -23,23 +23,9 @@ import {
 export { normalizeStripeStatus } from './stripeClient.js'
 import { isLegacyProviderConfigured } from './legacyProvider.js'
 import { startLegacyCheckout } from './legacyPayments.js'
-import {
-  buildGoCardlessBillingRequestFlowCreatePayload,
-  buildGoCardlessMandateBillingRequestPayload,
-  formatGoCardlessApiError,
-  gocardlessGet,
-  gocardlessPost,
-  getGoCardlessInterval,
-  normalizeGoCardlessCurrency,
-  normalizeGoCardlessStatus,
-  prefillGoCardlessBillingRequestCustomer,
-  resolveFulfilledBillingRequestMandate,
-  verifyGoCardlessWebhook,
-} from './gocardlessCore.js'
-export { normalizeGoCardlessStatus } from './gocardlessCore.js'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
+type PaymentProvider = 'stripe' | 'legacy'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -112,11 +98,11 @@ async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
   const providers = (raw ? raw : 'stripe,legacy')
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'gocardless' || v === 'legacy')
+    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'legacy')
   return providers.length > 0 ? providers : ['stripe']
 }
 
-/** Gateways enabled for new checkouts. GoCardless removed from user-facing checkout; legacy optional. */
+/** Gateways enabled for new checkouts (Stripe default; legacy optional). */
 async function getConfiguredProviders(env: any): Promise<PaymentProvider[]> {
   const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' })
   const raw = String(stored ?? 'stripe').trim()
@@ -170,10 +156,6 @@ async function getEffectivePricingSettings(env: any, provider: PaymentProvider) 
     yearly: providerPricing.yearly ?? fallbackPricing.yearly,
     club: providerPricing.club ?? fallbackPricing.club,
   }
-}
-
-function moneyToMinorUnits(amount: number) {
-  return Math.max(0, Math.round(amount * 100))
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
@@ -345,9 +327,6 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'stripe_monthly_price_eur',
       'stripe_yearly_price_eur',
       'stripe_club_price_eur',
-      'gocardless_monthly_price_eur',
-      'gocardless_yearly_price_eur',
-      'gocardless_club_price_eur',
       'stripe_price_monthly',
       'stripe_price_yearly',
       'stripe_price_club',
@@ -355,8 +334,8 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
     const values = await Promise.all(keys.map((key) => getSetting(env, key)))
     const valueByKey = Object.fromEntries(keys.map((key, index) => [key, values[index]]))
     return jsonResponse({
-      enabledProviders: parseCsvList(valueByKey.payments_enabled_providers ?? 'stripe', ['stripe', 'gocardless']),
-      providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,gocardless', ['stripe', 'gocardless']),
+      enabledProviders: parseCsvList(valueByKey.payments_enabled_providers ?? 'stripe', ['stripe', 'legacy']),
+      providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,legacy', ['stripe', 'legacy']),
       allowedPlans: parseCsvList(valueByKey.allowed_plans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club']),
       basePrices: {
         monthly: valueByKey.monthly_price_eur ?? '',
@@ -368,11 +347,6 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
           monthly: valueByKey.stripe_monthly_price_eur ?? '',
           yearly: valueByKey.stripe_yearly_price_eur ?? '',
           club: valueByKey.stripe_club_price_eur ?? '',
-        },
-        gocardless: {
-          monthly: valueByKey.gocardless_monthly_price_eur ?? '',
-          yearly: valueByKey.gocardless_yearly_price_eur ?? '',
-          club: valueByKey.gocardless_club_price_eur ?? '',
         },
       },
       stripePriceIds: {
@@ -393,11 +367,11 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
   }
 
   try {
-    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'gocardless', 'legacy'])
+    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'legacy'])
     if (!enabledProviders.length) {
       return jsonResponse({ error: 'At least one payment provider must be enabled' }, 400, corsHeaders)
     }
-    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'gocardless', 'legacy'])
+    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'legacy'])
     const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
     const basePrices = body.basePrices ?? {}
     const providerPrices = body.providerPrices ?? {}
@@ -413,9 +387,6 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       ['stripe_monthly_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.monthly)],
       ['stripe_yearly_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.yearly)],
       ['stripe_club_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.club)],
-      ['gocardless_monthly_price_eur', parseOptionalPositiveNumber(providerPrices?.gocardless?.monthly)],
-      ['gocardless_yearly_price_eur', parseOptionalPositiveNumber(providerPrices?.gocardless?.yearly)],
-      ['gocardless_club_price_eur', parseOptionalPositiveNumber(providerPrices?.gocardless?.club)],
       ['stripe_price_monthly', String(stripePriceIds.monthly ?? '').trim()],
       ['stripe_price_yearly', String(stripePriceIds.yearly ?? '').trim()],
       ['stripe_price_club', String(stripePriceIds.club ?? '').trim()],
@@ -622,7 +593,6 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
  * POST /api/payments/checkout — protected
  * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath? }
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
- * GoCardless: hosted redirect → { checkoutUrl }.
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user
@@ -747,109 +717,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       return startLegacyCheckout(env, user, body, corsHeaders)
     }
 
-    const promoCodeInput = typeof body?.promoCode === 'string' ? body.promoCode.trim() : ''
-    let promoCodeId: string | null = null
-    let gocardlessDiscountPercentSnapshot: number | null = null
-    let gocardlessPlanCodeSnapshot: string | null = null
-    if (promoCodeInput) {
-      const promoValidation = await resolvePromoCodeForCheckout(env, promoCodeInput, planType, 'gocardless')
-      if (!promoValidation.ok) {
-        return jsonResponse({
-          error: promoValidation.error ?? 'Promo code is not valid',
-          code: promoValidation.reason ?? 'invalid_promo',
-        }, promoValidation.status ?? 400, corsHeaders)
-      }
-      promoCodeId = promoValidation.checkoutMeta?.promoCodeId ?? null
-      const discountSnapshot = Number(promoValidation.checkoutMeta?.gocardlessDiscountPercent)
-      gocardlessDiscountPercentSnapshot = Number.isFinite(discountSnapshot) ? discountSnapshot : null
-      gocardlessPlanCodeSnapshot = promoValidation.checkoutMeta?.gocardlessPlanCode || null
-    }
-
-    const pricing = await getEffectivePricingSettings(env, 'gocardless')
-    const planAmount = pricing[planType]
-    if (planAmount == null || !Number.isFinite(planAmount)) {
-      return jsonResponse({
-        error: 'GoCardless pricing is not configured for the selected plan.',
-        code: 'prices_not_configured',
-      }, 503, corsHeaders)
-    }
-
-    const currency = normalizeGoCardlessCurrency(
-      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
-    )
-
-    const checkoutToken = crypto.randomUUID()
-    const checkoutSessionId = crypto.randomUUID()
-    await db.prepare(`
-      INSERT INTO payment_checkout_sessions
-        (id, user_id, provider, plan_type, checkout_token, session_token, status, promo_code_id, gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot, updated_at)
-      VALUES (?, ?, 'gocardless', ?, ?, ?, 'pending', ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).bind(checkoutSessionId, user.sub, planType, checkoutToken, null, promoCodeId, gocardlessDiscountPercentSnapshot, gocardlessPlanCodeSnapshot, currency).run()
-
-    const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
-      currency,
-      // GoCardless allows at most 3 metadata keys on billing_requests; currency is on mandate_request.
-      metadata: {
-        userId: user.sub,
-        planType,
-        checkoutToken,
-      },
-      creditorId: env.GOCARDLESS_CREDITOR_ID,
-    })
-    const billingRequestResponse = await gocardlessPost('/billing_requests', billingRequestPayload, env)
-    const billingRequest = billingRequestResponse?.data?.billing_requests
-    if (!billingRequestResponse.ok || !billingRequest?.id) {
-      console.error('GoCardless billing request error:', billingRequestResponse?.data)
-      return jsonResponse({
-        error: formatGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
-        code: 'gocardless_billing_request_failed',
-      }, 502, corsHeaders)
-    }
-
-    const userRow = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(user.sub).first()
-    const customerEmail = String(userRow?.email ?? user.email ?? '').trim().toLowerCase()
-    const defaultCountry = String(
-      await getSetting(env, 'gocardless_default_country_code', { defaultValue: 'SK' }),
-    ).trim().toUpperCase()
-    if (customerEmail) {
-      await prefillGoCardlessBillingRequestCustomer(
-        billingRequest.id,
-        customerEmail,
-        env,
-        defaultCountry,
-      )
-    }
-
-    const flowResponse = await gocardlessPost(
-      '/billing_request_flows',
-      buildGoCardlessBillingRequestFlowCreatePayload({
-        billingRequestId: billingRequest.id,
-        redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
-        customerEmail,
-      }),
-      env,
-    )
-
-    const billingRequestFlow = flowResponse?.data?.billing_request_flows
-    if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
-      console.error('GoCardless billing request flow error:', flowResponse?.data)
-      return jsonResponse({
-        error: formatGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
-        code: 'gocardless_billing_request_flow_failed',
-      }, 502, corsHeaders)
-    }
-
-    await db.prepare(`
-      UPDATE payment_checkout_sessions
-      SET provider_checkout_id = ?, session_token = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(billingRequestFlow.id, billingRequest.id, checkoutSessionId).run()
-
     return jsonResponse({
-      checkoutUrl: billingRequestFlow.authorisation_url,
-      provider,
-    }, 200, corsHeaders)
+      error: 'Requested payment provider is not supported.',
+      code: 'provider_not_supported',
+    }, 400, corsHeaders)
   } catch (err: unknown) {
     console.error('handleCheckout error:', err)
     const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
@@ -1022,421 +893,6 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
 }
 
 /**
- * POST /api/payments/webhook/gocardless — NO auth (GoCardless calls this directly)
- */
-export async function handleGoCardlessWebhook(request: any, env: any, corsHeaders: any) {
-  const rawBody = await request.text()
-  const signature = request.headers.get('Webhook-Signature') ?? ''
-  const valid = await verifyGoCardlessWebhook(rawBody, signature, String(env.GOCARDLESS_WEBHOOK_SECRET ?? ''))
-  if (!valid) {
-    return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders)
-  }
-
-  let payload: any
-  try {
-    payload = JSON.parse(rawBody)
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders)
-  }
-
-  const events = Array.isArray(payload?.events) ? payload.events : []
-  if (events.length === 0) return jsonResponse({ ok: true }, 200, corsHeaders)
-
-  try {
-    const db = getDb(env)
-    for (const event of events) {
-      const resourceType = String(event?.resource_type ?? '')
-      const subscriptionId = String(event?.links?.subscription ?? '').trim()
-      if (resourceType !== 'subscriptions' || !subscriptionId) continue
-
-      const existing = await db.prepare(`
-        SELECT user_id, plan_type
-        FROM subscriptions
-        WHERE provider = 'gocardless' AND provider_subscription_id = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(subscriptionId).first()
-      if (!existing?.user_id) continue
-
-      const subResponse = await gocardlessGet(`/subscriptions/${subscriptionId}`, env)
-      if (!subResponse?.ok || !subResponse?.data?.subscriptions) {
-        console.error('GoCardless webhook: failed to fetch subscription', { subscriptionId, response: subResponse })
-        return jsonResponse({ error: 'Failed to fetch subscription from GoCardless' }, 500, corsHeaders)
-      }
-
-      const gocardlessSub = subResponse.data.subscriptions
-      const status = normalizeGoCardlessStatus(gocardlessSub?.status)
-      const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
-        ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
-        : null
-      const planType = normalizePlanType(String(existing.plan_type || gocardlessSub?.metadata?.planType || 'monthly'))
-      const customerId = String(gocardlessSub?.links?.customer ?? gocardlessSub?.links?.mandate ?? '')
-
-      await upsertSubscriptionRow(db, {
-        userId: existing.user_id,
-        planType,
-        status,
-        provider: 'gocardless',
-        providerSubscriptionId: subscriptionId,
-        providerCustomerId: customerId || null,
-        currentPeriodEnd,
-      })
-      if (status === 'active' || status === 'trialing') {
-        try {
-          await syncNewsletterForStripeSubscription(db, existing.user_id, 'active', env)
-        } catch (brevoErr) {
-          console.error(
-            '[gocardless webhook] syncNewsletterForStripeSubscription failed',
-            { userId: existing.user_id, providerSubscriptionId: subscriptionId, status, err: brevoErr },
-          )
-        }
-      } else if (status === 'cancelled' || status === 'past_due') {
-        try {
-          await removeSubscriberFromNewsletter(db, existing.user_id, env)
-        } catch (brevoErr) {
-          console.error(
-            '[gocardless webhook] removeSubscriberFromNewsletter failed',
-            { userId: existing.user_id, providerSubscriptionId: subscriptionId, status, err: brevoErr },
-          )
-        }
-      }
-    }
-    return jsonResponse({ ok: true }, 200, corsHeaders)
-  } catch (err) {
-    console.error('handleGoCardlessWebhook error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
-  }
-}
-
-/**
- * POST /api/payments/gocardless/complete — protected
- * Completes a billing request flow after bank authorization and creates the recurring subscription.
- */
-export async function handleGoCardlessComplete(request: any, env: any, corsHeaders: any) {
-  let user: any
-  try {
-    user = await requireAuth(request, env)
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
-  }
-
-  const body = await request.json().catch(() => null)
-  const billingRequestFlowId = String(body?.billingRequestFlowId ?? '').trim()
-  const checkoutToken = String(body?.checkoutToken ?? '').trim()
-  if (!checkoutToken) {
-    return jsonResponse({ error: 'checkoutToken is required' }, 400, corsHeaders)
-  }
-
-  try {
-    const db = getDb(env)
-    const sessionColumns = `
-      id, user_id, plan_type, session_token, provider_checkout_id, status, promo_code_id,
-      gocardless_discount_percent_snapshot, gocardless_plan_code_snapshot, gocardless_currency_snapshot,
-      provider_subscription_id
-    `
-    let checkoutSession: any
-    if (billingRequestFlowId) {
-      checkoutSession = await db.prepare(`
-        SELECT ${sessionColumns}
-        FROM payment_checkout_sessions
-        WHERE provider = 'gocardless'
-          AND user_id = ?
-          AND checkout_token = ?
-          AND provider_checkout_id = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(user.sub, checkoutToken, billingRequestFlowId).first()
-    } else {
-      checkoutSession = await db.prepare(`
-        SELECT ${sessionColumns}
-        FROM payment_checkout_sessions
-        WHERE provider = 'gocardless'
-          AND user_id = ?
-          AND checkout_token = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(user.sub, checkoutToken).first()
-    }
-
-    if (!checkoutSession) {
-      return jsonResponse({ error: 'Checkout session not found' }, 404, corsHeaders)
-    }
-
-    if (checkoutSession.status === 'completed') {
-      return jsonResponse({
-        ok: true,
-        alreadyCompleted: true,
-        provider: 'gocardless',
-        subscriptionId: checkoutSession.provider_subscription_id ?? null,
-      }, 200, corsHeaders)
-    }
-
-    const billingRequestId = String(checkoutSession.session_token ?? '').trim()
-    if (!billingRequestId.startsWith('BRQ')) {
-      return jsonResponse({
-        error: 'Checkout session is missing a billing request id. Start checkout again.',
-        code: 'billing_request_missing',
-      }, 409, corsHeaders)
-    }
-
-    const mandateResolution = await resolveFulfilledBillingRequestMandate(
-      billingRequestId,
-      env,
-      `gocardless-fulfil:${checkoutToken}`,
-    )
-    if (!mandateResolution.ok) {
-      console.error('GoCardless billing request mandate resolution failed:', {
-        billingRequestId,
-        reason: mandateResolution.reason,
-        status: mandateResolution.billingRequest?.status,
-        data: mandateResolution.billingRequest,
-      })
-      return jsonResponse({ error: 'Failed to complete GoCardless authorization' }, 502, corsHeaders)
-    }
-    const billingRequest = mandateResolution.billingRequest
-    const mandateId = mandateResolution.mandateId
-
-    const pricing = await getEffectivePricingSettings(env, 'gocardless')
-    const planType = normalizePlanType(String(checkoutSession.plan_type || 'monthly'))
-    let amountEur = pricing[planType]
-    if (amountEur == null || !Number.isFinite(amountEur)) {
-      return jsonResponse({ error: 'Pricing is not configured for selected plan' }, 503, corsHeaders)
-    }
-    const snapshotPercent = Number(checkoutSession.gocardless_discount_percent_snapshot)
-    if (Number.isFinite(snapshotPercent) && snapshotPercent > 0 && snapshotPercent <= 100) {
-      amountEur = Number((amountEur * (1 - snapshotPercent / 100)).toFixed(2))
-    } else if (checkoutSession.promo_code_id) {
-      // Backward-compatible fallback for sessions created before snapshot support.
-      const promoRow: any = await db.prepare(`
-        SELECT reward_type, gocardless_discount_percent
-        FROM promo_codes
-        WHERE id = ?
-        LIMIT 1
-      `).bind(checkoutSession.promo_code_id).first()
-      if (promoRow?.reward_type === 'discount_percent') {
-        const percent = Number(promoRow.gocardless_discount_percent)
-        if (Number.isFinite(percent) && percent > 0 && percent <= 100) {
-          amountEur = Number((amountEur * (1 - percent / 100)).toFixed(2))
-        }
-      }
-    }
-
-    const interval = getGoCardlessInterval(planType)
-    const snapshotCurrency = String(checkoutSession.gocardless_currency_snapshot ?? '').trim()
-    const currency = snapshotCurrency
-      ? normalizeGoCardlessCurrency(snapshotCurrency)
-      : normalizeGoCardlessCurrency(await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }))
-    const snapshotPlanCode = String(checkoutSession.gocardless_plan_code_snapshot ?? '').trim()
-    let planName: string
-    if (snapshotPlanCode) {
-      planName = snapshotPlanCode
-    } else {
-      const planNameRaw = await getSetting(env, `gocardless_plan_${planType}`, { defaultValue: `VMP ${planType}` })
-      planName = String(planNameRaw || `VMP ${planType}`)
-    }
-    const subscriptionResponse = await gocardlessPost('/subscriptions', {
-      subscriptions: {
-        amount: moneyToMinorUnits(amountEur),
-        currency,
-        name: planName,
-        interval: interval.interval,
-        interval_unit: interval.intervalUnit,
-        day_of_month: 1,
-        links: {
-          mandate: mandateId,
-        },
-        metadata: {
-          userId: user.sub,
-          planType,
-          checkoutToken,
-        },
-      },
-    }, env, { 'Idempotency-Key': checkoutToken })
-    const gocardlessSub = subscriptionResponse?.data?.subscriptions
-    if (!subscriptionResponse.ok || !gocardlessSub?.id) {
-      console.error('GoCardless create subscription error:', subscriptionResponse?.data)
-      return jsonResponse({ error: 'Failed to create GoCardless subscription' }, 502, corsHeaders)
-    }
-
-    const status = normalizeGoCardlessStatus(String(gocardlessSub.status ?? 'pending_customer_approval'))
-    const currentPeriodEnd = gocardlessSub?.upcoming_payments?.[0]?.charge_date
-      ? new Date(`${gocardlessSub.upcoming_payments[0].charge_date}T00:00:00.000Z`).toISOString()
-      : null
-    const providerCustomerId = String(gocardlessSub?.links?.customer ?? billingRequest?.links?.customer ?? mandateId ?? '')
-    await upsertSubscriptionRow(db, {
-      userId: user.sub,
-      planType,
-      status,
-      provider: 'gocardless',
-      providerSubscriptionId: gocardlessSub.id,
-      providerCustomerId: providerCustomerId || null,
-      currentPeriodEnd,
-    })
-
-    await db.prepare(`
-      UPDATE payment_checkout_sessions
-      SET status = 'completed',
-          provider_subscription_id = ?,
-          completed_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(gocardlessSub.id, checkoutSession.id).run()
-    if (status === 'active' || status === 'trialing') {
-      try {
-        await syncNewsletterForStripeSubscription(db, user.sub, 'active', env)
-      } catch (brevoErr) {
-        console.error(
-          '[gocardless complete] syncNewsletterForStripeSubscription failed',
-          { userId: user.sub, subscriptionId: gocardlessSub.id, status, err: brevoErr },
-        )
-      }
-    }
-    if (checkoutSession.promo_code_id) {
-      await applyPromoRedemption(env, {
-        promoCodeId: String(checkoutSession.promo_code_id),
-        userId: user.sub,
-        provider: 'gocardless',
-        planType,
-        providerSubscriptionId: gocardlessSub.id,
-        grantedUntil: currentPeriodEnd,
-      })
-    }
-
-    return jsonResponse({
-      ok: true,
-      provider: 'gocardless',
-      subscriptionStatus: status,
-      subscriptionId: gocardlessSub.id,
-    }, 200, corsHeaders)
-  } catch (err) {
-    console.error('handleGoCardlessComplete error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
-  }
-}
-
-/**
- * POST /api/payments/gocardless/retry — protected
- * Re-opens GoCardless hosted checkout for a pending session (or latest pending for the user).
- * Body: { checkoutToken?: string, planType?: string }
- */
-export async function handleGoCardlessRetry(request: any, env: any, corsHeaders: any) {
-  let user: any
-  try {
-    user = await requireAuth(request, env)
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
-  }
-
-  const body = await request.json().catch(() => ({}))
-  const checkoutTokenInput = String(body?.checkoutToken ?? '').trim()
-  const planTypeInput = normalizePlanType(String(body?.planType ?? 'monthly'))
-
-  try {
-    const db = getDb(env)
-    let checkoutSession: any = null
-    if (checkoutTokenInput) {
-      checkoutSession = await db.prepare(`
-        SELECT id, user_id, plan_type, checkout_token, session_token, status
-        FROM payment_checkout_sessions
-        WHERE provider = 'gocardless'
-          AND user_id = ?
-          AND checkout_token = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(user.sub, checkoutTokenInput).first()
-    } else {
-      checkoutSession = await db.prepare(`
-        SELECT id, user_id, plan_type, checkout_token, session_token, status
-        FROM payment_checkout_sessions
-        WHERE provider = 'gocardless'
-          AND user_id = ?
-          AND status = 'pending'
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(user.sub).first()
-    }
-
-    if (!checkoutSession || checkoutSession.status === 'completed') {
-      return jsonResponse({
-        error: 'No pending GoCardless checkout to resume. Start checkout again.',
-        code: 'checkout_not_found',
-      }, 404, corsHeaders)
-    }
-
-    const planType = normalizePlanType(String(checkoutSession.plan_type || planTypeInput))
-    const checkoutToken = String(checkoutSession.checkout_token)
-    const frontendUrl = (env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-
-    const userRow = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(user.sub).first()
-    const customerEmail = String(userRow?.email ?? user.email ?? '').trim().toLowerCase()
-    if (!customerEmail) {
-      return jsonResponse({ error: 'Account email is missing. Contact support.' }, 400, corsHeaders)
-    }
-
-    const currency = normalizeGoCardlessCurrency(
-      await getSetting(env, 'gocardless_currency', { defaultValue: 'EUR' }),
-    )
-    const defaultCountry = String(
-      await getSetting(env, 'gocardless_default_country_code', { defaultValue: 'SK' }),
-    ).trim().toUpperCase()
-
-    const billingRequestPayload = buildGoCardlessMandateBillingRequestPayload({
-      currency,
-      metadata: {
-        userId: user.sub,
-        planType,
-        checkoutToken,
-      },
-      creditorId: env.GOCARDLESS_CREDITOR_ID,
-    })
-    const billingRequestResponse = await gocardlessPost('/billing_requests', billingRequestPayload, env)
-    const billingRequest = billingRequestResponse?.data?.billing_requests
-    if (!billingRequestResponse.ok || !billingRequest?.id) {
-      return jsonResponse({
-        error: formatGoCardlessApiError(billingRequestResponse, 'Failed to create GoCardless billing request'),
-        code: 'gocardless_billing_request_failed',
-      }, 502, corsHeaders)
-    }
-
-    await prefillGoCardlessBillingRequestCustomer(
-      billingRequest.id,
-      customerEmail,
-      env,
-      defaultCountry,
-    )
-
-    const flowResponse = await gocardlessPost(
-      '/billing_request_flows',
-      buildGoCardlessBillingRequestFlowCreatePayload({
-        billingRequestId: billingRequest.id,
-        redirectUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}`,
-        exitUri: `${frontendUrl}/account?gocardless_checkout_token=${checkoutToken}&gocardless_retry=1`,
-        customerEmail,
-      }),
-      env,
-    )
-    const billingRequestFlow = flowResponse?.data?.billing_request_flows
-    if (!flowResponse.ok || !billingRequestFlow?.id || !billingRequestFlow?.authorisation_url) {
-      return jsonResponse({
-        error: formatGoCardlessApiError(flowResponse, 'Failed to create GoCardless checkout flow'),
-        code: 'gocardless_billing_request_flow_failed',
-      }, 502, corsHeaders)
-    }
-
-    await db.prepare(`
-      UPDATE payment_checkout_sessions
-      SET provider_checkout_id = ?, session_token = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(billingRequestFlow.id, billingRequest.id, checkoutSession.id).run()
-
-    return jsonResponse({ checkoutUrl: billingRequestFlow.authorisation_url }, 200, corsHeaders)
-  } catch (err) {
-    console.error('handleGoCardlessRetry error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
-  }
-}
-
-/**
  * GET /api/account/subscription — protected
  * Returns the most recent subscription row for the authenticated user.
  */
@@ -1539,7 +995,7 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders)
     }
     if ((sub.provider ?? 'stripe') !== 'stripe') {
-      const manageUrl = String(await getSetting(env, 'gocardless_manage_subscription_url', { defaultValue: '' }) ?? '').trim()
+      const manageUrl = String(await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' }) ?? '').trim()
       if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders)
       return jsonResponse({
         error: 'Customer portal is not available for this payment provider.',

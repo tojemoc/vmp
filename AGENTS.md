@@ -44,7 +44,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Config format | `wrangler.json` (not `.toml`) |
 | Frontend | Nuxt 4, hls.js, media-chrome |
 | Email | Brevo Transactional API |
-| Payments | Stripe, GoCardless (REST via `fetch`; see [docs/gocardless-checkout-api.md](docs/gocardless-checkout-api.md)) |
+| Payments | Stripe (card, PayPal, SEPA via Checkout); optional legacy provider for grandfathered subs |
 | Push notifications | Web Push / VAPID |
 
 ### Roles
@@ -221,9 +221,6 @@ SENTRY_DSN              — Sentry DSN for the API Worker (`@sentry/cloudflare`)
 BREVO_API_KEY           — from brevo.com
 STRIPE_SECRET_KEY       — from stripe.com dashboard
 STRIPE_WEBHOOK_SECRET   — from stripe webhook registration
-GOCARDLESS_ACCESS_TOKEN — GoCardless API token (same environment as creditor)
-GOCARDLESS_CREDITOR_ID  — GoCardless creditor id (CR…); required for checkout
-GOCARDLESS_WEBHOOK_SECRET — GoCardless webhook signing secret
 TOTP_ENCRYPTION_KEY     — AES-256-GCM encryption key for TOTP secrets
 VAPID_PRIVATE_KEY       — generated with web-push generate-vapid-keys
 RSS_SECRET              — 32+ random chars used only to sign/tokenize personal account RSS URLs (`/api/feed/:userId/:token` and `/api/account/rss`); not required for the public feed endpoint (`/api/feed/public`)

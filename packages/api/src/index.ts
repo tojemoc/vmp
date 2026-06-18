@@ -39,9 +39,6 @@ import {
   handleGetStripeConfig,
   handleCheckout,
   handleWebhook,
-  handleGoCardlessWebhook,
-  handleGoCardlessComplete,
-  handleGoCardlessRetry,
   handleGetSubscription,
   handleSessionStatus,
   handlePortal,
@@ -388,9 +385,6 @@ const workerHandler = {
     if (url.pathname === '/api/auth/pwa-push-login/verify-2fa' && request.method === 'POST') {
       return handlePwaPushLoginVerify2fa(request, env, corsHeaders)
     }
-    if (url.pathname === '/api/payments/gocardless/retry' && request.method === 'POST') {
-      return handleGoCardlessRetry(request, env, corsHeaders)
-    }
     if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
       return handleRefreshToken(request, env, corsHeaders)
     }
@@ -610,9 +604,6 @@ const workerHandler = {
     if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
       return handleWebhook(request, env, corsHeaders)
     }
-    if (url.pathname === '/api/payments/webhook/gocardless' && request.method === 'POST') {
-      return handleGoCardlessWebhook(request, env, corsHeaders)
-    }
     if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
       return handleLegacyWebhook(request, env, corsHeaders)
     }
@@ -657,9 +648,6 @@ const workerHandler = {
     }
     if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
       return handlePortal(request, env, corsHeaders)
-    }
-    if (url.pathname === '/api/payments/gocardless/complete' && request.method === 'POST') {
-      return handleGoCardlessComplete(request, env, corsHeaders)
     }
     // ── Push notification routes ──────────────────────────────────────────────
     if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {

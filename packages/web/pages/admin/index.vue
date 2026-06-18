@@ -1671,8 +1671,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                       <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">Club</label>
                     </div>
                   </label>
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
+                  <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
                       <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">Stripe promo mapping</h5>
                       <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
                         <input
@@ -1683,29 +1682,6 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                         >
                       </label>
                     </div>
-                    <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
-                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">GoCardless promo mapping</h5>
-                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Discount percent
-                        <input
-                          v-model="promoCodeForm.gocardlessDiscountPercent"
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-xs"
-                          placeholder="10"
-                        >
-                      </label>
-                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Plan code (optional)
-                        <input
-                          v-model="promoCodeForm.gocardlessPlanCode"
-                          type="text"
-                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                          placeholder="ALT-MONTHLY"
-                        >
-                      </label>
-                    </div>
-                  </div>
                   <label class="text-xs text-gray-600 dark:text-gray-300 block">Expires at (optional)
                     <input v-model="promoCodeForm.expiresAt" type="datetime-local" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   </label>
@@ -1744,8 +1720,6 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                         <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
                           <div class="space-y-1 text-xs">
                             <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
-                            <p>GoCardless: {{ code.gocardless_discount_percent != null ? `${code.gocardless_discount_percent}%` : '—' }}</p>
-                            <p>GoCardless plan: {{ code.gocardlessPlanCode || code.gocardless_plan_code || '—' }}</p>
                           </div>
                         </td>
                         <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.used_count }} / {{ code.max_uses }}</td>
@@ -2632,7 +2606,7 @@ const newsletterCampaigns = ref<any[]>([])
 const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' })
 const newsletterEditingTemplateId = ref<string | null>(null)
 const newsletterTemplateSaving = ref(false)
-type PaymentProvider = 'stripe' | 'gocardless' | 'legacy'
+type PaymentProvider = 'stripe' | 'legacy'
 type PlanType = 'monthly' | 'yearly' | 'club'
 interface AdminPaymentPlanRow {
   id: string
@@ -2659,9 +2633,6 @@ interface PromoCodeRow {
   is_active: number
   allowed_plan_types: string
   stripe_coupon_id?: string | null
-  gocardless_discount_percent?: number | null
-  gocardlessPlanCode?: string | null
-  gocardless_plan_code?: string | null
 }
 interface IsicCampaignRow {
   id: string
@@ -2679,19 +2650,18 @@ type IsicPopupBehavior = 'default' | 'highlight_campaign' | 'hide_standard' | 'i
 
 const paymentSettings = ref<{
   enabledProviders: PaymentProvider[]
-  providerOrder: [PaymentProvider, PaymentProvider]
+  providerOrder: PaymentProvider[]
   allowedPlans: PlanType[]
   basePrices: PaymentPriceRow
-  providerPrices: { stripe: PaymentPriceRow; gocardless: PaymentPriceRow }
+  providerPrices: { stripe: PaymentPriceRow }
   stripePriceIds: PaymentPriceRow
 }>({
   enabledProviders: ['stripe'],
-  providerOrder: ['stripe', 'gocardless'],
+  providerOrder: ['stripe', 'legacy'],
   allowedPlans: ['monthly', 'yearly', 'club'],
   basePrices: { monthly: '', yearly: '', club: '' },
   providerPrices: {
     stripe: { monthly: '', yearly: '', club: '' },
-    gocardless: { monthly: '', yearly: '', club: '' },
   },
   stripePriceIds: { monthly: '', yearly: '', club: '' },
 })
@@ -2749,8 +2719,6 @@ const promoCodeForm = ref({
   maxUses: 1,
   allowedPlanTypes: ['monthly', 'yearly', 'club'] as string[],
   stripeCouponId: '',
-  gocardlessDiscountPercent: '',
-  gocardlessPlanCode: '',
   expiresAt: '',
 })
 const isicLoading = ref(false)
@@ -4167,17 +4135,15 @@ const loadPaymentSettings = async () => {
     }
     const data = await res.json()
     const enabled = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
+      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
       : ['stripe']
     const order = Array.isArray(data.providerOrder)
-      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'gocardless' || p === 'legacy')
-      : []
-    const first: PaymentProvider = order[0] === 'gocardless' ? 'gocardless' : 'stripe'
-    const second: PaymentProvider = order[1] === 'stripe' || order[1] === 'gocardless' ? order[1] : (first === 'stripe' ? 'gocardless' : 'stripe')
+      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
+      : ['stripe', 'legacy']
     const allowed = Array.isArray(data.allowedPlans) ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club') : ['monthly', 'yearly', 'club']
     paymentSettings.value = {
       enabledProviders: enabled.length ? enabled : ['stripe'],
-      providerOrder: [first, second],
+      providerOrder: order.length ? order : ['stripe', 'legacy'],
       allowedPlans: allowed.length ? allowed : ['monthly', 'yearly', 'club'],
       basePrices: {
         monthly: data.basePrices?.monthly != null ? String(data.basePrices.monthly) : '',
@@ -4189,11 +4155,6 @@ const loadPaymentSettings = async () => {
           monthly: data.providerPrices?.stripe?.monthly != null ? String(data.providerPrices.stripe.monthly) : '',
           yearly: data.providerPrices?.stripe?.yearly != null ? String(data.providerPrices.stripe.yearly) : '',
           club: data.providerPrices?.stripe?.club != null ? String(data.providerPrices.stripe.club) : '',
-        },
-        gocardless: {
-          monthly: data.providerPrices?.gocardless?.monthly != null ? String(data.providerPrices.gocardless.monthly) : '',
-          yearly: data.providerPrices?.gocardless?.yearly != null ? String(data.providerPrices.gocardless.yearly) : '',
-          club: data.providerPrices?.gocardless?.club != null ? String(data.providerPrices.gocardless.club) : '',
         },
       },
       stripePriceIds: {
@@ -4276,14 +4237,8 @@ const createPromoCodes = async () => {
     return
   }
   const stripeCouponId = promoCodeForm.value.stripeCouponId.trim()
-  const gocardlessDiscountPercentRaw = promoCodeForm.value.gocardlessDiscountPercent
-  const gocardlessDiscountPercent = gocardlessDiscountPercentRaw === ''
-    ? null
-    : Number(gocardlessDiscountPercentRaw)
-  if (promoCodeForm.value.rewardType === 'discount_percent'
-      && !stripeCouponId
-      && !(Number.isFinite(gocardlessDiscountPercent) && gocardlessDiscountPercent! > 0 && gocardlessDiscountPercent! <= 100)) {
-    promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID and/or GoCardless discount %.'
+  if (promoCodeForm.value.rewardType === 'discount_percent' && !stripeCouponId) {
+    promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID.'
     promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
     return
   }
@@ -4302,8 +4257,6 @@ const createPromoCodes = async () => {
         maxUses: promoCodeForm.value.maxUses,
         allowedPlanTypes: promoCodeForm.value.allowedPlanTypes,
         stripeCouponId,
-        gocardlessDiscountPercent,
-        gocardlessPlanCode: promoCodeForm.value.gocardlessPlanCode.trim(),
         expiresAt: expiresIso,
       }),
     })
@@ -4323,8 +4276,6 @@ const createPromoCodes = async () => {
       maxUses: 1,
       allowedPlanTypes: ['monthly', 'yearly', 'club'],
       stripeCouponId: '',
-      gocardlessDiscountPercent: '',
-      gocardlessPlanCode: '',
       expiresAt: '',
     }
     await loadPromotions()

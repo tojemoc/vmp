@@ -57,7 +57,7 @@ Slovak and Czech copy in `locales/sk/` and `locales/cs/` is a **draft** for in-c
    - Login / magic-link / PWA handoff (`/login`, `/auth/verify`)
    - 2FA setup and verify
    - Watch page (preview limit, player chrome, checkout overlay)
-   - Account + billing + GoCardless retry states
+   - Account + billing
    - `/personal-data` (legal tone + table labels)
    - PWA install prompt and push-notification errors
 5. **Reset** on the preview bar returns to the build default (`NUXT_PUBLIC_UI_LOCALE` or `en`).
@@ -139,7 +139,7 @@ Neither requires `@nuxtjs/i18n` initially — sync translated JSON into `locales
 - `strings.admin` until admin SFCs use the keys
 - API-returned errors (unless you add `error.code` + client-side mapping)
 - User-generated content (video titles, descriptions)
-- Brand tokens: `VMP`, provider names (`Stripe`, `GoCardless`) often stay untranslated
+- Brand tokens: `VMP`, provider names (`Stripe`) often stay untranslated
 
 ## Verifying coverage
 

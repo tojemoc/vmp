@@ -18,8 +18,8 @@ export function defineCatalog(
       return maps.planNames[planType] ?? planType
     },
     paymentProviderLabel(provider: string) {
-      if (provider === 'gocardless') return 'GoCardless'
       if (provider === 'stripe') return 'Stripe'
+      if (provider === 'legacy') return 'Legacy'
       return provider
     },
     roleLabel(role: string | undefined) {

@@ -10,9 +10,6 @@ export interface CFEnvShape {
   VAPID_PUBLIC_KEY?: string
   RSS_SECRET?: string
   TOTP_ENCRYPTION_KEY?: string
-  GOCARDLESS_ACCESS_TOKEN?: string
-  GOCARDLESS_CREDITOR_ID?: string
-  GOCARDLESS_WEBHOOK_SECRET?: string
   FRONTEND_URL?: string
   /** Canonical public API base (e.g. https://vmp-backup-api.tjm.sk) for proxy/RSS URLs behind TLS. */
   API_PUBLIC_URL?: string

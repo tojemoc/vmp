@@ -98,7 +98,6 @@ Notes:
 
 ## API docs (`docs/`)
 
-- [GoCardless checkout — outbound API payloads](docs/gocardless-checkout-api.md)
 - [Pills external update API](docs/pills-external-update-api.md)
 
 ## Notes
