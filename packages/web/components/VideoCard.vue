@@ -67,11 +67,13 @@ interface Video {
 const props = withDefaults(defineProps<{
   video: Video
   layout?: 'default' | 'horizontal'
+  titleScale?: 'default' | 'hero'
   showDescription?: boolean
   showRelativeTimestamp?: boolean
   clampTitle?: boolean
 }>(), {
   layout: 'default',
+  titleScale: 'default',
   showDescription: true,
   showRelativeTimestamp: false,
   clampTitle: true,
@@ -85,7 +87,10 @@ let nowInterval: ReturnType<typeof setInterval> | undefined
 const linkClass = computed(() => isHorizontal.value ? 'md:grid md:grid-cols-[58%_42%] md:gap-4 md:items-center' : '')
 const mediaClass = computed(() => isHorizontal.value ? 'mb-2 md:mb-0' : 'mb-2')
 const contentClass = computed(() => isHorizontal.value ? 'space-y-2' : '')
-const titleClass = computed(() => isHorizontal.value ? 'text-xl md:text-3xl leading-tight' : 'mb-1')
+const titleClass = computed(() => {
+  if (!isHorizontal.value) return 'mb-1'
+  return props.titleScale === 'hero' ? 'text-xl md:text-3xl leading-tight' : 'text-base font-semibold leading-snug'
+})
 const relativeUploadTime = computed(() => {
   const sourceDate = props.video.upload_date
   if (!sourceDate) return ''

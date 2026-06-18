@@ -17,8 +17,11 @@ export interface HomepageLayoutBlock {
   title?: string
   body?: string
   categoryId?: string | null
+  /** @deprecated Pairing is inferred from gridRow/gridCol + width; kept for backwards-compatible loads. */
   rightRailWithNextSideMini?: boolean
   width?: 'full' | 'half'
+  gridRow?: number
+  gridCol?: number
   mobileHidden?: boolean
   mobileOrder?: number
   childBlocks?: HomepageLayoutChildBlock[]
@@ -58,6 +61,8 @@ export interface HomepageRenderLeafBlock {
     overflowCount: number
     variant: 'three_by_one' | 'side_mini'
   } | null
+  /** Half-width block rendered alone because its row partner is empty/hidden. */
+  expandedFromHalf?: boolean
 }
 
 export interface HomepageRenderSplitBlock {
@@ -87,11 +92,95 @@ export function isLeafRenderBlock(block: HomepageRenderBlock): block is Homepage
   return block.type === 'featured_row' || block.type === 'category' || block.type === 'top_video'
 }
 
+function defaultBlockWidth(type: HomepageBlockType): 'full' | 'half' {
+  if (type === 'featured_row' || type === 'top_video') return 'full'
+  return 'half'
+}
+
+/** Assign row/column positions from block order and width. Full-width blocks occupy a row alone. */
+export function assignGridPositions(blocks: HomepageLayoutBlock[]): HomepageLayoutBlock[] {
+  let row = 0
+  let col = 0
+  return blocks.map((block) => {
+    const width = block.width === 'half' ? 'half' : defaultBlockWidth(block.type)
+    if (width === 'full') {
+      if (col === 1) {
+        row += 1
+        col = 0
+      }
+      const next = { ...block, width: 'full' as const, gridRow: row, gridCol: 0 }
+      row += 1
+      col = 0
+      return next
+    }
+    const next = { ...block, width: 'half' as const, gridRow: row, gridCol: col }
+    if (col === 0) col = 1
+    else {
+      row += 1
+      col = 0
+    }
+    return next
+  })
+}
+
+export function ensureBlockGridPositions(blocks: HomepageLayoutBlock[]): HomepageLayoutBlock[] {
+  if (!blocks.length) return []
+  const needsAssign = blocks.some((block) => !Number.isFinite(Number(block.gridRow)) || !Number.isFinite(Number(block.gridCol)))
+  return needsAssign ? assignGridPositions(blocks) : blocks.map((block) => ({
+    ...block,
+    gridRow: Number(block.gridRow),
+    gridCol: Number(block.gridCol),
+  }))
+}
+
+export function validateGridPositions(blocks: HomepageLayoutBlock[]): string | null {
+  const positioned = ensureBlockGridPositions(blocks)
+  const seen = new Set<string>()
+  for (const block of positioned) {
+    const key = `${block.gridRow}:${block.gridCol}`
+    if (seen.has(key)) {
+      return `Two homepage blocks share row ${block.gridRow}, column ${block.gridCol}.`
+    }
+    seen.add(key)
+    if (block.gridCol !== 0 && block.gridCol !== 1) {
+      return `Block ${block.id} has invalid gridCol ${block.gridCol}.`
+    }
+    if (block.width === 'full' && block.gridCol !== 0) {
+      return `Full-width block ${block.id} must use column 0.`
+    }
+  }
+  return null
+}
+
+export function orderBlocksByGrid(blocks: HomepageLayoutBlock[]): HomepageLayoutBlock[] {
+  return [...ensureBlockGridPositions(blocks)].sort((a, b) => {
+    const rowDiff = Number(a.gridRow) - Number(b.gridRow)
+    if (rowDiff !== 0) return rowDiff
+    return Number(a.gridCol) - Number(b.gridCol)
+  })
+}
+
+export function rowPartnerBlock(blocks: HomepageLayoutBlock[], block: HomepageLayoutBlock): HomepageLayoutBlock | null {
+  const positioned = ensureBlockGridPositions(blocks)
+  const row = Number(block.gridRow)
+  const col = Number(block.gridCol)
+  const partnerCol = col === 0 ? 1 : 0
+  return positioned.find((candidate) => Number(candidate.gridRow) === row && Number(candidate.gridCol) === partnerCol) ?? null
+}
+
+export function blockWouldExpandToFullWidth(blocks: HomepageLayoutBlock[], block: HomepageLayoutBlock): boolean {
+  if (block.width !== 'half') return false
+  const partner = rowPartnerBlock(blocks, block)
+  if (!partner) return true
+  if (partner.type === 'category' && (!partner.categoryId || partner.categoryId.trim() === '')) return true
+  return false
+}
+
 export function orderLayoutBlocksForViewport(
   blocks: HomepageLayoutBlock[],
   isMobile: boolean,
 ): HomepageLayoutBlock[] {
-  if (!isMobile) return blocks
+  if (!isMobile) return orderBlocksByGrid(blocks)
   return blocks
     .map((block, index) => ({ block, index }))
     .filter(({ block }) => block.mobileHidden !== true)
@@ -103,6 +192,12 @@ export function orderLayoutBlocksForViewport(
     .map(({ block }) => block)
 }
 
+function leafHasRenderableContent(leaf: HomepageRenderLeafBlock | null): boolean {
+  if (!leaf) return false
+  if (leaf.type === 'category') return Boolean(leaf.categorySection?.allVideos.length)
+  return leaf.videos.length > 0
+}
+
 export function buildHomepageRenderModel({
   videos,
   layoutBlocks,
@@ -112,8 +207,7 @@ export function buildHomepageRenderModel({
   layoutBlocks: HomepageLayoutBlock[]
   placement: HomepagePlacementResponse | null
 }) {
-  const safeLayoutBlocks = Array.isArray(layoutBlocks) ? layoutBlocks : []
-  const renderedBlocks = safeLayoutBlocks
+  const positionedBlocks = orderBlocksByGrid(Array.isArray(layoutBlocks) ? layoutBlocks : [])
   const videoById = new Map((videos ?? []).map((video) => [video.id, video]))
   const sortedByNewest = [...videoById.values()].sort((a: any, b: any) => compareVideosNewestFirst(a, b))
   const topVideo = sortedByNewest[0] ?? null
@@ -145,7 +239,7 @@ export function buildHomepageRenderModel({
 
   const sectionByCategoryId = new Map(categorySections.map((section) => [section.category.id, section]))
 
-  const buildLeafBlock = (block: HomepageLayoutChildBlock, id: string): HomepageRenderLeafBlock | null => {
+  const buildLeafBlock = (block: HomepageLayoutChildBlock | HomepageLayoutBlock, id: string): HomepageRenderLeafBlock | null => {
     const type = block?.type
     if (type !== 'featured_row' && type !== 'category' && type !== 'top_video') return null
     const title = typeof block?.title === 'string' ? block.title : ''
@@ -185,57 +279,84 @@ export function buildHomepageRenderModel({
     }
   }
 
+  const rows = new Map<number, HomepageLayoutBlock[]>()
+  for (const block of positionedBlocks) {
+    const row = Number(block.gridRow)
+    if (!rows.has(row)) rows.set(row, [])
+    rows.get(row)!.push(block)
+  }
+
   const blockItems: HomepageRenderBlock[] = []
-  for (let idx = 0; idx < renderedBlocks.length; idx += 1) {
-    const block = renderedBlocks[idx]
-    if (!block) continue
-    const blockType = block?.type
-    if (blockType === 'split_horizontal' || blockType === 'split_vertical') {
-      const children = Array.isArray(block?.childBlocks)
-        ? block.childBlocks
-          .map((child, childIdx) => buildLeafBlock(child, `${block.id}:child:${childIdx}`))
-          .filter((child): child is HomepageRenderLeafBlock => Boolean(child))
-          .slice(0, 2)
-        : []
-      blockItems.push({
-        id: block.id,
-        type: blockType,
-        title: typeof block?.title === 'string' ? block.title : '',
-        body: typeof block?.body === 'string' ? block.body : '',
-        children,
-      } as HomepageRenderSplitBlock)
-      continue
-    }
-    const leaf = buildLeafBlock(block as HomepageLayoutChildBlock, block.id)
-    if (!leaf) continue
-    const shouldPairRightRail = blockType === 'category' && block?.rightRailWithNextSideMini === true
-    if (shouldPairRightRail) {
-      const next = renderedBlocks[idx + 1]
-      const nextLeaf = next ? buildLeafBlock(next as HomepageLayoutChildBlock, next.id) : null
-      const nextIsSideMiniCategory = next?.type === 'category' && nextLeaf?.categorySection?.variant === 'side_mini'
-      if (nextIsSideMiniCategory && nextLeaf) {
-        const primaryCategorySection = leaf.categorySection
-        const pairedPrimary: HomepageRenderLeafBlock = {
-          ...leaf,
-          categorySection: primaryCategorySection ? {
-            ...primaryCategorySection,
-            visible: primaryCategorySection.allVideos.slice(0, 4),
-            overflowCount: Math.max(0, primaryCategorySection.allVideos.length - 4),
-          } : null,
-        }
+  for (const row of [...rows.keys()].sort((a, b) => a - b)) {
+    const rowBlocks = (rows.get(row) ?? []).sort((a, b) => Number(a.gridCol) - Number(b.gridCol))
+    const fullBlock = rowBlocks.find((block) => block.width === 'full')
+    if (fullBlock) {
+      if (fullBlock.type === 'split_horizontal' || fullBlock.type === 'split_vertical') {
+        const children = Array.isArray(fullBlock.childBlocks)
+          ? fullBlock.childBlocks
+            .map((child, childIdx) => buildLeafBlock(child, `${fullBlock.id}:child:${childIdx}`))
+            .filter((child): child is HomepageRenderLeafBlock => Boolean(child))
+            .slice(0, 2)
+          : []
         blockItems.push({
-          id: `${leaf.id}:right-rail`,
-          type: 'category_with_side_mini',
-          title: leaf.title,
-          body: leaf.body,
-          primary: pairedPrimary,
-          sideMini: nextLeaf,
+          id: fullBlock.id,
+          type: fullBlock.type,
+          title: typeof fullBlock.title === 'string' ? fullBlock.title : '',
+          body: typeof fullBlock.body === 'string' ? fullBlock.body : '',
+          children,
         })
-        idx += 1
         continue
       }
+      const leaf = buildLeafBlock(fullBlock, fullBlock.id)
+      if (leaf && leafHasRenderableContent(leaf)) blockItems.push(leaf)
+      continue
     }
-    blockItems.push(leaf)
+
+    const leftConfig = rowBlocks.find((block) => Number(block.gridCol) === 0)
+    const rightConfig = rowBlocks.find((block) => Number(block.gridCol) === 1)
+    const leftLeaf = leftConfig ? buildLeafBlock(leftConfig, leftConfig.id) : null
+    const rightLeaf = rightConfig ? buildLeafBlock(rightConfig, rightConfig.id) : null
+    const leftVisible = leafHasRenderableContent(leftLeaf)
+    const rightVisible = leafHasRenderableContent(rightLeaf)
+
+    if (leftVisible && rightVisible && leftLeaf && rightLeaf && leftLeaf.type === 'category' && rightLeaf.type === 'category') {
+      const pairedPrimary: HomepageRenderLeafBlock = leftLeaf.type === 'category' && leftLeaf.categorySection
+        ? {
+          ...leftLeaf,
+          categorySection: {
+            ...leftLeaf.categorySection,
+            visible: leftLeaf.categorySection.allVideos.slice(0, 4),
+            overflowCount: Math.max(0, leftLeaf.categorySection.allVideos.length - 4),
+          },
+        }
+        : leftLeaf
+      const sideMini: HomepageRenderLeafBlock = rightLeaf.type === 'category' && rightLeaf.categorySection
+        ? {
+          ...rightLeaf,
+          categorySection: {
+            ...rightLeaf.categorySection,
+            variant: 'side_mini',
+            visible: rightLeaf.categorySection.allVideos.slice(0, 2),
+            overflowCount: Math.max(0, rightLeaf.categorySection.allVideos.length - 2),
+          },
+        }
+        : rightLeaf
+      blockItems.push({
+        id: `${leftLeaf.id}:row-${row}`,
+        type: 'category_with_side_mini',
+        title: leftLeaf.title,
+        body: leftLeaf.body,
+        primary: pairedPrimary,
+        sideMini,
+      })
+      continue
+    }
+
+    if (leftVisible && leftLeaf) {
+      blockItems.push({ ...leftLeaf, expandedFromHalf: leftConfig?.width === 'half' && !rightVisible })
+    } else if (rightVisible && rightLeaf) {
+      blockItems.push({ ...rightLeaf, expandedFromHalf: rightConfig?.width === 'half' && !leftVisible })
+    }
   }
 
   const hasFeaturedRowBlock = blockItems.some((item: any) =>
@@ -246,7 +367,7 @@ export function buildHomepageRenderModel({
   )
 
   return {
-    renderedBlocks,
+    renderedBlocks: positionedBlocks,
     featuredVideos,
     categorySections,
     blockItems,

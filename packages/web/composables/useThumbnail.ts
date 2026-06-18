@@ -34,6 +34,13 @@ export function sizeUrl(url: string | null | undefined, size: ThumbnailSize): st
   )
 }
 
+/** Prefer small variant; fall back to original URL when path does not follow size naming. */
+export function adminTableThumbUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined
+  const sized = sizeUrl(url, 'small')
+  return sized || url
+}
+
 /**
  * Composable variant — wraps a reactive thumbnail URL ref.
  * Use in component <script setup> blocks where the URL is a Ref.

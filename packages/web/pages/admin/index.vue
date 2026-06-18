@@ -125,12 +125,14 @@
                   :key="`preview-top-video-${video.id}`"
                   :video="video"
                   layout="horizontal"
+                  title-scale="hero"
                   :show-description="false"
                   :show-relative-timestamp="true"
                 />
               </div>
 
               <div v-else-if="block.type === 'category'" class="space-y-3">
+                <p v-if="block.expandedFromHalf" class="text-xs text-amber-700 dark:text-amber-300">Expanded to full width — row partner has no published videos.</p>
                 <div v-if="block.categorySection" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <VideoCard
                     v-for="video in block.categorySection.visible"
@@ -155,7 +157,9 @@
                   </div>
                 </div>
                 <div class="space-y-3">
-                  <h4 class="font-semibold text-gray-900 dark:text-white">{{ block.sideMini.title || block.sideMini.categorySection?.category?.name || 'Side mini' }}</h4>
+                  <div v-if="block.sideMini.categorySection" class="flex items-center justify-between">
+                    <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ block.sideMini.categorySection.category.name }}</h4>
+                  </div>
                   <div v-if="block.sideMini.categorySection" class="space-y-3">
                     <VideoCard
                       v-for="video in block.sideMini.categorySection.visible"
@@ -253,15 +257,18 @@
                     <td class="py-3 pr-4">
                       <label
                         :for="`thumb-input-${video.id}`"
-                        class="relative block w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800
+                        class="relative block w-16 sm:w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
                                cursor-pointer ring-2 ring-transparent hover:ring-blue-500 transition-all group"
                         :title="video.thumbnail_url ? 'Replace thumbnail' : 'Upload thumbnail'"
                       >
                         <!-- Existing thumbnail -->
                         <img
                           v-if="video.thumbnail_url"
-                          :src="sizeUrl(video.thumbnail_url, 'small')"
+                          :src="adminTableThumbUrl(video.thumbnail_url)"
                           :alt="video.title"
+                          width="64"
+                          height="36"
+                          loading="lazy"
                           class="w-full h-full object-cover"
                         />
                         <!-- Placeholder with upload icon -->
@@ -603,7 +610,7 @@
                 <div class="ml-auto flex flex-wrap items-center gap-1">
                   <button
                     type="button"
-                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
                     :disabled="categoryIndex === 0"
                     aria-label="Move category up"
                     @click="moveCategoryUp(categoryIndex)"
@@ -612,14 +619,14 @@
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                    class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
                     :disabled="categoryIndex === categories.length - 1"
                     aria-label="Move category down"
                     @click="moveCategoryDown(categoryIndex)"
                   >
                     Move down
                   </button>
-                  <button type="button" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
+                  <button type="button" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
                 </div>
               </div>
             </div>
@@ -701,7 +708,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
               <input v-model="newPill.imageUrl" type="url" placeholder="Image URL (optional)" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input type="file" accept="image/*" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, null)" />
+              <input type="file" accept="image/*" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200" @change="uploadPillImage($event, null)" />
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createPill">Create</button>
             </div>
           </div>
@@ -721,7 +728,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               <textarea v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_payload_json" rows="2" placeholder="Graph payload JSON" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
               <input v-model="pill.color" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               <input v-model="pill.image_url" type="url" placeholder="Image URL (optional)" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input type="file" accept="image/*" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 text-sm" @change="uploadPillImage($event, pill)" />
+              <input type="file" accept="image/*" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200" @change="uploadPillImage($event, pill)" />
               <div class="flex gap-2">
                 <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
                 <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
@@ -969,7 +976,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div v-if="usersTotalPages > 1" class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"
-              class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
               :disabled="usersPage <= 1 || usersLoading"
               @click="usersPage = Math.max(1, usersPage - 1); loadUsers()"
             >
@@ -978,7 +985,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ usersPage }} / {{ usersTotalPages }}</span>
             <button
               type="button"
-              class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
               :disabled="usersPage >= usersTotalPages || usersLoading"
               @click="usersPage = Math.min(usersTotalPages, usersPage + 1); loadUsers()"
             >
@@ -1098,11 +1105,16 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </div>
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+            <p class="text-xs text-gray-600 dark:text-gray-400">
+              Lists legacy provider subscriptions only (<code class="font-mono">provider = legacy</code>) that are invalid or have had
+              <code class="font-mono">needs_relink</code> for at least 30 days. Users imported without a purchase ID get
+              <code class="font-mono">provider = stripe</code> and appear under Users but not here until they have a legacy row.
+            </p>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h3 class="font-semibold text-gray-900 dark:text-white">Relink candidates</h3>
               <button
                 type="button"
-                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
                 @click="exportLegacyRelinkCandidatesCsv"
               >
                 Export CSV
@@ -1144,7 +1156,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </button>
               <button
                 type="button"
-                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
                 :disabled="legacyRelinkPage <= 1 || legacyRelinkLoading"
                 @click="legacyRelinkPage -= 1; loadLegacyRelinkCandidates()"
               >
@@ -1153,7 +1165,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ legacyRelinkPage }}</span>
               <button
                 type="button"
-                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm disabled:opacity-40"
+                class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
                 :disabled="legacyRelinkCandidates.length < legacyRelinkPageSize || legacyRelinkLoading"
                 @click="legacyRelinkPage += 1; loadLegacyRelinkCandidates()"
               >
@@ -2321,9 +2333,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
 <script setup lang="ts">
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
-import { sizeUrl } from '~/composables/useThumbnail'
+import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
-import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
+import { buildHomepageRenderModel, assignGridPositions } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 // ── Route guard ───────────────────────────────────────────────────────────────
@@ -3413,8 +3425,9 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
   const title = typeof raw.title === 'string' ? raw.title : ''
   const body = typeof raw.body === 'string' ? raw.body : ''
   const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
-  const rightRailWithNextSideMini = raw.rightRailWithNextSideMini === true
   const width = raw.width === 'half' || raw.width === 'full' ? raw.width : undefined
+  const gridRow = Number.isFinite(Number(raw.gridRow)) ? Number(raw.gridRow) : undefined
+  const gridCol = Number.isFinite(Number(raw.gridCol)) ? Number(raw.gridCol) : undefined
   const mobileHidden = raw.mobileHidden === true
   const mobileOrder = Number.isFinite(Number(raw.mobileOrder)) ? Number(raw.mobileOrder) : undefined
   if (type === 'split_horizontal' || type === 'split_vertical') {
@@ -3450,8 +3463,9 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     title,
     body,
     categoryId: type === 'category' ? categoryId : null,
-    rightRailWithNextSideMini: type === 'category' ? rightRailWithNextSideMini : false,
     width: width ?? (type === 'featured_row' || type === 'top_video' ? 'full' : 'half'),
+    gridRow,
+    gridCol,
     mobileHidden,
     mobileOrder,
   }
@@ -3465,9 +3479,10 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   }
   if (block.type === 'category') {
     payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
-    payload.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
   }
   if (block.width === 'half' || block.width === 'full') payload.width = block.width
+  if (Number.isFinite(Number(block.gridRow))) payload.gridRow = Number(block.gridRow)
+  if (Number.isFinite(Number(block.gridCol))) payload.gridCol = Number(block.gridCol)
   if (block.mobileHidden === true) payload.mobileHidden = true
   if (Number.isFinite(Number(block.mobileOrder))) payload.mobileOrder = Number(block.mobileOrder)
   if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
@@ -3813,7 +3828,9 @@ const loadHomepageState = async () => {
   const homepageConfig = data?.homepageConfig ?? {}
   const featuredIds: string[] = Array.isArray(homepageConfig.featuredVideoIds) ? homepageConfig.featuredVideoIds : []
   layoutBlocks.value = Array.isArray(homepageConfig.layoutBlocks) && homepageConfig.layoutBlocks.length
-    ? homepageConfig.layoutBlocks.map(normalizeLoadedBlock).filter((block: LayoutBlock | null): block is LayoutBlock => Boolean(block))
+    ? assignGridPositions(
+      homepageConfig.layoutBlocks.map(normalizeLoadedBlock).filter((block: LayoutBlock | null): block is LayoutBlock => Boolean(block)),
+    )
     : getDefaultBlocks()
   if (!layoutBlocks.value.length) {
     featuredSlots.value = [null, null, null, null]
@@ -5279,6 +5296,7 @@ const saveAll = async () => {
   saving.value      = true
   saveMessage.value = ''
   try {
+    layoutBlocks.value = assignGridPositions([...layoutBlocks.value])
     const featuredVideoIds = featuredSlots.value.map(v => v?.id).filter(Boolean)
     const [homepageRes, locksRes] = await Promise.all([
       fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
@@ -5342,9 +5360,6 @@ watch(
     for (const block of blocks) {
       if (block.type !== 'category' && typeof block.categoryId === 'string' && block.categoryId) {
         block.categoryId = null
-      }
-      if (block.type !== 'category' && block.rightRailWithNextSideMini) {
-        block.rightRailWithNextSideMini = false
       }
       if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
