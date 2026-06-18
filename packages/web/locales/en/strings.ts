@@ -247,6 +247,9 @@ export const strings: StringsDefinition = {
   planClub: 'Club membership',
   providerStripe: 'Stripe',
   billingPortalFailed: 'Could not open billing portal. Please try again.',
+  accountContactSupport: 'Contact support',
+  accountRelinkPaymentMethod: 'Relink payment method',
+  accountManagePaymentMethod: 'Manage payment method',
   networkError: 'Network error. Please try again.',
 
   podcastRssTitle: 'Podcast RSS',

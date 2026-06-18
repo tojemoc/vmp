@@ -92,11 +92,17 @@
             </span>
           </div>
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-3">
+            <NuxtLink
+              to="/pricing"
+              class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {{ strings.accountRelinkPaymentMethod }}
+            </NuxtLink>
             <a
               :href="supportMailto"
-              class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+              class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
-              Contact support
+              {{ strings.accountContactSupport }}
             </a>
             <a
               v-if="showLegacyManageButton"
@@ -105,7 +111,7 @@
               rel="noopener noreferrer"
               class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
-              Manage payment method
+              {{ strings.accountManagePaymentMethod }}
             </a>
           </div>
         </template>
@@ -154,7 +160,7 @@
               rel="noopener noreferrer"
               class="ml-3 inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
-              Manage payment method
+              {{ strings.accountManagePaymentMethod }}
             </a>
             <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
           </div>
@@ -351,8 +357,8 @@ const legacyProviderDisplayName = computed(() => {
 })
 
 const supportMailto = computed(() => {
-  const name = siteSettings.value.siteName || 'VMP'
-  return `mailto:support@${name.toLowerCase().replace(/\s+/g, '')}.com`
+  const email = siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk'
+  return `mailto:${email}`
 })
 
 const relinkBannerDismissed = ref(false)

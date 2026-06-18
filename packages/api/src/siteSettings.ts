@@ -22,15 +22,21 @@ const SITE_KEYS = [
   'site_description',
   'site_logo_url',
   'site_favicon_url',
+  'site_support_email',
   'podcast_title',
   'podcast_description',
   'gtm_container_id',
 ] as const
 
+const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
+
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {
   if (request.method === 'GET') {
     const entries = await Promise.all(
-      SITE_KEYS.map(async (key) => [key, await getSetting(env, key, { defaultValue: '' })])
+      SITE_KEYS.map(async (key) => {
+        const defaultValue = key === 'site_support_email' ? DEFAULT_SUPPORT_EMAIL : ''
+        return [key, await getSetting(env, key, { defaultValue })]
+      })
     )
     return jsonResponse(Object.fromEntries(entries), 200, corsHeaders)
   }
