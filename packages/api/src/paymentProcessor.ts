@@ -48,7 +48,7 @@ async function getAllowedPlans(env: any): Promise<PlanType[]> {
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
     .filter((v: string): v is PlanType => v === 'monthly' || v === 'yearly' || v === 'club')
-  const base = plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
+  const base: PlanType[] = plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
   const enabled: PlanType[] = []
   for (const plan of base) {
     const flag = await getSetting(env, `${plan}_enabled`, { defaultValue: '1', ttlSeconds: 300 })
