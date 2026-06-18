@@ -89,7 +89,7 @@ const mediaClass = computed(() => isHorizontal.value ? 'mb-2 md:mb-0' : 'mb-2')
 const contentClass = computed(() => isHorizontal.value ? 'space-y-2' : '')
 const titleClass = computed(() => {
   if (!isHorizontal.value) return 'mb-1'
-  return props.titleScale === 'hero' ? 'text-xl md:text-3xl leading-tight' : 'text-base font-semibold leading-snug'
+  return props.titleScale === 'hero' ? 'text-xl md:text-3xl leading-tight' : 'text-base leading-snug'
 })
 const relativeUploadTime = computed(() => {
   const sourceDate = props.video.upload_date

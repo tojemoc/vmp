@@ -354,7 +354,8 @@ export function buildHomepageRenderModel({
 
     if (leftVisible && leftLeaf) {
       blockItems.push({ ...leftLeaf, expandedFromHalf: leftConfig?.width === 'half' && !rightVisible })
-    } else if (rightVisible && rightLeaf) {
+    }
+    if (rightVisible && rightLeaf) {
       blockItems.push({ ...rightLeaf, expandedFromHalf: rightConfig?.width === 'half' && !leftVisible })
     }
   }
