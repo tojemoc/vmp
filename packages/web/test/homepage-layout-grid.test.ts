@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   assignGridPositions,
   buildHomepageRenderModel,
+  orderLayoutBlocksForViewport,
   validateGridPositions,
 } from '../composables/useHomepageLayout'
 
@@ -30,6 +31,17 @@ describe('assignGridPositions', () => {
       ['full', 1, 0, 'full'],
     ])
   })
+
+  it('honours explicit full width on category blocks', () => {
+    const blocks = assignGridPositions([
+      { id: 'cat', type: 'category', width: 'full' },
+      { id: 'half', type: 'category', width: 'half' },
+    ] as any)
+    assert.deepEqual(blocks.map((block) => [block.id, block.gridRow, block.gridCol, block.width]), [
+      ['cat', 0, 0, 'full'],
+      ['half', 1, 0, 'half'],
+    ])
+  })
 })
 
 describe('validateGridPositions', () => {
@@ -39,6 +51,18 @@ describe('validateGridPositions', () => {
       { id: 'b', type: 'category', width: 'half', gridRow: 0, gridCol: 0 },
     ] as any)
     assert.match(message ?? '', /share row 0, column 0/)
+  })
+})
+
+describe('orderLayoutBlocksForViewport', () => {
+  it('filters hidden blocks and sorts by mobileOrder on mobile', () => {
+    const blocks = assignGridPositions([
+      { id: 'a', type: 'top_video', width: 'full', mobileOrder: 2 },
+      { id: 'b', type: 'category', width: 'half', mobileOrder: 0, mobileHidden: true },
+      { id: 'c', type: 'category', width: 'half', mobileOrder: 1 },
+    ] as any)
+    const mobile = orderLayoutBlocksForViewport(blocks, true)
+    assert.deepEqual(mobile.map((block) => block.id), ['c', 'a'])
   })
 })
 

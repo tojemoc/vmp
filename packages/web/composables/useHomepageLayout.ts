@@ -97,12 +97,17 @@ function defaultBlockWidth(type: HomepageBlockType): 'full' | 'half' {
   return 'half'
 }
 
+function resolveBlockWidth(block: HomepageLayoutBlock): 'full' | 'half' {
+  if (block.width === 'full' || block.width === 'half') return block.width
+  return defaultBlockWidth(block.type)
+}
+
 /** Assign row/column positions from block order and width. Full-width blocks occupy a row alone. */
 export function assignGridPositions(blocks: HomepageLayoutBlock[]): HomepageLayoutBlock[] {
   let row = 0
   let col = 0
   return blocks.map((block) => {
-    const width = block.width === 'half' ? 'half' : defaultBlockWidth(block.type)
+    const width = resolveBlockWidth(block)
     if (width === 'full') {
       if (col === 1) {
         row += 1
