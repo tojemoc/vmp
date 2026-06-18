@@ -28,20 +28,23 @@ function createMockDb(rows: Record<string, unknown>[]) {
             const legacy = rows.filter((r) => r.provider === 'legacy')
             return {
               total_imported: legacy.length,
-              needs_relink: legacy.filter((r) => r.status === 'needs_relink').length,
+              needs_relink: rows.filter((r) => r.status === 'needs_relink').length,
               active: legacy.filter((r) => r.status === 'active' || r.status === 'trialing').length,
               failed: legacy.filter((r) => r.legacy_validation_status === 'invalid').length,
               not_validated: legacy.filter((r) => r.status === 'needs_relink' && r.legacy_validation_status == null).length,
             }
           }
           if (query.includes('count(*) as n')) {
-            const staleModifier = String(binds[0] ?? '')
-            const staleDays = Number.parseInt(staleModifier.replace(/[^\d]/g, ''), 10) || 30
-            const cutoff = Date.now() - staleDays * 86_400_000
+            const staleModifier = binds[0]
+            const staleDays = staleModifier != null
+              ? Number.parseInt(String(staleModifier).replace(/[^\d]/g, ''), 10) || 0
+              : 0
+            const cutoff = staleDays > 0 ? Date.now() - staleDays * 86_400_000 : null
             const matched = rows.filter((r) => {
-              if (r.legacy_validation_status === 'invalid') return true
-              if (r.status === 'needs_relink' && r.created_at) {
-                return new Date(String(r.created_at)).getTime() <= cutoff
+              if (r.legacy_validation_status === 'invalid' && r.provider === 'legacy') return true
+              if (r.status === 'needs_relink') {
+                if (!cutoff) return true
+                if (r.created_at) return new Date(String(r.created_at)).getTime() <= cutoff
               }
               return false
             })
@@ -60,24 +63,29 @@ function createMockDb(rows: Record<string, unknown>[]) {
             )
             return { results: matched.slice(0, limit) }
           }
-          if (query.includes('relink candidates') || (query.includes('legacy_validation_status') && query.includes('join users'))) {
+          if (query.includes('join users')) {
             const limit = binds[binds.length - 2]
             const offset = binds[binds.length - 1]
-            const staleModifier = binds[0]
-            const staleDays = Number.parseInt(String(staleModifier).replace(/[^\d]/g, ''), 10) || 30
-            const cutoff = Date.now() - staleDays * 86_400_000
+            const staleModifier = binds.length > 2 ? binds[0] : null
+            const staleDays = staleModifier != null
+              ? Number.parseInt(String(staleModifier).replace(/[^\d]/g, ''), 10) || 0
+              : 0
+            const cutoff = staleDays > 0 ? Date.now() - staleDays * 86_400_000 : null
             const matched = rows
               .filter((r) => {
-                if (r.legacy_validation_status === 'invalid') return true
-                if (r.status === 'needs_relink' && r.created_at) {
-                  return new Date(String(r.created_at)).getTime() <= cutoff
+                if (r.legacy_validation_status === 'invalid' && r.provider === 'legacy') return true
+                if (r.status === 'needs_relink') {
+                  if (!cutoff) return true
+                  if (r.created_at) return new Date(String(r.created_at)).getTime() <= cutoff
                 }
                 return false
               })
               .map((r) => ({
                 user_id: r.user_id,
                 email: r.email,
+                provider: r.provider,
                 purchase_id: r.purchase_id,
+                stripe_customer_id: r.stripe_customer_id,
                 legacy_validation_status: r.legacy_validation_status,
                 legacy_validated_at: r.legacy_validated_at,
                 created_at: r.created_at,
@@ -255,7 +263,7 @@ describe('validateLegacyBatch', () => {
 })
 
 describe('getRelinkCandidates', () => {
-  it('paginates invalid and stale needs_relink rows', async () => {
+  it('includes all needs_relink rows and invalid legacy rows', async () => {
     const oldDate = new Date(Date.now() - 40 * 86_400_000).toISOString()
     const db = createMockDb([
       {
@@ -288,11 +296,57 @@ describe('getRelinkCandidates', () => {
         legacy_validated_at: null,
         created_at: new Date().toISOString(),
       },
+      {
+        user_id: 'u4',
+        email: 'delta@example.com',
+        provider: 'stripe',
+        status: 'needs_relink',
+        purchase_id: null,
+        stripe_customer_id: 'import-list:ml-1',
+        legacy_validation_status: null,
+        legacy_validated_at: null,
+        created_at: new Date().toISOString(),
+      },
+    ]) as any
+
+    const result = await getRelinkCandidatesFromModule(db, 1, 25, 0)
+    assert.equal(result.total, 4)
+    assert.equal(result.users.length, 4)
+    assert.equal(result.users[0]?.validationStatus, 'invalid')
+    assert.ok(result.users.some((u) => u.provider === 'stripe'))
+
+    const stats = await getMigrationStatsFromModule(db as any, {} as any)
+    assert.equal(stats.needs_relink, 4)
+  })
+
+  it('can limit needs_relink to stale imports when staleDays is set', async () => {
+    const oldDate = new Date(Date.now() - 40 * 86_400_000).toISOString()
+    const db = createMockDb([
+      {
+        user_id: 'u2',
+        email: 'beta@example.com',
+        provider: 'legacy',
+        status: 'needs_relink',
+        purchase_id: 'p2',
+        legacy_validation_status: null,
+        legacy_validated_at: null,
+        created_at: oldDate,
+      },
+      {
+        user_id: 'u3',
+        email: 'gamma@example.com',
+        provider: 'legacy',
+        status: 'needs_relink',
+        purchase_id: 'p3',
+        legacy_validation_status: null,
+        legacy_validated_at: null,
+        created_at: new Date().toISOString(),
+      },
     ]) as any
 
     const result = await getRelinkCandidatesFromModule(db, 1, 25, 30)
-    assert.equal(result.total, 2)
-    assert.equal(result.users.length, 2)
-    assert.equal(result.users[0]?.validationStatus, 'invalid')
+    assert.equal(result.total, 1)
+    assert.equal(result.users.length, 1)
+    assert.equal(result.users[0]?.userId, 'u2')
   })
 })

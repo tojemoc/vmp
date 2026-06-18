@@ -249,6 +249,9 @@ export const strings: StringsDefinition = {
   planClub: 'Klubové predplatné',
   providerStripe: 'Stripe',
   billingPortalFailed: 'Nepodarilo sa otvoriť fakturačný portál. Skúste to prosím znova.',
+  accountContactSupport: 'Kontaktovať podporu',
+  accountRelinkPaymentMethod: 'Znova prepojiť platobnú metódu',
+  accountManagePaymentMethod: 'Spravovať platobnú metódu',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 
   podcastRssTitle: 'Podcast RSS',
