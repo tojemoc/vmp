@@ -9,7 +9,7 @@
       leave-to-class="opacity-0"
     >
       <div
-        v-if="open && category"
+        v-if="open && category && draft"
         class="fixed inset-0 z-50 flex justify-end"
         @click.self="emit('close')"
       >
@@ -23,7 +23,7 @@
           leave-to-class="translate-x-full"
         >
           <aside
-            v-if="open && category"
+            v-if="open && category && draft"
             class="relative w-full max-w-md h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl overflow-y-auto"
             role="dialog"
             aria-modal="true"
