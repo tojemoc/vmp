@@ -1,18 +1,76 @@
 # i18n preparation (VMP web)
 
-This document describes the current string centralization pass and what it would take to add real locales or a translation platform.
+This document describes the string centralization pass and **per-instance localization** (one language per VMP deployment).
 
 ## Current approach
 
-All viewer-facing UI copy is consolidated in [`packages/web/utils/strings.ts`](../packages/web/utils/strings.ts). Components import the default export:
+Viewer-facing UI copy lives in locale catalogs under [`packages/web/locales/`](../packages/web/locales/):
+
+| Locale | Path | Use case |
+|--------|------|----------|
+| `en` | `locales/en/` | Default / international |
+| `sk` | `locales/sk/` | Slovak VMP instance |
+| `cs` | `locales/cs/` | Czech VMP instance |
+
+Each catalog exports `strings` (UI copy) and `personalData` (GDPR transparency page at `/personal-data`).
+
+Components import the active catalog via:
 
 ```ts
 import strings from '~/utils/strings'
 ```
 
+or reactively:
+
+```ts
+const { strings, personalData, locale, htmlLang } = useStrings()
+```
+
 Parameterized copy uses functions on the same object (for example `strings.rateLimitMessage(current, limit)`).
 
 Admin dashboard copy is listed under `strings.admin` as an **inventory** for translators. `pages/admin/index.vue` (~6k lines) still embeds most admin strings inline; wiring that file is a separate follow-up.
+
+## Per-instance locale (not in-app switching)
+
+VMP is designed for **one language per deployment** — e.g. a Slovak client instance with `NUXT_PUBLIC_UI_LOCALE=sk`, a Czech client with `NUXT_PUBLIC_UI_LOCALE=cs`.
+
+Set at build time in Cloudflare Pages / Vercel / local dev:
+
+```bash
+NUXT_PUBLIC_UI_LOCALE=sk API_URL=https://api.example.sk npm run build --workspace=@vmp/web
+```
+
+`runtimeConfig.public.uiLocale` and `<html lang="…">` follow this value. There is no language picker in the header by default.
+
+To add an in-app switcher later, use `@nuxtjs/i18n` with locale-prefixed routes — not required for white-label instances.
+
+## Manual translation validation (SK / CZ)
+
+Slovak and Czech copy in `locales/sk/` and `locales/cs/` is a **draft** for in-context review. Declension, register, and UI fit matter more than literal translation — validate in real flows, not in isolation.
+
+### Local dev workflow
+
+1. Start the web app: `API_URL=http://localhost:8787 npm run dev --workspace=@vmp/web`
+2. Use the **Locale preview** bar (bottom-left, dev only) to switch `EN` / `SK` / `CS`, or open any page with `?uiLocale=sk` once (sets a dev cookie, then drops the query param).
+3. Edit strings in `packages/web/locales/sk/strings.ts` or `locales/cs/personalData.ts` — Vite HMR reloads copy while you keep browsing.
+4. Walk the flows where declension shows up:
+   - Login / magic-link / PWA handoff (`/login`, `/auth/verify`)
+   - 2FA setup and verify
+   - Watch page (preview limit, player chrome, checkout overlay)
+   - Account + billing + GoCardless retry states
+   - `/personal-data` (legal tone + table labels)
+   - PWA install prompt and push-notification errors
+5. **Reset** on the preview bar returns to the build default (`NUXT_PUBLIC_UI_LOCALE` or `en`).
+
+The preview bar and cookie override exist **only in `import.meta.dev`**. Production builds ignore them and use `NUXT_PUBLIC_UI_LOCALE` exclusively.
+
+### Production instance check
+
+Before shipping a Slovak or Czech client, set the env on that deployment and smoke-test once without the dev bar:
+
+```bash
+NUXT_PUBLIC_UI_LOCALE=sk npm run build --workspace=@vmp/web
+```
 
 ## String inventory (approximate)
 
@@ -39,10 +97,10 @@ Content from CMS/API (video titles, category names, homepage blocks, pill labels
 
 ## Next implementation steps
 
-1. **Locale modules** — Split `strings.ts` into `locales/en.ts`, `locales/sk.ts`, etc., and a thin `useStrings()` composable that picks locale from route, cookie, or `Accept-Language`.
-2. **Nuxt i18n (optional)** — [`@nuxtjs/i18n`](https://i18n.nuxtjs.org/) gives routing (`/sk/watch/...`), lazy-loaded messages, and ICU plurals. VMP does not need locale switching in URLs on day one; a composable + single default locale may be enough until you add a language picker.
-3. **Admin pass** — Replace inline copy in `admin/index.vue` with `strings.admin.*` (or `adminStrings` module) in chunks by tab.
-4. **API errors** — Many `data.error` strings come from the Worker in English; backend message catalogs would be a second project.
+1. **Admin pass** — Replace inline copy in `admin/index.vue` with `strings.admin.*` (or `adminStrings` module) in chunks by tab.
+2. **API errors** — Many `data.error` strings come from the Worker in English; backend message catalogs would be a second project.
+3. **Optional in-app locale switcher** — [`@nuxtjs/i18n`](https://i18n.nuxtjs.org/) if a single site needs multiple languages with `/sk/…` routes.
+4. **Crowdin / Weblate** — Sync `locales/*/strings.ts` or exported JSON per locale file.
 
 ## Crowdin / Weblate effort
 
