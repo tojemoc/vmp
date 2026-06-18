@@ -319,6 +319,18 @@ const strings = {
   checkoutPromoValidateNetworkError: 'Network error while validating promo code.',
   premiumOverlayClose: 'Close subscription popup',
 
+  // ── Personal data notice (GDPR transparency) ───────────────────────────────
+  personalDataPageTitle: 'Personal data processing',
+  personalDataBannerSummary:
+    'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
+  personalDataLearnMore: 'Personal data notice',
+  personalDataBannerAcknowledge: 'I understand',
+  personalDataTableName: 'Name / key',
+  personalDataTableMechanism: 'Mechanism',
+  personalDataTablePurpose: 'Purpose',
+  personalDataTableLifetime: 'Lifetime',
+  personalDataTableNecessary: 'Strictly necessary?',
+
   // ── PWA ────────────────────────────────────────────────────────────────────
   pwaInstallPrompt: 'Install the app for quick access to your videos.',
   pwaInstall: 'Install',
