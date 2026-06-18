@@ -1355,16 +1355,23 @@ export async function handleAdminNewsletterSchedule(request: any, env: any, cors
     }, scheduleRes.status >= 400 && scheduleRes.status < 600 ? scheduleRes.status : 502, corsHeaders)
   }
 
+  let draftPersistenceWarning: string | undefined
   if (draftId) {
     const run = await db.prepare(`
       UPDATE newsletter_drafts SET scheduled_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).bind(scheduledAt, draftId).run()
     const changed = run.meta?.changes ?? run.changes ?? 0
     if (!changed) {
-      return jsonResponse({ error: 'Draft not found', code: 'not_found' }, 404, corsHeaders)
+      draftPersistenceWarning = 'draft_not_found'
+      newsletterLog('schedule_draft_update_failed', { correlationId, campaignId, draftId })
     }
   }
 
   newsletterLog('schedule_ok', { correlationId, campaignId })
-  return jsonResponse({ ok: true, campaignId, scheduledAt }, 200, corsHeaders)
+  return jsonResponse({
+    ok: true,
+    campaignId,
+    scheduledAt,
+    ...(draftPersistenceWarning ? { warning: draftPersistenceWarning } : {}),
+  }, 200, corsHeaders)
 }
