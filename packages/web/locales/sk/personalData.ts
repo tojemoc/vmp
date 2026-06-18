@@ -35,7 +35,7 @@ export const personalData: PersonalDataPage = {
       id: 'storage-table',
       title: 'Cookies a úložisko prehliadača, ktoré používame',
       paragraphs: [
-        'Kód aplikácie nižšie je pod našou kontrolou. Platobné stránky tretích strán (Stripe, GoCardless) môžu nastaviť vlastné cookies, keď začnete platbu na ich rozhraní.',
+        'Kód aplikácie nižšie je pod našou kontrolou. Platobné stránky tretích strán (Stripe) môžu nastaviť vlastné cookies, keď začnete platbu na ich rozhraní.',
       ],
     },
     {
@@ -44,12 +44,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primárne hosting používa Cloudflare (API Worker, databáza D1, médiá R2, frontend Pages). Prevádzka prebieha cez globálnu sieť Cloudflare; nemôžeme zaručiť, že každý bajt zostane v EÚ, ale minimalizujeme osobné údaje a kde je to možné používame analytiku so sídlom v EÚ.',
         'Záložná infraštruktúra môže bežať na Deno Deploy (API) a Vercel (frontend). Nasadenie na Vercel môže načítať Vercel Web Analytics pre prevádzkové štatistiky návštevnosti len na tejto doméne.',
-        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; Stripe a GoCardless pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
+        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnosť (globálny edge)',
         'Umami Cloud (región EÚ) — štatistika zobrazení stránok bez cookies',
-        'Stripe / GoCardless — spracovanie platieb pri predplatení',
+        'Stripe — spracovanie platieb pri predplatení',
         'Brevo — magic-link a e-maily účtu',
         'Sentry — monitorovanie chýb a stability (technické logy)',
         'Deno Deploy / Vercel — záložné nasadenia API a frontendu',

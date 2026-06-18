@@ -6,6 +6,14 @@ Tiered storage offloading service for VMP:
 - cold tier: Garage (S3-compatible)
 - migration jobs: demotion (R2 -> Garage), promotion (Garage -> R2)
 
+## Contents
+
+- [Responsibilities](#responsibilities)
+- [Scripts](#scripts)
+- [Environment](#environment)
+- [Garage compose](#garage-compose)
+- [Related documentation](#related-documentation)
+
 ## Responsibilities
 
 1. Run Garage via Docker Compose
@@ -52,3 +60,12 @@ This provides:
 Configure TLS termination in front of the S3 endpoint (reverse proxy/load balancer)
 for production HTTPS exposure, including direct-fallback hostname (e.g.
 `videos-direct.example.com`).
+
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../README.md) | Monorepo overview and documentation map |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker/Compose deployment recommendations for this package |
+| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline that writes objects to R2 |
+| [AGENTS.md](../../AGENTS.md) | R2 storage and video access architecture |

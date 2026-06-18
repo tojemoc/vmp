@@ -10,6 +10,17 @@ HTTP server that runs the **same** `@vmp/api` Worker handlers with adapter bindi
 
 Deploy target: [Deno Deploy](https://docs.deno.com/deploy/) with GitHub Actions prebuild (`deploy-api-node-backup` in `.github/workflows/deploy.yml`).
 
+## Contents
+
+- [Architecture](#architecture)
+- [Deno Deploy setup](#deno-deploy-setup)
+- [CI prebuild (same as local release)](#ci-prebuild-same-as-local-release)
+- [Local development](#local-development)
+- [D1 → Postgres replication (Cloudflare Queues)](#d1--postgres-replication-cloudflare-queues)
+- [Optional admin write log](#optional-admin-write-log)
+- [Legacy VM / Fly.io paths](#legacy-vm--flyio-paths)
+- [Related documentation](#related-documentation)
+
 ## Architecture
 
 ```mermaid
@@ -81,3 +92,12 @@ Mutating SQL can be recorded in `failover_write_log` for audit (`ENABLE_WRITE_LO
 ## Legacy VM / Fly.io paths
 
 `Dockerfile` and `fly.toml` remain for historical VM failover but are not the primary deployment path. They assumed on-disk SQLite; use Deno Deploy + Postgres instead.
+
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../README.md) | Monorepo overview, local setup, documentation map |
+| [AGENTS.md](../../AGENTS.md) | Primary Worker API, D1 schema, secrets, replication queue bindings |
+| [DEPLOYMENT.md](../../DEPLOYMENT.md) | CI/CD, env templates, deploy workflow |
+| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline (primary encode path; separate from api-node) |

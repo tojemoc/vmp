@@ -35,7 +35,7 @@ export const personalData: PersonalDataPage = {
       id: 'storage-table',
       title: 'Cookies a úložiště prohlížeče, které používáme',
       paragraphs: [
-        'Kód aplikace níže je pod naší kontrolou. Platební stránky třetích stran (Stripe, GoCardless) mohou nastavit vlastní cookies, když začnete platbu na jejich rozhraní.',
+        'Kód aplikace níže je pod naší kontrolou. Platební stránky třetích stran (Stripe) mohou nastavit vlastní cookies, když začnete platbu na jejich rozhraní.',
       ],
     },
     {
@@ -44,12 +44,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primární hosting používá Cloudflare (API Worker, databáze D1, média R2, frontend Pages). Provoz probíhá přes globální síť Cloudflare; nemůžeme zaručit, že každý bajt zůstane v EU, ale minimalizujeme osobní údaje a kde je to možné používáme analytiku se sídlem v EU.',
         'Záložní infrastruktura může běžet na Deno Deploy (API) a Vercel (frontend). Nasazení na Vercel může načíst Vercel Web Analytics pro provozní statistiky návštěvnosti pouze na této doméně.',
-        'Další zpracovatelé zahrnují: Umami Cloud (EU) pro anonymní statistiku; Stripe a GoCardless pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API. Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
+        'Další zpracovatelé zahrnují: Umami Cloud (EU) pro anonymní statistiku; Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API. Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnost (globální edge)',
         'Umami Cloud (region EU) — statistika zobrazení stránek bez cookies',
-        'Stripe / GoCardless — zpracování plateb při předplatném',
+        'Stripe — zpracování plateb při předplatném',
         'Brevo — magic-link a e-maily účtu',
         'Sentry — monitorování chyb a stability (technické logy)',
         'Deno Deploy / Vercel — záložní nasazení API a frontendu',

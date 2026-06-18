@@ -9,6 +9,20 @@ Runs on the **media VM** (alongside ffmpeg, shaka-packager, rclone). It bundles:
    - accepts the **same signed webhook** the Worker sends (`POST /api/podcast-preview-rebuild`, HMAC body).
 3. **`render_podcast_preview_mp3.ts`** — builds `podcast_preview.mp3` from full `podcast.mp3` for a given duration (compiled to `dist/render_podcast_preview_mp3.js`).
 
+## Contents
+
+- [Install on the VM](#install-on-the-vm)
+- [Run (recommended: systemd)](#run-recommended-systemd)
+  - [Environment](#environment)
+  - [Time-to-publish (TTP) logging](#time-to-publish-ttp-logging)
+  - [Encode progress (dashboard)](#encode-progress-dashboard)
+  - [rclone + Cloudflare R2](#rclone--cloudflare-r2)
+  - [Migration note (legacy `.sh` overrides)](#migration-note-legacy-sh-overrides)
+- [“Fragmented MP3” and podcast apps](#fragmented-mp3-and-podcast-apps)
+- [npm scripts](#npm-scripts)
+- [Video ID migration workflow (no reupload)](#video-id-migration-workflow-no-reupload)
+- [Related documentation](#related-documentation)
+
 ## Install on the VM
 
 From a git checkout of this monorepo:
@@ -23,6 +37,8 @@ npm install
 Point `WorkingDirectory` at the monorepo root. **`dist/` is gitignored** — run `npm run build --workspace=@vmp/podcast-host` after every `git pull` that touches `packages/podcast-host/` (auto-upgrade does this when `VMP_AUTO_UPGRADE=1`).
 
 **Do not** point `ExecStart` or `VMP_*_SCRIPT` at `.ts` source files. Even on Node 24 (native type stripping), compiled imports such as `./ttpLog.js` resolve only under `dist/`.
+
+For production installs, prefer the maintained unit in [systemd/README.md](systemd/README.md).
 
 Example unit (adjust paths and secrets):
 
@@ -186,3 +202,13 @@ Optional flags:
 - `APPLY=0` (default) preview only
 - `APPLY=1` perform copy/sync
 - `DELETE_OLD=1` delete old prefixes after successful copy + verification
+
+## Related documentation
+
+| Document | Description |
+| --- | --- |
+| [Repository README](../../README.md) | Monorepo overview and documentation map |
+| [systemd/README.md](systemd/README.md) | `vmp-supervisor` systemd unit install, env file, logs, watchdog |
+| [AGENTS.md](../../AGENTS.md) | Worker API, pipeline callbacks, secrets (`VMP_API_PIPELINE_SECRET`) |
+| [packages/offloading/README.md](../offloading/README.md) | R2 hot/cold tier offloading to Garage |
+| [packages/moq-probe/README.md](../moq-probe/README.md) | MoQ probe (future live ingest path) |
