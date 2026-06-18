@@ -72,12 +72,45 @@
         <div class="h-4 w-24 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
       </div>
 
-      <!-- Subscription (active or empty — never both) -->
+      <!-- Subscription -->
       <div
         v-else-if="!loadingSub"
         class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6"
       >
-        <template v-if="hasActiveSubscription && subscription">
+        <template v-if="subscription?.status === 'needs_relink'">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1">Subscription</p>
+              <p class="text-lg font-semibold text-gray-900 dark:text-white">Your subscription was imported and needs to be linked</p>
+              <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                Your access is active while we complete the migration. If you previously paid via
+                {{ legacyProviderDisplayName }}, your subscription may need to be renewed. Contact us if you experience any issues.
+              </p>
+            </div>
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
+              needs_relink
+            </span>
+          </div>
+          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-3">
+            <a
+              :href="supportMailto"
+              class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Contact support
+            </a>
+            <a
+              v-if="showLegacyManageButton"
+              :href="legacyManageUrl!"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Manage payment method
+            </a>
+          </div>
+        </template>
+
+        <template v-else-if="hasActiveSubscription && subscription">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{{ strings.currentPlan }}</p>
@@ -106,6 +139,7 @@
 
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
             <button
+              v-if="!(showLegacyManageButton && legacyManageUrl)"
               class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               :disabled="openingPortal"
               @click="openPortal"
@@ -113,6 +147,15 @@
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
               <span v-else>{{ strings.manageSubscription }}</span>
             </button>
+            <a
+              v-if="showLegacyManageButton && legacyManageUrl"
+              :href="legacyManageUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="ml-3 inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Manage payment method
+            </a>
             <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
           </div>
         </template>
@@ -279,12 +322,37 @@ const apiUrl = config.public.apiUrl as string
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'] as const
 
 const { user, subscription, fetchSubscription, authHeader, isLoggedIn, markTotpDisabled, applyNewSession } = useAuth()
+const { siteSettings } = useSiteSettings()
 const { startLoginFlow, waitForAuthInitialised } = useLoginFlow()
 
 const hasActiveSubscription = computed(() => {
   const sub = subscription.value
   if (!sub) return false
-  return sub.status === 'active' || sub.status === 'trialing'
+  return sub.status === 'active' || sub.status === 'trialing' || sub.status === 'needs_relink'
+})
+
+const legacyManageUrl = computed(() => {
+  const sub = subscription.value as { legacyManageUrl?: string | null } | null
+  const url = sub?.legacyManageUrl
+  return typeof url === 'string' && url.trim() ? url.trim() : null
+})
+
+const showLegacyManageButton = computed(() => {
+  const sub = subscription.value as { showLegacyManageButton?: boolean; provider?: string } | null
+  if (!sub || sub.provider !== 'legacy') return false
+  if (sub.showLegacyManageButton === false) return false
+  return Boolean(legacyManageUrl.value) && ['active', 'needs_relink', 'past_due'].includes(sub.status ?? '')
+})
+
+const legacyProviderDisplayName = computed(() => {
+  const sub = subscription.value
+  if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy')
+  return 'our previous provider'
+})
+
+const supportMailto = computed(() => {
+  const name = siteSettings.value.siteName || 'VMP'
+  return `mailto:support@${name.toLowerCase().replace(/\s+/g, '')}.com`
 })
 
 const relinkBannerDismissed = ref(false)

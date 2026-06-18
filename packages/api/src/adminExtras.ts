@@ -170,6 +170,16 @@ function normalizeHomepageConfigForResponse(config: any) {
         title: typeof block.title === 'string' ? block.title : '',
         body: typeof block.body === 'string' ? block.body : '',
       } as Record<string, any>
+      const widthRaw = block.width
+      if (widthRaw === 'half' || widthRaw === 'full') {
+        normalized.width = widthRaw
+      } else if (type === 'featured_row' || type === 'top_video') {
+        normalized.width = 'full'
+      } else if (type === 'category' || type === 'split_horizontal' || type === 'split_vertical') {
+        normalized.width = 'half'
+      }
+      if (block.mobileHidden === true) normalized.mobileHidden = true
+      if (Number.isFinite(Number(block.mobileOrder))) normalized.mobileOrder = Number(block.mobileOrder)
       if (type === 'category') {
         normalized.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
         normalized.rightRailWithNextSideMini = block.rightRailWithNextSideMini === true
@@ -999,7 +1009,7 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
   const actorRole = typeof actor.role === 'string' ? actor.role : 'viewer'
 
   const wantsRole = typeof body?.role === 'string'
-  const wantsSubscription = typeof body?.subscriptionStatus === 'string'
+  const wantsSubscription = typeof body?.subscriptionStatus === 'string' || (body?.createSubscription && typeof body.createSubscription === 'object')
   if (wantsRole && wantsSubscription) {
     return jsonResponse({
       error: 'Send only one of role or subscriptionStatus per request',
@@ -1065,7 +1075,10 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
       return jsonResponse({ error: 'Only super_admin may edit super_admin accounts', code: 'forbidden_target' }, 403, corsHeaders)
     }
     const prevStatus = latest?.status ?? null
-    const transition = evaluateSubscriptionStatusChange(prevStatus, body.subscriptionStatus)
+    const statusRaw = typeof body?.subscriptionStatus === 'string'
+      ? body.subscriptionStatus
+      : (typeof body?.createSubscription?.status === 'string' ? body.createSubscription.status : '')
+    const transition = evaluateSubscriptionStatusChange(prevStatus, statusRaw)
     if (!transition.ok) {
       return jsonResponse({ error: transition.error, code: transition.code }, 400, corsHeaders)
     }
@@ -1098,7 +1111,31 @@ export async function handleAdminUsers(request: any, env: any, corsHeaders: any)
       return jsonResponse({ ok: true }, 200, corsHeaders)
     }
     if (!latest?.id) {
-      return jsonResponse({ error: 'User has no subscription row to update', code: 'no_subscription' }, 400, corsHeaders)
+      const createSub = body?.createSubscription
+      const planTypeRaw = typeof createSub?.planType === 'string'
+        ? createSub.planType
+        : (typeof body?.planType === 'string' ? body.planType : 'monthly')
+      const planType = planTypeRaw === 'yearly' || planTypeRaw === 'club' ? planTypeRaw : 'monthly'
+      const newSubId = crypto.randomUUID()
+      const statements = [
+        db.prepare(`
+          INSERT INTO subscriptions (id, user_id, plan_type, status, provider, updated_at, created_at)
+          VALUES (?, ?, ?, ?, 'manual', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).bind(newSubId, userId, planType, transition.next),
+        buildAdminAuditLogStatement(db, {
+          actorUserId,
+          actionType: 'subscription_manual_create',
+          targetUserId: userId,
+          detail: { status: transition.next, planType, provider: 'manual' },
+        }),
+      ]
+      try {
+        await db.batch(statements)
+      } catch (e) {
+        console.error('handleAdminUsers batch (subscription create):', e)
+        return jsonResponse({ error: 'Update failed', code: 'transaction_failed' }, 500, corsHeaders)
+      }
+      return jsonResponse({ ok: true }, 200, corsHeaders)
     }
     const statements = [
       db.prepare(`
