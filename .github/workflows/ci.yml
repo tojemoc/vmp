@@ -1,0 +1,48 @@
+name: CI
+
+permissions:
+  contents: read
+
+env:
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - name: Mount npm cache
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
+        with:
+          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: |
+          npm exec nx -- run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
+          npm exec nx -- run @vmp/web:typecheck:scripts
+
+      - run: npx nx fix-ci
+        if: always()
