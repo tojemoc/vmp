@@ -252,7 +252,7 @@
 
 <script setup lang="ts">
 import type { HomepagePlacementResponse } from '~/composables/useHomepageLayout'
-import { buildHomepageRenderModel } from '~/composables/useHomepageLayout'
+import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
 
@@ -304,10 +304,16 @@ function formatPillValue(pill: HomePill) {
   return String(pill.value)
 }
 
+const isMobileViewport = ref(false)
+
+const effectiveLayoutBlocks = computed(() =>
+  orderLayoutBlocksForViewport(layoutBlocks.value, isMobileViewport.value),
+)
+
 const homepageRenderModel = computed(() =>
   buildHomepageRenderModel({
     videos: videos.value,
-    layoutBlocks: layoutBlocks.value,
+    layoutBlocks: effectiveLayoutBlocks.value,
     placement: placement.value,
   }),
 )
@@ -333,6 +339,19 @@ const loadPills = async () => {
   const data = await res.json()
   pills.value = Array.isArray(data?.pills) ? data.pills : []
 }
+
+function updateMobileViewport() {
+  if (import.meta.client) isMobileViewport.value = window.innerWidth < 1024
+}
+
+onMounted(() => {
+  updateMobileViewport()
+  if (import.meta.client) window.addEventListener('resize', updateMobileViewport)
+})
+
+onUnmounted(() => {
+  if (import.meta.client) window.removeEventListener('resize', updateMobileViewport)
+})
 
 onMounted(async () => {
   try {

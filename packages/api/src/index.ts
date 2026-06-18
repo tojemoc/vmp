@@ -34,6 +34,7 @@ import { checkAnonymousRateLimit } from './rateLimit.js'
 import { sendPushNotification } from './webpush.js'
 import {
   handleAdminPaymentSettings,
+  handleAdminPaymentPlans,
   handleGetPricing,
   handleGetStripeConfig,
   handleCheckout,
@@ -56,6 +57,8 @@ import {
   handleAdminNewsletterTemplates,
   handleAdminNewsletterTemplateById,
   handleAdminNewsletterSync,
+  handleAdminNewsletterDrafts,
+  handleAdminNewsletterSchedule,
 } from './brevo.js'
 import { signVideoToken, verifyVideoToken } from './videoTokens.js'
 import { handlePublicFeed, handlePersonalFeed } from './feed.js'
@@ -528,6 +531,21 @@ const workerHandler = {
     }
     if (url.pathname === '/api/admin/newsletter/sync' && request.method === 'POST') {
       return handleAdminNewsletterSync(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/newsletter/schedule' && request.method === 'POST') {
+      return handleAdminNewsletterSchedule(request, env, corsHeaders)
+    }
+    {
+      const draftById = url.pathname.match(/^\/api\/admin\/newsletter\/drafts\/([^/]+)$/)
+      if (draftById && (request.method === 'PATCH' || request.method === 'DELETE')) {
+        return handleAdminNewsletterDrafts(request, env, corsHeaders, draftById[1])
+      }
+    }
+    if (url.pathname === '/api/admin/newsletter/drafts' && (request.method === 'GET' || request.method === 'POST')) {
+      return handleAdminNewsletterDrafts(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/payments/plans' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminPaymentPlans(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/rss/podcast-rebuild-webhook' && ['GET', 'PATCH'].includes(request.method)) {
       return handleRssPodcastWebhookConfig(request, env, corsHeaders)
