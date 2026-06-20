@@ -39,9 +39,12 @@ export function shouldAttemptChunkReload(
   now = Date.now(),
 ): boolean {
   try {
-    const lastAttempt = Number(storage.getItem(CHUNK_RELOAD_ATTEMPTED_AT_KEY))
-    if (Number.isFinite(lastAttempt) && now - lastAttempt < CHUNK_RELOAD_THROTTLE_MS) {
-      return false
+    const storedAttempt = storage.getItem(CHUNK_RELOAD_ATTEMPTED_AT_KEY)
+    if (storedAttempt !== null) {
+      const lastAttempt = Number(storedAttempt)
+      if (Number.isFinite(lastAttempt) && now - lastAttempt < CHUNK_RELOAD_THROTTLE_MS) {
+        return false
+      }
     }
     storage.setItem(CHUNK_RELOAD_ATTEMPTED_AT_KEY, String(now))
   } catch {
