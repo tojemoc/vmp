@@ -98,7 +98,9 @@ export default defineNuxtConfig({
   },
 
   pwa: {
-    registerType: 'autoUpdate',
+    // Keep the old precache alive for already-open tabs; they may still import
+    // route chunks from the previous deployment until a close or refresh.
+    registerType: 'prompt',
     // 'auto' lets vite-plugin-pwa choose the best registration strategy for
     // the current environment (inline script in <head> during SSR builds).
     injectRegister: 'auto',

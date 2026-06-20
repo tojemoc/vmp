@@ -1,0 +1,63 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  CHUNK_RELOAD_ATTEMPTED_AT_KEY,
+  CHUNK_RELOAD_THROTTLE_MS,
+  isChunkLoadErrorReason,
+  shouldAttemptChunkReload,
+} from '../utils/chunkLoadRecovery'
+
+function storageWith(initial?: string) {
+  const values = new Map<string, string>()
+  if (initial !== undefined) {
+    values.set(CHUNK_RELOAD_ATTEMPTED_AT_KEY, initial)
+  }
+
+  return {
+    values,
+    getItem(key: string) {
+      return values.get(key) ?? null
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value)
+    },
+  }
+}
+
+describe('isChunkLoadErrorReason', () => {
+  it('matches Safari module script import failures', () => {
+    assert.equal(isChunkLoadErrorReason(new TypeError('Importing a module script failed.')), true)
+  })
+
+  it('matches Chromium dynamic import fetch failures', () => {
+    assert.equal(
+      isChunkLoadErrorReason(new TypeError('Failed to fetch dynamically imported module: /_nuxt/watch.abc.js')),
+      true,
+    )
+  })
+
+  it('does not match unrelated promise rejections', () => {
+    assert.equal(isChunkLoadErrorReason(new TypeError('Cannot read properties of undefined')), false)
+  })
+})
+
+describe('shouldAttemptChunkReload', () => {
+  it('allows the first reload attempt and records the attempt time', () => {
+    const storage = storageWith()
+
+    assert.equal(shouldAttemptChunkReload(storage, 1_000), true)
+    assert.equal(storage.values.get(CHUNK_RELOAD_ATTEMPTED_AT_KEY), '1000')
+  })
+
+  it('blocks reload loops within the throttle window', () => {
+    const storage = storageWith('1000')
+
+    assert.equal(shouldAttemptChunkReload(storage, 1_000 + CHUNK_RELOAD_THROTTLE_MS - 1), false)
+  })
+
+  it('allows a later reload attempt after the throttle window', () => {
+    const storage = storageWith('1000')
+
+    assert.equal(shouldAttemptChunkReload(storage, 1_000 + CHUNK_RELOAD_THROTTLE_MS), true)
+  })
+})
