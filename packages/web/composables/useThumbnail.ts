@@ -34,11 +34,14 @@ export function sizeUrl(url: string | null | undefined, size: ThumbnailSize): st
   )
 }
 
-/** Prefer small variant; fall back to original URL when path does not follow size naming. */
+/**
+ * Admin table thumbnail URL — use the canonical D1 value (large.jpg).
+ * Do not downsize to small.jpg: older assets may only have large in R2, which
+ * would 404 and show empty gray boxes (especially on mobile).
+ */
 export function adminTableThumbUrl(url: string | null | undefined): string | undefined {
   if (!url) return undefined
-  const sized = sizeUrl(url, 'small')
-  return sized || url
+  return url
 }
 
 /**
