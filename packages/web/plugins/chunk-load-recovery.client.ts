@@ -1,8 +1,16 @@
 import { isChunkLoadErrorReason, shouldAttemptChunkReload } from '~/utils/chunkLoadRecovery'
 
 export default defineNuxtPlugin(() => {
+  function safeSessionStorage() {
+    try {
+      return window.sessionStorage
+    } catch {
+      return null
+    }
+  }
+
   function reloadOnceForFreshAssets() {
-    if (!shouldAttemptChunkReload(window.sessionStorage)) return
+    if (!shouldAttemptChunkReload(safeSessionStorage())) return
     window.location.reload()
   }
 

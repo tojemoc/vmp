@@ -61,4 +61,21 @@ describe('shouldAttemptChunkReload', () => {
 
     assert.equal(shouldAttemptChunkReload(storage, 1_000 + CHUNK_RELOAD_THROTTLE_MS), true)
   })
+
+  it('throttles reload attempts when storage operations throw or storage is unavailable', () => {
+    const blockedStorage = {
+      getItem() {
+        throw new Error('storage unavailable')
+      },
+      setItem() {
+        throw new Error('storage unavailable')
+      },
+    }
+    const now = 1_000_000
+
+    assert.equal(shouldAttemptChunkReload(blockedStorage, now), true)
+    assert.equal(shouldAttemptChunkReload(blockedStorage, now + CHUNK_RELOAD_THROTTLE_MS - 1), false)
+    assert.equal(shouldAttemptChunkReload(null, now + CHUNK_RELOAD_THROTTLE_MS), true)
+    assert.equal(shouldAttemptChunkReload(null, now + (CHUNK_RELOAD_THROTTLE_MS * 2) - 1), false)
+  })
 })

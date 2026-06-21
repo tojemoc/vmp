@@ -1,6 +1,8 @@
 export const CHUNK_RELOAD_ATTEMPTED_AT_KEY = 'vmp_chunk_reload_attempted_at'
 export const CHUNK_RELOAD_THROTTLE_MS = 30_000
 
+let fallbackChunkReloadAttemptedAt: number | null = null
+
 const CHUNK_LOAD_ERROR_PATTERNS = [
   'ChunkLoadError',
   'Failed to fetch dynamically imported module',
@@ -35,9 +37,18 @@ export function isChunkLoadErrorReason(reason: unknown): boolean {
 }
 
 export function shouldAttemptChunkReload(
-  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null | undefined,
   now = Date.now(),
 ): boolean {
+  if (fallbackChunkReloadAttemptedAt !== null && now - fallbackChunkReloadAttemptedAt < CHUNK_RELOAD_THROTTLE_MS) {
+    return false
+  }
+
+  if (!storage) {
+    fallbackChunkReloadAttemptedAt = now
+    return true
+  }
+
   try {
     const storedAttempt = storage.getItem(CHUNK_RELOAD_ATTEMPTED_AT_KEY)
     if (storedAttempt !== null) {
@@ -48,7 +59,7 @@ export function shouldAttemptChunkReload(
     }
     storage.setItem(CHUNK_RELOAD_ATTEMPTED_AT_KEY, String(now))
   } catch {
-    // Reloading is still the safest recovery path when storage is unavailable.
+    fallbackChunkReloadAttemptedAt = now
   }
 
   return true
