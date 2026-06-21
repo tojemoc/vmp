@@ -257,7 +257,7 @@
                     <td class="py-3 pr-4">
                       <label
                         :for="`thumb-input-${video.id}`"
-                        class="relative block w-16 sm:w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
+                        class="relative block w-16 h-9 sm:w-14 sm:h-8 rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
                                cursor-pointer ring-2 ring-transparent hover:ring-blue-500 transition-all group"
                         :title="video.thumbnail_url ? 'Replace thumbnail' : 'Upload thumbnail'"
                       >
@@ -268,8 +268,8 @@
                           :alt="video.title"
                           width="64"
                           height="36"
-                          loading="lazy"
-                          class="w-full h-full object-cover"
+                          decoding="async"
+                          class="block w-full h-full object-cover"
                         />
                         <!-- Placeholder with upload icon -->
                         <div
@@ -1042,7 +1042,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             <div class="flex flex-wrap gap-3 items-end">
               <label class="text-xs text-gray-600 dark:text-gray-300 block">
                 Batch size
-                <select v-model.number="legacyValidationBatchSize" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+                <select v-model.number="legacyValidationBatchSize" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
                   <option :value="10">10</option>
                   <option :value="25">25</option>
                   <option :value="50">50</option>
@@ -1051,7 +1051,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </label>
               <label class="text-xs text-gray-600 dark:text-gray-300 block">
                 Target
-                <select v-model="legacyValidationTarget" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm">
+                <select v-model="legacyValidationTarget" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
                   <option value="production">Production (real tokens)</option>
                   <option value="sandbox">Sandbox</option>
                 </select>
@@ -1087,15 +1087,15 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                       <th class="py-2">Error</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody class="text-gray-900 dark:text-white">
                     <tr v-for="row in legacyValidationResult.details" :key="row.subscriptionId" class="border-b border-gray-100 dark:border-gray-800">
-                      <td class="py-2 pr-3 font-mono">{{ row.purchaseId }}</td>
+                      <td class="py-2 pr-3 font-mono text-xs">{{ row.purchaseId }}</td>
                       <td class="py-2 pr-3">
-                        <span v-if="row.result === 'valid'" class="text-emerald-600">✓ valid</span>
-                        <span v-else-if="row.result === 'invalid'" class="text-red-600">✗ invalid</span>
-                        <span v-else class="text-amber-600">⚠ error</span>
+                        <span v-if="row.result === 'valid'" class="text-emerald-600 dark:text-emerald-400">✓ valid</span>
+                        <span v-else-if="row.result === 'invalid'" class="text-red-600 dark:text-red-400">✗ invalid</span>
+                        <span v-else class="text-amber-600 dark:text-amber-400">⚠ error</span>
                       </td>
-                      <td class="py-2 pr-3">{{ row.httpStatus ?? '—' }}</td>
+                      <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.httpStatus ?? '—' }}</td>
                       <td class="py-2 text-gray-600 dark:text-gray-400">{{ row.errorMessage || '—' }}</td>
                     </tr>
                   </tbody>
@@ -1120,7 +1120,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 Export CSV
               </button>
             </div>
-            <div v-if="legacyRelinkLoading" class="text-sm text-gray-500">Loading…</div>
+            <div v-if="legacyRelinkLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
             <div v-else class="overflow-x-auto">
               <table class="min-w-full text-sm">
                 <thead>
@@ -1135,18 +1135,18 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     <th class="py-2">Validated at</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="text-gray-900 dark:text-white">
                   <tr v-for="row in legacyRelinkCandidates" :key="row.userId" class="border-b border-gray-100 dark:border-gray-800">
                     <td class="py-2 pr-3">
                       <input v-model="legacyRelinkSelected" type="checkbox" :value="row.userId">
                     </td>
-                    <td class="py-2 pr-3">{{ row.email }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs">{{ row.provider || '—' }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs break-all">{{ row.providerCustomerId || '—' }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs">{{ row.purchaseId || '—' }}</td>
-                    <td class="py-2 pr-3">{{ row.importedAt }}</td>
-                    <td class="py-2 pr-3">{{ row.validationStatus || '—' }}</td>
-                    <td class="py-2">{{ row.validatedAt || '—' }}</td>
+                    <td class="py-2 pr-3 font-medium">{{ row.email }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">{{ row.provider || '—' }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs break-all text-gray-700 dark:text-gray-300">{{ row.providerCustomerId || '—' }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">{{ row.purchaseId || '—' }}</td>
+                    <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.importedAt }}</td>
+                    <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.validationStatus || '—' }}</td>
+                    <td class="py-2 text-gray-700 dark:text-gray-300">{{ row.validatedAt || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
