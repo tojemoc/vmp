@@ -259,8 +259,8 @@
                         :for="`thumb-input-${video.id}`"
                         class="relative block w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
                                cursor-pointer ring-2 ring-transparent hover:ring-blue-500
-                               focus:outline-none focus-visible:ring-blue-500
                                transition-all group [transform:translateZ(0)]"
+                        :class="{ 'ring-blue-500': thumbInputFocused === video.id }"
                         :title="video.thumbnail_url ? 'Replace thumbnail' : 'Upload thumbnail'"
                       >
                         <!-- Existing thumbnail -->
@@ -310,7 +310,9 @@
                         :id="`thumb-input-${video.id}`"
                         type="file"
                         accept="image/jpeg,image/png"
-                        class="sr-only"
+                        class="sr-only focus:outline-none"
+                        @focus="thumbInputFocused = video.id"
+                        @blur="thumbInputFocused = null"
                         @change="(e) => handleThumbnailSelect(e, video)"
                       />
                     </td>
@@ -2491,6 +2493,7 @@ const uploadDateEditDraft = ref<Record<string, string>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
+const thumbInputFocused = ref<string | null>(null)
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
