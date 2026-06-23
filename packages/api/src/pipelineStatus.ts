@@ -4,6 +4,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types'
+import { log } from './logger.js'
 
 interface PipelineEnv {
   DB?: D1Database
@@ -70,6 +71,7 @@ export async function handleVideoPipelineStatus(request: Request, env: PipelineE
   const tsHeader = request.headers.get('X-VMP-Timestamp') ?? ''
   const valid = await verifyPipelineWebhook(rawBody, sigHeader, tsHeader, secret)
   if (!valid) {
+    log({ service: 'pipeline', event: 'pipeline_webhook_invalid_signature', level: 'warn', video_id: videoId })
     return jsonResponse({ error: 'Invalid signature', code: 'invalid_signature' }, 401, corsHeaders)
   }
 
@@ -112,6 +114,8 @@ export async function handleVideoPipelineStatus(request: Request, env: PipelineE
     await db.prepare(`
       UPDATE videos SET status = 'processed', updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).bind(videoId).run()
+
+    log({ service: 'pipeline', event: 'pipeline_status_updated', video_id: videoId, stage })
 
     if (stage === 'fully_processed' && env.RATE_LIMIT_KV) {
       await env.RATE_LIMIT_KV.delete(`duration:${videoId}`)
