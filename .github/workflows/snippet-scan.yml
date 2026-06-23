@@ -1,0 +1,67 @@
+name: Snippet scan
+
+# First-party snippet provenance only (SCANOSS). Not part of the fast PR CI path.
+# ORT was removed: it analyzed 1k+ npm deps, cloned upstream git repos, and took ~11 min/run.
+#
+# Triggers:
+#   - workflow_dispatch — run on demand before releases or after large AI codegen sessions
+#   - schedule — weekly baseline (Mondays 07:00 UTC)
+#
+# Optional: uncomment the pull_request block to scan when packages/ changes.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * 1'
+
+#  pull_request:
+#    paths:
+#      - 'packages/**'
+#      - 'scanoss.json'
+#      - '.github/workflows/snippet-scan.yml'
+#      - '.github/scripts/snippet-scan.sh'
+
+concurrency:
+  group: snippet-scan
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/workflows/snippet-scan.yml
+
+      - name: Mount pip cache
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
+        with:
+          key: ${{ github.repository }}-snippet-scan-pip-v1
+          path: ~/.cache/pip
+
+      - name: Install SCANOSS CLI
+        run: pip install 'scanoss==1.53.1'
+
+      - name: Scan first-party source for OSS snippets
+        env:
+          # Optional — improves OSSKB rate limits; not required for api.osskb.org.
+          SCANOSS_API_KEY: ${{ secrets.SCANOSS_API_KEY }}
+        run: bash .github/scripts/snippet-scan.sh
+
+      - name: Upload snippet report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snippet-scan-${{ github.run_number }}
+          path: snippet-report.json
+          if-no-files-found: ignore

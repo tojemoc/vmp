@@ -1,0 +1,11 @@
+{
+  "settings": {
+    "file_snippet": {
+      "min_snippet_hits": 3,
+      "min_snippet_lines": 5,
+      "ranking_enabled": true,
+      "ranking_threshold": 9,
+      "honour_file_exts": true
+    }
+  }
+}
