@@ -66,7 +66,7 @@
         >
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Featured videos</h2>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Click a slot to replace</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Click a slot to pick or clear</p>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2314,8 +2314,18 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     <div v-if="pickerOpen" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4" @click.self="closePicker">
       <div class="w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-gray-900 dark:text-white">Choose replacement for featured slot {{ activeSlotIndex + 1 }}</h3>
+          <h3 class="text-lg font-bold text-gray-900 dark:text-white">Choose video for featured slot {{ activeSlotIndex + 1 }}</h3>
           <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closePicker">Close</button>
+        </div>
+        <div class="mb-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            class="px-3 py-2 text-sm font-semibold rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+            @click="clearFeaturedSlot(activeSlotIndex)"
+          >
+            Unpin this slot
+          </button>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Unpinned slots fall back to automatic or category placement on the public homepage.</p>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
@@ -2340,7 +2350,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
-import { buildHomepageRenderModel, assignGridPositions } from '~/composables/useHomepageLayout'
+import { buildHomepageRenderModel, assignGridPositions, layoutIncludesFeaturedRowBlock } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 // ── Route guard ───────────────────────────────────────────────────────────────
@@ -3198,10 +3208,13 @@ const previewSplitBlocks = computed(() =>
 const homepagePlacement = ref<HomepagePlacementResponse | null>(null)
 const mergedHomepagePlacement = computed(() => {
   const base = homepagePlacement.value || { featured: [], recentGrid: [], categoryBlocks: [] }
-  const featuredIds = featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v))
+  const manualFeaturedIds = featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v))
+  const featured = manualFeaturedIds.length > 0
+    ? manualFeaturedIds.map((id) => ({ id }))
+    : (layoutIncludesFeaturedRowBlock(layoutBlocks.value) ? (base.featured ?? []) : [])
   return {
     ...base,
-    featured: featuredIds.map((id) => ({ id })),
+    featured,
     categoryBlocks: categories.value.map((cat) => {
       const existing = base.categoryBlocks?.find((b) => b.category.id === cat.id)
       if (existing) {
@@ -3242,6 +3255,15 @@ const swapFeatured = (video: Video) => {
   while (next.length < 4) next.push(null)
   featuredSlots.value = next
   closePicker()
+}
+
+const clearFeaturedSlot = (slotIndex: number) => {
+  const next = [...featuredSlots.value]
+  while (next.length < 4) next.push(null)
+  next[slotIndex] = null
+  featuredSlots.value = next
+  closePicker()
+  showToast('success', `Featured slot ${slotIndex + 1} cleared. Save homepage to apply.`)
 }
 
 // SQLite CURRENT_TIMESTAMP returns "YYYY-MM-DD HH:MM:SS" which Safari cannot
@@ -3851,10 +3873,12 @@ const loadHomepageState = async () => {
       recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
     }))
   }
-  const nextSlots = featuredIds
-    .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
-    .slice(0, 4)
-  while (nextSlots.length < 4) nextSlots.push(chronologicallySortedUploads.value[nextSlots.length] || null)
+  const nextSlots = featuredIds.length
+    ? featuredIds
+      .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
+      .slice(0, 4)
+    : []
+  while (nextSlots.length < 4) nextSlots.push(null)
   featuredSlots.value = nextSlots
   applyHomepageBaseline()
 }

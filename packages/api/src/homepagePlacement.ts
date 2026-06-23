@@ -9,13 +9,14 @@ export { placementTimestampMs }
  *   `placementTimestampMs` = parse(published_at) if present, else parse(upload_date).
  *   Tie-break: lexicographic `id` descending so results are stable.
  *
- * Featured hero (max one VideoRef):
- *   - `featuredMode === 'specific'` and `featuredVideoId` set → that video if it appears
- *     in the published input set; otherwise fall back as in automatic mode below.
- *   - `featuredMode === 'latest'` (automatic): if `featuredVideoIds[0]` is set (legacy) and
- *     that id is in the published set → use as pinned hero; else newest published video
- *     that has a category assignment (`category_id` non-null); if none → empty (no
- *     fallback to global newest — keeps the 2×2 grid able to show four uncategorized).
+ * Featured row (up to four VideoRefs) — only when `layoutBlocks` includes a `featured_row`
+ *   block (including inside split blocks). Without that block, featured pins are ignored
+ *   so stale admin picks cannot hide videos from categories.
+ *   - Explicit `featuredVideoIds` (in order, max 4) → those videos when still published.
+ *   - `featuredMode === 'specific'` and `featuredVideoId` set → that video if published;
+ *     otherwise fall back as in automatic mode below.
+ *   - Automatic (`featuredMode === 'latest'` and no pins): newest categorized published
+ *     video; if none → empty (no fallback to global newest).
  *
  * Recent 2×2 (exactly four slots): pool = published videos without category, excluding
  *   the featured id, newest first; array length is always 4 (pad with null for empty slots
@@ -28,10 +29,15 @@ export { placementTimestampMs }
  *
  * Exclusivity: a video id appears at most once across featured, recent slots, and any
  *   category visible/overflow list. Priority when building: featured → recent 2×2 →
- *   categories in order.
+ *   categories in order (featured exclusivity applies only when a `featured_row` block
+ *   is configured).
  */
 
 type VideoRef = { id: string }
+type LayoutBlockInput = {
+  type?: string
+  childBlocks?: Array<{ type?: string } | null> | null
+}
 export type PublishedVideoInput = {
   id: string
   published_at?: string | null
@@ -149,8 +155,49 @@ function refFor(id: any, byId: any) {
   return row ? { id: row.id } : null
 }
 
+/** True when homepage layout config includes a renderable `featured_row` leaf block. */
+export function layoutIncludesFeaturedRowBlock(blocks: LayoutBlockInput[] | null | undefined) {
+  if (!Array.isArray(blocks)) return false
+  for (const block of blocks) {
+    if (block?.type === 'featured_row') return true
+    if (Array.isArray(block?.childBlocks) && block.childBlocks.some((child) => child?.type === 'featured_row')) {
+      return true
+    }
+  }
+  return false
+}
+
+function pickFeaturedVideos({
+  homepage,
+  byId,
+  categorized,
+  featuredRowActive,
+}: {
+  homepage: NormalizedHomepagePlacementConfig
+  byId: Map<string, PublishedVideoInput>
+  categorized: PublishedVideoInput[]
+  featuredRowActive: boolean
+}) {
+  if (!featuredRowActive) return []
+
+  const explicitPins = homepage.featuredVideoIds
+    .map((id) => refFor(id, byId))
+    .filter((ref): ref is VideoRef => Boolean(ref))
+
+  if (explicitPins.length > 0) return explicitPins
+
+  const mode = homepage.featuredMode === 'specific' ? 'specific' : 'latest'
+  const featuredVideoId = typeof homepage.featuredVideoId === 'string' ? homepage.featuredVideoId : null
+  if (mode === 'specific' && featuredVideoId) {
+    const pin = refFor(featuredVideoId, byId)
+    return pin ? [pin] : pickAutomaticFeatured(categorized)
+  }
+
+  return pickAutomaticFeatured(categorized)
+}
+
 /**
- * @param {{ videos: PublishedVideoInput[], categories: CategoryInput[], homepage: HomepageConfigInput }} input
+ * @param {{ videos: PublishedVideoInput[], categories: CategoryInput[], homepage: HomepageConfigInput, layoutBlocks?: LayoutBlockInput[] }} input
  */
 export function placeHomepageVideos(input: any) {
   const rawVideos = normalizePlacementVideoRows(Array.isArray(input.videos) ? input.videos : [])
@@ -164,27 +211,11 @@ export function placeHomepageVideos(input: any) {
   const sortedAll = [...byId.values()].sort(compareVideosNewestFirst)
 
   const categorized = sortedAll.filter(v => v.category_id != null && v.category_id !== '')
-  const mode = homepage.featuredMode === 'specific' ? 'specific' : 'latest'
-  const featuredVideoId = typeof homepage.featuredVideoId === 'string' ? homepage.featuredVideoId : null
-  const legacyIds = Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : []
-  const legacyPin = typeof legacyIds[0] === 'string' ? legacyIds[0] : null
+  const featuredRowActive = layoutIncludesFeaturedRowBlock(input.layoutBlocks)
+  const featured = pickFeaturedVideos({ homepage, byId, categorized, featuredRowActive })
 
-  /** @type {VideoRef[]} */
-  let featured = []
-
-  if (mode === 'specific' && featuredVideoId) {
-    const pin = refFor(featuredVideoId, byId)
-    featured = pin ? [pin] : pickAutomaticFeatured(categorized)
-  } else if (mode === 'latest' && legacyPin) {
-    const pin = refFor(legacyPin, byId)
-    featured = pin ? [pin] : pickAutomaticFeatured(categorized)
-  } else {
-    featured = pickAutomaticFeatured(categorized)
-  }
-
-  const featuredId = featured[0]?.id ?? null
-  const assigned = new Set()
-  if (featuredId) assigned.add(featuredId)
+  const assigned = new Set<string>()
+  for (const ref of featured) assigned.add(ref.id)
 
   const uncategorizedPool = sortedAll.filter(v => (!v.category_id || v.category_id === '') && !assigned.has(v.id))
   /** @type {(VideoRef | null)[]} */

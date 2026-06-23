@@ -231,6 +231,16 @@ function layoutIncludesTopVideoBlock(blocks: HomepageLayoutBlock[]): boolean {
   return false
 }
 
+export function layoutIncludesFeaturedRowBlock(blocks: HomepageLayoutBlock[]): boolean {
+  for (const block of blocks) {
+    if (block?.type === 'featured_row') return true
+    if (Array.isArray(block?.childBlocks) && block.childBlocks.some((child) => child?.type === 'featured_row')) {
+      return true
+    }
+  }
+  return false
+}
+
 export function buildHomepageRenderModel({
   videos,
   layoutBlocks,
@@ -246,12 +256,16 @@ export function buildHomepageRenderModel({
   const topVideo = sortedByNewest[0] ?? null
   const topVideoId = topVideo?.id ?? null
   const suppressTopVideoElsewhere = layoutIncludesTopVideoBlock(positionedBlocks)
+  const suppressFeaturedElsewhere = layoutIncludesFeaturedRowBlock(positionedBlocks)
   const excludeTopVideoId = (id: string | null | undefined) =>
     suppressTopVideoElsewhere && topVideoId && id === topVideoId
 
   const featuredIdList = Array.isArray(placement?.featured)
     ? placement.featured.map((ref) => ref?.id).filter(Boolean).filter((id) => !excludeTopVideoId(id))
     : []
+  const featuredIdSet = new Set(featuredIdList)
+  const excludeFeaturedId = (id: string | null | undefined) =>
+    suppressFeaturedElsewhere && id != null && featuredIdSet.has(id)
   const featuredVideos = featuredIdList
     .slice(0, 4)
     .map((id) => videoById.get(id))
@@ -260,7 +274,7 @@ export function buildHomepageRenderModel({
   const categorySections = (placement?.categoryBlocks ?? []).map((block) => {
     const combinedIds = [...block.visible, ...block.overflow]
       .map((ref) => ref.id)
-      .filter((id) => !excludeTopVideoId(id))
+      .filter((id) => !excludeTopVideoId(id) && !excludeFeaturedId(id))
     const allVideos = combinedIds.map((id) => videoById.get(id)).filter(Boolean)
     const variant = block.category?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one'
     const visibleCount = variant === 'side_mini' ? 2 : 3

@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { placeHomepageVideos, placementTimestampMs, sortCategoriesForHomepage, normalizePlacementVideoRows, collectPlacementVideoIds } from '../src/homepagePlacement.js'
+import { placeHomepageVideos, placementTimestampMs, sortCategoriesForHomepage, normalizePlacementVideoRows, collectPlacementVideoIds, layoutIncludesFeaturedRowBlock } from '../src/homepagePlacement.js'
 
 const T = {
   t1: '2026-01-01T12:00:00.000Z',
@@ -17,6 +17,8 @@ const T = {
 function cat(id: any, name: any, sortOrder: any, direction = 'desc') {
   return { id, slug: id, name, sort_order: sortOrder, direction }
 }
+
+const featuredRowLayout = [{ id: 'featured', type: 'featured_row' }]
 
 describe('normalizePlacementVideoRows', () => {
   it('prefers categorized duplicate rows over uncategorized', () => {
@@ -81,7 +83,18 @@ describe('placeHomepageVideos matrix', () => {
     assert.ok(after.categoryBlocks.find(b => b.category.id === 'c-b')?.visible.some(v => v.id === 'v-move'))
   })
 
-  it('2 — automatic featured: newest categorized published is featured', () => {
+  it('2 — automatic featured: newest categorized published is featured when featured_row exists', () => {
+    const homepage = { featuredMode: 'latest', featuredVideoId: null, featuredVideoIds: [] }
+    const categories = [cat('c1', 'One', 0)]
+    const videos = [
+      { id: 'old', published_at: T.t1, upload_date: T.t1, category_id: 'c1' },
+      { id: 'new', published_at: T.t3, upload_date: T.t3, category_id: 'c1' },
+    ]
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
+    assert.deepEqual(out.featured, [{ id: 'new' }])
+  })
+
+  it('2b — automatic featured is skipped when no featured_row block is configured', () => {
     const homepage = { featuredMode: 'latest', featuredVideoId: null, featuredVideoIds: [] }
     const categories = [cat('c1', 'One', 0)]
     const videos = [
@@ -89,7 +102,8 @@ describe('placeHomepageVideos matrix', () => {
       { id: 'new', published_at: T.t3, upload_date: T.t3, category_id: 'c1' },
     ]
     const out = placeHomepageVideos({ videos, categories, homepage })
-    assert.deepEqual(out.featured, [{ id: 'new' }])
+    assert.deepEqual(out.featured, [])
+    assert.ok(out.categoryBlocks[0]?.visible.some((v) => v.id === 'new'))
   })
 
   it('3 — specific featuredVideoId overrides recency', () => {
@@ -99,7 +113,7 @@ describe('placeHomepageVideos matrix', () => {
       { id: 'old', published_at: T.t1, upload_date: T.t1, category_id: 'c1' },
       { id: 'new', published_at: T.t3, upload_date: T.t3, category_id: 'c1' },
     ]
-    const out = placeHomepageVideos({ videos, categories, homepage })
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
     assert.deepEqual(out.featured, [{ id: 'old' }])
   })
 
@@ -126,7 +140,7 @@ describe('placeHomepageVideos matrix', () => {
       { id: 'u3', published_at: T.t2, upload_date: T.t2, category_id: null },
       { id: 'u4', published_at: T.t1, upload_date: T.t1, category_id: null },
     ]
-    const out = placeHomepageVideos({ videos, categories, homepage })
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
     assert.deepEqual(out.featured, [{ id: 'feat' }])
     assert.deepEqual(out.recentGrid.map(s => s && s.id), ['u1', 'u2', 'u3', 'u4'])
   })
@@ -145,6 +159,7 @@ describe('placeHomepageVideos matrix', () => {
       videos,
       categories,
       homepage: { ...homepage, featuredMode: 'specific', featuredVideoId: 'v1', featuredVideoIds: [] },
+      layoutBlocks: featuredRowLayout,
     })
     const block = out.categoryBlocks[0]
     assert.ok(block, 'expected first category block to exist')
@@ -160,7 +175,7 @@ describe('placeHomepageVideos matrix', () => {
       { id: 'u1', published_at: T.t4, upload_date: T.t4, category_id: null },
       { id: 'x', published_at: T.t3, upload_date: T.t3, category_id: 'c1' },
     ]
-    const out = placeHomepageVideos({ videos, categories, homepage })
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
     const seen = new Set()
     const take = (id: any) => {
       assert.ok(!seen.has(id), `duplicate placement for ${id}`)
@@ -190,19 +205,46 @@ describe('placeHomepageVideos matrix', () => {
     const homepage = { featuredMode: 'specific', featuredVideoId: 'missing', featuredVideoIds: [] }
     const categories = [cat('c1', 'One', 0)]
     const videos = [{ id: 'only', published_at: T.t1, upload_date: T.t1, category_id: 'c1' }]
-    const out = placeHomepageVideos({ videos, categories, homepage })
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
     assert.deepEqual(out.featured, [{ id: 'only' }])
   })
 
-  it('legacy featuredVideoIds[0] pins hero in latest mode', () => {
+  it('featuredVideoIds pins up to four videos and removes them from categories', () => {
+    const homepage = { featuredMode: 'latest', featuredVideoId: null, featuredVideoIds: ['p1', 'p2'] }
+    const categories = [cat('c1', 'One', 0)]
+    const videos = [
+      { id: 'p1', published_at: T.t4, upload_date: T.t4, category_id: 'c1' },
+      { id: 'p2', published_at: T.t3, upload_date: T.t3, category_id: 'c1' },
+      { id: 'p3', published_at: T.t2, upload_date: T.t2, category_id: 'c1' },
+    ]
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
+    assert.deepEqual(out.featured.map((v) => v.id), ['p1', 'p2'])
+    assert.deepEqual(out.categoryBlocks[0]?.visible.map((v) => v.id), ['p3'])
+  })
+
+  it('stale featuredVideoIds are ignored when featured_row block is absent', () => {
+    const homepage = { featuredMode: 'latest', featuredVideoId: null, featuredVideoIds: ['stale'] }
+    const categories = [cat('c1', 'One', 0)]
+    const videos = [{ id: 'stale', published_at: T.t1, upload_date: T.t1, category_id: 'c1' }]
+    const out = placeHomepageVideos({ videos, categories, homepage })
+    assert.deepEqual(out.featured, [])
+    assert.deepEqual(out.categoryBlocks[0]?.visible.map((v) => v.id), ['stale'])
+  })
+
+  it('legacy featuredVideoIds pins hero in latest mode when featured_row exists', () => {
     const homepage = { featuredMode: 'latest', featuredVideoId: null, featuredVideoIds: ['pin'] }
     const videos = [
       { id: 'pin', published_at: T.t1, upload_date: T.t1, category_id: null },
       { id: 'newer', published_at: T.t5, upload_date: T.t5, category_id: 'c1' },
     ]
     const categories = [cat('c1', 'One', 0)]
-    const out = placeHomepageVideos({ videos, categories, homepage })
+    const out = placeHomepageVideos({ videos, categories, homepage, layoutBlocks: featuredRowLayout })
     assert.deepEqual(out.featured, [{ id: 'pin' }])
+  })
+
+  it('layoutIncludesFeaturedRowBlock detects split children', () => {
+    assert.equal(layoutIncludesFeaturedRowBlock([{ type: 'split_horizontal', childBlocks: [{ type: 'featured_row' }] }]), true)
+    assert.equal(layoutIncludesFeaturedRowBlock([{ type: 'category' }]), false)
   })
 
   it('category ordering prioritizes P0 buckets before standard', () => {

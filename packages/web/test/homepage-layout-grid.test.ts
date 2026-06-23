@@ -136,13 +136,22 @@ describe('buildHomepageRenderModel grid rows', () => {
   })
 
   it('renders both row blocks when pairing fails but both are visible', () => {
+    const splitPlacement = {
+      featured: [{ id: 'v2' }],
+      recentGrid: [],
+      categoryBlocks: [{
+        category: { id: 'cat-side', slug: 'side', name: 'Side', homepage_layout_variant: 'side_mini' },
+        visible: [{ id: 'v3' }, { id: 'v4' }],
+        overflow: [],
+      }],
+    }
     const model = buildHomepageRenderModel({
       videos,
       layoutBlocks: assignGridPositions([
-        { id: 'left', type: 'category', width: 'half', categoryId: 'cat-main' },
+        { id: 'left', type: 'category', width: 'half', categoryId: 'cat-side' },
         { id: 'right', type: 'featured_row', width: 'half' },
       ] as any),
-      placement: placement as any,
+      placement: splitPlacement as any,
     })
     assert.equal(model.blockItems.length, 2)
     assert.equal(model.blockItems[0]?.type, 'category')
@@ -190,5 +199,47 @@ describe('buildHomepageRenderModel grid rows', () => {
     const featured = model.blockItems.find((item: any) => item.type === 'featured_row') as any
     assert.equal(top?.videos?.[0]?.id, 'v5')
     assert.equal(featured?.videos?.length ?? 0, 0)
+  })
+
+  it('suppresses featured videos from categories only when a featured_row block exists', () => {
+    const pinned = { id: 'v-pin', title: 'Pinned', upload_date: '2026-02-01T00:00:00Z', published_at: '2026-02-01T00:00:00Z' }
+    const placement = {
+      featured: [{ id: 'v-pin' }],
+      recentGrid: [],
+      categoryBlocks: [{
+        category: { id: 'cat-main', slug: 'main', name: 'Main', homepage_layout_variant: 'three_by_one' },
+        visible: [{ id: 'v2' }, { id: 'v3' }],
+        overflow: [],
+      }],
+    }
+    const withFeaturedRow = buildHomepageRenderModel({
+      videos: [...videos, pinned],
+      layoutBlocks: assignGridPositions([
+        { id: 'featured', type: 'featured_row', width: 'full' },
+        { id: 'cat', type: 'category', width: 'full', categoryId: 'cat-main' },
+      ] as any),
+      placement: placement as any,
+    })
+    const featured = withFeaturedRow.blockItems.find((item: any) => item.type === 'featured_row') as any
+    const category = withFeaturedRow.blockItems.find((item: any) => item.type === 'category') as any
+    assert.equal(featured?.videos?.[0]?.id, 'v-pin')
+    assert.equal(category?.categorySection?.visible.some((video: any) => video.id === 'v-pin'), false)
+
+    const withoutFeaturedRow = buildHomepageRenderModel({
+      videos: [...videos, pinned],
+      layoutBlocks: assignGridPositions([
+        { id: 'cat', type: 'category', width: 'full', categoryId: 'cat-main' },
+      ] as any),
+      placement: {
+        ...placement,
+        featured: [],
+        categoryBlocks: [{
+          ...placement.categoryBlocks[0],
+          visible: [{ id: 'v-pin' }, { id: 'v2' }, { id: 'v3' }],
+        }],
+      } as any,
+    })
+    const loneCategory = withoutFeaturedRow.blockItems.find((item: any) => item.type === 'category') as any
+    assert.ok(loneCategory?.categorySection?.visible.some((video: any) => video.id === 'v-pin'))
   })
 })
