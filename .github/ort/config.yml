@@ -11,8 +11,9 @@ ort:
           commandLine: '--copyright,--license,--info,--strip-root,--timeout,300'
           commandLineNonConfig: '--processes,4'
           preferFileLicense: false
+          # maxVersion is exclusive; ort:latest currently ships ScanCode 32.5.x.
           minVersion: '3.2.1-rc2'
-          maxVersion: '32.0.0'
+          maxVersion: '33.0.0'
       SCANOSS:
         options:
           apiUrl: 'https://api.osskb.org/'

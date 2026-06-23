@@ -33,10 +33,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Configure ORT SCANOSS snippet scanner
+      - name: Configure ORT scanner settings
         run: |
           mkdir -p ~/.ort/config
+          git clone --depth 1 https://github.com/oss-review-toolkit/ort-config.git ~/.ort/config
           cp .github/ort/config.yml ~/.ort/config/config.yml
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - run: npm ci
 
       - name: Run ORT license, snippet, and dependency scan
         uses: oss-review-toolkit/ort-ci-github-action@v1.2.0
