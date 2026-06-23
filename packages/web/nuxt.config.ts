@@ -24,7 +24,7 @@ export default defineNuxtConfig({
   gtm: {
     id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
     enabled: true,
-    loadScript: true,
+    loadScript: false,
     enableRouterSync: true,
     debug: process.env.NODE_ENV === 'development',
     defer: false,

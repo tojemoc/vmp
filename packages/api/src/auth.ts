@@ -38,6 +38,8 @@
  *       present it gets a fresh JWT silently.
  */
 
+import { log } from './logger.js'
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ACCESS_TOKEN_TTL  = 15 * 60            // 15 minutes (seconds)
@@ -353,6 +355,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   try {
     const tokenResult = await createMagicLinkToken(request, email, db, env)
     if (!tokenResult) {
+      log({ service: 'auth', event: 'magic_link_rate_limited', level: 'warn' })
       return authJson({ ok: true, message: 'If that address is valid, a sign-in link is on its way.' }, 200, corsHeaders)
     }
     const { token } = tokenResult
@@ -367,6 +370,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
       // No Brevo key — log the link for local development.
       console.log(`[DEV] Magic link for ${email}: ${verifyUrl.toString()}`)
     }
+    log({ service: 'auth', event: 'magic_link_sent', level: 'info' })
   } catch (err) {
     console.error('[auth] magic link error:', err)
     // Still return success — don't leak whether the error was email-related.
@@ -540,12 +544,16 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
   if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders)
 
   const phase = await consumeMagicLinkForUser(env, token)
-  if (phase.tag === 'invalid') return authJson({ error: phase.message }, 401, corsHeaders)
+  if (phase.tag === 'invalid') {
+    log({ service: 'auth', event: 'magic_link_verify_failed', level: 'warn', error_code: 'invalid_or_used' })
+    return authJson({ error: phase.message }, 401, corsHeaders)
+  }
   if (phase.tag === 'totp_pending') {
     return authJson({ requiresTwoFactor: true, pendingToken: phase.pendingToken }, 200, corsHeaders)
   }
 
   const db = getDb(env)
+  log({ service: 'auth', event: 'magic_link_verify_success', level: 'info', totp_required: Boolean(phase.user.totp_enabled) })
   return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders)
 }
 
@@ -673,6 +681,7 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
     .first()
 
   if (!record || new Date(record.expires_at) < new Date()) {
+    log({ service: 'auth', event: 'refresh_token_rejected', level: 'warn' })
     const headers = buildResponseHeaders(corsHeaders)
     headers.set('Set-Cookie', clearRefreshCookie())
     return new Response(JSON.stringify({ error: 'Session expired. Please sign in again.' }), { status: 401, headers })
@@ -1285,6 +1294,7 @@ export async function verifyTotpPendingLogin(
     if (!incrResult.meta.changes) {
       return { ok: false, status: 401, error: 'Sign-in session is no longer valid. Please start again.', code: 'session_expired' }
     }
+    log({ service: 'auth', event: 'totp_verify_failed', level: 'warn', attempts: challenge.failed_attempts + 1 })
     return { ok: false, status: 400, error: 'Invalid code. Please try again.' }
   }
 
@@ -1296,6 +1306,7 @@ export async function verifyTotpPendingLogin(
     return { ok: false, status: 401, error: 'This sign-in link has already been used.', code: 'session_expired' }
   }
 
+  log({ service: 'auth', event: 'totp_verify_success', level: 'info' })
   return {
     ok: true,
     user: {
