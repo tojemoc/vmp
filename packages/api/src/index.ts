@@ -791,17 +791,25 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
 
     let placementVideos: any[] = []
     if (videoIds.size) {
-      const placeholders = [...videoIds].map(() => '?').join(', ')
-      const slimRows = await db.prepare(`
+      const PLACEMENT_VIDEO_ID_CHUNK_SIZE = 90
+      const idList = [...videoIds]
+      const slimSql = `
         SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
                v.upload_date, v.publish_status, v.slug, v.published_at,
                vc.id AS category_id, vc.name AS category_name, vc.slug AS category_slug
         FROM videos v
         LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
         LEFT JOIN video_categories vc ON vc.id = vca.category_id
-        WHERE v.id IN (${placeholders})
-      `).bind(...videoIds).all()
-      placementVideos = dedupeVideoListRows(slimRows.results || [])
+        WHERE v.id IN (
+      `
+      const mergedRows: any[] = []
+      for (let i = 0; i < idList.length; i += PLACEMENT_VIDEO_ID_CHUNK_SIZE) {
+        const chunk = idList.slice(i, i + PLACEMENT_VIDEO_ID_CHUNK_SIZE)
+        const placeholders = chunk.map(() => '?').join(', ')
+        const slimRows = await db.prepare(`${slimSql}${placeholders})`).bind(...chunk).all()
+        mergedRows.push(...(slimRows.results || []))
+      }
+      placementVideos = dedupeVideoListRows(mergedRows)
     }
 
     return jsonResponse({ ...placement, videos: placementVideos }, 200, corsHeaders)
