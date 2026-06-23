@@ -1,4 +1,4 @@
-import type { CmsPageInput } from '@vmp/shared'
+import type { CmsPageInput, CmsPageStatus } from '@vmp/shared'
 import { requireAuth, requireRole } from './auth.js'
 import { parseCmsBlocks } from './cmsBlockValidation.js'
 import { CmsPagesRepository } from './cmsPagesRepository.js'
@@ -25,6 +25,12 @@ function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, s
   })
 }
 
+function parsePageStatus(raw: unknown): CmsPageStatus | undefined | null {
+  if (raw === undefined) return undefined
+  if (raw === 'published' || raw === 'draft') return raw
+  return null
+}
+
 function parsePageInput(body: unknown): CmsPageInput | null {
   if (!body || typeof body !== 'object') return null
   const raw = body as Record<string, unknown>
@@ -33,13 +39,16 @@ function parsePageInput(body: unknown): CmsPageInput | null {
   if (!content) return null
   const slug = raw.slug.trim()
   if (!slug) return null
-  return {
+  const status = parsePageStatus(raw.status)
+  if (status === null) return null
+  const input: CmsPageInput = {
     title: raw.title.trim(),
     slug,
     description: typeof raw.description === 'string' ? raw.description.trim() : null,
-    status: raw.status === 'published' ? 'published' : 'draft',
     content,
   }
+  if (status !== undefined) input.status = status
+  return input
 }
 
 async function isSlugTaken(env: Env, slug: string, excludePageId?: string): Promise<boolean> {

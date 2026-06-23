@@ -6,17 +6,76 @@ import type {
 
 const CALLOUT_VARIANTS = new Set<CmsCalloutVariant>(['info', 'warning', 'error'])
 
+const ALLOWED_BLOCK_NODES = new Set([
+  'paragraph',
+  'heading',
+  'bulletList',
+  'orderedList',
+  'listItem',
+  'blockquote',
+  'codeBlock',
+  'horizontalRule',
+  'hardBreak',
+])
+
+const ALLOWED_MARKS = new Set(['bold', 'italic', 'strike', 'code', 'underline', 'link'])
+
+const MAX_NODE_DEPTH = 32
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+function validateMark(mark: unknown): boolean {
+  if (!isRecord(mark) || typeof mark.type !== 'string' || !ALLOWED_MARKS.has(mark.type)) return false
+  if (mark.type === 'link') {
+    return isRecord(mark.attrs) && typeof mark.attrs.href === 'string'
+  }
+  return true
+}
+
+function validateTipTapNode(node: unknown, depth = 0): boolean {
+  if (depth > MAX_NODE_DEPTH) return false
+  if (!isRecord(node) || typeof node.type !== 'string') return false
+
+  if (node.type === 'text') {
+    if (typeof node.text !== 'string') return false
+    if (node.marks === undefined) return true
+    return Array.isArray(node.marks) && node.marks.every((mark) => validateMark(mark))
+  }
+
+  if (!ALLOWED_BLOCK_NODES.has(node.type)) return false
+
+  if (node.type === 'heading') {
+    if (!isRecord(node.attrs) || typeof node.attrs.level !== 'number') return false
+    if (![2, 3, 4].includes(node.attrs.level)) return false
+  }
+
+  if (node.content === undefined) return true
+  if (!Array.isArray(node.content)) return false
+  return node.content.every((child) => validateTipTapNode(child, depth + 1))
+}
+
 function isRichTextDocument(value: unknown): value is CmsRichTextDocument {
-  return isRecord(value) && value.type === 'doc' && Array.isArray(value.content)
+  if (!isRecord(value) || value.type !== 'doc' || !Array.isArray(value.content)) return false
+  return value.content.every((node) => validateTipTapNode(node))
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) return false
   return Object.values(value).every((entry) => typeof entry === 'string')
+}
+
+function validateTableInvariants(
+  columns: string[],
+  columnKeys: string[],
+  rows: Array<Record<string, string>>,
+): boolean {
+  if (columns.length !== columnKeys.length) return false
+  const normalizedKeys = columnKeys.map((key) => key.trim())
+  if (normalizedKeys.some((key) => !key)) return false
+  if (new Set(normalizedKeys).size !== normalizedKeys.length) return false
+  return rows.every((row) => normalizedKeys.every((key) => typeof row[key] === 'string'))
 }
 
 export function parseCmsBlock(raw: unknown): CmsBlock | null {
@@ -46,6 +105,7 @@ export function parseCmsBlock(raw: unknown): CmsBlock | null {
       if (!raw.columns.every((column) => typeof column === 'string')) return null
       if (!raw.columnKeys.every((key) => typeof key === 'string')) return null
       if (!raw.rows.every((row) => isStringRecord(row))) return null
+      if (!validateTableInvariants(raw.columns, raw.columnKeys, raw.rows)) return null
       return {
         type: 'table',
         columns: raw.columns,

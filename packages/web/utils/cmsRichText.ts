@@ -1,3 +1,4 @@
+import DOMPurify from 'isomorphic-dompurify'
 import { generateHTML } from '@tiptap/html'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -29,17 +30,17 @@ function sanitizeHref(rawUrl: string): string {
   }
 }
 
-/** Strip dangerous markup from TipTap HTML before v-html binding. */
-export function sanitizeCmsRichTextHtml(html: string): string {
-  if (!html) return ''
-  let safe = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/\s+on\w+\s*=\s*(['"])[^'"]*\1/gi, '')
-  safe = safe.replace(/href\s*=\s*(['"])([^'"]*)\1/gi, (_, quote: string, href: string) => {
+function sanitizeLinkHrefs(html: string): string {
+  return html.replace(/href\s*=\s*(['"])([^'"]*)\1/gi, (_, quote: string, href: string) => {
     return `href=${quote}${sanitizeHref(href)}${quote}`
   })
-  return safe
+}
+
+/** DOM-aware XSS prevention for TipTap HTML before v-html binding. */
+export function sanitizeCmsRichTextHtml(html: string): string {
+  if (!html) return ''
+  const purified = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
+  return sanitizeLinkHrefs(purified)
 }
 
 export function renderCmsRichTextHtml(content: CmsRichTextDocument): string {
