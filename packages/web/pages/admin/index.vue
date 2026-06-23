@@ -257,8 +257,10 @@
                     <td class="py-3 pr-4">
                       <label
                         :for="`thumb-input-${video.id}`"
-                        class="relative block w-16 h-9 sm:w-14 sm:h-8 rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
-                               cursor-pointer ring-2 ring-transparent hover:ring-blue-500 transition-all group"
+                        class="relative block w-14 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 shrink-0
+                               cursor-pointer ring-2 ring-transparent hover:ring-blue-500
+                               transition-all group [transform:translateZ(0)]"
+                        :class="{ 'ring-blue-500': thumbInputFocused === video.id }"
                         :title="video.thumbnail_url ? 'Replace thumbnail' : 'Upload thumbnail'"
                       >
                         <!-- Existing thumbnail -->
@@ -269,12 +271,12 @@
                           width="64"
                           height="36"
                           decoding="async"
-                          class="block w-full h-full object-cover"
+                          class="absolute inset-0 w-full h-full object-cover"
                         />
                         <!-- Placeholder with upload icon -->
                         <div
                           v-else
-                          class="w-full h-full flex items-center justify-center text-gray-400 group-hover:text-blue-500 transition-colors"
+                          class="absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-blue-500 transition-colors"
                         >
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round"
@@ -308,7 +310,9 @@
                         :id="`thumb-input-${video.id}`"
                         type="file"
                         accept="image/jpeg,image/png"
-                        class="sr-only"
+                        class="sr-only focus:outline-none"
+                        @focus="thumbInputFocused = video.id"
+                        @blur="thumbInputFocused = null"
                         @change="(e) => handleThumbnailSelect(e, video)"
                       />
                     </td>
@@ -2489,6 +2493,7 @@ const uploadDateEditDraft = ref<Record<string, string>>({})
 const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
+const thumbInputFocused = ref<string | null>(null)
 const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
