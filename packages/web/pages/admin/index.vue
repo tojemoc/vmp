@@ -59,7 +59,18 @@
 
       <section class="space-y-8">
         <div
-          v-if="activeAdminTab === 'homepage' && homepagePreviewModel.hasFeaturedRowBlock"
+          v-if="activeAdminTab === 'homepage' && orphanedFeaturedPinsWarning"
+          role="alert"
+          class="p-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40"
+        >
+          <p class="text-sm font-medium text-amber-900 dark:text-amber-200">{{ orphanedFeaturedPinsWarning }}</p>
+          <p class="text-xs text-amber-800 dark:text-amber-300 mt-1">
+            Add a <span class="font-semibold">Featured row</span> block below to show pinned videos on the homepage, or unpin them above and save.
+          </p>
+        </div>
+
+        <div
+          v-if="activeAdminTab === 'homepage' && (homepagePreviewModel.hasFeaturedRowBlock || orphanedFeaturedPinsWarning)"
           id="homepage-panel"
           role="tabpanel"
           class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
@@ -3204,6 +3215,20 @@ const previewSplitBlocks = computed(() =>
     block.type === 'split_horizontal' || block.type === 'split_vertical',
   ),
 )
+
+const pinnedFeaturedVideoIds = computed(() =>
+  featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v)),
+)
+
+const orphanedFeaturedPinsWarning = computed(() => {
+  const pins = pinnedFeaturedVideoIds.value
+  if (!pins.length) return null
+  if (layoutIncludesFeaturedRowBlock(layoutBlocks.value)) return null
+  const titles = pins
+    .map((id) => featuredSlots.value.find((v) => v?.id === id)?.title || id)
+    .join(', ')
+  return `${pins.length} featured video pin${pins.length === 1 ? '' : 's'} (${titles}) will not appear in a featured row — only in categories — because the homepage layout has no Featured row block.`
+})
 
 const homepagePlacement = ref<HomepagePlacementResponse | null>(null)
 const mergedHomepagePlacement = computed(() => {
