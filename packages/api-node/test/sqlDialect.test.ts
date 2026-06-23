@@ -33,8 +33,12 @@ END;
 -- POSTGRES: CREATE TRIGGER cms_pages_set_updated_at BEFORE UPDATE ON cms_pages FOR EACH ROW EXECUTE PROCEDURE cms_pages_touch_updated_at();`
     const out = translateSqliteDdl(sql)
     assert.doesNotMatch(out, /BEGIN\s+UPDATE cms_pages/i)
+    assert.doesNotMatch(out, /CREATE TRIGGER IF NOT EXISTS/i)
+    assert.doesNotMatch(out, /AFTER UPDATE ON cms_pages/i)
+    assert.doesNotMatch(out, /WHEN NEW\.updated_at = OLD\.updated_at/i)
     assert.match(out, /CREATE OR REPLACE FUNCTION cms_pages_touch_updated_at/i)
     assert.match(out, /CREATE TRIGGER cms_pages_set_updated_at/i)
+    assert.match(out, /BEFORE UPDATE ON cms_pages/i)
   })
 })
 
