@@ -6,6 +6,8 @@ logs:
   - type: journald
     source: vmp-transcoder
     service: vmp-transcoder
+    include_units:
+      - vmp-supervisor.service
     log_processing_rules:
       - type: exclude_at_match
         name: exclude_datadog_agent_noise
