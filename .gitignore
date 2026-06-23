@@ -6,6 +6,7 @@ node_modules/
 dist/
 .output/
 .nuxt/
+.vercel/
 build/
 .wrangler/
 packages/web/public/sw-push.js
