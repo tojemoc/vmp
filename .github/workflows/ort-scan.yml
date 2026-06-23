@@ -35,9 +35,23 @@ jobs:
       - name: Configure ORT SCANOSS scanner
         run: bash .github/scripts/configure-ort.sh
 
+      # ort-ci-github-action bind-mounts only $HOME into the ORT container and rewrites
+      # paths with ${path/$USER/ort}. Self-hosted runners often use /opt/actions-runner/…
+      # for GITHUB_WORKSPACE, which becomes /opt/actions-ort/… and is not mounted.
+      - name: Stage workspace for ORT Docker mount
+        run: |
+          ORT_WORKSPACE="${HOME}/ort-workspace"
+          rm -rf "${ORT_WORKSPACE}"
+          mkdir -p "${ORT_WORKSPACE}"
+          rsync -a \
+            --exclude node_modules \
+            --exclude .git \
+            "${GITHUB_WORKSPACE}/" "${ORT_WORKSPACE}/"
+
       - name: Run ORT snippet scan (first-party source only)
         uses: oss-review-toolkit/ort-ci-github-action@086d928d24ef1653dc0777296b312fda5faaaf52 # v1.2.0
         with:
+          project-path: ${{ env.HOME }}/ort-workspace
           allow-dynamic-versions: 'true'
           fail-on: ''
           ort-cli-args: >-
