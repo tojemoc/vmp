@@ -772,6 +772,13 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <AdminNewsletterPanel v-else />
         </div>
 
+        <div v-if="activeAdminTab === 'pages'" id="pages-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Only site administrators can manage CMS pages.
+          </div>
+          <AdminCmsPanel v-else />
+        </div>
+
         <div v-if="activeAdminTab === 'users'" id="users-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Users and roles</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -2508,7 +2515,7 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
 const thumbInputFocused = ref<string | null>(null)
-const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
+const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'categories' as const, label: 'Categories' },
@@ -2516,6 +2523,7 @@ const baseAdminTabs = [
   { id: 'pills' as const, label: 'Pills' },
   { id: 'notifications' as const, label: 'Notifications' },
   { id: 'newsletter' as const, label: 'Newsletter' },
+  { id: 'pages' as const, label: 'Pages' },
   { id: 'users' as const, label: 'Users & roles' },
   { id: 'legacy_migration' as const, label: 'Legacy migration' },
   { id: 'analytics' as const, label: 'Analytics' },
@@ -2523,7 +2531,7 @@ const baseAdminTabs = [
 ]
 const adminTabs = computed(() =>
   baseAdminTabs.filter((tab) => {
-    if (tab.id === 'pills' || tab.id === 'legacy_migration') return isAdmin.value
+    if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'pages') return isAdmin.value
     return true
   })
 )
@@ -6356,7 +6364,7 @@ const descriptionDialogRef = ref<HTMLElement | null>(null)
 const transferSubDialogRef = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
-function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
+function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
   router.replace({ query: { ...route.query, tab } })
 }
 
