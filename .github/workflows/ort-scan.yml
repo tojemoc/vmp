@@ -1,0 +1,56 @@
+name: ORT snippet scan
+
+# SCANOSS snippet provenance via ORT on the self-hosted ort-scanner runner.
+# Not part of PR CI — weekly baseline + manual runs only.
+#
+# Requires a repo runner with labels: self-hosted, Linux, X64
+# and Docker available for ghcr.io/oss-review-toolkit/ort.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * 1'
+
+concurrency:
+  group: ort-snippet-scan
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: self-hosted
+    timeout-minutes: 120
+    env:
+      SCANOSS_API_KEY: ${{ secrets.SCANOSS_API_KEY }}
+    steps:
+      - name: Use HTTPS instead of SSH for Git cloning
+        run: git config --global url.https://github.com/.insteadOf ssh://git@github.com/
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Configure ORT SCANOSS scanner
+        run: bash .github/scripts/configure-ort.sh
+
+      - name: Run ORT snippet scan (first-party source only)
+        uses: oss-review-toolkit/ort-ci-github-action@v1.2.0
+        with:
+          allow-dynamic-versions: 'true'
+          fail-on: ''
+          ort-cli-args: >-
+            -P ort.analyzer.enabledPackageManagers=NPM
+            -P ort.forceOverwrite=true
+            --stacktrace
+          ort-cli-scan-args: '--scanners SCANOSS --skip-excluded'
+          docker-cli-args: '-e SCANOSS_API_KEY'
+          run: >-
+            cache-scan-results,
+            analyzer,
+            scanner,
+            reporter,
+            upload-results,
+            upload-scan-result
+          sw-name: vmp
