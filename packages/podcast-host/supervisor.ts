@@ -22,6 +22,7 @@ import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { gauge, increment } from './metrics.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const pkgRoot = __dirname
@@ -236,6 +237,15 @@ function syncResourceSlots(): void {
   }
   gpuSlots.current = gpu
   uploadSlots.current = upload
+  reportSupervisorMetrics()
+}
+
+function reportSupervisorMetrics(): void {
+  const previewQueued = jobQueue.filter((j) => j.type === 'preview_mp3' && j.status === 'queued').length
+  gauge('vmp.supervisor.preview_queue.depth', previewQueued)
+  gauge('vmp.supervisor.gpu_slots.used', gpuSlots.current)
+  gauge('vmp.supervisor.upload_slots.used', uploadSlots.current)
+  gauge('vmp.supervisor.pipeline_child.alive', pipelineChild && !pipelineState.exited ? 1 : 0)
 }
 
 function phaseProgressFromOverall(overall: number | null) {
@@ -565,6 +575,7 @@ function startPipeline() {
     pipelineIpcPath = null
     if (runPipeline) {
       markRunningJobsFailedOnPipelineCrash()
+      increment('vmp.supervisor.pipeline.restart', 1)
       pushLog('Pipeline process exited; restarting pipeline_watch in 3s')
       if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
       pipelineRestartTimer = setTimeout(() => {
@@ -1213,6 +1224,7 @@ server.listen(uiPort, uiHost, () => {
   }
   startPipeline()
   setInterval(() => {
+    reportSupervisorMetrics()
     if (pipelineChild && !pipelineState.exited && !hasStuckRunningJobs()) {
       void sdNotify('WATCHDOG=1')
     }

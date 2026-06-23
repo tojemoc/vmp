@@ -108,6 +108,10 @@ Expose the HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy with 
 | `RCLONE_EXTRA_ARGS` | Extra rclone flags (space-separated) |
 | `RCLONE_LOG_LEVEL` | rclone log level (default `NOTICE`; use `ERROR` to hide retry noise) |
 | `VMP_TTP_LOG_PATH` | Optional path to append structured `VMP_TTP` JSON lines (one object per line) for TTP analysis |
+| `DD_METRICS_ENABLED` | `1` (default) emit DogStatsD metrics; `0` to disable |
+| `DD_AGENT_HOST` | DogStatsD host (default `127.0.0.1`) |
+| `DD_DOGSTATSD_PORT` | DogStatsD port (default `8125`) |
+| `DD_ENV` / `DD_SERVICE` | Optional Datadog tags on every metric (default service `vmp-transcoder`) |
 
 ### Time-to-publish (TTP) logging
 
@@ -136,6 +140,14 @@ node packages/podcast-host/scripts/ttp-report.mjs /var/log/vmp-ttp.jsonl
 ```
 
 Ratios in `ttp_summary` are wall-clock seconds divided by source duration (e.g. `0.35` ≈ 35% of video length to reach minimal publish).
+
+### Datadog observability
+
+On the transcoding VM, install the Datadog Agent and apply configs from [datadog/README.md](./datadog/README.md):
+
+- **Metrics** — `metrics.ts` sends DogStatsD counters/gauges/histograms (queue depth, job success/failure, TTP timings, supervisor health).
+- **Logs** — agent tails `journalctl -u vmp-supervisor` (or optional `/var/log/vmp/supervisor.log`).
+- **Process checks** — agent monitors supervisor, `pipeline_watch`, and `ffmpeg`.
 
 ### Encode progress (dashboard)
 
