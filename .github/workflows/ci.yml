@@ -19,6 +19,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  license-compliance:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 90
+    steps:
+      - name: Use HTTPS instead of SSH for Git cloning
+        run: git config --global url.https://github.com/.insteadOf ssh://git@github.com/
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run ORT license and dependency scan
+        uses: oss-review-toolkit/ort-ci-github-action@v1.2.0
+        with:
+          allow-dynamic-versions: 'true'
+          advisors: OSV
+          fail-on: issues
+          ort-cli-args: >-
+            -P ort.analyzer.enabledPackageManagers=NPM
+            -P ort.forceOverwrite=true
+            --stacktrace
+          run: >-
+            cache-dependencies,
+            analyzer,
+            scanner,
+            advisor,
+            reporter,
+            upload-results
+          sw-name: vmp
+
   typecheck:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:

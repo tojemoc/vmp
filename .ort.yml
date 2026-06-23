@@ -1,0 +1,16 @@
+# ORT repository configuration — see https://oss-review-toolkit.org/ort/docs/configuration
+#
+# Scans npm workspace dependencies for license/copyright findings and OSV advisories.
+# First-party source similarity (e.g. AI-generated vs. known OSS snippets) is out of
+# scope for ORT; use dependency SBOM + advisor output as the compliance baseline.
+
+excludes:
+  paths:
+    - pattern: '**/.nuxt/**'
+      reason: 'GENERATED'
+    - pattern: '**/dist/**'
+      reason: 'BUILD_TOOL_OF'
+    - pattern: '**/.wrangler/**'
+      reason: 'BUILD_TOOL_OF'
+    - pattern: '**/coverage/**'
+      reason: 'TEST_TOOL_OF'
