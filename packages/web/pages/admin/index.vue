@@ -574,17 +574,13 @@
             </button>
 
             <div v-if="categoryCreateExpanded" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-              <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <input v-model="categoryForm.name" type="text" placeholder="Name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="categoryForm.slug" type="text" placeholder="slug-name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model.number="categoryForm.sortOrder" type="number" placeholder="Sort order" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <select v-model="categoryForm.direction" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   <option value="desc">desc</option>
                   <option value="asc">asc</option>
-                </select>
-                <select v-model="categoryForm.homepageLayoutVariant" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="three_by_one">3×1 block</option>
-                  <option value="side_mini">2×1 small block</option>
                 </select>
               </div>
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createCategory">Create category</button>
@@ -609,7 +605,6 @@
                   {{ category.sort_order <= 0 ? 'P0' : `#${category.sort_order}` }}
                 </span>
                 <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.direction }}</span>
-                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.homepage_layout_variant === 'side_mini' ? 'side_mini' : '3×1' }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ category.video_count ?? 0 }} videos</span>
                 <div class="ml-auto flex flex-wrap items-center gap-1">
                   <button

@@ -86,7 +86,7 @@
         <p class="text-red-700 dark:text-red-300">{{ error }}</p>
       </div>
 
-      <div v-else-if="videos.length > 0" class="space-y-8">
+      <div v-else-if="homepageRenderModel.blockItems.length > 0" class="space-y-8">
         <section
           v-for="block in homepageRenderModel.blockItems"
           :key="`home-block-${block.id}`"
@@ -332,7 +332,9 @@ const loadAdminConfig = async () => {
 const loadPlacement = async () => {
   const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
   if (!res.ok) return
-  placement.value = await res.json()
+  const data = await res.json()
+  placement.value = data
+  videos.value = Array.isArray(data?.videos) ? data.videos : []
 }
 
 const loadPills = async () => {
@@ -357,15 +359,11 @@ onUnmounted(() => {
 
 onMounted(async () => {
   try {
-    const [videosRes] = await Promise.all([
-      fetch(`${config.public.apiUrl}/api/videos`),
+    await Promise.all([
       loadAdminConfig(),
       loadPlacement(),
       loadPills(),
     ])
-    if (!videosRes.ok) throw new Error(strings.failedToLoadVideos)
-    const data = await videosRes.json()
-    videos.value = data.videos || []
   } catch (e: any) {
     error.value = e.message
   } finally {

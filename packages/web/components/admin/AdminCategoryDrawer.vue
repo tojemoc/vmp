@@ -55,13 +55,6 @@
                 </select>
               </label>
               <label class="block text-sm text-gray-700 dark:text-gray-300">
-                Homepage layout variant
-                <select v-model="draft.homepage_layout_variant" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="three_by_one">3×1 block</option>
-                  <option value="side_mini">2×1 small block</option>
-                </select>
-              </label>
-              <label class="block text-sm text-gray-700 dark:text-gray-300">
                 Rec. recency bias
                 <input v-model.number="draft.recommendation_recency_bias" type="number" min="0" step="0.1" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
               </label>

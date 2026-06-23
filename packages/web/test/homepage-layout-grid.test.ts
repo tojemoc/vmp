@@ -111,8 +111,8 @@ describe('buildHomepageRenderModel grid rows', () => {
     assert.equal(paired.type, 'category_with_side_mini')
     assert.equal(paired.primary.categoryId, 'cat-main')
     assert.equal(paired.sideMini.categoryId, 'cat-side')
-    assert.equal(paired.primary.categorySection.allVideos.length, 3)
-    assert.equal(paired.primary.categorySection.visible.length, 3)
+    assert.equal(paired.primary.categorySection.allVideos.length, 4)
+    assert.equal(paired.primary.categorySection.visible.length, 4)
     assert.equal(paired.sideMini.categorySection.visible.length, 2)
   })
 
@@ -147,5 +147,48 @@ describe('buildHomepageRenderModel grid rows', () => {
     assert.equal(model.blockItems.length, 2)
     assert.equal(model.blockItems[0]?.type, 'category')
     assert.equal(model.blockItems[1]?.type, 'featured_row')
+  })
+
+  it('does not hide the global newest video from categories when no top_video block exists', () => {
+    const newestVideo = { id: 'v-newest', title: 'Newest', upload_date: '2026-02-01T00:00:00Z', published_at: '2026-02-01T00:00:00Z' }
+    const placementWithNewestFeatured = {
+      featured: [{ id: 'v-newest' }],
+      recentGrid: [null, null, null, null],
+      categoryBlocks: [{
+        category: { id: 'cat-main', slug: 'main', name: 'Main', homepage_layout_variant: 'three_by_one' },
+        visible: [{ id: 'v2' }, { id: 'v3' }],
+        overflow: [],
+      }],
+    }
+    const model = buildHomepageRenderModel({
+      videos: [...videos, newestVideo],
+      layoutBlocks: assignGridPositions([
+        { id: 'featured', type: 'featured_row', width: 'full' },
+        { id: 'cat', type: 'category', width: 'full', categoryId: 'cat-main' },
+      ] as any),
+      placement: placementWithNewestFeatured as any,
+    })
+    const featured = model.blockItems.find((item: any) => item.type === 'featured_row') as any
+    assert.ok(featured?.videos?.some((video: any) => video.id === 'v-newest'))
+  })
+
+  it('suppresses duplicate global newest video elsewhere only when a top_video block exists', () => {
+    const newestVideo = { id: 'v5', title: 'Five', upload_date: '2026-01-05T00:00:00Z', published_at: '2026-01-05T00:00:00Z' }
+    const model = buildHomepageRenderModel({
+      videos: [...videos, newestVideo],
+      layoutBlocks: assignGridPositions([
+        { id: 'top', type: 'top_video', width: 'full' },
+        { id: 'featured', type: 'featured_row', width: 'full' },
+      ] as any),
+      placement: {
+        featured: [{ id: 'v5' }],
+        recentGrid: [null, null, null, null],
+        categoryBlocks: [],
+      } as any,
+    })
+    const top = model.blockItems.find((item: any) => item.type === 'top_video') as any
+    const featured = model.blockItems.find((item: any) => item.type === 'featured_row') as any
+    assert.equal(top?.videos?.[0]?.id, 'v5')
+    assert.equal(featured?.videos?.length ?? 0, 0)
   })
 })
