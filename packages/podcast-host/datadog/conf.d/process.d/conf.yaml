@@ -1,0 +1,27 @@
+# Process checks for the transcoding VM.
+# Install: sudo cp to /etc/datadog-agent/conf.d/process.d/conf.yaml
+# Adjust VMP_ROOT if the repo is not at /root/vmp.
+
+init_config:
+
+instances:
+  - name: vmp-supervisor
+    search_string: ['node', '/packages/podcast-host/dist/supervisor.js']
+    exact_match: false
+    tags:
+      - service:vmp-transcoder
+      - component:supervisor
+
+  - name: vmp-pipeline-watch
+    search_string: ['node', '/packages/podcast-host/dist/pipeline_watch.js']
+    exact_match: false
+    tags:
+      - service:vmp-transcoder
+      - component:pipeline
+
+  - name: vmp-ffmpeg
+    search_string: ['ffmpeg']
+    exact_match: false
+    tags:
+      - service:vmp-transcoder
+      - component:ffmpeg
