@@ -43,7 +43,7 @@ export const personalData: PersonalDataPage = {
       title: 'Who processes data on our behalf',
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
-        'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend). The Vercel deployment may load Vercel Web Analytics for operational traffic statistics on that hostname only.',
+        'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
         'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
       ],
       bullets: [
