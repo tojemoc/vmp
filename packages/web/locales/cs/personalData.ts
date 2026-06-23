@@ -43,7 +43,7 @@ export const personalData: PersonalDataPage = {
       title: 'Kdo zpracovává údaje v našem jménu',
       paragraphs: [
         'Primární hosting používá Cloudflare (API Worker, databáze D1, média R2, frontend Pages). Provoz probíhá přes globální síť Cloudflare; nemůžeme zaručit, že každý bajt zůstane v EU, ale minimalizujeme osobní údaje a kde je to možné používáme analytiku se sídlem v EU.',
-        'Záložní infrastruktura může běžet na Deno Deploy (API) a Vercel (frontend). Nasazení na Vercel může načíst Vercel Web Analytics pro provozní statistiky návštěvnosti pouze na této doméně.',
+        'Záložní infrastruktura může běžet na Deno Deploy (API) a Vercel (frontend).',
         'Další zpracovatelé zahrnují: Umami Cloud (EU) pro anonymní statistiku; Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API. Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
       ],
       bullets: [

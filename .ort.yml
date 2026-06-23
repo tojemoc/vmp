@@ -1,0 +1,28 @@
+# ORT repository configuration — first-party snippet scan only.
+# dependency scopes are excluded; use --skip-excluded in the scanner step.
+
+analyzer:
+  skip_excluded: true
+
+excludes:
+  paths:
+    - pattern: '**/.nuxt/**'
+      reason: 'BUILD_TOOL_OF'
+    - pattern: '**/dist/**'
+      reason: 'BUILD_TOOL_OF'
+    - pattern: '**/.wrangler/**'
+      reason: 'BUILD_TOOL_OF'
+    - pattern: '**/coverage/**'
+      reason: 'TEST_TOOL_OF'
+    - pattern: '**/.nx/**'
+      reason: 'BUILD_TOOL_OF'
+      comment: 'Nx cache is not first-party source.'
+    - pattern: '**/node_modules/**'
+      reason: 'BUILD_TOOL_OF'
+  scopes:
+    - pattern: 'dependencies'
+      reason: 'OTHER'
+      comment: 'Snippet scan targets first-party project source, not third-party deps.'
+    - pattern: 'devDependencies'
+      reason: 'DEV_DEPENDENCY_OF'
+      comment: 'Dev dependencies are not scanned for snippets.'

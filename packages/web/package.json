@@ -34,7 +34,6 @@
     "@tiptap/pm": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
     "@tiptap/vue-3": "^3.27.1",
-    "@vercel/analytics": "^2.0.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vmp/shared": "*",
     "media-chrome": "^4.19.0",

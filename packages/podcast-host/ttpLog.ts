@@ -8,6 +8,7 @@
  */
 
 import { appendFile } from 'node:fs/promises'
+import { histogram } from './metrics.js'
 
 export type TtpMilestone =
   | 'inbox_close_write'
@@ -167,6 +168,10 @@ export async function emitTtpSummary(videoId: string, outcome: 'success' | 'fail
     phase2AfterMinimalMs:
       minimalMs != null && fullMs != null ? Math.max(0, fullMs - minimalMs) : null,
   })
+
+  if (minimalMs != null) histogram('vmp.transcoder.ttp.minimal_publish_ms', minimalMs, { outcome })
+  if (fullMs != null) histogram('vmp.transcoder.ttp.full_renditions_ms', fullMs, { outcome })
+  histogram('vmp.transcoder.ttp.total_ms', totalMs, { outcome })
 
   jobs.delete(videoId)
 }

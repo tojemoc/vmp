@@ -70,6 +70,7 @@ import {
   handleRssPodcastWebhookConfig,
 } from './rssPodcastAdmin.js'
 import { handleVideoPipelineStatus } from './pipelineStatus.js'
+import { log } from './logger.js'
 import {
   handleHomepageContent,
   handleHomepageContentPublic,
@@ -342,6 +343,10 @@ export const SegmentRateLimiterDO = Sentry.instrumentDurableObjectWithSentry(
   SegmentRateLimiterDOBase as never,
 )
 
+function logRequest(method: string, path: string, status: number, durationMs: number, extra?: Record<string, unknown>) {
+  log({ service: 'worker', event: 'request', level: 'info', http_method: method, http_path: path, http_status: status, duration_ms: durationMs, ...extra })
+}
+
 const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
@@ -359,6 +364,7 @@ const workerHandler = {
     // back.  Unknown origins get a non-credentialed response, which is fine
     // for public endpoints like /api/videos.
     const corsHeaders = buildCorsHeaders(request, env)
+    const _reqStart = Date.now()
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -439,10 +445,10 @@ const workerHandler = {
       return handlePersonalFeed(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/video-access/')) {
-      return handleVideoAccess(request, env, corsHeaders, ctx)
+      return handleVideoAccess(request, env, corsHeaders, ctx, _reqStart)
     }
     if (url.pathname.startsWith('/api/video-proxy/')) {
-      return handleVideoProxy(request, env, corsHeaders, ctx)
+      return handleVideoProxy(request, env, corsHeaders, ctx, _reqStart)
     }
     {
       const pipelineStatusMatch = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/)
@@ -726,6 +732,7 @@ const workerHandler = {
       return jsonResponse({ status: 'healthy' }, 200, corsHeaders)
     }
 
+    log({ service: 'worker', event: 'route_not_found', http_method: request.method, http_path: url.pathname, http_status: 404 })
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
   },
 
@@ -962,7 +969,7 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
   }
 }
 
-async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?: ExecutionContext) {
+async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?: ExecutionContext, reqStart = Date.now()) {
   try {
     const url = new URL(request.url)
     const pathParts = url.pathname.split('/').filter(Boolean)
@@ -1206,6 +1213,12 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
         { title: 'Full Content', startTime: previewDuration, endTime: fullDuration, accessible: hasAccess },
       ],
     }
+    logRequest(request.method, url.pathname, 200, Date.now() - reqStart, {
+      video_id: resolvedVideoId,
+      has_access: response.hasAccess,
+      is_preview: !hasPremiumAccess,
+      subscription_status: subscription?.status ?? 'none',
+    })
     return jsonResponse(response, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
@@ -1213,7 +1226,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
   }
 }
 
-async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: any) {
+async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: any, reqStart = Date.now()) {
   const requestUrl = new URL(request.url)
   const proxyPrefix = '/api/video-proxy/'
   const objectPath = requestUrl.pathname.slice(proxyPrefix.length)
@@ -1371,12 +1384,25 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     if (cacheControl) headers.set('Cache-Control', cacheControl)
     headers.delete('Content-Length')
     for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
+    logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+      video_id: proxyVideoId,
+      manifest_type: manifestType ?? 'segment',
+      preview_enforced: effectivePreviewUntil !== null,
+    })
     return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
   }
   const headers = new Headers(upstreamResponse.headers)
   const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)
   if (cacheControl) headers.set('Cache-Control', cacheControl)
   for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
+  if (isSegment) {
+    log({ service: 'video_proxy', event: 'segment_served', video_id: proxyVideoId, duration_ms: Date.now() - reqStart })
+  }
+  logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+    video_id: proxyVideoId,
+    manifest_type: manifestType ?? 'segment',
+    preview_enforced: effectivePreviewUntil !== null,
+  })
   return new Response(upstreamResponse.body, { status: upstreamResponse.status, headers })
 }
 

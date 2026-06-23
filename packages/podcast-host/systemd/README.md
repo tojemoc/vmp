@@ -111,6 +111,22 @@ sudo systemctl status vmp-supervisor
 journalctl -u vmp-supervisor -f
 ```
 
+Optional file logging for Datadog file tailing: see `vmp-supervisor-logfile.conf.example` and [datadog/README.md](../datadog/README.md).
+
+## Datadog (metrics, logs, process checks)
+
+The transcoder emits DogStatsD metrics (`packages/podcast-host/metrics.ts`) and structured stdout lines (`VMP_TTP`, `VMP_PIPELINE_EVENT`). Agent install templates live in [packages/podcast-host/datadog/](../datadog/README.md).
+
+Quick env vars in `/etc/vmp/env`:
+
+```ini
+DD_METRICS_ENABLED=1
+DD_ENV=production
+DD_SERVICE=vmp-transcoder
+# Optional dedicated TTP JSONL for log tailing:
+# VMP_TTP_LOG_PATH=/var/log/vmp/ttp.jsonl
+```
+
 ## Drain and restart
 
 **Drain / stop without starting a new instance** (maintenance, drain queue):
