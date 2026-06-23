@@ -94,6 +94,18 @@ import {
   handleIsicCampaignPublic,
 } from './promotions.js'
 import { handleAdminSmokeAuth } from './smokeAuth.js'
+import {
+  handleCmsPagesList,
+  handleCmsPageBySlug,
+  handleCmsPageById,
+  handleCmsPageCreate,
+  handleCmsPagePublish,
+  handleCmsPageUnpublish,
+  handleCmsPageRevisions,
+  handleCmsPageRestoreRevision,
+  handleCmsMediaUpload,
+  handleCmsMediaById,
+} from './cmsPages.js'
 import { handleSiteSettings } from './siteSettings.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
@@ -567,6 +579,43 @@ const workerHandler = {
     }
     if (url.pathname === '/api/site-settings' && request.method === 'GET') {
       return handleSiteSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pages' && request.method === 'GET') {
+      return handleCmsPagesList(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pages' && request.method === 'POST') {
+      return handleCmsPageCreate(request, env, corsHeaders)
+    }
+    const cmsPageRestore = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/)
+    if (cmsPageRestore && request.method === 'POST') {
+      return handleCmsPageRestoreRevision(request, env, corsHeaders, cmsPageRestore[1], cmsPageRestore[2])
+    }
+    const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/)
+    if (cmsPageRevisions && request.method === 'GET') {
+      return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisions[1])
+    }
+    const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/)
+    if (cmsPagePublish && request.method === 'POST') {
+      return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublish[1])
+    }
+    const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/)
+    if (cmsPageUnpublish && request.method === 'POST') {
+      return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublish[1])
+    }
+    const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/)
+    if (cmsPageById && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+      return handleCmsPageById(request, env, corsHeaders, cmsPageById[1])
+    }
+    const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/)
+    if (cmsPageBySlug && request.method === 'GET') {
+      return handleCmsPageBySlug(request, env, corsHeaders, cmsPageBySlug[1])
+    }
+    if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
+      return handleCmsMediaUpload(request, env, corsHeaders)
+    }
+    const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/)
+    if (cmsMediaById && request.method === 'GET') {
+      return handleCmsMediaById(request, env, corsHeaders, cmsMediaById[1])
     }
     if (url.pathname === '/api/pills' && request.method === 'GET') {
       return handlePillsPublic(request, env, corsHeaders)
