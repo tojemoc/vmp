@@ -1,13 +1,14 @@
 import type { CmsBlock, CmsMedia, CmsPage, CmsPageInput, CmsPageRevision } from '@vmp/shared'
 
+export type CmsDbStatement = {
+  first<T = Record<string, unknown>>(): Promise<T | null>
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>
+  run(): Promise<unknown>
+  bind(...args: unknown[]): CmsDbStatement
+}
+
 export type CmsDb = {
-  prepare(query: string): {
-    bind(...args: unknown[]): {
-      first<T = Record<string, unknown>>(): Promise<T | null>
-      all<T = Record<string, unknown>>(): Promise<{ results: T[] }>
-      run(): Promise<unknown>
-    }
-  }
+  prepare(query: string): CmsDbStatement
   batch?(statements: unknown[]): Promise<unknown>
 }
 
@@ -89,17 +90,20 @@ export function mapRevisionRow(row: CmsRevisionRow): CmsPageRevision {
 
 export function mapMediaRow(row: CmsMediaRow, baseUrl = ''): CmsMedia {
   const normalizedBase = baseUrl.replace(/\/$/, '')
-  return {
+  const media: CmsMedia = {
     id: row.id,
     key: row.key,
     filename: row.filename,
     width: row.width,
     height: row.height,
     contentType: row.content_type,
-    url: normalizedBase ? `${normalizedBase}/${row.key}` : undefined,
     createdAt: row.created_at,
     createdBy: row.created_by,
   }
+  if (normalizedBase) {
+    media.url = `${normalizedBase}/${row.key}`
+  }
+  return media
 }
 
 export function slugify(input: string): string {

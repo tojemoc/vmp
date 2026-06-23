@@ -587,35 +587,43 @@ const workerHandler = {
       return handleCmsPageCreate(request, env, corsHeaders)
     }
     const cmsPageRestore = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/)
-    if (cmsPageRestore && request.method === 'POST') {
-      return handleCmsPageRestoreRevision(request, env, corsHeaders, cmsPageRestore[1], cmsPageRestore[2])
+    const cmsPageRestoreId = cmsPageRestore?.[1]
+    const cmsPageRestoreRevisionId = cmsPageRestore?.[2]
+    if (cmsPageRestoreId && cmsPageRestoreRevisionId && request.method === 'POST') {
+      return handleCmsPageRestoreRevision(request, env, corsHeaders, cmsPageRestoreId, cmsPageRestoreRevisionId)
     }
     const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/)
-    if (cmsPageRevisions && request.method === 'GET') {
-      return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisions[1])
+    const cmsPageRevisionsId = cmsPageRevisions?.[1]
+    if (cmsPageRevisionsId && request.method === 'GET') {
+      return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisionsId)
     }
     const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/)
-    if (cmsPagePublish && request.method === 'POST') {
-      return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublish[1])
+    const cmsPagePublishId = cmsPagePublish?.[1]
+    if (cmsPagePublishId && request.method === 'POST') {
+      return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublishId)
     }
     const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/)
-    if (cmsPageUnpublish && request.method === 'POST') {
-      return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublish[1])
+    const cmsPageUnpublishId = cmsPageUnpublish?.[1]
+    if (cmsPageUnpublishId && request.method === 'POST') {
+      return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublishId)
     }
     const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/)
-    if (cmsPageById && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
-      return handleCmsPageById(request, env, corsHeaders, cmsPageById[1])
+    const cmsPageId = cmsPageById?.[1]
+    if (cmsPageId && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+      return handleCmsPageById(request, env, corsHeaders, cmsPageId)
     }
     const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/)
-    if (cmsPageBySlug && request.method === 'GET') {
-      return handleCmsPageBySlug(request, env, corsHeaders, cmsPageBySlug[1])
+    const cmsPageSlug = cmsPageBySlug?.[1]
+    if (cmsPageSlug && request.method === 'GET') {
+      return handleCmsPageBySlug(request, env, corsHeaders, cmsPageSlug)
     }
     if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
       return handleCmsMediaUpload(request, env, corsHeaders)
     }
     const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/)
-    if (cmsMediaById && request.method === 'GET') {
-      return handleCmsMediaById(request, env, corsHeaders, cmsMediaById[1])
+    const cmsMediaId = cmsMediaById?.[1]
+    if (cmsMediaId && request.method === 'GET') {
+      return handleCmsMediaById(request, env, corsHeaders, cmsMediaId)
     }
     if (url.pathname === '/api/pills' && request.method === 'GET') {
       return handlePillsPublic(request, env, corsHeaders)
