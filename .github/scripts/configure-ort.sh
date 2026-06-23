@@ -3,9 +3,9 @@
 set -euo pipefail
 
 ORT_CONFIG_DIR="${ORT_CONFIG_DIR:-$HOME/.ort/config}"
-mkdir -p "$ORT_CONFIG_DIR"
 
 if [[ ! -d "$ORT_CONFIG_DIR/.git" ]]; then
+  rm -rf "$ORT_CONFIG_DIR"
   git clone --depth 1 https://github.com/oss-review-toolkit/ort-config.git "$ORT_CONFIG_DIR"
 fi
 
