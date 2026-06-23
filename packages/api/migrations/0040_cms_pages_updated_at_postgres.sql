@@ -1,0 +1,4 @@
+-- Postgres-only trigger for cms_pages.updated_at (D1 uses 0039 SQLite trigger).
+-- POSTGRES: CREATE OR REPLACE FUNCTION cms_pages_touch_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at THEN NEW.updated_at = CURRENT_TIMESTAMP; END IF; RETURN NEW; END; $$;
+-- POSTGRES: DROP TRIGGER IF EXISTS cms_pages_set_updated_at ON cms_pages;
+-- POSTGRES: CREATE TRIGGER cms_pages_set_updated_at BEFORE UPDATE ON cms_pages FOR EACH ROW EXECUTE PROCEDURE cms_pages_touch_updated_at();

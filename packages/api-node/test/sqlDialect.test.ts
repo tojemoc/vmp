@@ -19,6 +19,25 @@ DROP TABLE promo_codes;`
   })
 })
 
+describe('translateSqliteDdl migration 0039 cms_pages trigger', () => {
+  it('strips SQLite trigger DDL and keeps POSTGRES replacement', () => {
+    const sql = `CREATE TRIGGER IF NOT EXISTS cms_pages_set_updated_at
+AFTER UPDATE ON cms_pages
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+  UPDATE cms_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- POSTGRES: CREATE OR REPLACE FUNCTION cms_pages_touch_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at THEN NEW.updated_at = CURRENT_TIMESTAMP; END IF; RETURN NEW; END; $$;
+-- POSTGRES: DROP TRIGGER IF EXISTS cms_pages_set_updated_at ON cms_pages;
+-- POSTGRES: CREATE TRIGGER cms_pages_set_updated_at BEFORE UPDATE ON cms_pages FOR EACH ROW EXECUTE PROCEDURE cms_pages_touch_updated_at();`
+    const out = translateSqliteDdl(sql)
+    assert.doesNotMatch(out, /BEGIN\s+UPDATE cms_pages/i)
+    assert.match(out, /CREATE OR REPLACE FUNCTION cms_pages_touch_updated_at/i)
+    assert.match(out, /CREATE TRIGGER cms_pages_set_updated_at/i)
+  })
+})
+
 describe('translateSqliteDdl migration 0036 promo_codes', () => {
   it('drops and recreates promo_redemptions FK around promo_codes table swap', () => {
     const sql = `PRAGMA foreign_keys = OFF;
