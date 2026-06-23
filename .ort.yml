@@ -7,7 +7,8 @@
 excludes:
   paths:
     - pattern: '**/.nuxt/**'
-      reason: 'GENERATED'
+      reason: 'BUILD_TOOL_OF'
+      comment: 'Nuxt prepare/build output; not shipped source.'
     - pattern: '**/dist/**'
       reason: 'BUILD_TOOL_OF'
     - pattern: '**/.wrangler/**'
