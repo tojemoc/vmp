@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { placeHomepageVideos, placementTimestampMs, sortCategoriesForHomepage } from '../src/homepagePlacement.js'
+import { placeHomepageVideos, placementTimestampMs, sortCategoriesForHomepage, normalizePlacementVideoRows, collectPlacementVideoIds } from '../src/homepagePlacement.js'
 
 const T = {
   t1: '2026-01-01T12:00:00.000Z',
@@ -17,6 +17,31 @@ const T = {
 function cat(id: any, name: any, sortOrder: any, direction = 'desc') {
   return { id, slug: id, name, sort_order: sortOrder, direction }
 }
+
+describe('normalizePlacementVideoRows', () => {
+  it('prefers categorized duplicate rows over uncategorized', () => {
+    const rows = normalizePlacementVideoRows([
+      { id: 'v1', published_at: T.t1, upload_date: T.t1, category_id: null },
+      { id: 'v1', published_at: T.t1, upload_date: T.t1, category_id: 'c1' },
+    ])
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.category_id, 'c1')
+  })
+})
+
+describe('collectPlacementVideoIds', () => {
+  it('collects ids from featured, recent grid, and category blocks', () => {
+    const ids = collectPlacementVideoIds({
+      featured: [{ id: 'f1' }],
+      recentGrid: [{ id: 'u1' }, null, { id: 'u2' }],
+      categoryBlocks: [{
+        visible: [{ id: 'c1' }],
+        overflow: [{ id: 'c2' }],
+      }],
+    })
+    assert.deepEqual(ids.sort(), ['c1', 'c2', 'f1', 'u1', 'u2'].sort())
+  })
+})
 
 describe('placementTimestampMs', () => {
   it('prefers published_at over upload_date', () => {

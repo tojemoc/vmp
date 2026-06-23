@@ -37,6 +37,22 @@ export interface HomepageCategory {
   homepage_layout_variant?: 'three_by_one' | 'side_mini'
 }
 
+export interface HomepagePlacementVideo {
+  id: string
+  title?: string
+  description?: string
+  thumbnail_url?: string | null
+  full_duration?: number
+  preview_duration?: number
+  upload_date?: string | null
+  publish_status?: string
+  slug?: string | null
+  published_at?: string | null
+  category_id?: string | null
+  category_name?: string | null
+  category_slug?: string | null
+}
+
 export interface HomepagePlacementResponse {
   featured: Array<{ id: string }>
   recentGrid: Array<{ id: string } | null>
@@ -45,6 +61,8 @@ export interface HomepagePlacementResponse {
     visible: Array<{ id: string }>
     overflow: Array<{ id: string }>
   }>
+  /** Slim video records for ids used on the homepage (plus global newest for top_video blocks). */
+  videos?: HomepagePlacementVideo[]
 }
 
 export interface HomepageRenderLeafBlock {
@@ -203,6 +221,16 @@ function leafHasRenderableContent(leaf: HomepageRenderLeafBlock | null): boolean
   return leaf.videos.length > 0
 }
 
+function layoutIncludesTopVideoBlock(blocks: HomepageLayoutBlock[]): boolean {
+  for (const block of blocks) {
+    if (block?.type === 'top_video') return true
+    if (Array.isArray(block?.childBlocks) && block.childBlocks.some((child) => child?.type === 'top_video')) {
+      return true
+    }
+  }
+  return false
+}
+
 export function buildHomepageRenderModel({
   videos,
   layoutBlocks,
@@ -217,9 +245,12 @@ export function buildHomepageRenderModel({
   const sortedByNewest = [...videoById.values()].sort((a: any, b: any) => compareVideosNewestFirst(a, b))
   const topVideo = sortedByNewest[0] ?? null
   const topVideoId = topVideo?.id ?? null
+  const suppressTopVideoElsewhere = layoutIncludesTopVideoBlock(positionedBlocks)
+  const excludeTopVideoId = (id: string | null | undefined) =>
+    suppressTopVideoElsewhere && topVideoId && id === topVideoId
 
   const featuredIdList = Array.isArray(placement?.featured)
-    ? placement.featured.map((ref) => ref?.id).filter(Boolean).filter((id) => id !== topVideoId)
+    ? placement.featured.map((ref) => ref?.id).filter(Boolean).filter((id) => !excludeTopVideoId(id))
     : []
   const featuredVideos = featuredIdList
     .slice(0, 4)
@@ -229,7 +260,7 @@ export function buildHomepageRenderModel({
   const categorySections = (placement?.categoryBlocks ?? []).map((block) => {
     const combinedIds = [...block.visible, ...block.overflow]
       .map((ref) => ref.id)
-      .filter((id) => id !== topVideoId)
+      .filter((id) => !excludeTopVideoId(id))
     const allVideos = combinedIds.map((id) => videoById.get(id)).filter(Boolean)
     const variant = block.category?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one'
     const visibleCount = variant === 'side_mini' ? 2 : 3

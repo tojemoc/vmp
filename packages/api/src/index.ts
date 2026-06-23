@@ -111,7 +111,7 @@ import { handleSiteSettings } from './siteSettings.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { compareVideosNewestFirst } from '@vmp/shared'
-import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
+import { placeHomepageVideos, normalizeHomepagePlacementConfig, collectPlacementVideoIds, normalizePlacementVideoRows } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
   enqueueReplicationBatch,
@@ -811,19 +811,7 @@ function parseAllowedOrigins(envValue: any) {
 
 /** Collapse LEFT JOIN duplicate rows (multi-category) and order like homepage placement. */
 function dedupeVideoListRows(rows: any[]) {
-  const byId = new Map<string, any>()
-  for (const row of rows) {
-    if (!row || typeof row.id !== 'string') continue
-    if (!byId.has(row.id)) {
-      byId.set(row.id, row)
-      continue
-    }
-    const prev = byId.get(row.id)
-    const prevHasCat = prev.category_id && String(prev.category_id).trim() !== ''
-    const rowHasCat = row.category_id && String(row.category_id).trim() !== ''
-    if (!prevHasCat && rowHasCat) byId.set(row.id, row)
-  }
-  return [...byId.values()].sort((a, b) => compareVideosNewestFirst(a, b))
+  return normalizePlacementVideoRows(rows).sort((a, b) => compareVideosNewestFirst(a, b))
 }
 
 // ─── Existing handler implementations (unchanged) ─────────────────────────────
@@ -848,12 +836,40 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
       db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
     ])
     const homepage = normalizeHomepagePlacementConfig(safeJsonParse(homepageRow?.value, defaultHomepageConfig()))
+    const normalizedVideos = normalizePlacementVideoRows(videoRows.results || [])
     const placement = placeHomepageVideos({
-      videos: videoRows.results || [],
+      videos: normalizedVideos,
       categories: catRows.results || [],
       homepage,
     })
-    return jsonResponse(placement, 200, corsHeaders)
+    const videoIds = new Set(collectPlacementVideoIds(placement))
+    const newestPublished = [...normalizedVideos].sort(compareVideosNewestFirst)[0]
+    if (newestPublished?.id) videoIds.add(newestPublished.id)
+
+    let placementVideos: any[] = []
+    if (videoIds.size) {
+      const PLACEMENT_VIDEO_ID_CHUNK_SIZE = 90
+      const idList = [...videoIds]
+      const slimSql = `
+        SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
+               v.upload_date, v.publish_status, v.slug, v.published_at,
+               vc.id AS category_id, vc.name AS category_name, vc.slug AS category_slug
+        FROM videos v
+        LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+        LEFT JOIN video_categories vc ON vc.id = vca.category_id
+        WHERE v.id IN (
+      `
+      const mergedRows: any[] = []
+      for (let i = 0; i < idList.length; i += PLACEMENT_VIDEO_ID_CHUNK_SIZE) {
+        const chunk = idList.slice(i, i + PLACEMENT_VIDEO_ID_CHUNK_SIZE)
+        const placeholders = chunk.map(() => '?').join(', ')
+        const slimRows = await db.prepare(`${slimSql}${placeholders})`).bind(...chunk).all()
+        mergedRows.push(...(slimRows.results || []))
+      }
+      placementVideos = dedupeVideoListRows(mergedRows)
+    }
+
+    return jsonResponse({ ...placement, videos: placementVideos }, 200, corsHeaders)
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
@@ -1718,25 +1734,10 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
 
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     const videos = await db.prepare(`
-      WITH view_counts AS (
-        SELECT
-          video_id,
-          COUNT(DISTINCT COALESCE(
-            session_key,
-            CASE
-              WHEN user_id IS NOT NULL THEN 'u:' || user_id
-              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
-              ELSE 'path:' || request_path
-            END
-          )) AS total_views
-        FROM video_segment_events
-        WHERE event_type = 'segment'
-        GROUP BY video_id
-      )
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
              v.scheduled_publish_at, v.notified_at,
-             vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
+             vca.category_id, COALESCE(vvc.view_count, 0) AS total_views,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.moq_endpoint AS livestream_moq_endpoint,
@@ -1744,7 +1745,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              ls.recording_video_id AS livestream_recording_video_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-      LEFT JOIN view_counts vc ON vc.video_id = v.id
+      LEFT JOIN video_view_counts vvc ON vvc.video_id = v.id
       LEFT JOIN livestreams ls ON ls.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()

@@ -86,7 +86,7 @@
         <p class="text-red-700 dark:text-red-300">{{ error }}</p>
       </div>
 
-      <div v-else-if="videos.length > 0" class="space-y-8">
+      <div v-else-if="homepageRenderModel.blockItems.length > 0" class="space-y-8">
         <section
           v-for="block in homepageRenderModel.blockItems"
           :key="`home-block-${block.id}`"
@@ -238,6 +238,17 @@
         </section>
       </div>
 
+      <div v-else-if="videos.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <VideoCard
+          v-for="video in videos"
+          :key="`home-fallback-${video.id}`"
+          :video="video"
+          :show-description="false"
+          :show-relative-timestamp="true"
+          :clamp-title="false"
+        />
+      </div>
+
       <!-- Empty State -->
       <div v-else class="text-center py-20">
         <div class="w-16 h-16 mx-auto mb-4 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center">
@@ -332,7 +343,9 @@ const loadAdminConfig = async () => {
 const loadPlacement = async () => {
   const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
   if (!res.ok) return
-  placement.value = await res.json()
+  const data = await res.json()
+  placement.value = data
+  videos.value = Array.isArray(data?.videos) ? data.videos : []
 }
 
 const loadPills = async () => {
@@ -357,15 +370,11 @@ onUnmounted(() => {
 
 onMounted(async () => {
   try {
-    const [videosRes] = await Promise.all([
-      fetch(`${config.public.apiUrl}/api/videos`),
+    await Promise.all([
       loadAdminConfig(),
       loadPlacement(),
       loadPills(),
     ])
-    if (!videosRes.ok) throw new Error(strings.failedToLoadVideos)
-    const data = await videosRes.json()
-    videos.value = data.videos || []
   } catch (e: any) {
     error.value = e.message
   } finally {
