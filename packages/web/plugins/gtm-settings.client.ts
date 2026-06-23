@@ -24,5 +24,6 @@ export default defineNuxtPlugin(async () => {
   const fromSettings = String(siteSettings.value.gtmContainerId ?? '').trim()
   const measurementPath = String(siteSettings.value.gtmMeasurementPath ?? '').trim() || null
   const fallback = String(config.public.gtm?.id ?? '').trim()
-  loadGtm(fromSettings || fallback, fromSettings ? measurementPath : null)
+  const effectiveId = fromSettings || fallback
+  loadGtm(effectiveId, effectiveId ? measurementPath : null)
 })
