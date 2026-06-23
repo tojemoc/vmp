@@ -22,6 +22,9 @@ jobs:
   license-compliance:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 90
+    env:
+      # Optional — only required for api.scanoss.com / commercial SCANOSS features.
+      SCANOSS_API_KEY: ${{ secrets.SCANOSS_API_KEY }}
     steps:
       - name: Use HTTPS instead of SSH for Git cloning
         run: git config --global url.https://github.com/.insteadOf ssh://git@github.com/
@@ -30,7 +33,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run ORT license and dependency scan
+      - name: Configure ORT SCANOSS snippet scanner
+        run: |
+          mkdir -p ~/.ort/config
+          cp .github/ort/config.yml ~/.ort/config/config.yml
+
+      - name: Run ORT license, snippet, and dependency scan
         uses: oss-review-toolkit/ort-ci-github-action@v1.2.0
         with:
           allow-dynamic-versions: 'true'
@@ -40,13 +48,16 @@ jobs:
             -P ort.analyzer.enabledPackageManagers=NPM
             -P ort.forceOverwrite=true
             --stacktrace
+          ort-cli-scan-args: '--scanners ScanCode,SCANOSS'
+          docker-cli-args: '-e SCANOSS_API_KEY'
           run: >-
             cache-dependencies,
             analyzer,
             scanner,
             advisor,
             reporter,
-            upload-results
+            upload-results,
+            upload-scan-result
           sw-name: vmp
 
   typecheck:

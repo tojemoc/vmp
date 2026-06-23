@@ -1,0 +1,30 @@
+# ORT global config for CI — merged into ~/.ort/config before the scan step.
+# SCANOSS matches first-party and dependency source against the public OSS knowledge base.
+# The default OSSKB endpoint (api.osskb.org) does not require an API key; set SCANOSS_API_KEY
+# in GitHub Actions secrets only if you switch to api.scanoss.com or need commercial features.
+
+ort:
+  scanner:
+    config:
+      ScanCode:
+        options:
+          commandLine: '--copyright,--license,--info,--strip-root,--timeout,300'
+          commandLineNonConfig: '--processes,4'
+          preferFileLicense: false
+          minVersion: '3.2.1-rc2'
+          maxVersion: '32.0.0'
+      SCANOSS:
+        options:
+          apiUrl: 'https://api.osskb.org/'
+          writeToStorage: true
+          enablePathObfuscation: false
+          # Snippet tuning — approximate copilot-scanner --threshold 0.9 intent.
+          minSnippetHits: 3
+          minSnippetLines: 5
+          honourFileExts: true
+          rankingEnabled: true
+          rankingThreshold: 90
+          skipHeaders: false
+          skipHeadersLimit: 0
+        secrets:
+          apiKey: '${SCANOSS_API_KEY}'

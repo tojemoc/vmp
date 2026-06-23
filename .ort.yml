@@ -1,8 +1,8 @@
 # ORT repository configuration — see https://oss-review-toolkit.org/ort/docs/configuration
 #
-# Scans npm workspace dependencies for license/copyright findings and OSV advisories.
-# First-party source similarity (e.g. AI-generated vs. known OSS snippets) is out of
-# scope for ORT; use dependency SBOM + advisor output as the compliance baseline.
+# CI runs ORT Analyzer + Scanner (ScanCode + SCANOSS) on every pull request.
+# ScanCode covers dependency license/copyright headers; SCANOSS flags snippet
+# matches against the public OSS knowledge base (first-party source and deps).
 
 excludes:
   paths:
@@ -14,3 +14,7 @@ excludes:
       reason: 'BUILD_TOOL_OF'
     - pattern: '**/coverage/**'
       reason: 'TEST_TOOL_OF'
+  scopes:
+    - pattern: 'devDependencies'
+      reason: 'DEV_DEPENDENCY_OF'
+      comment: 'Dev-only npm packages are not shipped to users.'
