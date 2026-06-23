@@ -99,6 +99,8 @@
             v-model="form.slug"
             type="text"
             class="mt-1 w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm"
+            @input="onSlugInput"
+            @blur="normalizeSlugField"
           >
         </label>
 
@@ -237,6 +239,7 @@
 <script setup lang="ts">
 import type { CmsBlock, CmsCalloutBlock, CmsImageBlock, CmsPage, CmsPageRevision, CmsRichTextBlock } from '@vmp/shared'
 import { emptyTiptapDoc } from '~/utils/cmsRichText'
+import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs'
 
 const config = useRuntimeConfig()
 const { authHeader } = useAuth()
@@ -274,7 +277,16 @@ function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
 }
 
 function slugify(input: string) {
-  return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120)
+  const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120)
+  return slug || 'untitled'
+}
+
+function onSlugInput() {
+  slugTouched.value = true
+}
+
+function normalizeSlugField() {
+  form.slug = slugify(form.slug)
 }
 
 function maybeAutoSlug() {
@@ -356,12 +368,15 @@ async function savePage() {
   try {
     const payload = {
       title: form.title.trim(),
-      slug: form.slug.trim(),
+      slug: slugify(form.slug.trim()),
       description: form.description.trim() || null,
       status: form.status,
       content: form.content,
     }
     if (!payload.title || !payload.slug) throw new Error('Title and slug are required')
+    if (isCmsReservedSlug(payload.slug)) {
+      throw new Error(`Slug "${payload.slug}" is reserved and cannot be used for a CMS page`)
+    }
 
     if (form.id) {
       const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages/${form.id}`, {

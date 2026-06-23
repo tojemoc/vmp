@@ -107,12 +107,13 @@ export function mapMediaRow(row: CmsMediaRow, baseUrl = ''): CmsMedia {
 }
 
 export function slugify(input: string): string {
-  return input
+  const slug = input
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 120)
+  return slug || 'untitled'
 }
 
 export class CmsPagesRepository {

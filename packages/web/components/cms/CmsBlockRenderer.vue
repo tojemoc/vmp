@@ -119,6 +119,9 @@ function sectionClass(block: CmsBlock) {
 .cms-rich-text :deep(h3) {
   @apply text-lg font-semibold text-gray-900 dark:text-white;
 }
+.cms-rich-text :deep(h4) {
+  @apply text-base font-semibold text-gray-900 dark:text-white;
+}
 .cms-rich-text :deep(p) {
   @apply mt-3 text-gray-600 dark:text-gray-300 leading-relaxed;
 }

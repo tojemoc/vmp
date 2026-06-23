@@ -1,5 +1,6 @@
-import type { CmsBlock, CmsPageInput } from '@vmp/shared'
+import type { CmsPageInput } from '@vmp/shared'
 import { requireAuth, requireRole } from './auth.js'
+import { parseCmsBlocks } from './cmsBlockValidation.js'
 import { CmsPagesRepository } from './cmsPagesRepository.js'
 
 type Env = {
@@ -28,14 +29,22 @@ function parsePageInput(body: unknown): CmsPageInput | null {
   if (!body || typeof body !== 'object') return null
   const raw = body as Record<string, unknown>
   if (typeof raw.title !== 'string' || typeof raw.slug !== 'string') return null
-  if (!Array.isArray(raw.content)) return null
+  const content = parseCmsBlocks(raw.content)
+  if (!content) return null
+  const slug = raw.slug.trim()
+  if (!slug) return null
   return {
     title: raw.title.trim(),
-    slug: raw.slug.trim(),
+    slug,
     description: typeof raw.description === 'string' ? raw.description.trim() : null,
     status: raw.status === 'published' ? 'published' : 'draft',
-    content: raw.content as CmsBlock[],
+    content,
   }
+}
+
+async function isSlugTaken(env: Env, slug: string, excludePageId?: string): Promise<boolean> {
+  const existing = await repo(env).getPageBySlug(slug)
+  return !!existing && existing.id !== excludePageId
 }
 
 async function requireAdmin(request: Request, env: Env) {
@@ -101,6 +110,10 @@ export async function handleCmsPageById(request: Request, env: Env, corsHeaders:
     const body = await request.json().catch(() => null)
     const input = parsePageInput(body)
     if (!input) return jsonResponse({ error: 'Invalid page payload' }, 400, corsHeaders)
+    const slugConflict = await isSlugTaken(env, input.slug, id)
+    if (slugConflict) {
+      return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
+    }
     const actorId = await getActorId(request, env)
     const page = await repo(env).updatePage(id, input, actorId)
     if (!page) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
@@ -128,8 +141,9 @@ export async function handleCmsPageCreate(request: Request, env: Env, corsHeader
   const input = parsePageInput(body)
   if (!input) return jsonResponse({ error: 'Invalid page payload' }, 400, corsHeaders)
 
-  const existing = await repo(env).getPageBySlug(input.slug)
-  if (existing) return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
+  if (await isSlugTaken(env, input.slug)) {
+    return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
+  }
 
   const actorId = await getActorId(request, env)
   const page = await repo(env).createPage(input, actorId)
@@ -207,9 +221,11 @@ export async function handleCmsMediaUpload(request: Request, env: Env, corsHeade
   if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
     return jsonResponse({ error: 'Unsupported image type' }, 415, corsHeaders)
   }
+  if (file.size > 10 * 1024 * 1024) {
+    return jsonResponse({ error: 'Image too large (max 10MB)' }, 413, corsHeaders)
+  }
 
   const bytes = await file.arrayBuffer()
-  if (bytes.byteLength > 10 * 1024 * 1024) return jsonResponse({ error: 'Image too large (max 10MB)' }, 413, corsHeaders)
 
   const ext = file.type === 'image/png' ? 'png'
     : file.type === 'image/webp' ? 'webp'
