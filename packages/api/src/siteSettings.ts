@@ -26,6 +26,7 @@ const SITE_KEYS = [
   'podcast_title',
   'podcast_description',
   'gtm_container_id',
+  'gtm_measurement_path',
 ] as const
 
 const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'

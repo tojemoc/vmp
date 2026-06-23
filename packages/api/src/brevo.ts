@@ -56,7 +56,7 @@ function correlationFromRequest(request: any) {
 }
 
 function newsletterLog(event: any, fields = {}) {
-  console.log(JSON.stringify({ source: 'brevo_newsletter', event, ...fields }))
+  console.log(JSON.stringify({ service: 'newsletter', source: 'brevo_newsletter', event, ...fields }))
 }
 
 /** One-way id for logs (Workers: Web Crypto; no raw user ids). */

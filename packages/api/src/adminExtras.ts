@@ -8,6 +8,7 @@ import {
   isValidRoleName,
 } from './adminUserPolicy.js'
 import { parseCsvUserRows } from './userImportCsv.js'
+import { log } from './logger.js'
 
 const PILLS_KEY_HASH_PREFIX = 'pbkdf2'
 const PILLS_KEY_HASH_LEGACY_PREFIX = 'sha256'
@@ -2290,5 +2291,13 @@ export async function logSegmentEvent(env: any, payload: any) {
           updated_at = CURRENT_TIMESTAMP
       `).bind(videoId).run()
     }
+    log({
+      service: 'segment_analytics',
+      event: 'segment_logged',
+      video_id: videoId,
+      source_category: source.category,
+      has_user: Boolean(payload.userId),
+      is_new_session: (sessionInsert.meta?.changes ?? 0) > 0,
+    })
   }
 }

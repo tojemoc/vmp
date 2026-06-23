@@ -1587,6 +1587,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
                 </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  GTM first-party measurement path
+                  <input
+                    v-model="siteBranding.gtm_measurement_path"
+                    type="text"
+                    placeholder="/metrics  (leave empty to load GTM directly)"
+                    class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Set this to the measurement path configured in your Cloudflare Google Tag Gateway
+                    (e.g. /metrics). When set, GTM loads from your own domain instead of googletagmanager.com,
+                    surviving most privacy-focused browser settings.
+                  </p>
+                </label>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -2771,6 +2785,7 @@ const siteBranding = ref({
   podcast_title: '',
   podcast_description: '',
   gtm_container_id: '',
+  gtm_measurement_path: '',
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -4447,6 +4462,7 @@ const loadSiteBranding = async () => {
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
       gtm_container_id: data.gtm_container_id || '',
+      gtm_measurement_path: data.gtm_measurement_path || '',
     }
   } catch (e: any) {
     siteBrandingMessage.value = `Could not load site branding: ${e.message}`
