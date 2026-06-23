@@ -13,6 +13,7 @@ interface SiteSettings {
   faviconUrl: string
   supportEmail: string
   gtmContainerId: string
+  gtmMeasurementPath: string
 }
 
 const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
@@ -26,6 +27,7 @@ function defaultSiteSettings(): SiteSettings {
     faviconUrl: '',
     supportEmail: DEFAULT_SUPPORT_EMAIL,
     gtmContainerId: '',
+    gtmMeasurementPath: '',
   }
 }
 
@@ -39,6 +41,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     faviconUrl: String(data.site_favicon_url || ''),
     supportEmail: String(data.site_support_email || DEFAULT_SUPPORT_EMAIL),
     gtmContainerId: String(data.gtm_container_id || ''),
+    gtmMeasurementPath: String(data.gtm_measurement_path || ''),
   }
 }
 
