@@ -11,7 +11,6 @@ export default defineNuxtConfig({
     '@nuxtjs/color-mode',
     '@vite-pwa/nuxt',
     '@saslavik/nuxt-gtm',
-    '@vercel/analytics',
     '@sentry/nuxt/module',
   ],
 
