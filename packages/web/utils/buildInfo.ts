@@ -61,5 +61,5 @@ export function commitPageUrl(repoUrl: string, sha: string): string | null {
 }
 
 export function shouldLinkBuildLabel(tier: DeployTier): boolean {
-  return tier === 'staging' || tier === 'development'
+  return tier === 'staging'
 }
