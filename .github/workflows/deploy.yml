@@ -55,6 +55,8 @@ jobs:
       - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_DEPLOY_TIER: staging
+          NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
           NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
@@ -147,6 +149,9 @@ jobs:
       - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_DEPLOY_TIER: production
+          NUXT_PUBLIC_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
           NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 

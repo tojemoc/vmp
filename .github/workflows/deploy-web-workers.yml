@@ -44,6 +44,8 @@ jobs:
         env:
           API_URL: ${{ vars.API_URL_STAGING }}
           NODE_ENV: production
+          NUXT_PUBLIC_DEPLOY_TIER: staging
+          NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
           NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: npm run build:workers
