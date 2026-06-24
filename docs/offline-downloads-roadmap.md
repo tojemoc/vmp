@@ -30,8 +30,8 @@ flowchart TB
 
   subgraph api [Worker + D1 — M1/M2]
     DevReg[POST /api/offline/devices/register]
-    Auth[POST /api/downloads/:id/authorize]
-    Assets[GET /api/downloads/:id/assets/*]
+    Auth[POST /api/downloads/:videoId/authorize]
+    Assets[GET /api/downloads/:videoId/assets/*]
     Renew[POST /api/downloads/licenses/renew]
     D1[(D1: devices, licenses, subscriptions)]
   end
@@ -91,7 +91,7 @@ Revalidation interval: `offline_revalidation_days` (default 7).
 
 ## Subscription revocation
 
-On `customer.subscription.deleted` / `past_due`, server marks related licenses `revoked`. Client keeps OPFS files; playback blocked until renew after resubscribe.
+On `customer.subscription.deleted` and `invoice.payment_failed`, the server marks related licenses `revoked`. Client keeps OPFS files; playback blocked until renew after resubscribe.
 
 ## Abstraction layers (DRM-ready)
 

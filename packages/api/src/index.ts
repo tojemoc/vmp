@@ -726,7 +726,13 @@ const workerHandler = {
       const downloadVideoId = downloadAssetMatch?.[1]
       const downloadAssetPath = downloadAssetMatch?.[2]
       if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
-        return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodeURIComponent(downloadAssetPath))
+        let decodedAssetPath: string
+        try {
+          decodedAssetPath = decodeURIComponent(downloadAssetPath)
+        } catch {
+          return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders)
+        }
+        return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodedAssetPath)
       }
     }
     {

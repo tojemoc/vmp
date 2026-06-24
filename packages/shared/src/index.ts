@@ -71,6 +71,10 @@ export interface VideoAccessResponse {
 /** HLS rendition keys supported for offline download. */
 export type OfflineRendition = '480p' | '720p' | '1080p'
 
+export function isOfflineRendition(value: unknown): value is OfflineRendition {
+  return value === '480p' || value === '720p' || value === '1080p'
+}
+
 export interface OfflineDeviceRegistration {
   deviceId: string
   deviceToken: string

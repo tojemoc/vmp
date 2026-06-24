@@ -28,6 +28,7 @@ CREATE TABLE offline_download_licenses (
   revoked_at        DATETIME,
   revoked_reason    TEXT,
   manifest_hash     TEXT NOT NULL,
+  manifest_paths    TEXT NOT NULL,
   manifest_version  INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (video_id) REFERENCES videos(id),

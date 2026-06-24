@@ -858,6 +858,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               '[stripe webhook] revokeOfflineLicensesForUser failed',
               { fn: 'revokeOfflineLicensesForUser', userId: row.user_id, err: offlineErr },
             )
+            throw offlineErr
           }
         }
         break
@@ -890,6 +891,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
                 '[stripe webhook] revokeOfflineLicensesForUser failed',
                 { fn: 'revokeOfflineLicensesForUser', userId: existing.user_id, err: offlineErr },
               )
+              throw offlineErr
             }
           }
         }

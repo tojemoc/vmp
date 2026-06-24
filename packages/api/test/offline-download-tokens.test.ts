@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { signDownloadToken, verifyDownloadToken } from '../src/downloadTokens.js'
 
@@ -23,18 +23,16 @@ describe('downloadTokens', () => {
   })
 
   it('rejects expired tokens', async () => {
-    const token = await signDownloadToken('user-1', 'license-1', 'device-1', SECRET, { ttlSeconds: 60 })
-    const parts = token.split('.')
-    const payload = parts[0]
-    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
-    const segments = decoded.split(':')
-    segments[3] = String(Math.floor(Date.now() / 1000) - 10)
-    const expiredPayload = Buffer.from(segments.join(':')).toString('base64')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-    const expiredToken = `${expiredPayload}.${parts[1]}`
-    await assert.rejects(
-      () => verifyDownloadToken(expiredToken, SECRET),
-      /Invalid download token signature|Download token expired/,
-    )
+    const nowSpy = mock.method(Date, 'now', () => 1_700_000_000_000)
+    try {
+      const token = await signDownloadToken('user-1', 'license-1', 'device-1', SECRET, { ttlSeconds: 60 })
+      nowSpy.mock.mockImplementation(() => 1_700_000_120_000)
+      await assert.rejects(
+        () => verifyDownloadToken(token, SECRET),
+        /Download token expired/,
+      )
+    } finally {
+      nowSpy.mock.restore()
+    }
   })
 })

@@ -14,9 +14,10 @@ import {
   computeManifestHash,
   estimateDownloadBytes,
   isOfflineRendition,
+  parseLicensedManifestPaths,
   sha256HexFromString,
-  type OfflineRendition,
 } from './offlineManifest.js'
+import type { OfflineRendition } from '@vmp/shared'
 import { resolveMediaEntrypointUrl } from './mediaEntrypoints.js'
 
 const DEVICE_TOKEN_HEADER = 'x-vmp-device-token'
@@ -217,14 +218,26 @@ export async function handleRegisterOfflineDevice(request: Request, env: any, co
     }
 
     const limit = deviceLimitForPlan(subscription.plan_type, settings)
-    const countRow = await db.prepare(`
-      SELECT COUNT(*) AS count FROM offline_devices
-      WHERE user_id = ? AND revoked_at IS NULL
-    `).bind(user.sub).first()
-    const count = Number(countRow?.count ?? 0)
-    if (count >= limit) {
+    const deviceId = crypto.randomUUID()
+    const deviceToken = generateOpaqueToken()
+    const deviceTokenHash = await sha256Hex(deviceToken)
+
+    const insertResult = await db.prepare(`
+      INSERT INTO offline_devices (id, user_id, device_name, public_key, device_token_hash, registered_at, last_seen_at)
+      SELECT ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      WHERE (SELECT COUNT(*) FROM offline_devices WHERE user_id = ? AND revoked_at IS NULL) < ?
+    `).bind(deviceId, user.sub, deviceName, publicKey, deviceTokenHash, user.sub, limit).run()
+
+    if (!insertResult.meta?.changes) {
       return errorResponse('Device limit reached', 409, corsHeaders, 'device_limit_reached')
     }
+
+    return jsonResponse({
+      deviceId,
+      deviceToken,
+      deviceName,
+      registeredAt: new Date().toISOString(),
+    }, 201, corsHeaders)
   }
 
   const deviceId = crypto.randomUUID()
@@ -406,6 +419,7 @@ export async function handleAuthorizeDownload(
   }
 
   const manifestHash = await sha256HexFromString(computeManifestHash(manifest.files))
+  const manifestPathsJson = JSON.stringify(manifest.files.map(f => f.path))
   const subscription = await getActiveSubscription(db, user.sub)
   const expiresAt = computeLicenseExpiresAt(subscription, settings)
   const licenseId = crypto.randomUUID()
@@ -413,8 +427,8 @@ export async function handleAuthorizeDownload(
   await db.prepare(`
     INSERT INTO offline_download_licenses (
       id, user_id, video_id, device_id, rendition, status,
-      issued_at, expires_at, manifest_hash, manifest_version
-    ) VALUES (?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?, ?, ?)
+      issued_at, expires_at, manifest_hash, manifest_paths, manifest_version
+    ) VALUES (?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?, ?, ?, ?)
     ON CONFLICT(user_id, video_id, rendition, device_id) DO UPDATE SET
       status = 'active',
       issued_at = CURRENT_TIMESTAMP,
@@ -423,6 +437,7 @@ export async function handleAuthorizeDownload(
       revoked_at = NULL,
       revoked_reason = NULL,
       manifest_hash = excluded.manifest_hash,
+      manifest_paths = excluded.manifest_paths,
       manifest_version = excluded.manifest_version
   `).bind(
     licenseId,
@@ -432,6 +447,7 @@ export async function handleAuthorizeDownload(
     rendition,
     expiresAt,
     manifestHash,
+    manifestPathsJson,
     manifest.manifestVersion,
   ).run()
 
@@ -519,6 +535,11 @@ export async function handleDownloadAsset(
   const normalizedAsset = assetPath.replace(/^\/+/, '')
   if (!normalizedAsset || normalizedAsset.includes('..')) {
     return errorResponse('Invalid asset path', 400, corsHeaders)
+  }
+
+  const licensedPaths = parseLicensedManifestPaths(license.manifest_paths)
+  if (!licensedPaths?.has(normalizedAsset)) {
+    return errorResponse('Asset not covered by download license', 403, corsHeaders, 'asset_not_licensed')
   }
 
   const objectPath = `videos/${resolvedVideoId}/${normalizedAsset}`

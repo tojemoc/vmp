@@ -2,21 +2,12 @@
  * Build a flat file list for a single HLS rendition + shared audio group.
  */
 
-export type OfflineRendition = '480p' | '720p' | '1080p'
-
-export interface OfflineManifestFile {
-  /** Path relative to videos/{videoId}/ — e.g. "720p/seg_720_001.m4s" */
-  path: string
-  size: number | null
-}
-
-export interface OfflineManifest {
-  videoId: string
-  rendition: OfflineRendition
-  files: OfflineManifestFile[]
-  totalBytes: number
-  manifestVersion: number
-}
+import type {
+  OfflineManifest,
+  OfflineManifestFile,
+  OfflineRendition,
+} from '@vmp/shared'
+export { isOfflineRendition } from '@vmp/shared'
 
 const RENDITION_RESOLUTION: Record<OfflineRendition, string> = {
   '480p': '854x480',
@@ -24,9 +15,7 @@ const RENDITION_RESOLUTION: Record<OfflineRendition, string> = {
   '1080p': '1920x1080',
 }
 
-export function isOfflineRendition(value: unknown): value is OfflineRendition {
-  return value === '480p' || value === '720p' || value === '1080p'
-}
+const R2_PROBE_TIMEOUT_MS = 8_000
 
 export function computeManifestHash(files: OfflineManifestFile[]): string {
   const canonical = files
@@ -74,8 +63,8 @@ export async function buildOfflineManifest({
   }
 
   const masterText = await fetchText(masterUrl)
-  const variantPlaylistUrl = pickVariantPlaylistUrl(masterText, masterUrl, rendition)
-  if (!variantPlaylistUrl) {
+  const variantSelection = pickVariantPlaylistUrl(masterText, masterUrl, rendition)
+  if (!variantSelection) {
     throw new Error(`Rendition ${rendition} is not available for this video`)
   }
 
@@ -91,14 +80,14 @@ export async function buildOfflineManifest({
     files.push({ path: relative, size })
   }
 
-  const audioPlaylistUrl = findAudioPlaylistUrl(masterText, masterUrl)
+  const audioPlaylistUrl = findAudioPlaylistUrl(masterText, masterUrl, variantSelection.audioGroupId)
   if (audioPlaylistUrl) {
     const audioText = await fetchText(audioPlaylistUrl)
     await collectMediaPlaylistFiles(audioText, audioPlaylistUrl, addRelativePath)
   }
 
-  const variantText = await fetchText(variantPlaylistUrl)
-  await collectMediaPlaylistFiles(variantText, variantPlaylistUrl, addRelativePath)
+  const variantText = await fetchText(variantSelection.playlistUrl)
+  await collectMediaPlaylistFiles(variantText, variantSelection.playlistUrl, addRelativePath)
 
   // Include rewritten local manifests the client will store
   const localManifestPaths = [
@@ -124,7 +113,16 @@ export async function buildOfflineManifest({
   }
 }
 
-function pickVariantPlaylistUrl(masterText: string, masterUrl: string, rendition: OfflineRendition): string | null {
+interface VariantSelection {
+  playlistUrl: string
+  audioGroupId: string | null
+}
+
+function pickVariantPlaylistUrl(
+  masterText: string,
+  masterUrl: string,
+  rendition: OfflineRendition,
+): VariantSelection | null {
   const lines = masterText.split('\n').map(l => l.trim()).filter(Boolean)
   const targetResolution = RENDITION_RESOLUTION[rendition]
   const targetPathFragment = `/${rendition}/`
@@ -140,7 +138,10 @@ function pickVariantPlaylistUrl(masterText: string, masterUrl: string, rendition
     const matchesResolution = resolution === targetResolution
     const matchesPath = next.includes(targetPathFragment) || next.includes(`${rendition}/playlist.m3u8`)
     if (matchesResolution || matchesPath) {
-      return new URL(next, masterUrl).toString()
+      return {
+        playlistUrl: new URL(next, masterUrl).toString(),
+        audioGroupId: extractAudioGroupId(streamInf),
+      }
     }
   }
 
@@ -150,18 +151,36 @@ function pickVariantPlaylistUrl(masterText: string, masterUrl: string, rendition
       const streamInf = lines[i]
       if (!streamInf?.startsWith('#EXT-X-STREAM-INF:')) continue
       const next = lines[i + 1]
-      if (next && !next.startsWith('#')) return new URL(next, masterUrl).toString()
+      if (next && !next.startsWith('#')) {
+        return {
+          playlistUrl: new URL(next, masterUrl).toString(),
+          audioGroupId: extractAudioGroupId(streamInf),
+        }
+      }
     }
   }
 
   return null
 }
 
-function findAudioPlaylistUrl(masterText: string, masterUrl: string): string | null {
+function extractAudioGroupId(streamInfLine: string): string | null {
+  const match = streamInfLine.match(/AUDIO="([^"]+)"/i)
+  return match?.[1] ?? null
+}
+
+export function findAudioPlaylistUrl(
+  masterText: string,
+  masterUrl: string,
+  audioGroupId: string | null,
+): string | null {
   const lines = masterText.split('\n').map(l => l.trim()).filter(Boolean)
   for (const line of lines) {
     if (!line.startsWith('#EXT-X-MEDIA:')) continue
     if (!/TYPE=AUDIO/i.test(line)) continue
+    if (audioGroupId) {
+      const groupMatch = line.match(/GROUP-ID="([^"]+)"/i)
+      if (groupMatch?.[1] !== audioGroupId) continue
+    }
     const uriMatch = line.match(/URI="([^"]+)"/i)
     if (uriMatch?.[1]) return new URL(uriMatch[1], masterUrl).toString()
   }
@@ -194,9 +213,18 @@ function toVideoRelativePath(pathname: string, videoId: string): string | null {
   return relative
 }
 
+function probeSignal(): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(R2_PROBE_TIMEOUT_MS)
+  }
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), R2_PROBE_TIMEOUT_MS)
+  return controller.signal
+}
+
 async function headOk(url: string): Promise<boolean> {
   try {
-    const res = await fetch(url, { method: 'HEAD' })
+    const res = await fetch(url, { method: 'HEAD', signal: probeSignal() })
     return res.ok
   } catch {
     return false
@@ -205,7 +233,7 @@ async function headOk(url: string): Promise<boolean> {
 
 async function headContentLength(url: string): Promise<number | null> {
   try {
-    const res = await fetch(url, { method: 'HEAD' })
+    const res = await fetch(url, { method: 'HEAD', signal: probeSignal() })
     if (!res.ok) return null
     const cl = res.headers.get('Content-Length')
     if (!cl) return null
@@ -217,7 +245,15 @@ async function headContentLength(url: string): Promise<number | null> {
 }
 
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url)
+  let res: Response
+  try {
+    res = await fetch(url, { signal: probeSignal() })
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error('Timed out fetching playlist from R2')
+    }
+    throw new Error('Failed to fetch playlist from R2')
+  }
   if (!res.ok) throw new Error(`Failed to fetch playlist (${res.status})`)
   return res.text()
 }
@@ -226,4 +262,16 @@ export function estimateDownloadBytes(durationSec: number, rendition: OfflineRen
   const videoBitrate = { '480p': 1.5e6, '720p': 3e6, '1080p': 5e6 }[rendition]
   const audioBitrate = rendition === '480p' ? 96e3 : 128e3
   return Math.ceil((videoBitrate + audioBitrate) * Math.max(0, durationSec) / 8 * 1.05)
+}
+
+export function parseLicensedManifestPaths(raw: unknown): Set<string> | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    const paths = parsed.filter((p): p is string => typeof p === 'string' && p.length > 0)
+    return paths.length > 0 ? new Set(paths) : null
+  } catch {
+    return null
+  }
 }
