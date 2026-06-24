@@ -6,7 +6,7 @@
     - Wrong role       → /
 -->
 <template>
-  <div class="min-h-screen overflow-x-hidden bg-gray-50 dark:bg-gray-950">
+  <div class="min-h-screen overflow-x-hidden bg-gray-50 dark:bg-gray-950 flex flex-col">
     <AppHeader />
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -1945,6 +1945,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       </section>
 
     </main>
+
+    <AdminBuildFooter />
 
     <div class="fixed top-20 right-4 z-50 space-y-2">
       <div v-for="toast in toasts" :key="toast.id" role="status" aria-live="polite" aria-atomic="true" class="rounded-lg border px-3 py-2 text-sm shadow" :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'">{{ toast.message }}</div>

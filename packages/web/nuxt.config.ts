@@ -1,4 +1,7 @@
+import { readBuildInfoDefaults } from './utils/buildInfoSource'
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+
+const buildInfo = readBuildInfoDefaults()
 
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
@@ -69,6 +72,13 @@ export default defineNuxtConfig({
         environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
         enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
       },
+      /** staging | beta | production | development — controls admin footer build label. */
+      deployTier: buildInfo.deployTier,
+      /** Release tag or package version (production / beta). */
+      appVersion: buildInfo.appVersion,
+      /** Full git SHA baked in at build time (staging footer shows short form). */
+      gitCommit: buildInfo.gitCommit,
+      gitRepoUrl: buildInfo.gitRepoUrl,
     },
   },
 
