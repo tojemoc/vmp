@@ -2547,7 +2547,7 @@ const baseAdminTabs = [
 ]
 const adminTabs = computed(() =>
   baseAdminTabs.filter((tab) => {
-    if (tab.id === 'pills' || tab.id === 'legacy_migration') return isAdmin.value
+    if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'newsletter') return isAdmin.value
     return true
   })
 )
@@ -6442,13 +6442,14 @@ function onConfirmModalKeydown(e: KeyboardEvent) {
 
 watch([() => route.query.tab, adminTabs, initialised], () => {
   if (!initialised.value) return
-  const requested = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const rawTab = route.query.tab
+  const requested = Array.isArray(rawTab) ? rawTab[0] || '' : (typeof rawTab === 'string' ? rawTab : '')
   const allowed = new Set(adminTabs.value.map((t) => t.id))
   const resolved = requested && allowed.has(requested as typeof activeAdminTab.value)
     ? (requested as typeof activeAdminTab.value)
     : 'videos'
   activeAdminTab.value = resolved
-  if (requested && requested !== resolved) {
+  if (rawTab !== resolved) {
     router.replace({ query: { ...route.query, tab: resolved } })
   }
 }, { immediate: true })
