@@ -99,7 +99,7 @@
           </svg>
         </div>
         <div>
-          <h2 class="text-lg font-semibold text-white mb-1">Link invalid</h2>
+          <h2 class="text-lg font-semibold text-white mb-1">{{ strings.authVerifyLinkInvalid }}</h2>
           <p class="text-gray-400 text-sm leading-relaxed">{{ errorMessage }}</p>
         </div>
         <button
@@ -107,7 +107,7 @@
           class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           @click="requestNewLink"
         >
-          Request a new link
+          {{ strings.authVerifyRequestNewLink }}
         </button>
       </div>
 

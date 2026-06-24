@@ -69,6 +69,8 @@ export const strings: StringsDefinition = {
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',
   authVerifySignInIncomplete: 'Sign-in incomplete',
   authVerifyNoToken: 'No token found in the URL. Try clicking the link in your email again.',
+  authVerifyLinkInvalid: 'Link invalid',
+  authVerifyRequestNewLink: 'Request a new link',
 
   pwaLoginTitle: 'Sign in to the app',
   pwaLoginIntro: 'This takes a few extra steps the first time. Follow each step carefully.',
@@ -249,6 +251,16 @@ export const strings: StringsDefinition = {
   billingPortalFailed: 'Could not open billing portal. Please try again.',
   accountContactSupport: 'Contact support',
   accountRelinkPaymentMethod: 'Relink payment method',
+  accountRelinkBannerTitle: 'Link your payment method',
+  accountRelinkBannerBody:
+    'Your subscription was migrated from our previous platform. To ensure uninterrupted access, please link a payment method.',
+  accountRelinkBannerCta: 'Link payment method →',
+  accountSubscriptionLabel: 'Subscription',
+  accountRelinkImportedTitle: 'Your subscription was imported and needs to be linked',
+  accountRelinkImportedBody: (provider: string) =>
+    `Your access is active while we complete the migration. If you previously paid via ${provider}, your subscription may need to be renewed. Contact us if you experience any issues.`,
+  accountRelinkStatusNeedsRelink: 'Needs relink',
+  accountRelinkLegacyProviderFallback: 'our previous provider',
   accountManagePaymentMethod: 'Manage payment method',
   networkError: 'Network error. Please try again.',
 

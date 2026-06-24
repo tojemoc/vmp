@@ -9,16 +9,15 @@
         class="flex items-start gap-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4"
       >
         <div class="flex-1">
-          <p class="font-semibold text-amber-900 dark:text-amber-200">Link your payment method</p>
+          <p class="font-semibold text-amber-900 dark:text-amber-200">{{ strings.accountRelinkBannerTitle }}</p>
           <p class="text-sm text-amber-800 dark:text-amber-300 mt-0.5">
-            Your subscription was migrated from our previous platform. To ensure uninterrupted access,
-            please link a payment method.
+            {{ strings.accountRelinkBannerBody }}
           </p>
           <NuxtLink
             to="/pricing"
             class="inline-flex items-center mt-3 text-sm font-semibold text-amber-900 dark:text-amber-100 hover:underline"
           >
-            Link payment method →
+            {{ strings.accountRelinkBannerCta }}
           </NuxtLink>
         </div>
         <button
@@ -26,7 +25,7 @@
           class="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
           @click="dismissRelinkBanner"
         >
-          <span class="sr-only">Dismiss</span>
+          <span class="sr-only">{{ strings.dismiss }}</span>
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
           </svg>
@@ -80,15 +79,14 @@
         <template v-if="subscription?.status === 'needs_relink'">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1">Subscription</p>
-              <p class="text-lg font-semibold text-gray-900 dark:text-white">Your subscription was imported and needs to be linked</p>
+              <p class="text-xs text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1">{{ strings.accountSubscriptionLabel }}</p>
+              <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ strings.accountRelinkImportedTitle }}</p>
               <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                Your access is active while we complete the migration. If you previously paid via
-                {{ legacyProviderDisplayName }}, your subscription may need to be renewed. Contact us if you experience any issues.
+                {{ strings.accountRelinkImportedBody(legacyProviderDisplayName) }}
               </p>
             </div>
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200">
-              needs_relink
+              {{ strings.accountRelinkStatusNeedsRelink }}
             </span>
           </div>
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-3">
@@ -353,7 +351,7 @@ const showLegacyManageButton = computed(() => {
 const legacyProviderDisplayName = computed(() => {
   const sub = subscription.value
   if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy')
-  return 'our previous provider'
+  return strings.accountRelinkLegacyProviderFallback
 })
 
 const supportMailto = computed(() => {

@@ -280,8 +280,10 @@ usePageSeo(
 // ── PWA install banner ────────────────────────────────────────────────────────
 const { $pwa } = useNuxtApp()
 const pwaBannerDismissed = ref(false)
+/** Defer until after mount so SSR HTML matches the first client paint (avoids hydration mismatch). */
+const pwaBannerReady = ref(false)
 const showPwaBanner = computed(
-  () => import.meta.client && !pwaBannerDismissed.value && !!($pwa as any)?.showInstallPrompt,
+  () => pwaBannerReady.value && !pwaBannerDismissed.value && !!($pwa as any)?.showInstallPrompt,
 )
 function installPwa() {
   ;($pwa as any)?.install?.()
@@ -360,6 +362,7 @@ function updateMobileViewport() {
 }
 
 onMounted(() => {
+  pwaBannerReady.value = true
   updateMobileViewport()
   if (import.meta.client) window.addEventListener('resize', updateMobileViewport)
 })

@@ -123,12 +123,6 @@ onMounted(() => {
     const authenticated = isLoggedIn.value
     const iosPwa = isIosInstalledPwa()
 
-    console.log('[PWA WIZARD] auto-open check', {
-      authenticated,
-      iosPwa,
-      route: window.location.pathname,
-    })
-
     if (!authenticated && iosPwa) {
       openPwaPushLoginWizard()
     }

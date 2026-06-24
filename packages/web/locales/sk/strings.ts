@@ -71,6 +71,8 @@ export const strings: StringsDefinition = {
   authVerifyErrorGeneric: 'Niečo sa pokazilo. Požiadajte o nový odkaz na prihlásenie.',
   authVerifySignInIncomplete: 'Prihlásenie nebolo dokončené',
   authVerifyNoToken: 'V adrese URL sa nenašiel token. Skúste znova kliknúť na odkaz v e-maile.',
+  authVerifyLinkInvalid: 'Neplatný odkaz',
+  authVerifyRequestNewLink: 'Požiadať o nový odkaz',
 
   pwaLoginTitle: 'Prihlásiť sa do aplikácie',
   pwaLoginIntro: 'Prvýkrát to vyžaduje niekoľko ďalších krokov. Postupujte opatrne podľa každého kroku.',
@@ -251,6 +253,16 @@ export const strings: StringsDefinition = {
   billingPortalFailed: 'Nepodarilo sa otvoriť fakturačný portál. Skúste to prosím znova.',
   accountContactSupport: 'Kontaktovať podporu',
   accountRelinkPaymentMethod: 'Znova prepojiť platobnú metódu',
+  accountRelinkBannerTitle: 'Prepojte platobnú metódu',
+  accountRelinkBannerBody:
+    'Vaše predplatné bolo presunuté z predchádzajúcej platformy. Aby ste mali neprerušený prístup, prepojte prosím platobnú metódu.',
+  accountRelinkBannerCta: 'Prepojiť platobnú metódu →',
+  accountSubscriptionLabel: 'Predplatné',
+  accountRelinkImportedTitle: 'Vaše predplatné bolo importované a je potrebné ho prepojiť',
+  accountRelinkImportedBody: (provider: string) =>
+    `Váš prístup je aktívny, kým dokončíme migráciu. Ak ste predtým platili cez ${provider}, predplatné môže byť potrebné obnoviť. V prípade problémov nás kontaktujte.`,
+  accountRelinkStatusNeedsRelink: 'Vyžaduje prepojenie',
+  accountRelinkLegacyProviderFallback: 'nášho predchádzajúceho poskytovateľa',
   accountManagePaymentMethod: 'Spravovať platobnú metódu',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 

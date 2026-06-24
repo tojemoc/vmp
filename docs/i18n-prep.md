@@ -34,11 +34,13 @@ Admin dashboard copy is listed under `strings.admin` as an **inventory** for tra
 
 VMP is designed for **one language per deployment** — e.g. a Slovak client instance with `NUXT_PUBLIC_UI_LOCALE=sk`, a Czech client with `NUXT_PUBLIC_UI_LOCALE=cs`.
 
-Set at build time in Cloudflare Pages / Vercel / local dev:
+Set at build time in Cloudflare Pages / local dev:
 
 ```bash
 NUXT_PUBLIC_UI_LOCALE=sk API_URL=https://api.example.sk npm run build --workspace=@vmp/web
 ```
+
+Staging deploys via `.github/workflows/deploy.yml` on push to `main`. Set `NUXT_PUBLIC_UI_LOCALE=sk` in the Cloudflare Pages project env (or workflow `env:` block) before flipping a Slovak instance.
 
 `runtimeConfig.public.uiLocale` and `<html lang="…">` follow this value. There is no language picker in the header by default.
 
@@ -80,7 +82,7 @@ NUXT_PUBLIC_UI_LOCALE=sk npm run build --workspace=@vmp/web
 | Login, verify, PWA login | ~45 | Yes |
 | 2FA (verify, setup, account) | ~40 | Yes |
 | Homepage, category, watch | ~45 | Yes |
-| Account, billing, RSS | ~35 | Yes |
+| Account, billing, RSS | ~45 | Yes (including legacy relink banners) |
 | Checkout / premium overlay | ~30 | Yes |
 | Admin inventory (`strings.admin`) | ~45 | No (inventory only) |
 
