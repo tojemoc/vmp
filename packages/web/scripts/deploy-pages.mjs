@@ -27,15 +27,23 @@ const commitHash = process.env.GITHUB_SHA || readGitValue('git rev-parse HEAD');
 const rawMessage = process.env.GITHUB_EVENT_HEAD_COMMIT_MESSAGE || readGitValue('git log -1 --pretty=%B');
 const commitMessage = sanitizeCommitMessage(rawMessage);
 
+const projectName = (process.env.CF_PAGES_PROJECT_NAME || 'vmp-fe').trim();
+if (!projectName) {
+  console.error('CF_PAGES_PROJECT_NAME is required (e.g. vmp-fe or your production Pages project).');
+  process.exit(1);
+}
+
+const branch = (process.env.CF_PAGES_BRANCH || 'main').trim() || 'main';
+
 // `pages_build_output_dir` in wrangler.toml supplies dist/; deploy from packages/web so config is loaded.
 const args = [
   'wrangler',
   'pages',
   'deploy',
   '--project-name',
-  'vmp-fe',
+  projectName,
   '--branch',
-  'main',
+  branch,
   '--commit-message',
   commitMessage,
 ];

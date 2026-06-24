@@ -46,7 +46,7 @@ Core API and web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.m
 
 ## Deployment model (high level)
 
-- Pushes to `main` run staging deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+- Pushes to `main` run staging deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) (API + Worker staging; web build is deployed to both the staging Pages project and the production Pages project so the public domain stays current).
 - Version tags (`v*.*.*`) run production deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 - Deploy pipeline fails fast on type-checking before build/deploy:
   - `@vmp/shared` `tsc --noEmit`
@@ -69,7 +69,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for env templates, secrets, and domain overri
    - `CLOUDFLARE_ACCOUNT_ID_STAGING`
    - `CLOUDFLARE_API_TOKEN_PROD`
    - `CLOUDFLARE_ACCOUNT_ID_PROD`
-   - `CF_PAGES_PROJECT_NAME` (staging web deploy)
+   - `CF_PAGES_PROJECT_NAME_STAGING` (staging Pages project, e.g. `vmp-fe`)
+   - `CF_PAGES_PROJECT_NAME_PROD` (production Pages project bound to the public domain, e.g. `vmp.tjm.sk`)
 
 ## Local setup
 

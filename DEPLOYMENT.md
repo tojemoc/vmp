@@ -29,8 +29,8 @@ Canonical deploy workflow: `.github/workflows/deploy.yml`.
 
 The canonical workflow uses:
 
-- pushes to `main` -> staging deploy
-- version tags (`v*.*.*`) -> production deploy
+- pushes to `main` -> staging API deploy + web build deployed to staging **and** production Pages projects (public domain)
+- version tags (`v*.*.*`) -> full production deploy (API + web)
 
 Required repository secrets:
 

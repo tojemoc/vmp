@@ -59,7 +59,6 @@
     "targets": {
       "deploy": {
         "dependsOn": [
-          "build",
           "^deploy"
         ]
       }

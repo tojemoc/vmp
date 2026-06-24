@@ -27,7 +27,12 @@ jobs:
     env:
       API_BASE_URL: ${{ vars.API_URL_STAGING }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
+      FRONTEND_URL_PROD: ${{ vars.FRONTEND_URL_PROD }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
+      NUXT_PUBLIC_DEPLOY_TIER: staging
+      NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
+      NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -55,10 +60,6 @@ jobs:
       - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
-          NUXT_PUBLIC_DEPLOY_TIER: staging
-          NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
-          NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Validate staging env/domain wiring
         run: |
@@ -72,11 +73,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
         run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
       
-      - name: Deploy Web (staging)
+      - name: Deploy Web (staging Pages project)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-        run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:deploy
+          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_STAGING }}
+        run: |
+          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_STAGING" && exit 1)
+          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:deploy
+
+      - name: Deploy Web (production Pages project — public domain)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
+          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_PROD }}
+        run: |
+          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_PROD" && exit 1)
+          node packages/web/scripts/deploy-pages.mjs
 
       - name: Smoke check API health (staging)
         run: |
@@ -108,6 +121,21 @@ jobs:
         run: |
           curl -fsS "$FRONTEND_URL" >/dev/null
 
+      - name: Smoke check frontend build revision (staging)
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
+
+      - name: Smoke check frontend build revision (production domain)
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$FRONTEND_URL_PROD" ]; then
+            echo "Skipping production frontend revision smoke (FRONTEND_URL_PROD unset)."
+            exit 0
+          fi
+          bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL_PROD"
+
   deploy-production:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -116,6 +144,11 @@ jobs:
       API_BASE_URL: ${{ vars.API_URL_PROD }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL_PROD }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_PROD }}
+      NUXT_PUBLIC_DEPLOY_TIER: production
+      NUXT_PUBLIC_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+      NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
+      NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -149,11 +182,6 @@ jobs:
       - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
         env:
           API_URL: ${{ env.API_BASE_URL }}
-          NUXT_PUBLIC_DEPLOY_TIER: production
-          NUXT_PUBLIC_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
-          NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Validate production env/domain wiring
         run: |
@@ -168,12 +196,13 @@ jobs:
         run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
       
       - name: Deploy Web (production)
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-          workingDirectory: packages/web
-          command: pages deploy --project-name ${{ vars.CF_PAGES_PROJECT_NAME_PROD }} --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
+          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_PROD }}
+        run: |
+          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_PROD" && exit 1)
+          node packages/web/scripts/deploy-pages.mjs
 
       - name: Smoke check API health (production)
         run: |
@@ -204,6 +233,11 @@ jobs:
       - name: Smoke check frontend reachability (production)
         run: |
           curl -fsS "$FRONTEND_URL" >/dev/null
+
+      - name: Smoke check frontend build revision (production)
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
 
       - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
