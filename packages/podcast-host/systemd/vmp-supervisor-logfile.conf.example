@@ -1,0 +1,15 @@
+# Optional systemd drop-in: persist supervisor logs to a file for Datadog file tailing.
+#
+#   sudo mkdir -p /var/log/vmp
+#   sudo chown root:root /var/log/vmp
+#   sudo chmod 755 /var/log/vmp
+#   sudo cp packages/podcast-host/systemd/vmp-supervisor-logfile.conf.example \
+#     /etc/systemd/system/vmp-supervisor.service.d/logfile.conf
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart vmp-supervisor
+#
+# Then uncomment the file source in packages/podcast-host/datadog/conf.d/vmp.d/conf.yaml.
+
+[Service]
+StandardOutput=append:/var/log/vmp/supervisor.log
+StandardError=append:/var/log/vmp/supervisor.log

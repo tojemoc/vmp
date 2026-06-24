@@ -95,6 +95,12 @@ export function translateSqliteToPostgres(sql: string): string {
   // Strip SQLite PRAGMA (Postgres uses different session settings).
   s = s.replace(/^\s*PRAGMA\s+[^;]+;\s*/gim, '')
 
+  // SQLite trigger bodies (BEGIN … END;) are invalid in Postgres; use -- POSTGRES: replacements.
+  s = s.replace(
+    /CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?[\w]+\s+[\s\S]*?\bBEGIN\b[\s\S]*?\bEND\s*;/gi,
+    '',
+  )
+
   // sqlite_master introspection (admin health / seed helpers in @vmp/api).
   s = s.replace(
     /FROM\s+sqlite_master\b/gi,

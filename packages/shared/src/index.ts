@@ -3,6 +3,22 @@ export {
   compareVideosNewestFirst,
 } from './homepagePlacementSort.js'
 
+export type {
+  CmsBlock,
+  CmsCalloutBlock,
+  CmsCalloutVariant,
+  CmsDividerBlock,
+  CmsImageBlock,
+  CmsMedia,
+  CmsPage,
+  CmsPageInput,
+  CmsPageRevision,
+  CmsPageStatus,
+  CmsRichTextBlock,
+  CmsRichTextDocument,
+  CmsTableBlock,
+} from './cms.js'
+
 export interface User {
   id: string
   email: string

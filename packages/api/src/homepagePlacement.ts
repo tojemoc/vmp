@@ -32,11 +32,57 @@ export { placementTimestampMs }
  */
 
 type VideoRef = { id: string }
-type PublishedVideoInput = {
+export type PublishedVideoInput = {
   id: string
   published_at?: string | null
   upload_date?: string | null
   category_id?: string | null
+}
+
+/** Collapse duplicate join rows; prefer a row that carries a category assignment. */
+export function normalizePlacementVideoRows(rows: PublishedVideoInput[]) {
+  const byId = new Map<string, PublishedVideoInput>()
+  for (const row of rows) {
+    if (!row || typeof row.id !== 'string') continue
+    if (!byId.has(row.id)) {
+      byId.set(row.id, row)
+      continue
+    }
+    const prev = byId.get(row.id)!
+    const prevHasCat = prev.category_id != null && String(prev.category_id).trim() !== ''
+    const rowHasCat = row.category_id != null && String(row.category_id).trim() !== ''
+    if (!prevHasCat && rowHasCat) byId.set(row.id, row)
+  }
+  return [...byId.values()]
+}
+
+/** Collect every video id referenced by a placement payload. */
+export function collectPlacementVideoIds(placement: {
+  featured?: Array<{ id?: string } | null> | null
+  recentGrid?: Array<{ id?: string } | null> | null
+  categoryBlocks?: Array<{
+    visible?: Array<{ id?: string } | null> | null
+    overflow?: Array<{ id?: string } | null> | null
+  } | null> | null
+} | null) {
+  const ids = new Set<string>()
+  if (!placement) return []
+  for (const ref of placement.featured ?? []) {
+    if (ref && typeof ref.id === 'string') ids.add(ref.id)
+  }
+  for (const ref of placement.recentGrid ?? []) {
+    if (ref && typeof ref.id === 'string') ids.add(ref.id)
+  }
+  for (const block of placement.categoryBlocks ?? []) {
+    if (!block) continue
+    for (const ref of block.visible ?? []) {
+      if (ref && typeof ref.id === 'string') ids.add(ref.id)
+    }
+    for (const ref of block.overflow ?? []) {
+      if (ref && typeof ref.id === 'string') ids.add(ref.id)
+    }
+  }
+  return [...ids]
 }
 type CategoryInput = {
   id: string
@@ -107,16 +153,13 @@ function refFor(id: any, byId: any) {
  * @param {{ videos: PublishedVideoInput[], categories: CategoryInput[], homepage: HomepageConfigInput }} input
  */
 export function placeHomepageVideos(input: any) {
-  const rawVideos = Array.isArray(input.videos) ? input.videos : []
+  const rawVideos = normalizePlacementVideoRows(Array.isArray(input.videos) ? input.videos : [])
   const categories = Array.isArray(input.categories) ? [...input.categories] : []
   const homepage: NormalizedHomepagePlacementConfig = input.homepage && typeof input.homepage === 'object'
     ? input.homepage
     : normalizeHomepagePlacementConfig(null)
 
-  const byId = new Map()
-  for (const v of rawVideos) {
-    if (v && typeof v.id === 'string') byId.set(v.id, v)
-  }
+  const byId = new Map(rawVideos.map((v) => [v.id, v]))
 
   const sortedAll = [...byId.values()].sort(compareVideosNewestFirst)
 

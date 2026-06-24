@@ -12,6 +12,7 @@ import {
   emitTtpSummary,
   setTtpSourceDuration,
 } from './ttpLog.js'
+import { gauge, histogram, increment } from './metrics.js'
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused'
 type PipelineStage =
@@ -846,6 +847,8 @@ async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: stri
 }
 
 async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
+  const jobStartMs = Date.now()
+  increment('vmp.transcoder.job.started', 1, { source })
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   const doneFlag = path.join(tmpDir, '.done')
   const lockFile = path.join(tmpDir, '.lock')
@@ -982,6 +985,8 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitProgressCheckpoint(videoId, 'done', PROGRESS.DONE, 'complete')
     await emitTtp(videoId, 'pipeline_done', {})
     await emitTtpSummary(videoId, 'success')
+    histogram('vmp.transcoder.job.duration_ms', Date.now() - jobStartMs, { outcome: 'success', source })
+    increment('vmp.transcoder.job.success', 1, { source })
     videoDurations.delete(videoId)
     progressEmitState.delete(videoId)
     jobHandles.delete(videoId)
@@ -995,6 +1000,8 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitPipelineEvent(videoId, 'failed', 'failed', detail)
     await emitTtp(videoId, 'pipeline_failed', { error: detail })
     await emitTtpSummary(videoId, 'failed', detail)
+    histogram('vmp.transcoder.job.duration_ms', Date.now() - jobStartMs, { outcome: 'failed', source })
+    increment('vmp.transcoder.job.failed', 1, { source })
     log(`❌ ${videoId} failed: ${err instanceof Error ? err.message : String(err)}`)
     await rm(lockFile, { force: true })
     videoDurations.delete(videoId)
@@ -1009,6 +1016,11 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
 
 const queue: QueueJob[] = []
 let running = 0
+
+function reportQueueMetrics(): void {
+  gauge('vmp.transcoder.queue.depth', queue.length)
+  gauge('vmp.transcoder.jobs.active', running)
+}
 
 /** Original inbox basename (pre-rename) → resolved path/id; prevents duplicate renames. */
 const inboxIntakeByBasename = new Map<string, ResolveInputTargetPathResult>()
@@ -1166,6 +1178,7 @@ function enqueue(videoId: string, inputPath: string, source: string): void {
   if (isJobStopped(videoId)) return
   beginTtpJob(videoId, source, inputPath)
   queue.push({ videoId, inputPath, source })
+  reportQueueMetrics()
   drain()
 }
 
@@ -1236,10 +1249,12 @@ function drain(): void {
     if (!job) break
     if (isJobStopped(job.videoId)) continue
     running += 1
+    reportQueueMetrics()
     processVideo(job.videoId, job.inputPath, job.source)
       .catch(() => {})
       .finally(() => {
         running -= 1
+        reportQueueMetrics()
         drain()
       })
   }

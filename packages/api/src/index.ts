@@ -80,6 +80,7 @@ import {
   handleRssPodcastWebhookConfig,
 } from './rssPodcastAdmin.js'
 import { handleVideoPipelineStatus } from './pipelineStatus.js'
+import { log } from './logger.js'
 import {
   handleHomepageContent,
   handleHomepageContentPublic,
@@ -104,11 +105,23 @@ import {
   handleIsicCampaignPublic,
 } from './promotions.js'
 import { handleAdminSmokeAuth } from './smokeAuth.js'
+import {
+  handleCmsPagesList,
+  handleCmsPageBySlug,
+  handleCmsPageById,
+  handleCmsPageCreate,
+  handleCmsPagePublish,
+  handleCmsPageUnpublish,
+  handleCmsPageRevisions,
+  handleCmsPageRestoreRevision,
+  handleCmsMediaUpload,
+  handleCmsMediaById,
+} from './cmsPages.js'
 import { handleSiteSettings } from './siteSettings.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { compareVideosNewestFirst } from '@vmp/shared'
-import { placeHomepageVideos, normalizeHomepagePlacementConfig } from './homepagePlacement.js'
+import { placeHomepageVideos, normalizeHomepagePlacementConfig, collectPlacementVideoIds, normalizePlacementVideoRows } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
   enqueueReplicationBatch,
@@ -340,6 +353,10 @@ export const SegmentRateLimiterDO = Sentry.instrumentDurableObjectWithSentry(
   SegmentRateLimiterDOBase as never,
 )
 
+function logRequest(method: string, path: string, status: number, durationMs: number, extra?: Record<string, unknown>) {
+  log({ service: 'worker', event: 'request', level: 'info', http_method: method, http_path: path, http_status: status, duration_ms: durationMs, ...extra })
+}
+
 const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     const url = new URL(request.url)
@@ -357,6 +374,7 @@ const workerHandler = {
     // back.  Unknown origins get a non-credentialed response, which is fine
     // for public endpoints like /api/videos.
     const corsHeaders = buildCorsHeaders(request, env)
+    const _reqStart = Date.now()
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -437,10 +455,10 @@ const workerHandler = {
       return handlePersonalFeed(request, env, corsHeaders)
     }
     if (url.pathname.startsWith('/api/video-access/')) {
-      return handleVideoAccess(request, env, corsHeaders, ctx)
+      return handleVideoAccess(request, env, corsHeaders, ctx, _reqStart)
     }
     if (url.pathname.startsWith('/api/video-proxy/')) {
-      return handleVideoProxy(request, env, corsHeaders, ctx)
+      return handleVideoProxy(request, env, corsHeaders, ctx, _reqStart)
     }
     {
       const pipelineStatusMatch = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/)
@@ -577,6 +595,51 @@ const workerHandler = {
     }
     if (url.pathname === '/api/site-settings' && request.method === 'GET') {
       return handleSiteSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pages' && request.method === 'GET') {
+      return handleCmsPagesList(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/pages' && request.method === 'POST') {
+      return handleCmsPageCreate(request, env, corsHeaders)
+    }
+    const cmsPageRestore = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/)
+    const cmsPageRestoreId = cmsPageRestore?.[1]
+    const cmsPageRestoreRevisionId = cmsPageRestore?.[2]
+    if (cmsPageRestoreId && cmsPageRestoreRevisionId && request.method === 'POST') {
+      return handleCmsPageRestoreRevision(request, env, corsHeaders, cmsPageRestoreId, cmsPageRestoreRevisionId)
+    }
+    const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/)
+    const cmsPageRevisionsId = cmsPageRevisions?.[1]
+    if (cmsPageRevisionsId && request.method === 'GET') {
+      return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisionsId)
+    }
+    const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/)
+    const cmsPagePublishId = cmsPagePublish?.[1]
+    if (cmsPagePublishId && request.method === 'POST') {
+      return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublishId)
+    }
+    const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/)
+    const cmsPageUnpublishId = cmsPageUnpublish?.[1]
+    if (cmsPageUnpublishId && request.method === 'POST') {
+      return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublishId)
+    }
+    const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/)
+    const cmsPageId = cmsPageById?.[1]
+    if (cmsPageId && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+      return handleCmsPageById(request, env, corsHeaders, cmsPageId)
+    }
+    const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/)
+    const cmsPageSlug = cmsPageBySlug?.[1]
+    if (cmsPageSlug && request.method === 'GET') {
+      return handleCmsPageBySlug(request, env, corsHeaders, cmsPageSlug)
+    }
+    if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
+      return handleCmsMediaUpload(request, env, corsHeaders)
+    }
+    const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/)
+    const cmsMediaId = cmsMediaById?.[1]
+    if (cmsMediaId && request.method === 'GET') {
+      return handleCmsMediaById(request, env, corsHeaders, cmsMediaId)
     }
     if (url.pathname === '/api/pills' && request.method === 'GET') {
       return handlePillsPublic(request, env, corsHeaders)
@@ -722,6 +785,7 @@ const workerHandler = {
       return jsonResponse({ status: 'healthy' }, 200, corsHeaders)
     }
 
+    log({ service: 'worker', event: 'route_not_found', http_method: request.method, http_path: url.pathname, http_status: 404 })
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
   },
 
@@ -800,19 +864,7 @@ function parseAllowedOrigins(envValue: any) {
 
 /** Collapse LEFT JOIN duplicate rows (multi-category) and order like homepage placement. */
 function dedupeVideoListRows(rows: any[]) {
-  const byId = new Map<string, any>()
-  for (const row of rows) {
-    if (!row || typeof row.id !== 'string') continue
-    if (!byId.has(row.id)) {
-      byId.set(row.id, row)
-      continue
-    }
-    const prev = byId.get(row.id)
-    const prevHasCat = prev.category_id && String(prev.category_id).trim() !== ''
-    const rowHasCat = row.category_id && String(row.category_id).trim() !== ''
-    if (!prevHasCat && rowHasCat) byId.set(row.id, row)
-  }
-  return [...byId.values()].sort((a, b) => compareVideosNewestFirst(a, b))
+  return normalizePlacementVideoRows(rows).sort((a, b) => compareVideosNewestFirst(a, b))
 }
 
 // ─── Existing handler implementations (unchanged) ─────────────────────────────
@@ -837,12 +889,40 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
       db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
     ])
     const homepage = normalizeHomepagePlacementConfig(safeJsonParse(homepageRow?.value, defaultHomepageConfig()))
+    const normalizedVideos = normalizePlacementVideoRows(videoRows.results || [])
     const placement = placeHomepageVideos({
-      videos: videoRows.results || [],
+      videos: normalizedVideos,
       categories: catRows.results || [],
       homepage,
     })
-    return jsonResponse(placement, 200, corsHeaders)
+    const videoIds = new Set(collectPlacementVideoIds(placement))
+    const newestPublished = [...normalizedVideos].sort(compareVideosNewestFirst)[0]
+    if (newestPublished?.id) videoIds.add(newestPublished.id)
+
+    let placementVideos: any[] = []
+    if (videoIds.size) {
+      const PLACEMENT_VIDEO_ID_CHUNK_SIZE = 90
+      const idList = [...videoIds]
+      const slimSql = `
+        SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
+               v.upload_date, v.publish_status, v.slug, v.published_at,
+               vc.id AS category_id, vc.name AS category_name, vc.slug AS category_slug
+        FROM videos v
+        LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
+        LEFT JOIN video_categories vc ON vc.id = vca.category_id
+        WHERE v.id IN (
+      `
+      const mergedRows: any[] = []
+      for (let i = 0; i < idList.length; i += PLACEMENT_VIDEO_ID_CHUNK_SIZE) {
+        const chunk = idList.slice(i, i + PLACEMENT_VIDEO_ID_CHUNK_SIZE)
+        const placeholders = chunk.map(() => '?').join(', ')
+        const slimRows = await db.prepare(`${slimSql}${placeholders})`).bind(...chunk).all()
+        mergedRows.push(...(slimRows.results || []))
+      }
+      placementVideos = dedupeVideoListRows(mergedRows)
+    }
+
+    return jsonResponse({ ...placement, videos: placementVideos }, 200, corsHeaders)
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
@@ -958,7 +1038,7 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
   }
 }
 
-async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?: ExecutionContext) {
+async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?: ExecutionContext, reqStart = Date.now()) {
   try {
     const url = new URL(request.url)
     const pathParts = url.pathname.split('/').filter(Boolean)
@@ -1202,6 +1282,12 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
         { title: 'Full Content', startTime: previewDuration, endTime: fullDuration, accessible: hasAccess },
       ],
     }
+    logRequest(request.method, url.pathname, 200, Date.now() - reqStart, {
+      video_id: resolvedVideoId,
+      has_access: response.hasAccess,
+      is_preview: !hasPremiumAccess,
+      subscription_status: subscription?.status ?? 'none',
+    })
     return jsonResponse(response, 200, corsHeaders)
   } catch (error) {
     console.error('Error:', error)
@@ -1209,7 +1295,7 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
   }
 }
 
-async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: any) {
+async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: any, reqStart = Date.now()) {
   const requestUrl = new URL(request.url)
   const proxyPrefix = '/api/video-proxy/'
   const objectPath = requestUrl.pathname.slice(proxyPrefix.length)
@@ -1367,12 +1453,25 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     if (cacheControl) headers.set('Cache-Control', cacheControl)
     headers.delete('Content-Length')
     for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
+    logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+      video_id: proxyVideoId,
+      manifest_type: manifestType ?? 'segment',
+      preview_enforced: effectivePreviewUntil !== null,
+    })
     return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
   }
   const headers = new Headers(upstreamResponse.headers)
   const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)
   if (cacheControl) headers.set('Cache-Control', cacheControl)
   for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
+  if (isSegment) {
+    log({ service: 'video_proxy', event: 'segment_served', video_id: proxyVideoId, duration_ms: Date.now() - reqStart })
+  }
+  logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+    video_id: proxyVideoId,
+    manifest_type: manifestType ?? 'segment',
+    preview_enforced: effectivePreviewUntil !== null,
+  })
   return new Response(upstreamResponse.body, { status: upstreamResponse.status, headers })
 }
 
@@ -1688,25 +1787,10 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
 
     // ── 2. Fetch all videos from D1 ──────────────────────────────────────────
     const videos = await db.prepare(`
-      WITH view_counts AS (
-        SELECT
-          video_id,
-          COUNT(DISTINCT COALESCE(
-            session_key,
-            CASE
-              WHEN user_id IS NOT NULL THEN 'u:' || user_id
-              WHEN ip_hash IS NOT NULL THEN 'i:' || ip_hash
-              ELSE 'path:' || request_path
-            END
-          )) AS total_views
-        FROM video_segment_events
-        WHERE event_type = 'segment'
-        GROUP BY video_id
-      )
       SELECT v.id, v.title, v.description, v.thumbnail_url, v.full_duration, v.preview_duration,
              v.upload_date, v.status, v.publish_status, v.published_at, v.updated_at, v.slug, v.legacy_slug,
              v.scheduled_publish_at, v.notified_at,
-             vca.category_id, COALESCE(vc.total_views, 0) AS total_views,
+             vca.category_id, COALESCE(vvc.view_count, 0) AS total_views,
              ls.provider AS livestream_provider,
              ls.status AS livestream_status,
              ls.moq_endpoint AS livestream_moq_endpoint,
@@ -1714,7 +1798,7 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
              ls.recording_video_id AS livestream_recording_video_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-      LEFT JOIN view_counts vc ON vc.video_id = v.id
+      LEFT JOIN video_view_counts vvc ON vvc.video_id = v.id
       LEFT JOIN livestreams ls ON ls.video_id = v.id
       ORDER BY v.upload_date DESC
     `).all()

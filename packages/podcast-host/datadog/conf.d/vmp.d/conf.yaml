@@ -1,0 +1,30 @@
+# Datadog log collection for VMP podcast-host / transcoder.
+# Install: sudo mkdir -p /etc/datadog-agent/conf.d/vmp.d && sudo cp this file there.
+
+logs:
+  # Primary: journald unit for vmp-supervisor (stdout from supervisor + pipeline_watch child).
+  - type: journald
+    source: vmp-transcoder
+    service: vmp-transcoder
+    include_units:
+      - vmp-supervisor.service
+    log_processing_rules:
+      - type: exclude_at_match
+        name: exclude_datadog_agent_noise
+        pattern: 'datadog-agent'
+
+  # Optional: dedicated TTP JSONL when VMP_TTP_LOG_PATH is set (uncomment path).
+  # - type: file
+  #   path: /var/log/vmp/ttp.jsonl
+  #   source: vmp-transcoder
+  #   service: vmp-transcoder
+  #   log_processing_rules:
+  #     - type: multi_line
+  #       name: vmp_ttp_json
+  #       pattern: ^VMP_TTP
+
+  # Optional: file redirect via systemd drop-in (see systemd/vmp-supervisor-logfile.conf.example).
+  # - type: file
+  #   path: /var/log/vmp/supervisor.log
+  #   source: vmp-transcoder
+  #   service: vmp-transcoder

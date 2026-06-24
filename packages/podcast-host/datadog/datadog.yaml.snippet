@@ -1,0 +1,13 @@
+# Append or merge into /etc/datadog-agent/datadog.yaml on the transcoding VM.
+
+# Receive DogStatsD metrics from podcast-host (metrics.ts).
+use_dogstatsd: true
+dogstatsd_port: 8125
+# Non-local UDP (default false) — leave false; only Node on this host emits metrics.
+# dogstatsd_non_local_traffic: false
+
+# Ship logs to Datadog Logs UI.
+logs_enabled: true
+
+# Optional: tag every host metric/log with environment.
+# env: production

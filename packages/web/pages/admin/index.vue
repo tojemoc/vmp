@@ -574,17 +574,13 @@
             </button>
 
             <div v-if="categoryCreateExpanded" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-              <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <input v-model="categoryForm.name" type="text" placeholder="Name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model="categoryForm.slug" type="text" placeholder="slug-name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <input v-model.number="categoryForm.sortOrder" type="number" placeholder="Sort order" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 <select v-model="categoryForm.direction" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
                   <option value="desc">desc</option>
                   <option value="asc">asc</option>
-                </select>
-                <select v-model="categoryForm.homepageLayoutVariant" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  <option value="three_by_one">3×1 block</option>
-                  <option value="side_mini">2×1 small block</option>
                 </select>
               </div>
               <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createCategory">Create category</button>
@@ -609,7 +605,6 @@
                   {{ category.sort_order <= 0 ? 'P0' : `#${category.sort_order}` }}
                 </span>
                 <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.direction }}</span>
-                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.homepage_layout_variant === 'side_mini' ? 'side_mini' : '3×1' }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ category.video_count ?? 0 }} videos</span>
                 <div class="ml-auto flex flex-wrap items-center gap-1">
                   <button
@@ -770,6 +765,13 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.
           </div>
           <AdminNewsletterPanel v-else />
+        </div>
+
+        <div v-if="activeAdminTab === 'pages'" id="pages-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Only site administrators can manage CMS pages.
+          </div>
+          <AdminCmsPanel v-else />
         </div>
 
         <div v-if="activeAdminTab === 'users'" id="users-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
@@ -1586,6 +1588,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   Google Tag Manager container ID
                   <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
+                </label>
+                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  GTM first-party measurement path
+                  <input
+                    v-model="siteBranding.gtm_measurement_path"
+                    type="text"
+                    placeholder="/metrics  (leave empty to load GTM directly)"
+                    class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Set this to the measurement path configured in your Cloudflare Google Tag Gateway
+                    (e.g. /metrics). When set, GTM loads from your own domain instead of googletagmanager.com,
+                    surviving most privacy-focused browser settings.
+                  </p>
                 </label>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -2494,7 +2510,7 @@ const notifying = ref<Record<string, boolean>>({})
 const trashing = ref<Record<string, boolean>>({})
 const uploadingFor = ref<string | null>(null)
 const thumbInputFocused = ref<string | null>(null)
-const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
+const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
 const baseAdminTabs = [
   { id: 'videos' as const, label: 'Videos' },
   { id: 'categories' as const, label: 'Categories' },
@@ -2502,6 +2518,7 @@ const baseAdminTabs = [
   { id: 'pills' as const, label: 'Pills' },
   { id: 'notifications' as const, label: 'Notifications' },
   { id: 'newsletter' as const, label: 'Newsletter' },
+  { id: 'pages' as const, label: 'Pages' },
   { id: 'users' as const, label: 'Users & roles' },
   { id: 'legacy_migration' as const, label: 'Legacy migration' },
   { id: 'analytics' as const, label: 'Analytics' },
@@ -2509,7 +2526,7 @@ const baseAdminTabs = [
 ]
 const adminTabs = computed(() =>
   baseAdminTabs.filter((tab) => {
-    if (tab.id === 'pills' || tab.id === 'legacy_migration') return isAdmin.value
+    if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'pages') return isAdmin.value
     return true
   })
 )
@@ -2771,6 +2788,7 @@ const siteBranding = ref({
   podcast_title: '',
   podcast_description: '',
   gtm_container_id: '',
+  gtm_measurement_path: '',
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -4447,6 +4465,7 @@ const loadSiteBranding = async () => {
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
       gtm_container_id: data.gtm_container_id || '',
+      gtm_measurement_path: data.gtm_measurement_path || '',
     }
   } catch (e: any) {
     siteBrandingMessage.value = `Could not load site branding: ${e.message}`
@@ -6340,7 +6359,7 @@ const descriptionDialogRef = ref<HTMLElement | null>(null)
 const transferSubDialogRef = ref<HTMLElement | null>(null)
 const lastFocusedEl    = ref<HTMLElement | null>(null)
 
-function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
+function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
   router.replace({ query: { ...route.query, tab } })
 }
 
