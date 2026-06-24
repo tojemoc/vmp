@@ -19,13 +19,6 @@ export function isInstalledPwa(): boolean {
   const displayModeStandalone = window.matchMedia?.('(display-mode: standalone)').matches === true
   const displayModeFullscreen = window.matchMedia?.('(display-mode: fullscreen)').matches === true
 
-  console.log('[PWA DETECT]', {
-    standalone: (window.navigator as Navigator & { standalone?: boolean }).standalone,
-    displayStandalone: window.matchMedia?.('(display-mode: standalone)').matches,
-    displayFullscreen: window.matchMedia?.('(display-mode: fullscreen)').matches,
-    userAgent: window.navigator.userAgent,
-  })
-
   return iosStandalone || displayModeStandalone || displayModeFullscreen
 }
 

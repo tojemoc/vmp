@@ -43,14 +43,7 @@ export function useLoginFlow() {
     const standalone = isIosInstalledPwa()
     const route = import.meta.client ? window.location.pathname : '/login'
 
-    console.log('[AUTH ENTRY]', {
-      authenticated,
-      initialized,
-      standalone,
-      route,
-    })
-
-    if (!initialized) {
+    if (!initialized && import.meta.dev) {
       console.warn('[AUTH ENTRY] auth not initialized yet')
     }
 
@@ -61,7 +54,6 @@ export function useLoginFlow() {
     const goLogin = () => navigateTo({ path: '/login', query })
 
     if (!authenticated && standalone) {
-      console.log('[AUTH ENTRY] launching iOS PWA wizard')
       openPwaPushLoginWizard()
       if (route !== '/login') {
         return nuxtApp.runWithContext(goLogin)
@@ -69,7 +61,6 @@ export function useLoginFlow() {
       return
     }
 
-    console.log('[AUTH ENTRY] launching normal login')
     return nuxtApp.runWithContext(goLogin)
   }
 

@@ -84,6 +84,8 @@ export type StringsDefinition = {
   authVerifyErrorGeneric: string
   authVerifySignInIncomplete: string
   authVerifyNoToken: string
+  authVerifyLinkInvalid: string
+  authVerifyRequestNewLink: string
   pwaLoginTitle: string
   pwaLoginIntro: string
   pwaLoginEmailLabel: string
@@ -236,6 +238,14 @@ export type StringsDefinition = {
   billingPortalFailed: string
   accountContactSupport: string
   accountRelinkPaymentMethod: string
+  accountRelinkBannerTitle: string
+  accountRelinkBannerBody: string
+  accountRelinkBannerCta: string
+  accountSubscriptionLabel: string
+  accountRelinkImportedTitle: string
+  accountRelinkImportedBody: (provider: string) => string
+  accountRelinkStatusNeedsRelink: string
+  accountRelinkLegacyProviderFallback: string
   accountManagePaymentMethod: string
   networkError: string
   podcastRssTitle: string
