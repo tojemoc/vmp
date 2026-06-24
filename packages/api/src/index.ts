@@ -894,12 +894,15 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
       `).all(),
       db.prepare('SELECT value FROM admin_settings WHERE key = ? LIMIT 1').bind('homepage').first(),
     ])
-    const homepage = normalizeHomepagePlacementConfig(safeJsonParse(homepageRow?.value, defaultHomepageConfig()))
+    const homepageRaw = safeJsonParse(homepageRow?.value, defaultHomepageConfig())
+    const homepage = normalizeHomepagePlacementConfig(homepageRaw)
+    const layoutBlocks = Array.isArray(homepageRaw?.layoutBlocks) ? homepageRaw.layoutBlocks : []
     const normalizedVideos = normalizePlacementVideoRows(videoRows.results || [])
     const placement = placeHomepageVideos({
       videos: normalizedVideos,
       categories: catRows.results || [],
       homepage,
+      layoutBlocks,
     })
     const videoIds = new Set(collectPlacementVideoIds(placement))
     const newestPublished = [...normalizedVideos].sort(compareVideosNewestFirst)[0]
