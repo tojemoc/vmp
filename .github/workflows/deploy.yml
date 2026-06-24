@@ -27,7 +27,6 @@ jobs:
     env:
       API_BASE_URL: ${{ vars.API_URL_STAGING }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
-      FRONTEND_URL_PROD: ${{ vars.FRONTEND_URL_PROD }}
       EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
       NUXT_PUBLIC_DEPLOY_TIER: staging
       NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
@@ -37,59 +36,51 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      
+
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           package-manager-cache: false
-        # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
-          
+
       - run: npm ci
       - name: Type check (fail fast)
         run: |
           bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
           bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
           bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build:sw-push
-      
-      - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
+
+      - name: Build Web (Nuxt → Cloudflare Worker)
+        working-directory: packages/web
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_SITE_URL: ${{ env.FRONTEND_URL }}
+          NODE_ENV: production
+        run: npm run build
 
       - name: Validate staging env/domain wiring
         run: |
           test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_STAGING" && exit 1)
           test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_STAGING" && exit 1)
           test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_STAGING" && exit 1)
-      
+
       - name: Deploy API (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
         run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
-      
-      - name: Deploy Web (staging Pages project)
+
+      - name: Deploy Web (staging Worker — vmp-web-worker-dev)
+        working-directory: packages/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_STAGING }}
-        run: |
-          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_STAGING" && exit 1)
-          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:deploy
-
-      - name: Deploy Web (production Pages project — public domain)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_PROD }}
-        run: |
-          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_PROD" && exit 1)
-          node packages/web/scripts/deploy-pages.mjs
+        run: npx wrangler deploy --config wrangler.workers.toml
 
       - name: Smoke check API health (staging)
         run: |
@@ -126,16 +117,6 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
 
-      - name: Smoke check frontend build revision (production domain)
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          if [ -z "$FRONTEND_URL_PROD" ]; then
-            echo "Skipping production frontend revision smoke (FRONTEND_URL_PROD unset)."
-            exit 0
-          fi
-          bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL_PROD"
-
   deploy-production:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -153,56 +134,57 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
-      
+
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
           package-manager-cache: false
-        # Remove cache: npm here if using stickydisk for ~/.npm below
 
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-npm-cache
           path: ~/.npm
-  
+
       - name: Mount node_modules
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
           key: ${{ github.repository }}-node-modules
           path: ./node_modules
-          
+
       - run: npm ci
       - name: Type check (fail fast)
         run: |
           bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
           bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
           bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build:sw-push
-      
-      - run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:build
+
+      - name: Build Web (Nuxt → Cloudflare Worker)
+        working-directory: packages/web
         env:
           API_URL: ${{ env.API_BASE_URL }}
+          NUXT_PUBLIC_SITE_URL: ${{ env.FRONTEND_URL }}
+          NODE_ENV: production
+        run: npm run build
 
       - name: Validate production env/domain wiring
         run: |
           test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_PROD" && exit 1)
           test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_PROD" && exit 1)
           test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_PROD" && exit 1)
-      
+
       - name: Deploy API (production)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
         run: bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/api:deploy
-      
-      - name: Deploy Web (production)
+
+      - name: Deploy Web (production Worker — vmp-web-worker-prod)
+        working-directory: packages/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-          CF_PAGES_PROJECT_NAME: ${{ vars.CF_PAGES_PROJECT_NAME_PROD }}
-        run: |
-          test -n "$CF_PAGES_PROJECT_NAME" || (echo "Missing vars.CF_PAGES_PROJECT_NAME_PROD" && exit 1)
-          node packages/web/scripts/deploy-pages.mjs
+        run: npx wrangler deploy --config wrangler.workers.toml --env production
 
       - name: Smoke check API health (production)
         run: |

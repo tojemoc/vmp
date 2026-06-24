@@ -1,5 +1,6 @@
-# Cloudflare Pages (primary frontend). Deploy: npm run deploy / `wrangler pages deploy`
-# Requires `pages_build_output_dir` so compatibility_flags apply to the Nuxt `_worker.js` bundle.
+# DEPRECATED — Cloudflare Pages is no longer used for VMP frontend deploys.
+# Canonical frontend: wrangler.workers.toml + npm run deploy (Workers).
+# Kept only for reference if you need a one-off Pages build (`npm run build:pages`).
 
 name = "vmp-fe"
 pages_build_output_dir = "dist"

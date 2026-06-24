@@ -46,8 +46,9 @@ Core API and web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.m
 
 ## Deployment model (high level)
 
-- Pushes to `main` run staging deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) (API + Worker staging; web build is deployed to both the staging Pages project and the production Pages project so the public domain stays current).
-- Version tags (`v*.*.*`) run production deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+- Pushes to `main` run staging deploy in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): API Worker + web Worker (`vmp-web-worker-dev`).
+- Version tags (`v*.*.*`) run production deploy: API Worker + web Worker (`vmp-web-worker-prod`).
+- Frontend is **Cloudflare Workers only** (Nuxt SSR). Pages is deprecated.
 - Deploy pipeline fails fast on type-checking before build/deploy:
   - `@vmp/shared` `tsc --noEmit`
   - `@vmp/api` `tsc --noEmit`
@@ -59,8 +60,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for env templates, secrets, and domain overri
 
 1. Node.js 20+ and npm 10+.
 2. Cloudflare account with:
-   - Worker/API service
-   - Pages project(s)
+   - Two Workers per environment (API + Nuxt web frontend)
    - D1 database
    - R2 bucket
    - KV namespaces
@@ -69,8 +69,6 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for env templates, secrets, and domain overri
    - `CLOUDFLARE_ACCOUNT_ID_STAGING`
    - `CLOUDFLARE_API_TOKEN_PROD`
    - `CLOUDFLARE_ACCOUNT_ID_PROD`
-   - `CF_PAGES_PROJECT_NAME_STAGING` (staging Pages project, e.g. `vmp-fe`)
-   - `CF_PAGES_PROJECT_NAME_PROD` (production Pages project bound to the public domain, e.g. `vmp.tjm.sk`)
 
 ## Local setup
 
@@ -89,8 +87,9 @@ These are useful for controlled/manual rollouts outside GitHub Actions.
 
 1. API deploy:
    - `npm run deploy:api`
-2. Web deploy:
-   - `npm run deploy:web`
+2. Web deploy (from `packages/web` after `npm run build`):
+   - Staging Worker: `npm run deploy --workspace=@vmp/web`
+   - Production Worker: `npm run deploy:prod --workspace=@vmp/web`
 
 ## Runtime secrets/vars
 

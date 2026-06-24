@@ -1,6 +1,7 @@
-# Experimental Cloudflare Workers frontend (parallel to Pages).
-# Deploy: npm run build:workers && npm run deploy:workers
-# CI: .github/workflows/deploy-web-workers.yml
+# Cloudflare Workers frontend (Nuxt SSR + static assets).
+# Deploy: npm run build && npm run deploy  (staging — vmp-web-worker-dev)
+#         npm run build && npm run deploy:prod  (production — vmp-web-worker-prod)
+# CI: .github/workflows/deploy.yml
 
 name = "vmp-web-worker-dev"
 main = ".output/server/index.mjs"
@@ -18,4 +19,4 @@ enabled = true
 name = "vmp-web-worker-prod"
 
 [vars]
-# NUXT_PUBLIC_* are not read here unless you add server-side runtimeConfig without public prefix.
+# NUXT_PUBLIC_* are baked at build time; no runtime Worker vars required today.

@@ -29,8 +29,10 @@ Canonical deploy workflow: `.github/workflows/deploy.yml`.
 
 The canonical workflow uses:
 
-- pushes to `main` -> staging API deploy + web build deployed to staging **and** production Pages projects (public domain)
-- version tags (`v*.*.*`) -> full production deploy (API + web)
+- pushes to `main` → staging API Worker (`@vmp/api`) + staging web Worker (`vmp-web-worker-dev`)
+- version tags (`v*.*.*`) → production API Worker + production web Worker (`vmp-web-worker-prod`)
+
+Frontend deploy is **Workers only** (Nuxt `cloudflare-module` preset). Cloudflare Pages is deprecated in this repo.
 
 Required repository secrets:
 
@@ -47,15 +49,13 @@ Required environment variables (GitHub Environments/Repository Variables):
 
 - Staging:
   - `API_URL_STAGING`
-  - `FRONTEND_URL_STAGING`
+  - `FRONTEND_URL_STAGING` (must match the Worker custom domain or `*.workers.dev` URL you route to `vmp-web-worker-dev`)
   - `ALLOWED_ORIGINS_STAGING`
-  - `CF_PAGES_PROJECT_NAME_STAGING`
   - `NUXT_PUBLIC_SENTRY_DSN` (frontend Sentry project DSN, embedded at build time)
 - Production:
   - `API_URL_PROD`
-  - `FRONTEND_URL_PROD`
+  - `FRONTEND_URL_PROD` (custom domain routed to `vmp-web-worker-prod`)
   - `ALLOWED_ORIGINS_PROD`
-  - `CF_PAGES_PROJECT_NAME_PROD`
   - `NUXT_PUBLIC_SENTRY_DSN` (frontend Sentry project DSN, embedded at build time)
 
 Optional repository secret for Sentry source map uploads during web builds:
@@ -70,7 +70,8 @@ The hardened workflows now enforce:
   - `/api/health` payload (`{ status: "healthy" }`)
   - CORS `Access-Control-Allow-Origin` against `FRONTEND_URL_*`
   - machine smoke-auth endpoint (`GET /api/admin/smoke-auth`) via `X-Smoke-Token`
-  - frontend reachability.
+  - frontend reachability on `FRONTEND_URL_*`
+  - `gitCommit` baked into deployed HTML matches `${{ github.sha }}` (see `.github/scripts/smoke-frontend-build-revision.sh`)
 
 Smoke auth endpoint details:
 
@@ -87,7 +88,7 @@ Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 
 1) Freeze auto-deploys
 
-- Confirm `.github/workflows/deploy.yml` is the only active deployment workflow.
+- Confirm `.github/workflows/deploy.yml` is the only active deployment workflow (no separate Pages or experimental web workflow).
 
 1. Recreate bindings/resources (per environment)
 
