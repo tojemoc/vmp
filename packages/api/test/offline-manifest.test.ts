@@ -48,5 +48,7 @@ describe('offlineManifest helpers', () => {
     const paths = parseLicensedManifestPaths(JSON.stringify(['720p/seg_720_001.m4s', 'audio.m3u8']))
     assert.ok(paths?.has('720p/seg_720_001.m4s'))
     assert.equal(parseLicensedManifestPaths('not-json'), null)
+    assert.equal(parseLicensedManifestPaths(JSON.stringify(['valid.m4s', 123])), null)
+    assert.equal(parseLicensedManifestPaths(JSON.stringify(['valid.m4s', ''])), null)
   })
 })

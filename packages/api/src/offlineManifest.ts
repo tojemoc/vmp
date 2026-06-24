@@ -268,9 +268,11 @@ export function parseLicensedManifestPaths(raw: unknown): Set<string> | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return null
-    const paths = parsed.filter((p): p is string => typeof p === 'string' && p.length > 0)
-    return paths.length > 0 ? new Set(paths) : null
+    if (!Array.isArray(parsed) || parsed.length === 0) return null
+    for (const entry of parsed) {
+      if (typeof entry !== 'string' || entry.length === 0) return null
+    }
+    return new Set(parsed)
   } catch {
     return null
   }
