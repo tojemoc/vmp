@@ -247,6 +247,18 @@ describe('placeHomepageVideos matrix', () => {
     assert.equal(layoutIncludesFeaturedRowBlock([{ type: 'category' }]), false)
   })
 
+  it('raw homepage without featuredVideoIds does not throw when featured_row is active', () => {
+    const categories = [cat('c1', 'One', 0)]
+    const videos = [{ id: 'only', published_at: T.t1, upload_date: T.t1, category_id: 'c1' }]
+    const out = placeHomepageVideos({
+      videos,
+      categories,
+      homepage: { featuredMode: 'latest' },
+      layoutBlocks: featuredRowLayout,
+    })
+    assert.deepEqual(out.featured, [{ id: 'only' }])
+  })
+
   it('category ordering prioritizes P0 buckets before standard', () => {
     const ordered = sortCategoriesForHomepage([
       cat('std-2', 'Zeta', 2),

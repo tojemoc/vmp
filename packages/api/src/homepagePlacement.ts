@@ -180,7 +180,10 @@ function pickFeaturedVideos({
 }) {
   if (!featuredRowActive) return []
 
-  const explicitPins = homepage.featuredVideoIds
+  const pinnedIds = (Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : [])
+    .filter((id): id is string => typeof id === 'string')
+    .slice(0, 4)
+  const explicitPins = pinnedIds
     .map((id) => refFor(id, byId))
     .filter((ref): ref is VideoRef => Boolean(ref))
 
@@ -202,9 +205,7 @@ function pickFeaturedVideos({
 export function placeHomepageVideos(input: any) {
   const rawVideos = normalizePlacementVideoRows(Array.isArray(input.videos) ? input.videos : [])
   const categories = Array.isArray(input.categories) ? [...input.categories] : []
-  const homepage: NormalizedHomepagePlacementConfig = input.homepage && typeof input.homepage === 'object'
-    ? input.homepage
-    : normalizeHomepagePlacementConfig(null)
+  const homepage = normalizeHomepagePlacementConfig(input?.homepage)
 
   const byId = new Map(rawVideos.map((v) => [v.id, v]))
 

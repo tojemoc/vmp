@@ -70,7 +70,7 @@
         </div>
 
         <div
-          v-if="activeAdminTab === 'homepage' && (homepagePreviewModel.hasFeaturedRowBlock || orphanedFeaturedPinsWarning)"
+          v-if="activeAdminTab === 'homepage' && (hasFeaturedRowInLayout || orphanedFeaturedPinsWarning)"
           id="homepage-panel"
           role="tabpanel"
           class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
@@ -3220,10 +3220,12 @@ const pinnedFeaturedVideoIds = computed(() =>
   featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v)),
 )
 
+const hasFeaturedRowInLayout = computed(() => layoutIncludesFeaturedRowBlock(layoutBlocks.value))
+
 const orphanedFeaturedPinsWarning = computed(() => {
   const pins = pinnedFeaturedVideoIds.value
   if (!pins.length) return null
-  if (layoutIncludesFeaturedRowBlock(layoutBlocks.value)) return null
+  if (hasFeaturedRowInLayout.value) return null
   const titles = pins
     .map((id) => featuredSlots.value.find((v) => v?.id === id)?.title || id)
     .join(', ')
