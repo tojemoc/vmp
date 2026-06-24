@@ -23,6 +23,7 @@ import {
 export { normalizeStripeStatus } from './stripeClient.js'
 import { isLegacyProviderConfigured } from './legacyProvider.js'
 import { startLegacyCheckout } from './legacyPayments.js'
+import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'legacy'
@@ -850,6 +851,15 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               { fn: 'removeSubscriberFromNewsletter', userId: row.user_id, err: brevoErr },
             )
           }
+          try {
+            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled')
+          } catch (offlineErr) {
+            console.error(
+              '[stripe webhook] revokeOfflineLicensesForUser failed',
+              { fn: 'revokeOfflineLicensesForUser', userId: row.user_id, err: offlineErr },
+            )
+            throw offlineErr
+          }
         }
         break
       }
@@ -873,6 +883,15 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
                 '[stripe webhook] removeSubscriberFromNewsletter failed',
                 { fn: 'removeSubscriberFromNewsletter', userId: existing.user_id, err: brevoErr },
               )
+            }
+            try {
+              await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due')
+            } catch (offlineErr) {
+              console.error(
+                '[stripe webhook] revokeOfflineLicensesForUser failed',
+                { fn: 'revokeOfflineLicensesForUser', userId: existing.user_id, err: offlineErr },
+              )
+              throw offlineErr
             }
           }
         }

@@ -61,6 +61,16 @@ import { signVideoToken, verifyVideoToken } from './videoTokens.js'
 import { handlePublicFeed, handlePersonalFeed } from './feed.js'
 import { handleGetAccountRss } from './rssAccount.js'
 import {
+  handleRegisterOfflineDevice,
+  handleListOfflineDevices,
+  handleRevokeOfflineDevice,
+  handleAuthorizeDownload,
+  handleDownloadAsset,
+  handleRenewDownloadLicenses,
+  handleListDownloads,
+  handleRevokeDownload,
+} from './offlineDownloads.js'
+import {
   handleAccountTransferSubscription,
   handleAdminTransferSubscription,
 } from './subscriptionTransfer.js'
@@ -372,7 +382,7 @@ const workerHandler = {
         headers: {
           ...corsHeaders,
           'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, x-d1-bookmark',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token',
           'Access-Control-Max-Age': '86400',
         },
       })
@@ -691,6 +701,55 @@ const workerHandler = {
     if (url.pathname === '/api/admin/legacy-migration/send-relink-email' && request.method === 'POST') {
       return handleAdminLegacyMigrationSendRelinkEmail(request, env, corsHeaders)
     }
+    // ── Offline downloads (M1/M2) ─────────────────────────────────────────────
+    if (url.pathname === '/api/offline/devices/register' && request.method === 'POST') {
+      return handleRegisterOfflineDevice(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/offline/devices' && request.method === 'GET') {
+      return handleListOfflineDevices(request, env, corsHeaders)
+    }
+    {
+      const offlineDeviceMatch = url.pathname.match(/^\/api\/offline\/devices\/([^/]+)$/)
+      const offlineDeviceId = offlineDeviceMatch?.[1]
+      if (offlineDeviceId && request.method === 'DELETE') {
+        return handleRevokeOfflineDevice(request, env, corsHeaders, offlineDeviceId)
+      }
+    }
+    if (url.pathname === '/api/downloads/licenses/renew' && request.method === 'POST') {
+      return handleRenewDownloadLicenses(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/downloads' && request.method === 'GET') {
+      return handleListDownloads(request, env, corsHeaders)
+    }
+    {
+      const downloadAssetMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/assets\/(.+)$/)
+      const downloadVideoId = downloadAssetMatch?.[1]
+      const downloadAssetPath = downloadAssetMatch?.[2]
+      if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
+        let decodedAssetPath: string
+        try {
+          decodedAssetPath = decodeURIComponent(downloadAssetPath)
+        } catch {
+          return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders)
+        }
+        return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodedAssetPath)
+      }
+    }
+    {
+      const downloadAuthorizeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/authorize$/)
+      const authorizeVideoId = downloadAuthorizeMatch?.[1]
+      if (authorizeVideoId && request.method === 'POST') {
+        return handleAuthorizeDownload(request, env, corsHeaders, authorizeVideoId)
+      }
+    }
+    {
+      const downloadRevokeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)$/)
+      const revokeVideoId = downloadRevokeMatch?.[1]
+      if (revokeVideoId && request.method === 'DELETE') {
+        return handleRevokeDownload(request, env, corsHeaders, revokeVideoId)
+      }
+    }
+
     if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
       return handleGetSubscription(request, env, corsHeaders)
     }

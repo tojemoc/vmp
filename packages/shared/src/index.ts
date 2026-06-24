@@ -67,3 +67,79 @@ export interface VideoAccessResponse {
   }
   chapters: Chapter[]
 }
+
+/** HLS rendition keys supported for offline download. */
+export type OfflineRendition = '480p' | '720p' | '1080p'
+
+export function isOfflineRendition(value: unknown): value is OfflineRendition {
+  return value === '480p' || value === '720p' || value === '1080p'
+}
+
+export interface OfflineDeviceRegistration {
+  deviceId: string
+  deviceToken: string
+  deviceName: string
+  registeredAt: string
+}
+
+export interface OfflineDeviceSummary {
+  deviceId: string
+  deviceName: string
+  hasPublicKey: boolean
+  registeredAt: string
+  lastSeenAt: string | null
+  revokedAt: string | null
+  active: boolean
+}
+
+export interface OfflineManifestFile {
+  path: string
+  size: number | null
+}
+
+export interface OfflineManifest {
+  videoId: string
+  rendition: OfflineRendition
+  files: OfflineManifestFile[]
+  totalBytes: number
+  manifestVersion: number
+}
+
+export interface OfflineLicense {
+  licenseId: string
+  deviceId: string
+  videoId: string
+  rendition: OfflineRendition
+  expiresAt: string
+  manifestHash: string
+  manifestVersion: number
+  playbackState: 'allowed' | 'expired' | 'revoked' | string
+  nextValidationDueAt: string
+  signature: string
+}
+
+export interface OfflineAuthorizeResponse {
+  license: OfflineLicense
+  manifest: OfflineManifest
+  downloadToken: string
+  estimatedBytes: number
+  video: {
+    id: string
+    title: string
+    fullDuration: number
+  }
+}
+
+export interface OfflineDownloadSummary {
+  licenseId: string
+  videoId: string
+  videoTitle: string | null
+  deviceId: string
+  rendition: OfflineRendition
+  status: string
+  issuedAt: string
+  expiresAt: string
+  lastRenewedAt: string | null
+  manifestHash: string
+  manifestVersion: number
+}
