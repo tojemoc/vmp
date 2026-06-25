@@ -251,6 +251,7 @@ npm run preview:workers --workspace=@vmp/web   # local Worker preview (after bui
 ```text
 JWT_SECRET              — 32+ random chars
 SENTRY_DSN              — Sentry DSN for the API Worker (`@sentry/cloudflare`)
+DD_API_KEY              — Datadog API key for optional direct Worker log shipping (`DD_LOGS_ENABLED=true`)
 BREVO_API_KEY           — from brevo.com
 STRIPE_SECRET_KEY       — from stripe.com dashboard
 STRIPE_WEBHOOK_SECRET   — from stripe webhook registration
