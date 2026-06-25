@@ -14,6 +14,21 @@ const CHUNK_LOAD_ERROR_PATTERNS = [
   'Service Unavailable',
 ]
 
+/** Cloudflare Workers refuse `sec-purpose: prefetch` with HTTP 503 — not a real asset miss. */
+export function isPrefetchLinkElement(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof target !== 'object') return false
+  const el = target as HTMLLinkElement
+  return el.tagName === 'LINK' && String(el.rel ?? '').toLowerCase() === 'prefetch'
+}
+
+export function isCriticalAssetLoadTarget(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof target !== 'object') return false
+  const el = target as HTMLScriptElement | HTMLLinkElement
+  if (el.tagName === 'SCRIPT') return true
+  if (el.tagName === 'LINK') return !isPrefetchLinkElement(el)
+  return false
+}
+
 export function isNuxtAssetUrl(url: string): boolean {
   try {
     const pathname = new URL(url, 'https://placeholder.local').pathname

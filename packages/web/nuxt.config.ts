@@ -7,6 +7,16 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
+  hooks: {
+    // Cloudflare Workers return 503 for sec-purpose: prefetch (Speed Brain / speculation).
+    // Prefetching /_nuxt async chunks is a no-op on Workers and breaks chunk-load recovery.
+    'build:manifest'(manifest) {
+      for (const key in manifest) {
+        manifest[key].prefetch = false
+      }
+    },
+  },
+
   sourcemap: { client: 'hidden' },
 
   modules: [
