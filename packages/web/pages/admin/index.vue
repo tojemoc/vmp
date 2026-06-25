@@ -2370,7 +2370,6 @@ import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
 import { buildHomepageRenderModel, assignGridPositions, layoutIncludesFeaturedRowBlock } from '~/composables/useHomepageLayout'
 import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
-import { focusAndSelectTemplateRef } from '~/utils/templateRefFocus'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 // ── Route guard ───────────────────────────────────────────────────────────────
 // This single line is the only meaningful addition to this file.
@@ -2559,12 +2558,28 @@ const adminTabs = computed(() =>
     return true
   })
 )
+type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>
+type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null
+
+function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
+  const refs = Array.isArray(inputRef) ? inputRef : [inputRef]
+  return refs.find((input): input is InlineEditInput =>
+    !!input && typeof input.focus === 'function' && typeof input.select === 'function'
+  ) ?? null
+}
+
+function focusInlineEditInput(inputRef: InlineEditInputRef) {
+  const input = findInlineEditInput(inputRef)
+  input?.focus()
+  input?.select()
+}
+
 const editingTitle = ref<{ id: string; value: string } | null>(null)
-const titleInputEl = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const titleInputEl = ref<InlineEditInputRef>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
-const slugInputEl  = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const slugInputEl  = ref<InlineEditInputRef>(null)
 const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
-const legacySlugInputEl = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const legacySlugInputEl = ref<InlineEditInputRef>(null)
 const scheduleModal = ref<{
   open: boolean
   videoId: string | null
@@ -5532,7 +5547,7 @@ function formatSeconds(total: number): string {
 async function startTitleEdit(video: Video) {
   editingTitle.value = { id: video.id, value: video.title }
   await nextTick()
-  focusAndSelectTemplateRef(titleInputEl.value)
+  focusInlineEditInput(titleInputEl.value)
 }
 
 async function saveTitleEdit(video: Video) {
@@ -6279,7 +6294,7 @@ async function runConfirmedAction() {
 async function startSlugEdit(video: Video) {
   editingSlug.value = { id: video.id, value: video.slug ?? '' }
   await nextTick()
-  focusAndSelectTemplateRef(slugInputEl.value)
+  focusInlineEditInput(slugInputEl.value)
 }
 
 async function saveSlugEdit(video: Video) {
@@ -6315,7 +6330,7 @@ async function saveSlugEdit(video: Video) {
 async function startLegacySlugEdit(video: Video) {
   editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
   await nextTick()
-  focusAndSelectTemplateRef(legacySlugInputEl.value)
+  focusInlineEditInput(legacySlugInputEl.value)
 }
 
 async function saveLegacySlugEdit(video: Video) {
