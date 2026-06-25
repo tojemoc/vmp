@@ -80,7 +80,7 @@ import {
   handleRssPodcastWebhookConfig,
 } from './rssPodcastAdmin.js'
 import { handleVideoPipelineStatus } from './pipelineStatus.js'
-import { log } from './logger.js'
+import { log, runWithDatadogLogContext } from './logger.js'
 import {
   handleHomepageContent,
   handleHomepageContentPublic,
@@ -118,6 +118,7 @@ import {
   handleCmsMediaById,
 } from './cmsPages.js'
 import { handleSiteSettings } from './siteSettings.js'
+import { handleSiteFooterPublic, handleSiteFooterAdmin } from './siteFooter.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { compareVideosNewestFirst } from '@vmp/shared'
@@ -359,6 +360,7 @@ function logRequest(method: string, path: string, status: number, durationMs: nu
 
 const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
+    return runWithDatadogLogContext(env, ctx, async () => {
     const url = new URL(request.url)
     ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env))
     await maybeSyncPillsApiKey(env)
@@ -596,6 +598,12 @@ const workerHandler = {
     if (url.pathname === '/api/site-settings' && request.method === 'GET') {
       return handleSiteSettings(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/site-footer' && request.method === 'GET') {
+      return handleSiteFooterPublic(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/site-footer' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleSiteFooterAdmin(request, env, corsHeaders)
+    }
     if (url.pathname === '/api/pages' && request.method === 'GET') {
       return handleCmsPagesList(request, env, corsHeaders)
     }
@@ -793,9 +801,11 @@ const workerHandler = {
 
     log({ service: 'worker', event: 'route_not_found', http_method: request.method, http_path: url.pathname, http_status: 404 })
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
+    })
   },
 
   async scheduled(event: any, env: any, ctx: ExecutionContext) {
+    return runWithDatadogLogContext(env, ctx, async () => {
     const cron = String(event?.cron ?? '*/5 * * * *')
     const runReplication = cron === '*/15 * * * *'
 
@@ -823,15 +833,18 @@ const workerHandler = {
         console.error('Replication enqueue sweep failed:', err)
       }
     }
+    })
   },
 
   async queue(batch: any, env: any, ctx: ExecutionContext) {
+    return runWithDatadogLogContext(env, ctx, async () => {
     const queueName = String(batch?.queue ?? '')
     if (queueName.includes('push-delivery')) {
       await handlePushDeliveryQueue(batch, env)
       return
     }
     await handleReplicationQueue(batch, env)
+    })
   },
 }
 

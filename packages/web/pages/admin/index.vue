@@ -2430,7 +2430,7 @@ interface AdminUserRow {
   uiSubscription?: string
 }
 
-type BlockType = 'featured_row' | 'category' | 'top_video' | 'split_horizontal' | 'split_vertical'
+type BlockType = 'featured_row' | 'category' | 'top_video' | 'page_banner' | 'split_horizontal' | 'split_vertical'
 type LeafBlockType = 'featured_row' | 'category' | 'top_video'
 type LayoutBlock = HomepageLayoutBlock
 
@@ -3518,6 +3518,23 @@ const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
     }
     return { id, type, title, body, childBlocks: normalizedChildren }
   }
+  if (type === 'page_banner') {
+    return {
+      id,
+      type,
+      title,
+      body,
+      imageId: typeof raw.imageId === 'string' ? raw.imageId : '',
+      mobileImageId: typeof raw.mobileImageId === 'string' ? raw.mobileImageId : '',
+      pageSlug: typeof raw.pageSlug === 'string' ? raw.pageSlug : '',
+      alt: typeof raw.alt === 'string' ? raw.alt : '',
+      width: 'full' as const,
+      gridRow,
+      gridCol,
+      mobileHidden,
+      mobileOrder,
+    }
+  }
   return {
     id,
     type,
@@ -3541,7 +3558,16 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
   if (block.type === 'category') {
     payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
   }
-  if (block.width === 'half' || block.width === 'full') payload.width = block.width
+  if (block.type === 'page_banner') {
+    payload.imageId = typeof block.imageId === 'string' ? block.imageId : ''
+    payload.mobileImageId = typeof block.mobileImageId === 'string' ? block.mobileImageId : ''
+    payload.pageSlug = typeof block.pageSlug === 'string' ? block.pageSlug : ''
+    payload.alt = typeof block.alt === 'string' ? block.alt : ''
+    payload.width = 'full'
+  }
+  if (block.type !== 'page_banner' && (block.width === 'half' || block.width === 'full')) {
+    payload.width = block.width
+  }
   if (Number.isFinite(Number(block.gridRow))) payload.gridRow = Number(block.gridRow)
   if (Number.isFinite(Number(block.gridCol))) payload.gridCol = Number(block.gridCol)
   if (block.mobileHidden === true) payload.mobileHidden = true

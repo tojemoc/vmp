@@ -19,6 +19,14 @@ export type {
   CmsTableBlock,
 } from './cms.js'
 
+export {
+  CMS_FOOTER_PAGE_ID,
+  CMS_FOOTER_SLUG,
+  CMS_PERSONAL_DATA_PAGE_ID,
+  isCmsSystemPageId,
+  isCmsSystemSlug,
+} from './cmsSystemPages.js'
+
 export interface User {
   id: string
   email: string

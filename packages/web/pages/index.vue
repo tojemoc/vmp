@@ -121,6 +121,29 @@
             />
           </div>
 
+          <div v-else-if="block.type === 'page_banner'" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+            <NuxtLink
+              :to="`/${block.pageSlug}`"
+              class="block"
+              :aria-label="bannerLinkLabel(block)"
+            >
+              <picture>
+                <source
+                  v-if="block.mobileImageId && bannerImageUrls[block.mobileImageId]"
+                  media="(max-width: 1023px)"
+                  :srcset="bannerImageUrls[block.mobileImageId]"
+                >
+                <img
+                  v-if="bannerImageUrls[block.imageId]"
+                  :src="bannerImageUrls[block.imageId]"
+                  :alt="bannerImageAlt(block)"
+                  class="w-full h-auto object-cover"
+                  loading="lazy"
+                >
+              </picture>
+            </NuxtLink>
+          </div>
+
           <div v-else-if="block.type === 'category'" class="space-y-2">
             <div v-if="block.categorySection" class="flex items-center justify-between">
               <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ block.categorySection.category.name }}</h3>
@@ -264,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import type { HomepagePlacementResponse } from '~/composables/useHomepageLayout'
+import type { HomepagePlacementResponse, HomepageRenderPageBannerBlock } from '~/composables/useHomepageLayout'
 import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
@@ -311,6 +334,24 @@ type HomePill = {
 }
 const pills = ref<HomePill[]>([])
 
+function bannerLinkLabel(block: HomepageRenderPageBannerBlock): string {
+  const title = block.title?.trim()
+  if (title) return title
+  const alt = block.alt?.trim()
+  if (alt) return alt
+  const slug = block.pageSlug?.trim()
+  if (slug) return `Go to ${slug}`
+  return 'Learn more'
+}
+
+function bannerImageAlt(block: HomepageRenderPageBannerBlock): string {
+  const alt = block.alt?.trim()
+  if (alt) return alt
+  const title = block.title?.trim()
+  if (title) return title
+  return ''
+}
+
 function formatPillValue(pill: HomePill) {
   const mode = pill.value_mode || 'number'
   if (mode === 'percentage') return `${pill.value}%`
@@ -333,6 +374,34 @@ const homepageRenderModel = computed(() =>
   }),
 )
 const placement = ref<HomepagePlacementResponse | null>(null)
+const bannerImageUrls = ref<Record<string, string>>({})
+
+const bannerImageIds = computed(() => {
+  const ids = new Set<string>()
+  for (const block of homepageRenderModel.value.blockItems) {
+    if (block.type !== 'page_banner') continue
+    if (block.imageId) ids.add(block.imageId)
+    if (block.mobileImageId) ids.add(block.mobileImageId)
+  }
+  return [...ids]
+})
+
+async function loadBannerImageUrls() {
+  const apiBase = String(config.public.apiUrl || '').replace(/\/$/, '')
+  const urls: Record<string, string> = { ...bannerImageUrls.value }
+  await Promise.all(bannerImageIds.value.map(async (id) => {
+    if (urls[id]) return
+    try {
+      const res = await fetch(`${apiBase}/api/cms/media/${id}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.media?.url) urls[id] = data.media.url
+    } catch {
+      // ignore missing media
+    }
+  }))
+  bannerImageUrls.value = urls
+}
 
 const loadAdminConfig = async () => {
   const res = await fetch(`${config.public.apiUrl}/api/homepage/content`)
@@ -370,6 +439,8 @@ onMounted(() => {
 onUnmounted(() => {
   if (import.meta.client) window.removeEventListener('resize', updateMobileViewport)
 })
+
+watch(bannerImageIds, () => { void loadBannerImageUrls() }, { immediate: true })
 
 onMounted(async () => {
   try {

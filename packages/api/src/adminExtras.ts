@@ -172,7 +172,9 @@ function normalizeHomepageConfigForResponse(config: any) {
         body: typeof block.body === 'string' ? block.body : '',
       } as Record<string, any>
       const widthRaw = block.width
-      if (widthRaw === 'half' || widthRaw === 'full') {
+      if (type === 'page_banner') {
+        normalized.width = 'full'
+      } else if (widthRaw === 'half' || widthRaw === 'full') {
         normalized.width = widthRaw
       } else if (type === 'featured_row' || type === 'top_video') {
         normalized.width = 'full'
@@ -185,6 +187,12 @@ function normalizeHomepageConfigForResponse(config: any) {
       if (Number.isFinite(Number(block.gridCol))) normalized.gridCol = Number(block.gridCol)
       if (type === 'category') {
         normalized.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
+      }
+      if (type === 'page_banner') {
+        normalized.imageId = typeof block.imageId === 'string' ? block.imageId : ''
+        normalized.mobileImageId = typeof block.mobileImageId === 'string' ? block.mobileImageId : ''
+        normalized.pageSlug = typeof block.pageSlug === 'string' ? block.pageSlug : ''
+        normalized.alt = typeof block.alt === 'string' ? block.alt : ''
       }
       if (type === 'split_horizontal' || type === 'split_vertical') {
         const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
@@ -221,7 +229,7 @@ function normalizeLayoutBlockType(type: any) {
   if (type === 'video_grid') return 'category'
   if (type === 'text_split') return 'split_horizontal'
   if (type === 'cta') return 'top_video'
-  const allowedTypes = new Set(['featured_row', 'category', 'top_video', 'split_horizontal', 'split_vertical'])
+  const allowedTypes = new Set(['featured_row', 'category', 'top_video', 'split_horizontal', 'split_vertical', 'page_banner'])
   return allowedTypes.has(type) ? type : 'top_video'
 }
 
