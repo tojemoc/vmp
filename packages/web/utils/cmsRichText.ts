@@ -1,4 +1,4 @@
-import { sanitize } from 'unsane'
+import { sanitize, type SanitizerOptions } from 'unsane'
 import { generateHTML } from '@tiptap/html'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -19,7 +19,7 @@ const richTextExtensions = [
 ]
 
 /** Allowlist aligned with TipTap StarterKit + Link output (Workers-safe, no DOM). */
-const CMS_RICH_TEXT_SANITIZE_OPTIONS = {
+const CMS_RICH_TEXT_SANITIZE_OPTIONS: SanitizerOptions = {
   allowedTags: [
     'p', 'h2', 'h3', 'h4', 'strong', 'em', 's', 'code', 'pre',
     'ul', 'ol', 'li', 'blockquote', 'hr', 'br', 'a',
@@ -28,8 +28,7 @@ const CMS_RICH_TEXT_SANITIZE_OPTIONS = {
     a: ['href', 'class'],
     '*': ['class'],
   },
-  allowedProtocols: ['http:', 'https:'],
-} as const
+}
 
 function sanitizeHref(rawUrl: string): string {
   try {
