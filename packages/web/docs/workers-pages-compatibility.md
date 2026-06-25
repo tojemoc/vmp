@@ -1,35 +1,24 @@
-# Pages vs Workers compatibility (audit only)
+# Web: Cloudflare Workers (current) vs Pages (deprecated)
 
-Non-fixing notes for the parallel Workers experiment. Primary production remains **Cloudflare Pages**.
+| | Pages (deprecated) | Workers (canonical) |
+|---|---|---|
+| Config | `wrangler.toml` | `wrangler.workers.toml` |
+| Deploy | ~~`wrangler pages deploy`~~ | `wrangler deploy` |
+| Nitro preset | `cloudflare_pages` → `dist/` | `cloudflare-module` → `.output/` |
+| Staging Worker | — | `vmp-web-worker-dev` |
+| Production Worker | — | `vmp-web-worker-prod` |
+| CI | removed | `.github/workflows/deploy.yml` |
 
-## Pages-specific assumptions
+## Custom domains
 
-| Area | Pages behavior | Workers experiment |
-|------|----------------|-------------------|
-| Deploy target | `wrangler pages deploy` (`wrangler.toml` → `pages_build_output_dir = dist`, `nodejs_compat`) | `wrangler deploy --config wrangler.workers.toml`, Worker `vmp-web-worker-dev` |
-| Nitro preset | `cloudflare_pages` → output under `dist/` with `_worker.js` | `cloudflare-module` → `.output/server/index.mjs` + `.output/public/` |
-| Production prod web | `deploy.yml` uses `cloudflare/wrangler-action` Pages deploy to `CF_PAGES_PROJECT_NAME_PROD` | Not wired to tags yet; `[env.production]` name reserved |
+Attach hostnames to the **Worker** that matches the environment (`vmp-web-worker-dev` for staging traffic from `main`, `vmp-web-worker-prod` for tagged releases). Do not rely on the old `vmp-fe` Pages project.
 
-## `_headers`
+## PWA / headers
 
-- **Pages:** `public/_headers` is applied by Pages for static assets and documented in-repo.
-- **Workers:** Nitro copies/merges headers into `.output/public/_headers` for static assets. Unmatched SSR routes rely on Nitro-generated fallback rules, not the Pages CDN `_headers` file format for the Worker shell the same way.
-- Custom rules for `/manifest.webmanifest`, `/sw.js`, `/workbox-*.js`, `/sw-push.js` in `public/_headers` should be validated on `*.workers.dev` after deploy.
+Custom rules for `/manifest.webmanifest`, `/sw.js`, `/workbox-*.js`, `/sw-push.js` in `public/_headers` apply to Worker static assets under `[assets]`.
 
-## Asset paths
+## Related docs
 
-- Pages build: `dist/` with `publicDir` layout per `cloudflare_pages` preset.
-- Workers build: `.output/public/` served via Wrangler `[assets]` binding `ASSETS`.
-- Same Vite/Nuxt asset URLs (`/_nuxt/*`, `/icons/*`) expected; verify hashed assets and `manifest.webmanifest` on Workers URL.
-
-## SSR / runtime
-
-- Both presets use SSR (not `nuxi generate` static-only).
-- Both presets need `nodejs_compat`: `wrangler.toml` (Pages) and `wrangler.workers.toml` (Workers).
-- **PWA:** Workbox + service worker registration may behave differently under Workers static asset routing vs Pages; test installability and `navigateFallback` on the experimental host.
-- **No D1/KV bindings** on the web Worker today (stateless SSR + static assets only).
-
-## CI isolation
-
-- `deploy-web-workers.yml` does not run `npm run deploy` (Pages) or modify `deploy.yml`.
-- Uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.github/workflows/deploy-web-workers.yml` (not the `CLOUDFLARE_API_TOKEN_STAGING` / `CLOUDFLARE_ACCOUNT_ID_STAGING` names from `deploy.yml`; values may still be scoped via the GitHub `staging` environment).
+- [workers-deploy-env.md](./workers-deploy-env.md) — build-time env vars for CI
+- [DEPLOYMENT.md](../../DEPLOYMENT.md) — full CD flow
+- [AGENTS.md](../../AGENTS.md) — “When deploy looks broken but CI is green”

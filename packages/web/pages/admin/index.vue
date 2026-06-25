@@ -782,7 +782,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
             Only site administrators can manage CMS pages.
           </div>
-          <AdminCmsPanel v-else />
+          <ClientOnly v-else>
+            <LazyAdminCmsPanel />
+            <template #fallback>
+              <p class="text-sm text-gray-600 dark:text-gray-400">Loading pages editor…</p>
+            </template>
+          </ClientOnly>
         </div>
 
         <div v-if="activeAdminTab === 'users'" id="users-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">

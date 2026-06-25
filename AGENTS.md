@@ -24,6 +24,38 @@
 
 If you are unsure which branch you are on, run `git branch --show-current` before `git push`.
 
+## When deploy looks broken but CI is green
+
+Agents implement what the repo and workflows say. **Stale or split traffic is often a Cloudflare / GitHub configuration issue on the maintainer side**, not a bad merge or a “missed” code deploy.
+
+Before assuming the latest PR failed to ship, check:
+
+1. **Which Worker serves the hostname you are testing?**
+   - API: `@vmp/api` Worker (see `packages/api/wrangler.json`).
+   - Web: `vmp-web-worker-dev` (staging / `main`) or `vmp-web-worker-prod` (tags), **not** Cloudflare Pages (`vmp-fe` is deprecated).
+   - In Cloudflare dashboard → **Workers & Pages** → each Worker → **Settings → Domains & routes**. A custom domain (e.g. `vmp.tjm.sk`) must point at the Worker CI actually deploys to.
+
+2. **Two deploy paths for the same hostname**
+   - Historically, an experimental **web Worker** (`deploy-web-workers.yml`) could run in parallel with **Pages** (`deploy.yml`). Disabling the GitHub workflow does **not** remove Worker routes or custom domains already attached in Cloudflare — traffic can still hit an old Worker build.
+
+3. **Compare live revision to `main`**
+   - Fetch `/login` and inspect `window.__NUXT__.config` in page source: `gitCommit`, `buildId`, `deployTier`.
+   - Or run: `bash .github/scripts/smoke-frontend-build-revision.sh https://your-frontend-url`
+   - If `gitCommit` ≠ latest `main` SHA, the URL you are opening is not the deployment CI just updated.
+
+4. **GitHub Actions workflow state**
+   - `gh workflow list --repo tojemoc/vmp` — `state: active` vs `disabled_manually`.
+   - Only `.github/workflows/deploy.yml` should deploy production traffic.
+
+5. **PWA / service worker**
+   - Installed PWA clients can keep old JS chunks until refresh or chunk-load recovery. Test in a fresh profile or with the PWA uninstalled when verifying admin UI changes.
+
+6. **When to change code vs ops**
+   - **Ops / config:** wrong Worker route, disabled workflow but live route, Pages domain still attached, `FRONTEND_URL_*` mismatch with actual hostname.
+   - **Code / CI:** smoke checks fail, `/admin` 500 on the **correct** hostname after a green deploy, missing features on the URL whose `gitCommit` matches `main`.
+
+Document what you ruled out in PR comments so reviewers do not chase the wrong deploy target.
+
 ## Project overview
 
 VMP (Video Monetization Platform) is a subscription-gated HLS video streaming platform. npm workspaces monorepo with three packages:
@@ -31,7 +63,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Package | Path | Runtime |
 |---|---|---|
 | `@vmp/api` | `packages/api` | Cloudflare Worker (JS) — REST API, auth, Stripe, push, thumbnails |
-| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) |
+| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) — Cloudflare **Worker** SSR (`wrangler.workers.toml`) |
 | `@vmp/shared` | `packages/shared` | Shared TS types |
 
 ### Infrastructure
@@ -42,7 +74,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | API + auth backend | Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite) |
 | Config format | `wrangler.json` (not `.toml`) |
-| Frontend | Nuxt 4, hls.js, media-chrome |
+| Frontend | Nuxt 4 on Cloudflare Workers (`vmp-web-worker-dev` / `vmp-web-worker-prod`) + `@vmp/api` API Worker |
 | Email | Brevo Transactional API |
 | Payments | Stripe (card, PayPal, SEPA via Checkout); optional legacy provider for grandfathered subs |
 | Push notifications | Web Push / VAPID |
@@ -204,7 +236,8 @@ npx wrangler d1 execute video-subscription-db --local \
 ### Build
 
 ```bash
-npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Pages preset)
+npm run build --workspace=@vmp/web   # Nuxt production build (Cloudflare Workers / cloudflare-module preset)
+npm run preview:workers --workspace=@vmp/web   # local Worker preview (after build)
 ```
 
 ### Gotchas
