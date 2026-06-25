@@ -345,7 +345,6 @@ const homepageContentAsync = useAsyncData('homepage-content', () =>
 )
 const placementAsync = useAsyncData('homepage-placement', () =>
   $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
-  { getCachedData: () => undefined },
 )
 const pillsAsync = useAsyncData('homepage-pills', () =>
   $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),

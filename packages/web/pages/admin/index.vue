@@ -6323,7 +6323,6 @@ async function saveSlugEdit(video: Video) {
       uploads.value[idx] = { ...cur, slug: normalizedSlug }
     }
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
-    void loadHomepagePlacement()
   } catch (e: any) {
     showToast('error', `Failed to update slug: ${e.message}`)
   }

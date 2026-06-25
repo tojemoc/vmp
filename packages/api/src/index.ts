@@ -944,10 +944,7 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
       placementVideos = dedupeVideoListRows(mergedRows)
     }
 
-    return jsonResponse({ ...placement, videos: placementVideos }, 200, {
-      ...corsHeaders,
-      'Cache-Control': 'no-store',
-    })
+    return jsonResponse({ ...placement, videos: placementVideos }, 200, corsHeaders)
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
