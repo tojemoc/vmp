@@ -1,5 +1,5 @@
 import type { CmsPageInput, CmsPageStatus } from '@vmp/shared'
-import { CMS_FOOTER_SLUG, isCmsSystemPageId, isCmsSystemSlug } from '@vmp/shared'
+import { isCmsSystemPageId, isCmsSystemSlug } from '@vmp/shared'
 import { requireAuth, requireRole } from './auth.js'
 import { parseCmsBlocks } from './cmsBlockValidation.js'
 import { CmsPagesRepository } from './cmsPagesRepository.js'
