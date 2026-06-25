@@ -1,6 +1,6 @@
 import { compareVideosNewestFirst } from '@vmp/shared'
 
-export type HomepageBlockType = 'featured_row' | 'category' | 'top_video' | 'split_horizontal' | 'split_vertical'
+export type HomepageBlockType = 'featured_row' | 'category' | 'top_video' | 'split_horizontal' | 'split_vertical' | 'page_banner'
 export type HomepageLeafBlockType = 'featured_row' | 'category' | 'top_video'
 
 export interface HomepageLayoutChildBlock {
@@ -17,6 +17,10 @@ export interface HomepageLayoutBlock {
   title?: string
   body?: string
   categoryId?: string | null
+  imageId?: string
+  mobileImageId?: string
+  pageSlug?: string
+  alt?: string
   /** @deprecated Pairing is inferred from gridRow/gridCol + width; kept for backwards-compatible loads. */
   rightRailWithNextSideMini?: boolean
   width?: 'full' | 'half'
@@ -100,10 +104,25 @@ export interface HomepageRenderCategoryPairBlock {
   sideMini: HomepageRenderLeafBlock
 }
 
-export type HomepageRenderBlock = HomepageRenderLeafBlock | HomepageRenderSplitBlock | HomepageRenderCategoryPairBlock
+export interface HomepageRenderPageBannerBlock {
+  id: string
+  type: 'page_banner'
+  title: string
+  body: string
+  imageId: string
+  mobileImageId: string | null
+  pageSlug: string
+  alt: string
+}
+
+export type HomepageRenderBlock = HomepageRenderLeafBlock | HomepageRenderSplitBlock | HomepageRenderCategoryPairBlock | HomepageRenderPageBannerBlock
 
 export function isSplitRenderBlock(block: HomepageRenderBlock): block is HomepageRenderSplitBlock {
   return block.type === 'split_horizontal' || block.type === 'split_vertical'
+}
+
+export function isPageBannerRenderBlock(block: HomepageRenderBlock): block is HomepageRenderPageBannerBlock {
+  return block.type === 'page_banner'
 }
 
 export function isLeafRenderBlock(block: HomepageRenderBlock): block is HomepageRenderLeafBlock {
@@ -111,7 +130,7 @@ export function isLeafRenderBlock(block: HomepageRenderBlock): block is Homepage
 }
 
 function defaultBlockWidth(type: HomepageBlockType): 'full' | 'half' {
-  if (type === 'featured_row' || type === 'top_video') return 'full'
+  if (type === 'featured_row' || type === 'top_video' || type === 'page_banner') return 'full'
   return 'half'
 }
 
@@ -213,6 +232,25 @@ export function orderLayoutBlocksForViewport(
       return ao - bo
     })
     .map(({ block }) => block)
+}
+
+function buildPageBannerBlock(block: HomepageLayoutBlock): HomepageRenderPageBannerBlock | null {
+  const imageId = typeof block.imageId === 'string' ? block.imageId.trim() : ''
+  const pageSlug = typeof block.pageSlug === 'string' ? block.pageSlug.trim() : ''
+  if (!imageId || !pageSlug) return null
+  const mobileImageId = typeof block.mobileImageId === 'string' && block.mobileImageId.trim()
+    ? block.mobileImageId.trim()
+    : null
+  return {
+    id: block.id,
+    type: 'page_banner',
+    title: typeof block.title === 'string' ? block.title : '',
+    body: typeof block.body === 'string' ? block.body : '',
+    imageId,
+    mobileImageId,
+    pageSlug,
+    alt: typeof block.alt === 'string' ? block.alt : '',
+  }
 }
 
 function leafHasRenderableContent(leaf: HomepageRenderLeafBlock | null): boolean {
@@ -355,6 +393,11 @@ export function buildHomepageRenderModel({
           body: typeof fullBlock.body === 'string' ? fullBlock.body : '',
           children,
         })
+        continue
+      }
+      if (fullBlock.type === 'page_banner') {
+        const banner = buildPageBannerBlock(fullBlock)
+        if (banner) blockItems.push(banner)
         continue
       }
       const leaf = buildLeafBlock(fullBlock, fullBlock.id)
