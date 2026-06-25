@@ -5,6 +5,7 @@ import {
   CHUNK_RELOAD_ATTEMPTED_AT_KEY,
   CHUNK_RELOAD_THROTTLE_MS,
   isChunkLoadErrorReason,
+  isCriticalAssetLoadTarget,
   isNuxtAssetUrl,
   shouldAttemptChunkReload,
 } from '../utils/chunkLoadRecovery'
@@ -44,6 +45,23 @@ describe('isChunkLoadErrorReason', () => {
 
   it('matches transient 503 asset failures', () => {
     assert.equal(isChunkLoadErrorReason(new TypeError('Failed to fetch /_nuxt/app.abc.js: 503 Service Unavailable')), true)
+  })
+})
+
+describe('isCriticalAssetLoadTarget', () => {
+  it('treats script and stylesheet links as critical', () => {
+    const script = { tagName: 'SCRIPT', src: '/_nuxt/entry.js' } as HTMLScriptElement
+    const stylesheet = { tagName: 'LINK', rel: 'stylesheet', href: '/_nuxt/entry.css' } as HTMLLinkElement
+    const modulepreload = { tagName: 'LINK', rel: 'modulepreload', href: '/_nuxt/entry.js' } as HTMLLinkElement
+
+    assert.equal(isCriticalAssetLoadTarget(script), true)
+    assert.equal(isCriticalAssetLoadTarget(stylesheet), true)
+    assert.equal(isCriticalAssetLoadTarget(modulepreload), true)
+  })
+
+  it('ignores rel=prefetch link failures (Cloudflare Worker 503 noise)', () => {
+    const prefetch = { tagName: 'LINK', rel: 'prefetch', href: '/_nuxt/lazy.js' } as HTMLLinkElement
+    assert.equal(isCriticalAssetLoadTarget(prefetch), false)
   })
 })
 

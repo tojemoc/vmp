@@ -1,4 +1,9 @@
-import { isChunkLoadErrorReason, isNuxtAssetUrl, shouldAttemptChunkReload } from '~/utils/chunkLoadRecovery'
+import {
+  getCriticalAssetUrl,
+  isChunkLoadErrorReason,
+  isNuxtAssetUrl,
+  shouldAttemptChunkReload,
+} from '~/utils/chunkLoadRecovery'
 
 export default defineNuxtPlugin(() => {
   function safeReloadAttemptStorage(): Pick<Storage, 'getItem' | 'setItem'> {
@@ -71,9 +76,7 @@ export default defineNuxtPlugin(() => {
   })
 
   window.addEventListener('error', (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLScriptElement || target instanceof HTMLLinkElement)) return
-    const src = target instanceof HTMLScriptElement ? target.src : target.href
+    const src = getCriticalAssetUrl(event.target)
     if (!src || !isNuxtAssetUrl(src)) return
     reloadOnceForFreshAssets()
   }, true)

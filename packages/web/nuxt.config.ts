@@ -7,6 +7,19 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
+  hooks: {
+    // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
+    // sec-purpose: prefetch on Worker routes with HTTP 503 (same rule as Speed Brain
+    // navigation prefetch). Those 503s are harmless, but chunk-load-recovery (#411)
+    // must not treat them as fatal — disabling manifest prefetch avoids the noise.
+    'build:manifest'(manifest) {
+      for (const key in manifest) {
+        const file = manifest[key]
+        if (file) file.prefetch = false
+      }
+    },
+  },
+
   sourcemap: { client: 'hidden' },
 
   modules: [
