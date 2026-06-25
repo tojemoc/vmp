@@ -11,4 +11,8 @@ describe('sanitizeVideoSlug (API contract)', () => {
     assert.equal(sanitizeVideoSlug('článok o víne'), 'clanok-o-vine')
     assert.equal(sanitizeVideoSlug('čťáíý'), 'ctaiy')
   })
+
+  it('returns empty for input that has no slug-safe characters', () => {
+    assert.equal(sanitizeVideoSlug('!!!'), '')
+  })
 })

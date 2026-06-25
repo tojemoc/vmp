@@ -6317,10 +6317,11 @@ async function saveSlugEdit(video: Video) {
     }
     const data = await res.json().catch(() => ({}))
     const normalizedSlug = data?.video?.slug ?? requestedSlug
+    const normalizedLegacySlug = data?.video?.legacy_slug ?? video.legacy_slug ?? null
     const idx = uploads.value.findIndex(v => v.id === video.id)
     if (idx !== -1) {
       const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, slug: normalizedSlug }
+      uploads.value[idx] = { ...cur, slug: normalizedSlug, legacy_slug: normalizedLegacySlug }
     }
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
   } catch (e: any) {

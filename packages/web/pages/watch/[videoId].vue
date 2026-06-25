@@ -579,7 +579,7 @@ const emptyVideoMeta = (): VideoMetaAsyncValue => ({ meta: null, notFound: false
 
 const videoIdParam = computed(() => String(route.params.videoId ?? '').trim())
 
-const { data: videoMetaState } = await useAsyncData(
+const { data: videoMetaState, pending: videoMetaPending } = await useAsyncData(
   () => `video-meta-${videoIdParam.value}`,
   async () => {
     if (!videoIdParam.value) return emptyVideoMeta()
@@ -602,6 +602,13 @@ const videoNotFound = computed(() => videoMetaState.value?.notFound === true)
 const accessNotFound = ref(false)
 const showVideoNotFound = computed(() => videoNotFound.value || accessNotFound.value)
 
+function markVideoNotFoundResponse() {
+  accessNotFound.value = true
+  if (import.meta.server) {
+    setResponseStatus(404)
+  }
+}
+
 const canonicalWatchPath = computed(() => {
   if (!videoMeta.value) return null
   return videoMeta.value.canonicalWatchPath
@@ -613,10 +620,6 @@ if (videoMeta.value && canonicalWatchPath.value) {
   if (videoIdParam.value && videoIdParam.value !== canonicalToken) {
     await navigateTo(canonicalWatchPath.value, { redirectCode: 301 })
   }
-}
-
-if (showVideoNotFound.value && import.meta.server) {
-  setResponseStatus(404)
 }
 
 usePageSeo(
@@ -1262,7 +1265,7 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
   ensureCurrent()
 
   if (videoResponse.status === 404) {
-    accessNotFound.value = true
+    markVideoNotFoundResponse()
     await loadBrowseRecommendations(options.signal)
     return
   }
@@ -1332,6 +1335,7 @@ type LoadVideoForRouteOptions = {
 }
 
 const loadBrowseRecommendations = async (signal?: AbortSignal) => {
+  recommendations.value = []
   try {
     const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, { signal })
     if (!recsResponse.ok) return
@@ -1341,6 +1345,23 @@ const loadBrowseRecommendations = async (signal?: AbortSignal) => {
     if (e?.name === 'AbortError' || signal?.aborted) throw e
   }
 }
+
+const waitForVideoMeta = (signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (!videoMetaPending.value) {
+    resolve()
+    return
+  }
+  const stopPending = watch(videoMetaPending, (pending) => {
+    if (!pending) {
+      stopPending()
+      resolve()
+    }
+  })
+  signal?.addEventListener('abort', () => {
+    stopPending()
+    reject(new DOMException('Request aborted', 'AbortError'))
+  }, { once: true })
+})
 
 const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRouteOptions = {}) => {
   const guard = options.guard ?? (() => true)
@@ -1365,7 +1386,11 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   error.value = null
   teardownLivestreamRuntime()
 
+  await waitForVideoMeta(options.signal)
+  ensureCurrent()
+
   if (videoNotFound.value) {
+    markVideoNotFoundResponse()
     recommendations.value = []
     await loadBrowseRecommendations(options.signal)
     ensureCurrent()
@@ -1715,6 +1740,14 @@ watch(
     onCleanup(() => {
       cancel()
     })
+
+    try {
+      await waitForVideoMeta(abortController.signal)
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || abortController.signal.aborted) return
+      throw e
+    }
+    if (!isCurrentInvocation()) return
 
     await loadVideoForRoute(String(newVideoId), {
       signal: abortController.signal,

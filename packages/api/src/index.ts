@@ -1868,13 +1868,19 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
   if (!title) return jsonResponse({ error: 'title is required' }, 400, corsHeaders)
 
   const description = typeof body.description === 'string' ? body.description.trim() : null
-  const slug = typeof body.slug === 'string' && body.slug.trim() ? sanitizeVideoSlug(body.slug) : null
+  const rawSlug = typeof body.slug === 'string' ? body.slug.trim() : ''
+  let slug: string | null = null
+  if (rawSlug) {
+    const sanitizedSlug = sanitizeVideoSlug(rawSlug)
+    if (!sanitizedSlug || !isValidVideoSlug(sanitizedSlug)) {
+      return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+    }
+    slug = sanitizedSlug
+  }
+
   const publishStatus = typeof body.publishStatus === 'string' ? body.publishStatus : 'draft'
   if (!['draft', 'published', 'archived'].includes(publishStatus)) {
     return jsonResponse({ error: 'publishStatus must be one of: draft, published, archived' }, 400, corsHeaders)
-  }
-  if (slug && !isValidVideoSlug(slug)) {
-    return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
   }
 
   const provider = 'moq'

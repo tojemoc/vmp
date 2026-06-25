@@ -295,7 +295,7 @@ export function buildHomepageRenderModel({
     const existing = videoById.get(placementVideo.id)
     videoById.set(
       placementVideo.id,
-      existing ? { ...placementVideo, ...existing } : placementVideo,
+      existing ? { ...existing, ...placementVideo } : placementVideo,
     )
   }
   const sortedByNewest = [...videoById.values()].sort((a: any, b: any) => compareVideosNewestFirst(a, b))

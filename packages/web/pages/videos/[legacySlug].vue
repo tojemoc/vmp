@@ -11,6 +11,14 @@ type VideoMetaResponse = {
   canonicalWatchPath?: string
 }
 
+function metaFetchStatus(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null
+  const status = (error as { statusCode?: number; status?: number; response?: { status?: number } }).statusCode
+    ?? (error as { response?: { status?: number } }).response?.status
+    ?? (error as { status?: number }).status
+  return typeof status === 'number' ? status : null
+}
+
 const { data: resolvedMeta, error: resolveError } = await useAsyncData(
   () => `legacy-video-resolve-${legacySlug.value}`,
   async () => {
@@ -22,7 +30,21 @@ const { data: resolvedMeta, error: resolveError } = await useAsyncData(
   { watch: [legacySlug] },
 )
 
-if (resolveError.value || !resolvedMeta.value) {
+if (resolveError.value) {
+  const status = metaFetchStatus(resolveError.value)
+  if (status === 404) {
+    if (import.meta.server) {
+      setResponseStatus(404)
+    }
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Video not found',
+    })
+  }
+  throw resolveError.value
+}
+
+if (!resolvedMeta.value) {
   if (import.meta.server) {
     setResponseStatus(404)
   }
