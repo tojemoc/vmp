@@ -215,6 +215,9 @@ export type StringsDefinition = {
   livestreamUnavailableDetail: string
   liveBrowserOnly: string
   videoLoadFailed: string
+  videoNotFoundTitle: string
+  videoNotFoundMessage: string
+  videoNotFoundSuggestions: string
   rateLimitExceeded: string
   mediaFailedToLoad: string
   liveCanvasUnavailable: string
