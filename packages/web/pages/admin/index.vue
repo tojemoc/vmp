@@ -3565,7 +3565,9 @@ const sanitizeBlockForSave = (block: LayoutBlock) => {
     payload.alt = typeof block.alt === 'string' ? block.alt : ''
     payload.width = 'full'
   }
-  if (block.width === 'half' || block.width === 'full') payload.width = block.width
+  if (block.type !== 'page_banner' && (block.width === 'half' || block.width === 'full')) {
+    payload.width = block.width
+  }
   if (Number.isFinite(Number(block.gridRow))) payload.gridRow = Number(block.gridRow)
   if (Number.isFinite(Number(block.gridCol))) payload.gridCol = Number(block.gridCol)
   if (block.mobileHidden === true) payload.mobileHidden = true

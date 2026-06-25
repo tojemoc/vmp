@@ -1,5 +1,5 @@
 /** Fixed CMS page id for site-wide footer content (not a public route). */
-export const CMS_FOOTER_PAGE_ID = 'cms-page-footer'
+export const CMS_FOOTER_PAGE_ID = 'f0000001-0000-4000-8000-000000000001'
 
 /** Internal slug — reserved; footer content is rendered in AppFooter, not at this URL. */
 export const CMS_FOOTER_SLUG = '_footer'

@@ -172,14 +172,14 @@ function normalizeHomepageConfigForResponse(config: any) {
         body: typeof block.body === 'string' ? block.body : '',
       } as Record<string, any>
       const widthRaw = block.width
-      if (widthRaw === 'half' || widthRaw === 'full') {
+      if (type === 'page_banner') {
+        normalized.width = 'full'
+      } else if (widthRaw === 'half' || widthRaw === 'full') {
         normalized.width = widthRaw
       } else if (type === 'featured_row' || type === 'top_video') {
         normalized.width = 'full'
       } else if (type === 'category' || type === 'split_horizontal' || type === 'split_vertical') {
         normalized.width = 'half'
-      } else if (type === 'page_banner') {
-        normalized.width = 'full'
       }
       if (block.mobileHidden === true) normalized.mobileHidden = true
       if (Number.isFinite(Number(block.mobileOrder))) normalized.mobileOrder = Number(block.mobileOrder)

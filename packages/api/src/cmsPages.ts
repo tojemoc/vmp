@@ -124,6 +124,8 @@ export async function handleCmsPageById(request: Request, env: Env, corsHeaders:
     if (!existing) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
     if (isCmsSystemPageId(id)) {
       input.slug = existing.slug
+    } else if (isCmsSystemSlug(input.slug)) {
+      return jsonResponse({ error: 'Slug is reserved for system pages', code: 'SLUG_RESERVED' }, 409, corsHeaders)
     }
     const slugConflict = await isSlugTaken(env, input.slug, id)
     if (slugConflict) {
@@ -159,11 +161,11 @@ export async function handleCmsPageCreate(request: Request, env: Env, corsHeader
   const input = parsePageInput(body)
   if (!input) return jsonResponse({ error: 'Invalid page payload' }, 400, corsHeaders)
 
-  if (await isSlugTaken(env, input.slug)) {
-    return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
-  }
   if (isCmsSystemSlug(input.slug)) {
     return jsonResponse({ error: 'Slug is reserved for system pages', code: 'SLUG_RESERVED' }, 409, corsHeaders)
+  }
+  if (await isSlugTaken(env, input.slug)) {
+    return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
   }
 
   const actorId = await getActorId(request, env)

@@ -1,6 +1,6 @@
 INSERT OR IGNORE INTO cms_pages (id, title, slug, description, status, content, published_at)
 VALUES (
-  'cms-page-footer',
+  'f0000001-0000-4000-8000-000000000001',
   'Site footer',
   '_footer',
   'Content shown in the site-wide footer.',

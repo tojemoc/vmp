@@ -82,7 +82,8 @@ export async function handleSiteFooterPublic(request: Request, env: any, corsHea
     ])
     const config = normalizeFooterConfig(safeJsonParse(configRaw, {}))
     const links = await resolveFooterLinks(env, config.linkPageIds)
-    const content: CmsBlock[] = footerPage?.content ?? []
+    const content: CmsBlock[] =
+      footerPage?.status === 'published' ? footerPage.content : []
     return jsonResponse({ content, links }, 200, corsHeaders)
   } catch (error) {
     console.error('handleSiteFooterPublic:', error)
@@ -129,12 +130,14 @@ export async function handleSiteFooterAdmin(request: Request, env: any, corsHead
 
     const repo = new CmsPagesRepository(db)
     const linkPageIds: string[] = []
+    const seen = new Set<string>()
     for (const id of raw.linkPageIds) {
       if (typeof id !== 'string' || !id.trim()) continue
       const trimmed = id.trim()
-      if (trimmed === CMS_FOOTER_PAGE_ID) continue
+      if (trimmed === CMS_FOOTER_PAGE_ID || seen.has(trimmed)) continue
       const page = await repo.getPageById(trimmed)
-      if (!page || page.slug === CMS_FOOTER_SLUG) continue
+      if (!page || page.slug === CMS_FOOTER_SLUG || page.status !== 'published') continue
+      seen.add(page.id)
       linkPageIds.push(page.id)
     }
 

@@ -51,7 +51,7 @@
           type="button"
           class="mt-2 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
           :disabled="savingFooterLinks"
-          @click="saveFooterLinks"
+          @click="saveFooterLinksOnly"
         >
           {{ savingFooterLinks ? 'Saving…' : 'Save footer links' }}
         </button>
@@ -82,7 +82,7 @@
       <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadPages">
         Refresh
       </button>
-      <div v-if="!pages.length" class="text-sm text-gray-500 dark:text-gray-400">No pages yet.</div>
+      <div v-if="!regularPages.length" class="text-sm text-gray-500 dark:text-gray-400">No pages yet.</div>
       <div
         v-for="page in regularPages"
         :key="page.id"
@@ -464,11 +464,20 @@ async function saveFooterLinks() {
       headers: { ...authHeader(), 'Content-Type': 'application/json' },
       body: { linkPageIds: footerLinkPageIds.value },
     })
-    setMessage('Footer links saved.')
   } catch (err: unknown) {
     setMessage(err instanceof Error ? err.message : 'Failed to save footer links', 'error')
+    throw err
   } finally {
     savingFooterLinks.value = false
+  }
+}
+
+async function saveFooterLinksOnly() {
+  try {
+    await saveFooterLinks()
+    setMessage('Footer links saved.')
+  } catch {
+    // Error message already set in saveFooterLinks.
   }
 }
 

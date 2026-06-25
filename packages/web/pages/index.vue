@@ -122,7 +122,11 @@
           </div>
 
           <div v-else-if="block.type === 'page_banner'" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <NuxtLink :to="`/${block.pageSlug}`" class="block">
+            <NuxtLink
+              :to="`/${block.pageSlug}`"
+              class="block"
+              :aria-label="bannerLinkLabel(block)"
+            >
               <picture>
                 <source
                   v-if="block.mobileImageId && bannerImageUrls[block.mobileImageId]"
@@ -132,7 +136,7 @@
                 <img
                   v-if="bannerImageUrls[block.imageId]"
                   :src="bannerImageUrls[block.imageId]"
-                  :alt="block.alt || block.title || ''"
+                  :alt="bannerImageAlt(block)"
                   class="w-full h-auto object-cover"
                   loading="lazy"
                 >
@@ -283,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import type { HomepagePlacementResponse } from '~/composables/useHomepageLayout'
+import type { HomepagePlacementResponse, HomepageRenderPageBannerBlock } from '~/composables/useHomepageLayout'
 import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
@@ -329,6 +333,24 @@ type HomePill = {
   image_url?: string
 }
 const pills = ref<HomePill[]>([])
+
+function bannerLinkLabel(block: HomepageRenderPageBannerBlock): string {
+  const title = block.title?.trim()
+  if (title) return title
+  const alt = block.alt?.trim()
+  if (alt) return alt
+  const slug = block.pageSlug?.trim()
+  if (slug) return `Go to ${slug}`
+  return 'Learn more'
+}
+
+function bannerImageAlt(block: HomepageRenderPageBannerBlock): string {
+  const alt = block.alt?.trim()
+  if (alt) return alt
+  const title = block.title?.trim()
+  if (title) return title
+  return ''
+}
 
 function formatPillValue(pill: HomePill) {
   const mode = pill.value_mode || 'number'

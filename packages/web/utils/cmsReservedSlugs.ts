@@ -1,3 +1,5 @@
+import { CMS_FOOTER_SLUG } from '@vmp/shared'
+
 /**
  * Slugs that have dedicated Nuxt routes and must not be served by the CMS catch-all.
  */
@@ -9,7 +11,7 @@ export const CMS_RESERVED_SLUGS = new Set([
   'watch',
   'videos',
   'category',
-  '_footer',
+  CMS_FOOTER_SLUG,
 ])
 
 export function isCmsReservedSlug(slug: string): boolean {

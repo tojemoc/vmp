@@ -63,7 +63,7 @@
               <option v-for="t in blockTypeOptions(slot.block.type)" :key="t" :value="t">{{ t }}</option>
             </select>
             <select
-              v-if="!mobileOrderMode && slot.block.type !== 'split_horizontal' && slot.block.type !== 'split_vertical'"
+              v-if="!mobileOrderMode && slot.block.type !== 'split_horizontal' && slot.block.type !== 'split_vertical' && slot.block.type !== 'page_banner'"
               v-model="slot.block.width"
               class="px-2 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-xs text-gray-900 dark:text-white"
               @change="onWidthChange(slot.block)"
@@ -411,13 +411,13 @@ function leafBlockTypeOptions(current: LeafBlockType): LeafBlockType[] {
 }
 
 function onTypeChange(block: HomepageLayoutBlock) {
-  if (!block.width) block.width = defaultWidth(block.type)
+  block.width = defaultWidth(block.type)
   syncGridPositions()
 }
 
 function onWidthChange(block: HomepageLayoutBlock) {
   const live = blocks.value.find((entry) => entry.id === block.id)
-  if (live) live.width = block.width
+  if (live) live.width = live.type === 'page_banner' ? 'full' : block.width
   syncGridPositions()
 }
 
@@ -510,7 +510,7 @@ function onDropPartnerSlot(anchorBlockId: string) {
   if (!reordered) return
 
   const moved = reordered.find((block) => block.id === fromId)
-  if (moved && moved.type !== 'split_horizontal' && moved.type !== 'split_vertical') {
+  if (moved && moved.type !== 'split_horizontal' && moved.type !== 'split_vertical' && moved.type !== 'page_banner') {
     moved.width = 'half'
   }
   blocks.value = assignGridPositions(reordered)
@@ -521,7 +521,11 @@ function onDropPartnerSlot(anchorBlockId: string) {
 
 watch(blocks, (list) => {
   for (const block of list) {
-    if (!block.width) block.width = defaultWidth(block.type)
+    if (block.type === 'page_banner') {
+      block.width = 'full'
+    } else if (!block.width) {
+      block.width = defaultWidth(block.type)
+    }
     if (block.mobileHidden == null) block.mobileHidden = false
   }
 }, { deep: true, immediate: true })
