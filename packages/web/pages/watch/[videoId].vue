@@ -834,6 +834,36 @@ const getNativeVideoElement = (media: MediaLikeElement | null = videoElement.val
   return shadowVideo instanceof HTMLVideoElement ? shadowVideo : null
 }
 
+/** Native <video> for seek/pause/time — reliable before videojs-video fully upgrades. */
+const getPlaybackVideo = (media: MediaLikeElement | null = videoElement.value): WebKitVideoElement | null =>
+  getNativeVideoElement(media)
+
+const resolveTimeUpdateTarget = (target: EventTarget | null): WebKitVideoElement | null => {
+  if (target instanceof HTMLVideoElement) return target
+  if (target && typeof target === 'object') {
+    return getPlaybackVideo(target as MediaLikeElement)
+  }
+  return getPlaybackVideo()
+}
+
+const setPlaybackTime = (seconds: number, media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    native.currentTime = seconds
+    return
+  }
+  if (media && 'currentTime' in media) media.currentTime = seconds
+}
+
+const pausePlayback = (media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    native.pause()
+    return
+  }
+  if (media && typeof media.pause === 'function') media.pause()
+}
+
 const isIosLikeDevice = () => {
   if (import.meta.server) return false
   const nav = navigator
@@ -976,8 +1006,9 @@ const toggleMobileSettings = () => {
 
 const handleMobilePlaybackRate = (rate: number) => {
   setPlaybackRate(rate)
-  const video = videoElement.value
-  if (video) video.playbackRate = rate
+  const native = getPlaybackVideo()
+  if (native) native.playbackRate = rate
+  else if (videoElement.value) videoElement.value.playbackRate = rate
   mobileSettingsOpen.value = false
 }
 
@@ -1064,7 +1095,8 @@ const handleDocumentFullscreenChange = () => {
 // ── Event handlers ────────────────────────────────────────────────────────────
 
 const handleTimeUpdate = (event: Event) => {
-  const video = event.target as HTMLVideoElement
+  const video = resolveTimeUpdateTarget(event.target)
+  if (!video) return
   currentTime.value = video.currentTime
   enforcePreviewLimit(video)
 }
@@ -1076,7 +1108,8 @@ usePushAttribution({
 })
 
 const handleSeeking = (event: Event) => {
-  const video = event.target as HTMLVideoElement
+  const video = resolveTimeUpdateTarget(event.target)
+  if (!video) return
   enforcePreviewLimit(video)
 }
 
@@ -1088,19 +1121,19 @@ const handleSeekbarInput = (event: Event) => {
   if (!videoData.value?.hasAccess && previewDuration && requestedTime >= previewDuration) {
     if (isFullPublicPreview.value) {
       currentTime.value = requestedTime
-      if (videoElement.value) videoElement.value.currentTime = requestedTime
+      setPlaybackTime(requestedTime)
       return
     }
     input.value        = String(previewDuration)
     currentTime.value  = previewDuration
-    const video = videoElement.value
-    if (video) { video.currentTime = previewDuration; video.pause() }
+    setPlaybackTime(previewDuration)
+    pausePlayback()
     showPremiumOverlay.value = true
     return
   }
 
   currentTime.value = requestedTime
-  if (videoElement.value) videoElement.value.currentTime = requestedTime
+  setPlaybackTime(requestedTime)
 }
 
 const enforcePreviewLimit = (video: HTMLVideoElement) => {
@@ -1171,6 +1204,7 @@ let handleCanPlay:        (() => void) | null = null
 let handleRateChange:     (() => void) | null = null
 let handleNativeBeginFullscreen: (() => void) | null = null
 let handleNativeEndFullscreen:   (() => void) | null = null
+let handleNativeTimeUpdate:      (() => void) | null = null
 let nativeVideoWithListeners: HTMLVideoElement | null = null
 type Closable = { close?: () => void }
 type LivestreamRuntime = {
@@ -1500,6 +1534,12 @@ const initializeVideoElement = async (
     }
     nativeVideo.addEventListener('webkitbeginfullscreen', handleNativeBeginFullscreen)
     nativeVideo.addEventListener('webkitendfullscreen', handleNativeEndFullscreen)
+    handleNativeTimeUpdate = () => {
+      if (!isCurrentInvocation()) return
+      currentTime.value = nativeVideo.currentTime
+      enforcePreviewLimit(nativeVideo)
+    }
+    nativeVideo.addEventListener('timeupdate', handleNativeTimeUpdate)
   }
   ensureActive()
 
@@ -1643,6 +1683,10 @@ function teardownVideoListeners() {
     if (handleNativeEndFullscreen) {
       nativeVideoWithListeners.removeEventListener('webkitendfullscreen', handleNativeEndFullscreen)
       handleNativeEndFullscreen = null
+    }
+    if (handleNativeTimeUpdate) {
+      nativeVideoWithListeners.removeEventListener('timeupdate', handleNativeTimeUpdate)
+      handleNativeTimeUpdate = null
     }
     nativeVideoWithListeners = null
   }
