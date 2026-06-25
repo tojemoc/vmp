@@ -66,7 +66,7 @@ const showRelinkFlow = computed(() => {
 })
 
 const legacyProviderDisplayName = computed(() => {
-  const sub = subscription.value as { legacyProviderName?: string | null } | null
+  const sub = subscription.value
   const name = sub?.legacyProviderName?.trim()
   if (name) return name
   if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy')

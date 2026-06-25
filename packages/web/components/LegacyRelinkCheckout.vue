@@ -97,6 +97,12 @@ function planButtonClass(plan: PlanType): string {
     : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
 }
 
+function parseNullablePrice(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
 async function loadPrices() {
   loadingPrices.value = true
   checkoutError.value = null
@@ -107,9 +113,9 @@ async function loadPrices() {
 
     const legacyRaw = data?.pricesByProvider?.legacy ?? {}
     prices.value = {
-      monthly: legacyRaw.monthly != null ? Number(legacyRaw.monthly) : Number(data.monthly ?? null),
-      yearly: legacyRaw.yearly != null ? Number(legacyRaw.yearly) : Number(data.yearly ?? null),
-      club: legacyRaw.club != null ? Number(legacyRaw.club) : Number(data.club ?? null),
+      monthly: legacyRaw.monthly != null ? parseNullablePrice(legacyRaw.monthly) : parseNullablePrice(data.monthly),
+      yearly: legacyRaw.yearly != null ? parseNullablePrice(legacyRaw.yearly) : parseNullablePrice(data.yearly),
+      club: legacyRaw.club != null ? parseNullablePrice(legacyRaw.club) : parseNullablePrice(data.club),
     }
 
     const allowed = Array.isArray(data.allowedPlans)

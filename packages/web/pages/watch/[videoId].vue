@@ -1226,6 +1226,10 @@ onMounted(async () => {
       await clearLegacyOrderQuery()
       return
     }
+    error.value = result.error ?? strings.checkoutStartFailed
+    showPremiumOverlay.value = true
+    await clearLegacyOrderQuery()
+    return
   }
 
   if (returningFromStripe.value) {

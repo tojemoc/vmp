@@ -57,7 +57,7 @@
           >
         </label>
       </div>
-      <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50" :disabled="saving" @click="saveProviderSettings">
+      <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50" :disabled="saving" @click="saveProviderSettings">
         {{ saving ? 'Saving…' : 'Save provider settings' }}
       </button>
     </div>
@@ -166,7 +166,7 @@
         <input v-model="legacy.showManageButton" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
         Show "Manage payment method" button to legacy subscribers
       </label>
-      <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50" :disabled="saving" @click="saveLegacy">Save legacy settings</button>
+      <button type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50" :disabled="saving" @click="saveLegacy">Save legacy settings</button>
     </div>
 
     <div v-if="legacy.configured" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
@@ -251,6 +251,22 @@ const legacyPrices = ref<Record<LegacyPlanKey, string>>({
   yearly: '',
   club: '',
 })
+const basePrices = ref<Record<LegacyPlanKey, string>>({
+  monthly: '',
+  yearly: '',
+  club: '',
+})
+const stripePrices = ref<Record<LegacyPlanKey, string>>({
+  monthly: '',
+  yearly: '',
+  club: '',
+})
+const stripePriceIds = ref<Record<LegacyPlanKey, string>>({
+  monthly: '',
+  yearly: '',
+  club: '',
+})
+const allowedPlansSetting = ref<string[]>(['monthly', 'yearly', 'club'])
 const legacyOrders = ref<LegacyOrderRow[]>([])
 const ordersLoading = ref(false)
 const loading = ref(false)
@@ -274,6 +290,28 @@ async function loadPaymentSettings() {
     ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
     : ['stripe', 'legacy']
   providerOrderText.value = (order.length ? order : ['stripe', 'legacy']).join(',')
+  const allowed = Array.isArray(data.allowedPlans)
+    ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club')
+    : ['monthly', 'yearly', 'club']
+  allowedPlansSetting.value = allowed.length ? allowed : ['monthly', 'yearly', 'club']
+  const base = data.basePrices ?? {}
+  basePrices.value = {
+    monthly: String(base.monthly ?? ''),
+    yearly: String(base.yearly ?? ''),
+    club: String(base.club ?? ''),
+  }
+  const stripeProviderPrices = data.providerPrices?.stripe ?? {}
+  stripePrices.value = {
+    monthly: String(stripeProviderPrices.monthly ?? ''),
+    yearly: String(stripeProviderPrices.yearly ?? ''),
+    club: String(stripeProviderPrices.club ?? ''),
+  }
+  const stripeIds = data.stripePriceIds ?? {}
+  stripePriceIds.value = {
+    monthly: String(stripeIds.monthly ?? ''),
+    yearly: String(stripeIds.yearly ?? ''),
+    club: String(stripeIds.club ?? ''),
+  }
   const legacyProviderPrices = data.providerPrices?.legacy ?? {}
   legacyPrices.value = {
     monthly: String(legacyProviderPrices.monthly ?? ''),
@@ -406,13 +444,17 @@ async function saveProviderSettings() {
       body: JSON.stringify({
         enabledProviders: enabledProviders.value,
         providerOrder: order.length ? order : enabledProviders.value,
+        allowedPlans: allowedPlansSetting.value,
+        basePrices: basePrices.value,
         providerPrices: {
+          stripe: stripePrices.value,
           legacy: {
             monthly: legacyPrices.value.monthly,
             yearly: legacyPrices.value.yearly,
             club: legacyPrices.value.club,
           },
         },
+        stripePriceIds: stripePriceIds.value,
       }),
     })
     const data = await res.json().catch(() => ({}))

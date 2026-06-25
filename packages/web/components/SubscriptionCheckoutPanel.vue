@@ -285,6 +285,9 @@ const planGridClass = computed(() =>
   'grid-cols-3 max-[22rem]:grid-cols-1',
 )
 
+/** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
+const pendingLegacyCheckoutIntent = ref(false)
+
 const stripeCheckoutMounted = computed(() => true)
 
 const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'))
@@ -301,7 +304,7 @@ const legacyButtonClass = computed(() => {
   if (props.embedded) {
     return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
   }
-  return 'border-gray-600 bg-gray-800 text-white hover:border-gray-500'
+  return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500'
 })
 
 const legacyPlanPrice = computed(() => {
@@ -441,6 +444,10 @@ async function loadPrices() {
     priceError.value = true
   } finally {
     loadingPrices.value = false
+    if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
+      pendingLegacyCheckoutIntent.value = false
+      void startLegacyCheckout()
+    }
   }
 }
 
@@ -547,15 +554,19 @@ function applyCheckoutIntentFromRoute() {
     selectedPlan.value = plan
   }
   const provider = q.checkout_provider
-  if (provider === 'legacy' && showLegacyCheckout.value) {
-    void startLegacyCheckout()
+  if (provider === 'legacy') {
+    if (showLegacyCheckout.value) {
+      void startLegacyCheckout()
+    } else {
+      pendingLegacyCheckoutIntent.value = true
+    }
   }
 }
 
-function activatePanel() {
+async function activatePanel() {
   applyCheckoutIntentFromRoute()
   clearPromoCode()
-  loadPrices()
+  await loadPrices()
 }
 
 watch(() => props.active, (isActive) => {

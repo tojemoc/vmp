@@ -3,7 +3,7 @@
  */
 
 import { requireAuth, requireRole } from './auth.js'
-import { syncNewsletterForStripeSubscription, removeSubscriberFromNewsletter } from './brevo.js'
+import { syncNewsletterForStripeSubscription } from './brevo.js'
 import { getSetting } from './settingsStore.js'
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 import {
@@ -246,6 +246,29 @@ export async function handleLegacyCheckout(request: Request, env: any, corsHeade
   return startLegacyCheckout(env, user, body, corsHeaders)
 }
 
+async function resolveLegacyPurchaseId(
+  env: any,
+  userId: string,
+  order: Record<string, unknown>,
+  orderId: string,
+): Promise<string> {
+  const fromOrder = String(order.purchaseId ?? order.purchase_id ?? '').trim()
+  if (fromOrder) return fromOrder
+
+  const db = getDb(env)
+  const legacySub = await db.prepare(`
+    SELECT purchase_id FROM subscriptions
+    WHERE user_id = ? AND provider = 'legacy'
+      AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+    ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+    LIMIT 1
+  `).bind(userId).first()
+  const fromSubscription = String(legacySub?.purchase_id ?? '').trim()
+  if (fromSubscription) return fromSubscription
+
+  return orderId
+}
+
 export async function handleLegacyComplete(request: Request, env: any, corsHeaders: Record<string, string>) {
   let user
   try {
@@ -274,7 +297,7 @@ export async function handleLegacyComplete(request: Request, env: any, corsHeade
   try {
     const order = await getLegacyOrder(env, orderId) as Record<string, unknown>
     const status = normalizeLegacySubscriptionStatus(order.status ?? order.subscriptionStatus)
-    const purchaseId = String(order.purchaseId ?? order.purchase_id ?? orderId).trim()
+    const purchaseId = await resolveLegacyPurchaseId(env, user.sub, order, orderId)
     const planType = normalizePlanType(order.planType ?? body?.planType ?? (session as any).plan_type)
     const periodEnd = order.currentPeriodEnd ?? order.current_period_end ?? null
 
@@ -410,11 +433,6 @@ export async function handleLegacyWebhook(request: Request, env: any, corsHeader
   const userId = String((sub as any).user_id)
   if (status === 'cancelled' || status === 'past_due') {
     try {
-      await removeSubscriberFromNewsletter(db, userId, env)
-    } catch (brevoErr) {
-      console.error('[legacy webhook] removeSubscriberFromNewsletter failed', brevoErr)
-    }
-    try {
       await revokeOfflineLicensesForUser(
         db,
         userId,
@@ -478,6 +496,6 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@')
   if (!local || !domain) return '***'
-  const visible = local.length <= 2 ? local[0] ?? '*' : `${local.slice(0, 2)}***`
+  const visible = local.length <= 2 ? '*' : `${local.slice(0, 2)}***`
   return `${visible}@${domain}`
 }
