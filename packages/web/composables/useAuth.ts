@@ -39,13 +39,16 @@ export type MagicPwaHandoffResult =
 export interface SubscriptionData {
   id:               string
   planType:         string   // 'monthly' | 'yearly' | 'club'
-  status:           string   // 'active' | 'cancelled' | 'past_due' | 'trialing'
+  status:           string   // 'active' | 'cancelled' | 'past_due' | 'trialing' | 'needs_relink'
   provider?:        string | null
   providerCustomerId?: string | null
   stripeCustomerId: string | null
   currentPeriodEnd: string | null
   createdAt:        string
   updatedAt:        string
+  legacyManageUrl?: string | null
+  showLegacyManageButton?: boolean
+  legacyProviderName?: string | null
 }
 
 // Module-level state — shared across all useAuth() calls in the same tab.
