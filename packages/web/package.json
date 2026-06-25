@@ -35,7 +35,6 @@
     "@tiptap/vue-3": "^3.27.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vmp/shared": "*",
-    "isomorphic-dompurify": "^3.18.0",
     "media-chrome": "^4.19.0",
     "nuxt": "^4.4.8",
     "qrcode": "^1.5.4",

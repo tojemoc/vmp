@@ -1,4 +1,3 @@
-import DOMPurify from 'isomorphic-dompurify'
 import { generateHTML } from '@tiptap/html'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -36,11 +35,22 @@ function sanitizeLinkHrefs(html: string): string {
   })
 }
 
-/** DOM-aware XSS prevention for TipTap HTML before v-html binding. */
+/** HTML sanitization without a DOM (Cloudflare Workers SSR has no document). */
+function purifyHtml(html: string): string {
+  if (!html) return ''
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object\b[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript:/gi, '')
+}
+
+/** XSS prevention for TipTap HTML before v-html binding. */
 export function sanitizeCmsRichTextHtml(html: string): string {
   if (!html) return ''
-  const purified = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
-  return sanitizeLinkHrefs(purified)
+  return sanitizeLinkHrefs(purifyHtml(html))
 }
 
 export function renderCmsRichTextHtml(content: CmsRichTextDocument): string {
