@@ -26,7 +26,7 @@ const needle = `gitCommit:"${expected}"`;
 if (!html.includes(needle)) {
   console.error(`Deployed frontend at ${target} is missing ${needle}`);
   if (!html.includes("gitCommit:")) {
-    console.error("No gitCommit in __NUXT__.config — stale build or wrong Pages project/domain.");
+    console.error("No gitCommit in __NUXT__.config — stale build or Workers build/deployment issue.");
   }
   process.exit(1);
 }
