@@ -8,8 +8,10 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
 
   hooks: {
-    // Cloudflare Workers return 503 for sec-purpose: prefetch (Speed Brain / speculation).
-    // Prefetching /_nuxt async chunks is a no-op on Workers and breaks chunk-load recovery.
+    // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
+    // sec-purpose: prefetch on Worker routes with HTTP 503 (same rule as Speed Brain
+    // navigation prefetch). Those 503s are harmless, but chunk-load-recovery (#411)
+    // must not treat them as fatal — disabling manifest prefetch avoids the noise.
     'build:manifest'(manifest) {
       for (const key in manifest) {
         manifest[key].prefetch = false
