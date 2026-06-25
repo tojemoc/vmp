@@ -6302,7 +6302,7 @@ async function saveSlugEdit(video: Video) {
   const editing = editingSlug.value
   if (!editing || editing.id !== video.id) return
   const slugInput = editing.value.trim()
-  const requestedSlug = slugInput ? sanitizeVideoSlug(slugInput) : null
+  const requestedSlug = slugInput ? (sanitizeVideoSlug(slugInput) || null) : null
   editingSlug.value = null
   if (requestedSlug === (video.slug ?? null)) return
   try {
