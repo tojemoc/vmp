@@ -287,7 +287,7 @@
 </template>
 
 <script setup lang="ts">
-import type { HomepagePlacementResponse, HomepageRenderPageBannerBlock } from '~/composables/useHomepageLayout'
+import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderPageBannerBlock } from '~/composables/useHomepageLayout'
 import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
@@ -317,10 +317,7 @@ function dismissPwaBanner() {
 }
 
 const config = useRuntimeConfig()
-const loading = ref(true)
-const error   = ref<string | null>(null)
-const videos  = ref<any[]>([])
-const layoutBlocks = ref<any[]>([])
+
 type HomePill = {
   id: string
   label: string
@@ -332,7 +329,59 @@ type HomePill = {
   color: string
   image_url?: string
 }
-const pills = ref<HomePill[]>([])
+
+type HomepageContentResponse = {
+  homepageConfig?: {
+    layoutBlocks?: HomepageLayoutBlock[]
+  }
+}
+
+type PillsResponse = {
+  pills?: HomePill[]
+}
+
+const {
+  data: homepageContent,
+  pending: homepageContentPending,
+  error: homepageContentError,
+} = await useAsyncData('homepage-content', () =>
+  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`).catch(() => null),
+)
+
+const {
+  data: placementData,
+  pending: placementPending,
+  error: placementError,
+} = await useAsyncData('homepage-placement', () =>
+  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`).catch(() => null),
+)
+
+const {
+  data: pillsData,
+  pending: pillsPending,
+  error: pillsError,
+} = await useAsyncData('homepage-pills', () =>
+  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`).catch(() => null),
+)
+
+const layoutBlocks = computed(() => {
+  const blocks = homepageContent.value?.homepageConfig?.layoutBlocks
+  return Array.isArray(blocks) ? blocks : []
+})
+const placement = computed(() => placementData.value ?? null)
+const videos = computed<any[]>(() => Array.isArray(placementData.value?.videos) ? placementData.value.videos : [])
+const pills = computed(() => Array.isArray(pillsData.value?.pills) ? pillsData.value.pills : [])
+const loading = computed(() =>
+  (homepageContentPending.value || placementPending.value || pillsPending.value)
+  && !placementData.value
+  && !homepageContent.value,
+)
+const error = computed(() =>
+  homepageContentError.value?.message
+  || placementError.value?.message
+  || pillsError.value?.message
+  || null,
+)
 
 function bannerLinkLabel(block: HomepageRenderPageBannerBlock): string {
   const title = block.title?.trim()
@@ -373,7 +422,6 @@ const homepageRenderModel = computed(() =>
     placement: placement.value,
   }),
 )
-const placement = ref<HomepagePlacementResponse | null>(null)
 const bannerImageUrls = ref<Record<string, string>>({})
 
 const bannerImageIds = computed(() => {
@@ -403,29 +451,6 @@ async function loadBannerImageUrls() {
   bannerImageUrls.value = urls
 }
 
-const loadAdminConfig = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/homepage/content`)
-  if (!res.ok) return
-  const data = await res.json()
-  const homepageConfig = data?.homepageConfig ?? {}
-  layoutBlocks.value = Array.isArray(homepageConfig?.layoutBlocks) ? homepageConfig.layoutBlocks : []
-}
-
-const loadPlacement = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
-  if (!res.ok) return
-  const data = await res.json()
-  placement.value = data
-  videos.value = Array.isArray(data?.videos) ? data.videos : []
-}
-
-const loadPills = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/pills`)
-  if (!res.ok) return
-  const data = await res.json()
-  pills.value = Array.isArray(data?.pills) ? data.pills : []
-}
-
 function updateMobileViewport() {
   if (import.meta.client) isMobileViewport.value = window.innerWidth < 1024
 }
@@ -441,18 +466,4 @@ onUnmounted(() => {
 })
 
 watch(bannerImageIds, () => { void loadBannerImageUrls() }, { immediate: true })
-
-onMounted(async () => {
-  try {
-    await Promise.all([
-      loadAdminConfig(),
-      loadPlacement(),
-      loadPills(),
-    ])
-  } catch (e: any) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-})
 </script>

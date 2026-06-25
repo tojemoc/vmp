@@ -10,7 +10,18 @@ const CHUNK_LOAD_ERROR_PATTERNS = [
   'error loading dynamically imported module',
   'Loading chunk',
   'Loading CSS chunk',
+  '503',
+  'Service Unavailable',
 ]
+
+export function isNuxtAssetUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url, 'https://placeholder.local').pathname
+    return pathname.startsWith('/_nuxt/') || pathname === '/sw.js' || /^\/workbox-[\w-]+\.js$/.test(pathname)
+  } catch {
+    return false
+  }
+}
 
 function errorMessages(reason: unknown): string[] {
   if (reason instanceof Error) {

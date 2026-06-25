@@ -541,14 +541,16 @@ type VideoMetaResponse = {
   thumbnail_url: string | null
 }
 
-const videoIdParam = computed(() => String(route.params.videoId ?? ''))
+const videoIdParam = computed(() => String(route.params.videoId ?? '').trim())
 
 const { data: videoMeta } = await useAsyncData(
   () => `video-meta-${videoIdParam.value}`,
-  () =>
-    $fetch<VideoMetaResponse>(
+  () => {
+    if (!videoIdParam.value) return Promise.resolve(null)
+    return $fetch<VideoMetaResponse>(
       `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
-    ).catch(() => null),
+    ).catch(() => null)
+  },
   { watch: [videoIdParam] },
 )
 

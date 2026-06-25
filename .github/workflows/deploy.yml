@@ -117,6 +117,9 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
 
+      - name: Smoke check frontend Nuxt chunks (staging)
+        run: bash .github/scripts/smoke-frontend-nuxt-chunks.sh "$FRONTEND_URL"
+
   deploy-production:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -220,6 +223,9 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.sha }}
         run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
+
+      - name: Smoke check frontend Nuxt chunks (production)
+        run: bash .github/scripts/smoke-frontend-nuxt-chunks.sh "$FRONTEND_URL"
 
       - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
