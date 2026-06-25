@@ -142,7 +142,7 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
       cleanupOutdatedCaches: true,
       // Keep push handlers in a tiny sidecar file so GenerateSW can still be used.
-      importScripts: ['/sw-push.js'],
+      importScripts: ['/sw-push.js', '/sw-offline-media.js'],
     },
     client: {
       installPrompt: true,
