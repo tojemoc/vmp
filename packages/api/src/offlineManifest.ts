@@ -15,11 +15,11 @@ const RENDITION_RESOLUTION: Record<OfflineRendition, string> = {
   '1080p': '1920x1080',
 }
 
-const MASTER_RELATIVE_CANDIDATES = [
+export const MASTER_PLAYLIST_RELATIVE_CANDIDATES = [
   'master.m3u8',
   'processed/hls/master.m3u8',
   'processed/playlist.m3u8',
-]
+] as const
 
 const R2_PROBE_TIMEOUT_MS = 8_000
 
@@ -74,6 +74,13 @@ export function createHttpOfflineR2Reader(r2BaseUrl: string, videoId: string): O
   }
 }
 
+export async function findMasterRelativePath(reader: OfflineR2Reader): Promise<string | null> {
+  for (const candidate of MASTER_PLAYLIST_RELATIVE_CANDIDATES) {
+    if (await reader.exists(candidate)) return candidate
+  }
+  return null
+}
+
 export function computeManifestHash(files: OfflineManifestFile[]): string {
   const canonical = files
     .map(f => `${f.path}:${f.size ?? 0}`)
@@ -99,13 +106,7 @@ export async function buildOfflineManifest({
   rendition: OfflineRendition
   manifestVersion?: number
 }): Promise<OfflineManifest> {
-  let masterRelative: string | null = null
-  for (const candidate of MASTER_RELATIVE_CANDIDATES) {
-    if (await reader.exists(candidate)) {
-      masterRelative = candidate
-      break
-    }
-  }
+  const masterRelative = await findMasterRelativePath(reader)
   if (!masterRelative) {
     throw new Error('No HLS master playlist found in R2 for this video')
   }
@@ -124,8 +125,11 @@ export async function buildOfflineManifest({
     const resolved = new URL(absoluteOrRelative, fromUrl)
     const relative = toVideoRelativePath(resolved.pathname, videoId)
     if (!relative || seen.has(relative)) return
-    seen.add(relative)
     const size = await reader.contentLength(relative)
+    if (size === null) {
+      throw new Error(`Required offline asset missing in R2: ${relative}`)
+    }
+    seen.add(relative)
     files.push({ path: relative, size })
   }
 
@@ -145,26 +149,24 @@ export async function buildOfflineManifest({
   const variantText = await reader.readText(variantRelative)
   await collectMediaPlaylistFiles(variantText, variantSelection.playlistUrl, addRelativePath)
 
-  if (variantRelative && !seen.has(variantRelative)) {
-    seen.add(variantRelative)
-    const size = await reader.contentLength(variantRelative)
-    files.push({ path: variantRelative, size })
+  const addPlaylistFile = async (relative: string) => {
+    if (seen.has(relative)) return
+    const size = await reader.contentLength(relative)
+    if (size === null) {
+      throw new Error(`Required offline asset missing in R2: ${relative}`)
+    }
+    seen.add(relative)
+    files.push({ path: relative, size })
   }
+
+  await addPlaylistFile(variantRelative)
 
   if (audioPlaylistUrl) {
     const audioRelative = toVideoRelativePath(new URL(audioPlaylistUrl).pathname, videoId)
-    if (audioRelative && !seen.has(audioRelative)) {
-      seen.add(audioRelative)
-      const size = await reader.contentLength(audioRelative)
-      files.push({ path: audioRelative, size })
-    }
+    if (audioRelative) await addPlaylistFile(audioRelative)
   }
 
-  if (!seen.has(masterRelative)) {
-    seen.add(masterRelative)
-    const size = await reader.contentLength(masterRelative)
-    files.push({ path: masterRelative, size })
-  }
+  await addPlaylistFile(masterRelative)
 
   // Include rewritten local manifests the client will store
   const localManifestPaths = [

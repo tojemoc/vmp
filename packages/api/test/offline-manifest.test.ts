@@ -5,6 +5,7 @@ import {
   computeManifestHash,
   estimateDownloadBytes,
   findAudioPlaylistUrl,
+  findMasterRelativePath,
   isOfflineRendition,
   parseLicensedManifestPaths,
   sha256HexFromString,
@@ -106,8 +107,42 @@ describe('offlineManifest helpers', () => {
     })
 
     assert.equal(manifest.rendition, '720p')
-    assert.ok(manifest.files.some(file => file.path === '720p/seg_001.m4s'))
-    assert.ok(manifest.files.some(file => file.path === 'audio/seg_001.m4s'))
-    assert.ok(manifest.files.some(file => file.path === 'offline-master.m3u8'))
+    const paths = manifest.files.map(file => file.path)
+    assert.ok(paths.includes('master.m3u8'))
+    assert.ok(paths.includes('720p/playlist.m3u8'))
+    assert.ok(paths.includes('audio/playlist.m3u8'))
+    assert.ok(paths.includes('720p/seg_001.m4s'))
+    assert.ok(paths.includes('audio/seg_001.m4s'))
+    assert.ok(paths.includes('offline-master.m3u8'))
+    assert.equal(new Set(paths).size, paths.length)
+    assert.ok(manifest.files.some(file => file.path === '720p/seg_001.m4s' && file.size === 11))
+    assert.ok(manifest.totalBytes > 0)
+  })
+
+  it('findMasterRelativePath returns the first existing candidate', async () => {
+    const reader = createFixtureReader({
+      'processed/hls/master.m3u8': '#EXTM3U',
+    })
+    assert.equal(await findMasterRelativePath(reader), 'processed/hls/master.m3u8')
+  })
+
+  it('rejects manifests when a referenced media segment is missing', async () => {
+    const reader = createFixtureReader({
+      'master.m3u8': [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720',
+        '720p/playlist.m3u8',
+      ].join('\n'),
+      '720p/playlist.m3u8': [
+        '#EXTM3U',
+        '#EXTINF:4.0,',
+        'seg_001.m4s',
+      ].join('\n'),
+    })
+
+    await assert.rejects(
+      () => buildOfflineManifest({ reader, videoId: 'vid', rendition: '720p' }),
+      /Required offline asset missing in R2: 720p\/seg_001\.m4s/,
+    )
   })
 })
