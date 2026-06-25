@@ -239,7 +239,19 @@ class SegmentRateLimiterDOBase {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const body = await request.json() as SegmentRateLimitBody
+    let body: SegmentRateLimitBody
+    try {
+      body = await request.json() as SegmentRateLimitBody
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('client disconnected')) {
+        return new Response(JSON.stringify({ skipped: true, reason: 'client_disconnected' }), {
+          status: 499,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      throw err
+    }
     const identifier = body.identifier ?? 'unknown'
     const videoId = body.videoId ?? 'unknown'
     const avgSegDur = body.avgSegDur ?? null

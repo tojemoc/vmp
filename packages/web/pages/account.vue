@@ -14,7 +14,7 @@
             {{ strings.accountRelinkBannerBody }}
           </p>
           <NuxtLink
-            to="/pricing"
+            to="/account?relink=1#relink-checkout"
             class="inline-flex items-center mt-3 text-sm font-semibold text-amber-900 dark:text-amber-100 hover:underline"
           >
             {{ strings.accountRelinkBannerCta }}
@@ -30,6 +30,13 @@
             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
           </svg>
         </button>
+      </div>
+
+      <div
+        v-if="legacyCompletionError"
+        class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4 text-sm text-red-700 dark:text-red-300"
+      >
+        {{ legacyCompletionError }}
       </div>
 
       <div
@@ -89,13 +96,11 @@
               {{ strings.accountRelinkStatusNeedsRelink }}
             </span>
           </div>
-          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 flex flex-wrap gap-3">
-            <NuxtLink
-              to="/pricing"
-              class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {{ strings.accountRelinkPaymentMethod }}
-            </NuxtLink>
+          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-5">
+            <div id="relink-checkout">
+              <LegacyRelinkCheckout return-path="/account" embedded />
+            </div>
+            <div class="flex flex-wrap gap-3">
             <a
               :href="supportMailto"
               class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
@@ -111,6 +116,7 @@
             >
               {{ strings.accountManagePaymentMethod }}
             </a>
+            </div>
           </div>
         </template>
 
@@ -411,7 +417,13 @@ const {
   completeStripeCheckoutReturn,
   clearStripeSessionQuery,
 } = useStripeCheckoutReturn()
+const {
+  returningFromLegacy,
+  completeLegacyCheckoutReturn,
+  clearLegacyOrderQuery,
+} = useLegacyCheckoutReturn()
 const stripeCompletionError = ref<string | null>(null)
+const legacyCompletionError = ref<string | null>(null)
 
 const showTotpDisable   = ref(false)
 const totpDisableCode   = ref('')
@@ -455,6 +467,16 @@ const copiedWhich       = ref<'personal' | null>(null)
 onMounted(async () => {
   if (import.meta.client && sessionStorage.getItem(relinkBannerStorageKey(user.value?.id)) === '1') {
     relinkBannerDismissed.value = true
+  }
+
+  if (returningFromLegacy.value) {
+    const result = await completeLegacyCheckoutReturn()
+    if (result.ok || result.pending) {
+      showWelcomeBanner.value = true
+      await clearLegacyOrderQuery({ relink: '1' })
+    } else {
+      legacyCompletionError.value = result.error ?? strings.checkoutStartFailed
+    }
   }
 
   if (returningFromStripe.value) {

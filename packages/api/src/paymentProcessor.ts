@@ -267,12 +267,14 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
     const stripePricing = await getEffectivePricingSettings(env, 'stripe')
+    const legacyPricing = await getEffectivePricingSettings(env, 'legacy')
     const allowedPlans = await getAllowedPlans(env)
     const pricingNotConfigured = (
       (allowedPlans.includes('monthly') && stripePricing.monthly == null)
       || (allowedPlans.includes('yearly') && stripePricing.yearly == null)
       || (allowedPlans.includes('club') && stripePricing.club == null)
     )
+    const configuredProviders = await getConfiguredProviders(env)
     const payload = {
       monthly: allowedPlans.includes('monthly') ? stripePricing.monthly : null,
       yearly: allowedPlans.includes('yearly') ? stripePricing.yearly : null,
@@ -280,8 +282,9 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       allowedPlans,
       pricesByProvider: {
         stripe: stripePricing,
+        legacy: legacyPricing,
       },
-      enabledProviders: ['stripe'],
+      enabledProviders: configuredProviders,
       ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
     }
     return jsonResponse(payload, 200, corsHeaders)

@@ -131,6 +131,18 @@
             </div>
 
             <button
+              v-if="autoplayMuting && !autoplayBlocked"
+              type="button"
+              class="absolute top-3 right-3 z-20 inline-flex items-center gap-2 rounded-full bg-black/70 border border-white/30 px-3 py-1.5 text-sm font-medium text-white shadow-lg"
+              @click="handleUnmuteBannerClick"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+              </svg>
+              <span>{{ strings.offlineTapToUnmute }}</span>
+            </button>
+
+            <button
               v-if="autoplayBlocked"
               type="button"
               class="absolute inset-0 z-20 flex items-center justify-center"
@@ -156,6 +168,8 @@
               @touchstart.passive="handlePlayerTouchStart"
               @touchmove.passive="handlePlayerTouchMove"
               @touchend.passive="handlePlayerTouchEnd"
+              @mediaplayrequest.capture="handleMediaPlayRequest"
+              @mediapauserequest.capture="handleMediaPauseRequest"
             >
               <videojs-video
                 ref="videoElement"
@@ -279,6 +293,11 @@
                     </svg>
                   </button>
                   <media-playback-rate-menu-button class="watch-playback-rate-menu-button hidden sm:inline-flex"></media-playback-rate-menu-button>
+                  <OfflineDownloadButton
+                    v-if="videoData.hasAccess"
+                    :video-id="videoId"
+                    :video-title="videoData.video.title"
+                  />
                   <button
                     type="button"
                     class="watch-icon-button watch-settings-menu-button sm:hidden"
@@ -393,13 +412,6 @@
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
               {{ videoData.video.title }}
             </h1>
-
-            <OfflineDownloadButton
-              v-if="videoData.hasAccess && !videoData.video.isLivestream"
-              :video-id="videoId"
-              :video-title="videoData.video.title"
-              class="mb-4"
-            />
 
             <div
               v-if="playingOffline"
@@ -919,7 +931,48 @@ const pausePlayback = (media: MediaLikeElement | null = videoElement.value) => {
     native.pause()
     return
   }
+  const el = media as (MediaLikeElement & { api?: { pause?: () => void } }) | null
+  if (el?.api && typeof el.api.pause === 'function') {
+    el.api.pause()
+    return
+  }
   if (media && typeof media.pause === 'function') media.pause()
+}
+
+const playPlayback = async (media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    await native.play().catch(() => {})
+    return
+  }
+  const el = media as (MediaLikeElement & { api?: { play?: () => Promise<void> | void } }) | null
+  if (el?.api && typeof el.api.play === 'function') {
+    await Promise.resolve(el.api.play()).catch(() => {})
+    return
+  }
+  if (media && typeof media.play === 'function') {
+    await media.play().catch(() => {})
+  }
+}
+
+const handleMediaPauseRequest = (event: Event) => {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  pausePlayback()
+}
+
+const handleMediaPlayRequest = (event: Event) => {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  void playPlayback()
+}
+
+const handleUnmuteBannerClick = async () => {
+  const video = videoElement.value
+  if (!video) return
+  video.muted = false
+  autoplayMuting.value = false
+  await playPlayback(video)
 }
 
 const isIosLikeDevice = () => {

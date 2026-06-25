@@ -176,43 +176,56 @@ export async function startOfflineDownload({
 }): Promise<void> {
   if (activeDownloads.has(videoId)) return
 
+  const existingRecord = await readStoredDownload(videoId)
+  const isResume = Boolean(
+    existingRecord
+    && existingRecord.rendition === rendition
+    && (existingRecord.status === 'paused' || existingRecord.status === 'failed')
+    && existingRecord.filesCompleted > 0,
+  )
+
   const device = await ensureOfflineDevice(apiUrl, authHeaders)
   const controller = new AbortController()
   activeDownloads.set(videoId, controller)
 
-  const initial: StoredDownload = {
-    videoId,
-    videoTitle: '',
-    rendition,
-    status: 'downloading',
-    license: {
-      licenseId: '',
-      deviceId: device.deviceId,
+  if (!isResume) {
+    const initial: StoredDownload = {
       videoId,
+      videoTitle: existingRecord?.videoTitle ?? '',
       rendition,
-      expiresAt: new Date().toISOString(),
-      manifestHash: '',
-      manifestVersion: 1,
-      playbackState: 'allowed',
-      nextValidationDueAt: new Date().toISOString(),
-      signature: '',
-    },
-    downloadToken: '',
-    manifestHash: '',
-    manifestVersion: 1,
-    bytesDownloaded: 0,
-    totalBytes: 0,
-    filesCompleted: 0,
-    filesTotal: 0,
-    errorMessage: null,
-    createdAt: nowIso(),
-    updatedAt: nowIso(),
-    completedAt: null,
+      status: 'downloading',
+      license: existingRecord?.license ?? {
+        licenseId: '',
+        deviceId: device.deviceId,
+        videoId,
+        rendition,
+        expiresAt: new Date().toISOString(),
+        manifestHash: '',
+        manifestVersion: 1,
+        playbackState: 'allowed',
+        nextValidationDueAt: new Date().toISOString(),
+        signature: '',
+      },
+      downloadToken: existingRecord?.downloadToken ?? '',
+      manifestHash: existingRecord?.manifestHash ?? '',
+      manifestVersion: existingRecord?.manifestVersion ?? 1,
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      filesCompleted: 0,
+      filesTotal: 0,
+      errorMessage: null,
+      createdAt: existingRecord?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+      completedAt: null,
+    }
+    await writeStoredDownload(initial)
+    await enqueueDownload(videoId)
+    emitProgress(videoId, initial)
+  } else {
+    await patchDownload(videoId, { status: 'downloading', errorMessage: null })
+    await enqueueDownload(videoId)
   }
-  await writeStoredDownload(initial)
-  await enqueueDownload(videoId)
-  emitProgress(videoId, initial)
-  trackOfflineEvent('offline_download_started', { videoId, rendition })
+  trackOfflineEvent('offline_download_started', { videoId, rendition, resumed: isResume })
 
   try {
     const res = await fetch(`${apiUrl}/api/downloads/${encodeURIComponent(videoId)}/authorize`, {
@@ -229,32 +242,39 @@ export async function startOfflineDownload({
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Download authorization failed')
 
-    await deleteOfflineVideo(videoId)
+    if (!isResume) {
+      await deleteOfflineVideo(videoId)
+    }
 
     const downloadableFiles = data.manifest.files.filter(
       (f: OfflineManifestFile) => !isGeneratedManifestPath(f.path),
     )
-    const totalBytes = data.estimatedBytes ?? data.manifest.totalBytes ?? 0
+    const totalBytes = data.estimatedBytes ?? data.manifest.totalBytes ?? existingRecord?.totalBytes ?? 0
 
     await patchDownload(videoId, {
-      videoTitle: data.video?.title ?? videoId,
+      videoTitle: data.video?.title ?? existingRecord?.videoTitle ?? videoId,
       license: data.license,
       downloadToken: data.downloadToken,
       manifestHash: data.license.manifestHash,
       manifestVersion: data.license.manifestVersion,
       totalBytes,
       filesTotal: downloadableFiles.length,
-      filesCompleted: 0,
-      bytesDownloaded: 0,
+      filesCompleted: isResume ? (existingRecord?.filesCompleted ?? 0) : 0,
+      bytesDownloaded: isResume ? (existingRecord?.bytesDownloaded ?? 0) : 0,
       status: 'downloading',
       errorMessage: null,
     })
 
-    let bytesDownloaded = 0
+    let bytesDownloaded = isResume ? (existingRecord?.bytesDownloaded ?? 0) : 0
     let filesCompleted = 0
 
     for (const file of downloadableFiles) {
       controller.signal.throwIfAborted()
+      const alreadyStored = isResume ? await readOfflineAsset(videoId, file.path) : null
+      if (alreadyStored) {
+        filesCompleted += 1
+        continue
+      }
       const bytes = await fetchAsset(apiUrl, videoId, file.path, data.downloadToken, controller.signal)
       await writeOfflineAsset(videoId, file.path, bytes)
       bytesDownloaded += bytes.byteLength
