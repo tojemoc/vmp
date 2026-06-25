@@ -5,6 +5,10 @@
  */
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
+// Registers the <videojs-video> custom element used on the watch page.
+// Regression: feat(web) offline downloads (#398) dropped the watch-page side-effect
+// import; without this, customElements.whenDefined('videojs-video') never resolves.
+import 'videojs-video-element'
 
 export default defineNuxtPlugin(() => {
   const g = globalThis as typeof globalThis & { videojs?: typeof videojs }
