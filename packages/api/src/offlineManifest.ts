@@ -15,7 +15,64 @@ const RENDITION_RESOLUTION: Record<OfflineRendition, string> = {
   '1080p': '1920x1080',
 }
 
+const MASTER_RELATIVE_CANDIDATES = [
+  'master.m3u8',
+  'processed/hls/master.m3u8',
+  'processed/playlist.m3u8',
+]
+
 const R2_PROBE_TIMEOUT_MS = 8_000
+
+export interface OfflineR2Reader {
+  /** Synthetic absolute URL for resolving relative playlist URIs. */
+  masterBaseUrl(masterRelativePath: string): string
+  exists(relativePath: string): Promise<boolean>
+  readText(relativePath: string): Promise<string>
+  contentLength(relativePath: string): Promise<number | null>
+}
+
+export function createBucketOfflineR2Reader(bucket: R2Bucket, videoId: string): OfflineR2Reader {
+  const keyPrefix = `videos/${videoId}/`
+
+  return {
+    masterBaseUrl(masterRelativePath) {
+      return `https://r2.local/${keyPrefix}${masterRelativePath}`
+    },
+    async exists(relativePath) {
+      const object = await bucket.head(`${keyPrefix}${relativePath}`)
+      return object !== null
+    },
+    async readText(relativePath) {
+      const object = await bucket.get(`${keyPrefix}${relativePath}`)
+      if (!object) throw new Error(`Playlist not found in R2: ${relativePath}`)
+      return object.text()
+    },
+    async contentLength(relativePath) {
+      const object = await bucket.head(`${keyPrefix}${relativePath}`)
+      if (!object) return null
+      return Number.isFinite(object.size) ? object.size : null
+    },
+  }
+}
+
+export function createHttpOfflineR2Reader(r2BaseUrl: string, videoId: string): OfflineR2Reader {
+  const publicPrefix = `${r2BaseUrl.replace(/\/+$/, '')}/videos/${encodeURIComponent(videoId)}/`
+
+  return {
+    masterBaseUrl(masterRelativePath) {
+      return `${publicPrefix}${masterRelativePath}`
+    },
+    async exists(relativePath) {
+      return headOk(`${publicPrefix}${relativePath}`)
+    },
+    async readText(relativePath) {
+      return fetchText(`${publicPrefix}${relativePath}`)
+    },
+    async contentLength(relativePath) {
+      return headContentLength(`${publicPrefix}${relativePath}`)
+    },
+  }
+}
 
 export function computeManifestHash(files: OfflineManifestFile[]): string {
   const canonical = files
@@ -32,37 +89,29 @@ export async function sha256HexFromString(value: string): Promise<string> {
 }
 
 export async function buildOfflineManifest({
-  r2BaseUrl,
+  reader,
   videoId,
   rendition,
   manifestVersion = 1,
 }: {
-  r2BaseUrl: string
+  reader: OfflineR2Reader
   videoId: string
   rendition: OfflineRendition
   manifestVersion?: number
 }): Promise<OfflineManifest> {
-  const base = r2BaseUrl.replace(/\/+$/, '')
-  const prefix = `${base}/videos/${encodeURIComponent(videoId)}/`
-
-  const masterCandidates = [
-    `${prefix}master.m3u8`,
-    `${prefix}processed/hls/master.m3u8`,
-    `${prefix}processed/playlist.m3u8`,
-  ]
-
-  let masterUrl: string | null = null
-  for (const candidate of masterCandidates) {
-    if (await headOk(candidate)) {
-      masterUrl = candidate
+  let masterRelative: string | null = null
+  for (const candidate of MASTER_RELATIVE_CANDIDATES) {
+    if (await reader.exists(candidate)) {
+      masterRelative = candidate
       break
     }
   }
-  if (!masterUrl) {
+  if (!masterRelative) {
     throw new Error('No HLS master playlist found in R2 for this video')
   }
 
-  const masterText = await fetchText(masterUrl)
+  const masterUrl = reader.masterBaseUrl(masterRelative)
+  const masterText = await reader.readText(masterRelative)
   const variantSelection = pickVariantPlaylistUrl(masterText, masterUrl, rendition)
   if (!variantSelection) {
     throw new Error(`Rendition ${rendition} is not available for this video`)
@@ -76,23 +125,29 @@ export async function buildOfflineManifest({
     const relative = toVideoRelativePath(resolved.pathname, videoId)
     if (!relative || seen.has(relative)) return
     seen.add(relative)
-    const size = await headContentLength(`${base}/videos/${videoId}/${relative}`)
+    const size = await reader.contentLength(relative)
     files.push({ path: relative, size })
   }
 
   const audioPlaylistUrl = findAudioPlaylistUrl(masterText, masterUrl, variantSelection.audioGroupId)
   if (audioPlaylistUrl) {
-    const audioText = await fetchText(audioPlaylistUrl)
-    await collectMediaPlaylistFiles(audioText, audioPlaylistUrl, addRelativePath)
+    const audioRelative = toVideoRelativePath(new URL(audioPlaylistUrl).pathname, videoId)
+    if (audioRelative) {
+      const audioText = await reader.readText(audioRelative)
+      await collectMediaPlaylistFiles(audioText, audioPlaylistUrl, addRelativePath)
+    }
   }
 
-  const variantText = await fetchText(variantSelection.playlistUrl)
+  const variantRelative = toVideoRelativePath(new URL(variantSelection.playlistUrl).pathname, videoId)
+  if (!variantRelative) {
+    throw new Error(`Rendition ${rendition} playlist path is invalid for this video`)
+  }
+  const variantText = await reader.readText(variantRelative)
   await collectMediaPlaylistFiles(variantText, variantSelection.playlistUrl, addRelativePath)
 
-  const variantRelative = toVideoRelativePath(new URL(variantSelection.playlistUrl).pathname, videoId)
   if (variantRelative && !seen.has(variantRelative)) {
     seen.add(variantRelative)
-    const size = await headContentLength(`${base}/videos/${videoId}/${variantRelative}`)
+    const size = await reader.contentLength(variantRelative)
     files.push({ path: variantRelative, size })
   }
 
@@ -100,15 +155,14 @@ export async function buildOfflineManifest({
     const audioRelative = toVideoRelativePath(new URL(audioPlaylistUrl).pathname, videoId)
     if (audioRelative && !seen.has(audioRelative)) {
       seen.add(audioRelative)
-      const size = await headContentLength(`${base}/videos/${videoId}/${audioRelative}`)
+      const size = await reader.contentLength(audioRelative)
       files.push({ path: audioRelative, size })
     }
   }
 
-  const masterRelative = toVideoRelativePath(new URL(masterUrl).pathname, videoId)
-  if (masterRelative && !seen.has(masterRelative)) {
+  if (!seen.has(masterRelative)) {
     seen.add(masterRelative)
-    const size = await headContentLength(`${base}/videos/${videoId}/${masterRelative}`)
+    const size = await reader.contentLength(masterRelative)
     files.push({ path: masterRelative, size })
   }
 
