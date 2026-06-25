@@ -135,6 +135,7 @@ import {
   handleLegacyCheckout,
   handleLegacyComplete,
   handleLegacyWebhook,
+  handleLegacyOrderStatus,
   handleAdminLegacyPaymentSettings,
 } from './legacyPayments.js'
 import {
@@ -693,6 +694,9 @@ const workerHandler = {
     }
     if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
       return handleLegacyComplete(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/payments/legacy/order-status' && request.method === 'GET') {
+      return handleLegacyOrderStatus(request, env, corsHeaders)
     }
     if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
       return handleAdminLegacyPaymentSettings(request, env, corsHeaders)

@@ -662,6 +662,11 @@ const {
   completeStripeCheckoutReturn,
   clearStripeSessionQuery,
 } = useStripeCheckoutReturn()
+const {
+  returningFromLegacy,
+  completeLegacyCheckoutReturn,
+  clearLegacyOrderQuery,
+} = useLegacyCheckoutReturn()
 
 type MediaLikeElement = HTMLElement & {
   src: string
@@ -1212,6 +1217,16 @@ onMounted(async () => {
   document.addEventListener('touchstart', closeMobileSettingsFromDocument)
 
   measureDescriptionClamp()
+
+  if (returningFromLegacy.value) {
+    const result = await completeLegacyCheckoutReturn()
+    if (result.ok || result.pending) {
+      showPremiumOverlay.value = false
+      await loadVideoForRoute(videoId.value)
+      await clearLegacyOrderQuery()
+      return
+    }
+  }
 
   if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()

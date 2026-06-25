@@ -3,8 +3,9 @@
  */
 
 import { requireAuth, requireRole } from './auth.js'
-import { syncNewsletterForStripeSubscription } from './brevo.js'
+import { syncNewsletterForStripeSubscription, removeSubscriberFromNewsletter } from './brevo.js'
 import { getSetting } from './settingsStore.js'
+import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 import {
   createLegacyOrder,
   getLegacyOrder,
@@ -193,9 +194,9 @@ export async function startLegacyCheckout(
 
     await db.prepare(`
       INSERT INTO payment_checkout_sessions (
-        id, user_id, provider, plan_type, provider_checkout_id, status, created_at, updated_at
-      ) VALUES (?, ?, 'legacy', ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).bind(crypto.randomUUID(), user.sub, planType, idOrder).run()
+        id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status, created_at, updated_at
+      ) VALUES (?, ?, 'legacy', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).bind(crypto.randomUUID(), user.sub, planType, idOrder, idOrder).run()
 
     const checkoutUrl = String(
       created.webPaymentGatewayLink ||
@@ -259,11 +260,22 @@ export async function handleLegacyComplete(request: Request, env: any, corsHeade
     return jsonResponse({ error: 'orderId is required' }, 400, corsHeaders)
   }
 
+  const db = getDb(env)
+  const session = await db.prepare(`
+    SELECT id, user_id, plan_type, status
+    FROM payment_checkout_sessions
+    WHERE provider = 'legacy' AND provider_checkout_id = ? AND user_id = ?
+    LIMIT 1
+  `).bind(orderId, user.sub).first()
+  if (!session) {
+    return jsonResponse({ error: 'Order not found for this account', code: 'order_not_found' }, 403, corsHeaders)
+  }
+
   try {
     const order = await getLegacyOrder(env, orderId) as Record<string, unknown>
     const status = normalizeLegacySubscriptionStatus(order.status ?? order.subscriptionStatus)
     const purchaseId = String(order.purchaseId ?? order.purchase_id ?? orderId).trim()
-    const planType = normalizePlanType(order.planType ?? body?.planType)
+    const planType = normalizePlanType(order.planType ?? body?.planType ?? (session as any).plan_type)
     const periodEnd = order.currentPeriodEnd ?? order.current_period_end ?? null
 
     await upsertLegacySubscription(env, {
@@ -275,10 +287,67 @@ export async function handleLegacyComplete(request: Request, env: any, corsHeade
       periodEndIso: periodEnd ? String(periodEnd) : null,
     })
 
+    await db.prepare(`
+      UPDATE payment_checkout_sessions
+      SET status = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind((session as any).id).run()
+
+    try {
+      await syncNewsletterForStripeSubscription(db, user.sub, status, env)
+    } catch (brevoErr) {
+      console.error('[legacy complete] syncNewsletterForStripeSubscription failed', brevoErr)
+    }
+
     return jsonResponse({ ok: true, status, purchaseId }, 200, corsHeaders)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Legacy completion failed'
     const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_completion_failed'
+    const status = isLegacyFetchTimeout(err) ? 504 : 502
+    return jsonResponse({ error: message, code }, status, corsHeaders)
+  }
+}
+
+export async function handleLegacyOrderStatus(request: Request, env: any, corsHeaders: Record<string, string>) {
+  let user
+  try {
+    user = await requireAuth(request, env)
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+  }
+
+  const url = new URL(request.url)
+  const orderId = String(url.searchParams.get('orderId') ?? '').trim()
+  if (!orderId) {
+    return jsonResponse({ error: 'orderId is required' }, 400, corsHeaders)
+  }
+
+  const db = getDb(env)
+  const session = await db.prepare(`
+    SELECT id, plan_type, status, created_at, completed_at
+    FROM payment_checkout_sessions
+    WHERE provider = 'legacy' AND provider_checkout_id = ? AND user_id = ?
+    LIMIT 1
+  `).bind(orderId, user.sub).first()
+  if (!session) {
+    return jsonResponse({ error: 'Order not found for this account', code: 'order_not_found' }, 403, corsHeaders)
+  }
+
+  try {
+    const order = await getLegacyOrder(env, orderId) as Record<string, unknown>
+    const normalizedStatus = normalizeLegacySubscriptionStatus(order.status ?? order.subscriptionStatus)
+    return jsonResponse({
+      orderId,
+      sessionStatus: (session as any).status ?? null,
+      planType: (session as any).plan_type ?? null,
+      providerStatus: order.status ?? order.subscriptionStatus ?? null,
+      normalizedStatus,
+      createdAt: (session as any).created_at ?? null,
+      completedAt: (session as any).completed_at ?? null,
+    }, 200, corsHeaders)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch order status'
+    const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_status_failed'
     const status = isLegacyFetchTimeout(err) ? 504 : 502
     return jsonResponse({ error: message, code }, status, corsHeaders)
   }
@@ -338,6 +407,24 @@ export async function handleLegacyWebhook(request: Request, env: any, corsHeader
     console.error('[legacy webhook] syncNewsletterForStripeSubscription failed', brevoErr)
   }
 
+  const userId = String((sub as any).user_id)
+  if (status === 'cancelled' || status === 'past_due') {
+    try {
+      await removeSubscriberFromNewsletter(db, userId, env)
+    } catch (brevoErr) {
+      console.error('[legacy webhook] removeSubscriberFromNewsletter failed', brevoErr)
+    }
+    try {
+      await revokeOfflineLicensesForUser(
+        db,
+        userId,
+        status === 'cancelled' ? 'subscription_cancelled' : 'subscription_past_due',
+      )
+    } catch (offlineErr) {
+      console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr)
+    }
+  }
+
   return jsonResponse({ ok: true }, 200, corsHeaders)
 }
 
@@ -349,6 +436,33 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
   }
 
   if (request.method === 'GET') {
+    const url = new URL(request.url)
+    if (url.searchParams.get('orders') === '1') {
+      const limitRaw = Number.parseInt(String(url.searchParams.get('limit') ?? '25'), 10)
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 25
+      const db = getDb(env)
+      const rows = await db.prepare(`
+        SELECT pcs.id, pcs.user_id, pcs.plan_type, pcs.provider_checkout_id, pcs.status,
+               pcs.created_at, pcs.completed_at, u.email
+        FROM payment_checkout_sessions pcs
+        LEFT JOIN users u ON u.id = pcs.user_id
+        WHERE pcs.provider = 'legacy'
+        ORDER BY datetime(COALESCE(pcs.updated_at, pcs.created_at)) DESC
+        LIMIT ?
+      `).bind(limit).all()
+      const orders = (rows.results ?? []).map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        email: row.email ? maskEmail(String(row.email)) : null,
+        planType: row.plan_type,
+        orderId: row.provider_checkout_id,
+        status: row.status,
+        createdAt: row.created_at,
+        completedAt: row.completed_at,
+      }))
+      return jsonResponse({ orders }, 200, corsHeaders)
+    }
+
     return jsonResponse({
       configured: isLegacyProviderConfigured(env, 'production'),
       sandboxConfigured: isLegacyProviderConfigured(env, 'sandbox'),
@@ -359,4 +473,11 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
   }
 
   return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@')
+  if (!local || !domain) return '***'
+  const visible = local.length <= 2 ? local[0] ?? '*' : `${local.slice(0, 2)}***`
+  return `${visible}@${domain}`
 }
