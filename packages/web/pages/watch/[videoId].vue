@@ -367,6 +367,23 @@
               {{ videoData.video.title }}
             </h1>
 
+            <OfflineDownloadButton
+              v-if="videoData.hasAccess && !videoData.video.isLivestream"
+              :video-id="videoId"
+              :video-title="videoData.video.title"
+              class="mb-4"
+            />
+
+            <div
+              v-if="playingOffline"
+              class="mb-4 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
+            >
+              <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+              </svg>
+              <span>{{ strings.offlinePlaybackBadge }}</span>
+            </div>
+
             <div class="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400 mb-4">
               <span
                 v-if="videoData.video.isLivestream"
@@ -503,7 +520,7 @@ import { useRoute } from 'vue-router'
 import { useRuntimeConfig } from '#app'
 import 'media-chrome'
 import 'media-chrome/menu'
-import 'videojs-video-element'
+import { trackOfflineEvent } from '~/utils/offline/analytics'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
@@ -567,6 +584,8 @@ const ensureMoqModules = async () => {
 // For logged-in users the API looks up their subscription and returns the
 // correct hasAccess / playlistUrl for their plan.
 const { isLoggedIn, authHeader } = useAuth()
+const { getOfflineSource } = useOfflineDownloads()
+const playingOffline = ref(false)
 const { startLoginFlow } = useLoginFlow()
 const {
   returningFromStripe,
@@ -1255,6 +1274,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   showPremiumOverlay.value = false
   rateLimited.value = false
   currentTime.value = 0
+  playingOffline.value = false
   loading.value = true
   error.value = null
   teardownLivestreamRuntime()
@@ -1306,7 +1326,20 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     const playlistUrl = videoData.value?.video?.playlistUrl
     if (playlistUrl && !rateLimited.value) {
       error.value = null
-      await initializeVideoElement(playlistUrl, guard, options.signal)
+      let resolvedPlaylist = playlistUrl
+      if (videoData.value?.hasAccess) {
+        try {
+          const offline = await getOfflineSource(String(videoData.value?.videoId ?? targetVideoId))
+          if (offline?.playlistUrl) {
+            resolvedPlaylist = offline.playlistUrl
+            playingOffline.value = true
+            trackOfflineEvent('offline_playback_started', { videoId: targetVideoId })
+          }
+        } catch {
+          playingOffline.value = false
+        }
+      }
+      await initializeVideoElement(resolvedPlaylist, guard, options.signal)
       ensureCurrent()
     }
   } catch (e: any) {

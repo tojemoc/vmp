@@ -1,6 +1,6 @@
 # Offline Downloads — Architecture & Roadmap
 
-Status: **M1 + M2 implemented** (device registration + download API). Client storage, playback, and UI are future milestones.
+Status: **M1–M6 implemented** (API + client storage, playback, UI, revalidation).
 
 ## Goals
 
@@ -118,10 +118,10 @@ interface KeySessionProvider {
 |---|---|---|
 | **M1** | D1 schema, device registration API | **Done (PR 1)** |
 | **M2** | Download authorize, asset delivery, license renew | **Done (PR 1)** |
-| M3 | Client OPFS storage + download manager | Pending |
-| M4 | License gate + `MediaSourceProvider` playback | Pending |
-| M5 | Downloads UI + startup revalidation | Pending |
-| M6 | Manifest versioning, quota UI, analytics | Pending |
+| **M3** | Client OPFS storage + download manager | **Done (PR 2)** |
+| **M4** | License gate + `MediaSourceProvider` playback | **Done (PR 2)** |
+| **M5** | Downloads UI + startup revalidation | **Done (PR 2)** |
+| **M6** | Manifest versioning, quota UI, analytics | **Done (PR 2)** |
 
 ## Future enhancements (not V1)
 
@@ -153,4 +153,6 @@ interface KeySessionProvider {
 - `packages/api/src/downloadTokens.ts` — download-scoped asset tokens
 - `packages/api/src/offlineManifest.ts` — HLS manifest builder
 - `packages/api/migrations/0037_offline_downloads.sql` — schema
-- `packages/shared/src/index.ts` — shared types
+- `packages/web/utils/offline/` — OPFS/IDB storage, download manager, license client
+- `packages/web/composables/useOfflineDownloads.ts` — UI composable
+- `packages/web/sw-offline-media.ts` — OPFS media serving in the service worker

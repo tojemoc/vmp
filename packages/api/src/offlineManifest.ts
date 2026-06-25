@@ -89,6 +89,29 @@ export async function buildOfflineManifest({
   const variantText = await fetchText(variantSelection.playlistUrl)
   await collectMediaPlaylistFiles(variantText, variantSelection.playlistUrl, addRelativePath)
 
+  const variantRelative = toVideoRelativePath(new URL(variantSelection.playlistUrl).pathname, videoId)
+  if (variantRelative && !seen.has(variantRelative)) {
+    seen.add(variantRelative)
+    const size = await headContentLength(`${base}/videos/${videoId}/${variantRelative}`)
+    files.push({ path: variantRelative, size })
+  }
+
+  if (audioPlaylistUrl) {
+    const audioRelative = toVideoRelativePath(new URL(audioPlaylistUrl).pathname, videoId)
+    if (audioRelative && !seen.has(audioRelative)) {
+      seen.add(audioRelative)
+      const size = await headContentLength(`${base}/videos/${videoId}/${audioRelative}`)
+      files.push({ path: audioRelative, size })
+    }
+  }
+
+  const masterRelative = toVideoRelativePath(new URL(masterUrl).pathname, videoId)
+  if (masterRelative && !seen.has(masterRelative)) {
+    seen.add(masterRelative)
+    const size = await headContentLength(`${base}/videos/${videoId}/${masterRelative}`)
+    files.push({ path: masterRelative, size })
+  }
+
   // Include rewritten local manifests the client will store
   const localManifestPaths = [
     'offline-master.m3u8',
