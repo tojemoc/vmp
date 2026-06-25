@@ -12,10 +12,14 @@ import { signDownloadToken, verifyDownloadToken } from './downloadTokens.js'
 import {
   buildOfflineManifest,
   computeManifestHash,
+  createBucketOfflineR2Reader,
+  createHttpOfflineR2Reader,
   estimateDownloadBytes,
+  findMasterRelativePath,
   isOfflineRendition,
   parseLicensedManifestPaths,
   sha256HexFromString,
+  type OfflineR2Reader,
 } from './offlineManifest.js'
 import type { OfflineRendition } from '@vmp/shared'
 import { resolveMediaEntrypointUrl } from './mediaEntrypoints.js'
@@ -319,6 +323,32 @@ export async function handleRevokeOfflineDevice(
   return jsonResponse({ ok: true, deviceId }, 200, corsHeaders)
 }
 
+async function resolveAvailableOfflineR2Reader(env: any, videoId: string): Promise<OfflineR2Reader | null> {
+  if (env.BUCKET) {
+    const bucketReader = createBucketOfflineR2Reader(env.BUCKET, videoId)
+    if (await findMasterRelativePath(bucketReader)) return bucketReader
+  }
+  if (env.R2_BASE_URL) {
+    const httpReader = createHttpOfflineR2Reader(env.R2_BASE_URL, videoId)
+    if (await findMasterRelativePath(httpReader)) return httpReader
+  }
+  return null
+}
+
+function parseRangeHeader(rangeHeader: string | null): { offset: number, length?: number } | undefined {
+  if (!rangeHeader) return undefined
+  const match = rangeHeader.match(/^bytes=(\d+)-(\d*)$/i)
+  if (!match) return undefined
+  const offsetRaw = match[1]
+  if (!offsetRaw) return undefined
+  const offset = Number.parseInt(offsetRaw, 10)
+  if (!Number.isFinite(offset) || offset < 0) return undefined
+  if (!match[2]) return { offset }
+  const end = Number.parseInt(match[2], 10)
+  if (!Number.isFinite(end) || end < offset) return undefined
+  return { offset, length: end - offset + 1 }
+}
+
 // ── Download licensing ────────────────────────────────────────────────────────
 
 async function resolvePublishedVideo(db: any, videoId: string, authRole: unknown) {
@@ -389,27 +419,23 @@ export async function handleAuthorizeDownload(
     ORDER BY completed_at DESC, created_at DESC LIMIT 1
   `).bind(resolvedVideoId).first()
 
-  const entrypoint = await resolveMediaEntrypointUrl({
-    env,
-    videoId: resolvedVideoId,
-    bunnyPlaybackUrl: bunnyRow?.bunny_playback_url ?? null,
-  })
-
-  if (!entrypoint || !String(entrypoint).includes(`/videos/${resolvedVideoId}/`)) {
-    return errorResponse(
-      'Offline download requires R2-hosted HLS assets for this video',
-      409,
-      corsHeaders,
-      'r2_assets_required',
-    )
+  const reader = await resolveAvailableOfflineR2Reader(env, resolvedVideoId)
+  if (!reader) {
+    const entrypoint = await resolveMediaEntrypointUrl({
+      env,
+      videoId: resolvedVideoId,
+      bunnyPlaybackUrl: bunnyRow?.bunny_playback_url ?? null,
+    })
+    const reason = entrypoint && !String(entrypoint).includes(`/videos/${resolvedVideoId}/`)
+      ? 'Offline download requires R2-hosted HLS assets for this video'
+      : 'No HLS master playlist found in R2 for this video'
+    return errorResponse(reason, 409, corsHeaders, 'r2_assets_required')
   }
-
-  if (!env.R2_BASE_URL) return errorResponse('R2 not configured', 503, corsHeaders)
 
   let manifest
   try {
     manifest = await buildOfflineManifest({
-      r2BaseUrl: env.R2_BASE_URL,
+      reader,
       videoId: resolvedVideoId,
       rendition,
     })
@@ -496,7 +522,7 @@ export async function handleDownloadAsset(
   videoIdParam: string,
   assetPath: string,
 ) {
-  if (!env.JWT_SECRET || !env.R2_BASE_URL) {
+  if (!env.JWT_SECRET || (!env.BUCKET && !env.R2_BASE_URL)) {
     return errorResponse('Offline downloads not configured', 503, corsHeaders)
   }
 
@@ -543,6 +569,40 @@ export async function handleDownloadAsset(
   }
 
   const objectPath = `videos/${resolvedVideoId}/${normalizedAsset}`
+
+  if (env.BUCKET) {
+    const range = parseRangeHeader(request.headers.get('Range'))
+    const object = await env.BUCKET.get(objectPath, range ? { range } : undefined)
+    if (object) {
+      const headers = new Headers()
+      if (object.httpMetadata?.contentType) {
+        headers.set('Content-Type', object.httpMetadata.contentType)
+      }
+      if (object.range) {
+        headers.set('Content-Length', String(object.range.length))
+        headers.set(
+          'Content-Range',
+          `bytes ${object.range.offset}-${object.range.offset + object.range.length - 1}/${object.size}`,
+        )
+        headers.set('Accept-Ranges', 'bytes')
+      } else if (object.size !== undefined) {
+        headers.set('Content-Length', String(object.size))
+      }
+      headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin'] ?? '*')
+      if (corsHeaders['Access-Control-Allow-Credentials']) {
+        headers.set('Access-Control-Allow-Credentials', corsHeaders['Access-Control-Allow-Credentials'])
+      }
+      headers.set('Cache-Control', 'private, no-store')
+
+      return new Response(object.body, {
+        status: object.range ? 206 : 200,
+        headers,
+      })
+    }
+  }
+
+  if (!env.R2_BASE_URL) return errorResponse('R2 not configured', 503, corsHeaders)
+
   const upstreamUrl = `${env.R2_BASE_URL.replace(/\/+$/, '')}/${objectPath}`
 
   const upstreamHeaders = new Headers()
