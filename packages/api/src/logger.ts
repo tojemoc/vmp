@@ -11,12 +11,15 @@
  *   DD_SERVICE=vmp-api           — optional
  *   DD_ENV=staging               — optional tag (env:staging)
  *
- * Call `attachDatadogLogContext(env, ctx)` at the start of each Worker entry
- * point (fetch / scheduled / queue) so batched uploads use `ctx.waitUntil`.
+ * Wrap each Worker entry point (fetch / scheduled / queue) in
+ * `runWithDatadogLogContext(env, ctx, fn)` so batched uploads use `ctx.waitUntil`.
  *
  * In Datadog Logs Explorer, search: `source:cloudflare-worker service:vmp-api`
  * Pipeline Grok (optional): `json_rule %{data::json}` on the `message` field.
  */
+
+/// <reference types="node" />
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 type LogLevel = 'info' | 'warn' | 'error'
 
@@ -46,7 +49,11 @@ type DatadogLogContext = {
   buffer: LogEntry[]
 }
 
-let activeDatadogContext: DatadogLogContext | null = null
+const datadogLogContextStorage = new AsyncLocalStorage<DatadogLogContext>()
+
+type DatadogFlushHandler = (env: Record<string, unknown>, entries: LogEntry[]) => Promise<void>
+
+let datadogFlushHandler: DatadogFlushHandler = flushDatadogLogs
 
 export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
   const flag = String(env.DD_LOGS_ENABLED ?? '').trim().toLowerCase()
@@ -108,23 +115,34 @@ export async function flushDatadogLogs(env: Record<string, unknown>, entries: Lo
   }
 }
 
-/** Bind env/ctx for the current Worker invocation; flush on `detachDatadogLogContext()`. */
-export function attachDatadogLogContext(env: Record<string, unknown>, ctx: ExecutionContext): void {
-  activeDatadogContext = { env, ctx, buffer: [] }
+/** @internal Test hook — pass null to restore the default HTTP flush handler. */
+export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | null): void {
+  datadogFlushHandler = handler ?? flushDatadogLogs
 }
 
-/** Flush buffered logs to Datadog (via waitUntil) and clear the active context. */
-export function detachDatadogLogContext(): void {
-  const context = activeDatadogContext
-  activeDatadogContext = null
-  if (!context || context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return
+function scheduleDatadogFlush(context: DatadogLogContext): void {
+  if (context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return
 
   const batch = context.buffer.splice(0, context.buffer.length)
   context.ctx.waitUntil(
-    flushDatadogLogs(context.env, batch).catch((err) => {
+    datadogFlushHandler(context.env, batch).catch((err) => {
       console.error('[datadog] log upload error:', err)
     }),
   )
+}
+
+/** Run a Worker handler with isolated Datadog log buffering for this invocation. */
+export async function runWithDatadogLogContext<T>(
+  env: Record<string, unknown>,
+  ctx: ExecutionContext,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const ddContext: DatadogLogContext = { env, ctx, buffer: [] }
+  try {
+    return await datadogLogContextStorage.run(ddContext, fn)
+  } finally {
+    scheduleDatadogFlush(ddContext)
+  }
 }
 
 export function log(fields: LogFields): void {
@@ -137,8 +155,9 @@ export function log(fields: LogFields): void {
 
   console.log(JSON.stringify(entry))
 
-  if (activeDatadogContext && isDatadogLogsEnabled(activeDatadogContext.env)) {
-    activeDatadogContext.buffer.push(entry)
+  const ddContext = datadogLogContextStorage.getStore()
+  if (ddContext && isDatadogLogsEnabled(ddContext.env)) {
+    ddContext.buffer.push(entry)
   }
 }
 
