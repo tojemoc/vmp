@@ -6,10 +6,10 @@
     - Wrong role       → /
 -->
 <template>
-  <div class="min-h-screen overflow-x-hidden bg-gray-50 dark:bg-gray-950 flex flex-col">
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
     <AppHeader />
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <main class="flex-1 min-w-0 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Admin Console</h1>
@@ -43,7 +43,7 @@
         {{ saveMessage }}
       </div>
 
-      <div role="tablist" aria-label="Admin sections" class="flex gap-2 border-b border-gray-200 dark:border-gray-800 overflow-x-auto whitespace-nowrap pb-1">
+      <div role="tablist" aria-label="Admin sections" class="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain border-b border-gray-200 px-4 dark:border-gray-800 sm:mx-0 sm:px-0 whitespace-nowrap pb-1">
         <button
           v-for="tab in adminTabs"
           :key="tab.id"
@@ -57,7 +57,7 @@
         >{{ tab.label }}</button>
       </div>
 
-      <section class="space-y-8">
+      <section class="min-w-0 space-y-8">
         <div
           v-if="activeAdminTab === 'homepage' && orphanedFeaturedPinsWarning"
           role="alert"
@@ -247,7 +247,7 @@
             <div v-else-if="!chronologicallySortedUploads.length" class="text-sm text-gray-500 dark:text-gray-400 py-4">
               No videos found. Upload via rclone — they'll appear here as drafts.
             </div>
-            <div v-else class="w-full overflow-x-auto">
+            <div v-else class="w-full min-w-0 overflow-x-auto overscroll-x-contain">
               <table class="min-w-[920px] w-full text-sm">
                 <thead>
                   <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
