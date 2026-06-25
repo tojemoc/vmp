@@ -5,6 +5,7 @@ import {
   CHUNK_RELOAD_ATTEMPTED_AT_KEY,
   CHUNK_RELOAD_THROTTLE_MS,
   isChunkLoadErrorReason,
+  isNuxtAssetUrl,
   shouldAttemptChunkReload,
 } from '../utils/chunkLoadRecovery'
 
@@ -39,6 +40,26 @@ describe('isChunkLoadErrorReason', () => {
 
   it('does not match unrelated promise rejections', () => {
     assert.equal(isChunkLoadErrorReason(new TypeError('Cannot read properties of undefined')), false)
+  })
+
+  it('matches transient 503 asset failures', () => {
+    assert.equal(isChunkLoadErrorReason(new TypeError('Failed to fetch /_nuxt/app.abc.js: 503 Service Unavailable')), true)
+  })
+})
+
+describe('isNuxtAssetUrl', () => {
+  it('matches /_nuxt chunk paths', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_nuxt/entry.js'), true)
+  })
+
+  it('matches service worker and workbox assets', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/sw.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/workbox-abc123.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_workbox-abc123.js'), true)
+  })
+
+  it('ignores unrelated URLs', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp-api.tjm.sk/api/health'), false)
   })
 })
 
