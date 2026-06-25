@@ -234,7 +234,7 @@ export async function startOfflineDownload({
     )
     const totalBytes = data.estimatedBytes ?? data.manifest.totalBytes ?? 0
 
-    let record = await patchDownload(videoId, {
+    await patchDownload(videoId, {
       videoTitle: data.video?.title ?? videoId,
       license: data.license,
       downloadToken: data.downloadToken,
@@ -257,7 +257,7 @@ export async function startOfflineDownload({
       await writeOfflineAsset(videoId, file.path, bytes)
       bytesDownloaded += bytes.byteLength
       filesCompleted += 1
-      record = await patchDownload(videoId, {
+      await patchDownload(videoId, {
         bytesDownloaded,
         filesCompleted,
       })
@@ -269,7 +269,7 @@ export async function startOfflineDownload({
       bytesDownloaded += item.bytes.byteLength
     }
 
-    record = await patchDownload(videoId, {
+    await patchDownload(videoId, {
       status: 'completed',
       bytesDownloaded,
       filesCompleted: downloadableFiles.length,
