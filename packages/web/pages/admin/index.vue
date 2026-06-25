@@ -2558,12 +2558,28 @@ const adminTabs = computed(() =>
     return true
   })
 )
+type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>
+type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null
+
+function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
+  const refs = Array.isArray(inputRef) ? inputRef : [inputRef]
+  return refs.find((input): input is InlineEditInput =>
+    !!input && typeof input.focus === 'function' && typeof input.select === 'function'
+  ) ?? null
+}
+
+function focusInlineEditInput(inputRef: InlineEditInputRef) {
+  const input = findInlineEditInput(inputRef)
+  input?.focus()
+  input?.select()
+}
+
 const editingTitle = ref<{ id: string; value: string } | null>(null)
-const titleInputEl = ref<HTMLInputElement | null>(null)
+const titleInputEl = ref<InlineEditInputRef>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
-const slugInputEl  = ref<HTMLInputElement | null>(null)
+const slugInputEl  = ref<InlineEditInputRef>(null)
 const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
-const legacySlugInputEl = ref<HTMLInputElement | null>(null)
+const legacySlugInputEl = ref<InlineEditInputRef>(null)
 const scheduleModal = ref<{
   open: boolean
   videoId: string | null
@@ -5531,8 +5547,7 @@ function formatSeconds(total: number): string {
 async function startTitleEdit(video: Video) {
   editingTitle.value = { id: video.id, value: video.title }
   await nextTick()
-  titleInputEl.value?.focus()
-  titleInputEl.value?.select()
+  focusInlineEditInput(titleInputEl.value)
 }
 
 async function saveTitleEdit(video: Video) {
@@ -6279,8 +6294,7 @@ async function runConfirmedAction() {
 async function startSlugEdit(video: Video) {
   editingSlug.value = { id: video.id, value: video.slug ?? '' }
   await nextTick()
-  slugInputEl.value?.focus()
-  slugInputEl.value?.select()
+  focusInlineEditInput(slugInputEl.value)
 }
 
 async function saveSlugEdit(video: Video) {
@@ -6316,8 +6330,7 @@ async function saveSlugEdit(video: Video) {
 async function startLegacySlugEdit(video: Video) {
   editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
   await nextTick()
-  legacySlugInputEl.value?.focus()
-  legacySlugInputEl.value?.select()
+  focusInlineEditInput(legacySlugInputEl.value)
 }
 
 async function saveLegacySlugEdit(video: Video) {
