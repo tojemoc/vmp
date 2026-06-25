@@ -345,7 +345,7 @@ const {
   pending: homepageContentPending,
   error: homepageContentError,
 } = await useAsyncData('homepage-content', () =>
-  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`).catch(() => null),
+  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`),
 )
 
 const {
@@ -353,7 +353,7 @@ const {
   pending: placementPending,
   error: placementError,
 } = await useAsyncData('homepage-placement', () =>
-  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`).catch(() => null),
+  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
 )
 
 const {
@@ -361,7 +361,7 @@ const {
   pending: pillsPending,
   error: pillsError,
 } = await useAsyncData('homepage-pills', () =>
-  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`).catch(() => null),
+  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),
 )
 
 const layoutBlocks = computed(() => {

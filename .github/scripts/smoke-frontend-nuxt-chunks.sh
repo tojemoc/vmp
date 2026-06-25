@@ -10,7 +10,7 @@ if [ -z "$url" ]; then
 fi
 
 target="${url%/}/"
-html="$(curl -fsS "$target")"
+html="$(curl -fsS --connect-timeout 10 --max-time 30 "$target")"
 
 node -e '
 const origin = process.argv[1];
@@ -29,7 +29,7 @@ process.stdout.write(chunkPaths.join("\n"));
 failed=0
 while IFS= read -r chunk_path; do
   [ -n "$chunk_path" ] || continue
-  status="$(curl -sS -o /dev/null -w "%{http_code}" "${target%/}${chunk_path}")"
+  status="$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" "${target%/}${chunk_path}")"
   if [ "$status" != "200" ]; then
     echo "Chunk ${chunk_path} returned HTTP ${status}" >&2
     failed=1

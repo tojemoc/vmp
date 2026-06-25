@@ -541,18 +541,28 @@ type VideoMetaResponse = {
   thumbnail_url: string | null
 }
 
+type VideoMetaAsyncValue = {
+  meta: VideoMetaResponse | null
+}
+
+const emptyVideoMeta = (): VideoMetaAsyncValue => ({ meta: null })
+
 const videoIdParam = computed(() => String(route.params.videoId ?? '').trim())
 
-const { data: videoMeta } = await useAsyncData(
+const { data: videoMetaState } = await useAsyncData(
   () => `video-meta-${videoIdParam.value}`,
   () => {
-    if (!videoIdParam.value) return Promise.resolve(null)
+    if (!videoIdParam.value) return Promise.resolve(emptyVideoMeta())
     return $fetch<VideoMetaResponse>(
       `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
-    ).catch(() => null)
+    )
+      .then(meta => ({ meta }))
+      .catch(() => emptyVideoMeta())
   },
   { watch: [videoIdParam] },
 )
+
+const videoMeta = computed(() => videoMetaState.value?.meta ?? null)
 
 usePageSeo(
   computed(() => ({

@@ -17,7 +17,10 @@ const CHUNK_LOAD_ERROR_PATTERNS = [
 export function isNuxtAssetUrl(url: string): boolean {
   try {
     const pathname = new URL(url, 'https://placeholder.local').pathname
-    return pathname.startsWith('/_nuxt/') || pathname === '/sw.js' || /^\/workbox-[\w-]+\.js$/.test(pathname)
+    return pathname.startsWith('/_nuxt/')
+      || pathname === '/sw.js'
+      || /^\/workbox-[\w-]+\.js$/.test(pathname)
+      || /^\/_workbox-[\w-]+\.js$/.test(pathname)
   } catch {
     return false
   }

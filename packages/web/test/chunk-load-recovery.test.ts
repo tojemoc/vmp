@@ -52,6 +52,12 @@ describe('isNuxtAssetUrl', () => {
     assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_nuxt/entry.js'), true)
   })
 
+  it('matches service worker and workbox assets', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/sw.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/workbox-abc123.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_workbox-abc123.js'), true)
+  })
+
   it('ignores unrelated URLs', () => {
     assert.equal(isNuxtAssetUrl('https://vmp-api.tjm.sk/api/health'), false)
   })
