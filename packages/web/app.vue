@@ -1,12 +1,15 @@
 <template>
-  <div class="overflow-x-hidden">
+  <div class="overflow-x-hidden min-h-screen flex flex-col">
     <PersonalDataNoticeBanner />
     <DevLocalePreview v-if="isDev" />
     <PwaLoginWizard
       :open="isPwaPushLoginWizardOpen"
       @dismiss="closePwaPushLoginWizard"
     />
-    <NuxtPage />
+    <div class="flex-1">
+      <NuxtPage />
+    </div>
+    <AppFooter />
   </div>
 </template>
 

@@ -9,6 +9,7 @@ export const CMS_RESERVED_SLUGS = new Set([
   'watch',
   'videos',
   'category',
+  '_footer',
 ])
 
 export function isCmsReservedSlug(slug: string): boolean {

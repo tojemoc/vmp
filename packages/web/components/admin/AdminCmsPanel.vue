@@ -9,6 +9,56 @@
 
     <div v-if="message" class="rounded-lg border px-4 py-3 text-sm" :class="messageClass">{{ message }}</div>
 
+    <!-- Site footer (system page) -->
+    <section
+      v-if="!editing"
+      class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20 px-4 py-4 space-y-4"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="font-semibold text-gray-900 dark:text-white">Site footer</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Edit footer copy and choose which published pages appear as navigation links.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+          @click="editFooter"
+        >
+          Edit footer
+        </button>
+      </div>
+
+      <div v-if="footerLinkCandidates.length" class="space-y-2">
+        <p class="text-sm font-medium text-gray-900 dark:text-white">Footer navigation links</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label
+            v-for="page in footerLinkCandidates"
+            :key="`footer-link-${page.id}`"
+            class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+          >
+            <input
+              type="checkbox"
+              class="rounded border-gray-300 dark:border-gray-600"
+              :checked="footerLinkPageIds.includes(page.id)"
+              @change="toggleFooterLink(page.id, ($event.target as HTMLInputElement).checked)"
+            >
+            <span>{{ page.title }} <span class="text-gray-500 dark:text-gray-400">(/{{ page.slug }})</span></span>
+          </label>
+        </div>
+        <button
+          type="button"
+          class="mt-2 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+          :disabled="savingFooterLinks"
+          @click="saveFooterLinks"
+        >
+          {{ savingFooterLinks ? 'Saving…' : 'Save footer links' }}
+        </button>
+      </div>
+      <p v-else class="text-sm text-gray-500 dark:text-gray-400">Publish CMS pages to add them as footer links.</p>
+    </section>
+
     <div class="flex flex-wrap gap-2">
       <button
         type="button"
@@ -34,7 +84,7 @@
       </button>
       <div v-if="!pages.length" class="text-sm text-gray-500 dark:text-gray-400">No pages yet.</div>
       <div
-        v-for="page in pages"
+        v-for="page in regularPages"
         :key="page.id"
         class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 flex flex-wrap items-center justify-between gap-2"
       >
@@ -60,7 +110,7 @@
             class="text-gray-600 dark:text-gray-400 hover:underline"
           >View</a>
           <button
-            v-if="page.status === 'draft'"
+            v-if="page.status === 'draft' && page.id !== CMS_FOOTER_PAGE_ID"
             type="button"
             class="text-emerald-600 dark:text-emerald-400 hover:underline"
             @click="publishPage(page.id)"
@@ -68,14 +118,19 @@
             Publish
           </button>
           <button
-            v-else
+            v-else-if="page.id !== CMS_FOOTER_PAGE_ID"
             type="button"
             class="text-amber-600 dark:text-amber-400 hover:underline"
             @click="unpublishPage(page.id)"
           >
             Unpublish
           </button>
-          <button type="button" class="text-red-600 dark:text-red-400 hover:underline" @click="deletePage(page.id)">Delete</button>
+          <button
+            v-if="page.id !== CMS_FOOTER_PAGE_ID"
+            type="button"
+            class="text-red-600 dark:text-red-400 hover:underline"
+            @click="deletePage(page.id)"
+          >Delete</button>
         </div>
       </div>
     </div>
@@ -83,6 +138,13 @@
     <!-- Editor -->
     <div v-else class="grid gap-6 lg:grid-cols-2">
       <div class="space-y-4">
+        <p
+          v-if="isFooterEdit"
+          class="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200"
+        >
+          System page — site footer
+        </p>
+
         <label class="block text-sm font-medium text-gray-900 dark:text-white">
           Title
           <input
@@ -93,7 +155,7 @@
           >
         </label>
 
-        <label class="block text-sm font-medium text-gray-900 dark:text-white">
+        <label v-if="!isFooterEdit" class="block text-sm font-medium text-gray-900 dark:text-white">
           Slug
           <input
             v-model="form.slug"
@@ -102,6 +164,28 @@
             @input="onSlugInput"
             @blur="normalizeSlugField"
           >
+        </label>
+        <p v-else class="text-xs text-gray-500 dark:text-gray-400">
+          Footer content is rendered site-wide; it does not have a public URL.
+        </p>
+
+        <label v-if="isFooterEdit && footerLinkCandidates.length" class="block space-y-2">
+          <span class="text-sm font-medium text-gray-900 dark:text-white">Footer navigation links</span>
+          <div class="grid gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3">
+            <label
+              v-for="page in footerLinkCandidates"
+              :key="`footer-edit-link-${page.id}`"
+              class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+            >
+              <input
+                type="checkbox"
+                class="rounded border-gray-300 dark:border-gray-600"
+                :checked="footerLinkPageIds.includes(page.id)"
+                @change="toggleFooterLink(page.id, ($event.target as HTMLInputElement).checked)"
+              >
+              {{ page.title }}
+            </label>
+          </div>
         </label>
 
         <label class="block text-sm font-medium text-gray-900 dark:text-white">
@@ -238,6 +322,7 @@
 
 <script setup lang="ts">
 import type { CmsBlock, CmsCalloutBlock, CmsImageBlock, CmsPage, CmsPageRevision, CmsRichTextBlock } from '@vmp/shared'
+import { CMS_FOOTER_PAGE_ID } from '@vmp/shared'
 import { emptyTiptapDoc } from '~/utils/cmsRichText'
 import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs'
 
@@ -249,7 +334,10 @@ const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '')
 const pages = ref<CmsPage[]>([])
 const revisions = ref<CmsPageRevision[]>([])
 const editing = ref(false)
+const isFooterEdit = ref(false)
 const saving = ref(false)
+const savingFooterLinks = ref(false)
+const footerLinkPageIds = ref<string[]>([])
 const message = ref('')
 const messageTone = ref<'ok' | 'error'>('ok')
 const slugTouched = ref(false)
@@ -269,6 +357,12 @@ const messageClass = computed(() =>
   messageTone.value === 'ok'
     ? 'border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
     : 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100',
+)
+
+const regularPages = computed(() => pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID))
+
+const footerLinkCandidates = computed(() =>
+  pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID && page.status === 'published'),
 )
 
 function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
@@ -332,16 +426,65 @@ function resetForm() {
 }
 
 function startCreate() {
+  isFooterEdit.value = false
   resetForm()
   editing.value = true
 }
 
 function cancelEdit() {
   editing.value = false
+  isFooterEdit.value = false
   resetForm()
 }
 
+async function loadFooterConfig() {
+  try {
+    const res = await $fetch<{ linkPageIds?: string[] }>(`${apiUrl}/api/admin/site-footer`, { headers: authHeader() })
+    footerLinkPageIds.value = Array.isArray(res.linkPageIds) ? [...res.linkPageIds] : []
+  } catch {
+    footerLinkPageIds.value = []
+  }
+}
+
+function toggleFooterLink(pageId: string, checked: boolean) {
+  if (checked) {
+    if (!footerLinkPageIds.value.includes(pageId)) {
+      footerLinkPageIds.value = [...footerLinkPageIds.value, pageId]
+    }
+  } else {
+    footerLinkPageIds.value = footerLinkPageIds.value.filter((id) => id !== pageId)
+  }
+}
+
+async function saveFooterLinks() {
+  savingFooterLinks.value = true
+  try {
+    await $fetch(`${apiUrl}/api/admin/site-footer`, {
+      method: 'PATCH',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: { linkPageIds: footerLinkPageIds.value },
+    })
+    setMessage('Footer links saved.')
+  } catch (err: unknown) {
+    setMessage(err instanceof Error ? err.message : 'Failed to save footer links', 'error')
+  } finally {
+    savingFooterLinks.value = false
+  }
+}
+
+async function editFooter() {
+  await loadFooterConfig()
+  const footerPage = pages.value.find((page) => page.id === CMS_FOOTER_PAGE_ID)
+  if (!footerPage) {
+    setMessage('Footer page is missing. Run the latest database migration.', 'error')
+    return
+  }
+  isFooterEdit.value = true
+  editPage(footerPage)
+}
+
 function editPage(page: CmsPage) {
+  isFooterEdit.value = page.id === CMS_FOOTER_PAGE_ID
   form.id = page.id
   form.title = page.title
   form.slug = page.slug
@@ -385,7 +528,8 @@ async function savePage() {
         body: payload,
       })
       form.status = res.page.status
-      setMessage('Page saved.')
+      if (isFooterEdit.value) await saveFooterLinks()
+      setMessage(isFooterEdit.value ? 'Footer saved.' : 'Page saved.')
       await loadPages()
       await loadRevisions()
     } else {
@@ -523,5 +667,6 @@ watch(() => form.slug, () => { slugTouched.value = true })
 
 onMounted(() => {
   void loadPages()
+  void loadFooterConfig()
 })
 </script>

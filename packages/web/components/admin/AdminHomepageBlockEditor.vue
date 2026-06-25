@@ -17,6 +17,8 @@
       </button>
     </div>
 
+    <input ref="bannerImageInputEl" type="file" accept="image/*" class="hidden" @change="onBannerImageSelected">
+
     <p v-if="!mobileOrderMode" class="text-xs text-gray-500 dark:text-gray-400">
       Use <strong class="font-medium">Half width</strong> for side-by-side rows. Two half blocks on the same row pair automatically — left is the main category (2×2), right is the side-mini column.
     </p>
@@ -99,6 +101,55 @@
               <option value="">Select category</option>
               <option v-for="cat in categories" :key="`block-cat-${slot.block.id}-${cat.id}`" :value="cat.id">{{ cat.name }}</option>
             </select>
+            <div v-if="slot.block.type === 'page_banner'" class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3">
+              <div class="grid gap-2">
+                <span class="text-xs font-semibold text-gray-600 dark:text-gray-400">Desktop image</span>
+                <img
+                  v-if="slot.block.imageId && bannerImageUrls[slot.block.imageId]"
+                  :src="bannerImageUrls[slot.block.imageId]"
+                  alt=""
+                  class="max-h-32 rounded border border-gray-200 dark:border-gray-700"
+                >
+                <button
+                  type="button"
+                  class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 w-fit"
+                  @click="pickBannerImage(slot.block.id, 'desktop')"
+                >
+                  {{ slot.block.imageId ? 'Replace desktop image' : 'Upload desktop image' }}
+                </button>
+              </div>
+              <div class="grid gap-2">
+                <span class="text-xs font-semibold text-gray-600 dark:text-gray-400">Mobile image (optional)</span>
+                <img
+                  v-if="slot.block.mobileImageId && bannerImageUrls[slot.block.mobileImageId]"
+                  :src="bannerImageUrls[slot.block.mobileImageId]"
+                  alt=""
+                  class="max-h-32 rounded border border-gray-200 dark:border-gray-700"
+                >
+                <button
+                  type="button"
+                  class="px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 w-fit"
+                  @click="pickBannerImage(slot.block.id, 'mobile')"
+                >
+                  {{ slot.block.mobileImageId ? 'Replace mobile image' : 'Upload mobile image' }}
+                </button>
+              </div>
+              <select
+                v-model="slot.block.pageSlug"
+                class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="">Select target page</option>
+                <option v-for="page in cmsPages" :key="`banner-page-${slot.block.id}-${page.id}`" :value="page.slug">
+                  {{ page.title }} (/{{ page.slug }})
+                </option>
+              </select>
+              <input
+                v-model="slot.block.alt"
+                type="text"
+                placeholder="Image alt text (optional)"
+                class="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+            </div>
             <div v-if="(slot.block.type === 'split_horizontal' || slot.block.type === 'split_vertical') && slot.block.childBlocks" class="grid gap-3 rounded-md border border-dashed border-gray-300 dark:border-gray-700 p-3">
               <div v-for="(child, childIndex) in slot.block.childBlocks" :key="`${slot.block.id}-child-${childIndex}`" class="grid gap-2 rounded border border-gray-200 dark:border-gray-700 p-2 bg-white dark:bg-gray-900">
                 <div class="text-xs font-semibold text-gray-600 dark:text-gray-400">Child block {{ childIndex + 1 }}</div>
@@ -121,6 +172,8 @@
 </template>
 
 <script setup lang="ts">
+import type { CmsPage } from '@vmp/shared'
+import { CMS_FOOTER_SLUG } from '@vmp/shared'
 import {
   assignGridPositions,
   ensureBlockGridPositions,
@@ -149,6 +202,76 @@ const blocks = defineModel<HomepageLayoutBlock[]>({ required: true })
 const props = defineProps<{
   categories: CategoryOption[]
 }>()
+
+const config = useRuntimeConfig()
+const { authHeader } = useAuth()
+const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '')
+
+const cmsPages = ref<Array<Pick<CmsPage, 'id' | 'title' | 'slug'>>>([])
+const bannerImageInputEl = ref<HTMLInputElement | null>(null)
+const bannerImageTarget = ref<{ blockId: string; field: 'desktop' | 'mobile' } | null>(null)
+const bannerImageUrls = ref<Record<string, string>>({})
+
+async function loadCmsPages() {
+  try {
+    const res = await $fetch<{ pages: CmsPage[] }>(`${apiUrl}/api/pages`, { headers: authHeader() })
+    cmsPages.value = (res.pages ?? [])
+      .filter((page) => page.status === 'published' && page.slug !== CMS_FOOTER_SLUG)
+      .map((page) => ({ id: page.id, title: page.title, slug: page.slug }))
+  } catch {
+    cmsPages.value = []
+  }
+}
+
+function pickBannerImage(blockId: string, field: 'desktop' | 'mobile') {
+  bannerImageTarget.value = { blockId, field }
+  bannerImageInputEl.value?.click()
+}
+
+async function onBannerImageSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const target = bannerImageTarget.value
+  bannerImageTarget.value = null
+  if (!file || !target) return
+
+  const formData = new FormData()
+  formData.append('image', file)
+  try {
+    const res = await $fetch<{ media: { id: string; url?: string } }>(`${apiUrl}/api/admin/cms/media`, {
+      method: 'POST',
+      headers: authHeader(),
+      body: formData,
+    })
+    const block = blocks.value.find((entry) => entry.id === target.blockId)
+    if (block && block.type === 'page_banner') {
+      if (target.field === 'mobile') block.mobileImageId = res.media.id
+      else block.imageId = res.media.id
+    }
+    if (res.media.url) bannerImageUrls.value[res.media.id] = res.media.url
+  } catch {
+    // ignore upload errors in editor; parent save will surface issues
+  }
+}
+
+async function refreshBannerImageUrls() {
+  const ids = new Set<string>()
+  for (const block of blocks.value) {
+    if (block.type !== 'page_banner') continue
+    if (block.imageId) ids.add(block.imageId)
+    if (block.mobileImageId) ids.add(block.mobileImageId)
+  }
+  const urls = { ...bannerImageUrls.value }
+  await Promise.all([...ids].map(async (id) => {
+    if (urls[id]) return
+    try {
+      const res = await $fetch<{ media: { url?: string } }>(`${apiUrl}/api/cms/media/${id}`)
+      if (res.media?.url) urls[id] = res.media.url
+    } catch { /* ignore */ }
+  }))
+  bannerImageUrls.value = urls
+}
 
 const mobileOrderMode = ref(false)
 const draggingId = ref<string | null>(null)
@@ -234,7 +357,7 @@ function toggleMobileOrderMode() {
 }
 
 function defaultWidth(type: BlockType): 'full' | 'half' {
-  if (type === 'featured_row' || type === 'top_video') return 'full'
+  if (type === 'featured_row' || type === 'top_video' || type === 'page_banner') return 'full'
   return 'half'
 }
 
@@ -278,7 +401,7 @@ function blockWouldExpand(block: HomepageLayoutBlock): boolean {
 }
 
 function blockTypeOptions(current: BlockType): BlockType[] {
-  const all: BlockType[] = ['featured_row', 'category', 'top_video', 'split_horizontal', 'split_vertical']
+  const all: BlockType[] = ['featured_row', 'category', 'top_video', 'page_banner', 'split_horizontal', 'split_vertical']
   return all.includes(current) ? all : [...all, current]
 }
 
@@ -311,6 +434,9 @@ function addBlock(type: BlockType = 'top_video') {
       width: defaultWidth(type),
       mobileHidden: false,
       mobileOrder: blocks.value.length,
+      ...(type === 'page_banner'
+        ? { imageId: '', mobileImageId: '', pageSlug: '', alt: '' }
+        : {}),
       ...(type === 'split_horizontal' || type === 'split_vertical'
         ? {
           childBlocks: [
@@ -402,5 +528,9 @@ watch(blocks, (list) => {
 
 onMounted(() => {
   syncGridPositions()
+  void loadCmsPages()
+  void refreshBannerImageUrls()
 })
+
+watch(blocks, () => { void refreshBannerImageUrls() }, { deep: true })
 </script>

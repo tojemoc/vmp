@@ -118,6 +118,7 @@ import {
   handleCmsMediaById,
 } from './cmsPages.js'
 import { handleSiteSettings } from './siteSettings.js'
+import { handleSiteFooterPublic, handleSiteFooterAdmin } from './siteFooter.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { compareVideosNewestFirst } from '@vmp/shared'
@@ -595,6 +596,12 @@ const workerHandler = {
     }
     if (url.pathname === '/api/site-settings' && request.method === 'GET') {
       return handleSiteSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/site-footer' && request.method === 'GET') {
+      return handleSiteFooterPublic(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/site-footer' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleSiteFooterAdmin(request, env, corsHeaders)
     }
     if (url.pathname === '/api/pages' && request.method === 'GET') {
       return handleCmsPagesList(request, env, corsHeaders)

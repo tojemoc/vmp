@@ -1,4 +1,5 @@
 import type { CmsPageInput, CmsPageStatus } from '@vmp/shared'
+import { CMS_FOOTER_SLUG, isCmsSystemPageId, isCmsSystemSlug } from '@vmp/shared'
 import { requireAuth, requireRole } from './auth.js'
 import { parseCmsBlocks } from './cmsBlockValidation.js'
 import { CmsPagesRepository } from './cmsPagesRepository.js'
@@ -98,7 +99,7 @@ export async function handleCmsPageBySlug(request: Request, env: Env, corsHeader
   }
 
   const page = await repo(env).getPageBySlug(slug, { publishedOnly: true })
-  if (!page) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
+  if (!page || isCmsSystemSlug(slug)) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
   return jsonResponse({ page }, 200, corsHeaders)
 }
 
@@ -119,6 +120,11 @@ export async function handleCmsPageById(request: Request, env: Env, corsHeaders:
     const body = await request.json().catch(() => null)
     const input = parsePageInput(body)
     if (!input) return jsonResponse({ error: 'Invalid page payload' }, 400, corsHeaders)
+    const existing = await repo(env).getPageById(id)
+    if (!existing) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
+    if (isCmsSystemPageId(id)) {
+      input.slug = existing.slug
+    }
     const slugConflict = await isSlugTaken(env, input.slug, id)
     if (slugConflict) {
       return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
@@ -130,6 +136,9 @@ export async function handleCmsPageById(request: Request, env: Env, corsHeaders:
   }
 
   if (request.method === 'DELETE') {
+    if (isCmsSystemPageId(id)) {
+      return jsonResponse({ error: 'System pages cannot be deleted', code: 'SYSTEM_PAGE' }, 403, corsHeaders)
+    }
     const ok = await repo(env).deletePage(id)
     if (!ok) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders)
     return jsonResponse({ ok: true }, 200, corsHeaders)
@@ -152,6 +161,9 @@ export async function handleCmsPageCreate(request: Request, env: Env, corsHeader
 
   if (await isSlugTaken(env, input.slug)) {
     return jsonResponse({ error: 'Slug already in use', code: 'SLUG_EXISTS' }, 409, corsHeaders)
+  }
+  if (isCmsSystemSlug(input.slug)) {
+    return jsonResponse({ error: 'Slug is reserved for system pages', code: 'SLUG_RESERVED' }, 409, corsHeaders)
   }
 
   const actorId = await getActorId(request, env)
