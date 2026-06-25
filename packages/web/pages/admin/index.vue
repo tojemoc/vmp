@@ -2365,6 +2365,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 </template>
 
 <script setup lang="ts">
+import { sanitizeVideoSlug } from '@vmp/shared'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
@@ -6301,7 +6302,7 @@ async function saveSlugEdit(video: Video) {
   const editing = editingSlug.value
   if (!editing || editing.id !== video.id) return
   const slugInput = editing.value.trim()
-  const requestedSlug = slugInput ? slugInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '') : null
+  const requestedSlug = slugInput ? sanitizeVideoSlug(slugInput) : null
   editingSlug.value = null
   if (requestedSlug === (video.slug ?? null)) return
   try {
@@ -6322,6 +6323,7 @@ async function saveSlugEdit(video: Video) {
       uploads.value[idx] = { ...cur, slug: normalizedSlug }
     }
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
+    void loadHomepagePlacement()
   } catch (e: any) {
     showToast('error', `Failed to update slug: ${e.message}`)
   }
@@ -6337,9 +6339,7 @@ async function saveLegacySlugEdit(video: Video) {
   const editing = editingLegacySlug.value
   if (!editing || editing.id !== video.id) return
   const legacyInput = editing.value.trim()
-  const requestedLegacySlug = legacyInput
-    ? legacyInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '')
-    : null
+  const requestedLegacySlug = legacyInput ? sanitizeVideoSlug(legacyInput) : null
   editingLegacySlug.value = null
   if (requestedLegacySlug === (video.legacy_slug ?? null)) return
   try {

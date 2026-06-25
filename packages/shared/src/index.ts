@@ -3,6 +3,13 @@ export {
   compareVideosNewestFirst,
 } from './homepagePlacementSort.js'
 
+export {
+  canonicalWatchToken,
+  isValidVideoSlug,
+  sanitizeVideoSlug,
+  transliterateToAscii,
+} from './videoSlug.js'
+
 export type {
   CmsBlock,
   CmsCalloutBlock,

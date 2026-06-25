@@ -290,6 +290,14 @@ export function buildHomepageRenderModel({
 }) {
   const positionedBlocks = orderBlocksByGrid(Array.isArray(layoutBlocks) ? layoutBlocks : [])
   const videoById = new Map((videos ?? []).map((video) => [video.id, video]))
+  for (const placementVideo of placement?.videos ?? []) {
+    if (!placementVideo?.id) continue
+    const existing = videoById.get(placementVideo.id)
+    videoById.set(
+      placementVideo.id,
+      existing ? { ...placementVideo, ...existing } : placementVideo,
+    )
+  }
   const sortedByNewest = [...videoById.values()].sort((a: any, b: any) => compareVideosNewestFirst(a, b))
   const topVideo = sortedByNewest[0] ?? null
   const topVideoId = topVideo?.id ?? null

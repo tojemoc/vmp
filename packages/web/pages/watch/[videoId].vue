@@ -53,6 +53,33 @@
         </div>
       </div>
 
+      <!-- Video Not Found -->
+      <div v-else-if="showVideoNotFound" class="max-w-6xl mx-auto space-y-8">
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-8 text-center">
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ strings.videoNotFoundTitle }}</h1>
+          <p class="text-gray-600 dark:text-gray-400 mb-6">{{ strings.videoNotFoundMessage }}</p>
+          <NuxtLink
+            to="/"
+            class="inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            {{ strings.backToHomepage }}
+          </NuxtLink>
+        </div>
+
+        <div v-if="recommendations.length" class="space-y-4">
+          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">{{ strings.videoNotFoundSuggestions }}</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <VideoCard
+              v-for="rec in recommendations"
+              :key="rec.id"
+              :video="rec"
+              :show-description="true"
+              :show-relative-timestamp="true"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Error State -->
       <div v-else-if="error" class="max-w-4xl mx-auto">
         <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6">
@@ -517,7 +544,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRuntimeConfig } from '#app'
+import { useRuntimeConfig, setResponseStatus } from '#app'
+import { canonicalWatchToken } from '@vmp/shared'
 import 'media-chrome'
 import 'media-chrome/menu'
 import { trackOfflineEvent } from '~/utils/offline/analytics'
@@ -539,30 +567,57 @@ type VideoMetaResponse = {
   title: string
   description: string
   thumbnail_url: string | null
+  canonicalWatchPath?: string
 }
 
 type VideoMetaAsyncValue = {
   meta: VideoMetaResponse | null
+  notFound: boolean
 }
 
-const emptyVideoMeta = (): VideoMetaAsyncValue => ({ meta: null })
+const emptyVideoMeta = (): VideoMetaAsyncValue => ({ meta: null, notFound: false })
 
 const videoIdParam = computed(() => String(route.params.videoId ?? '').trim())
 
 const { data: videoMetaState } = await useAsyncData(
   () => `video-meta-${videoIdParam.value}`,
-  () => {
-    if (!videoIdParam.value) return Promise.resolve(emptyVideoMeta())
-    return $fetch<VideoMetaResponse>(
-      `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
-    )
-      .then(meta => ({ meta }))
-      .catch(() => emptyVideoMeta())
+  async () => {
+    if (!videoIdParam.value) return emptyVideoMeta()
+    try {
+      const meta = await $fetch<VideoMetaResponse>(
+        `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
+      )
+      return { meta, notFound: false }
+    } catch (error: any) {
+      const status = error?.statusCode ?? error?.response?.status ?? error?.status
+      if (status === 404) return { meta: null, notFound: true }
+      return emptyVideoMeta()
+    }
   },
   { watch: [videoIdParam] },
 )
 
 const videoMeta = computed(() => videoMetaState.value?.meta ?? null)
+const videoNotFound = computed(() => videoMetaState.value?.notFound === true)
+const accessNotFound = ref(false)
+const showVideoNotFound = computed(() => videoNotFound.value || accessNotFound.value)
+
+const canonicalWatchPath = computed(() => {
+  if (!videoMeta.value) return null
+  return videoMeta.value.canonicalWatchPath
+    ?? `/watch/${encodeURIComponent(canonicalWatchToken(videoMeta.value))}`
+})
+
+if (videoMeta.value && canonicalWatchPath.value) {
+  const canonicalToken = decodeURIComponent(canonicalWatchPath.value.replace(/^\/watch\//, ''))
+  if (videoIdParam.value && videoIdParam.value !== canonicalToken) {
+    await navigateTo(canonicalWatchPath.value, { redirectCode: 301 })
+  }
+}
+
+if (showVideoNotFound.value && import.meta.server) {
+  setResponseStatus(404)
+}
 
 usePageSeo(
   computed(() => ({
@@ -1206,6 +1261,12 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
   )
   ensureCurrent()
 
+  if (videoResponse.status === 404) {
+    accessNotFound.value = true
+    await loadBrowseRecommendations(options.signal)
+    return
+  }
+
   if (videoResponse.status === 429) {
     const data = await videoResponse.json().catch(() => ({}))
     ensureCurrent()
@@ -1222,6 +1283,7 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
   if (!videoResponse.ok) throw new Error(strings.videoLoadFailed)
   const data = await videoResponse.json()
   ensureCurrent()
+  accessNotFound.value = false
   videoData.value = data
   rateLimited.value = false
   rateLimitRetryAfter.value = null
@@ -1269,6 +1331,17 @@ type LoadVideoForRouteOptions = {
   guard?: () => boolean
 }
 
+const loadBrowseRecommendations = async (signal?: AbortSignal) => {
+  try {
+    const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, { signal })
+    if (!recsResponse.ok) return
+    const data = await recsResponse.json()
+    recommendations.value = (data.videos || []).slice(0, 9)
+  } catch (e: any) {
+    if (e?.name === 'AbortError' || signal?.aborted) throw e
+  }
+}
+
 const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRouteOptions = {}) => {
   const guard = options.guard ?? (() => true)
   const ensureCurrent = () => {
@@ -1279,6 +1352,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
   ensureCurrent()
 
+  accessNotFound.value = false
   autoplayBlocked.value = false
   autoplayMuting.value = false
   buffering.value = false
@@ -1291,6 +1365,14 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   error.value = null
   teardownLivestreamRuntime()
 
+  if (videoNotFound.value) {
+    recommendations.value = []
+    await loadBrowseRecommendations(options.signal)
+    ensureCurrent()
+    loading.value = false
+    return
+  }
+
   try {
     await fetchVideoAccess({
       videoId: targetVideoId,
@@ -1298,6 +1380,11 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
       guard
     })
     ensureCurrent()
+
+    if (accessNotFound.value || showVideoNotFound.value) {
+      loading.value = false
+      return
+    }
 
     recommendations.value = []
     try {
@@ -1606,9 +1693,21 @@ const handleUserPlaybackInteraction = (event: PointerEvent | MouseEvent | Event)
 }
 
 watch(
+  [videoIdParam, videoMeta, canonicalWatchPath],
+  async ([param, meta, path]) => {
+    if (import.meta.server || !meta || !path || !param) return
+    const canonicalToken = decodeURIComponent(path.replace(/^\/watch\//, ''))
+    if (param !== canonicalToken) {
+      await navigateTo(path, { replace: true })
+    }
+  },
+)
+
+watch(
   () => route.params.videoId,
   async (newVideoId, oldVideoId, onCleanup) => {
     if (newVideoId === oldVideoId) return
+    accessNotFound.value = false
     descriptionExpanded.value = false
     descriptionClamped.value = false
     const { abortController, isCurrentInvocation, cancel } = createLoadInvocation()

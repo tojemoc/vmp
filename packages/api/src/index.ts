@@ -121,7 +121,7 @@ import { handleSiteSettings } from './siteSettings.js'
 import { handleSiteFooterPublic, handleSiteFooterAdmin } from './siteFooter.js'
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js'
 import { getReadSession, applySessionBookmark } from './d1Session.js'
-import { compareVideosNewestFirst } from '@vmp/shared'
+import { canonicalWatchToken, compareVideosNewestFirst, isValidVideoSlug, sanitizeVideoSlug } from '@vmp/shared'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig, collectPlacementVideoIds, normalizePlacementVideoRows } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
 import {
@@ -944,7 +944,10 @@ async function handleHomepagePlacement(request: any, env: any, corsHeaders: any)
       placementVideos = dedupeVideoListRows(mergedRows)
     }
 
-    return jsonResponse({ ...placement, videos: placementVideos }, 200, corsHeaders)
+    return jsonResponse({ ...placement, videos: placementVideos }, 200, {
+      ...corsHeaders,
+      'Cache-Control': 'no-store',
+    })
   } catch (error) {
     console.error('handleHomepagePlacement:', error)
     return jsonResponse({ error: getPublicErrorMessage('Internal server error') }, 500, corsHeaders)
@@ -1053,6 +1056,7 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
       title: video.title ?? '',
       description: video.description ?? '',
       thumbnail_url: video.thumbnail_url ?? null,
+      canonicalWatchPath: `/watch/${encodeURIComponent(canonicalWatchToken({ id: video.id, slug: video.slug ?? null }))}`,
     }, 200, corsHeaders)
   } catch (error) {
     console.error('handleVideoPublicMeta:', error)
@@ -1150,6 +1154,12 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
 
     // Resolve by ID first, then by vanity slug so /watch/<slug> works transparently.
     const video = await resolveVideoByIdOrSlug(db, videoId)
+    const hasElevatedRole = isAdministrativeRole(authUser?.role)
+
+    if (!video && !hasElevatedRole) {
+      return jsonResponse({ error: 'Video not found', code: 'video_not_found' }, 404, corsHeaders)
+    }
+
     // Use the canonical database ID for all downstream operations (R2 paths, token signing).
     const resolvedVideoId = video?.id ?? videoId
     const livestream = video
@@ -1160,9 +1170,6 @@ async function handleVideoAccess(request: any, env: any, corsHeaders: any, ctx?:
           LIMIT 1
         `).bind(resolvedVideoId).first()
       : null
-
-    // Treat all non-viewer staff roles as premium-equivalent entitlements.
-    const hasElevatedRole = isAdministrativeRole(authUser?.role)
 
     // Reject unpublished videos for non-staff so drafts/archived videos can't
     // receive signed playlist tokens via a slug or ID they happen to know.
@@ -1638,12 +1645,12 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
 
     if (method === 'POST') {
       const name = typeof body.name === 'string' ? body.name.trim() : ''
-      const slug = typeof body.slug === 'string' ? sanitizeSlug(body.slug) : ''
+      const slug = typeof body.slug === 'string' ? sanitizeVideoSlug(body.slug) : ''
       const sortOrder = Number.isInteger(body.sortOrder) ? body.sortOrder : 0
       const direction = body.direction === 'asc' ? 'asc' : 'desc'
       const homepageLayoutVariant = normalizeHomepageLayoutVariant(body.homepageLayoutVariant)
       if (!name) return jsonResponse({ error: 'name is required' }, 400, corsHeaders)
-      if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+      if (!isValidVideoSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
       try {
         await db.prepare(`
           INSERT INTO video_categories (id, slug, name, sort_order, direction, homepage_layout_variant)
@@ -1670,8 +1677,8 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
         values.push(name)
       }
       if (typeof body.slug === 'string') {
-        const slug = sanitizeSlug(body.slug)
-        if (!isValidSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
+        const slug = sanitizeVideoSlug(body.slug)
+        if (!isValidVideoSlug(slug)) return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
         updates.push('slug = ?')
         values.push(slug)
       }
@@ -1864,12 +1871,12 @@ async function handleAdminLivestreamCreate(request: any, env: any, corsHeaders: 
   if (!title) return jsonResponse({ error: 'title is required' }, 400, corsHeaders)
 
   const description = typeof body.description === 'string' ? body.description.trim() : null
-  const slug = typeof body.slug === 'string' && body.slug.trim() ? sanitizeSlug(body.slug) : null
+  const slug = typeof body.slug === 'string' && body.slug.trim() ? sanitizeVideoSlug(body.slug) : null
   const publishStatus = typeof body.publishStatus === 'string' ? body.publishStatus : 'draft'
   if (!['draft', 'published', 'archived'].includes(publishStatus)) {
     return jsonResponse({ error: 'publishStatus must be one of: draft, published, archived' }, 400, corsHeaders)
   }
-  if (slug && !isValidSlug(slug)) {
+  if (slug && !isValidVideoSlug(slug)) {
     return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens' }, 400, corsHeaders)
   }
 
@@ -2055,21 +2062,21 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     return jsonResponse({ error: 'status must be one of: draft, published, archived' }, 400, corsHeaders)
   }
   const normalizedSlug = hasSlug && body.slug !== null
-    ? (typeof body.slug === 'string' ? sanitizeSlug(body.slug) : null)
+    ? (typeof body.slug === 'string' ? sanitizeVideoSlug(body.slug) : null)
     : null
   if (hasSlug && body.slug !== null && !normalizedSlug) {
     return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens (e.g. my-video-title), or null to clear it' }, 400, corsHeaders)
   }
-  if (normalizedSlug && !isValidSlug(normalizedSlug)) {
+  if (normalizedSlug && !isValidVideoSlug(normalizedSlug)) {
     return jsonResponse({ error: 'slug must be lowercase alphanumeric words separated by hyphens (e.g. my-video-title), or null to clear it' }, 400, corsHeaders)
   }
   const normalizedLegacySlug = hasLegacySlug && body.legacySlug !== null
-    ? (typeof body.legacySlug === 'string' ? sanitizeSlug(body.legacySlug) : null)
+    ? (typeof body.legacySlug === 'string' ? sanitizeVideoSlug(body.legacySlug) : null)
     : null
   if (hasLegacySlug && body.legacySlug !== null && !normalizedLegacySlug) {
     return jsonResponse({ error: 'legacySlug must be lowercase alphanumeric words separated by hyphens (e.g. old-video-title), or null to clear it' }, 400, corsHeaders)
   }
-  if (normalizedLegacySlug && !isValidSlug(normalizedLegacySlug)) {
+  if (normalizedLegacySlug && !isValidVideoSlug(normalizedLegacySlug)) {
     return jsonResponse({ error: 'legacySlug must be lowercase alphanumeric words separated by hyphens (e.g. old-video-title), or null to clear it' }, 400, corsHeaders)
   }
   const scheduledPublishAt = normalizeScheduledPublishAt(body.scheduledPublishAt, { allowNull: true })
@@ -2141,6 +2148,23 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     }
   }
 
+  // When the vanity slug changes, preserve the previous slug as legacy_slug so
+  // old /watch/ and /videos/ links keep working without manual admin setup.
+  let autoLegacySlug: string | null = null
+  if (!hasLegacySlug && hasSlug && body.slug !== null && normalizedSlug) {
+    const currentRouteRow = await db.prepare('SELECT slug, legacy_slug FROM videos WHERE id = ?').bind(videoId).first() as {
+      slug?: string | null
+      legacy_slug?: string | null
+    } | null
+    const previousSlug = typeof currentRouteRow?.slug === 'string' ? currentRouteRow.slug.trim() : ''
+    const existingLegacy = typeof currentRouteRow?.legacy_slug === 'string' ? currentRouteRow.legacy_slug.trim() : ''
+    if (previousSlug && previousSlug !== normalizedSlug && !existingLegacy) {
+      autoLegacySlug = previousSlug
+    }
+  }
+  const willUpdateLegacySlug = hasLegacySlug || autoLegacySlug !== null
+  const legacySlugToWrite = hasLegacySlug ? normalizedLegacySlug : autoLegacySlug
+
   // Guard: reject a slug that equals another video's id — resolveVideoByIdOrSlug
   // resolves by id before slug, so the slug would become permanently shadowed.
   // Also ensure slug/legacy_slug don't collide with existing videos.
@@ -2148,7 +2172,7 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
     db,
     videoId,
     hasSlug ? normalizedSlug : null,
-    hasLegacySlug ? normalizedLegacySlug : null,
+    willUpdateLegacySlug ? legacySlugToWrite : null,
     corsHeaders
   )
   if (collisionError) return collisionError
@@ -2156,26 +2180,26 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
   try {
     // When both title and slug are supplied, write them atomically so a slug
     // constraint violation cannot leave the title committed but the slug not.
-    if (hasTitle || hasSlug || hasLegacySlug) {
+    if (hasTitle || hasSlug || willUpdateLegacySlug) {
       try {
-        if (hasTitle && hasSlug && hasLegacySlug) {
+        if (hasTitle && hasSlug && willUpdateLegacySlug) {
           await db.prepare(`UPDATE videos SET title = ?, slug = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-            .bind(body.title.trim(), normalizedSlug ?? null, normalizedLegacySlug ?? null, videoId).run()
+            .bind(body.title.trim(), normalizedSlug ?? null, legacySlugToWrite ?? null, videoId).run()
         } else if (hasTitle && hasSlug) {
           await db.prepare(`UPDATE videos SET title = ?, slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(body.title.trim(), normalizedSlug ?? null, videoId).run()
-        } else if (hasTitle && hasLegacySlug) {
+        } else if (hasTitle && willUpdateLegacySlug) {
           await db.prepare(`UPDATE videos SET title = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-            .bind(body.title.trim(), normalizedLegacySlug ?? null, videoId).run()
-        } else if (hasSlug && hasLegacySlug) {
+            .bind(body.title.trim(), legacySlugToWrite ?? null, videoId).run()
+        } else if (hasSlug && willUpdateLegacySlug) {
           await db.prepare(`UPDATE videos SET slug = ?, legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-            .bind(normalizedSlug ?? null, normalizedLegacySlug ?? null, videoId).run()
+            .bind(normalizedSlug ?? null, legacySlugToWrite ?? null, videoId).run()
         } else if (hasTitle) {
           await db.prepare(`UPDATE videos SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(body.title.trim(), videoId).run()
-        } else if (hasLegacySlug) {
+        } else if (willUpdateLegacySlug && !hasSlug) {
           await db.prepare(`UPDATE videos SET legacy_slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-            .bind(normalizedLegacySlug ?? null, videoId).run()
+            .bind(legacySlugToWrite ?? null, videoId).run()
         } else {
           await db.prepare(`UPDATE videos SET slug = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
             .bind(normalizedSlug ?? null, videoId).run()
@@ -3145,21 +3169,6 @@ async function resolveVideoByIdOrSlug(db: any, idOrSlug: any) {
   const bySlug = await db.prepare('SELECT * FROM videos WHERE slug = ?').bind(idOrSlug).first()
   if (bySlug) return bySlug
   return db.prepare('SELECT * FROM videos WHERE legacy_slug = ?').bind(idOrSlug).first()
-}
-
-// Validate a vanity slug format: lowercase alphanumeric words separated by hyphens.
-function isValidSlug(slug: any) {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
-}
-
-function sanitizeSlug(raw: any) {
-  if (typeof raw !== 'string') return ''
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .trim()
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
 }
 
 /**
