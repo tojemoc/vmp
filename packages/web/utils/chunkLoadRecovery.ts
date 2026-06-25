@@ -21,12 +21,18 @@ export function isPrefetchLinkElement(target: EventTarget | null | undefined): b
   return el.tagName === 'LINK' && String(el.rel ?? '').toLowerCase() === 'prefetch'
 }
 
-export function isCriticalAssetLoadTarget(target: EventTarget | null | undefined): boolean {
+export function isCriticalAssetLoadTarget(target: EventTarget | null | undefined): target is HTMLScriptElement | HTMLLinkElement {
   if (!target || typeof target !== 'object') return false
   const el = target as HTMLScriptElement | HTMLLinkElement
   if (el.tagName === 'SCRIPT') return true
   if (el.tagName === 'LINK') return !isPrefetchLinkElement(el)
   return false
+}
+
+export function getCriticalAssetUrl(target: EventTarget | null | undefined): string | null {
+  if (!isCriticalAssetLoadTarget(target)) return null
+  if (target.tagName === 'SCRIPT') return (target as HTMLScriptElement).src || null
+  return (target as HTMLLinkElement).href || null
 }
 
 export function isNuxtAssetUrl(url: string): boolean {

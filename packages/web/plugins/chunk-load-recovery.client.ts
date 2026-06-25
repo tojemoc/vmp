@@ -1,6 +1,6 @@
 import {
+  getCriticalAssetUrl,
   isChunkLoadErrorReason,
-  isCriticalAssetLoadTarget,
   isNuxtAssetUrl,
   shouldAttemptChunkReload,
 } from '~/utils/chunkLoadRecovery'
@@ -76,9 +76,7 @@ export default defineNuxtPlugin(() => {
   })
 
   window.addEventListener('error', (event) => {
-    const target = event.target
-    if (!isCriticalAssetLoadTarget(target)) return
-    const src = target instanceof HTMLScriptElement ? target.src : target.href
+    const src = getCriticalAssetUrl(event.target)
     if (!src || !isNuxtAssetUrl(src)) return
     reloadOnceForFreshAssets()
   }, true)

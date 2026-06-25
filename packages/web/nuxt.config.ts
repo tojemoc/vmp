@@ -14,7 +14,8 @@ export default defineNuxtConfig({
     // must not treat them as fatal — disabling manifest prefetch avoids the noise.
     'build:manifest'(manifest) {
       for (const key in manifest) {
-        manifest[key].prefetch = false
+        const file = manifest[key]
+        if (file) file.prefetch = false
       }
     },
   },
