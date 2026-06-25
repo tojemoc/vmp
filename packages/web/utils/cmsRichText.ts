@@ -1,3 +1,4 @@
+import { sanitize } from 'unsane'
 import { generateHTML } from '@tiptap/html'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -17,6 +18,19 @@ const richTextExtensions = [
   }),
 ]
 
+/** Allowlist aligned with TipTap StarterKit + Link output (Workers-safe, no DOM). */
+const CMS_RICH_TEXT_SANITIZE_OPTIONS = {
+  allowedTags: [
+    'p', 'h2', 'h3', 'h4', 'strong', 'em', 's', 'code', 'pre',
+    'ul', 'ol', 'li', 'blockquote', 'hr', 'br', 'a',
+  ],
+  allowedAttributes: {
+    a: ['href', 'class'],
+    '*': ['class'],
+  },
+  allowedProtocols: ['http:', 'https:'],
+} as const
+
 function sanitizeHref(rawUrl: string): string {
   try {
     const normalized = new URL(rawUrl, 'http://dummy')
@@ -35,16 +49,9 @@ function sanitizeLinkHrefs(html: string): string {
   })
 }
 
-/** HTML sanitization without a DOM (Cloudflare Workers SSR has no document). */
 function purifyHtml(html: string): string {
   if (!html) return ''
-  return html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<object\b[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed\b[^>]*>/gi, '')
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript:/gi, '')
+  return sanitize(html, CMS_RICH_TEXT_SANITIZE_OPTIONS)
 }
 
 /** XSS prevention for TipTap HTML before v-html binding. */
