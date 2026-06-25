@@ -27,7 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nx/nuxt": "22.7.5",
-    "@nx/vite": "22.7.5",
+    "@nx/vite": "23.0.1",
     "@vue/language-core": "^3.2.9",
     "eslint": "^10.4.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
