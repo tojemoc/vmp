@@ -80,7 +80,7 @@ import {
   handleRssPodcastWebhookConfig,
 } from './rssPodcastAdmin.js'
 import { handleVideoPipelineStatus } from './pipelineStatus.js'
-import { log } from './logger.js'
+import { attachDatadogLogContext, detachDatadogLogContext, log } from './logger.js'
 import {
   handleHomepageContent,
   handleHomepageContentPublic,
@@ -359,6 +359,8 @@ function logRequest(method: string, path: string, status: number, durationMs: nu
 
 const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
+    attachDatadogLogContext(env, ctx)
+    try {
     const url = new URL(request.url)
     ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env))
     await maybeSyncPillsApiKey(env)
@@ -793,9 +795,14 @@ const workerHandler = {
 
     log({ service: 'worker', event: 'route_not_found', http_method: request.method, http_path: url.pathname, http_status: 404 })
     return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
+    } finally {
+      detachDatadogLogContext()
+    }
   },
 
   async scheduled(event: any, env: any, ctx: ExecutionContext) {
+    attachDatadogLogContext(env, ctx)
+    try {
     const cron = String(event?.cron ?? '*/5 * * * *')
     const runReplication = cron === '*/15 * * * *'
 
@@ -823,15 +830,23 @@ const workerHandler = {
         console.error('Replication enqueue sweep failed:', err)
       }
     }
+    } finally {
+      detachDatadogLogContext()
+    }
   },
 
   async queue(batch: any, env: any, ctx: ExecutionContext) {
+    attachDatadogLogContext(env, ctx)
+    try {
     const queueName = String(batch?.queue ?? '')
     if (queueName.includes('push-delivery')) {
       await handlePushDeliveryQueue(batch, env)
       return
     }
     await handleReplicationQueue(batch, env)
+    } finally {
+      detachDatadogLogContext()
+    }
   },
 }
 

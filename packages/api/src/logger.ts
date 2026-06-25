@@ -1,10 +1,21 @@
 /**
- * Logs emitted by this module are shipped to Datadog via Workers Logpush.
- * In Datadog, create a Grok parser under Logs > Configuration > Pipelines with:
- *   Filter: source:cloudflare-workers
- *   Rule: json_rule %{data::json}
- * This parses the JSON object into facets (duration_ms, service, event, etc.)
- * that can be used in monitors and dashboards.
+ * Structured application logs.
+ *
+ * Always emitted to `console.log` (visible in the Cloudflare dashboard and
+ * Workers Logpush when that plan feature is enabled).
+ *
+ * Optional direct shipping to Datadog via the HTTP Logs API when configured:
+ *   DD_LOGS_ENABLED=true
+ *   DD_API_KEY=<secret>          — wrangler secret put DD_API_KEY
+ *   DD_SITE=datadoghq.eu         — optional, default datadoghq.eu
+ *   DD_SERVICE=vmp-api           — optional
+ *   DD_ENV=staging               — optional tag (env:staging)
+ *
+ * Call `attachDatadogLogContext(env, ctx)` at the start of each Worker entry
+ * point (fetch / scheduled / queue) so batched uploads use `ctx.waitUntil`.
+ *
+ * In Datadog Logs Explorer, search: `source:cloudflare-worker service:vmp-api`
+ * Pipeline Grok (optional): `json_rule %{data::json}` on the `message` field.
  */
 
 type LogLevel = 'info' | 'warn' | 'error'
@@ -24,12 +35,111 @@ export interface LogFields {
   [key: string]: unknown
 }
 
+type LogEntry = LogFields & {
+  level: LogLevel
+  ts: string
+}
+
+type DatadogLogContext = {
+  env: Record<string, unknown>
+  ctx: ExecutionContext
+  buffer: LogEntry[]
+}
+
+let activeDatadogContext: DatadogLogContext | null = null
+
+export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
+  const flag = String(env.DD_LOGS_ENABLED ?? '').trim().toLowerCase()
+  if (flag !== '1' && flag !== 'true' && flag !== 'yes') return false
+  return Boolean(String(env.DD_API_KEY ?? '').trim())
+}
+
+export function normalizeDatadogSite(site: string): string {
+  const trimmed = site.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
+  if (!trimmed) return 'datadoghq.eu'
+  if (trimmed.includes('.')) return trimmed
+  return `${trimmed}.datadoghq.eu`
+}
+
+export function buildDatadogIntakeUrl(env: Record<string, unknown>): string {
+  const configured = String(env.DD_SITE ?? 'datadoghq.eu').trim() || 'datadoghq.eu'
+  if (configured.startsWith('http')) {
+    const base = configured.replace(/\/$/, '')
+    return base.includes('/api/v2/logs') ? base : `${base}/api/v2/logs`
+  }
+  const site = normalizeDatadogSite(configured)
+  return `https://http-intake.logs.${site}/api/v2/logs`
+}
+
+export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, unknown>) {
+  const service = String(env.DD_SERVICE ?? 'vmp-api').trim() || 'vmp-api'
+  const ddEnv = String(env.DD_ENV ?? '').trim()
+  const ddtags = ddEnv ? `env:${ddEnv}` : undefined
+
+  return entries.map((entry) => {
+    const level = entry.level ?? 'info'
+    const status = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info'
+    return {
+      message: JSON.stringify(entry),
+      ddsource: 'cloudflare-worker',
+      service,
+      hostname: 'cloudflare',
+      status,
+      ...(ddtags ? { ddtags } : {}),
+    }
+  })
+}
+
+export async function flushDatadogLogs(env: Record<string, unknown>, entries: LogEntry[]): Promise<void> {
+  const apiKey = String(env.DD_API_KEY ?? '').trim()
+  if (!apiKey || entries.length === 0) return
+
+  const response = await fetch(buildDatadogIntakeUrl(env), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'DD-API-KEY': apiKey,
+    },
+    body: JSON.stringify(buildDatadogLogBatch(entries, env)),
+  })
+
+  if (response.status !== 202 && !response.ok) {
+    console.error(`[datadog] log upload failed: HTTP ${response.status}`)
+  }
+}
+
+/** Bind env/ctx for the current Worker invocation; flush on `detachDatadogLogContext()`. */
+export function attachDatadogLogContext(env: Record<string, unknown>, ctx: ExecutionContext): void {
+  activeDatadogContext = { env, ctx, buffer: [] }
+}
+
+/** Flush buffered logs to Datadog (via waitUntil) and clear the active context. */
+export function detachDatadogLogContext(): void {
+  const context = activeDatadogContext
+  activeDatadogContext = null
+  if (!context || context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return
+
+  const batch = context.buffer.splice(0, context.buffer.length)
+  context.ctx.waitUntil(
+    flushDatadogLogs(context.env, batch).catch((err) => {
+      console.error('[datadog] log upload error:', err)
+    }),
+  )
+}
+
 export function log(fields: LogFields): void {
-  console.log(JSON.stringify({
+  const entry: LogEntry = {
     level: 'info',
     ...fields,
     ts: new Date().toISOString(),
-  }))
+  }
+  if (entry.level === undefined) entry.level = 'info'
+
+  console.log(JSON.stringify(entry))
+
+  if (activeDatadogContext && isDatadogLogsEnabled(activeDatadogContext.env)) {
+    activeDatadogContext.buffer.push(entry)
+  }
 }
 
 /** Convenience: hash any string to a short hex prefix safe for logs */
