@@ -35,11 +35,11 @@
     "@tiptap/vue-3": "^3.27.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vmp/shared": "*",
-    "isomorphic-dompurify": "^3.18.0",
     "media-chrome": "^4.19.0",
     "nuxt": "^4.4.8",
     "qrcode": "^1.5.4",
     "tus-js-client": "^4.3.1",
+    "unsane": "^0.0.19",
     "video.js": "^8.23.7",
     "videojs-video-element": "^1.4.8",
     "vue": "^3.5.35"
