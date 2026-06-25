@@ -340,29 +340,35 @@ type PillsResponse = {
   pills?: HomePill[]
 }
 
+const homepageContentAsync = useAsyncData('homepage-content', () =>
+  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`),
+)
+const placementAsync = useAsyncData('homepage-placement', () =>
+  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
+)
+const pillsAsync = useAsyncData('homepage-pills', () =>
+  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),
+)
+
+await Promise.all([homepageContentAsync, placementAsync, pillsAsync])
+
 const {
   data: homepageContent,
   pending: homepageContentPending,
   error: homepageContentError,
-} = await useAsyncData('homepage-content', () =>
-  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`),
-)
+} = homepageContentAsync
 
 const {
   data: placementData,
   pending: placementPending,
   error: placementError,
-} = await useAsyncData('homepage-placement', () =>
-  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
-)
+} = placementAsync
 
 const {
   data: pillsData,
   pending: pillsPending,
   error: pillsError,
-} = await useAsyncData('homepage-pills', () =>
-  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),
-)
+} = pillsAsync
 
 const layoutBlocks = computed(() => {
   const blocks = homepageContent.value?.homepageConfig?.layoutBlocks
@@ -465,5 +471,7 @@ onUnmounted(() => {
   if (import.meta.client) window.removeEventListener('resize', updateMobileViewport)
 })
 
-watch(bannerImageIds, () => { void loadBannerImageUrls() }, { immediate: true })
+if (import.meta.client) {
+  watch(bannerImageIds, () => { void loadBannerImageUrls() }, { immediate: true })
+}
 </script>
