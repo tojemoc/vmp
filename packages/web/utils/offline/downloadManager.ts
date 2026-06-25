@@ -229,6 +229,8 @@ export async function startOfflineDownload({
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Download authorization failed')
 
+    await deleteOfflineVideo(videoId)
+
     const downloadableFiles = data.manifest.files.filter(
       (f: OfflineManifestFile) => !isGeneratedManifestPath(f.path),
     )
@@ -264,6 +266,10 @@ export async function startOfflineDownload({
     }
 
     const generated = await buildGeneratedManifests(videoId, rendition, data.manifest.files)
+    const renditionPlaylistPath = `${rendition}/offline-playlist.m3u8`
+    if (!generated.some(item => item.path === renditionPlaylistPath)) {
+      throw new Error('Offline rendition playlist could not be built')
+    }
     for (const item of generated) {
       await writeOfflineAsset(videoId, item.path, item.bytes)
       bytesDownloaded += item.bytes.byteLength

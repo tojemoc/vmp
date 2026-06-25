@@ -33,4 +33,16 @@ describe('offline localManifest', () => {
     assert.match(master, /offline-audio\.m3u8/)
     assert.match(master, /\/__vmp\/offline-media\/vid-3\/720p\/offline-playlist\.m3u8/)
   })
+
+  it('rewrites root-relative segment URIs without folding in baseDir', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXTINF:6.000,',
+      '/720p/seg_00001.m4s',
+    ].join('\n')
+
+    const output = rewritePlaylistForOffline(input, 'vid-4', '720p/playlist.m3u8')
+    assert.match(output, /\/__vmp\/offline-media\/vid-4\/720p\/seg_00001\.m4s/)
+    assert.doesNotMatch(output, /playlist\.m3u8\/720p/)
+  })
 })

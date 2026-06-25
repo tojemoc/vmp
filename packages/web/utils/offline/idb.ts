@@ -121,7 +121,7 @@ export async function enqueueDownload(videoId: string): Promise<void> {
     const tx = db.transaction(OFFLINE_STORE_QUEUE, 'readwrite')
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
-    tx.objectStore(OFFLINE_STORE_QUEUE).put({ videoId, queuedAt: new Date().toISOString() }, videoId)
+    tx.objectStore(OFFLINE_STORE_QUEUE).put({ videoId, queuedAt: new Date().toISOString() })
   })
 }
 
@@ -139,14 +139,16 @@ export async function listQueuedDownloads(): Promise<string[]> {
   if (import.meta.server) return []
   try {
     const db = await openOfflineIdb()
-    const rows = await new Promise<Array<{ videoId: string }>>((resolve, reject) => {
+    const rows = await new Promise<Array<{ videoId: string, queuedAt: string }>>((resolve, reject) => {
       const tx = db.transaction(OFFLINE_STORE_QUEUE, 'readonly')
       tx.onerror = () => reject(tx.error)
       const req = tx.objectStore(OFFLINE_STORE_QUEUE).getAll()
-      req.onsuccess = () => resolve((req.result as Array<{ videoId: string }>) ?? [])
+      req.onsuccess = () => resolve((req.result as Array<{ videoId: string, queuedAt: string }>) ?? [])
       req.onerror = () => reject(req.error)
     })
-    return rows.map(r => r.videoId)
+    return rows
+      .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+      .map(r => r.videoId)
   } catch {
     return []
   }

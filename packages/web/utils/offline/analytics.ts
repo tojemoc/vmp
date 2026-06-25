@@ -11,8 +11,8 @@ export function trackOfflineEvent(
   if (import.meta.server || typeof window === 'undefined') return
   window.dataLayer = window.dataLayer ?? []
   window.dataLayer.push({
+    ...params,
     event,
     offline: true,
-    ...params,
   })
 }

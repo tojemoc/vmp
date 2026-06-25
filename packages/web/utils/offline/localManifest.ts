@@ -37,6 +37,22 @@ export function rewritePlaylistForOffline(
     if (!trimmed || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return trimmed
     }
+    if (trimmed.startsWith('/')) {
+      const normalized = trimmed
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(part => part && part !== '.')
+        .reduce<string[]>((acc, part) => {
+          if (part === '..') {
+            acc.pop()
+            return acc
+          }
+          acc.push(part)
+          return acc
+        }, [])
+        .join('/')
+      return offlineMediaUrl(videoId, normalized)
+    }
     const combined = baseDir ? `${baseDir}/${trimmed}` : trimmed
     const normalized = combined
       .split('/')

@@ -35,9 +35,15 @@ export async function ensureOfflineDevice(
     throw new Error(data.error || 'Failed to register offline device')
   }
 
+  const deviceId = typeof data.deviceId === 'string' ? data.deviceId.trim() : ''
+  const deviceToken = typeof data.deviceToken === 'string' ? data.deviceToken.trim() : ''
+  if (!deviceId || !deviceToken) {
+    throw new Error('Invalid device registration response')
+  }
+
   const device: StoredDevice = {
-    deviceId: data.deviceId,
-    deviceToken: data.deviceToken,
+    deviceId,
+    deviceToken,
     deviceName: data.deviceName ?? deviceName,
     registeredAt: data.registeredAt ?? new Date().toISOString(),
   }

@@ -36,8 +36,13 @@ function statusLabel(record: StoredDownload): string {
 }
 
 onMounted(async () => {
-  await refreshDownloads()
-  loading.value = false
+  try {
+    await refreshDownloads()
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
+  } finally {
+    loading.value = false
+  }
 })
 
 const quotaPercent = computed(() => {
@@ -63,7 +68,6 @@ async function handleUpdate(record: StoredDownload) {
   workingId.value = record.videoId
   error.value = null
   try {
-    await removeDownload(record.videoId)
     await startDownload(record.videoId, record.rendition)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
@@ -135,7 +139,7 @@ async function handleUpdate(record: StoredDownload) {
           <button
             v-if="record.status === 'update_available'"
             type="button"
-            class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+            class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white dark:text-white disabled:opacity-50"
             :disabled="workingId === record.videoId"
             @click="handleUpdate(record)"
           >

@@ -28,6 +28,7 @@ const record = ref<Awaited<ReturnType<typeof getDownloadRecord>>>(null)
 const progress = ref({ bytesDownloaded: 0, totalBytes: 0, filesCompleted: 0, filesTotal: 0, status: null as string | null })
 
 let unsubscribe: (() => void) | null = null
+let mounted = false
 
 async function loadState() {
   loading.value = true
@@ -37,7 +38,9 @@ async function loadState() {
 }
 
 onMounted(async () => {
+  mounted = true
   await loadState()
+  if (!mounted) return
   unsubscribe = watchProgress(props.videoId, (p) => {
     progress.value = p
     if (p.status === 'completed' || p.status === 'failed' || p.status === 'paused') {
@@ -47,7 +50,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  mounted = false
   unsubscribe?.()
+  unsubscribe = null
 })
 
 const status = computed(() => record.value?.status ?? progress.value.status ?? null)
@@ -159,7 +164,7 @@ async function handleRemove() {
       <button
         v-if="!status || status === 'failed' || status === 'paused'"
         type="button"
-        class="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50"
+        class="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-medium disabled:opacity-50"
         :disabled="working"
         @click="handleDownload"
       >
@@ -179,7 +184,7 @@ async function handleRemove() {
       <button
         v-if="status === 'update_available'"
         type="button"
-        class="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium disabled:opacity-50"
+        class="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium disabled:opacity-50"
         :disabled="working"
         @click="handleDownload"
       >

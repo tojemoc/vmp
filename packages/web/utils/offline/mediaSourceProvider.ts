@@ -7,7 +7,7 @@ import type { MediaSourceResult } from './types'
 export async function getOfflinePlaylistUrl(videoId: string): Promise<MediaSourceResult | null> {
   if (import.meta.server) return null
   const record = await readStoredDownload(videoId)
-  if (!record || record.status !== 'completed') return null
+  if (!record || (record.status !== 'completed' && record.status !== 'update_available')) return null
   if (!isLicensePlaybackAllowed(record.license)) return null
   return {
     playlistUrl: masterPlaylistUrl(videoId),

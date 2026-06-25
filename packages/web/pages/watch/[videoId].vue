@@ -1274,6 +1274,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   showPremiumOverlay.value = false
   rateLimited.value = false
   currentTime.value = 0
+  playingOffline.value = false
   loading.value = true
   error.value = null
   teardownLivestreamRuntime()
@@ -1325,14 +1326,17 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     const playlistUrl = videoData.value?.video?.playlistUrl
     if (playlistUrl && !rateLimited.value) {
       error.value = null
-      playingOffline.value = false
       let resolvedPlaylist = playlistUrl
       if (videoData.value?.hasAccess) {
-        const offline = await getOfflineSource(String(videoData.value?.videoId ?? targetVideoId))
-        if (offline?.playlistUrl) {
-          resolvedPlaylist = offline.playlistUrl
-          playingOffline.value = true
-          trackOfflineEvent('offline_playback_started', { videoId: targetVideoId })
+        try {
+          const offline = await getOfflineSource(String(videoData.value?.videoId ?? targetVideoId))
+          if (offline?.playlistUrl) {
+            resolvedPlaylist = offline.playlistUrl
+            playingOffline.value = true
+            trackOfflineEvent('offline_playback_started', { videoId: targetVideoId })
+          }
+        } catch {
+          playingOffline.value = false
         }
       }
       await initializeVideoElement(resolvedPlaylist, guard, options.signal)

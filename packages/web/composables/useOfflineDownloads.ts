@@ -39,14 +39,19 @@ export function useOfflineDownloads() {
 
   async function initialiseOfflineDownloads(): Promise<void> {
     if (initialised.value || !offlineDownloadsEnabled()) return
-    initialised.value = true
-    await refreshDownloads()
-    const headers = authHeader()
-    if (Object.keys(headers).length > 0) {
-      await revalidateOfflineLicenses(apiUrl)
-      await checkManifestUpdates(apiUrl, headers)
-      await resumeQueuedDownloads(apiUrl, headers)
+    try {
       await refreshDownloads()
+      const headers = authHeader()
+      if (Object.keys(headers).length > 0) {
+        await revalidateOfflineLicenses(apiUrl)
+        await checkManifestUpdates(apiUrl, headers)
+        await resumeQueuedDownloads(apiUrl, headers)
+        await refreshDownloads()
+      }
+      initialised.value = true
+    } catch (err) {
+      initialised.value = false
+      throw err
     }
   }
 

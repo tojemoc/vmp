@@ -62,12 +62,24 @@ function openBlobIdb(): Promise<IDBDatabase> {
 
 async function writeIdbChunks(key: string, data: Uint8Array): Promise<void> {
   const db = await openBlobIdb()
+  const existingMeta = await new Promise<{ chunkCount: number } | undefined>((resolve, reject) => {
+    const tx = db.transaction(IDB_BLOB_STORE, 'readonly')
+    tx.onerror = () => reject(tx.error)
+    const req = tx.objectStore(IDB_BLOB_STORE).get(`${key}:meta`)
+    req.onsuccess = () => resolve(req.result as { chunkCount: number } | undefined)
+    req.onerror = () => reject(req.error)
+  })
   const chunkCount = Math.ceil(data.byteLength / IDB_CHUNK_BYTES) || 1
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_BLOB_STORE, 'readwrite')
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
     const store = tx.objectStore(IDB_BLOB_STORE)
+    if (existingMeta && existingMeta.chunkCount > chunkCount) {
+      for (let i = chunkCount; i < existingMeta.chunkCount; i++) {
+        store.delete(`${key}:chunk:${i}`)
+      }
+    }
     store.put({ byteLength: data.byteLength, chunkCount }, `${key}:meta`)
     for (let i = 0; i < chunkCount; i++) {
       const start = i * IDB_CHUNK_BYTES
@@ -228,14 +240,30 @@ export async function estimateOfflineBytes(videoId: string): Promise<number> {
   }
 
   const db = await openBlobIdb()
-  const metas = await new Promise<Array<{ byteLength: number }>>((resolve, reject) => {
+  const prefix = `${videoId}/`
+  const keys = await new Promise<string[]>((resolve, reject) => {
     const tx = db.transaction(IDB_BLOB_STORE, 'readonly')
     tx.onerror = () => reject(tx.error)
-    const req = tx.objectStore(IDB_BLOB_STORE).getAll()
-    req.onsuccess = () => resolve((req.result as Array<{ byteLength: number }>) ?? [])
+    const req = tx.objectStore(IDB_BLOB_STORE).getAllKeys()
+    req.onsuccess = () => {
+      const all = (req.result as string[]) ?? []
+      resolve(all.filter(k => typeof k === 'string' && k.startsWith(prefix) && k.endsWith(':meta')))
+    }
     req.onerror = () => reject(req.error)
   })
-  return metas.reduce((sum, m) => sum + (m.byteLength ?? 0), 0)
+
+  let total = 0
+  for (const metaKey of keys) {
+    const meta = await new Promise<{ byteLength: number } | undefined>((resolve, reject) => {
+      const tx = db.transaction(IDB_BLOB_STORE, 'readonly')
+      tx.onerror = () => reject(tx.error)
+      const req = tx.objectStore(IDB_BLOB_STORE).get(metaKey)
+      req.onsuccess = () => resolve(req.result as { byteLength: number } | undefined)
+      req.onerror = () => reject(req.error)
+    })
+    total += meta?.byteLength ?? 0
+  }
+  return total
 }
 
 export function contentTypeForPath(path: string): string {
