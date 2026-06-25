@@ -120,6 +120,17 @@ export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | nu
   datadogFlushHandler = handler ?? flushDatadogLogs
 }
 
+/**
+ * Flushes the buffered logs to Datadog.
+ *
+ * LIMITATION: Only logs emitted during the main handler execution (before `fn`
+ * resolves in `runWithDatadogLogContext`) are flushed. Logs from background work
+ * scheduled via `ctx.waitUntil` AFTER the handler returns are NOT captured.
+ *
+ * If you need to log from post-response background tasks, explicitly call
+ * `scheduleDatadogFlush` before those tasks complete, or emit logs before the
+ * main handler returns.
+ */
 function scheduleDatadogFlush(context: DatadogLogContext): void {
   if (context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return
 
