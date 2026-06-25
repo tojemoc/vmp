@@ -1600,25 +1600,35 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   Podcast feed description
                   <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  <input
+                    v-model="gtmEnabled"
+                    type="checkbox"
+                    class="rounded border-gray-300 dark:border-gray-600"
+                  />
+                  Google Tag Manager enabled
+                </label>
+                <template v-if="gtmEnabled">
                 <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
                   Google Tag Manager container ID
                   <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Required when GTM is enabled. No build-time fallback — set the container ID here.</p>
                 </label>
                 <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
                   GTM first-party measurement path
                   <input
                     v-model="siteBranding.gtm_measurement_path"
                     type="text"
-                    placeholder="/metrics  (leave empty to load GTM directly)"
+                    placeholder="/hb2v  (leave empty to load GTM directly)"
                     class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
                   />
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Set this to the measurement path configured in your Cloudflare Google Tag Gateway
-                    (e.g. /metrics). When set, GTM loads from your own domain instead of googletagmanager.com,
-                    surviving most privacy-focused browser settings.
+                    Optional. Set to the path configured in Cloudflare Google Tag Gateway
+                    (e.g. /hb2v). When set, GTM loads from your domain instead of googletagmanager.com.
+                    Leave Cloudflare “Set up tag” off — this app injects the script when enabled above.
                   </p>
                 </label>
+                </template>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -2815,8 +2825,15 @@ const siteBranding = ref({
   site_support_email: '',
   podcast_title: '',
   podcast_description: '',
+  gtm_enabled: '0',
   gtm_container_id: '',
   gtm_measurement_path: '',
+})
+const gtmEnabled = computed({
+  get: () => siteBranding.value.gtm_enabled === '1',
+  set: (enabled: boolean) => {
+    siteBranding.value.gtm_enabled = enabled ? '1' : '0'
+  },
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -4548,6 +4565,7 @@ const loadSiteBranding = async () => {
       site_support_email: data.site_support_email || 'vmp@tjm.sk',
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
+      gtm_enabled: data.gtm_enabled === '1' ? '1' : '0',
       gtm_container_id: data.gtm_container_id || '',
       gtm_measurement_path: data.gtm_measurement_path || '',
     }

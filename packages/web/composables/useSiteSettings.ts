@@ -12,6 +12,7 @@ interface SiteSettings {
   logoUrl: string
   faviconUrl: string
   supportEmail: string
+  gtmEnabled: boolean
   gtmContainerId: string
   gtmMeasurementPath: string
 }
@@ -26,6 +27,7 @@ function defaultSiteSettings(): SiteSettings {
     logoUrl: '',
     faviconUrl: '',
     supportEmail: DEFAULT_SUPPORT_EMAIL,
+    gtmEnabled: false,
     gtmContainerId: '',
     gtmMeasurementPath: '',
   }
@@ -40,6 +42,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     logoUrl: String(data.site_logo_url || ''),
     faviconUrl: String(data.site_favicon_url || ''),
     supportEmail: String(data.site_support_email || DEFAULT_SUPPORT_EMAIL),
+    gtmEnabled: String(data.gtm_enabled ?? '0') === '1',
     gtmContainerId: String(data.gtm_container_id || ''),
     gtmMeasurementPath: String(data.gtm_measurement_path || ''),
   }

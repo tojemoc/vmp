@@ -25,6 +25,7 @@ const SITE_KEYS = [
   'site_support_email',
   'podcast_title',
   'podcast_description',
+  'gtm_enabled',
   'gtm_container_id',
   'gtm_measurement_path',
 ] as const
@@ -35,7 +36,12 @@ export async function handleSiteSettings(request: any, env: any, corsHeaders: an
   if (request.method === 'GET') {
     const entries = await Promise.all(
       SITE_KEYS.map(async (key) => {
-        const defaultValue = key === 'site_support_email' ? DEFAULT_SUPPORT_EMAIL : ''
+        const defaultValue =
+          key === 'site_support_email'
+            ? DEFAULT_SUPPORT_EMAIL
+            : key === 'gtm_enabled'
+              ? '0'
+              : ''
         return [key, await getSetting(env, key, { defaultValue })]
       })
     )
