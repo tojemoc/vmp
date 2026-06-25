@@ -13,6 +13,15 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.cursor/**'
+      - '.agents/**'
+      - '.opencode/**'
+      - '.github/skills/**'
+      - '.github/prompts/**'
+      - '.github/agents/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -24,12 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           package-manager-cache: false
+
+      - uses: nrwl/nx-set-shas@v4
 
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
@@ -39,10 +51,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Typecheck
+      - name: Typecheck (affected)
         run: |
-          bash .github/scripts/nx-with-cloud-fallback.sh run-many -t typecheck --projects=@vmp/shared,@vmp/api,@vmp/web
-          bash .github/scripts/nx-with-cloud-fallback.sh run @vmp/web:typecheck:scripts
+          bash .github/scripts/nx-with-cloud-fallback.sh affected -t typecheck typecheck:scripts --base=$NX_BASE --head=$NX_HEAD
 
       - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
