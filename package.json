@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@nx/nuxt": "22.7.5",
+    "@nx/nuxt": "23.0.1",
     "@nx/vite": "22.7.5",
     "@vue/language-core": "^3.2.9",
     "eslint": "^10.4.0",
