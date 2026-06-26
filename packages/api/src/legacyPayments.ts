@@ -4,6 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js'
 import { syncNewsletterForStripeSubscription } from './brevo.js'
+import { getDb } from './d1Session.js'
 import { getSetting } from './settingsStore.js'
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 import {
@@ -34,10 +35,6 @@ function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, s
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   })
-}
-
-function getDb(env: any) {
-  return env.DB
 }
 
 function normalizePlanType(value: unknown): PlanType {
