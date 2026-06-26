@@ -266,7 +266,12 @@ export const strings: StringsDefinition = {
     `Váš prístup je aktívny, kým dokončíme migráciu. Ak ste predtým platili cez ${provider}, predplatné môže byť potrebné obnoviť. V prípade problémov nás kontaktujte.`,
   accountRelinkStatusNeedsRelink: 'Vyžaduje prepojenie',
   accountRelinkLegacyProviderFallback: 'nášho predchádzajúceho poskytovateľa',
+  accountRelinkCheckoutIntro: 'Vyberte plán a pokračujte na našu zabezpečenú platobnú stránku na prepojenie karty alebo bankového účtu.',
+  accountRelinkCheckoutWorking: 'Presmerovávam…',
   accountManagePaymentMethod: 'Spravovať platobnú metódu',
+  offlineDownloadMenuLabel: 'Stiahnuť na offline',
+  offlineDownloadResume: 'Pokračovať v sťahovaní',
+  offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 
   podcastRssTitle: 'Podcast RSS',

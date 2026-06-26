@@ -14,7 +14,7 @@
             {{ strings.accountRelinkBannerBody }}
           </p>
           <NuxtLink
-            to="/pricing"
+            to="/account?relink=1#relink-checkout"
             class="inline-flex items-center mt-3 text-sm font-semibold text-amber-900 dark:text-amber-100 hover:underline"
           >
             {{ strings.accountRelinkBannerCta }}
@@ -97,17 +97,14 @@
             </span>
           </div>
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-4">
-            <LegacyRelinkCheckout
-              return-path="/account"
-              force-legacy
-            />
+            <div id="relink-checkout">
+              <LegacyRelinkCheckout
+                return-path="/account"
+                force-legacy
+                :description="strings.accountRelinkCheckoutIntro"
+              />
+            </div>
             <div class="flex flex-wrap gap-3">
-            <NuxtLink
-              to="/pricing"
-              class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {{ strings.accountRelinkPaymentMethod }} ({{ strings.checkoutPremiumTitle }})
-            </NuxtLink>
             <a
               :href="supportMailto"
               class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"

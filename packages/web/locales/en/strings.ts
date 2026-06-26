@@ -264,7 +264,12 @@ export const strings: StringsDefinition = {
     `Your access is active while we complete the migration. If you previously paid via ${provider}, your subscription may need to be renewed. Contact us if you experience any issues.`,
   accountRelinkStatusNeedsRelink: 'Needs relink',
   accountRelinkLegacyProviderFallback: 'our previous provider',
+  accountRelinkCheckoutIntro: 'Choose your plan and continue to our secure payment page to link your card or bank account.',
+  accountRelinkCheckoutWorking: 'Redirecting…',
   accountManagePaymentMethod: 'Manage payment method',
+  offlineDownloadMenuLabel: 'Download for offline',
+  offlineDownloadResume: 'Resume download',
+  offlineTapToUnmute: 'Tap to unmute',
   networkError: 'Network error. Please try again.',
 
   podcastRssTitle: 'Podcast RSS',

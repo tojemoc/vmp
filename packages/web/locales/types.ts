@@ -249,7 +249,12 @@ export type StringsDefinition = {
   accountRelinkImportedBody: (provider: string) => string
   accountRelinkStatusNeedsRelink: string
   accountRelinkLegacyProviderFallback: string
+  accountRelinkCheckoutIntro: string
+  accountRelinkCheckoutWorking: string
   accountManagePaymentMethod: string
+  offlineDownloadMenuLabel: string
+  offlineDownloadResume: string
+  offlineTapToUnmute: string
   networkError: string
   podcastRssTitle: string
   podcastRssIntro: string
