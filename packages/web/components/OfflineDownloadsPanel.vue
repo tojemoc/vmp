@@ -122,6 +122,7 @@ async function handleUpdate(record: StoredDownload) {
 
 async function handlePause(record: StoredDownload) {
   workingId.value = record.videoId
+  error.value = null
   try {
     await pauseDownload(record.videoId)
   } catch (e: unknown) {

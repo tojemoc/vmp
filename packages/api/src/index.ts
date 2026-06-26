@@ -227,6 +227,22 @@ interface SegmentRateLimitBody {
   avgSegDur?: number | null
 }
 
+function clientDisconnectedResponse(): Response {
+  return new Response(JSON.stringify({ skipped: true, reason: 'client_disconnected' }), {
+    status: 499,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function isClientDisconnectError(err: unknown, request: Request): boolean {
+  if (request.signal.aborted) return true
+  if (!(err instanceof TypeError)) return false
+  const message = err.message.toLowerCase()
+  return message.includes('abort')
+    || message.includes('cancel')
+    || message.includes('disconnect')
+}
+
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
 // Used conditionally: only active when env.SEGMENT_RATE_LIMITER is present.
@@ -240,16 +256,16 @@ class SegmentRateLimiterDOBase {
   }
 
   async fetch(request: Request): Promise<Response> {
+    if (request.signal.aborted) {
+      return clientDisconnectedResponse()
+    }
+
     let body: SegmentRateLimitBody
     try {
       body = await request.json() as SegmentRateLimitBody
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (message.includes('client disconnected')) {
-        return new Response(JSON.stringify({ skipped: true, reason: 'client_disconnected' }), {
-          status: 499,
-          headers: { 'Content-Type': 'application/json' },
-        })
+      if (isClientDisconnectError(err, request)) {
+        return clientDisconnectedResponse()
       }
       throw err
     }

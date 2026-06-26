@@ -105,12 +105,6 @@
               />
             </div>
             <div class="flex flex-wrap gap-3">
-            <NuxtLink
-              to="/pricing"
-              class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {{ strings.accountRelinkPaymentMethod }} ({{ strings.checkoutPremiumTitle }})
-            </NuxtLink>
             <a
               :href="supportMailto"
               class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"

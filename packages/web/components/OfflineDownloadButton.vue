@@ -71,8 +71,14 @@ function closeMenuFromDocument(event: MouseEvent) {
 
 const status = computed(() => record.value?.status ?? progress.value.status ?? null)
 const percent = computed(() => {
-  if (!progress.value.totalBytes) return 0
-  return Math.min(100, Math.round((progress.value.bytesDownloaded / progress.value.totalBytes) * 100))
+  const liveTotal = progress.value.totalBytes
+  const liveBytes = progress.value.bytesDownloaded
+  const storedTotal = record.value?.totalBytes ?? 0
+  const storedBytes = record.value?.bytesDownloaded ?? 0
+  const totalBytes = liveTotal > 0 ? liveTotal : storedTotal
+  const bytesDownloaded = liveTotal > 0 ? liveBytes : storedBytes
+  if (!totalBytes) return 0
+  return Math.min(100, Math.round((bytesDownloaded / totalBytes) * 100))
 })
 const isActive = computed(() => status.value === 'downloading' || isDownloadActive(props.videoId))
 const showProgress = computed(() => isActive.value || status.value === 'paused')
@@ -147,17 +153,17 @@ async function handleRemove() {
       :aria-label="strings.offlineDownloadMenuLabel"
       @click.stop
     >
-      <p class="watch-offline-download-menu-title">{{ strings.offlineDownloadTitle }}</p>
+      <p class="watch-offline-download-menu-title text-xs font-semibold text-white dark:text-gray-100">{{ strings.offlineDownloadTitle }}</p>
 
       <div v-if="showProgress" class="space-y-2 mb-3">
-        <div class="h-1.5 rounded-full bg-white/20 overflow-hidden">
+        <div class="h-1.5 rounded-full bg-white/20 dark:bg-gray-700 overflow-hidden">
           <div class="h-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
         </div>
-        <p class="text-xs text-white/80">{{ strings.offlineDownloadProgress(percent) }}</p>
+        <p class="text-xs text-white/90 dark:text-gray-300">{{ strings.offlineDownloadProgress(percent) }}</p>
         <button
           v-if="isActive"
           type="button"
-          class="watch-offline-download-menu-item"
+          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
           role="menuitem"
           @click="handlePause"
         >
@@ -166,7 +172,7 @@ async function handleRemove() {
         <button
           v-else-if="status === 'paused'"
           type="button"
-          class="watch-offline-download-menu-item"
+          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
           role="menuitem"
           :disabled="working"
           @click="handleDownload"
@@ -180,7 +186,7 @@ async function handleRemove() {
           v-for="option in renditionOptions"
           :key="option"
           type="button"
-          class="watch-offline-download-menu-item"
+          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
           role="menuitemradio"
           :aria-checked="rendition === option"
           :disabled="working || status === 'completed'"
@@ -201,7 +207,7 @@ async function handleRemove() {
         <button
           v-if="!status || status === 'failed' || status === 'paused'"
           type="button"
-          class="watch-offline-download-menu-item watch-offline-download-menu-primary"
+          class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
           role="menuitem"
           :disabled="working"
           @click="handleDownload"
@@ -212,7 +218,7 @@ async function handleRemove() {
         <button
           v-if="status === 'update_available'"
           type="button"
-          class="watch-offline-download-menu-item watch-offline-download-menu-primary"
+          class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
           role="menuitem"
           :disabled="working"
           @click="handleDownload"
@@ -224,7 +230,7 @@ async function handleRemove() {
       <button
         v-if="status === 'completed' || status === 'update_available' || status === 'license_expired'"
         type="button"
-        class="watch-offline-download-menu-item"
+        class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
         role="menuitem"
         :disabled="working"
         @click="handleRemove"
@@ -232,8 +238,8 @@ async function handleRemove() {
         {{ strings.offlineDownloadRemove }}
       </button>
 
-      <p v-if="error" class="text-xs text-red-300 mt-2">{{ error }}</p>
-      <p v-else-if="status === 'failed' && record?.errorMessage" class="text-xs text-red-300 mt-2">
+      <p v-if="error" class="text-xs text-red-200 dark:text-red-400 mt-2">{{ error }}</p>
+      <p v-else-if="status === 'failed' && record?.errorMessage" class="text-xs text-red-200 dark:text-red-400 mt-2">
         {{ record.errorMessage }}
       </p>
     </div>
@@ -274,9 +280,6 @@ async function handleRemove() {
 }
 
 .watch-offline-download-menu-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
   margin-bottom: 0.5rem;
 }
 
@@ -288,8 +291,6 @@ async function handleRemove() {
   gap: 0.5rem;
   padding: 0.5rem 0.625rem;
   border-radius: 0.375rem;
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.92);
   text-align: left;
 }
 
