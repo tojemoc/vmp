@@ -29,7 +29,7 @@ export function getNativeEmailInboxHref(email = ''): string {
     if (GMAIL_DOMAINS.has(domain)) return 'googlegmail://'
     if (OUTLOOK_DOMAINS.has(domain)) return 'ms-outlook://emails/inbox'
     if (isIosLike()) return 'message://'
-    return 'ms-outlook://emails/inbox'
+    return 'message://'
   }
 
   if (/Macintosh|Mac OS X/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
