@@ -1,8 +1,8 @@
 import strings from '~/utils/strings'
 
 /**
- * After legacy (Qerko / eshop) checkout, the provider redirects back with ?legacy_order=...
- * Complete the order server-side and poll subscription until relink succeeds.
+ * After legacy (Qerko/eshop) checkout, the gateway redirects to return_url with ?legacy_order={orderId}.
+ * Complete the order server-side and poll subscription until active.
  */
 export function useLegacyCheckoutReturn() {
   const route = useRoute()
@@ -22,15 +22,15 @@ export function useLegacyCheckoutReturn() {
     if (!orderId) return { ok: false }
 
     try {
-      const res = await fetch(`${apiUrl}/api/payments/legacy/complete`, {
+      const completeRes = await fetch(`${apiUrl}/api/payments/legacy/complete`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({ orderId }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        return { ok: false, error: data.error ?? strings.checkoutStartFailed }
+      const completeData = await completeRes.json().catch(() => ({}))
+      if (!completeRes.ok) {
+        return { ok: false, error: completeData.error ?? strings.checkoutStartFailed }
       }
 
       const MAX_ATTEMPTS = 5

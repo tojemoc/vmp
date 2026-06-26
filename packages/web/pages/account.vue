@@ -96,11 +96,21 @@
               {{ strings.accountRelinkStatusNeedsRelink }}
             </span>
           </div>
-          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-5">
+          <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800 space-y-4">
             <div id="relink-checkout">
-              <LegacyRelinkCheckout return-path="/account" embedded />
+              <LegacyRelinkCheckout
+                return-path="/account"
+                force-legacy
+                :description="strings.accountRelinkCheckoutIntro"
+              />
             </div>
             <div class="flex flex-wrap gap-3">
+            <NuxtLink
+              to="/pricing"
+              class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {{ strings.accountRelinkPaymentMethod }} ({{ strings.checkoutPremiumTitle }})
+            </NuxtLink>
             <a
               :href="supportMailto"
               class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
@@ -344,13 +354,13 @@ const hasActiveSubscription = computed(() => {
 })
 
 const legacyManageUrl = computed(() => {
-  const sub = subscription.value as { legacyManageUrl?: string | null } | null
+  const sub = subscription.value
   const url = sub?.legacyManageUrl
   return typeof url === 'string' && url.trim() ? url.trim() : null
 })
 
 const showLegacyManageButton = computed(() => {
-  const sub = subscription.value as { showLegacyManageButton?: boolean; provider?: string; status?: string } | null
+  const sub = subscription.value
   if (!sub || sub.provider !== 'legacy') return false
   if (sub.showLegacyManageButton === false) return false
   return Boolean(legacyManageUrl.value) && ['active', 'needs_relink', 'past_due'].includes(sub.status ?? '')
@@ -358,6 +368,8 @@ const showLegacyManageButton = computed(() => {
 
 const legacyProviderDisplayName = computed(() => {
   const sub = subscription.value
+  const name = sub?.legacyProviderName?.trim()
+  if (name) return name
   if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy')
   return strings.accountRelinkLegacyProviderFallback
 })
@@ -473,13 +485,11 @@ onMounted(async () => {
     const result = await completeLegacyCheckoutReturn()
     if (result.ok || result.pending) {
       showWelcomeBanner.value = true
-      await clearLegacyOrderQuery({ relink: '1' })
+      await clearLegacyOrderQuery({ subscribed: '1' })
     } else {
       legacyCompletionError.value = result.error ?? strings.checkoutStartFailed
     }
-  }
-
-  if (returningFromStripe.value) {
+  } else if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()
     if (result.ok || result.pending) {
       showWelcomeBanner.value = true
@@ -489,7 +499,7 @@ onMounted(async () => {
     }
   }
 
-  if (showWelcomeBanner.value || returningFromStripe.value) {
+  if (showWelcomeBanner.value || returningFromStripe.value || returningFromLegacy.value) {
     // After checkout redirect the webhook may not have fired yet.
     // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
     const MAX_ATTEMPTS = 5

@@ -1,27 +1,85 @@
+<template>
+  <div class="space-y-4">
+    <p v-if="description" class="text-sm text-gray-600 dark:text-gray-400">
+      {{ description }}
+    </p>
+
+    <div v-if="loadingPrices" class="h-10 rounded-lg animate-pulse bg-gray-200 dark:bg-gray-800" />
+
+    <div v-else class="grid gap-2" :class="planGridClass">
+      <button
+        v-for="plan in visiblePlans"
+        :key="plan"
+        type="button"
+        class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
+        :class="planButtonClass(plan)"
+        @click="selectedPlan = plan"
+      >
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight text-gray-500 dark:text-gray-400">
+          {{ planLabel(plan) }}
+        </p>
+        <p class="text-base font-bold leading-tight text-gray-900 dark:text-white">
+          {{ formatPrice(planPrice(plan)) }}
+        </p>
+      </button>
+    </div>
+
+    <p v-if="checkoutError" class="text-sm text-red-600 dark:text-red-400">{{ checkoutError }}</p>
+
+    <button
+      type="button"
+      class="inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white dark:text-white text-sm font-medium rounded-lg transition-colors w-full sm:w-auto"
+      :disabled="startingCheckout || loadingPrices"
+      @click="startLegacyCheckout"
+    >
+      <span v-if="startingCheckout">{{ strings.checkoutRedirecting }}</span>
+      <span v-else>{{ ctaLabel }}</span>
+    </button>
+  </div>
+</template>
+
 <script setup lang="ts">
 import strings from '~/utils/strings'
 
 const props = withDefaults(defineProps<{
   returnPath?: string
-  embedded?: boolean
+  description?: string
+  ctaLabel?: string
+  /** When true, always show legacy checkout even if hidden for new subscribers. */
+  forceLegacy?: boolean
 }>(), {
   returnPath: '/account',
-  embedded: true,
+  ctaLabel: '',
+  forceLegacy: false,
 })
 
 const config = useRuntimeConfig()
 const apiUrl = config.public.apiUrl as string
-const { authHeader } = useAuth()
+const { isLoggedIn, authHeader, subscription } = useAuth()
+const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
+type Prices = Record<PlanType, number | null>
 
-const defaultPrices = { monthly: 6.90, yearly: 74.90, club: 109.00 }
-const prices = ref({ ...defaultPrices })
-const loadingPrices = ref(true)
-const priceError = ref(false)
 const selectedPlan = ref<PlanType>('monthly')
-const working = ref(false)
+const prices = ref<Prices>({ monthly: null, yearly: null, club: null })
+const allowedPlans = ref<PlanType[]>(['monthly', 'yearly', 'club'])
+const loadingPrices = ref(true)
+const startingCheckout = ref(false)
 const checkoutError = ref<string | null>(null)
+
+const ctaLabel = computed(() => props.ctaLabel || strings.accountRelinkPaymentMethod)
+const planGridClass = computed(() => 'grid-cols-3 max-[22rem]:grid-cols-1')
+
+const visiblePlans = computed(() =>
+  allowedPlans.value.filter((plan) => planPrice(plan) != null),
+)
+
+function planLabel(plan: PlanType): string {
+  if (plan === 'yearly') return strings.checkoutPlanYearly
+  if (plan === 'club') return strings.checkoutPlanClub
+  return strings.checkoutPlanMonthly
+}
 
 function formatPrice(amount: number | null | undefined): string {
   if (amount == null || !Number.isFinite(amount)) return '…'
@@ -30,56 +88,58 @@ function formatPrice(amount: number | null | undefined): string {
 
 function planPrice(plan: PlanType): number | null {
   const value = prices.value[plan]
-  return Number.isFinite(value) ? Number(value) : null
+  return value != null && Number.isFinite(value) ? Number(value) : null
 }
 
-const planButtonClass = computed(() => (plan: PlanType) => {
-  const selected = selectedPlan.value === plan
-  if (props.embedded) {
-    return selected
-      ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
-      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
-  }
-  return selected ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 bg-gray-800 hover:border-gray-500'
-})
+function planButtonClass(plan: PlanType): string {
+  return selectedPlan.value === plan
+    ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+    : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
+}
 
-const planLabelClass = computed(() =>
-  props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
-)
-const planPriceClass = computed(() =>
-  props.embedded ? 'text-gray-900 dark:text-white' : 'text-white',
-)
-const planSubtextClass = computed(() =>
-  props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500',
-)
+function parseNullablePrice(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
 
 async function loadPrices() {
   loadingPrices.value = true
-  priceError.value = false
+  checkoutError.value = null
   try {
     const res = await fetch(`${apiUrl}/api/account/pricing`)
-    if (!res.ok) {
-      priceError.value = true
-      return
-    }
-    const data = await res.json()
-    const legacyRaw = data?.pricesByProvider?.legacy ?? data ?? {}
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+
+    const legacyRaw = data?.pricesByProvider?.legacy ?? {}
     prices.value = {
-      monthly: Number(legacyRaw.monthly ?? data.monthly ?? defaultPrices.monthly),
-      yearly: Number(legacyRaw.yearly ?? data.yearly ?? defaultPrices.yearly),
-      club: Number(legacyRaw.club ?? data.club ?? defaultPrices.club),
+      monthly: legacyRaw.monthly != null ? parseNullablePrice(legacyRaw.monthly) : parseNullablePrice(data.monthly),
+      yearly: legacyRaw.yearly != null ? parseNullablePrice(legacyRaw.yearly) : parseNullablePrice(data.yearly),
+      club: legacyRaw.club != null ? parseNullablePrice(legacyRaw.club) : parseNullablePrice(data.club),
     }
-  } catch {
-    priceError.value = true
+
+    const allowed = Array.isArray(data.allowedPlans)
+      ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club')
+      : ['monthly', 'yearly', 'club']
+    allowedPlans.value = allowed.length ? allowed : ['monthly', 'yearly', 'club']
+    if (!allowedPlans.value.includes(selectedPlan.value)) {
+      selectedPlan.value = allowedPlans.value[0] ?? 'monthly'
+    }
+  } catch (e: unknown) {
+    checkoutError.value = e instanceof Error ? e.message : strings.checkoutPricesLoadFailed
   } finally {
     loadingPrices.value = false
   }
 }
 
-async function startLegacyRelink() {
-  if (working.value) return
-  working.value = true
+async function startLegacyCheckout() {
   checkoutError.value = null
+  if (!isLoggedIn.value) {
+    await startLoginFlow(props.returnPath)
+    return
+  }
+
+  startingCheckout.value = true
   try {
     const res = await fetch(`${apiUrl}/api/payments/legacy/checkout`, {
       method: 'POST',
@@ -95,68 +155,19 @@ async function startLegacyRelink() {
       checkoutError.value = data.error ?? strings.checkoutStartFailed
       return
     }
-    window.location.href = data.checkoutUrl
+    window.location.href = String(data.checkoutUrl)
   } catch {
     checkoutError.value = strings.networkError
   } finally {
-    working.value = false
+    startingCheckout.value = false
   }
 }
 
 onMounted(() => {
   void loadPrices()
 })
+
+watch(() => subscription.value?.status, (status) => {
+  if (status === 'needs_relink') void loadPrices()
+})
 </script>
-
-<template>
-  <div class="space-y-4">
-    <p class="text-sm text-gray-600 dark:text-gray-400">
-      {{ strings.accountRelinkCheckoutIntro }}
-    </p>
-
-    <div v-if="loadingPrices" class="grid grid-cols-3 gap-2">
-      <div
-        v-for="i in 3"
-        :key="i"
-        class="h-16 rounded-lg animate-pulse bg-gray-200 dark:bg-gray-800"
-      />
-    </div>
-
-    <div v-else-if="!priceError" class="grid grid-cols-3 gap-2 max-[22rem]:grid-cols-1">
-      <button
-        v-for="plan in (['monthly', 'yearly', 'club'] as const)"
-        :key="plan"
-        type="button"
-        class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
-        :class="planButtonClass(plan)"
-        @click="selectedPlan = plan"
-      >
-        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
-          {{ plan === 'monthly' ? strings.checkoutPlanMonthly : plan === 'yearly' ? strings.checkoutPlanYearly : strings.checkoutPlanClub }}
-        </p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">
-          {{ formatPrice(planPrice(plan)) }}
-        </p>
-        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">
-          {{ plan === 'monthly' ? strings.checkoutPerMonth : strings.checkoutPerYear }}
-        </p>
-      </button>
-    </div>
-
-    <p v-if="priceError" class="text-sm text-red-600 dark:text-red-400">
-      {{ strings.checkoutPricesLoadFailed }}
-    </p>
-    <p v-if="checkoutError" class="text-sm text-red-600 dark:text-red-400">
-      {{ checkoutError }}
-    </p>
-
-    <button
-      type="button"
-      class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
-      :disabled="working || loadingPrices || priceError"
-      @click="startLegacyRelink"
-    >
-      {{ working ? strings.accountRelinkCheckoutWorking : strings.accountRelinkPaymentMethod }}
-    </button>
-  </div>
-</template>
