@@ -2378,7 +2378,6 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
 <script setup lang="ts">
 import { sanitizeVideoSlug } from '@vmp/shared'
-import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
 import { buildHomepageRenderModel, assignGridPositions, layoutIncludesFeaturedRowBlock } from '~/composables/useHomepageLayout'
@@ -2542,7 +2541,6 @@ const saving = ref(false)
 const saveMessage = ref('')
 const saveMessageClass = ref('')
 const previewLockByVideoId = ref<Record<string, number>>({})
-const actualDurationByVideoId = ref<Record<string, number>>({})
 const statusUpdating = ref<Record<string, boolean>>({})
 const scheduleTextDraft = ref<Record<string, string>>({})
 const publishedTextDraft = ref<Record<string, string>>({})
@@ -3462,25 +3460,7 @@ const formatDateTime = (raw?: string | null) => {
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
-const getActualDuration = (video: Video) => actualDurationByVideoId.value[video.id] ?? video.full_duration
-
-const hydrateActualDurations = async () => {
-  const durations = await Promise.all(uploads.value.map(async (video) => {
-    try {
-      const res  = await fetch(
-        `${config.public.apiUrl}/api/video-access/${video.id}`,
-        { headers: authHeader() }
-      )
-      if (!res.ok) return [video.id, video.full_duration] as const
-      const data = await res.json()
-      const resolved = await resolvePlaylistDuration(data?.video?.playlistUrl)
-      return [video.id, resolved ?? video.full_duration] as const
-    } catch {
-      return [video.id, video.full_duration] as const
-    }
-  }))
-  actualDurationByVideoId.value = Object.fromEntries(durations)
-}
+const getActualDuration = (video: Video) => video.full_duration
 
 const defaultSplitChildren = (): Array<{ type: LeafBlockType, title: string, body: string, categoryId: string | null }> => ([
   { type: 'top_video', title: 'Top video', body: '', categoryId: null },
@@ -3803,7 +3783,6 @@ const loadVideos = async () => {
     for (const video of uploads.value) {
       previewLockByVideoId.value[video.id] = video.preview_duration
     }
-    await hydrateActualDurations()
   } catch (e: any) {
     saveMessage.value = `Failed to load videos: ${e.message}`
     saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'

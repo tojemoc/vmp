@@ -37,7 +37,9 @@ function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, s
 }
 
 function getDb(env: any) {
-  return env.DB
+  const db = env.DB || env.video_subscription_db
+  if (!db) throw new Error('D1 binding not found')
+  return db
 }
 
 function normalizePlanType(value: unknown): PlanType {
