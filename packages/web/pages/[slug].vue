@@ -30,7 +30,7 @@
 <script setup lang="ts">
 import type { CmsBlock, CmsPage, CmsRichTextBlock, CmsRichTextDocument } from '@vmp/shared'
 import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs'
-import { renderCmsRichTextHtml } from '~/utils/cmsRichText'
+import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls'
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -83,18 +83,7 @@ const imageIds = computed(() =>
 const imageUrls = ref<Record<string, string>>({})
 
 async function loadImageUrls() {
-  const urls: Record<string, string> = {}
-  await Promise.all(
-    imageIds.value.map(async (id) => {
-      try {
-        const res = await $fetch<{ media: { url?: string } }>(`${apiUrl}/api/cms/media/${id}`)
-        if (res.media?.url) urls[id] = res.media.url
-      } catch {
-        // ignore missing media
-      }
-    }),
-  )
-  imageUrls.value = urls
+  imageUrls.value = await fetchCmsMediaUrls(apiUrl, imageIds.value)
 }
 
 await loadImageUrls()

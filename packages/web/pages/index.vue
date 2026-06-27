@@ -291,6 +291,7 @@ import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderPage
 import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
 import { sizeUrl } from '~/composables/useThumbnail'
 import strings from '~/utils/strings'
+import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls'
 
 const { siteSettings } = useSiteSettings()
 usePageSeo(
@@ -442,19 +443,8 @@ const bannerImageIds = computed(() => {
 
 async function loadBannerImageUrls() {
   const apiBase = String(config.public.apiUrl || '').replace(/\/$/, '')
-  const urls: Record<string, string> = { ...bannerImageUrls.value }
-  await Promise.all(bannerImageIds.value.map(async (id) => {
-    if (urls[id]) return
-    try {
-      const res = await fetch(`${apiBase}/api/cms/media/${id}`)
-      if (!res.ok) return
-      const data = await res.json()
-      if (data?.media?.url) urls[id] = data.media.url
-    } catch {
-      // ignore missing media
-    }
-  }))
-  bannerImageUrls.value = urls
+  const fetched = await fetchCmsMediaUrls(apiBase, bannerImageIds.value)
+  bannerImageUrls.value = { ...bannerImageUrls.value, ...fetched }
 }
 
 function updateMobileViewport() {

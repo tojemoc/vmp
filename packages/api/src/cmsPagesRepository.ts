@@ -274,4 +274,15 @@ export class CmsPagesRepository {
     const row = await this.db.prepare(`SELECT * FROM cms_media WHERE id = ?`).bind(id).first<CmsMediaRow>()
     return row ? mapMediaRow(row, baseUrl) : null
   }
+
+  async getMediaByIds(ids: string[], baseUrl = ''): Promise<CmsMedia[]> {
+    const unique = [...new Set(ids.filter(Boolean))]
+    if (unique.length === 0) return []
+    const placeholders = unique.map(() => '?').join(', ')
+    const rows = await this.db
+      .prepare(`SELECT * FROM cms_media WHERE id IN (${placeholders})`)
+      .bind(...unique)
+      .all<CmsMediaRow>()
+    return (rows.results ?? []).map((row) => mapMediaRow(row, baseUrl))
+  }
 }

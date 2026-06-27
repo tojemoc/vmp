@@ -297,3 +297,14 @@ export async function handleCmsMediaById(request: Request, env: Env, corsHeaders
   if (!media) return jsonResponse({ error: 'Media not found' }, 404, corsHeaders)
   return jsonResponse({ media }, 200, corsHeaders)
 }
+
+export async function handleCmsMediaBatch(request: Request, env: Env, corsHeaders: Record<string, string>) {
+  if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  const url = new URL(request.url)
+  const rawIds = String(url.searchParams.get('ids') ?? '').trim()
+  if (!rawIds) return jsonResponse({ media: [] }, 200, corsHeaders)
+  const ids = rawIds.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 50)
+  const base = String(env.R2_BASE_URL ?? '').trim()
+  const media = await repo(env).getMediaByIds(ids, base)
+  return jsonResponse({ media }, 200, corsHeaders)
+}

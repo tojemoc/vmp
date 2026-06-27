@@ -26,6 +26,7 @@
 
 <script setup lang="ts">
 import type { CmsBlock, CmsImageBlock } from '@vmp/shared'
+import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls'
 
 type FooterLink = {
   id: string
@@ -59,18 +60,7 @@ const imageIds = computed(() =>
 const imageUrls = ref<Record<string, string>>({})
 
 async function loadImageUrls() {
-  const urls: Record<string, string> = {}
-  await Promise.all(
-    imageIds.value.map(async (id) => {
-      try {
-        const res = await $fetch<{ media: { url?: string } }>(`${apiUrl}/api/cms/media/${id}`)
-        if (res.media?.url) urls[id] = res.media.url
-      } catch {
-        // ignore missing media
-      }
-    }),
-  )
-  imageUrls.value = urls
+  imageUrls.value = await fetchCmsMediaUrls(apiUrl, imageIds.value)
 }
 
 watch(imageIds, () => { void loadImageUrls() }, { immediate: true })
