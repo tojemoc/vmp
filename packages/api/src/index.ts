@@ -29,6 +29,12 @@ import {
   requireAuth,
   requireRole,
 } from './auth.js'
+import {
+  handleAdminEInvoicingSettings,
+  handleAdminEInvoices,
+  handleAdminEInvoiceById,
+  handleAccountInvoices,
+} from './eInvoicing.js'
 import { isPrivateHost } from './is-private-host.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
 import { sendPushNotification } from './webpush.js'
@@ -227,6 +233,22 @@ interface SegmentRateLimitBody {
   avgSegDur?: number | null
 }
 
+function clientDisconnectedResponse(): Response {
+  return new Response(JSON.stringify({ skipped: true, reason: 'client_disconnected' }), {
+    status: 499,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function isClientDisconnectError(err: unknown, request: Request): boolean {
+  if (request.signal.aborted) return true
+  if (!(err instanceof TypeError)) return false
+  const message = err.message.toLowerCase()
+  return message.includes('abort')
+    || message.includes('cancel')
+    || message.includes('disconnect')
+}
+
 // ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
 // Binding is configured in wrangler.json under durable_objects.bindings.
 // Used conditionally: only active when env.SEGMENT_RATE_LIMITER is present.
@@ -240,7 +262,19 @@ class SegmentRateLimiterDOBase {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const body = await request.json() as SegmentRateLimitBody
+    if (request.signal.aborted) {
+      return clientDisconnectedResponse()
+    }
+
+    let body: SegmentRateLimitBody
+    try {
+      body = await request.json() as SegmentRateLimitBody
+    } catch (err) {
+      if (isClientDisconnectError(err, request)) {
+        return clientDisconnectedResponse()
+      }
+      throw err
+    }
     const identifier = body.identifier ?? 'unknown'
     const videoId = body.videoId ?? 'unknown'
     const avgSegDur = body.avgSegDur ?? null
@@ -524,6 +558,18 @@ const workerHandler = {
     if (url.pathname === '/api/admin/payments/settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminPaymentSettings(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/einvoicing/settings' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminEInvoicingSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/einvoicing/invoices' && request.method === 'GET') {
+      return handleAdminEInvoices(request, env, corsHeaders)
+    }
+    {
+      const eInvoiceById = url.pathname.match(/^\/api\/admin\/einvoicing\/invoices\/([^/]+)$/)
+      if (eInvoiceById?.[1] && request.method === 'GET') {
+        return handleAdminEInvoiceById(request, env, corsHeaders, eInvoiceById[1])
+      }
+    }
     if (url.pathname === '/api/admin/promotions/campaigns' && ['GET', 'POST', 'PATCH'].includes(request.method)) {
       return handleAdminPromoCampaigns(request, env, corsHeaders)
     }
@@ -776,6 +822,9 @@ const workerHandler = {
     }
     if (url.pathname === '/api/account/rss' && request.method === 'GET') {
       return handleGetAccountRss(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
+      return handleAccountInvoices(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/transfer-subscription' && request.method === 'POST') {
       return handleAccountTransferSubscription(request, env, corsHeaders)

@@ -26,7 +26,6 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@nuxtjs/color-mode',
     '@vite-pwa/nuxt',
-    '@saslavik/nuxt-gtm',
     '@sentry/nuxt/module',
   ],
 
@@ -34,15 +33,6 @@ export default defineNuxtConfig({
     org: 'tojemoc',
     project: 'vmp-fe-primary',
     authToken: process.env.SENTRY_AUTH_TOKEN,
-  },
-
-  gtm: {
-    id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
-    enabled: true,
-    loadScript: false,
-    enableRouterSync: true,
-    debug: process.env.NODE_ENV === 'development',
-    defer: false,
   },
 
   nitro: {
@@ -76,9 +66,6 @@ export default defineNuxtConfig({
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
       /** UI language for this deployment: `en`, `sk`, or `cs` (one locale per instance). */
       uiLocale: process.env.NUXT_PUBLIC_UI_LOCALE || 'en',
-      gtm: {
-        id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
-      },
       sentry: {
         dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
         tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),

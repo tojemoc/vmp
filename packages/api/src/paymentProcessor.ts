@@ -24,6 +24,7 @@ export { normalizeStripeStatus } from './stripeClient.js'
 import { isLegacyProviderConfigured } from './legacyProvider.js'
 import { startLegacyCheckout } from './legacyPayments.js'
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
+import { handleStripeInvoicePaid } from './eInvoicing.js'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
 type PaymentProvider = 'stripe' | 'legacy'
@@ -856,6 +857,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
             )
           }
+          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id))
         }
         break
       }

@@ -9,11 +9,17 @@ const {
   refreshDownloads,
   removeDownload,
   startDownload,
+  pauseDownload,
+  watchProgress,
+  isDownloadActive,
 } = useOfflineDownloads()
 
 const loading = ref(true)
 const workingId = ref<string | null>(null)
 const error = ref<string | null>(null)
+const progressByVideo = ref<Record<string, { percent: number; status: string | null }>>({})
+
+const unsubscribeFns: Array<() => void> = []
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -35,9 +41,30 @@ function statusLabel(record: StoredDownload): string {
   }
 }
 
+function bindProgressListeners(records: readonly StoredDownload[]) {
+  for (const unsub of unsubscribeFns) unsub()
+  unsubscribeFns.length = 0
+  for (const record of records) {
+    if (!['downloading', 'paused', 'failed'].includes(record.status) && !isDownloadActive(record.videoId)) {
+      continue
+    }
+    const unsub = watchProgress(record.videoId, (p) => {
+      const percent = p.totalBytes
+        ? Math.min(100, Math.round((p.bytesDownloaded / p.totalBytes) * 100))
+        : 0
+      progressByVideo.value = {
+        ...progressByVideo.value,
+        [record.videoId]: { percent, status: p.status },
+      }
+    })
+    unsubscribeFns.push(unsub)
+  }
+}
+
 onMounted(async () => {
   try {
     await refreshDownloads()
+    bindProgressListeners(downloads.value)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
   } finally {
@@ -45,11 +72,28 @@ onMounted(async () => {
   }
 })
 
+onUnmounted(() => {
+  for (const unsub of unsubscribeFns) unsub()
+})
+
+watch(downloads, (records) => {
+  bindProgressListeners(records)
+}, { deep: true })
+
 const quotaPercent = computed(() => {
   const { usedBytes, quotaBytes } = storageSummary.value
   if (!quotaBytes || quotaBytes <= 0) return null
   return Math.min(100, Math.round((usedBytes / quotaBytes) * 100))
 })
+
+function recordPercent(record: StoredDownload): number | null {
+  const live = progressByVideo.value[record.videoId]
+  if (live) return live.percent
+  if (record.status === 'downloading' && record.totalBytes > 0) {
+    return Math.min(100, Math.round((record.bytesDownloaded / record.totalBytes) * 100))
+  }
+  return null
+}
 
 async function handleRemove(record: StoredDownload) {
   if (!confirm(strings.value.offlineDownloadRemoveConfirm(record.videoTitle || record.videoId))) return
@@ -69,6 +113,18 @@ async function handleUpdate(record: StoredDownload) {
   error.value = null
   try {
     await startDownload(record.videoId, record.rendition)
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
+  } finally {
+    workingId.value = null
+  }
+}
+
+async function handlePause(record: StoredDownload) {
+  workingId.value = record.videoId
+  error.value = null
+  try {
+    await pauseDownload(record.videoId)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
   } finally {
@@ -118,7 +174,7 @@ async function handleUpdate(record: StoredDownload) {
         :key="record.videoId"
         class="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
       >
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <p class="font-medium text-gray-900 dark:text-white truncate">
             {{ record.videoTitle || record.videoId }}
           </p>
@@ -128,6 +184,20 @@ async function handleUpdate(record: StoredDownload) {
               · {{ formatBytes(record.bytesDownloaded) }}
             </span>
           </p>
+          <div
+            v-if="recordPercent(record) !== null"
+            class="mt-2 space-y-1"
+          >
+            <div class="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+              <div
+                class="h-full bg-blue-600 transition-all"
+                :style="{ width: `${recordPercent(record)}%` }"
+              />
+            </div>
+            <p class="text-xs text-gray-600 dark:text-gray-400">
+              {{ strings.offlineDownloadProgress(recordPercent(record) ?? 0) }}
+            </p>
+          </div>
         </div>
         <div class="flex flex-wrap gap-2 shrink-0">
           <NuxtLink
@@ -136,6 +206,24 @@ async function handleUpdate(record: StoredDownload) {
           >
             {{ strings.offlineDownloadPlay }}
           </NuxtLink>
+          <button
+            v-if="record.status === 'downloading' || isDownloadActive(record.videoId)"
+            type="button"
+            class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+            :disabled="workingId === record.videoId"
+            @click="handlePause(record)"
+          >
+            {{ strings.offlineDownloadPause }}
+          </button>
+          <button
+            v-if="record.status === 'paused' || record.status === 'failed'"
+            type="button"
+            class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white disabled:opacity-50"
+            :disabled="workingId === record.videoId"
+            @click="handleUpdate(record)"
+          >
+            {{ strings.offlineDownloadResume }}
+          </button>
           <button
             v-if="record.status === 'update_available'"
             type="button"
