@@ -9,13 +9,38 @@ export const DEV_UI_LOCALE_COOKIE = 'vmp_dev_ui_locale'
  * UI locale baked into this build from `NUXT_PUBLIC_UI_LOCALE`.
  * Production instances use this exclusively.
  */
+function readUiLocaleFromEnv(): string | undefined {
+  const fromImportMeta =
+    typeof import.meta !== 'undefined' ? import.meta.env?.NUXT_PUBLIC_UI_LOCALE : undefined
+  if (typeof fromImportMeta === 'string' && fromImportMeta) return fromImportMeta
+
+  const fromProcess = typeof process !== 'undefined' ? process.env.NUXT_PUBLIC_UI_LOCALE : undefined
+  if (typeof fromProcess === 'string' && fromProcess) return fromProcess
+
+  return undefined
+}
+
 export function getBuildUiLocale(): UiLocale {
   if (cachedBuildLocale) return cachedBuildLocale
-  const fromEnv =
-    (typeof import.meta !== 'undefined' && import.meta.env?.NUXT_PUBLIC_UI_LOCALE) ||
-    (typeof process !== 'undefined' ? process.env.NUXT_PUBLIC_UI_LOCALE : undefined)
-  cachedBuildLocale = parseUiLocale(typeof fromEnv === 'string' ? fromEnv : undefined)
-  return cachedBuildLocale
+
+  let fromEnv = readUiLocaleFromEnv()
+  if (!fromEnv) {
+    try {
+      const config = useRuntimeConfig()
+      const fromRuntime = config.public.uiLocale
+      if (typeof fromRuntime === 'string' && fromRuntime) fromEnv = fromRuntime
+    } catch {
+      // Outside Nuxt setup (e.g. static import timing) — fall through to default.
+    }
+  }
+
+  if (fromEnv) {
+    cachedBuildLocale = parseUiLocale(fromEnv)
+    return cachedBuildLocale
+  }
+
+  // No valid locale found — return fallback without caching.
+  return parseUiLocale(undefined)
 }
 
 /**
