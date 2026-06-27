@@ -46,6 +46,9 @@ export interface RoutingContext {
   now: Date
   skVoluntaryEnabled: boolean
   einvoicingEnabled: boolean
+  isdocEnabled: boolean
+  b2cMode: 'pdf_archive' | 'none'
+  skVoluntaryFrom: Date
 }
 
 export interface RoutingDecision {
@@ -81,6 +84,7 @@ export interface InvoiceDraftInput {
 }
 
 const SK_MANDATORY_DATE = new Date('2027-01-01T00:00:00.000Z')
+export const SK_VOLUNTARY_FROM_DATE = new Date('2026-05-15T00:00:00.000Z')
 const EU_COUNTRY_CODES = new Set([
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
   'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
@@ -158,6 +162,14 @@ export function resolveInvoiceRouting(
   const isB2C = !buyer.isBusiness || !hasBusinessVatId(buyer.vatId)
 
   if (isB2C) {
+    if (context.b2cMode === 'none') {
+      return {
+        format: 'none',
+        routing: 'not_required',
+        mandateApplies: false,
+        reason: 'B2C — einvoicing_b2c_mode=none; no structured invoice or PDF archive.',
+      }
+    }
     return {
       format: 'pdf_archive',
       routing: 'email_pdf',
@@ -168,7 +180,9 @@ export function resolveInvoiceRouting(
 
   if (isSkDomesticB2B(buyer, seller)) {
     const mandatory = context.now >= SK_MANDATORY_DATE
-    const voluntary = context.skVoluntaryEnabled && context.now < SK_MANDATORY_DATE
+    const voluntary = context.skVoluntaryEnabled
+      && context.now >= context.skVoluntaryFrom
+      && context.now < SK_MANDATORY_DATE
     if (mandatory || voluntary) {
       return {
         format: 'peppol_ubl',
@@ -188,11 +202,19 @@ export function resolveInvoiceRouting(
   }
 
   if (isCzDomesticB2B(buyer, seller)) {
+    if (context.isdocEnabled) {
+      return {
+        format: 'isdoc',
+        routing: 'isdoc_delivery',
+        mandateApplies: false,
+        reason: 'CZ domestic B2B — ISDOC/EN 16931 voluntary (buyer consent); no B2B mandate until EU ViDA (~2030).',
+      }
+    }
     return {
-      format: 'isdoc',
-      routing: 'isdoc_delivery',
+      format: 'pdf_archive',
+      routing: 'deferred',
       mandateApplies: false,
-      reason: 'CZ domestic B2B — ISDOC/EN 16931 voluntary (buyer consent); no B2B mandate until EU ViDA (~2030).',
+      reason: 'CZ domestic B2B — ISDOC disabled; deferred PDF archive until structured path is enabled.',
     }
   }
 
@@ -243,13 +265,13 @@ export function buildPeppolUblSkeleton(input: {
   const taxCategory = (input.vatRatePercent ?? 0) > 0 ? 'S' : 'Z'
   const taxPercent = input.vatRatePercent ?? 0
   const lines = input.lineItems.map((line, index) => {
+    const quantity = Math.max(Number(line.quantity) || 1, 1)
     const lineNet = (line.netAmountCents / 100).toFixed(2)
-    const lineTax = ((line.netAmountCents * (line.vatRatePercent ?? 0)) / 10000).toFixed(2)
-    const lineGross = ((line.netAmountCents + Number(lineTax) * 100) / 100).toFixed(2)
+    const unitPrice = (line.netAmountCents / quantity / 100).toFixed(2)
     return `
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="C62">${line.quantity}</cbc:InvoicedQuantity>
+    <cbc:InvoicedQuantity unitCode="C62">${quantity}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="${escapeXml(input.currency)}">${lineNet}</cbc:LineExtensionAmount>
     <cac:Item>
       <cbc:Name>${escapeXml(line.description)}</cbc:Name>
@@ -260,7 +282,7 @@ export function buildPeppolUblSkeleton(input: {
       </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
-      <cbc:PriceAmount currencyID="${escapeXml(input.currency)}">${lineNet}</cbc:PriceAmount>
+      <cbc:PriceAmount currencyID="${escapeXml(input.currency)}">${unitPrice}</cbc:PriceAmount>
     </cac:Price>
   </cac:InvoiceLine>`
   }).join('')
@@ -378,22 +400,19 @@ async function loadSellerProfile(env: any): Promise<SellerProfile> {
 }
 
 async function nextInvoiceSequence(db: any, jurisdiction: string, year: number): Promise<number> {
-  await db.prepare(`
-    INSERT INTO einvoicing_sequences (jurisdiction, year, last_number, updated_at)
-    VALUES (?, ?, 0, CURRENT_TIMESTAMP)
-    ON CONFLICT(jurisdiction, year) DO NOTHING
-  `).bind(jurisdiction, year).run()
-
-  await db.prepare(`
-    UPDATE einvoicing_sequences
-    SET last_number = last_number + 1, updated_at = CURRENT_TIMESTAMP
-    WHERE jurisdiction = ? AND year = ?
-  `).bind(jurisdiction, year).run()
-
   const row = await db.prepare(`
-    SELECT last_number FROM einvoicing_sequences WHERE jurisdiction = ? AND year = ? LIMIT 1
+    INSERT INTO einvoicing_sequences (jurisdiction, year, last_number, updated_at)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(jurisdiction, year) DO UPDATE SET
+      last_number = last_number + 1,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING last_number
   `).bind(jurisdiction, year).first()
-  return Number(row?.last_number ?? 1)
+  const sequence = Number(row?.last_number)
+  if (!Number.isFinite(sequence) || sequence < 1) {
+    throw new Error('Failed to allocate invoice sequence')
+  }
+  return sequence
 }
 
 function centsFromStripeAmount(value: unknown): number {
@@ -418,7 +437,7 @@ export function extractBuyerFromStripeInvoice(stripeInvoice: any, fallbackEmail?
     ? stripeInvoice.customer_address
     : null
   const taxIds = Array.isArray(stripeInvoice?.customer_tax_ids) ? stripeInvoice.customer_tax_ids : []
-  const primaryTax = taxIds.find((entry: any) => entry?.value) ?? stripeInvoice?.account_tax_ids?.[0]
+  const primaryTax = taxIds.find((entry: any) => entry?.value)
   const vatId = typeof primaryTax?.value === 'string'
     ? primaryTax.value
     : typeof stripeInvoice?.customer_tax_id === 'string'
@@ -426,8 +445,7 @@ export function extractBuyerFromStripeInvoice(stripeInvoice: any, fallbackEmail?
       : null
   const country = normalizeCountryCode(
     customerAddress?.country
-    || stripeInvoice?.customer_shipping?.address?.country
-    || stripeInvoice?.account_country,
+    || stripeInvoice?.customer_shipping?.address?.country,
   )
   const name = String(
     stripeInvoice?.customer_name
@@ -504,14 +522,28 @@ export async function createInvoiceFromStripe(env: any, params: {
   }
 
   const enabled = String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1'
+  if (!enabled) {
+    return { created: false, invoiceId: null, status: 'not_required', reason: 'E-invoicing disabled in admin settings.' }
+  }
+
   const skVoluntaryEnabled = String(await getSetting(env, 'einvoicing_sk_voluntary_enabled', { defaultValue: '0' })) === '1'
+  const isdocEnabled = String(await getSetting(env, 'einvoicing_isdoc_enabled', { defaultValue: '1' })) !== '0'
+  const b2cModeRaw = String(await getSetting(env, 'einvoicing_b2c_mode', { defaultValue: 'pdf_archive' }))
+  const b2cMode = b2cModeRaw === 'none' ? 'none' : 'pdf_archive'
   const seller = await loadSellerProfile(env)
   const buyer = extractBuyerFromStripeInvoice(stripeInvoice, params.userEmail)
   const routing = resolveInvoiceRouting(buyer, seller, {
     now: new Date(),
     skVoluntaryEnabled,
     einvoicingEnabled: enabled,
+    isdocEnabled,
+    b2cMode,
+    skVoluntaryFrom: SK_VOLUNTARY_FROM_DATE,
   })
+
+  if (routing.routing === 'not_required' || routing.format === 'none') {
+    return { created: false, invoiceId: null, status: 'not_required', reason: routing.reason }
+  }
 
   const issueDate = isoDateFromUnixSeconds(stripeInvoice?.status_transitions?.paid_at || stripeInvoice?.created)
   const year = Number(issueDate.slice(0, 4))
@@ -550,13 +582,9 @@ export async function createInvoiceFromStripe(env: any, params: {
     }
   }
 
-  const initialStatus: InvoiceStatus = routing.routing === 'not_required'
-    ? 'not_required'
-    : routing.format === 'none'
-      ? 'not_required'
-      : seller.legalName && seller.vatId
-        ? (routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery' ? 'queued' : 'draft')
-        : 'draft'
+  const initialStatus: InvoiceStatus = seller.legalName && seller.vatId
+    ? (routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery' ? 'queued' : 'draft')
+    : 'draft'
 
   await db.prepare(`
     INSERT INTO einvoices (
@@ -608,20 +636,16 @@ export async function createInvoiceFromStripe(env: any, params: {
 }
 
 export async function handleStripeInvoicePaid(env: any, db: any, stripeInvoice: any, userId: string) {
-  try {
-    const user = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first()
-    const sub = await db.prepare(
-      'SELECT plan_type FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
-    ).bind(userId).first()
-    await createInvoiceFromStripe(env, {
-      userId,
-      stripeInvoice,
-      planType: sub?.plan_type ? String(sub.plan_type) : null,
-      userEmail: user?.email ? String(user.email) : null,
-    })
-  } catch (err) {
-    console.error('[eInvoicing] handleStripeInvoicePaid failed', { userId, err })
-  }
+  const user = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first()
+  const sub = await db.prepare(
+    'SELECT plan_type FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+  ).bind(userId).first()
+  await createInvoiceFromStripe(env, {
+    userId,
+    stripeInvoice,
+    planType: sub?.plan_type ? String(sub.plan_type) : null,
+    userEmail: user?.email ? String(user.email) : null,
+  })
 }
 
 const ADMIN_SETTING_KEYS = [
@@ -680,7 +704,7 @@ export async function handleAdminEInvoicingSettings(request: any, env: any, cors
       },
       legalTimeline: {
         skMandatoryB2bDate: '2027-01-01',
-        skVoluntaryFrom: '2026-05-15',
+        skVoluntaryFrom: SK_VOLUNTARY_FROM_DATE.toISOString().slice(0, 10),
         czB2bMandate: 'none_announced',
         euCrossBorderViDA: '2030-07-01',
       },

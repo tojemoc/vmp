@@ -857,14 +857,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
             )
           }
-          try {
-            await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id))
-          } catch (einvErr) {
-            console.error(
-              '[stripe webhook] handleStripeInvoicePaid failed',
-              { fn: 'handleStripeInvoicePaid', userId: existing.user_id, stripeInvoiceId: invoice?.id, err: einvErr },
-            )
-          }
+          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id))
         }
         break
       }
