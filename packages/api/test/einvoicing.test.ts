@@ -4,6 +4,7 @@ import {
   buildPeppolUblSkeleton,
   extractBuyerFromStripeInvoice,
   formatInvoiceNumber,
+  hasMixedVatRates,
   isCzDomesticB2B,
   isSkDomesticB2B,
   resolveInvoiceRouting,
@@ -254,5 +255,35 @@ describe('buildPeppolUblSkeleton', () => {
     assert.match(xml, /<cbc:InvoicedQuantity unitCode="C62">4<\/cbc:InvoicedQuantity>/)
     assert.match(xml, /<cbc:LineExtensionAmount currencyID="EUR">40\.00<\/cbc:LineExtensionAmount>/)
     assert.match(xml, /<cbc:PriceAmount currencyID="EUR">10\.00<\/cbc:PriceAmount>/)
+  })
+
+  it('rejects mixed-rate line items before XML is built', () => {
+    assert.equal(hasMixedVatRates([
+      { description: 'Standard', quantity: 1, netAmountCents: 1000, vatRatePercent: 20 },
+      { description: 'Reduced', quantity: 1, netAmountCents: 500, vatRatePercent: 10 },
+    ]), true)
+
+    assert.throws(() => buildPeppolUblSkeleton({
+      invoiceNumber: 'VMP-SK-2027-000003',
+      issueDate: '2027-01-15',
+      currency: 'EUR',
+      seller: sellerSk,
+      buyer: {
+        country: 'SK',
+        vatId: 'SK2023456789',
+        name: 'Buyer s.r.o.',
+        email: 'buyer@example.com',
+        address: null,
+        isBusiness: true,
+      },
+      lineItems: [
+        { description: 'Standard plan', quantity: 1, netAmountCents: 1000, vatRatePercent: 20 },
+        { description: 'Add-on', quantity: 1, netAmountCents: 500, vatRatePercent: 10 },
+      ],
+      netAmountCents: 1500,
+      taxAmountCents: 250,
+      grossAmountCents: 1750,
+      vatRatePercent: 16.67,
+    }), /mixed_vat_rates/)
   })
 })

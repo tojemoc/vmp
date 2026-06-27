@@ -250,6 +250,16 @@ export function escapeXml(value: string): string {
     .replace(/'/g, '&apos;')
 }
 
+function normalizeVatRatePercent(rate: number | null | undefined): number {
+  if (rate == null || !Number.isFinite(rate)) return 0
+  return Math.round(rate * 100) / 100
+}
+
+export function hasMixedVatRates(lineItems: InvoiceLineItem[]): boolean {
+  const rates = new Set(lineItems.map((line) => normalizeVatRatePercent(line.vatRatePercent)))
+  return rates.size > 1
+}
+
 export function buildPeppolUblSkeleton(input: {
   invoiceNumber: string
   issueDate: string
@@ -262,12 +272,17 @@ export function buildPeppolUblSkeleton(input: {
   grossAmountCents: number
   vatRatePercent: number | null
 }): string {
+  if (hasMixedVatRates(input.lineItems)) {
+    throw new Error('mixed_vat_rates')
+  }
+
   const taxCategory = (input.vatRatePercent ?? 0) > 0 ? 'S' : 'Z'
   const taxPercent = input.vatRatePercent ?? 0
   const lines = input.lineItems.map((line, index) => {
     const quantity = Math.max(Number(line.quantity) || 1, 1)
     const lineNet = (line.netAmountCents / 100).toFixed(2)
     const unitPrice = (line.netAmountCents / quantity / 100).toFixed(2)
+    const lineTaxCategory = (line.vatRatePercent ?? 0) > 0 ? 'S' : 'Z'
     return `
   <cac:InvoiceLine>
     <cbc:ID>${index + 1}</cbc:ID>
@@ -276,7 +291,7 @@ export function buildPeppolUblSkeleton(input: {
     <cac:Item>
       <cbc:Name>${escapeXml(line.description)}</cbc:Name>
       <cac:ClassifiedTaxCategory>
-        <cbc:ID>${taxCategory}</cbc:ID>
+        <cbc:ID>${lineTaxCategory}</cbc:ID>
         <cbc:Percent>${line.vatRatePercent ?? 0}</cbc:Percent>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:ClassifiedTaxCategory>
@@ -561,30 +576,37 @@ export async function createInvoiceFromStripe(env: any, params: {
 
   let xmlPayload: string | null = null
   let xmlR2Key: string | null = null
+  let invoiceErrorMessage: string | null = null
   if (routing.format === 'peppol_ubl') {
-    xmlPayload = buildPeppolUblSkeleton({
-      invoiceNumber,
-      issueDate,
-      currency,
-      seller,
-      buyer,
-      lineItems,
-      netAmountCents,
-      taxAmountCents,
-      grossAmountCents,
-      vatRatePercent,
-    })
-    xmlR2Key = `einvoices/${invoiceId}/invoice.xml`
-    if (env.BUCKET && xmlPayload) {
-      await env.BUCKET.put(xmlR2Key, xmlPayload, {
-        httpMetadata: { contentType: 'application/xml' },
+    if (hasMixedVatRates(lineItems)) {
+      invoiceErrorMessage = 'Mixed VAT rates are not supported for Peppol UBL invoices.'
+    } else {
+      xmlPayload = buildPeppolUblSkeleton({
+        invoiceNumber,
+        issueDate,
+        currency,
+        seller,
+        buyer,
+        lineItems,
+        netAmountCents,
+        taxAmountCents,
+        grossAmountCents,
+        vatRatePercent,
       })
+      xmlR2Key = `einvoices/${invoiceId}/invoice.xml`
+      if (env.BUCKET && xmlPayload) {
+        await env.BUCKET.put(xmlR2Key, xmlPayload, {
+          httpMetadata: { contentType: 'application/xml' },
+        })
+      }
     }
   }
 
-  const initialStatus: InvoiceStatus = seller.legalName && seller.vatId
-    ? (routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery' ? 'queued' : 'draft')
-    : 'draft'
+  const initialStatus: InvoiceStatus = invoiceErrorMessage
+    ? 'failed'
+    : seller.legalName && seller.vatId
+      ? (routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery' ? 'queued' : 'draft')
+      : 'draft'
 
   await db.prepare(`
     INSERT INTO einvoices (
@@ -593,14 +615,14 @@ export async function createInvoiceFromStripe(env: any, params: {
       buyer_country, buyer_vat_id, buyer_name, buyer_email, buyer_address_json,
       buyer_peppol_endpoint_id, buyer_peppol_scheme_id,
       seller_jurisdiction, format, routing, status, mandate_applies,
-      xml_payload_r2_key, idempotency_key, created_at, updated_at
+      xml_payload_r2_key, idempotency_key, error_message, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?,
       ?, ?, ?, ?, ?,
-      ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
   `).bind(
     invoiceId,
@@ -630,6 +652,7 @@ export async function createInvoiceFromStripe(env: any, params: {
     routing.mandateApplies ? 1 : 0,
     xmlR2Key,
     idempotencyKey,
+    invoiceErrorMessage,
   ).run()
 
   return { created: true, invoiceId, status: initialStatus, reason: routing.reason }
