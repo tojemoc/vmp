@@ -53,6 +53,33 @@
         </div>
       </div>
 
+      <!-- Video Not Found -->
+      <div v-else-if="showVideoNotFound" class="max-w-6xl mx-auto space-y-8">
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-8 text-center">
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">{{ strings.videoNotFoundTitle }}</h1>
+          <p class="text-gray-600 dark:text-gray-400 mb-6">{{ strings.videoNotFoundMessage }}</p>
+          <NuxtLink
+            to="/"
+            class="inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            {{ strings.backToHomepage }}
+          </NuxtLink>
+        </div>
+
+        <div v-if="recommendations.length" class="space-y-4">
+          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">{{ strings.videoNotFoundSuggestions }}</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <VideoCard
+              v-for="rec in recommendations"
+              :key="rec.id"
+              :video="rec"
+              :show-description="true"
+              :show-relative-timestamp="true"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Error State -->
       <div v-else-if="error" class="max-w-4xl mx-auto">
         <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6">
@@ -104,6 +131,18 @@
             </div>
 
             <button
+              v-if="autoplayMuting && !autoplayBlocked"
+              type="button"
+              class="absolute top-3 right-3 z-20 inline-flex items-center gap-2 rounded-full bg-black/70 border border-white/30 px-3 py-1.5 text-sm font-medium text-white dark:text-gray-100 shadow-lg"
+              @click="handleUnmuteBannerClick"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+              </svg>
+              <span class="text-white dark:text-gray-100">{{ strings.offlineTapToUnmute }}</span>
+            </button>
+
+            <button
               v-if="autoplayBlocked"
               type="button"
               class="absolute inset-0 z-20 flex items-center justify-center"
@@ -129,6 +168,8 @@
               @touchstart.passive="handlePlayerTouchStart"
               @touchmove.passive="handlePlayerTouchMove"
               @touchend.passive="handlePlayerTouchEnd"
+              @mediaplayrequest.capture="handleMediaPlayRequest"
+              @mediapauserequest.capture="handleMediaPauseRequest"
             >
               <videojs-video
                 ref="videoElement"
@@ -252,6 +293,11 @@
                     </svg>
                   </button>
                   <media-playback-rate-menu-button class="watch-playback-rate-menu-button hidden sm:inline-flex"></media-playback-rate-menu-button>
+                  <OfflineDownloadButton
+                    v-if="videoData.hasAccess"
+                    :video-id="videoId"
+                    :video-title="videoData.video.title"
+                  />
                   <button
                     type="button"
                     class="watch-icon-button watch-settings-menu-button sm:hidden"
@@ -366,6 +412,16 @@
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
               {{ videoData.video.title }}
             </h1>
+
+            <div
+              v-if="playingOffline"
+              class="mb-4 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
+            >
+              <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+              </svg>
+              <span>{{ strings.offlinePlaybackBadge }}</span>
+            </div>
 
             <div class="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400 mb-4">
               <span
@@ -500,10 +556,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { useRuntimeConfig } from '#app'
+import { useRuntimeConfig, setResponseStatus } from '#app'
+import { canonicalWatchToken } from '@vmp/shared'
 import 'media-chrome'
 import 'media-chrome/menu'
-import 'videojs-video-element'
+import { trackOfflineEvent } from '~/utils/offline/analytics'
 import type { Broadcast, MultiBackend } from '@moq/watch'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/useMoqLivePlayerControls'
@@ -522,18 +579,60 @@ type VideoMetaResponse = {
   title: string
   description: string
   thumbnail_url: string | null
+  canonicalWatchPath?: string
 }
 
-const videoIdParam = computed(() => String(route.params.videoId ?? ''))
+type VideoMetaAsyncValue = {
+  meta: VideoMetaResponse | null
+  notFound: boolean
+}
 
-const { data: videoMeta } = await useAsyncData(
+const emptyVideoMeta = (): VideoMetaAsyncValue => ({ meta: null, notFound: false })
+
+const videoIdParam = computed(() => String(route.params.videoId ?? '').trim())
+
+const { data: videoMetaState, pending: videoMetaPending } = await useAsyncData(
   () => `video-meta-${videoIdParam.value}`,
-  () =>
-    $fetch<VideoMetaResponse>(
-      `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
-    ).catch(() => null),
+  async () => {
+    if (!videoIdParam.value) return emptyVideoMeta()
+    try {
+      const meta = await $fetch<VideoMetaResponse>(
+        `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
+      )
+      return { meta, notFound: false }
+    } catch (error: any) {
+      const status = error?.statusCode ?? error?.response?.status ?? error?.status
+      if (status === 404) return { meta: null, notFound: true }
+      return emptyVideoMeta()
+    }
+  },
   { watch: [videoIdParam] },
 )
+
+const videoMeta = computed(() => videoMetaState.value?.meta ?? null)
+const videoNotFound = computed(() => videoMetaState.value?.notFound === true)
+const accessNotFound = ref(false)
+const showVideoNotFound = computed(() => videoNotFound.value || accessNotFound.value)
+
+function markVideoNotFoundResponse() {
+  accessNotFound.value = true
+  if (import.meta.server) {
+    setResponseStatus(404)
+  }
+}
+
+const canonicalWatchPath = computed(() => {
+  if (!videoMeta.value) return null
+  return videoMeta.value.canonicalWatchPath
+    ?? `/watch/${encodeURIComponent(canonicalWatchToken(videoMeta.value))}`
+})
+
+if (videoMeta.value && canonicalWatchPath.value) {
+  const canonicalToken = decodeURIComponent(canonicalWatchPath.value.replace(/^\/watch\//, ''))
+  if (videoIdParam.value && videoIdParam.value !== canonicalToken) {
+    await navigateTo(canonicalWatchPath.value, { redirectCode: 301 })
+  }
+}
 
 usePageSeo(
   computed(() => ({
@@ -567,12 +666,19 @@ const ensureMoqModules = async () => {
 // For logged-in users the API looks up their subscription and returns the
 // correct hasAccess / playlistUrl for their plan.
 const { isLoggedIn, authHeader } = useAuth()
+const { getOfflineSource } = useOfflineDownloads()
+const playingOffline = ref(false)
 const { startLoginFlow } = useLoginFlow()
 const {
   returningFromStripe,
   completeStripeCheckoutReturn,
   clearStripeSessionQuery,
 } = useStripeCheckoutReturn()
+const {
+  returningFromLegacy,
+  completeLegacyCheckoutReturn,
+  clearLegacyOrderQuery,
+} = useLegacyCheckoutReturn()
 
 type MediaLikeElement = HTMLElement & {
   src: string
@@ -803,6 +909,77 @@ const getNativeVideoElement = (media: MediaLikeElement | null = videoElement.val
   return shadowVideo instanceof HTMLVideoElement ? shadowVideo : null
 }
 
+/** Native <video> for seek/pause/time — reliable before videojs-video fully upgrades. */
+const getPlaybackVideo = (media: MediaLikeElement | null = videoElement.value): WebKitVideoElement | null =>
+  getNativeVideoElement(media)
+
+const resolveTimeUpdateTarget = (target: EventTarget | null): WebKitVideoElement | null => {
+  if (target instanceof HTMLVideoElement) return target
+  if (target && typeof target === 'object') {
+    return getPlaybackVideo(target as MediaLikeElement)
+  }
+  return getPlaybackVideo()
+}
+
+const setPlaybackTime = (seconds: number, media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    native.currentTime = seconds
+    return
+  }
+  if (media && 'currentTime' in media) media.currentTime = seconds
+}
+
+const pausePlayback = (media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    native.pause()
+    return
+  }
+  const el = media as (MediaLikeElement & { api?: { pause?: () => void } }) | null
+  if (el?.api && typeof el.api.pause === 'function') {
+    el.api.pause()
+    return
+  }
+  if (media && typeof media.pause === 'function') media.pause()
+}
+
+const playPlayback = async (media: MediaLikeElement | null = videoElement.value) => {
+  const native = getPlaybackVideo(media)
+  if (native) {
+    await native.play().catch(() => {})
+    return
+  }
+  const el = media as (MediaLikeElement & { api?: { play?: () => Promise<void> | void } }) | null
+  if (el?.api && typeof el.api.play === 'function') {
+    await Promise.resolve(el.api.play()).catch(() => {})
+    return
+  }
+  if (media && typeof media.play === 'function') {
+    await media.play().catch(() => {})
+  }
+}
+
+const handleMediaPauseRequest = (event: Event) => {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  pausePlayback()
+}
+
+const handleMediaPlayRequest = (event: Event) => {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  void playPlayback()
+}
+
+const handleUnmuteBannerClick = async () => {
+  const video = videoElement.value
+  if (!video) return
+  video.muted = false
+  autoplayMuting.value = false
+  await playPlayback(video)
+}
+
 const isIosLikeDevice = () => {
   if (import.meta.server) return false
   const nav = navigator
@@ -945,8 +1122,9 @@ const toggleMobileSettings = () => {
 
 const handleMobilePlaybackRate = (rate: number) => {
   setPlaybackRate(rate)
-  const video = videoElement.value
-  if (video) video.playbackRate = rate
+  const native = getPlaybackVideo()
+  if (native) native.playbackRate = rate
+  else if (videoElement.value) videoElement.value.playbackRate = rate
   mobileSettingsOpen.value = false
 }
 
@@ -1033,7 +1211,8 @@ const handleDocumentFullscreenChange = () => {
 // ── Event handlers ────────────────────────────────────────────────────────────
 
 const handleTimeUpdate = (event: Event) => {
-  const video = event.target as HTMLVideoElement
+  const video = resolveTimeUpdateTarget(event.target)
+  if (!video) return
   currentTime.value = video.currentTime
   enforcePreviewLimit(video)
 }
@@ -1045,7 +1224,8 @@ usePushAttribution({
 })
 
 const handleSeeking = (event: Event) => {
-  const video = event.target as HTMLVideoElement
+  const video = resolveTimeUpdateTarget(event.target)
+  if (!video) return
   enforcePreviewLimit(video)
 }
 
@@ -1057,19 +1237,19 @@ const handleSeekbarInput = (event: Event) => {
   if (!videoData.value?.hasAccess && previewDuration && requestedTime >= previewDuration) {
     if (isFullPublicPreview.value) {
       currentTime.value = requestedTime
-      if (videoElement.value) videoElement.value.currentTime = requestedTime
+      setPlaybackTime(requestedTime)
       return
     }
     input.value        = String(previewDuration)
     currentTime.value  = previewDuration
-    const video = videoElement.value
-    if (video) { video.currentTime = previewDuration; video.pause() }
+    setPlaybackTime(previewDuration)
+    pausePlayback()
     showPremiumOverlay.value = true
     return
   }
 
   currentTime.value = requestedTime
-  if (videoElement.value) videoElement.value.currentTime = requestedTime
+  setPlaybackTime(requestedTime)
 }
 
 const enforcePreviewLimit = (video: HTMLVideoElement) => {
@@ -1090,6 +1270,20 @@ onMounted(async () => {
   document.addEventListener('touchstart', closeMobileSettingsFromDocument)
 
   measureDescriptionClamp()
+
+  if (returningFromLegacy.value) {
+    const result = await completeLegacyCheckoutReturn()
+    if (result.ok || result.pending) {
+      showPremiumOverlay.value = false
+      await loadVideoForRoute(videoId.value)
+      await clearLegacyOrderQuery()
+      return
+    }
+    error.value = result.error ?? strings.checkoutStartFailed
+    showPremiumOverlay.value = true
+    await clearLegacyOrderQuery()
+    return
+  }
 
   if (returningFromStripe.value) {
     const result = await completeStripeCheckoutReturn()
@@ -1140,6 +1334,7 @@ let handleCanPlay:        (() => void) | null = null
 let handleRateChange:     (() => void) | null = null
 let handleNativeBeginFullscreen: (() => void) | null = null
 let handleNativeEndFullscreen:   (() => void) | null = null
+let handleNativeTimeUpdate:      (() => void) | null = null
 let nativeVideoWithListeners: HTMLVideoElement | null = null
 type Closable = { close?: () => void }
 type LivestreamRuntime = {
@@ -1175,6 +1370,12 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
   )
   ensureCurrent()
 
+  if (videoResponse.status === 404) {
+    markVideoNotFoundResponse()
+    await loadBrowseRecommendations(options.signal)
+    return
+  }
+
   if (videoResponse.status === 429) {
     const data = await videoResponse.json().catch(() => ({}))
     ensureCurrent()
@@ -1191,6 +1392,7 @@ const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
   if (!videoResponse.ok) throw new Error(strings.videoLoadFailed)
   const data = await videoResponse.json()
   ensureCurrent()
+  accessNotFound.value = false
   videoData.value = data
   rateLimited.value = false
   rateLimitRetryAfter.value = null
@@ -1238,6 +1440,35 @@ type LoadVideoForRouteOptions = {
   guard?: () => boolean
 }
 
+const loadBrowseRecommendations = async (signal?: AbortSignal) => {
+  recommendations.value = []
+  try {
+    const recsResponse = await fetch(`${config.public.apiUrl}/api/videos`, { signal })
+    if (!recsResponse.ok) return
+    const data = await recsResponse.json()
+    recommendations.value = (data.videos || []).slice(0, 9)
+  } catch (e: any) {
+    if (e?.name === 'AbortError' || signal?.aborted) throw e
+  }
+}
+
+const waitForVideoMeta = (signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (!videoMetaPending.value) {
+    resolve()
+    return
+  }
+  const stopPending = watch(videoMetaPending, (pending) => {
+    if (!pending) {
+      stopPending()
+      resolve()
+    }
+  })
+  signal?.addEventListener('abort', () => {
+    stopPending()
+    reject(new DOMException('Request aborted', 'AbortError'))
+  }, { once: true })
+})
+
 const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRouteOptions = {}) => {
   const guard = options.guard ?? (() => true)
   const ensureCurrent = () => {
@@ -1248,6 +1479,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
   ensureCurrent()
 
+  accessNotFound.value = false
   autoplayBlocked.value = false
   autoplayMuting.value = false
   buffering.value = false
@@ -1255,9 +1487,22 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   showPremiumOverlay.value = false
   rateLimited.value = false
   currentTime.value = 0
+  playingOffline.value = false
   loading.value = true
   error.value = null
   teardownLivestreamRuntime()
+
+  await waitForVideoMeta(options.signal)
+  ensureCurrent()
+
+  if (videoNotFound.value) {
+    markVideoNotFoundResponse()
+    recommendations.value = []
+    await loadBrowseRecommendations(options.signal)
+    ensureCurrent()
+    loading.value = false
+    return
+  }
 
   try {
     await fetchVideoAccess({
@@ -1266,6 +1511,11 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
       guard
     })
     ensureCurrent()
+
+    if (accessNotFound.value || showVideoNotFound.value) {
+      loading.value = false
+      return
+    }
 
     recommendations.value = []
     try {
@@ -1306,7 +1556,20 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     const playlistUrl = videoData.value?.video?.playlistUrl
     if (playlistUrl && !rateLimited.value) {
       error.value = null
-      await initializeVideoElement(playlistUrl, guard, options.signal)
+      let resolvedPlaylist = playlistUrl
+      if (videoData.value?.hasAccess) {
+        try {
+          const offline = await getOfflineSource(String(videoData.value?.videoId ?? targetVideoId))
+          if (offline?.playlistUrl) {
+            resolvedPlaylist = offline.playlistUrl
+            playingOffline.value = true
+            trackOfflineEvent('offline_playback_started', { videoId: targetVideoId })
+          }
+        } catch {
+          playingOffline.value = false
+        }
+      }
+      await initializeVideoElement(resolvedPlaylist, guard, options.signal)
       ensureCurrent()
     }
   } catch (e: any) {
@@ -1455,6 +1718,12 @@ const initializeVideoElement = async (
     }
     nativeVideo.addEventListener('webkitbeginfullscreen', handleNativeBeginFullscreen)
     nativeVideo.addEventListener('webkitendfullscreen', handleNativeEndFullscreen)
+    handleNativeTimeUpdate = () => {
+      if (!isCurrentInvocation()) return
+      currentTime.value = nativeVideo.currentTime
+      enforcePreviewLimit(nativeVideo)
+    }
+    nativeVideo.addEventListener('timeupdate', handleNativeTimeUpdate)
   }
   ensureActive()
 
@@ -1561,9 +1830,21 @@ const handleUserPlaybackInteraction = (event: PointerEvent | MouseEvent | Event)
 }
 
 watch(
+  [videoIdParam, videoMeta, canonicalWatchPath],
+  async ([param, meta, path]) => {
+    if (import.meta.server || !meta || !path || !param) return
+    const canonicalToken = decodeURIComponent(path.replace(/^\/watch\//, ''))
+    if (param !== canonicalToken) {
+      await navigateTo(path, { replace: true })
+    }
+  },
+)
+
+watch(
   () => route.params.videoId,
   async (newVideoId, oldVideoId, onCleanup) => {
     if (newVideoId === oldVideoId) return
+    accessNotFound.value = false
     descriptionExpanded.value = false
     descriptionClamped.value = false
     const { abortController, isCurrentInvocation, cancel } = createLoadInvocation()
@@ -1571,6 +1852,14 @@ watch(
     onCleanup(() => {
       cancel()
     })
+
+    try {
+      await waitForVideoMeta(abortController.signal)
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || abortController.signal.aborted) return
+      throw e
+    }
+    if (!isCurrentInvocation()) return
 
     await loadVideoForRoute(String(newVideoId), {
       signal: abortController.signal,
@@ -1598,6 +1887,10 @@ function teardownVideoListeners() {
     if (handleNativeEndFullscreen) {
       nativeVideoWithListeners.removeEventListener('webkitendfullscreen', handleNativeEndFullscreen)
       handleNativeEndFullscreen = null
+    }
+    if (handleNativeTimeUpdate) {
+      nativeVideoWithListeners.removeEventListener('timeupdate', handleNativeTimeUpdate)
+      handleNativeTimeUpdate = null
     }
     nativeVideoWithListeners = null
   }

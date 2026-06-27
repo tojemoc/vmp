@@ -5,6 +5,8 @@ import {
   CHUNK_RELOAD_ATTEMPTED_AT_KEY,
   CHUNK_RELOAD_THROTTLE_MS,
   isChunkLoadErrorReason,
+  isCriticalAssetLoadTarget,
+  isNuxtAssetUrl,
   shouldAttemptChunkReload,
 } from '../utils/chunkLoadRecovery'
 
@@ -39,6 +41,43 @@ describe('isChunkLoadErrorReason', () => {
 
   it('does not match unrelated promise rejections', () => {
     assert.equal(isChunkLoadErrorReason(new TypeError('Cannot read properties of undefined')), false)
+  })
+
+  it('matches transient 503 asset failures', () => {
+    assert.equal(isChunkLoadErrorReason(new TypeError('Failed to fetch /_nuxt/app.abc.js: 503 Service Unavailable')), true)
+  })
+})
+
+describe('isCriticalAssetLoadTarget', () => {
+  it('treats script and stylesheet links as critical', () => {
+    const script = { tagName: 'SCRIPT', src: '/_nuxt/entry.js' } as HTMLScriptElement
+    const stylesheet = { tagName: 'LINK', rel: 'stylesheet', href: '/_nuxt/entry.css' } as HTMLLinkElement
+    const modulepreload = { tagName: 'LINK', rel: 'modulepreload', href: '/_nuxt/entry.js' } as HTMLLinkElement
+
+    assert.equal(isCriticalAssetLoadTarget(script), true)
+    assert.equal(isCriticalAssetLoadTarget(stylesheet), true)
+    assert.equal(isCriticalAssetLoadTarget(modulepreload), true)
+  })
+
+  it('ignores rel=prefetch link failures (Cloudflare Worker 503 noise)', () => {
+    const prefetch = { tagName: 'LINK', rel: 'prefetch', href: '/_nuxt/lazy.js' } as HTMLLinkElement
+    assert.equal(isCriticalAssetLoadTarget(prefetch), false)
+  })
+})
+
+describe('isNuxtAssetUrl', () => {
+  it('matches /_nuxt chunk paths', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_nuxt/entry.js'), true)
+  })
+
+  it('matches service worker and workbox assets', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/sw.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/workbox-abc123.js'), true)
+    assert.equal(isNuxtAssetUrl('https://vmp.tjm.sk/_workbox-abc123.js'), true)
+  })
+
+  it('ignores unrelated URLs', () => {
+    assert.equal(isNuxtAssetUrl('https://vmp-api.tjm.sk/api/health'), false)
   })
 })
 

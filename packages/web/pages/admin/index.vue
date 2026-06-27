@@ -2375,6 +2375,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 </template>
 
 <script setup lang="ts">
+import { sanitizeVideoSlug } from '@vmp/shared'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
@@ -2568,12 +2569,28 @@ const adminTabs = computed(() =>
     return true
   })
 )
+type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>
+type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null
+
+function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
+  const refs = Array.isArray(inputRef) ? inputRef : [inputRef]
+  return refs.find((input): input is InlineEditInput =>
+    !!input && typeof input.focus === 'function' && typeof input.select === 'function'
+  ) ?? null
+}
+
+function focusInlineEditInput(inputRef: InlineEditInputRef) {
+  const input = findInlineEditInput(inputRef)
+  input?.focus()
+  input?.select()
+}
+
 const editingTitle = ref<{ id: string; value: string } | null>(null)
-const titleInputEl = ref<HTMLInputElement | null>(null)
+const titleInputEl = ref<InlineEditInputRef>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
-const slugInputEl  = ref<HTMLInputElement | null>(null)
+const slugInputEl  = ref<InlineEditInputRef>(null)
 const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
-const legacySlugInputEl = ref<HTMLInputElement | null>(null)
+const legacySlugInputEl = ref<InlineEditInputRef>(null)
 const scheduleModal = ref<{
   open: boolean
   videoId: string | null
@@ -5549,8 +5566,7 @@ function formatSeconds(total: number): string {
 async function startTitleEdit(video: Video) {
   editingTitle.value = { id: video.id, value: video.title }
   await nextTick()
-  titleInputEl.value?.focus()
-  titleInputEl.value?.select()
+  focusInlineEditInput(titleInputEl.value)
 }
 
 async function saveTitleEdit(video: Video) {
@@ -6297,15 +6313,14 @@ async function runConfirmedAction() {
 async function startSlugEdit(video: Video) {
   editingSlug.value = { id: video.id, value: video.slug ?? '' }
   await nextTick()
-  slugInputEl.value?.focus()
-  slugInputEl.value?.select()
+  focusInlineEditInput(slugInputEl.value)
 }
 
 async function saveSlugEdit(video: Video) {
   const editing = editingSlug.value
   if (!editing || editing.id !== video.id) return
   const slugInput = editing.value.trim()
-  const requestedSlug = slugInput ? slugInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '') : null
+  const requestedSlug = slugInput ? (sanitizeVideoSlug(slugInput) || null) : null
   editingSlug.value = null
   if (requestedSlug === (video.slug ?? null)) return
   try {
@@ -6320,10 +6335,11 @@ async function saveSlugEdit(video: Video) {
     }
     const data = await res.json().catch(() => ({}))
     const normalizedSlug = data?.video?.slug ?? requestedSlug
+    const normalizedLegacySlug = data?.video?.legacy_slug ?? video.legacy_slug ?? null
     const idx = uploads.value.findIndex(v => v.id === video.id)
     if (idx !== -1) {
       const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, slug: normalizedSlug }
+      uploads.value[idx] = { ...cur, slug: normalizedSlug, legacy_slug: normalizedLegacySlug }
     }
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
   } catch (e: any) {
@@ -6334,17 +6350,14 @@ async function saveSlugEdit(video: Video) {
 async function startLegacySlugEdit(video: Video) {
   editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
   await nextTick()
-  legacySlugInputEl.value?.focus()
-  legacySlugInputEl.value?.select()
+  focusInlineEditInput(legacySlugInputEl.value)
 }
 
 async function saveLegacySlugEdit(video: Video) {
   const editing = editingLegacySlug.value
   if (!editing || editing.id !== video.id) return
   const legacyInput = editing.value.trim()
-  const requestedLegacySlug = legacyInput
-    ? legacyInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '')
-    : null
+  const requestedLegacySlug = legacyInput ? sanitizeVideoSlug(legacyInput) : null
   editingLegacySlug.value = null
   if (requestedLegacySlug === (video.legacy_slug ?? null)) return
   try {

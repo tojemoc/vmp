@@ -8,14 +8,15 @@
  *   DD_LOGS_ENABLED=true
  *   DD_API_KEY=<secret>          — wrangler secret put DD_API_KEY
  *   DD_SITE=datadoghq.eu         — optional, default datadoghq.eu
- *   DD_SERVICE=vmp-api           — optional
+ *   DD_SERVICE=vmp-api           — optional Datadog service name
  *   DD_ENV=staging               — optional tag (env:staging)
+ *   DD_VERSION=abc123            — optional tag (version:…); falls back to CF_VERSION_METADATA.id
  *
  * Wrap each Worker entry point (fetch / scheduled / queue) in
  * `runWithDatadogLogContext(env, ctx, fn)` so batched uploads use `ctx.waitUntil`.
  *
  * In Datadog Logs Explorer, search: `source:cloudflare-worker service:vmp-api`
- * Pipeline Grok (optional): `json_rule %{data::json}` on the `message` field.
+ * Filter by attributes: `@event:route_not_found`, `@component:worker`, `@http_status:404`.
  */
 
 /// <reference types="node" />
@@ -78,21 +79,69 @@ export function buildDatadogIntakeUrl(env: Record<string, unknown>): string {
   return `https://http-intake.logs.${site}/api/v2/logs`
 }
 
+/** Human-readable summary for Datadog list view (message column). */
+export function formatLogMessage(entry: LogEntry): string {
+  const parts: string[] = []
+  if (entry.http_method && entry.http_path) {
+    parts.push(`${entry.http_method} ${entry.http_path}`)
+    if (entry.http_status != null) parts.push(`→ ${entry.http_status}`)
+  }
+  parts.push(entry.event)
+  if (entry.error_message) {
+    parts.push(String(entry.error_message))
+  } else if (entry.duration_ms != null) {
+    parts.push(`${entry.duration_ms}ms`)
+  }
+  const summary = parts.join(' ')
+  const component = String(entry.service ?? '').trim()
+  return component ? `${component}: ${summary}` : summary
+}
+
+export function resolveDatadogVersion(env: Record<string, unknown>): string {
+  const explicit = String(env.DD_VERSION ?? '').trim()
+  if (explicit) return explicit
+  const meta = env.CF_VERSION_METADATA as { id?: string } | undefined
+  return String(meta?.id ?? '').trim()
+}
+
+export function buildDatadogTags(env: Record<string, unknown>): string | undefined {
+  const tags: string[] = []
+  const ddEnv = String(env.DD_ENV ?? '').trim()
+  if (ddEnv) tags.push(`env:${ddEnv}`)
+  const version = resolveDatadogVersion(env)
+  if (version) tags.push(`version:${version}`)
+  return tags.length > 0 ? tags.join(',') : undefined
+}
+
+/** Structured fields as Datadog attributes (entry.service → component to avoid clashing with DD service). */
+export function buildDatadogAttributes(entry: LogEntry): Record<string, unknown> {
+  const attrs: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(entry)) {
+    if (value === undefined) continue
+    if (key === 'service') {
+      attrs.component = value
+      continue
+    }
+    attrs[key] = value
+  }
+  return attrs
+}
+
 export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, unknown>) {
   const service = String(env.DD_SERVICE ?? 'vmp-api').trim() || 'vmp-api'
-  const ddEnv = String(env.DD_ENV ?? '').trim()
-  const ddtags = ddEnv ? `env:${ddEnv}` : undefined
+  const ddtags = buildDatadogTags(env)
 
   return entries.map((entry) => {
     const level = entry.level ?? 'info'
     const status = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info'
     return {
-      message: JSON.stringify(entry),
+      message: formatLogMessage(entry),
       ddsource: 'cloudflare-worker',
       service,
       hostname: 'cloudflare',
       status,
       ...(ddtags ? { ddtags } : {}),
+      ...buildDatadogAttributes(entry),
     }
   })
 }

@@ -266,8 +266,22 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const stripePricing = await getEffectivePricingSettings(env, 'stripe')
-    const allowedPlans = await getAllowedPlans(env)
+    const [
+      stripePricing,
+      legacyPricing,
+      allowedPlans,
+      configuredProviders,
+      providerOrder,
+      runnableProviders,
+    ] = await Promise.all([
+      getEffectivePricingSettings(env, 'stripe'),
+      getEffectivePricingSettings(env, 'legacy'),
+      getAllowedPlans(env),
+      getConfiguredProviders(env),
+      getPaymentProviderOrder(env),
+      getRunnableProviders(env),
+    ])
+    const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p))
     const pricingNotConfigured = (
       (allowedPlans.includes('monthly') && stripePricing.monthly == null)
       || (allowedPlans.includes('yearly') && stripePricing.yearly == null)
@@ -280,8 +294,11 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       allowedPlans,
       pricesByProvider: {
         stripe: stripePricing,
+        legacy: legacyPricing,
       },
-      enabledProviders: ['stripe'],
+      enabledProviders: enabledProviders.length > 0 ? enabledProviders : ['stripe'],
+      providerOrder,
+      legacyConfigured: isLegacyProviderConfigured(env),
       ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
     }
     return jsonResponse(payload, 200, corsHeaders)
@@ -328,6 +345,9 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'stripe_monthly_price_eur',
       'stripe_yearly_price_eur',
       'stripe_club_price_eur',
+      'legacy_monthly_price_eur',
+      'legacy_yearly_price_eur',
+      'legacy_club_price_eur',
       'stripe_price_monthly',
       'stripe_price_yearly',
       'stripe_price_club',
@@ -348,6 +368,11 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
           monthly: valueByKey.stripe_monthly_price_eur ?? '',
           yearly: valueByKey.stripe_yearly_price_eur ?? '',
           club: valueByKey.stripe_club_price_eur ?? '',
+        },
+        legacy: {
+          monthly: valueByKey.legacy_monthly_price_eur ?? '',
+          yearly: valueByKey.legacy_yearly_price_eur ?? '',
+          club: valueByKey.legacy_club_price_eur ?? '',
         },
       },
       stripePriceIds: {
@@ -388,6 +413,9 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       ['stripe_monthly_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.monthly)],
       ['stripe_yearly_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.yearly)],
       ['stripe_club_price_eur', parseOptionalPositiveNumber(providerPrices?.stripe?.club)],
+      ['legacy_monthly_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.monthly)],
+      ['legacy_yearly_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.yearly)],
+      ['legacy_club_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.club)],
       ['stripe_price_monthly', String(stripePriceIds.monthly ?? '').trim()],
       ['stripe_price_yearly', String(stripePriceIds.yearly ?? '').trim()],
       ['stripe_price_club', String(stripePriceIds.club ?? '').trim()],
@@ -958,14 +986,18 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
     const provider = sub.provider ?? 'stripe'
     let legacyManageUrl: string | null = null
     let showLegacyManageButton = false
+    let legacyProviderName: string | null = null
     if (provider === 'legacy') {
-      const [urlRaw, showRaw] = await Promise.all([
+      const [urlRaw, showRaw, nameRaw] = await Promise.all([
         getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
+        getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
       ])
       const url = String(urlRaw ?? '').trim()
       legacyManageUrl = url || null
       showLegacyManageButton = String(showRaw ?? '0') === '1' && Boolean(url)
+      const name = String(nameRaw ?? '').trim()
+      legacyProviderName = name || null
     }
 
     return jsonResponse({
@@ -981,6 +1013,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
         updatedAt:           sub.updated_at,
         legacyManageUrl,
         showLegacyManageButton,
+        legacyProviderName,
       },
     }, 200, corsHeaders)
   } catch (err) {

@@ -134,9 +134,11 @@ export async function handleVideoRecommendations(request: Request, env: any, cor
       SELECT v.id, v.slug, v.published_at, v.upload_date, vca.category_id
       FROM videos v
       LEFT JOIN video_category_assignments vca ON vca.video_id = v.id
-      WHERE v.id = ? OR v.slug = ?
+      WHERE (v.id = ? OR v.slug = ? OR v.legacy_slug = ?)
+        AND v.publish_status = 'published'
+        AND (v.scheduled_publish_at IS NULL OR datetime(v.scheduled_publish_at) <= CURRENT_TIMESTAMP)
       LIMIT 1
-    `).bind(videoId, videoId).first()
+    `).bind(videoId, videoId, videoId).first()
 
     if (!current) {
       return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
