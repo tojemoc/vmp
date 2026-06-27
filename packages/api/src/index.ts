@@ -29,6 +29,12 @@ import {
   requireAuth,
   requireRole,
 } from './auth.js'
+import {
+  handleAdminEInvoicingSettings,
+  handleAdminEInvoices,
+  handleAdminEInvoiceById,
+  handleAccountInvoices,
+} from './eInvoicing.js'
 import { isPrivateHost } from './is-private-host.js'
 import { checkAnonymousRateLimit } from './rateLimit.js'
 import { sendPushNotification } from './webpush.js'
@@ -552,6 +558,18 @@ const workerHandler = {
     if (url.pathname === '/api/admin/payments/settings' && ['GET', 'PATCH'].includes(request.method)) {
       return handleAdminPaymentSettings(request, env, corsHeaders)
     }
+    if (url.pathname === '/api/admin/einvoicing/settings' && ['GET', 'PATCH'].includes(request.method)) {
+      return handleAdminEInvoicingSettings(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/admin/einvoicing/invoices' && request.method === 'GET') {
+      return handleAdminEInvoices(request, env, corsHeaders)
+    }
+    {
+      const eInvoiceById = url.pathname.match(/^\/api\/admin\/einvoicing\/invoices\/([^/]+)$/)
+      if (eInvoiceById?.[1] && request.method === 'GET') {
+        return handleAdminEInvoiceById(request, env, corsHeaders, eInvoiceById[1])
+      }
+    }
     if (url.pathname === '/api/admin/promotions/campaigns' && ['GET', 'POST', 'PATCH'].includes(request.method)) {
       return handleAdminPromoCampaigns(request, env, corsHeaders)
     }
@@ -804,6 +822,9 @@ const workerHandler = {
     }
     if (url.pathname === '/api/account/rss' && request.method === 'GET') {
       return handleGetAccountRss(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
+      return handleAccountInvoices(request, env, corsHeaders)
     }
     if (url.pathname === '/api/account/transfer-subscription' && request.method === 'POST') {
       return handleAccountTransferSubscription(request, env, corsHeaders)
