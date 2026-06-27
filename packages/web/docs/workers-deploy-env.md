@@ -18,10 +18,9 @@ Read in `nuxt.config.ts` via `process.env` and embedded into the client/server b
 | `NUXT_PUBLIC_DEPLOY_TIER` | Admin footer build label | `staging` / `production` in `deploy.yml` |
 | `NUXT_PUBLIC_GIT_COMMIT` | Admin footer git SHA | `${{ github.sha }}` |
 | `NUXT_PUBLIC_APP_VERSION` | Admin footer on production tags | tag name on prod deploy |
-| `NUXT_PUBLIC_GTM_ID` | GTM module | optional repo var |
 | `NUXT_PUBLIC_SENTRY_DSN` | `@sentry/nuxt` | `vars.NUXT_PUBLIC_SENTRY_DSN` |
 | `SENTRY_AUTH_TOKEN` | Source map upload | `secrets.SENTRY_AUTH_TOKEN` |
-| `NODE_ENV` | GTM debug flag | `production` in CI |
+| `NODE_ENV` | Sentry / build mode | `production` in CI |
 
 ## Wrangler runtime
 
