@@ -21,20 +21,23 @@ export default defineNuxtPlugin(async () => {
     document.head.appendChild(script)
   }
 
-  function installRouterSync() {
-    router.afterEach((to) => {
-      const w = window as Window & { dataLayer?: Array<Record<string, unknown>> }
-      w.dataLayer = w.dataLayer ?? []
-      const base = router.options.history?.base ?? ''
-      const suffix = to.fullPath.startsWith('/') ? to.fullPath : `/${to.fullPath}`
-      const path = `${base}${suffix}`.replace(/\/{2,}/g, '/')
-      const viewName = typeof to.name === 'string' && to.name ? to.name : path
-      w.dataLayer.push({
-        event: 'content-view',
-        'content-name': path,
-        'content-view-name': viewName,
-      })
+  function pushContentView(to: { fullPath: string; name?: string | symbol | null }) {
+    const w = window as Window & { dataLayer?: Array<Record<string, unknown>> }
+    w.dataLayer = w.dataLayer ?? []
+    const base = router.options.history?.base ?? ''
+    const suffix = to.fullPath.startsWith('/') ? to.fullPath : `/${to.fullPath}`
+    const path = `${base}${suffix}`.replace(/\/{2,}/g, '/')
+    const viewName = typeof to.name === 'string' && to.name ? to.name : path
+    w.dataLayer.push({
+      event: 'content-view',
+      'content-name': path,
+      'content-view-name': viewName,
     })
+  }
+
+  function installRouterSync() {
+    pushContentView(router.currentRoute.value)
+    router.afterEach((to) => pushContentView(to))
   }
 
   await fetchSiteSettings()

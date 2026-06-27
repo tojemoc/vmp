@@ -32,6 +32,14 @@ const SITE_KEYS = [
 
 const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
 
+/** Web contract: persisted as '1' or '0' in admin_settings. */
+function normalizeGtmEnabled(raw: unknown): '1' | '0' | null {
+  if (raw === '1' || raw === '0') return raw
+  if (raw === true || raw === 'true') return '1'
+  if (raw === false || raw === 'false') return '0'
+  return null
+}
+
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {
   if (request.method === 'GET') {
     const entries = await Promise.all(
@@ -68,7 +76,20 @@ export async function handleSiteSettings(request: any, env: any, corsHeaders: an
 
     const updates: [string, string][] = []
     for (const key of SITE_KEYS) {
-      if (key in body && typeof body[key] === 'string') {
+      if (!(key in body)) continue
+      if (key === 'gtm_enabled') {
+        const normalized = normalizeGtmEnabled(body[key])
+        if (normalized === null) {
+          return jsonResponse(
+            { error: 'gtm_enabled must be "0" or "1"', code: 'INVALID_GTM_ENABLED' },
+            400,
+            corsHeaders,
+          )
+        }
+        updates.push([key, normalized])
+        continue
+      }
+      if (typeof body[key] === 'string') {
         updates.push([key, body[key]])
       }
     }
