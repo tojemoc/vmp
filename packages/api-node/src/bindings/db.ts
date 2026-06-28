@@ -236,6 +236,19 @@ export class PostgresPreparedStatement {
     }
   }
 
+  /**
+   * D1-compatible raw row access. Required for @sentry/cloudflare D1 instrumentation,
+   * which proxies `.raw` alongside `.first`, `.all`, and `.run`.
+   */
+  async raw<T = unknown[]>(colName?: string): Promise<T[]> {
+    const rows = await this.executeRows<Record<string, unknown>>()
+    if (colName !== undefined) {
+      return rows.map((row) => row[colName]) as T[]
+    }
+    if (rows.length === 0) return [] as T[]
+    return rows.map((row) => Object.values(row)) as T[]
+  }
+
   async run(): Promise<D1Result> {
     return this.runAsD1Result(this.dbAdapter.sql)
   }
