@@ -452,39 +452,44 @@ export async function handleAdminLegacyPaymentSettings(request: Request, env: an
 
   if (request.method === 'GET') {
     const url = new URL(request.url)
-    if (url.searchParams.get('orders') === '1') {
-      const limitRaw = Number.parseInt(String(url.searchParams.get('limit') ?? '25'), 10)
-      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 25
-      const db = getDb(env)
-      const rows = await db.prepare(`
-        SELECT pcs.id, pcs.user_id, pcs.plan_type, pcs.provider_checkout_id, pcs.status,
-               pcs.created_at, pcs.completed_at, u.email
-        FROM payment_checkout_sessions pcs
-        LEFT JOIN users u ON u.id = pcs.user_id
-        WHERE pcs.provider = 'legacy'
-        ORDER BY datetime(COALESCE(pcs.updated_at, pcs.created_at)) DESC
-        LIMIT ?
-      `).bind(limit).all()
-      const orders = (rows.results ?? []).map((row: any) => ({
-        id: row.id,
-        userId: row.user_id,
-        email: row.email ? maskEmail(String(row.email)) : null,
-        planType: row.plan_type,
-        orderId: row.provider_checkout_id,
-        status: row.status,
-        createdAt: row.created_at,
-        completedAt: row.completed_at,
-      }))
-      return jsonResponse({ orders }, 200, corsHeaders)
-    }
+    try {
+      if (url.searchParams.get('orders') === '1') {
+        const limitRaw = Number.parseInt(String(url.searchParams.get('limit') ?? '25'), 10)
+        const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 25
+        const db = getDb(env)
+        const rows = await db.prepare(`
+          SELECT pcs.id, pcs.user_id, pcs.plan_type, pcs.provider_checkout_id, pcs.status,
+                 pcs.created_at, pcs.completed_at, u.email
+          FROM payment_checkout_sessions pcs
+          LEFT JOIN users u ON u.id = pcs.user_id
+          WHERE pcs.provider = 'legacy'
+          ORDER BY datetime(COALESCE(pcs.updated_at, pcs.created_at)) DESC
+          LIMIT ?
+        `).bind(limit).all()
+        const orders = (rows.results ?? []).map((row: any) => ({
+          id: row.id,
+          userId: row.user_id,
+          email: row.email ? maskEmail(String(row.email)) : null,
+          planType: row.plan_type,
+          orderId: row.provider_checkout_id,
+          status: row.status,
+          createdAt: row.created_at,
+          completedAt: row.completed_at,
+        }))
+        return jsonResponse({ orders }, 200, corsHeaders)
+      }
 
-    return jsonResponse({
-      configured: isLegacyProviderConfigured(env, 'production'),
-      sandboxConfigured: isLegacyProviderConfigured(env, 'sandbox'),
-      merchantId: String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() || null,
-      hasApiKey: Boolean(String(env.LEGACY_ESHOP_API_KEY ?? '').trim()),
-      hasWebhookSecret: Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()),
-    }, 200, corsHeaders)
+      return jsonResponse({
+        configured: isLegacyProviderConfigured(env, 'production'),
+        sandboxConfigured: isLegacyProviderConfigured(env, 'sandbox'),
+        merchantId: String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() || null,
+        hasApiKey: Boolean(String(env.LEGACY_ESHOP_API_KEY ?? '').trim()),
+        hasWebhookSecret: Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim()),
+      }, 200, corsHeaders)
+    } catch (err) {
+      console.error('[admin legacy payments] GET failed', err)
+      return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    }
   }
 
   return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
