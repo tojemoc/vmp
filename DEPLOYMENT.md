@@ -29,10 +29,41 @@ Canonical deploy workflow: `.github/workflows/deploy.yml`.
 
 The canonical workflow uses:
 
-- pushes to `main` → staging API Worker (`@vmp/api`) + staging web Worker (`vmp-web-worker-dev`)
+- pushes to `main` → staging API Worker (`@vmp/api`) + staging web Worker (`vmp-web-worker-dev`) + **Deno Deploy backup API** (`@vmp/api-node`, job `deploy-api-node-backup`)
 - version tags (`v*.*.*`) → production API Worker + production web Worker (`vmp-web-worker-prod`)
 
 Frontend deploy is **Workers only** (Nuxt `cloudflare-module` preset). Cloudflare Pages is deprecated in this repo.
+
+### Deno Deploy backup API (`@vmp/api-node`) — deploy gates
+
+The backup API runs the same `@vmp/api` handlers on Deno Deploy with a Postgres D1 shim. **Uploading a broken bundle is not enough for a green deploy** — CI and deploy both enforce verification and smoke checks.
+
+**Pull requests (`.github/workflows/ci.yml`, job `api-node`):**
+
+- `npm run verify:api-node` — typecheck, unit tests (including Sentry/D1 shim compatibility), and esbuild bundle.
+- **A PR that fails this job must not be merged** if branch protection requires CI green; it will not produce a deployable backup API.
+
+**Staging deploy (`.github/workflows/deploy.yml`, job `deploy-api-node-backup`):**
+
+1. Same `verify:api-node` gate **before** `deno deploy` upload — upload is skipped if verify fails (job fails).
+2. Prebuilt tree: `deploy-install.mjs` → `npm run build` → `deploy-prune-prod.mjs`.
+3. Upload via `packages/api-node/scripts/deno-deploy-upload.mjs` when `secrets.DENO_DEPLOY_TOKEN` is set.
+4. Post-deploy smoke (when `vars.API_URL_BACKUP` is set): `.github/scripts/smoke-api-node-backup.sh` checks:
+   - `GET /api/health` — `mode: "deno-deploy"`, database check `ok: true`
+   - `GET /api/homepage/content` — HTTP 200 (catches runtime DB/Sentry shim failures that build alone would miss)
+
+Required for Deno backup deploy:
+
+- Secret: `DENO_DEPLOY_TOKEN`
+- Variables: `DENO_DEPLOY_ORG`, `DENO_DEPLOY_APP`, `API_URL_BACKUP` (public backup API origin, e.g. `https://vmp-backup-api.tjm.sk`)
+
+Local parity before opening a PR:
+
+```bash
+npm run verify:api-node
+```
+
+See [`packages/api-node/README.md`](packages/api-node/README.md) for runtime setup and replication ingest.
 
 Required repository secrets:
 

@@ -57,3 +57,26 @@ jobs:
 
       - run: bash .github/scripts/nx-with-cloud-fallback.sh fix-ci
         if: always()
+
+  api-node:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - name: Mount npm cache
+        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
+        with:
+          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
+          path: ~/.npm
+
+      - run: npm ci
+
+      - name: Verify api-node (Deno Deploy backup API gate)
+        run: npm run verify:api-node
