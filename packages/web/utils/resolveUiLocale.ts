@@ -34,8 +34,13 @@ export function getBuildUiLocale(): UiLocale {
     }
   }
 
-  cachedBuildLocale = parseUiLocale(fromEnv)
-  return cachedBuildLocale
+  if (fromEnv) {
+    cachedBuildLocale = parseUiLocale(fromEnv)
+    return cachedBuildLocale
+  }
+
+  // No valid locale found — return fallback without caching.
+  return parseUiLocale(undefined)
 }
 
 /**
