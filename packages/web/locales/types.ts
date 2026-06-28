@@ -215,6 +215,9 @@ export type StringsDefinition = {
   livestreamUnavailableDetail: string
   liveBrowserOnly: string
   videoLoadFailed: string
+  videoNotFoundTitle: string
+  videoNotFoundMessage: string
+  videoNotFoundSuggestions: string
   rateLimitExceeded: string
   mediaFailedToLoad: string
   liveCanvasUnavailable: string
@@ -246,7 +249,12 @@ export type StringsDefinition = {
   accountRelinkImportedBody: (provider: string) => string
   accountRelinkStatusNeedsRelink: string
   accountRelinkLegacyProviderFallback: string
+  accountRelinkCheckoutIntro: string
+  accountRelinkCheckoutWorking: string
   accountManagePaymentMethod: string
+  offlineDownloadMenuLabel: string
+  offlineDownloadResume: string
+  offlineTapToUnmute: string
   networkError: string
   podcastRssTitle: string
   podcastRssIntro: string
@@ -255,6 +263,30 @@ export type StringsDefinition = {
   copied: string
   rssLoadFailed: string
   rssLoadNetworkError: string
+  offlineDownloadTitle: string
+  offlineDownloadHint: string
+  offlineDownloadQuality: string
+  offlineDownloadStart: string
+  offlineDownloadWorking: string
+  offlineDownloadPause: string
+  offlineDownloadRemove: string
+  offlineDownloadUpdate: string
+  offlineDownloadPlay: string
+  offlineDownloadFailed: string
+  offlineDownloadProgress: (percent: number) => string
+  offlineDownloadRemoveConfirm: (title: string) => string
+  offlineDownloadStatusDownloaded: string
+  offlineDownloadStatusDownloading: string
+  offlineDownloadStatusPaused: string
+  offlineDownloadStatusFailed: string
+  offlineDownloadStatusUpdateAvailable: string
+  offlineDownloadStatusLicenseExpired: string
+  offlineDownloadsTitle: string
+  offlineDownloadsIntro: string
+  offlineDownloadsEmpty: string
+  offlineStorageUsed: (amount: string) => string
+  offlineStorageQuota: (amount: string) => string
+  offlinePlaybackBadge: string
   copyFailed: string
   checkoutPremiumTitle: string
   checkoutPremiumSubtitle: string

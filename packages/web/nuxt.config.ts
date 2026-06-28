@@ -1,5 +1,8 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource'
+import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv'
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+
+loadMonorepoRootEnv()
 
 const buildInfo = readBuildInfoDefaults()
 
@@ -7,13 +10,25 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
 
+  hooks: {
+    // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
+    // sec-purpose: prefetch on Worker routes with HTTP 503 (same rule as Speed Brain
+    // navigation prefetch). Those 503s are harmless, but chunk-load-recovery (#411)
+    // must not treat them as fatal — disabling manifest prefetch avoids the noise.
+    'build:manifest'(manifest) {
+      for (const key in manifest) {
+        const file = manifest[key]
+        if (file) file.prefetch = false
+      }
+    },
+  },
+
   sourcemap: { client: 'hidden' },
 
   modules: [
     '@nuxtjs/tailwindcss',
     '@nuxtjs/color-mode',
     '@vite-pwa/nuxt',
-    '@saslavik/nuxt-gtm',
     '@sentry/nuxt/module',
   ],
 
@@ -21,15 +36,6 @@ export default defineNuxtConfig({
     org: 'tojemoc',
     project: 'vmp-fe-primary',
     authToken: process.env.SENTRY_AUTH_TOKEN,
-  },
-
-  gtm: {
-    id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
-    enabled: true,
-    loadScript: false,
-    enableRouterSync: true,
-    debug: process.env.NODE_ENV === 'development',
-    defer: false,
   },
 
   nitro: {
@@ -63,9 +69,6 @@ export default defineNuxtConfig({
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
       /** UI language for this deployment: `en`, `sk`, or `cs` (one locale per instance). */
       uiLocale: process.env.NUXT_PUBLIC_UI_LOCALE || 'en',
-      gtm: {
-        id: process.env.NUXT_PUBLIC_GTM_ID || 'GTM-NM3DP5JR',
-      },
       sentry: {
         dsn: process.env.NUXT_PUBLIC_SENTRY_DSN || '',
         tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
@@ -142,7 +145,7 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
       cleanupOutdatedCaches: true,
       // Keep push handlers in a tiny sidecar file so GenerateSW can still be used.
-      importScripts: ['/sw-push.js'],
+      importScripts: ['/sw-push.js', '/sw-offline-media.js'],
     },
     client: {
       installPrompt: true,

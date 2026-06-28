@@ -136,11 +136,27 @@
     </div>
 
     <div
+      v-if="!loadingPrices && !priceError && isLoggedIn && showLegacyCheckout"
+      class="mb-4 text-left"
+    >
+      <button
+        type="button"
+        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+        :class="legacyButtonClass"
+        :disabled="legacyCheckoutStarting"
+        @click="startLegacyCheckout"
+      >
+        <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+        <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
+      </button>
+    </div>
+
+    <div
       v-if="!loadingPrices && !priceError && isLoggedIn"
       class="mb-4 text-left"
     >
       <StripeEmbeddedCheckout
-        v-if="stripeCheckoutMounted"
+        v-if="stripeCheckoutMounted && showStripeCheckout"
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
@@ -186,7 +202,7 @@
     </div>
 
     <p class="text-xs mt-3" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
-      {{ strings.checkoutBlurbEmbedded }}
+      {{ checkoutBlurb }}
     </p>
     <p
       v-if="!isLoggedIn"
@@ -229,14 +245,18 @@ const { isLoggedIn, authHeader } = useAuth()
 const { startLoginFlow } = useLoginFlow()
 
 type PlanType = 'monthly' | 'yearly' | 'club'
+type PaymentProvider = 'stripe' | 'legacy'
 
 interface Prices { monthly: number; yearly: number; club: number }
 
 const defaultPrices: Prices = { monthly: 6.90, yearly: 74.90, club: 109.00 }
 const prices = ref<Prices>({ ...defaultPrices })
+const legacyPrices = ref<Prices>({ ...defaultPrices })
+const enabledProviders = ref<PaymentProvider[]>(['stripe'])
 const loadingPrices = ref(false)
 const priceError = ref(false)
 const selectedPlan = ref<PlanType>('monthly')
+const legacyCheckoutStarting = ref(false)
 const walletAvailable = ref(false)
 /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
 const walletDetectionDone = ref(false)
@@ -265,7 +285,34 @@ const planGridClass = computed(() =>
   'grid-cols-3 max-[22rem]:grid-cols-1',
 )
 
+/** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
+const pendingLegacyCheckoutIntent = ref(false)
+
 const stripeCheckoutMounted = computed(() => true)
+
+const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'))
+
+const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'))
+
+const checkoutBlurb = computed(() => {
+  if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth
+  if (showLegacyCheckout.value) return strings.checkoutBlurbDefault
+  return strings.checkoutBlurbEmbedded
+})
+
+const legacyButtonClass = computed(() => {
+  if (props.embedded) {
+    return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
+  }
+  return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500'
+})
+
+const legacyPlanPrice = computed(() => {
+  const plan = selectedPlan.value
+  const legacy = legacyPrices.value[plan]
+  if (Number.isFinite(legacy)) return Number(legacy)
+  return planPrice(plan)
+})
 
 /** Apple / Google Pay above the fold (mount express until detection finishes). */
 const showWalletSurface = computed(() => {
@@ -372,11 +419,22 @@ async function loadPrices() {
     }
 
     const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {}
+    const legacyRaw = data?.pricesByProvider?.legacy ?? {}
     prices.value = {
       monthly: Number(stripeRaw.monthly ?? fallback.monthly),
       yearly: Number(stripeRaw.yearly ?? fallback.yearly),
       club: Number(stripeRaw.club ?? fallback.club),
     }
+    legacyPrices.value = {
+      monthly: Number(legacyRaw.monthly ?? fallback.monthly),
+      yearly: Number(legacyRaw.yearly ?? fallback.yearly),
+      club: Number(legacyRaw.club ?? fallback.club),
+    }
+
+    const providers = Array.isArray(data.enabledProviders)
+      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+      : ['stripe']
+    enabledProviders.value = providers.length ? providers : ['stripe']
 
     const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => planPrice(plan) != null)
     if (!hasVisiblePrice) {
@@ -386,6 +444,42 @@ async function loadPrices() {
     priceError.value = true
   } finally {
     loadingPrices.value = false
+    if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
+      pendingLegacyCheckoutIntent.value = false
+      void startLegacyCheckout()
+    }
+  }
+}
+
+async function startLegacyCheckout() {
+  checkoutError.value = null
+  if (!isLoggedIn.value) {
+    await startLoginFlow(props.returnPath)
+    return
+  }
+
+  legacyCheckoutStarting.value = true
+  try {
+    const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        planType: selectedPlan.value,
+        provider: 'legacy',
+        returnPath: props.returnPath,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.checkoutUrl) {
+      checkoutError.value = data.error ?? strings.checkoutStartFailed
+      return
+    }
+    window.location.href = String(data.checkoutUrl)
+  } catch {
+    checkoutError.value = strings.networkError
+  } finally {
+    legacyCheckoutStarting.value = false
   }
 }
 
@@ -459,12 +553,20 @@ function applyCheckoutIntentFromRoute() {
   if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
     selectedPlan.value = plan
   }
+  const provider = q.checkout_provider
+  if (provider === 'legacy') {
+    if (showLegacyCheckout.value) {
+      void startLegacyCheckout()
+    } else {
+      pendingLegacyCheckoutIntent.value = true
+    }
+  }
 }
 
-function activatePanel() {
+async function activatePanel() {
   applyCheckoutIntentFromRoute()
   clearPromoCode()
-  loadPrices()
+  await loadPrices()
 }
 
 watch(() => props.active, (isActive) => {

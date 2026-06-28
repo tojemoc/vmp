@@ -25,7 +25,7 @@
           </p>
           <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <a
-              :href="mailtoInboxHref"
+              :href="nativeEmailInboxHref"
               class="font-medium text-green-200 underline underline-offset-2 hover:text-white"
             >
               {{ strings.loginOpenEmailApp }}
@@ -86,6 +86,7 @@
 
 <script setup lang="ts">
 import strings from '~/utils/strings'
+import { getNativeEmailInboxHref } from '~/utils/emailInbox'
 import { isIosInstalledPwa } from '~/utils/pwa'
 
 usePageSeo({ title: strings.loginTitle, noIndex: true })
@@ -95,7 +96,7 @@ const { signIn, isLoggedIn } = useAuth()
 const { waitForAuthInitialised } = useLoginFlow()
 const { openPwaPushLoginWizard } = usePwaLoginWizardState()
 
-const mailtoInboxHref = 'mailto:'
+const nativeEmailInboxHref = computed(() => getNativeEmailInboxHref(email.value))
 const gmailInboxHref = 'https://mail.google.com/mail/u/0/#inbox'
 const outlookInboxHref = 'https://outlook.live.com/mail/0/inbox'
 

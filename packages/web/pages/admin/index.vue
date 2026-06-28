@@ -1600,25 +1600,37 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   Podcast feed description
                   <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
                 </label>
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                  <input
+                    v-model="gtmEnabled"
+                    type="checkbox"
+                    class="rounded border-gray-300 dark:border-gray-600"
+                    :disabled="!siteBranding.gtm_container_id.trim()"
+                  />
+                  Google Tag Manager enabled
+                  <span v-if="!siteBranding.gtm_container_id.trim()" class="text-xs text-gray-500 dark:text-gray-400">(enter container ID below first)</span>
+                </label>
                 <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
                   Google Tag Manager container ID
                   <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Overrides the build-time GTM ID after save. Leave empty to use the default from deployment env.</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Required to enable GTM. No build-time fallback — set the container ID here.</p>
                 </label>
+                <template v-if="gtmEnabled">
                 <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
                   GTM first-party measurement path
                   <input
                     v-model="siteBranding.gtm_measurement_path"
                     type="text"
-                    placeholder="/metrics  (leave empty to load GTM directly)"
+                    placeholder="/hb2v  (leave empty to load GTM directly)"
                     class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
                   />
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Set this to the measurement path configured in your Cloudflare Google Tag Gateway
-                    (e.g. /metrics). When set, GTM loads from your own domain instead of googletagmanager.com,
-                    surviving most privacy-focused browser settings.
+                    Optional. Set to the path configured in Cloudflare Google Tag Gateway
+                    (e.g. /hb2v). When set, GTM loads from your domain instead of googletagmanager.com.
+                    Leave Cloudflare “Set up tag” off — this app injects the script when enabled above.
                   </p>
                 </label>
+                </template>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button
@@ -2365,6 +2377,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 </template>
 
 <script setup lang="ts">
+import { sanitizeVideoSlug } from '@vmp/shared'
 import { resolvePlaylistDuration } from '~/composables/useHlsDuration'
 import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
 import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
@@ -2558,12 +2571,28 @@ const adminTabs = computed(() =>
     return true
   })
 )
+type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>
+type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null
+
+function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
+  const refs = Array.isArray(inputRef) ? inputRef : [inputRef]
+  return refs.find((input): input is InlineEditInput =>
+    !!input && typeof input.focus === 'function' && typeof input.select === 'function'
+  ) ?? null
+}
+
+function focusInlineEditInput(inputRef: InlineEditInputRef) {
+  const input = findInlineEditInput(inputRef)
+  input?.focus()
+  input?.select()
+}
+
 const editingTitle = ref<{ id: string; value: string } | null>(null)
-const titleInputEl = ref<HTMLInputElement | null>(null)
+const titleInputEl = ref<InlineEditInputRef>(null)
 const editingSlug  = ref<{ id: string; value: string } | null>(null)
-const slugInputEl  = ref<HTMLInputElement | null>(null)
+const slugInputEl  = ref<InlineEditInputRef>(null)
 const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
-const legacySlugInputEl = ref<HTMLInputElement | null>(null)
+const legacySlugInputEl = ref<InlineEditInputRef>(null)
 const scheduleModal = ref<{
   open: boolean
   videoId: string | null
@@ -2815,8 +2844,21 @@ const siteBranding = ref({
   site_support_email: '',
   podcast_title: '',
   podcast_description: '',
+  gtm_enabled: '0',
   gtm_container_id: '',
   gtm_measurement_path: '',
+})
+const gtmEnabled = computed({
+  get: () => siteBranding.value.gtm_enabled === '1',
+  set: (enabled: boolean) => {
+    if (enabled && !siteBranding.value.gtm_container_id.trim()) return
+    siteBranding.value.gtm_enabled = enabled ? '1' : '0'
+  },
+})
+watch(() => siteBranding.value.gtm_container_id, (id) => {
+  if (!id.trim() && siteBranding.value.gtm_enabled === '1') {
+    siteBranding.value.gtm_enabled = '0'
+  }
 })
 const siteBrandingSaving = ref(false)
 const siteBrandingMessage = ref('')
@@ -4548,6 +4590,7 @@ const loadSiteBranding = async () => {
       site_support_email: data.site_support_email || 'vmp@tjm.sk',
       podcast_title: data.podcast_title || '',
       podcast_description: data.podcast_description || '',
+      gtm_enabled: data.gtm_enabled === '1' && String(data.gtm_container_id || '').trim() ? '1' : '0',
       gtm_container_id: data.gtm_container_id || '',
       gtm_measurement_path: data.gtm_measurement_path || '',
     }
@@ -4562,6 +4605,11 @@ const saveSiteBranding = async () => {
   siteBrandingSaving.value = true
   siteBrandingMessage.value = ''
   try {
+    const containerId = siteBranding.value.gtm_container_id.trim()
+    if (siteBranding.value.gtm_enabled === '1' && !containerId) {
+      siteBranding.value.gtm_enabled = '0'
+      throw new Error('Google Tag Manager container ID is required when GTM is enabled.')
+    }
     const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
@@ -5531,8 +5579,7 @@ function formatSeconds(total: number): string {
 async function startTitleEdit(video: Video) {
   editingTitle.value = { id: video.id, value: video.title }
   await nextTick()
-  titleInputEl.value?.focus()
-  titleInputEl.value?.select()
+  focusInlineEditInput(titleInputEl.value)
 }
 
 async function saveTitleEdit(video: Video) {
@@ -6279,15 +6326,14 @@ async function runConfirmedAction() {
 async function startSlugEdit(video: Video) {
   editingSlug.value = { id: video.id, value: video.slug ?? '' }
   await nextTick()
-  slugInputEl.value?.focus()
-  slugInputEl.value?.select()
+  focusInlineEditInput(slugInputEl.value)
 }
 
 async function saveSlugEdit(video: Video) {
   const editing = editingSlug.value
   if (!editing || editing.id !== video.id) return
   const slugInput = editing.value.trim()
-  const requestedSlug = slugInput ? slugInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '') : null
+  const requestedSlug = slugInput ? (sanitizeVideoSlug(slugInput) || null) : null
   editingSlug.value = null
   if (requestedSlug === (video.slug ?? null)) return
   try {
@@ -6302,10 +6348,11 @@ async function saveSlugEdit(video: Video) {
     }
     const data = await res.json().catch(() => ({}))
     const normalizedSlug = data?.video?.slug ?? requestedSlug
+    const normalizedLegacySlug = data?.video?.legacy_slug ?? video.legacy_slug ?? null
     const idx = uploads.value.findIndex(v => v.id === video.id)
     if (idx !== -1) {
       const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, slug: normalizedSlug }
+      uploads.value[idx] = { ...cur, slug: normalizedSlug, legacy_slug: normalizedLegacySlug }
     }
     showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
   } catch (e: any) {
@@ -6316,17 +6363,14 @@ async function saveSlugEdit(video: Video) {
 async function startLegacySlugEdit(video: Video) {
   editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
   await nextTick()
-  legacySlugInputEl.value?.focus()
-  legacySlugInputEl.value?.select()
+  focusInlineEditInput(legacySlugInputEl.value)
 }
 
 async function saveLegacySlugEdit(video: Video) {
   const editing = editingLegacySlug.value
   if (!editing || editing.id !== video.id) return
   const legacyInput = editing.value.trim()
-  const requestedLegacySlug = legacyInput
-    ? legacyInput.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '')
-    : null
+  const requestedLegacySlug = legacyInput ? sanitizeVideoSlug(legacyInput) : null
   editingLegacySlug.value = null
   if (requestedLegacySlug === (video.legacy_slug ?? null)) return
   try {

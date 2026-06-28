@@ -10,7 +10,42 @@ const CHUNK_LOAD_ERROR_PATTERNS = [
   'error loading dynamically imported module',
   'Loading chunk',
   'Loading CSS chunk',
+  '503',
+  'Service Unavailable',
 ]
+
+/** Cloudflare Workers refuse `sec-purpose: prefetch` with HTTP 503 — not a real asset miss. */
+export function isPrefetchLinkElement(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof target !== 'object') return false
+  const el = target as HTMLLinkElement
+  return el.tagName === 'LINK' && String(el.rel ?? '').toLowerCase() === 'prefetch'
+}
+
+export function isCriticalAssetLoadTarget(target: EventTarget | null | undefined): target is HTMLScriptElement | HTMLLinkElement {
+  if (!target || typeof target !== 'object') return false
+  const el = target as HTMLScriptElement | HTMLLinkElement
+  if (el.tagName === 'SCRIPT') return true
+  if (el.tagName === 'LINK') return !isPrefetchLinkElement(el)
+  return false
+}
+
+export function getCriticalAssetUrl(target: EventTarget | null | undefined): string | null {
+  if (!isCriticalAssetLoadTarget(target)) return null
+  if (target.tagName === 'SCRIPT') return (target as HTMLScriptElement).src || null
+  return (target as HTMLLinkElement).href || null
+}
+
+export function isNuxtAssetUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url, 'https://placeholder.local').pathname
+    return pathname.startsWith('/_nuxt/')
+      || pathname === '/sw.js'
+      || /^\/workbox-[\w-]+\.js$/.test(pathname)
+      || /^\/_workbox-[\w-]+\.js$/.test(pathname)
+  } catch {
+    return false
+  }
+}
 
 function errorMessages(reason: unknown): string[] {
   if (reason instanceof Error) {

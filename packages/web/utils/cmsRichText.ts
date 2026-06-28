@@ -1,4 +1,4 @@
-import DOMPurify from 'isomorphic-dompurify'
+import { sanitize, type SanitizerOptions } from 'unsane'
 import { generateHTML } from '@tiptap/html'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -18,6 +18,18 @@ const richTextExtensions = [
   }),
 ]
 
+/** Allowlist aligned with TipTap StarterKit + Link output (Workers-safe, no DOM). */
+const CMS_RICH_TEXT_SANITIZE_OPTIONS: SanitizerOptions = {
+  allowedTags: [
+    'p', 'h2', 'h3', 'h4', 'strong', 'em', 's', 'code', 'pre',
+    'ul', 'ol', 'li', 'blockquote', 'hr', 'br', 'a',
+  ],
+  allowedAttributes: {
+    a: ['href', 'class'],
+    '*': ['class'],
+  },
+}
+
 function sanitizeHref(rawUrl: string): string {
   try {
     const normalized = new URL(rawUrl, 'http://dummy')
@@ -36,11 +48,15 @@ function sanitizeLinkHrefs(html: string): string {
   })
 }
 
-/** DOM-aware XSS prevention for TipTap HTML before v-html binding. */
+function purifyHtml(html: string): string {
+  if (!html) return ''
+  return sanitize(html, CMS_RICH_TEXT_SANITIZE_OPTIONS)
+}
+
+/** XSS prevention for TipTap HTML before v-html binding. */
 export function sanitizeCmsRichTextHtml(html: string): string {
   if (!html) return ''
-  const purified = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
-  return sanitizeLinkHrefs(purified)
+  return sanitizeLinkHrefs(purifyHtml(html))
 }
 
 export function renderCmsRichTextHtml(content: CmsRichTextDocument): string {

@@ -3,9 +3,12 @@ import assert from 'node:assert/strict'
 import {
   buildDatadogIntakeUrl,
   buildDatadogLogBatch,
+  buildDatadogTags,
+  formatLogMessage,
   isDatadogLogsEnabled,
   log,
   normalizeDatadogSite,
+  resolveDatadogVersion,
   runWithDatadogLogContext,
   setDatadogFlushHandlerForTests,
 } from '../src/logger.js'
@@ -56,6 +59,42 @@ describe('Datadog worker log helpers', () => {
     )
   })
 
+  it('formatLogMessage builds human-readable summaries', () => {
+    assert.equal(
+      formatLogMessage({
+        service: 'worker',
+        event: 'route_not_found',
+        level: 'info',
+        http_method: 'GET',
+        http_path: '/',
+        http_status: 404,
+        ts: '2026-06-25T08:40:05.704Z',
+      }),
+      'worker: GET / → 404 route_not_found',
+    )
+    assert.equal(
+      formatLogMessage({
+        service: 'auth',
+        event: 'magic_link_sent',
+        level: 'info',
+        ts: '2026-06-25T12:00:00.000Z',
+      }),
+      'auth: magic_link_sent',
+    )
+  })
+
+  it('buildDatadogTags includes env and version', () => {
+    assert.equal(
+      buildDatadogTags({ DD_ENV: 'staging', DD_VERSION: 'abc123' }),
+      'env:staging,version:abc123',
+    )
+    assert.equal(
+      buildDatadogTags({ CF_VERSION_METADATA: { id: 'cf-version-id' } }),
+      'version:cf-version-id',
+    )
+    assert.equal(resolveDatadogVersion({ DD_VERSION: 'explicit' }), 'explicit')
+  })
+
   it('buildDatadogLogBatch maps structured entries for the HTTP API', () => {
     const batch = buildDatadogLogBatch([
       {
@@ -67,14 +106,34 @@ describe('Datadog worker log helpers', () => {
     ], {
       DD_SERVICE: 'vmp-api',
       DD_ENV: 'staging',
+      DD_VERSION: 'd1b5d04',
     })
 
     assert.equal(batch.length, 1)
     assert.equal(batch[0].ddsource, 'cloudflare-worker')
     assert.equal(batch[0].service, 'vmp-api')
     assert.equal(batch[0].status, 'warn')
-    assert.equal(batch[0].ddtags, 'env:staging')
-    assert.match(batch[0].message, /magic_link_sent/)
+    assert.equal(batch[0].ddtags, 'env:staging,version:d1b5d04')
+    assert.equal(batch[0].message, 'auth: magic_link_sent')
+    assert.equal(batch[0].component, 'auth')
+    assert.equal(batch[0].event, 'magic_link_sent')
+    assert.equal(batch[0].level, 'warn')
+    assert.notEqual(batch[0].service, 'auth')
+  })
+
+  it('buildDatadogLogBatch maps error level to error status', () => {
+    const batch = buildDatadogLogBatch([
+      {
+        service: 'worker',
+        event: 'handler_failed',
+        level: 'error',
+        error_message: 'boom',
+        ts: '2026-06-25T12:00:00.000Z',
+      },
+    ], { DD_SERVICE: 'vmp-api' })
+
+    assert.equal(batch[0].status, 'error')
+    assert.equal(batch[0].message, 'worker: handler_failed boom')
   })
 
   it('buffers logs during runWithDatadogLogContext and flushes on completion', async () => {
