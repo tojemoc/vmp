@@ -32,7 +32,7 @@
     "eslint": "^10.6.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-vue": "^10.9.2",
-    "globals": "^16.5.0",
+    "globals": "^17.7.0",
     "knip": "^6.23.0",
     "nuxt": "^4.4.8",
     "nx": "23.0.1",
