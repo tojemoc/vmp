@@ -122,6 +122,7 @@ import {
   handleCmsPageRestoreRevision,
   handleCmsMediaUpload,
   handleCmsMediaById,
+  handleCmsMediaBatch,
 } from './cmsPages.js'
 import { handleSiteSettings } from './siteSettings.js'
 import { handleSiteFooterPublic, handleSiteFooterAdmin } from './siteFooter.js'
@@ -690,6 +691,9 @@ const workerHandler = {
     }
     if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
       return handleCmsMediaUpload(request, env, corsHeaders)
+    }
+    if (url.pathname === '/api/cms/media/batch' && request.method === 'GET') {
+      return handleCmsMediaBatch(request, env, corsHeaders)
     }
     const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/)
     const cmsMediaId = cmsMediaById?.[1]
@@ -1899,6 +1903,26 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
         r2_exists: r2Exists,
       }
     }))
+
+    // Best-effort duration hydration for legacy rows where full_duration=0.
+    if (env.R2_BASE_URL) {
+      const durationById = new Map<string, number>()
+      const uniqueIds = [...new Set(
+        annotated
+          .filter((video: any) => video && typeof video.id === 'string'
+            && !(typeof video.full_duration === 'number' && video.full_duration > 0))
+          .map((video: any) => video.id),
+      )]
+      await Promise.all(uniqueIds.map(async (id) => {
+        const resolved = await resolveVideoDurationSeconds(id, env)
+        if (resolved && resolved > 0) durationById.set(id, resolved)
+      }))
+      for (const video of annotated) {
+        if (!video || typeof video.id !== 'string') continue
+        const resolved = durationById.get(video.id)
+        if (resolved) video.full_duration = resolved
+      }
+    }
 
     return jsonResponse({ videos: annotated }, 200, corsHeaders)
   } catch (error) {
