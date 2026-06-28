@@ -10,6 +10,28 @@ HTTP server that runs the **same** `@vmp/api` Worker handlers with adapter bindi
 
 Deploy target: [Deno Deploy](https://docs.deno.com/deploy/) with GitHub Actions prebuild (`deploy-api-node-backup` in `.github/workflows/deploy.yml`).
 
+## Deploy and CI gates
+
+**A change that does not pass api-node verification will not deploy successfully to Deno Deploy.**
+
+| Stage | Workflow | What runs |
+| --- | --- | --- |
+| Pull request | `ci.yml` → job `api-node` | `npm run verify:api-node` (typecheck, tests, esbuild bundle) |
+| Push to `main` | `deploy.yml` → job `deploy-api-node-backup` | Same verify **before** upload; then `deno deploy`; then smoke checks on `API_URL_BACKUP` |
+
+Post-deploy smoke (`.github/scripts/smoke-api-node-backup.sh`):
+
+- `GET /api/health` — expects `mode: "deno-deploy"` and database `ok: true`
+- `GET /api/homepage/content` — expects HTTP 200 (exercises Sentry-wrapped DB queries)
+
+Run locally before opening a PR:
+
+```bash
+npm run verify:api-node
+```
+
+Required GitHub configuration for deploy + smoke: secret `DENO_DEPLOY_TOKEN`; variables `DENO_DEPLOY_ORG`, `DENO_DEPLOY_APP`, `API_URL_BACKUP`.
+
 ## Contents
 
 - [Architecture](#architecture)
@@ -48,7 +70,13 @@ The Worker `fetch()` entry in `packages/api/src/index.ts` is invoked unchanged. 
 
 ## CI prebuild (same as local release)
 
-From `packages/api-node`:
+From repo root (matches PR CI and deploy verify gate):
+
+```bash
+npm run verify:api-node
+```
+
+Production upload tree (after verify passes), from `packages/api-node`:
 
 ```bash
 node scripts/deploy-install.mjs
