@@ -4,6 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js'
 import { syncNewsletterForStripeSubscription } from './brevo.js'
+import { getDb } from './d1Session.js'
 import { getSetting } from './settingsStore.js'
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 import {
@@ -36,11 +37,6 @@ function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, s
   })
 }
 
-function getDb(env: any) {
-  const db = env.DB || env.video_subscription_db
-  if (!db) throw new Error('D1 binding not found')
-  return db
-}
 
 function normalizePlanType(value: unknown): PlanType {
   const plan = String(value ?? '').trim().toLowerCase()
