@@ -1,20 +1,16 @@
 /**
- * Bundle Video.js locally so videojs-video-element does not fetch from jsDelivr.
- * Safari Tracking Prevention blocks storage for third-party CDN scripts, which breaks
- * dynamic script loading and causes "Cannot read properties of undefined (reading 'src')".
+ * Lazy-load Video.js and register <videojs-video> only on the watch page.
+ * Keeps ~500KB+ of player code out of the homepage entry bundle.
  */
-import videojs from 'video.js'
-import 'video.js/dist/video-js.css'
-// Registers the <videojs-video> custom element used on the watch page.
-// Regression: feat(web) offline downloads (#398) dropped the watch-page side-effect
-// import; without this, customElements.whenDefined('videojs-video') never resolves.
-import 'videojs-video-element'
+import type videojs from 'video.js'
 
 type VideojsMediaElement = HTMLElement & {
   api?: { pause?: () => void; play?: () => Promise<void> | void }
   nativeEl?: HTMLVideoElement
   call?: (name: string, ...args: unknown[]) => unknown
 }
+
+let bootstrapPromise: Promise<void> | null = null
 
 function patchVideojsPlaybackMethods() {
   const ctor = customElements.get('videojs-video')
@@ -49,14 +45,30 @@ function patchVideojsPlaybackMethods() {
   }
 }
 
-export default defineNuxtPlugin(() => {
-  const g = globalThis as typeof globalThis & { videojs?: typeof videojs }
-  if (typeof g.videojs === 'undefined') {
-    g.videojs = videojs
-  }
-  if (import.meta.client) {
-    void customElements.whenDefined('videojs-video').then(() => {
+/** Load Video.js once and register the custom element used on /watch. */
+export async function ensureVideojsLoaded(): Promise<void> {
+  if (!import.meta.client) return
+  if (customElements.get('videojs-video')) return
+  if (!bootstrapPromise) {
+    bootstrapPromise = (async () => {
+      const [{ default: videojsLib }, videoElementModule] = await Promise.all([
+        import('video.js'),
+        import('videojs-video-element'),
+      ])
+      await import('video.js/dist/video-js.css')
+
+      const g = globalThis as typeof globalThis & { videojs?: typeof videojs }
+      if (typeof g.videojs === 'undefined') {
+        g.videojs = videojsLib as typeof videojs
+      }
+
+      void videoElementModule
+      await customElements.whenDefined('videojs-video')
       patchVideojsPlaybackMethods()
+    })().catch((err) => {
+      bootstrapPromise = null
+      throw err
     })
   }
-})
+  await bootstrapPromise
+}

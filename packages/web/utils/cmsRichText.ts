@@ -1,22 +1,7 @@
 import { sanitize, type SanitizerOptions } from 'unsane'
-import { generateHTML } from '@tiptap/html'
-import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
 import type { CmsRichTextDocument } from '@vmp/shared'
 
 const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:'])
-
-const richTextExtensions = [
-  StarterKit.configure({
-    heading: { levels: [2, 3, 4] },
-  }),
-  Link.configure({
-    openOnClick: true,
-    HTMLAttributes: {
-      class: 'text-blue-600 dark:text-blue-400 hover:underline',
-    },
-  }),
-]
 
 /** Allowlist aligned with TipTap StarterKit + Link output (Workers-safe, no DOM). */
 const CMS_RICH_TEXT_SANITIZE_OPTIONS: SanitizerOptions = {
@@ -57,16 +42,6 @@ function purifyHtml(html: string): string {
 export function sanitizeCmsRichTextHtml(html: string): string {
   if (!html) return ''
   return sanitizeLinkHrefs(purifyHtml(html))
-}
-
-export function renderCmsRichTextHtml(content: CmsRichTextDocument): string {
-  if (!content || typeof content !== 'object') return ''
-  try {
-    const html = generateHTML(content as Parameters<typeof generateHTML>[0], richTextExtensions)
-    return sanitizeCmsRichTextHtml(html)
-  } catch {
-    return ''
-  }
 }
 
 export function emptyTiptapDoc(): CmsRichTextDocument {
