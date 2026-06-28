@@ -1906,12 +1906,22 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
 
     // Best-effort duration hydration for legacy rows where full_duration=0.
     if (env.R2_BASE_URL) {
-      await Promise.all(annotated.map(async (video: any) => {
-        if (!video || typeof video.id !== 'string') return
-        if (typeof video.full_duration === 'number' && video.full_duration > 0) return
-        const resolved = await resolveVideoDurationSeconds(video.id, env)
-        if (resolved && resolved > 0) video.full_duration = resolved
+      const durationById = new Map<string, number>()
+      const uniqueIds = [...new Set(
+        annotated
+          .filter((video: any) => video && typeof video.id === 'string'
+            && !(typeof video.full_duration === 'number' && video.full_duration > 0))
+          .map((video: any) => video.id),
+      )]
+      await Promise.all(uniqueIds.map(async (id) => {
+        const resolved = await resolveVideoDurationSeconds(id, env)
+        if (resolved && resolved > 0) durationById.set(id, resolved)
       }))
+      for (const video of annotated) {
+        if (!video || typeof video.id !== 'string') continue
+        const resolved = durationById.get(video.id)
+        if (resolved) video.full_duration = resolved
+      }
     }
 
     return jsonResponse({ videos: annotated }, 200, corsHeaders)
