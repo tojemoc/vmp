@@ -1,5 +1,8 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource'
+import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv'
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+
+loadMonorepoRootEnv()
 
 const buildInfo = readBuildInfoDefaults()
 
