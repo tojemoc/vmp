@@ -20,13 +20,13 @@
     "db:migration-verify": "bash ./scripts/migration_integrity_check.sh"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^10.57.0",
+    "@sentry/cloudflare": "^10.62.0",
     "@vmp/shared": "*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260625.1",
+    "@cloudflare/workers-types": "^4.20260628.1",
     "@types/node": "^26.0.1",
     "tsx": "^4.22.4",
-    "wrangler": "^4.102.0"
+    "wrangler": "^4.105.0"
   }
 }
