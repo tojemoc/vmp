@@ -36,7 +36,10 @@ async function loadRenderer(): Promise<RichTextRenderer> {
           return ''
         }
       }
-    })()
+    })().catch((err) => {
+      rendererPromise = null
+      throw err
+    })
   }
   return rendererPromise
 }

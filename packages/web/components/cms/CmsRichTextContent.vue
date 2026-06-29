@@ -1,5 +1,5 @@
 <template>
-  <div class="cms-rich-text" v-html="html" />
+  <div class="cms-rich-text text-gray-900 dark:text-white" v-html="html" />
 </template>
 
 <script setup lang="ts">

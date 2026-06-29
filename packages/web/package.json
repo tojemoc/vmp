@@ -29,6 +29,7 @@
     "@nuxtjs/color-mode": "^4.0.0",
     "@sentry/nuxt": "^10.62.0",
     "@stripe/stripe-js": "^9.8.0",
+    "@tiptap/core": "^3.27.1",
     "@tiptap/extension-link": "^3.27.1",
     "@tiptap/extension-placeholder": "^3.27.1",
     "@tiptap/html": "^3.27.1",

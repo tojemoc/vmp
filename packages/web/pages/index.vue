@@ -456,6 +456,17 @@ const lcpVideoId = computed(() => {
     if (block.type === 'category' && block.categorySection?.visible[0]?.id) {
       return block.categorySection.visible[0].id
     }
+    if (block.type === 'category_with_side_mini') {
+      const primaryVideo = block.primary.categorySection?.visible[0]?.id
+      if (primaryVideo) return primaryVideo
+    }
+    if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
+      for (const child of block.children) {
+        if (child.type === 'top_video' && child.videos[0]?.id) return child.videos[0].id
+        if (child.type === 'featured_row' && child.videos[0]?.id) return child.videos[0].id
+        if (child.categorySection?.visible[0]?.id) return child.categorySection.visible[0].id
+      }
+    }
   }
   return videos.value[0]?.id ?? null
 })

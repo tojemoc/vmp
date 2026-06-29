@@ -73,12 +73,13 @@ const bodyBlocks = computed(() =>
 const introHtml = ref('')
 
 async function loadIntroHtml() {
-  if (!introBlock.value) {
+  const block = introBlock.value
+  if (!block) {
     introHtml.value = ''
     return
   }
   const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender')
-  introHtml.value = await renderCmsRichTextHtml(introBlock.value.content as CmsRichTextDocument)
+  introHtml.value = await renderCmsRichTextHtml(block.content as CmsRichTextDocument)
 }
 
 await loadIntroHtml()
