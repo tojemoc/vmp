@@ -51,7 +51,7 @@ flowchart LR
   DD[Deno Deploy]
   PG[(Managed Postgres)]
   S3[(S3 bucket)]
-  GHA -->|dist/server.js + node_modules| DD
+  GHA -->|self-contained dist/server.js| DD
   DD --> PG
   DD --> S3
 ```
@@ -81,7 +81,7 @@ Production upload tree (after verify passes), from `packages/api-node`:
 ```bash
 npm run build
 test -f dist/server.js
-node scripts/deno-deploy-upload.mjs   # needs DENO_DEPLOY_TOKEN
+node scripts/deno-deploy-upload.mjs   # needs DENO_DEPLOY_TOKEN, DENO_DEPLOY_ORG, DENO_DEPLOY_APP
 ```
 
 **Uploaded tree:** `dist/server.js` (esbuild bundle of `@vmp/api`, adapters, and runtime npm dependencies). The deployment artifact is produced from the monorepo `npm ci` output, so CI does not run a second package-local install/prune cycle.

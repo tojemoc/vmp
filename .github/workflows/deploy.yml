@@ -20,7 +20,7 @@ on:
           - production
 
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'push' }}
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
   cancel-in-progress: false
 
 jobs:

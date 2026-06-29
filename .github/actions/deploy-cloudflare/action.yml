@@ -120,7 +120,11 @@ runs:
         EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
       run: |
         headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
-        echo "$headers" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
+        actual_origin="$(printf '%s\n' "$headers" | awk 'BEGIN { IGNORECASE = 1 } /^access-control-allow-origin:/ { sub(/^[^:]*:[[:space:]]*/, ""); print; exit }')"
+        if [ "$actual_origin" != "$FRONTEND_URL" ]; then
+          echo "Expected access-control-allow-origin to equal $FRONTEND_URL, got: ${actual_origin:-<missing>}"
+          exit 1
+        fi
         echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
 
     - name: Smoke check deployment auth endpoint (${{ inputs.deploy-tier }})
