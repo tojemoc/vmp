@@ -9,7 +9,9 @@
     "build": "node scripts/build.mjs",
     "start": "node dist/server.js",
     "dev": "npm run build && node --watch dist/server.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "verify:deploy": "npm run typecheck && npm run test && npm run build"
   },
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
@@ -20,8 +22,10 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260628.1",
+    "@sentry/cloudflare": "^10.62.0",
     "@types/node": "^26.0.1",
     "esbuild": "^0.28.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
 }
