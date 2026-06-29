@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Upload a prebuilt api-node tree to Deno Deploy (GitHub Actions).
- * Expects dist/server.js and production node_modules/ in packages/api-node.
+ * Expects dist/server.js in packages/api-node; runtime npm dependencies are bundled.
  * Set DENO_DEPLOY_DEBUG=true to print full tree/debug diagnostics.
  */
 
@@ -21,13 +21,6 @@ const entrypoint = path.join(packageRoot, 'dist/server.js')
 if (!existsSync(entrypoint)) {
   console.error(
     `[deno-deploy] Missing ${entrypoint}. Run npm run build first.`,
-  )
-  process.exit(1)
-}
-
-if (!existsSync(path.join(packageRoot, 'node_modules/postgres'))) {
-  console.error(
-    '[deno-deploy] Missing node_modules/postgres. Run deploy-prune-prod after install.',
   )
   process.exit(1)
 }
@@ -61,7 +54,6 @@ const args = [
   '--app',
   app,
   '--prod',
-  '--allow-node-modules',
 ]
 
 console.log('[deno-deploy] Deploying prebuilt api-node bundle...')
