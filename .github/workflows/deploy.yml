@@ -158,27 +158,37 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-
+      
       - name: Deploy api-node to Deno Deploy
-        if: ${{ secrets.DENO_DEPLOY_TOKEN != '' }}
         working-directory: packages/api-node
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
           DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG }}
           DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP }}
-        run: node scripts/deno-deploy-upload.mjs
-
-      - name: Skip Deno Deploy upload (DENO_DEPLOY_TOKEN not configured)
-        if: ${{ secrets.DENO_DEPLOY_TOKEN == '' }}
-        run: echo "Skipping Deno Deploy upload — configure secrets.DENO_DEPLOY_TOKEN to enable backup API deploy."
-
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "Skipping Deno Deploy upload — configure DENO_DEPLOY_TOKEN to enable backup API deploy."
+            exit 0
+          fi
+      
+          node scripts/deno-deploy-upload.mjs
+      
       - name: Smoke check backup API (Deno Deploy)
-        if: ${{ secrets.DENO_DEPLOY_TOKEN != '' && vars.API_URL_BACKUP != '' }}
-        run: bash .github/scripts/smoke-api-node-backup.sh "$BACKUP_API_URL"
-
-      - name: Skip backup API smoke (API_URL_BACKUP not configured)
-        if: ${{ secrets.DENO_DEPLOY_TOKEN != '' && vars.API_URL_BACKUP == '' }}
-        run: echo "Skipping backup API smoke — configure vars.API_URL_BACKUP (e.g. https://vmp-backup-api.tjm.sk)."
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+          BACKUP_API_URL: ${{ vars.API_URL_BACKUP }}
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "Skipping backup API smoke — DENO_DEPLOY_TOKEN not configured."
+            exit 0
+          fi
+      
+          if [ -z "$BACKUP_API_URL" ]; then
+            echo "Skipping backup API smoke — configure API_URL_BACKUP (e.g. https://vmp-backup-api.tjm.sk)."
+            exit 0
+          fi
+          
+          bash .github/scripts/smoke-api-node-backup.sh "$BACKUP_API_URL"
 
   deploy-production:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
