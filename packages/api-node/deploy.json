@@ -9,12 +9,10 @@
     "denoDeployApp": "vmp",
     "secret": "DENO_DEPLOY_TOKEN",
     "buildOnRunner": [
-      "node scripts/deploy-install.mjs",
-      "npm run build",
-      "node scripts/deploy-prune-prod.mjs"
+      "npm run build"
     ],
     "upload": "node scripts/deno-deploy-upload.mjs"
   },
   "runtimeEntrypoint": "dist/server.js",
-  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds dist/ + production node_modules on Blacksmith, then deno deploy --allow-node-modules uploads the prebuilt tree."
+  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds a self-contained dist/ bundle on Blacksmith, then deno deploy uploads the prebuilt tree."
 }

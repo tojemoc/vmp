@@ -1,0 +1,162 @@
+name: Deploy Cloudflare API and Web
+description: Install, validate, deploy, and smoke-test the Cloudflare API plus Nuxt Worker frontend.
+inputs:
+  deploy-tier:
+    required: true
+    description: staging or production.
+  api-base-url:
+    required: true
+    description: Public API base URL for this environment.
+  frontend-url:
+    required: true
+    description: Public frontend URL for this environment.
+  expected-allowed-origins:
+    required: true
+    description: Comma-separated allowed origins expected to include the frontend URL.
+  cloudflare-api-token:
+    required: true
+    description: Cloudflare API token for this environment.
+  cloudflare-account-id:
+    required: true
+    description: Cloudflare account ID for this environment.
+  deploy-smoke-auth-token:
+    required: false
+    default: ''
+    description: Optional smoke-auth token for this environment.
+  web-deploy-args:
+    required: false
+    default: '--config wrangler.workers.toml'
+    description: Arguments passed to wrangler deploy from packages/web.
+  git-sha:
+    required: true
+    description: Commit SHA expected in deployed frontend build metadata.
+  app-version:
+    required: false
+    default: ''
+    description: Optional frontend app version, usually the release tag in production.
+  ui-locale:
+    required: false
+    default: ''
+    description: Optional public UI locale passed into Nuxt.
+  sentry-dsn:
+    required: false
+    default: ''
+    description: Optional public Sentry DSN passed into Nuxt.
+  sentry-auth-token:
+    required: false
+    default: ''
+    description: Optional Sentry auth token for sourcemap upload.
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Validate deployment environment
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api-base-url }}
+        FRONTEND_URL: ${{ inputs.frontend-url }}
+        EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: |
+        test -n "$API_BASE_URL" || (echo "Missing API base URL for ${{ inputs.deploy-tier }}" && exit 1)
+        test -n "$FRONTEND_URL" || (echo "Missing frontend URL for ${{ inputs.deploy-tier }}" && exit 1)
+        test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing allowed origins for ${{ inputs.deploy-tier }}" && exit 1)
+        test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing Cloudflare API token for ${{ inputs.deploy-tier }}" && exit 1)
+        test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing Cloudflare account ID for ${{ inputs.deploy-tier }}" && exit 1)
+        echo "Deploy tier: ${{ inputs.deploy-tier }}"
+        echo "API base URL: $API_BASE_URL"
+        echo "Frontend URL: $FRONTEND_URL"
+
+    - name: Type check (fail fast)
+      shell: bash
+      run: npm run typecheck:deploy
+
+    - name: Build Web (Nuxt → Cloudflare Worker)
+      shell: bash
+      working-directory: packages/web
+      env:
+        API_URL: ${{ inputs.api-base-url }}
+        NUXT_PUBLIC_SITE_URL: ${{ inputs.frontend-url }}
+        NUXT_PUBLIC_DEPLOY_TIER: ${{ inputs.deploy-tier }}
+        NUXT_PUBLIC_APP_VERSION: ${{ inputs.app-version }}
+        NUXT_PUBLIC_GIT_COMMIT: ${{ inputs.git-sha }}
+        NUXT_PUBLIC_UI_LOCALE: ${{ inputs.ui-locale }}
+        NUXT_PUBLIC_SENTRY_DSN: ${{ inputs.sentry-dsn }}
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        NODE_ENV: production
+      run: npm run build
+
+    - name: Deploy API (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: npm run deploy --workspace=@vmp/api
+
+    - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
+      shell: bash
+      working-directory: packages/web
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: npx wrangler deploy ${{ inputs.web-deploy-args }}
+
+    - name: Smoke check API health (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api-base-url }}
+      run: |
+        curl -fsS "$API_BASE_URL/api/health" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(body.status!=="healthy"){console.error("Unexpected /api/health payload",body);process.exit(1)}'
+
+    - name: Smoke check API CORS origin (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api-base-url }}
+        FRONTEND_URL: ${{ inputs.frontend-url }}
+        EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
+      run: |
+        headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
+        actual_origin="$(printf '%s\n' "$headers" | awk 'BEGIN { IGNORECASE = 1 } /^access-control-allow-origin:/ { sub(/^[^:]*:[[:space:]]*/, ""); print; exit }')"
+        if [ "$actual_origin" != "$FRONTEND_URL" ]; then
+          echo "Expected access-control-allow-origin to equal $FRONTEND_URL, got: ${actual_origin:-<missing>}"
+          exit 1
+        fi
+        echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
+
+    - name: Smoke check deployment auth endpoint (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api-base-url }}
+        DEPLOY_SMOKE_AUTH_TOKEN: ${{ inputs.deploy-smoke-auth-token }}
+      run: |
+        if [ -z "$DEPLOY_SMOKE_AUTH_TOKEN" ]; then
+          echo "Skipping deploy auth smoke check because deploy-smoke-auth-token is not configured."
+          exit 0
+        fi
+        auth_status="$(curl -sS -o "/tmp/smoke-auth-${{ inputs.deploy-tier }}.json" -w "%{http_code}" -H "X-Smoke-Token: $DEPLOY_SMOKE_AUTH_TOKEN" "$API_BASE_URL/api/admin/smoke-auth")"
+        if [ "$auth_status" != "200" ]; then
+          echo "Deploy auth smoke check failed with HTTP $auth_status"
+          cat "/tmp/smoke-auth-${{ inputs.deploy-tier }}.json"
+          exit 1
+        fi
+        node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(body?.ok!==true){console.error("Deploy auth smoke response invalid",body);process.exit(1)}' "/tmp/smoke-auth-${{ inputs.deploy-tier }}.json"
+
+    - name: Smoke check frontend reachability (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        FRONTEND_URL: ${{ inputs.frontend-url }}
+      run: curl -fsS "$FRONTEND_URL" >/dev/null
+
+    - name: Smoke check frontend build revision (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        EXPECTED_SHA: ${{ inputs.git-sha }}
+      run: bash .github/scripts/smoke-frontend-build-revision.sh "${{ inputs.frontend-url }}"
+
+    - name: Smoke check frontend Nuxt chunks (${{ inputs.deploy-tier }})
+      shell: bash
+      run: bash .github/scripts/smoke-frontend-nuxt-chunks.sh "${{ inputs.frontend-url }}"

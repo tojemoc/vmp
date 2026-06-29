@@ -31,10 +31,10 @@ await esbuild.build({
   packages: 'bundle',
   alias: {
     // CI can invoke api-node build without full workspace link metadata.
-    // Resolve @vmp/shared to source directly so worker code can be bundled.
+    // Resolve @vmp/shared to source directly; runtime npm dependencies are
+    // bundled too so Deno Deploy does not need a package-local node_modules.
     '@vmp/shared': sharedEntry,
   },
-  external: ['postgres', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
   sourcemap: true,
   logLevel: 'info',
 })

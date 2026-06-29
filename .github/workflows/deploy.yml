@@ -19,26 +19,22 @@ on:
           - staging
           - production
 
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  cancel-in-progress: false
+
 jobs:
   deploy-staging:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
-    env:
-      API_BASE_URL: ${{ vars.API_URL_STAGING }}
-      FRONTEND_URL: ${{ vars.FRONTEND_URL_STAGING }}
-      EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_STAGING }}
-      NUXT_PUBLIC_DEPLOY_TIER: staging
-      NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
-      NUXT_PUBLIC_UI_LOCALE: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
-      NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
           package-manager-cache: false
@@ -46,91 +42,37 @@ jobs:
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
-          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
 
-      - run: npm ci
-      - name: Type check (fail fast)
-        run: npm run typecheck:deploy
-
-      - name: Build Web (Nuxt → Cloudflare Worker)
-        working-directory: packages/web
-        env:
-          API_URL: ${{ env.API_BASE_URL }}
-          NUXT_PUBLIC_SITE_URL: ${{ env.FRONTEND_URL }}
-          NUXT_PUBLIC_UI_LOCALE: ${{ env.NUXT_PUBLIC_UI_LOCALE }}
-          NODE_ENV: production
-        run: npm run build
-
-      - name: Validate staging env/domain wiring
-        run: |
-          test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_STAGING" && exit 1)
-          test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_STAGING" && exit 1)
-          test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_STAGING" && exit 1)
-
-      - name: Deploy API (staging)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-        run: npm run deploy --workspace=@vmp/api
-
-      - name: Deploy Web (staging Worker — vmp-web-worker-dev)
-        working-directory: packages/web
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
-        run: npx wrangler deploy --config wrangler.workers.toml
-
-      - name: Smoke check API health (staging)
-        run: |
-          curl -fsS "$API_BASE_URL/api/health" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(body.status!=="healthy"){console.error("Unexpected /api/health payload",body);process.exit(1)}'
-
-      - name: Smoke check API CORS origin (staging)
-        run: |
-          headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
-          echo "$headers" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
-          echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
-
-      - name: Smoke check deployment auth endpoint (staging)
-        env:
-          DEPLOY_SMOKE_AUTH_TOKEN: ${{ secrets.STAGING_DEPLOY_SMOKE_AUTH_TOKEN }}
-        run: |
-          if [ -z "$DEPLOY_SMOKE_AUTH_TOKEN" ]; then
-            echo "Skipping deploy auth smoke check because secrets.STAGING_DEPLOY_SMOKE_AUTH_TOKEN is not configured."
-            exit 0
-          fi
-          auth_status="$(curl -sS -o /tmp/smoke-auth-staging.json -w "%{http_code}" -H "X-Smoke-Token: $DEPLOY_SMOKE_AUTH_TOKEN" "$API_BASE_URL/api/admin/smoke-auth")"
-          if [ "$auth_status" != "200" ]; then
-            echo "Deploy auth smoke check failed with HTTP $auth_status"
-            cat /tmp/smoke-auth-staging.json
-            exit 1
-          fi
-          node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync("/tmp/smoke-auth-staging.json","utf8"));if(body?.ok!==true){console.error("Deploy auth smoke response invalid",body);process.exit(1)}'
-
-      - name: Smoke check frontend reachability (staging)
-        run: |
-          curl -fsS "$FRONTEND_URL" >/dev/null
-
-      - name: Smoke check frontend build revision (staging)
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
-
-      - name: Smoke check frontend Nuxt chunks (staging)
-        run: bash .github/scripts/smoke-frontend-nuxt-chunks.sh "$FRONTEND_URL"
+      - name: Deploy staging Cloudflare API and Web
+        uses: ./.github/actions/deploy-cloudflare
+        with:
+          deploy-tier: staging
+          api-base-url: ${{ vars.API_URL_STAGING }}
+          frontend-url: ${{ vars.FRONTEND_URL_STAGING }}
+          expected-allowed-origins: ${{ vars.ALLOWED_ORIGINS_STAGING }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_STAGING }}
+          deploy-smoke-auth-token: ${{ secrets.STAGING_DEPLOY_SMOKE_AUTH_TOKEN }}
+          web-deploy-args: --config wrangler.workers.toml
+          git-sha: ${{ github.sha }}
+          ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
+          sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   deploy-api-node-backup:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+    needs: deploy-staging
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: staging
-    env:
-      BACKUP_API_URL: ${{ vars.API_URL_BACKUP }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
           package-manager-cache: false
@@ -138,24 +80,44 @@ jobs:
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
-          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Deno Deploy configuration
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+          DENO_DEPLOY_ORG: ${{ vars.DENO_DEPLOY_ORG }}
+          DENO_DEPLOY_APP: ${{ vars.DENO_DEPLOY_APP }}
+          BACKUP_API_URL: ${{ vars.API_URL_BACKUP }}
+        run: |
+          if [ -z "$DENO_DEPLOY_TOKEN" ]; then
+            echo "DENO_DEPLOY_TOKEN is not configured; backup API upload and smoke checks will be skipped."
+            exit 0
+          fi
+          test -n "$DENO_DEPLOY_ORG" || (echo "Missing vars.DENO_DEPLOY_ORG" && exit 1)
+          test -n "$DENO_DEPLOY_APP" || (echo "Missing vars.DENO_DEPLOY_APP" && exit 1)
+          test -n "$BACKUP_API_URL" || (echo "Missing vars.API_URL_BACKUP" && exit 1)
+          echo "Deno Deploy org: $DENO_DEPLOY_ORG"
+          echo "Deno Deploy app: $DENO_DEPLOY_APP"
+          echo "Backup API URL: $BACKUP_API_URL"
 
       - name: Verify api-node before upload (required — deploy aborts if this fails)
         run: npm run verify:api-node
 
-      - name: Build production upload tree
+      - name: Build Deno Deploy upload bundle
         working-directory: packages/api-node
         run: |
-          node scripts/deploy-install.mjs
+          # api-node now bundles pure-JS runtime dependencies with esbuild, so the upload
+          # artifact comes directly from the already-installed monorepo workspace.  The
+          # former second package-local npm install/prune existed to put production
+          # node_modules under packages/api-node for Deno Deploy; it is no longer needed.
           npm run build
-          node scripts/deploy-prune-prod.mjs
           test -f dist/server.js
-          test -d node_modules/postgres
 
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
         with:
           deno-version: v2.x
       
@@ -183,29 +145,15 @@ jobs:
             exit 0
           fi
       
-          if [ -z "$BACKUP_API_URL" ]; then
-            echo "Skipping backup API smoke — configure API_URL_BACKUP (e.g. https://vmp-backup-api.tjm.sk)."
-            exit 0
-          fi
-          
           bash .github/scripts/smoke-api-node-backup.sh "$BACKUP_API_URL"
 
   deploy-production:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
     runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: production
-    env:
-      API_BASE_URL: ${{ vars.API_URL_PROD }}
-      FRONTEND_URL: ${{ vars.FRONTEND_URL_PROD }}
-      EXPECTED_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS_PROD }}
-      NUXT_PUBLIC_DEPLOY_TIER: production
-      NUXT_PUBLIC_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-      NUXT_PUBLIC_GIT_COMMIT: ${{ github.sha }}
-      NUXT_PUBLIC_UI_LOCALE: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
-      NUXT_PUBLIC_SENTRY_DSN: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
 
@@ -217,82 +165,22 @@ jobs:
       - name: Mount npm cache
         uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
         with:
-          key: ${{ github.repository }}-npm-cache
+          key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
 
-      - name: Mount node_modules
-        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
+      - name: Deploy production Cloudflare API and Web
+        uses: ./.github/actions/deploy-cloudflare
         with:
-          key: ${{ github.repository }}-node-modules
-          path: ./node_modules
-
-      - run: npm ci
-      - name: Type check (fail fast)
-        run: npm run typecheck:deploy
-
-      - name: Build Web (Nuxt → Cloudflare Worker)
-        working-directory: packages/web
-        env:
-          API_URL: ${{ env.API_BASE_URL }}
-          NUXT_PUBLIC_SITE_URL: ${{ env.FRONTEND_URL }}
-          NUXT_PUBLIC_UI_LOCALE: ${{ env.NUXT_PUBLIC_UI_LOCALE }}
-          NODE_ENV: production
-        run: npm run build
-
-      - name: Validate production env/domain wiring
-        run: |
-          test -n "$API_BASE_URL" || (echo "Missing vars.API_URL_PROD" && exit 1)
-          test -n "$FRONTEND_URL" || (echo "Missing vars.FRONTEND_URL_PROD" && exit 1)
-          test -n "$EXPECTED_ALLOWED_ORIGINS" || (echo "Missing vars.ALLOWED_ORIGINS_PROD" && exit 1)
-
-      - name: Deploy API (production)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-        run: npm run deploy --workspace=@vmp/api
-
-      - name: Deploy Web (production Worker — vmp-web-worker-prod)
-        working-directory: packages/web
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
-        run: npx wrangler deploy --config wrangler.workers.toml --env production
-
-      - name: Smoke check API health (production)
-        run: |
-          curl -fsS "$API_BASE_URL/api/health" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(body.status!=="healthy"){console.error("Unexpected /api/health payload",body);process.exit(1)}'
-
-      - name: Smoke check API CORS origin (production)
-        run: |
-          headers="$(curl -fsSI -H "Origin: $FRONTEND_URL" "$API_BASE_URL/api/health" | tr -d '\r')"
-          echo "$headers" | rg -i "^access-control-allow-origin: ${FRONTEND_URL}$"
-          echo ",${EXPECTED_ALLOWED_ORIGINS}," | tr -d ' ' | rg -F ",${FRONTEND_URL},"
-
-      - name: Smoke check deployment auth endpoint (production)
-        env:
-          DEPLOY_SMOKE_AUTH_TOKEN: ${{ secrets.PROD_DEPLOY_SMOKE_AUTH_TOKEN }}
-        run: |
-          if [ -z "$DEPLOY_SMOKE_AUTH_TOKEN" ]; then
-            echo "Skipping deploy auth smoke check because secrets.PROD_DEPLOY_SMOKE_AUTH_TOKEN is not configured."
-            exit 0
-          fi
-          auth_status="$(curl -sS -o /tmp/smoke-auth-production.json -w "%{http_code}" -H "X-Smoke-Token: $DEPLOY_SMOKE_AUTH_TOKEN" "$API_BASE_URL/api/admin/smoke-auth")"
-          if [ "$auth_status" != "200" ]; then
-            echo "Deploy auth smoke check failed with HTTP $auth_status"
-            cat /tmp/smoke-auth-production.json
-            exit 1
-          fi
-          node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync("/tmp/smoke-auth-production.json","utf8"));if(body?.ok!==true){console.error("Deploy auth smoke response invalid",body);process.exit(1)}'
-
-      - name: Smoke check frontend reachability (production)
-        run: |
-          curl -fsS "$FRONTEND_URL" >/dev/null
-
-      - name: Smoke check frontend build revision (production)
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        run: bash .github/scripts/smoke-frontend-build-revision.sh "$FRONTEND_URL"
-
-      - name: Smoke check frontend Nuxt chunks (production)
-        run: bash .github/scripts/smoke-frontend-nuxt-chunks.sh "$FRONTEND_URL"
-
+          deploy-tier: production
+          api-base-url: ${{ vars.API_URL_PROD }}
+          frontend-url: ${{ vars.FRONTEND_URL_PROD }}
+          expected-allowed-origins: ${{ vars.ALLOWED_ORIGINS_PROD }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN_PROD }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROD }}
+          deploy-smoke-auth-token: ${{ secrets.PROD_DEPLOY_SMOKE_AUTH_TOKEN }}
+          web-deploy-args: --config wrangler.workers.toml --env production
+          git-sha: ${{ github.sha }}
+          app-version: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
+          sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
