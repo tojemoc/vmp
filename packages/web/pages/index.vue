@@ -50,7 +50,7 @@
               v-if="pill.image_url"
               class="w-10 h-10 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-800 flex-shrink-0"
             >
-              <img :src="pill.image_url" :alt="pill.label" class="w-full h-full object-cover" />
+              <img :src="pill.image_url" :alt="pill.label" class="w-full h-full object-cover" loading="lazy" decoding="async" />
             </div>
             <div
               v-else
@@ -107,6 +107,8 @@
               :show-description="false"
               :show-relative-timestamp="true"
               :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
             />
           </div>
 
@@ -118,6 +120,8 @@
               :show-description="false"
               :show-relative-timestamp="true"
               :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
             />
           </div>
 
@@ -159,6 +163,8 @@
                 :show-description="false"
                 :show-relative-timestamp="true"
                 :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
               />
             </div>
           </div>
@@ -178,6 +184,8 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
             </section>
@@ -197,6 +205,8 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
             </aside>
@@ -226,6 +236,8 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
               <div v-else-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -236,6 +248,8 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
               <div v-else-if="child.categorySection" class="space-y-2">
@@ -253,6 +267,8 @@
                     :show-description="false"
                     :show-relative-timestamp="true"
                     :clamp-title="false"
+              :image-loading="videoCardImageLoading(video.id)"
+              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                   />
                 </div>
               </div>
@@ -269,6 +285,8 @@
           :show-description="false"
           :show-relative-timestamp="true"
           :clamp-title="false"
+          :image-loading="videoCardImageLoading(video.id)"
+          :image-fetch-priority="videoCardImageFetchPriority(video.id)"
         />
       </div>
 
@@ -429,6 +447,37 @@ const homepageRenderModel = computed(() =>
     placement: placement.value,
   }),
 )
+
+/** First visible card is the mobile LCP candidate — load its thumbnail eagerly. */
+const lcpVideoId = computed(() => {
+  for (const block of homepageRenderModel.value.blockItems) {
+    if (block.type === 'top_video' && block.videos[0]?.id) return block.videos[0].id
+    if (block.type === 'featured_row' && block.videos[0]?.id) return block.videos[0].id
+    if (block.type === 'category' && block.categorySection?.visible[0]?.id) {
+      return block.categorySection.visible[0].id
+    }
+    if (block.type === 'category_with_side_mini') {
+      const primaryVideo = block.primary.categorySection?.visible[0]?.id
+      if (primaryVideo) return primaryVideo
+    }
+    if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
+      for (const child of block.children) {
+        if (child.type === 'top_video' && child.videos[0]?.id) return child.videos[0].id
+        if (child.type === 'featured_row' && child.videos[0]?.id) return child.videos[0].id
+        if (child.categorySection?.visible[0]?.id) return child.categorySection.visible[0].id
+      }
+    }
+  }
+  return videos.value[0]?.id ?? null
+})
+
+function videoCardImageLoading(videoId: string): 'lazy' | 'eager' {
+  return videoId === lcpVideoId.value ? 'eager' : 'lazy'
+}
+
+function videoCardImageFetchPriority(videoId: string): 'high' | 'auto' {
+  return videoId === lcpVideoId.value ? 'high' : 'auto'
+}
 const bannerImageUrls = ref<Record<string, string>>({})
 
 const bannerImageIds = computed(() => {

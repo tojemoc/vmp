@@ -10,7 +10,7 @@
         <div
           v-if="introBlock"
           class="cms-intro cms-rich-text"
-          v-html="renderIntroHtml"
+          v-html="introHtml"
         />
       </header>
 
@@ -70,9 +70,20 @@ const bodyBlocks = computed(() =>
   introBlock.value ? page.value.content.slice(1) : page.value.content,
 )
 
-const renderIntroHtml = computed(() =>
-  introBlock.value ? renderCmsRichTextHtml(introBlock.value.content as CmsRichTextDocument) : '',
-)
+const introHtml = ref('')
+
+async function loadIntroHtml() {
+  const block = introBlock.value
+  if (!block) {
+    introHtml.value = ''
+    return
+  }
+  const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender')
+  introHtml.value = await renderCmsRichTextHtml(block.content as CmsRichTextDocument)
+}
+
+await loadIntroHtml()
+watch(introBlock, () => { void loadIntroHtml() })
 
 const imageIds = computed(() =>
   page.value.content

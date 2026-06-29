@@ -18,7 +18,7 @@
       </nav>
 
       <div v-if="content.length" class="text-sm text-gray-600 dark:text-gray-400">
-        <CmsBlockRenderer :blocks="content" :image-urls="imageUrls" />
+        <LazyCmsBlockRenderer :blocks="content" :image-urls="imageUrls" />
       </div>
     </div>
   </footer>

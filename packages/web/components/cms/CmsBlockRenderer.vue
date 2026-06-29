@@ -3,10 +3,11 @@
     <template v-for="(block, index) in blocks" :key="index">
       <section
         v-if="block.type === 'rich_text'"
-        class="cms-rich-text prose prose-gray dark:prose-invert max-w-none scroll-mt-24"
+        class="prose prose-gray dark:prose-invert max-w-none scroll-mt-24"
         :class="sectionClass(block)"
-        v-html="renderRichText(block.content)"
-      />
+      >
+        <CmsRichTextContent :content="block.content" />
+      </section>
 
       <figure v-else-if="block.type === 'image'" class="space-y-2">
         <img
@@ -29,7 +30,7 @@
         class="rounded-lg border px-4 py-3 text-sm leading-relaxed"
         :class="calloutClass(block.variant)"
       >
-        <div class="cms-rich-text prose prose-sm dark:prose-invert max-w-none" v-html="renderRichText(block.content)" />
+        <CmsRichTextContent class="prose prose-sm dark:prose-invert max-w-none" :content="block.content" />
       </div>
 
       <hr
@@ -77,8 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import type { CmsBlock, CmsCalloutVariant, CmsRichTextDocument } from '@vmp/shared'
-import { renderCmsRichTextHtml } from '~/utils/cmsRichText'
+import type { CmsBlock, CmsCalloutVariant } from '@vmp/shared'
 
 const props = defineProps<{
   blocks: CmsBlock[]
@@ -86,10 +86,6 @@ const props = defineProps<{
 }>()
 
 const imageUrls = computed(() => props.imageUrls ?? {})
-
-function renderRichText(content: CmsRichTextDocument) {
-  return renderCmsRichTextHtml(content)
-}
 
 function calloutClass(variant: CmsCalloutVariant) {
   if (variant === 'warning') {

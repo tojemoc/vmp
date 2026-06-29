@@ -1669,6 +1669,9 @@ const initializeVideoElement = async (
 
   ensureActive()
 
+  // Load the player bundle on demand (not on the homepage entry chunk).
+  const { ensureVideojsLoaded } = await import('~/lib/videojsBootstrap')
+  await ensureVideojsLoaded()
   // Wait for the custom element to be fully upgraded before touching it.
   // Setting src before this resolves causes "this.api is undefined" inside
   // the videojs-video element because its internal Video.js instance isn't

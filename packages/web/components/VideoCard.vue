@@ -7,8 +7,15 @@
     <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800" :class="mediaClass">
       <img
         v-if="video.thumbnail_url"
-        :src="sizedUrl('medium')"
+        :src="cardThumbnailSrc"
+        :srcset="cardThumbnailSrcset"
+        :sizes="cardThumbnailSizes"
         :alt="video.title"
+        :loading="props.imageLoading"
+        :fetchpriority="props.imageFetchPriority"
+        width="640"
+        height="360"
+        decoding="async"
         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
       />
       <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all"></div>
@@ -71,15 +78,34 @@ const props = withDefaults(defineProps<{
   showDescription?: boolean
   showRelativeTimestamp?: boolean
   clampTitle?: boolean
+  imageLoading?: 'lazy' | 'eager'
+  imageFetchPriority?: 'high' | 'low' | 'auto'
 }>(), {
   layout: 'default',
   titleScale: 'default',
   showDescription: true,
   showRelativeTimestamp: false,
   clampTitle: true,
+  imageLoading: 'lazy',
+  imageFetchPriority: 'auto',
 })
 
 const { sizedUrl } = useThumbnail(computed(() => props.video.thumbnail_url))
+const cardThumbnailSrc = computed(() => sizedUrl('small') ?? sizedUrl('medium'))
+const cardThumbnailSrcset = computed(() => {
+  const small = sizedUrl('small')
+  const medium = sizedUrl('medium')
+  if (!small && !medium) return undefined
+  const parts: string[] = []
+  if (small) parts.push(`${small} 320w`)
+  if (medium) parts.push(`${medium} 640w`)
+  return parts.length ? parts.join(', ') : undefined
+})
+const cardThumbnailSizes = computed(() =>
+  props.layout === 'horizontal'
+    ? '(max-width: 767px) 100vw, 58vw'
+    : '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw',
+)
 const isHorizontal = computed(() => props.layout === 'horizontal')
 const now = ref(Date.now())
 let nowInterval: ReturnType<typeof setInterval> | undefined

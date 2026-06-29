@@ -8,7 +8,7 @@ const buildInfo = readBuildInfoDefaults()
 
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
-  devtools: { enabled: true },
+  devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
   hooks: {
     // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
@@ -54,12 +54,23 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       include: [
-        '@vue/devtools-core',
-        '@vue/devtools-kit',
         'media-chrome',
-        'videojs-video-element',
-      ]
-    }
+      ],
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/video.js') || id.includes('videojs-video-element')) {
+              return 'videojs'
+            }
+            if (id.includes('node_modules/@tiptap/')) {
+              return 'tiptap'
+            }
+          },
+        },
+      },
+    },
   },
 
   runtimeConfig: {
