@@ -269,6 +269,9 @@ export const strings: StringsDefinition = {
   accountManagePaymentMethod: 'Manage payment method',
   offlineDownloadMenuLabel: 'Download for offline',
   offlineDownloadResume: 'Resume download',
+  offlineDownloadPwaRequiredTitle: 'Install the app to download',
+  offlineDownloadPwaRequiredMessage: 'Offline downloads are only available in the installed app. Add VMP to your home screen, then open the video from the app to download it.',
+  offlineDownloadPwaRequiredDismiss: 'Got it',
   offlineTapToUnmute: 'Tap to unmute',
   networkError: 'Network error. Please try again.',
 
