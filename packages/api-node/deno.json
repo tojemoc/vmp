@@ -5,7 +5,11 @@
 
   "deploy": {
     "org": "tjm",
-    "app": "vmp"
+    "app": "vmp",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./dist/server.js"
+    }
   },
 
   "exports": {
