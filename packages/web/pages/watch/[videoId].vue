@@ -118,6 +118,17 @@
                 : 'sm:rounded-lg',
             ]"
           >
+            <!-- Route transition overlay (recommendation click — avoid full-page reload UX) -->
+            <div
+              v-if="isNavigatingToAnotherVideo"
+              class="absolute inset-0 z-30 flex items-center justify-center bg-black/60 pointer-events-none"
+              role="status"
+              aria-live="polite"
+              :aria-label="strings.loadingVideo"
+            >
+              <div class="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" aria-hidden="true"></div>
+            </div>
+
             <!-- Buffering Spinner -->
             <div
               v-if="buffering"
@@ -497,55 +508,55 @@
           <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">{{ strings.upNext }}</h2>
 
           <div class="space-y-3">
-            <div
+            <NuxtLink
               v-for="rec in recommendations"
               :key="rec.id"
-              class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden hover:border-gray-300 dark:hover:border-gray-700 transition-colors cursor-pointer"
+              :to="recommendationWatchPath(rec)"
+              :prefetch="false"
+              class="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
             >
-              <NuxtLink :to="`/watch/${rec.slug ?? rec.id}`" class="block">
-                <div class="flex space-x-3 p-3">
-                  <div class="relative w-40 h-24 flex-shrink-0 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
-                    <img
-                      v-if="rec.thumbnail_url"
-                      :src="sizeUrl(rec.thumbnail_url, 'small')"
-                      :alt="rec.title"
-                      class="w-full h-full object-cover"
-                    />
-                    <div
-                      v-if="isLiveRecommendation(rec)"
-                      class="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                    >
-                      <span class="inline-block w-1.5 h-2 rounded-sm bg-rose-500 shrink-0" aria-hidden="true"></span>
-                      <span class="inline-flex items-center gap-0.5 font-semibold">
-                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
-                        Live
-                      </span>
-                    </div>
-                    <div
-                      v-else
-                      class="absolute bottom-1 right-1 bg-black bg-opacity-80 text-white text-xs px-1.5 py-0.5 rounded"
-                    >
-                      {{ rec.full_duration ? formatDuration(rec.full_duration) : '--' }}
-                    </div>
-                    <div
-                      v-if="!isLiveRecommendation(rec) && (rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0)"
-                      class="absolute top-1 left-1 bg-yellow-500 text-black text-xs font-semibold px-1.5 py-0.5 rounded"
-                    >
-                      PRO
-                    </div>
+              <div class="flex space-x-3 p-3">
+                <div class="relative w-40 h-24 flex-shrink-0 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
+                  <img
+                    v-if="rec.thumbnail_url"
+                    :src="sizeUrl(rec.thumbnail_url, 'small')"
+                    :alt="rec.title"
+                    class="w-full h-full object-cover"
+                  />
+                  <div
+                    v-if="isLiveRecommendation(rec)"
+                    class="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                  >
+                    <span class="inline-block w-1.5 h-2 rounded-sm bg-rose-500 shrink-0" aria-hidden="true"></span>
+                    <span class="inline-flex items-center gap-0.5 font-semibold">
+                      <span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
+                      Live
+                    </span>
                   </div>
-
-                  <div class="flex-1 min-w-0">
-                    <h3 class="font-semibold text-sm text-gray-900 dark:text-white line-clamp-2 mb-1">
-                      {{ rec.title }}
-                    </h3>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-                      {{ rec.description }}
-                    </p>
+                  <div
+                    v-else
+                    class="absolute bottom-1 right-1 bg-black bg-opacity-80 text-white text-xs px-1.5 py-0.5 rounded"
+                  >
+                    {{ rec.full_duration ? formatDuration(rec.full_duration) : '--' }}
+                  </div>
+                  <div
+                    v-if="!isLiveRecommendation(rec) && (rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0)"
+                    class="absolute top-1 left-1 bg-yellow-500 text-black text-xs font-semibold px-1.5 py-0.5 rounded"
+                  >
+                    PRO
                   </div>
                 </div>
-              </NuxtLink>
-            </div>
+
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-semibold text-sm text-gray-900 dark:text-white line-clamp-2 mb-1">
+                    {{ rec.title }}
+                  </h3>
+                  <p class="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                    {{ rec.description }}
+                  </p>
+                </div>
+              </div>
+            </NuxtLink>
           </div>
         </div>
       </div>
@@ -731,6 +742,7 @@ const videoElement        = ref<MediaLikeElement | null>(null)
 const mediaControllerRef  = ref<FullscreenElement | null>(null)
 const mobileSettingsMenuRef = ref<HTMLElement | null>(null)
 const loading             = ref(true)
+const isNavigatingToAnotherVideo = ref(false)
 const error               = ref<string | null>(null)
 const videoData           = ref<any>(null)
 const recommendations     = ref<any[]>([])
@@ -894,6 +906,10 @@ const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function recommendationWatchPath(rec: { id: string; slug?: string | null }) {
+  return `/watch/${encodeURIComponent(rec.slug ?? rec.id)}`
 }
 
 const formatRetryAfter = (seconds: number) => {
@@ -1488,7 +1504,16 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   rateLimited.value = false
   currentTime.value = 0
   playingOffline.value = false
-  loading.value = true
+  const preserveWatchShell = Boolean(
+    videoData.value &&
+    !accessNotFound.value &&
+    !videoNotFound.value &&
+    !rateLimited.value
+  )
+  isNavigatingToAnotherVideo.value = preserveWatchShell
+  if (!preserveWatchShell) {
+    loading.value = true
+  }
   error.value = null
   teardownLivestreamRuntime()
 
@@ -1501,6 +1526,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     await loadBrowseRecommendations(options.signal)
     ensureCurrent()
     loading.value = false
+    isNavigatingToAnotherVideo.value = false
     return
   }
 
@@ -1514,6 +1540,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
     if (accessNotFound.value || showVideoNotFound.value) {
       loading.value = false
+      isNavigatingToAnotherVideo.value = false
       return
     }
 
@@ -1537,6 +1564,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
     ensureCurrent()
     loading.value = false
+    isNavigatingToAnotherVideo.value = false
     await nextTick()
     measureDescriptionClamp()
     ensureCurrent()
@@ -1576,6 +1604,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     if (e.name === 'AbortError' || options.signal?.aborted || !guard()) return
     error.value = e.message
     loading.value = false
+    isNavigatingToAnotherVideo.value = false
   }
 }
 

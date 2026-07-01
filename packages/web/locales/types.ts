@@ -254,6 +254,9 @@ export type StringsDefinition = {
   accountManagePaymentMethod: string
   offlineDownloadMenuLabel: string
   offlineDownloadResume: string
+  offlineDownloadPwaRequiredTitle: string
+  offlineDownloadPwaRequiredMessage: string
+  offlineDownloadPwaRequiredDismiss: string
   offlineTapToUnmute: string
   networkError: string
   podcastRssTitle: string

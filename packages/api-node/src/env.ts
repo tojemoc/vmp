@@ -1,4 +1,5 @@
-import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js'
 import { S3R2Adapter } from './bindings/bucket.js'
@@ -15,6 +16,9 @@ let cachedKv: PostgresKVAdapter | null = null
 let envBuildPromise: Promise<CFEnvShape> | null = null
 
 export function migrationsDir(): string {
+  const bundleDir = dirname(fileURLToPath(import.meta.url))
+  const colocated = resolve(bundleDir, 'migrations')
+  if (existsSync(colocated)) return colocated
   return resolve(workspaceRoot, 'packages/api/migrations')
 }
 

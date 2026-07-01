@@ -271,6 +271,9 @@ export const strings: StringsDefinition = {
   accountManagePaymentMethod: 'Spravovať platobnú metódu',
   offlineDownloadMenuLabel: 'Stiahnuť na offline',
   offlineDownloadResume: 'Pokračovať v sťahovaní',
+  offlineDownloadPwaRequiredTitle: 'Na sťahovanie nainštalujte aplikáciu',
+  offlineDownloadPwaRequiredMessage: 'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
+  offlineDownloadPwaRequiredDismiss: 'Rozumiem',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 

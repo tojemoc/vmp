@@ -8,8 +8,8 @@ const props = defineProps<{
 }>()
 
 const { strings } = useStrings()
+const { isPremium } = useAuth()
 const {
-  canDownload,
   offlineDownloadsEnabled,
   startDownload,
   pauseDownload,
@@ -21,10 +21,10 @@ const {
 } = useOfflineDownloads()
 
 const rendition = ref<OfflineRendition>('720p')
-const loading = ref(true)
 const working = ref(false)
 const error = ref<string | null>(null)
 const menuOpen = ref(false)
+const pwaModalOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 const record = ref<Awaited<ReturnType<typeof getDownloadRecord>>>(null)
 const progress = ref({ bytesDownloaded: 0, totalBytes: 0, filesCompleted: 0, filesTotal: 0, status: null as string | null })
@@ -35,16 +35,15 @@ let mounted = false
 const renditionOptions: OfflineRendition[] = ['480p', '720p', '1080p']
 
 async function loadState() {
-  loading.value = true
+  if (!offlineDownloadsEnabled.value) return
   record.value = await getDownloadRecord(props.videoId)
   if (record.value?.rendition) rendition.value = record.value.rendition
-  loading.value = false
 }
 
 onMounted(async () => {
   mounted = true
   await loadState()
-  if (!mounted) return
+  if (!mounted || !offlineDownloadsEnabled.value) return
   unsubscribe = watchProgress(props.videoId, (p) => {
     progress.value = p
     if (p.status === 'completed' || p.status === 'failed' || p.status === 'paused') {
@@ -59,6 +58,13 @@ onUnmounted(() => {
   unsubscribe?.()
   unsubscribe = null
   document.removeEventListener('click', closeMenuFromDocument)
+})
+
+watch(() => props.videoId, async () => {
+  menuOpen.value = false
+  pwaModalOpen.value = false
+  error.value = null
+  await loadState()
 })
 
 function closeMenuFromDocument(event: MouseEvent) {
@@ -82,12 +88,30 @@ const percent = computed(() => {
 })
 const isActive = computed(() => status.value === 'downloading' || isDownloadActive(props.videoId))
 const showProgress = computed(() => isActive.value || status.value === 'paused')
+const downloadsAvailable = computed(() => offlineDownloadsEnabled.value && isPremium.value)
+
+function openPwaModal() {
+  menuOpen.value = false
+  pwaModalOpen.value = true
+}
+
+function closePwaModal() {
+  pwaModalOpen.value = false
+}
 
 function toggleMenu() {
+  if (!downloadsAvailable.value) {
+    openPwaModal()
+    return
+  }
   menuOpen.value = !menuOpen.value
 }
 
 async function handleDownload() {
+  if (!downloadsAvailable.value) {
+    openPwaModal()
+    return
+  }
   if (working.value) return
   working.value = true
   error.value = null
@@ -123,127 +147,159 @@ async function handleRemove() {
 </script>
 
 <template>
-  <div
-    v-if="offlineDownloadsEnabled && canDownload && !loading"
-    ref="menuRef"
-    class="watch-offline-download"
-  >
-    <button
-      type="button"
-      class="watch-icon-button watch-offline-download-button"
-      :aria-label="strings.offlineDownloadMenuLabel"
-      :aria-expanded="menuOpen"
-      aria-haspopup="menu"
-      @click.stop="toggleMenu"
-    >
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v2H5v-2z" />
-      </svg>
-      <span
-        v-if="status === 'completed' || status === 'update_available'"
-        class="watch-offline-download-badge"
-        aria-hidden="true"
-      />
-    </button>
-
+  <template v-if="isPremium">
     <div
-      v-if="menuOpen"
-      class="watch-offline-download-menu"
-      role="menu"
-      :aria-label="strings.offlineDownloadMenuLabel"
-      @click.stop
+      ref="menuRef"
+      class="watch-offline-download"
     >
-      <p class="watch-offline-download-menu-title text-xs font-semibold text-white dark:text-gray-100">{{ strings.offlineDownloadTitle }}</p>
-
-      <div v-if="showProgress" class="space-y-2 mb-3">
-        <div class="h-1.5 rounded-full bg-white/20 dark:bg-gray-700 overflow-hidden">
-          <div class="h-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
-        </div>
-        <p class="text-xs text-white/90 dark:text-gray-300">{{ strings.offlineDownloadProgress(percent) }}</p>
-        <button
-          v-if="isActive"
-          type="button"
-          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
-          role="menuitem"
-          @click="handlePause"
-        >
-          {{ strings.offlineDownloadPause }}
-        </button>
-        <button
-          v-else-if="status === 'paused'"
-          type="button"
-          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
-          role="menuitem"
-          :disabled="working"
-          @click="handleDownload"
-        >
-          {{ strings.offlineDownloadResume }}
-        </button>
-      </div>
-
-      <template v-else>
-        <button
-          v-for="option in renditionOptions"
-          :key="option"
-          type="button"
-          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
-          role="menuitemradio"
-          :aria-checked="rendition === option"
-          :disabled="working || status === 'completed'"
-          @click="rendition = option"
-        >
-          <span>{{ option }}</span>
-          <svg
-            v-if="rendition === option"
-            class="w-4 h-4"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd" />
-          </svg>
-        </button>
-
-        <button
-          v-if="!status || status === 'failed' || status === 'paused'"
-          type="button"
-          class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
-          role="menuitem"
-          :disabled="working"
-          @click="handleDownload"
-        >
-          {{ working ? strings.offlineDownloadWorking : strings.offlineDownloadStart }}
-        </button>
-
-        <button
-          v-if="status === 'update_available'"
-          type="button"
-          class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
-          role="menuitem"
-          :disabled="working"
-          @click="handleDownload"
-        >
-          {{ strings.offlineDownloadUpdate }}
-        </button>
-      </template>
-
       <button
-        v-if="status === 'completed' || status === 'update_available' || status === 'license_expired'"
         type="button"
-        class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
-        role="menuitem"
-        :disabled="working"
-        @click="handleRemove"
+        class="watch-icon-button watch-offline-download-button"
+        :aria-label="strings.offlineDownloadMenuLabel"
+        :aria-expanded="menuOpen"
+        aria-haspopup="menu"
+        @click.stop="toggleMenu"
       >
-        {{ strings.offlineDownloadRemove }}
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M7 10l5 5 5-5H7z" />
+        </svg>
+        <span
+          v-if="downloadsAvailable && (status === 'completed' || status === 'update_available')"
+          class="watch-offline-download-badge"
+          aria-hidden="true"
+        />
       </button>
 
-      <p v-if="error" class="text-xs text-red-200 dark:text-red-400 mt-2">{{ error }}</p>
-      <p v-else-if="status === 'failed' && record?.errorMessage" class="text-xs text-red-200 dark:text-red-400 mt-2">
-        {{ record.errorMessage }}
-      </p>
+      <div
+        v-if="menuOpen && downloadsAvailable"
+        class="watch-offline-download-menu"
+        role="menu"
+        :aria-label="strings.offlineDownloadMenuLabel"
+        @click.stop
+      >
+        <p class="watch-offline-download-menu-title text-xs font-semibold text-white dark:text-gray-100">{{ strings.offlineDownloadTitle }}</p>
+
+        <div v-if="showProgress" class="space-y-2 mb-3">
+          <div class="h-1.5 rounded-full bg-white/20 dark:bg-gray-700 overflow-hidden">
+            <div class="h-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
+          </div>
+          <p class="text-xs text-white/90 dark:text-gray-300">{{ strings.offlineDownloadProgress(percent) }}</p>
+          <button
+            v-if="isActive"
+            type="button"
+            class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
+            role="menuitem"
+            @click="handlePause"
+          >
+            {{ strings.offlineDownloadPause }}
+          </button>
+          <button
+            v-else-if="status === 'paused'"
+            type="button"
+            class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
+            role="menuitem"
+            :disabled="working"
+            @click="handleDownload"
+          >
+            {{ strings.offlineDownloadResume }}
+          </button>
+        </div>
+
+        <template v-else>
+          <button
+            v-for="option in renditionOptions"
+            :key="option"
+            type="button"
+            class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
+            role="menuitemradio"
+            :aria-checked="rendition === option"
+            :disabled="working || status === 'completed'"
+            @click="rendition = option"
+          >
+            <span>{{ option }}</span>
+            <svg
+              v-if="rendition === option"
+              class="w-4 h-4"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+          </button>
+
+          <button
+            v-if="!status || status === 'failed' || status === 'paused'"
+            type="button"
+            class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
+            role="menuitem"
+            :disabled="working"
+            @click="handleDownload"
+          >
+            {{ working ? strings.offlineDownloadWorking : strings.offlineDownloadStart }}
+          </button>
+
+          <button
+            v-if="status === 'update_available'"
+            type="button"
+            class="watch-offline-download-menu-item watch-offline-download-menu-primary text-sm text-white dark:text-white"
+            role="menuitem"
+            :disabled="working"
+            @click="handleDownload"
+          >
+            {{ strings.offlineDownloadUpdate }}
+          </button>
+        </template>
+
+        <button
+          v-if="status === 'completed' || status === 'update_available' || status === 'license_expired'"
+          type="button"
+          class="watch-offline-download-menu-item text-sm text-white dark:text-gray-200"
+          role="menuitem"
+          :disabled="working"
+          @click="handleRemove"
+        >
+          {{ strings.offlineDownloadRemove }}
+        </button>
+
+        <p v-if="error" class="text-xs text-red-200 dark:text-red-400 mt-2">{{ error }}</p>
+        <p v-else-if="status === 'failed' && record?.errorMessage" class="text-xs text-red-200 dark:text-red-400 mt-2">
+          {{ record.errorMessage }}
+        </p>
+      </div>
     </div>
-  </div>
+
+    <Teleport to="body">
+      <div
+        v-if="pwaModalOpen"
+        class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
+        role="presentation"
+        @click.self="closePwaModal"
+      >
+        <div
+          class="w-full max-w-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 shadow-xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="offline-download-pwa-title"
+          aria-describedby="offline-download-pwa-desc"
+        >
+          <h3 id="offline-download-pwa-title" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            {{ strings.offlineDownloadPwaRequiredTitle }}
+          </h3>
+          <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
+            {{ strings.offlineDownloadPwaRequiredMessage }}
+          </p>
+          <button
+            type="button"
+            class="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            @click="closePwaModal"
+          >
+            {{ strings.offlineDownloadPwaRequiredDismiss }}
+          </button>
+        </div>
+      </div>
+    </Teleport>
+  </template>
 </template>
 
 <style scoped>

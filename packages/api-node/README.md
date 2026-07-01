@@ -84,7 +84,7 @@ test -f dist/server.js
 node scripts/deno-deploy-upload.mjs   # needs DENO_DEPLOY_TOKEN, DENO_DEPLOY_ORG, DENO_DEPLOY_APP
 ```
 
-**Uploaded tree:** `dist/server.js` (esbuild bundle of `@vmp/api`, adapters, and runtime npm dependencies). The deployment artifact is produced from the monorepo `npm ci` output, so CI does not run a second package-local install/prune cycle.
+**Uploaded tree:** `server.js` (esbuild bundle of `@vmp/api`, adapters, and runtime npm dependencies) plus `migrations/` (copied from `packages/api/migrations` for boot-time schema apply). CI stages both into a temp directory outside the monorepo and runs `deno deploy` from there as a **dynamic** Node runtime (runtime config is written into the staging `deno.json` by `deno-deploy-upload.mjs`, not `packages/api-node/deno.json`).
 
 ## Local development
 

@@ -14,5 +14,5 @@
     "upload": "node scripts/deno-deploy-upload.mjs"
   },
   "runtimeEntrypoint": "dist/server.js",
-  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds a self-contained dist/ bundle on Blacksmith, then deno deploy uploads the prebuilt tree."
+  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds a self-contained dist/server.js bundle, stages it with packages/api/migrations into a temp directory outside the monorepo, then deno deploy uploads that tree as a dynamic Node runtime."
 }
