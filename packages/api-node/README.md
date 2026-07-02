@@ -8,18 +8,21 @@ HTTP server that runs the **same** `@vmp/api` Worker handlers with adapter bindi
 - **Cache** → in-memory LRU
 - **Durable Objects** → in-memory segment rate limiter
 
-Deploy target: [Deno Deploy](https://docs.deno.com/deploy/) with GitHub Actions prebuild (`deploy-api-node-backup` in `.github/workflows/deploy.yml`).
+Deploy target: [Deno Deploy](https://docs.deno.com/deploy/) via **linked GitHub repository** (automatic git builds on every push).
 
 ## Deploy and CI gates
 
-**A change that does not pass api-node verification will not deploy successfully to Deno Deploy.**
+**A change that does not pass api-node verification is unlikely to deploy successfully to Deno Deploy.**
 
-| Stage | Workflow | What runs |
+| Stage | Where | What runs |
 | --- | --- | --- |
 | Pull request | `ci.yml` → job `api-node` | `npm run verify:api-node` (typecheck, tests, esbuild bundle) |
-| Push to `main` | `deploy.yml` → job `deploy-api-node-backup` | Same verify **before** upload; then `deno deploy`; then smoke checks on `API_URL_BACKUP` |
+| Pull request | Deno Deploy (git integration) | Automatic preview build + deploy — **check build status on the PR** |
+| Push to `main` | Deno Deploy (git integration) | Automatic production deploy |
 
-Post-deploy smoke (`.github/scripts/smoke-api-node-backup.sh`):
+`deploy.yml` does **not** deploy api-node. CLI uploads via `deno deploy` from GitHub Actions fail consistently; git-triggered Deno builds are the source of truth.
+
+Optional manual smoke (`.github/scripts/smoke-api-node-backup.sh`):
 
 - `GET /api/health` — expects `mode: "deno-deploy"` and database `ok: true`
 - `GET /api/homepage/content` — expects HTTP 200 (exercises Sentry-wrapped DB queries)
@@ -30,7 +33,7 @@ Run locally before opening a PR:
 npm run verify:api-node
 ```
 
-Required GitHub configuration for deploy + smoke: secret `DENO_DEPLOY_TOKEN`; variables `DENO_DEPLOY_ORG`, `DENO_DEPLOY_APP`, `API_URL_BACKUP`.
+Required GitHub configuration: none for Deno Deploy upload (git integration handles deploy). Optional repo variable `API_URL_BACKUP` for manual smoke scripts.
 
 ## Contents
 
@@ -47,11 +50,11 @@ Required GitHub configuration for deploy + smoke: secret `DENO_DEPLOY_TOKEN`; va
 
 ```mermaid
 flowchart LR
-  GHA[GitHub Actions prebuild]
+  GH[GitHub push / PR]
   DD[Deno Deploy]
   PG[(Managed Postgres)]
   S3[(S3 bucket)]
-  GHA -->|self-contained dist/server.js| DD
+  GH -->|git integration build| DD
   DD --> PG
   DD --> S3
 ```
@@ -63,28 +66,19 @@ The Worker `fetch()` entry in `packages/api/src/index.ts` is invoked unchanged. 
 ## Deno Deploy setup
 
 1. Provision **Prisma Postgres** (or attach external Postgres) in the [Deno Deploy dashboard](https://console.deno.com) and assign it to the app — `DATABASE_URL` is injected automatically per environment.
-2. Set deployment mode to **GitHub Actions** (no install/build in the Deno UI).
-3. Repository variables: `DENO_DEPLOY_ORG`, `DENO_DEPLOY_APP`. Secret: `DENO_DEPLOY_TOKEN`.
-4. Copy Worker secrets into Deno Deploy env vars (see `.env.example`).
-5. `GET /api/health` should return `"mode": "deno-deploy"` and `"checks.database": { "ok": true, "backend": "postgres" }`.
+2. Link the GitHub repository in Deno Deploy (git builds run on every push; PR previews and `main` → production).
+3. Copy Worker secrets into Deno Deploy env vars (see `.env.example`).
+4. `GET /api/health` should return `"mode": "deno-deploy"` and `"checks.database": { "ok": true, "backend": "postgres" }`.
 
-## CI prebuild (same as local release)
+## CI verify (same as local release)
 
-From repo root (matches PR CI and deploy verify gate):
+From repo root (matches PR CI):
 
 ```bash
 npm run verify:api-node
 ```
 
-Production upload tree (after verify passes), from `packages/api-node`:
-
-```bash
-npm run build
-test -f dist/server.js
-node scripts/deno-deploy-upload.mjs   # needs DENO_DEPLOY_TOKEN, DENO_DEPLOY_ORG, DENO_DEPLOY_APP
-```
-
-**Uploaded tree:** `server.js` (esbuild bundle of `@vmp/api`, adapters, and runtime npm dependencies) plus `migrations/` (copied from `packages/api/migrations` for boot-time schema apply). CI stages both into a temp directory outside the monorepo and runs `deno deploy` from there as a **dynamic** Node runtime (runtime config is written into the staging `deno.json` by `deno-deploy-upload.mjs`, not `packages/api-node/deno.json`).
+Deno Deploy’s git integration builds `packages/api-node` (esbuild bundle → `dist/server.js`) on push. Migrations live in `packages/api/migrations/` and are applied at boot.
 
 ## Local development
 

@@ -78,5 +78,5 @@ jobs:
 
       - run: npm ci
 
-      - name: Verify api-node (Deno Deploy backup API gate)
+      - name: Verify api-node (typecheck, tests, esbuild bundle)
         run: npm run verify:api-node
