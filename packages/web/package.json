@@ -24,11 +24,11 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/net": "^0.1.5",
-    "@moq/watch": "^0.2.16",
+    "@moq/net": "^0.1.6",
+    "@moq/watch": "^0.2.18",
     "@nuxtjs/color-mode": "^4.0.0",
-    "@sentry/nuxt": "^10.62.0",
-    "@stripe/stripe-js": "^9.8.0",
+    "@sentry/nuxt": "^10.63.0",
+    "@stripe/stripe-js": "^9.9.0",
     "@tiptap/core": "^3.27.1",
     "@tiptap/extension-link": "^3.27.1",
     "@tiptap/extension-placeholder": "^3.27.1",
@@ -49,12 +49,12 @@
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.0",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vue-tsc": "^3.3.4",
-    "wrangler": "^4.105.0"
+    "vue-tsc": "^3.3.6",
+    "wrangler": "^4.106.0"
   },
   "nx": {
     "targets": {
