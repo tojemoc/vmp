@@ -579,6 +579,7 @@ import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybac
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
 import strings from '~/utils/strings'
+import { routeParamMatchesVideoMeta } from '~/utils/watchRouteMeta'
 import { usePushAttribution } from '~/composables/usePushAttribution'
 
 const route  = useRoute()
@@ -1862,9 +1863,12 @@ const handleUserPlaybackInteraction = (event: PointerEvent | MouseEvent | Event)
 }
 
 watch(
-  [videoIdParam, videoMeta, canonicalWatchPath],
-  async ([param, meta, path]) => {
-    if (import.meta.server || !meta || !path || !param) return
+  [videoIdParam, videoMeta, canonicalWatchPath, videoMetaPending],
+  async ([param, meta, path, metaPending]) => {
+    if (import.meta.server || !meta || !path || !param || metaPending) return
+    // Meta can lag behind route changes during Up Next navigation; never redirect
+    // using stale meta or we snap back to the previous video's canonical slug.
+    if (!routeParamMatchesVideoMeta(param, meta)) return
     const canonicalToken = decodeURIComponent(path.replace(/^\/watch\//, ''))
     if (param !== canonicalToken) {
       await navigateTo(path, { replace: true })
