@@ -40,9 +40,6 @@ Thumbs.db
 *.sqlite-wal
 *.sqlite-shm
 
-# Deno Deploy upload staging (ephemeral; created under $TMPDIR by deno-deploy-upload.mjs)
-
-
 .nx/cache
 .nx/workspace-data
 .nx/polygraph

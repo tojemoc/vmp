@@ -1,18 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "VMP api-node — Deno Deploy via GitHub Actions prebuild; Postgres via DATABASE_URL.",
+  "description": "VMP api-node — Deno Deploy via linked GitHub repository; Postgres via DATABASE_URL.",
   "nodeVersion": "24.11.0",
   "rootDirectory": "packages/api-node",
-  "githubActions": {
-    "denoDeployOrg": "tjm",
-    "org": "tjm",
-    "denoDeployApp": "vmp",
-    "secret": "DENO_DEPLOY_TOKEN",
-    "buildOnRunner": [
-      "npm run build"
-    ],
-    "upload": "node scripts/deno-deploy-upload.mjs"
-  },
   "runtimeEntrypoint": "dist/server.js",
-  "notes": "In console.deno.com set the linked repo to GitHub Actions mode (disable automatic install/build). CI builds a self-contained dist/server.js bundle, stages it with packages/api/migrations into a temp directory outside the monorepo, then deno deploy uploads that tree as a dynamic Node runtime."
+  "notes": "Deno Deploy builds from the linked repo on every push (PR previews and production on main). GitHub Actions does not run deno deploy CLI uploads — those fail consistently while git-triggered builds succeed. PR gate: npm run verify:api-node in ci.yml. Deploy gate: Deno Deploy build status on the PR."
 }
