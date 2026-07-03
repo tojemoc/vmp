@@ -1,0 +1,14 @@
+# Optional NVIDIA GPU override for encore-worker.
+# Usage: docker compose -f encore/docker-compose.yml -f encore/docker-compose.nvidia.yml up -d
+
+services:
+  encore-worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}

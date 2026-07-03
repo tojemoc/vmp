@@ -5,5 +5,6 @@ vmp-1080p: vmp-1080p.yml
 vmp-480p: vmp-480p.yml
 vmp-full-ladder: vmp-full-ladder.yml
 vmp-full-ladder-gpu-vaapi: vmp-full-ladder-gpu-vaapi.yml
+vmp-full-ladder-gpu-nvenc: vmp-full-ladder-gpu-nvenc.yml
 vmp-podcast-mp3: vmp-podcast-mp3.yml
 vmp-podcast-preview: vmp-podcast-preview.yml

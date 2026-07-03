@@ -18,7 +18,7 @@ import {
   transcodeRenditionWithEncore,
   type EncoreRenditionKey,
 } from './encoreClient.js'
-import { type PipelineMode, ingestLabelForMode } from './pipelineMode.js'
+import { type PipelineMode, ingestLabelForMode, packagingStageToPipelineStage } from './pipelineMode.js'
 import { usesQueuedPackaging } from './packagingClient.js'
 import { runQueuedPipelineJob } from './runQueuedPipelineJob.js'
 import { detectGpuEncodeConfig } from './gpuDetect.js'
@@ -1049,8 +1049,9 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
         tmpDir,
         hasAudio,
         isCancelled: () => isJobStopped(videoId),
-        emitStage: (stage, status, detail) => {
-          emitPipelineEvent(videoId, stage as PipelineStage, status as PipelineStatus, detail)
+        emitStage: (packagingStage, status, detail) => {
+          const pipelineStage = packagingStageToPipelineStage(packagingStage, detail)
+          emitPipelineEvent(videoId, pipelineStage, status as PipelineStatus, detail)
         },
         notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
       })

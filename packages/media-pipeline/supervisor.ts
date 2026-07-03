@@ -39,6 +39,7 @@ const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render
 
 const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0'
 const secret = process.env.VMP_WEBHOOK_SECRET?.trim()
+const packagingSecret = (process.env.VMP_PACKAGING_SECRET || secret || '').trim()
 if (requireWebhookSecret && !secret) {
   console.error('[media-pipeline] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
   process.exit(1)
@@ -730,6 +731,22 @@ function verifySignature(rawBody, sigHeader, ts) {
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
+function timingSafeEqualString(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8')
+  const b = Buffer.from(expected, 'utf8')
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
+function verifyPackagingSecret(req: http.IncomingMessage): boolean {
+  if (!packagingSecret) {
+    return uiHost === '127.0.0.1' || uiHost === '::1' || uiHost === 'localhost'
+  }
+  const header = req.headers['x-vmp-packaging-secret']
+  const provided = (Array.isArray(header) ? header[0] : header) || ''
+  return timingSafeEqualString(provided, packagingSecret)
+}
+
 function json(res, obj, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(obj, null, 2))
@@ -1223,6 +1240,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/packaging/enqueue') {
+    if (!verifyPackagingSecret(req)) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
     const body = await readJsonBody(req)
     if (body === null) {
       json(res, { error: 'Invalid JSON' }, 400)
@@ -1270,6 +1291,10 @@ const server = http.createServer(async (req, res) => {
 
   const packagingStatusMatch = url.pathname.match(/^\/api\/packaging\/status\/([^/]+)$/)
   if (req.method === 'GET' && packagingStatusMatch) {
+    if (!verifyPackagingSecret(req)) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
     const jobId = decodeURIComponent(packagingStatusMatch[1])
     const job = getPackagingJob(jobId)
     if (!job) {

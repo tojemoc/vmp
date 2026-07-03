@@ -3,7 +3,7 @@
  * Submits transcoding jobs and waits for completion; maps outputs to VMP filenames.
  */
 
-import { readdir, rename, stat } from 'node:fs/promises'
+import { readdir, rename, stat, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { detectGpuEncodeConfig, resolveEncoreProfileBase } from './gpuDetect.js'
 
@@ -196,7 +196,7 @@ const PROFILE_GPU_VARIANTS: Record<string, string[]> = {
   'vmp-720p-audio': ['vmp-720p-audio-gpu-nvenc', 'vmp-720p-audio-gpu-vaapi', 'vmp-720p-audio'],
   'vmp-1080p': ['vmp-1080p'],
   'vmp-480p': ['vmp-480p'],
-  'vmp-full-ladder': ['vmp-full-ladder-gpu-vaapi', 'vmp-full-ladder'],
+  'vmp-full-ladder': ['vmp-full-ladder-gpu-nvenc', 'vmp-full-ladder-gpu-vaapi', 'vmp-full-ladder'],
   'vmp-podcast-mp3': ['vmp-podcast-mp3'],
   'vmp-podcast-preview': ['vmp-podcast-preview'],
 }
@@ -240,7 +240,7 @@ export async function transcodeRenditionWithEncore(options: {
   const baseName = `vmp-${options.videoId}-${options.rendition}`
   const attemptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const encoreOutDir = path.join(options.outputDir, 'encore', options.rendition, attemptId)
-  await import('node:fs/promises').then((fs) => fs.mkdir(encoreOutDir, { recursive: true }))
+  await mkdir(encoreOutDir, { recursive: true })
 
   const jobId = await submitEncoreJob({
     profile,

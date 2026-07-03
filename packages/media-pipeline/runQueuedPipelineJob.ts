@@ -15,7 +15,7 @@ import {
 import { detectGpuEncodeConfig } from './gpuDetect.js'
 import type { PipelineMode, PackagingStage } from './pipelineMode.js'
 import { registerAndEnqueuePackaging, usesQueuedPackaging, waitForPackaging } from './packagingClient.js'
-import { emitTtp } from './ttpLog.js'
+import { emitTtp, type TtpMilestone } from './ttpLog.js'
 
 export type QueuedPipelineContext = {
   videoId: string
@@ -24,7 +24,7 @@ export type QueuedPipelineContext = {
   tmpDir: string
   hasAudio: boolean
   isCancelled: () => boolean
-  emitStage: (stage: string, status: string, detail?: string) => void
+  emitStage: (stage: PackagingStage, status: string, detail?: string) => void
   notifyVideoAvailable: (stage: 'preview_ready' | 'fully_processed', renditions: string[]) => Promise<void>
 }
 
@@ -76,8 +76,8 @@ async function runEncoreAndPackage(
     outputSubdir: string
     priority?: number
     duration?: number
-    ttpEncodeStart: string
-    ttpEncodeDone: string
+    ttpEncodeStart: TtpMilestone
+    ttpEncodeDone: TtpMilestone
   },
 ): Promise<string> {
   const profile = await resolveEncoreProfileName(options.profileBase)
@@ -85,7 +85,7 @@ async function runEncoreAndPackage(
   await mkdir(outDir, { recursive: true })
   const baseName = `vmp-${ctx.videoId}-${options.outputSubdir}`
 
-  await emitTtp(ctx.videoId, options.ttpEncodeStart as never, {
+  await emitTtp(ctx.videoId, options.ttpEncodeStart, {
     pipelineMode: ctx.pipelineMode,
     profile,
     packagingStage: options.stage,
@@ -103,7 +103,7 @@ async function runEncoreAndPackage(
   })
 
   await waitForEncoreJob(jobId, { isCancelled: ctx.isCancelled })
-  await emitTtp(ctx.videoId, options.ttpEncodeDone as never, {
+  await emitTtp(ctx.videoId, options.ttpEncodeDone, {
     pipelineMode: ctx.pipelineMode,
     encoreJobId: jobId,
     profile,
