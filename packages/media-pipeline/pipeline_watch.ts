@@ -18,6 +18,10 @@ import {
   transcodeRenditionWithEncore,
   type EncoreRenditionKey,
 } from './encoreClient.js'
+import { type PipelineMode, ingestLabelForMode } from './pipelineMode.js'
+import { usesQueuedPackaging } from './packagingClient.js'
+import { runQueuedPipelineJob } from './runQueuedPipelineJob.js'
+import { detectGpuEncodeConfig } from './gpuDetect.js'
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused'
 type PipelineStage =
@@ -26,7 +30,7 @@ type PipelineStage =
   | 'phase2_encode' | 'phase2_package' | 'phase2_upload' | 'phase2_manifest_swap' | 'multi_rendition_ready'
   | 'podcast_mp3' | 'preview_wait' | 'preview_render' | 'preview_upload' | 'cleanup' | 'done' | 'failed'
   | 'paused' | 'resumed' | 'stopped'
-type QueueJob = { videoId: string, inputPath: string, source: string }
+type QueueJob = { videoId: string, inputPath: string, source: string, pipelineMode: PipelineMode }
 type RunResult = { stdout: string, stderr: string }
 type RunOptions = { capture?: boolean, videoId?: string }
 type ResolveInputTargetPathResult = { videoId: string, targetPath: string, renamed: boolean, reason?: 'legacy_filename' | 'random_uuid' | 'already_uuid' }
@@ -41,8 +45,23 @@ type JobHandle = {
 }
 type ProgressPhase = JobPhase
 
-const INBOX_DIR = (process.env.INBOX_DIR || '/mnt/videos/inbox').trim()
+const LEGACY_INBOX_DIR = (process.env.INBOX_DIR || '').trim()
+const INBOX_FAST_LANE_DIR = (process.env.INBOX_FAST_LANE_DIR || '').trim()
+  || (LEGACY_INBOX_DIR ? path.join(LEGACY_INBOX_DIR, 'fast-lane') : '/mnt/videos/inbox-fast-lane')
+const INBOX_FULL_LADDER_DIR = (process.env.INBOX_FULL_LADDER_DIR || '').trim()
+  || (LEGACY_INBOX_DIR ? path.join(LEGACY_INBOX_DIR, 'full-ladder') : '/mnt/videos/inbox-full-ladder')
 const TMP_DIR_BASE = (process.env.TMP_DIR_BASE || '/mnt/tmp/video_pipeline').trim()
+
+type InboxWatchConfig = {
+  dir: string
+  pipelineMode: PipelineMode
+  label: string
+}
+
+const INBOX_WATCHES: InboxWatchConfig[] = [
+  { dir: INBOX_FAST_LANE_DIR, pipelineMode: 'fast_lane', label: 'fast-lane' },
+  { dir: INBOX_FULL_LADDER_DIR, pipelineMode: 'full_ladder', label: 'full-ladder' },
+]
 const MAX_JOBS = Math.max(1, Number.parseInt(process.env.MAX_JOBS || '2', 10) || 2)
 const MP3_BITRATE = (process.env.MP3_BITRATE || '128k').trim()
 const PREVIEW_MP3_ENABLED = process.env.PREVIEW_MP3_ENABLED !== '0'
@@ -775,30 +794,11 @@ async function phase1EncodeAndPublish(
   return { audioTmpPath: hasAudio ? audioTmpPath : null, hasAudio }
 }
 
-async function phase2RemainingRenditions(
+async function phase2PackageAndPublish(
   videoId: string,
-  inputPath: string,
   tmpDir: string,
   hasAudio: boolean,
 ): Promise<void> {
-  setJobPhase(videoId, 'phase2')
-  await emitTtp(videoId, 'phase2_encode_start', { renditions: ['1080p', '480p'] })
-  emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
-  await encodeRendition(videoId, inputPath, tmpDir, '1080p', {
-    includeAudio: false,
-    stage: 'phase2_encode',
-    overallBase: PROGRESS.P2_1080.base,
-    overallSpan: PROGRESS.P2_1080.span,
-  })
-  await encodeRendition(videoId, inputPath, tmpDir, '480p', {
-    includeAudio: false,
-    stage: 'phase2_encode',
-    overallBase: PROGRESS.P2_480.base,
-    overallSpan: PROGRESS.P2_480.span,
-  })
-  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
-  await emitTtp(videoId, 'phase2_encode_done', {})
-
   emitPipelineEvent(videoId, 'phase2_package', 'active', 'start')
   await packagePhase2Hls(tmpDir, hasAudio, videoId)
   emitProgressCheckpoint(videoId, 'phase2_package', PROGRESS.P2_PACKAGE.base + PROGRESS.P2_PACKAGE.span, 'packaged')
@@ -830,6 +830,32 @@ async function phase2RemainingRenditions(
   await emitTtp(videoId, 'full_renditions_ready', { renditionsOnR2: ['1080p', '720p', '480p'] })
 }
 
+async function phase2RemainingRenditions(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  hasAudio: boolean,
+): Promise<void> {
+  setJobPhase(videoId, 'phase2')
+  await emitTtp(videoId, 'phase2_encode_start', { renditions: ['1080p', '480p'] })
+  emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
+  await encodeRendition(videoId, inputPath, tmpDir, '1080p', {
+    includeAudio: false,
+    stage: 'phase2_encode',
+    overallBase: PROGRESS.P2_1080.base,
+    overallSpan: PROGRESS.P2_1080.span,
+  })
+  await encodeRendition(videoId, inputPath, tmpDir, '480p', {
+    includeAudio: false,
+    stage: 'phase2_encode',
+    overallBase: PROGRESS.P2_480.base,
+    overallSpan: PROGRESS.P2_480.span,
+  })
+  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
+  await emitTtp(videoId, 'phase2_encode_done', {})
+  await phase2PackageAndPublish(videoId, tmpDir, hasAudio)
+}
+
 async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: string): Promise<void> {
   setJobPhase(videoId, 'podcast')
   emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'start')
@@ -854,9 +880,125 @@ async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: stri
   emitProgressCheckpoint(videoId, 'podcast_mp3', PROGRESS.PODCAST.base + PROGRESS.PODCAST.span, 'podcast.mp3 on R2', 'mp3')
 }
 
-async function processVideo(videoId: string, inputPath: string, source = 'watchfolder'): Promise<void> {
+async function runInlineFullLadderOnly(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  hasAudio: boolean,
+  pipelineMode: PipelineMode,
+): Promise<void> {
+  await emitTtp(videoId, 'phase2_encode_start', { pipelineMode, renditions: ['1080p', '720p', '480p'] })
+  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'full-ladder-inline')
+  await Promise.all([
+    encodeRendition(videoId, inputPath, tmpDir, '720p', {
+      includeAudio: hasAudio,
+      stage: 'phase2_encode',
+      overallBase: PROGRESS.P2_1080.base,
+      overallSpan: PROGRESS.P2_1080.span,
+    }),
+    encodeRendition(videoId, inputPath, tmpDir, '1080p', {
+      includeAudio: false,
+      stage: 'phase2_encode',
+      overallBase: PROGRESS.P2_1080.base,
+      overallSpan: PROGRESS.P2_1080.span,
+    }),
+    encodeRendition(videoId, inputPath, tmpDir, '480p', {
+      includeAudio: false,
+      stage: 'phase2_encode',
+      overallBase: PROGRESS.P2_480.base,
+      overallSpan: PROGRESS.P2_480.span,
+    }),
+  ])
+  await emitTtp(videoId, 'phase2_encode_done', { pipelineMode })
+  await phase2PackageAndPublish(videoId, tmpDir, hasAudio)
+}
+
+async function runInlinePreviewMp3(videoId: string, tmpDir: string): Promise<void> {
+  if (!PREVIEW_MP3_ENABLED || !existsSync(path.join(tmpDir, 'podcast.mp3'))) {
+    emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
+    await emitTtp(videoId, 'preview_mp3_skipped', {})
+    return
+  }
+  setJobPhase(videoId, 'preview')
+  assertNotStopped(videoId)
+  await waitWhilePaused(videoId)
+  if (PREVIEW_MP3_LOCK_SECONDS > 0) {
+    emitPipelineEvent(videoId, 'preview_wait', 'active', `${PREVIEW_MP3_LOCK_SECONDS}s`)
+    await new Promise((r) => setTimeout(r, PREVIEW_MP3_LOCK_SECONDS * 1000))
+  }
+  emitPipelineEvent(videoId, 'preview_render', 'active', `${PREVIEW_MP3_SECONDS}s`)
+  const prevTmp = path.join(tmpDir, `podcast_preview.mp3.tmp.${process.pid}`)
+  await runFfmpeg(
+    ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp],
+    'encode preview mp3',
+    {
+      videoId,
+      stage: 'preview_render',
+      rendition: 'preview_mp3',
+      durationSec: PREVIEW_MP3_SECONDS,
+      overallBase: PROGRESS.PREVIEW.base,
+      overallSpan: PROGRESS.PREVIEW.span,
+      phase: 'preview',
+    },
+  )
+  await rename(prevTmp, path.join(tmpDir, 'podcast_preview.mp3'))
+  const probe = await run(
+    'ffprobe',
+    ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path.join(tmpDir, 'podcast_preview.mp3')],
+    'probe preview mp3 duration',
+    { capture: true, videoId },
+  )
+  const measuredDurationSeconds = Math.round(Number.parseFloat((probe.stdout || '').trim()))
+  if (Number.isFinite(measuredDurationSeconds) && measuredDurationSeconds > 0) {
+    await writeFile(
+      path.join(tmpDir, 'podcast_preview.meta.json'),
+      JSON.stringify({
+        videoId,
+        requestedPreviewSeconds: PREVIEW_MP3_SECONDS,
+        measuredDurationSeconds,
+        renderedAt: new Date().toISOString(),
+      }),
+    )
+  }
+  setJobPhase(videoId, 'upload')
+  emitPipelineEvent(videoId, 'preview_upload', 'active', 'start')
+  await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.mp3'), r2Path(`videos/${videoId}/podcast_preview.mp3`)], 'upload preview mp3', { videoId })
+  if (existsSync(path.join(tmpDir, 'podcast_preview.meta.json'))) {
+    await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata', { videoId })
+  }
+  emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
+  emitProgressCheckpoint(videoId, 'preview_upload', PROGRESS.PREVIEW.base + PROGRESS.PREVIEW.span, 'preview on R2', 'preview_mp3')
+  await emitTtp(videoId, 'preview_mp3_done', { previewSeconds: PREVIEW_MP3_SECONDS })
+}
+
+async function completePipelineSuccess(
+  videoId: string,
+  inputPath: string,
+  tmpDir: string,
+  doneFlag: string,
+  jobStartMs: number,
+  source: string,
+): Promise<void> {
+  emitPipelineEvent(videoId, 'cleanup', 'active', 'start')
+  await writeFile(doneFlag, 'done')
+  await rm(inputPath, { force: true })
+  jobInputPaths.delete(videoId)
+  await rm(tmpDir, { recursive: true, force: true })
+  emitPipelineEvent(videoId, 'done', 'success', 'watchfolder_and_tmp_cleared')
+  emitProgressCheckpoint(videoId, 'done', PROGRESS.DONE, 'complete')
+  await emitTtp(videoId, 'pipeline_done', {})
+  await emitTtpSummary(videoId, 'success')
+  histogram('vmp.transcoder.job.duration_ms', Date.now() - jobStartMs, { outcome: 'success', source })
+  increment('vmp.transcoder.job.success', 1, { source })
+  videoDurations.delete(videoId)
+  progressEmitState.delete(videoId)
+  jobHandles.delete(videoId)
+  stoppedVideos.delete(videoId)
+}
+
+async function processVideo(videoId: string, inputPath: string, source: string, pipelineMode: PipelineMode): Promise<void> {
   const jobStartMs = Date.now()
-  increment('vmp.transcoder.job.started', 1, { source })
+  increment('vmp.transcoder.job.started', 1, { source, pipeline_mode: pipelineMode })
   const tmpDir = path.join(TMP_DIR_BASE, videoId)
   const doneFlag = path.join(tmpDir, '.done')
   const lockFile = path.join(tmpDir, '.lock')
@@ -874,8 +1016,8 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
   await writeFile(lockFile, String(process.pid))
   jobInputPaths.set(videoId, inputPath)
   ensureJobHandle(videoId, 'phase1')
-  await emitTtp(videoId, 'processing_started', {})
-  emitPipelineEvent(videoId, 'detected', 'active', `source=${source}`)
+  await emitTtp(videoId, 'processing_started', { pipelineMode })
+  emitPipelineEvent(videoId, 'detected', 'active', `source=${source} mode=${pipelineMode}`)
   try {
     assertNotStopped(videoId)
     await waitWhilePaused(videoId)
@@ -898,107 +1040,82 @@ async function processVideo(videoId: string, inputPath: string, source = 'watchf
     emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
     emitProgressCheckpoint(videoId, 'probe', PROGRESS.PROBE, 'probe complete')
 
-    await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
-    assertNotStopped(videoId)
-    await waitWhilePaused(videoId)
-    emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
-
-    const podcastTask = hasAudio
-      ? encodePodcastMp3(videoId, inputPath, tmpDir)
-        .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
-        .catch(async (err) => {
-          if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-          const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
-          log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
-          emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
-          await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
-        })
-      : (async () => {
-        emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
-        await emitTtp(videoId, 'podcast_mp3_skipped', {})
-      })()
-
-    const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
-      if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-      log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
-      emitPipelineEvent(videoId, 'phase2_upload', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+    await checkEncoreHealth()
+    const gpu = await detectGpuEncodeConfig()
+    await emitTtp(videoId, 'gpu_backend_detected', {
+      pipelineMode,
+      gpuBackend: gpu.backend,
+      profileSuffix: gpu.profileSuffix,
     })
 
-    await Promise.all([podcastTask, phase2Task])
-    assertNotStopped(videoId)
-    await waitWhilePaused(videoId)
-
-    if (PREVIEW_MP3_ENABLED && hasAudio && existsSync(path.join(tmpDir, 'podcast.mp3'))) {
-      setJobPhase(videoId, 'preview')
+    if (usesQueuedPackaging()) {
+      await runQueuedPipelineJob({
+        videoId,
+        inputPath,
+        pipelineMode,
+        tmpDir,
+        hasAudio,
+        isCancelled: () => isJobStopped(videoId),
+        emitStage: (stage, status, detail) => {
+          emitPipelineEvent(videoId, stage as PipelineStage, status as PipelineStatus, detail)
+        },
+        notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
+      })
+    } else if (pipelineMode === 'full_ladder') {
+      await runInlineFullLadderOnly(videoId, inputPath, tmpDir, hasAudio, pipelineMode)
       assertNotStopped(videoId)
       await waitWhilePaused(videoId)
-      if (PREVIEW_MP3_LOCK_SECONDS > 0) {
-        emitPipelineEvent(videoId, 'preview_wait', 'active', `${PREVIEW_MP3_LOCK_SECONDS}s`)
-        await new Promise((r) => setTimeout(r, PREVIEW_MP3_LOCK_SECONDS * 1000))
+      if (hasAudio) {
+        await encodePodcastMp3(videoId, inputPath, tmpDir)
+          .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
+          .catch(async (err) => {
+            if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
+            const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
+            log(`⚠️ ${videoId}: podcast MP3 failed: ${err instanceof Error ? err.message : String(err)}`)
+            emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
+            await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
+          })
+      } else {
+        emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
+        await emitTtp(videoId, 'podcast_mp3_skipped', {})
       }
-      emitPipelineEvent(videoId, 'preview_render', 'active', `${PREVIEW_MP3_SECONDS}s`)
-      const prevTmp = path.join(tmpDir, `podcast_preview.mp3.tmp.${process.pid}`)
-      await runFfmpeg(
-        ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp],
-        'encode preview mp3',
-        {
-          videoId,
-          stage: 'preview_render',
-          rendition: 'preview_mp3',
-          durationSec: PREVIEW_MP3_SECONDS,
-          overallBase: PROGRESS.PREVIEW.base,
-          overallSpan: PROGRESS.PREVIEW.span,
-          phase: 'preview',
-        },
-      )
-      await rename(prevTmp, path.join(tmpDir, 'podcast_preview.mp3'))
-      const probe = await run(
-        'ffprobe',
-        ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path.join(tmpDir, 'podcast_preview.mp3')],
-        'probe preview mp3 duration',
-        { capture: true, videoId },
-      )
-      const measuredDurationSeconds = Math.round(Number.parseFloat((probe.stdout || '').trim()))
-      if (Number.isFinite(measuredDurationSeconds) && measuredDurationSeconds > 0) {
-        await writeFile(
-          path.join(tmpDir, 'podcast_preview.meta.json'),
-          JSON.stringify({
-            videoId,
-            requestedPreviewSeconds: PREVIEW_MP3_SECONDS,
-            measuredDurationSeconds,
-            renderedAt: new Date().toISOString(),
-          }),
-        )
-      }
-      setJobPhase(videoId, 'upload')
-      emitPipelineEvent(videoId, 'preview_upload', 'active', 'start')
-      await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.mp3'), r2Path(`videos/${videoId}/podcast_preview.mp3`)], 'upload preview mp3', { videoId })
-      if (existsSync(path.join(tmpDir, 'podcast_preview.meta.json'))) {
-        await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata', { videoId })
-      }
-      emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
-      emitProgressCheckpoint(videoId, 'preview_upload', PROGRESS.PREVIEW.base + PROGRESS.PREVIEW.span, 'preview on R2', 'preview_mp3')
-      await emitTtp(videoId, 'preview_mp3_done', { previewSeconds: PREVIEW_MP3_SECONDS })
+      await runInlinePreviewMp3(videoId, tmpDir)
     } else {
-      emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
-      await emitTtp(videoId, 'preview_mp3_skipped', {})
+      await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
+      assertNotStopped(videoId)
+      await waitWhilePaused(videoId)
+      emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
+
+      const podcastTask = hasAudio
+        ? encodePodcastMp3(videoId, inputPath, tmpDir)
+          .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
+          .catch(async (err) => {
+            if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
+            const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
+            log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
+            emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
+            await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
+          })
+        : (async () => {
+          emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
+          await emitTtp(videoId, 'podcast_mp3_skipped', {})
+        })()
+
+      const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
+        if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
+        log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
+        emitPipelineEvent(videoId, 'phase2_upload', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
+      })
+
+      await Promise.all([podcastTask, phase2Task])
+      assertNotStopped(videoId)
+      await waitWhilePaused(videoId)
+      await runInlinePreviewMp3(videoId, tmpDir)
     }
 
-    emitPipelineEvent(videoId, 'cleanup', 'active', 'start')
-    await writeFile(doneFlag, 'done')
-    await rm(inputPath, { force: true })
-    jobInputPaths.delete(videoId)
-    await rm(tmpDir, { recursive: true, force: true })
-    emitPipelineEvent(videoId, 'done', 'success', 'watchfolder_and_tmp_cleared')
-    emitProgressCheckpoint(videoId, 'done', PROGRESS.DONE, 'complete')
-    await emitTtp(videoId, 'pipeline_done', {})
-    await emitTtpSummary(videoId, 'success')
-    histogram('vmp.transcoder.job.duration_ms', Date.now() - jobStartMs, { outcome: 'success', source })
-    increment('vmp.transcoder.job.success', 1, { source })
-    videoDurations.delete(videoId)
-    progressEmitState.delete(videoId)
-    jobHandles.delete(videoId)
-    stoppedVideos.delete(videoId)
+    assertNotStopped(videoId)
+    await waitWhilePaused(videoId)
+    await completePipelineSuccess(videoId, inputPath, tmpDir, doneFlag, jobStartMs, source)
   } catch (err) {
     if (err instanceof JobStoppedError || isJobStopped(videoId)) {
       cancelled = true
@@ -1041,46 +1158,52 @@ function isInboxVideoBasename(file: string): boolean {
   return /\.(mp4|mkv|mov)$/i.test(file)
 }
 
-function maybeEnqueueOnce(videoId: string, inputPath: string, source: string): void {
+function maybeEnqueueOnce(videoId: string, inputPath: string, source: string, pipelineMode: PipelineMode): void {
   if (enqueuedVideoIds.has(videoId)) return
   enqueuedVideoIds.add(videoId)
-  enqueue(videoId, inputPath, source)
+  enqueue(videoId, inputPath, source, pipelineMode)
 }
 
-function scheduleInboxIntake(file: string, source: string): void {
+function inboxFileCacheKey(inboxDir: string, file: string): string {
+  return `${inboxDir}::${file}`
+}
+
+function scheduleInboxIntake(file: string, inboxDir: string, pipelineMode: PipelineMode, mechanism: string): void {
   inboxIntakeChain = inboxIntakeChain
-    .then(() => intakeInboxBasename(file, source))
+    .then(() => intakeInboxBasename(file, inboxDir, pipelineMode, mechanism))
     .catch((err) => {
-      log(`inbox intake failed for '${file}' (${source}): ${err instanceof Error ? err.message : String(err)}`)
+      log(`inbox intake failed for '${file}' (${inboxDir}): ${err instanceof Error ? err.message : String(err)}`)
     })
 }
 
-async function intakeInboxBasename(file: string, source: string): Promise<void> {
+async function intakeInboxBasename(file: string, inboxDir: string, pipelineMode: PipelineMode, mechanism: string): Promise<void> {
   if (!isInboxVideoBasename(file)) return
+  const source = `${ingestLabelForMode(pipelineMode)}:${mechanism}`
+  const cacheKey = inboxFileCacheKey(inboxDir, file)
 
-  const cachedByFile = inboxIntakeByBasename.get(file)
+  const cachedByFile = inboxIntakeByBasename.get(cacheKey)
   if (cachedByFile) {
-    maybeEnqueueOnce(cachedByFile.videoId, cachedByFile.targetPath, source)
+    maybeEnqueueOnce(cachedByFile.videoId, cachedByFile.targetPath, source, pipelineMode)
     return
   }
 
   const stem = file.replace(/\.[^.]+$/, '')
   const ext = file.split('.').pop() || 'mp4'
-  const oldPath = path.join(INBOX_DIR, file)
+  const oldPath = path.join(inboxDir, file)
 
   if (isUuidLike(stem) && enqueuedVideoIds.has(stem)) return
 
   const cachedByStem = inboxResolvedByOriginalStem.get(stem)
   if (cachedByStem && existsSync(cachedByStem.targetPath)) {
-    inboxIntakeByBasename.set(file, cachedByStem)
-    maybeEnqueueOnce(cachedByStem.videoId, cachedByStem.targetPath, source)
+    inboxIntakeByBasename.set(cacheKey, cachedByStem)
+    maybeEnqueueOnce(cachedByStem.videoId, cachedByStem.targetPath, source, pipelineMode)
     return
   }
 
   if (!existsSync(oldPath)) return
 
   const result = await resolveInputTargetPath(stem, ext, oldPath, source)
-  inboxIntakeByBasename.set(file, result)
+  inboxIntakeByBasename.set(cacheKey, result)
   if (!isUuidLike(stem) || result.renamed) {
     inboxResolvedByOriginalStem.set(stem, result)
   }
@@ -1088,7 +1211,7 @@ async function intakeInboxBasename(file: string, source: string): Promise<void> 
     const detail = result.reason === 'random_uuid' ? 'Generated random VIDEO_ID' : 'Sanitized VIDEO_ID'
     log(`🧼 ${detail} ${source}: '${stem}' -> '${result.videoId}'`)
   }
-  maybeEnqueueOnce(result.videoId, result.targetPath, source)
+  maybeEnqueueOnce(result.videoId, result.targetPath, source, pipelineMode)
 }
 let ipcServer: net.Server | null = null
 const ipcSocketPath = `/tmp/vmp-pipeline-${process.pid}.sock`
@@ -1182,10 +1305,10 @@ async function stopIpcServer(): Promise<void> {
   }
 }
 
-function enqueue(videoId: string, inputPath: string, source: string): void {
+function enqueue(videoId: string, inputPath: string, source: string, pipelineMode: PipelineMode): void {
   if (isJobStopped(videoId)) return
-  beginTtpJob(videoId, source, inputPath)
-  queue.push({ videoId, inputPath, source })
+  beginTtpJob(videoId, source, inputPath, { pipelineMode })
+  queue.push({ videoId, inputPath, source, pipelineMode })
   reportQueueMetrics()
   drain()
 }
@@ -1258,7 +1381,7 @@ function drain(): void {
     if (isJobStopped(job.videoId)) continue
     running += 1
     reportQueueMetrics()
-    processVideo(job.videoId, job.inputPath, job.source)
+    processVideo(job.videoId, job.inputPath, job.source, job.pipelineMode)
       .catch(() => {})
       .finally(() => {
         running -= 1
@@ -1269,21 +1392,23 @@ function drain(): void {
 }
 
 async function startupScan(): Promise<void> {
-  await mkdir(INBOX_DIR, { recursive: true })
   await mkdir(TMP_DIR_BASE, { recursive: true })
-  const entries = await readdir(INBOX_DIR)
-  for (const file of entries) {
-    await intakeInboxBasename(file, 'startup_scan')
+  for (const watch of INBOX_WATCHES) {
+    await mkdir(watch.dir, { recursive: true })
+    const entries = await readdir(watch.dir)
+    for (const file of entries) {
+      await intakeInboxBasename(file, watch.dir, watch.pipelineMode, 'startup_scan')
+    }
   }
 }
 
-function startWatcher() {
-  const child = trackChild(spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', INBOX_DIR], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] }))
+function startWatcherForInbox(watch: InboxWatchConfig) {
+  const child = trackChild(spawn('inotifywait', ['-m', '-e', 'close_write', '--format', '%f', watch.dir], { env: process.env, stdio: ['ignore', 'pipe', 'inherit'] }))
   let stdoutBuffer = ''
   const processLines = (lines: string[]): void => {
     const unique = [...new Set(lines.filter(Boolean))]
     for (const file of unique) {
-      scheduleInboxIntake(file, 'watchfolder')
+      scheduleInboxIntake(file, watch.dir, watch.pipelineMode, 'watchfolder')
     }
   }
   child.stdout.on('data', (chunk) => {
@@ -1299,27 +1424,37 @@ function startWatcher() {
       processLines([trailing])
     }
     if (!shuttingDown) {
-      log(`inotifywait exited unexpectedly with code=${code ?? 'null'}`)
+      log(`inotifywait exited unexpectedly (${watch.label}) code=${code ?? 'null'}`)
       process.exit(1)
     }
   })
   return child
 }
 
+function startWatcher() {
+  return INBOX_WATCHES.map((watch) => startWatcherForInbox(watch))
+}
+
 function startPollingWatcher() {
   let timer: NodeJS.Timeout | null = null
-  let known = new Set<string>()
+  const knownByInbox = new Map<string, Set<string>>()
+  for (const watch of INBOX_WATCHES) {
+    knownByInbox.set(watch.dir, new Set<string>())
+  }
   const poll = async () => {
     if (shuttingDown) return
     try {
-      const entries = await readdir(INBOX_DIR)
-      const current = new Set(entries)
-      for (const file of entries) {
-        if (known.has(file)) continue
-        if (!isInboxVideoBasename(file)) continue
-        scheduleInboxIntake(file, 'polling_watchfolder')
+      for (const watch of INBOX_WATCHES) {
+        const entries = await readdir(watch.dir)
+        const known = knownByInbox.get(watch.dir) ?? new Set<string>()
+        const current = new Set(entries)
+        for (const file of entries) {
+          if (known.has(file)) continue
+          if (!isInboxVideoBasename(file)) continue
+          scheduleInboxIntake(file, watch.dir, watch.pipelineMode, 'polling_watchfolder')
+        }
+        knownByInbox.set(watch.dir, current)
       }
-      known = current
     } catch (err) {
       log(`polling watcher error: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -1337,15 +1472,19 @@ async function main() {
   await startIpcServer()
   await checkEncoreHealth()
   log(`🎞️  Encore API: ${(process.env.ENCORE_BASE_URL || 'http://127.0.0.1:8080').trim()}`)
+  log(`📦 Packaging mode: ${usesQueuedPackaging() ? 'queue (encore-packager)' : 'inline (shaka+rclone)'}`)
+  for (const watch of INBOX_WATCHES) {
+    log(`📥 Inbox [${watch.label}] pipelineMode=${watch.pipelineMode}: ${watch.dir}`)
+  }
   log(`☁️  Using R2 root: ${r2Root()}`)
   log('🔍 Resuming existing jobs...')
   await startupScan()
   log('🎬 Watching for new uploads...')
-  let watcher: { kill: (signal?: NodeJS.Signals) => boolean } | null = null
+  let watchers: Array<{ kill: (signal?: NodeJS.Signals) => boolean }> = []
   let poller: { stop: () => void } | null = null
   try {
-    watcher = startWatcher()
-    log('✅ inotify watcher started')
+    watchers = startWatcher()
+    log(`✅ inotify watcher started (${watchers.length} inbox${watchers.length === 1 ? '' : 'es'})`)
   } catch (err) {
     log(`⚠️ inotify unavailable, falling back to polling: ${err instanceof Error ? err.message : String(err)}`)
     poller = startPollingWatcher()
@@ -1354,7 +1493,7 @@ async function main() {
   const shutdown = async () => {
     if (shuttingDown) return
     shuttingDown = true
-    if (watcher) watcher.kill('SIGTERM')
+    for (const watcher of watchers) watcher.kill('SIGTERM')
     if (poller) poller.stop()
     for (const child of fallbackChildren) {
       try { child.kill('SIGTERM') } catch {}

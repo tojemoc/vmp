@@ -8,10 +8,11 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 | --- | --- | --- |
 | Package name | `@vmp/podcast-host` | `@vmp/media-pipeline` |
 | Transcoding | Inline ffmpeg + VAAPI in `pipeline_watch.ts` | Encore REST API + worker pool |
-| GPU env | `VAAPI_DEVICE` required | Removed — configure in Encore/worker FFmpeg |
-| New services | — | Redis, `encore-web`, `encore-worker` (Compose) |
-| HLS packaging | Shaka Packager | **Unchanged** |
-| R2 upload | rclone | **Unchanged** |
+| New services | — | Redis, `encore-web`, `encore-worker`, `encore-packager` (Compose) |
+| HLS packaging | Shaka Packager in orchestrator | **encore-packager** (default) or inline Shaka |
+| Ingest | Single `INBOX_DIR` | Dual inbox: `INBOX_FAST_LANE_DIR` + `INBOX_FULL_LADDER_DIR` |
+| GPU | `VAAPI_DEVICE` on host ffmpeg | Encore GPU profiles (`VMP_GPU_BACKEND=auto`, worker `/dev/dri`) |
+| R2 upload | rclone | rclone (inline) or packager → S3 (queue mode) |
 | Worker webhooks | pipeline-status + preview rebuild | **Unchanged** (same HMAC contracts) |
 | R2 key layout | `videos/{id}/…` | **Unchanged** |
 
@@ -62,12 +63,22 @@ Add:
 ENCORE_BASE_URL=http://127.0.0.1:8080
 MEDIA_HOST_ROOT=/mnt
 ENCORE_MEDIA_ROOT=/media   # if Compose mounts /mnt → /media in containers
+INBOX_FAST_LANE_DIR=/mnt/videos/inbox-fast-lane
+INBOX_FULL_LADDER_DIR=/mnt/videos/inbox-full-ladder
+PACKAGING_MODE=queue
+REDIS_URL=redis://127.0.0.1:6379
+VMP_GPU_BACKEND=auto
+PACKAGER_CALLBACK_URL=http://127.0.0.1:8788/vmp/api
+PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
+S3_ENDPOINT_URL=https://YOUR_ACCOUNT.r2.cloudflarestorage.com
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
 ```
 
-Remove (no longer used):
+Optional GPU on workers:
 
 ```bash
-# VAAPI_DEVICE=/dev/dri/renderD128
+VAAPI_DEVICE=/dev/dri/renderD128
 ```
 
 Keep all existing `VMP_*`, `INBOX_DIR`, `RCLONE_*`, and `VMP_API_*` variables.

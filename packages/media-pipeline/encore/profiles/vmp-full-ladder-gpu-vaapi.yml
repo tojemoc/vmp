@@ -1,0 +1,46 @@
+name: vmp-full-ladder-gpu-vaapi
+description: VMP full ladder via VAAPI (worker GPU required)
+scaling: bicubic
+encodes:
+  - type: X264Encode
+    suffix: _1080p
+    height: 1080
+    twoPass: false
+    videoFilter: format=nv12,hwupload
+    params:
+      c:v: h264_vaapi
+      b:v: 5000k
+      maxrate: 5000k
+      bufsize: 10000k
+      r: 30
+      g: 180
+      profile:v: high
+
+  - type: X264Encode
+    suffix: _720p
+    height: 720
+    twoPass: false
+    videoFilter: format=nv12,hwupload
+    params:
+      c:v: h264_vaapi
+      b:v: 3000k
+      maxrate: 3000k
+      bufsize: 6000k
+      r: 30
+      g: 180
+    audioEncode:
+      type: AudioEncode
+      bitrate: 128k
+
+  - type: X264Encode
+    suffix: _480p
+    height: 480
+    twoPass: false
+    videoFilter: format=nv12,hwupload
+    params:
+      c:v: h264_vaapi
+      b:v: 1500k
+      maxrate: 1500k
+      bufsize: 3000k
+      r: 30
+      g: 180

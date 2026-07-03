@@ -1,3 +1,9 @@
 vmp-720p-audio: vmp-720p-audio.yml
+vmp-720p-audio-gpu-vaapi: vmp-720p-audio-gpu-vaapi.yml
+vmp-720p-audio-gpu-nvenc: vmp-720p-audio-gpu-nvenc.yml
 vmp-1080p: vmp-1080p.yml
 vmp-480p: vmp-480p.yml
+vmp-full-ladder: vmp-full-ladder.yml
+vmp-full-ladder-gpu-vaapi: vmp-full-ladder-gpu-vaapi.yml
+vmp-podcast-mp3: vmp-podcast-mp3.yml
+vmp-podcast-preview: vmp-podcast-preview.yml

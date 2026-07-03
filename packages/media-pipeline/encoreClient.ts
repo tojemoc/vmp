@@ -5,6 +5,7 @@
 
 import { readdir, rename, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { detectGpuEncodeConfig, resolveEncoreProfileBase } from './gpuDetect.js'
 
 export type EncoreJobStatus =
   | 'NEW'
@@ -76,8 +77,10 @@ export async function submitEncoreJob(options: {
   baseName: string
   externalId: string
   priority?: number
+  duration?: number
+  seekTo?: number
 }): Promise<string> {
-  const body = {
+  const body: Record<string, unknown> = {
     profile: options.profile,
     outputFolder: toEncoreUri(options.outputFolder),
     baseName: options.baseName,
@@ -90,6 +93,8 @@ export async function submitEncoreJob(options: {
       },
     ],
   }
+  if (options.duration != null) body.duration = options.duration
+  if (options.seekTo != null) body.seekTo = options.seekTo
 
   const res = await encoreFetch('/encoreJobs', {
     method: 'POST',
@@ -172,6 +177,37 @@ export async function adoptEncoreOutput(outputFolder: string, targetFileName: st
   return dest
 }
 
+export function encoreJobUrl(jobId: string): string {
+  return `${ENCORE_BASE_URL}/encoreJobs/${encodeURIComponent(jobId)}`
+}
+
+const PROFILE_GPU_VARIANTS: Record<string, string[]> = {
+  'vmp-720p-audio': ['vmp-720p-audio-gpu-nvenc', 'vmp-720p-audio-gpu-vaapi', 'vmp-720p-audio'],
+  'vmp-1080p': ['vmp-1080p'],
+  'vmp-480p': ['vmp-480p'],
+  'vmp-full-ladder': ['vmp-full-ladder-gpu-vaapi', 'vmp-full-ladder'],
+  'vmp-podcast-mp3': ['vmp-podcast-mp3'],
+  'vmp-podcast-preview': ['vmp-podcast-preview'],
+}
+
+/** Pick best registered Encore profile for this host (GPU when available). */
+export async function resolveEncoreProfileName(profileBase: string): Promise<string> {
+  const gpu = await detectGpuEncodeConfig()
+  const candidates = PROFILE_GPU_VARIANTS[profileBase] || [resolveEncoreProfileBase(profileBase, gpu.profileSuffix)]
+  if (!PROFILE_GPU_VARIANTS[profileBase]) {
+    return resolveEncoreProfileBase(profileBase, gpu.profileSuffix)
+  }
+  if (gpu.backend === 'nvenc') {
+    const nvenc = candidates.find((c) => c.includes('nvenc'))
+    if (nvenc) return nvenc
+  }
+  if (gpu.backend === 'vaapi') {
+    const vaapi = candidates.find((c) => c.includes('vaapi'))
+    if (vaapi) return vaapi
+  }
+  return candidates[candidates.length - 1]
+}
+
 export const ENCORE_PROFILES = {
   '720p': 'vmp-720p-audio',
   '1080p': 'vmp-1080p',
@@ -189,7 +225,7 @@ export async function transcodeRenditionWithEncore(options: {
   onProgress?: (progress: number) => void
   isCancelled?: () => boolean
 }): Promise<string> {
-  const profile = ENCORE_PROFILES[options.rendition]
+  const profile = await resolveEncoreProfileName(ENCORE_PROFILES[options.rendition])
   const baseName = `vmp-${options.videoId}-${options.rendition}`
   const encoreOutDir = path.join(options.outputDir, 'encore', options.rendition)
   await import('node:fs/promises').then((fs) => fs.mkdir(encoreOutDir, { recursive: true }))

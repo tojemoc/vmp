@@ -23,6 +23,13 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
 import { gauge, increment } from './metrics.js'
+import {
+  getPackagingJob,
+  markPackagingFailed,
+  markPackagingSuccess,
+  registerPackagingJob,
+} from './packagingRegistry.js'
+import { enqueuePackagerJob } from './packagingQueue.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const pkgRoot = __dirname
@@ -1205,6 +1212,87 @@ const server = http.createServer(async (req, res) => {
       if (active) active.priority = index
     })
     sortJobQueue()
+    json(res, { ok: true })
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/packaging/enqueue') {
+    const body = await readJsonBody(req)
+    if (body === null) {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return
+    }
+    const reg = body as {
+      jobId?: string
+      encoreJobUrl?: string
+      videoId?: string
+      stage?: string
+      pipelineMode?: string
+    }
+    if (!reg.jobId || !reg.encoreJobUrl || !reg.videoId || !reg.stage || !reg.pipelineMode) {
+      json(res, { error: 'Missing required fields' }, 400)
+      return
+    }
+    registerPackagingJob({
+      jobId: String(reg.jobId),
+      encoreJobUrl: String(reg.encoreJobUrl),
+      videoId: String(reg.videoId),
+      stage: reg.stage as 'fast_lane_preview' | 'full_ladder',
+      pipelineMode: reg.pipelineMode as 'fast_lane' | 'full_ladder',
+    })
+    try {
+      await enqueuePackagerJob(String(reg.jobId), String(reg.encoreJobUrl))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      markPackagingFailed(String(reg.jobId), msg)
+      json(res, { error: msg }, 502)
+      return
+    }
+    json(res, { ok: true, jobId: reg.jobId }, 202)
+    return
+  }
+
+  const packagingStatusMatch = url.pathname.match(/^\/api\/packaging\/status\/([^/]+)$/)
+  if (req.method === 'GET' && packagingStatusMatch) {
+    const jobId = decodeURIComponent(packagingStatusMatch[1])
+    const job = getPackagingJob(jobId)
+    if (!job) {
+      json(res, { error: 'Not found' }, 404)
+      return
+    }
+    json(res, {
+      status: job.status,
+      outputPath: job.outputPath,
+      error: job.error,
+      stage: job.stage,
+      pipelineMode: job.pipelineMode,
+      videoId: job.videoId,
+    })
+    return
+  }
+
+  const packagerCallbackMatch = url.pathname.match(/^\/vmp\/api\/packagerCallback\/(success|failure)$/)
+  if (req.method === 'POST' && packagerCallbackMatch) {
+    const outcome = packagerCallbackMatch[1]
+    const body = await readJsonBody(req)
+    if (body === null) {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return
+    }
+    const payload = body as { jobId?: string, outputPath?: string, error?: string, message?: string }
+    const jobId = String(payload.jobId || '').trim()
+    if (!jobId) {
+      json(res, { error: 'Missing jobId' }, 400)
+      return
+    }
+    if (outcome === 'success') {
+      markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined)
+      pushLog(`packager success jobId=${jobId}`)
+    } else {
+      const errMsg = String(payload.error || payload.message || 'packager failure')
+      markPackagingFailed(jobId, errMsg)
+      pushLog(`packager failure jobId=${jobId}: ${errMsg}`)
+    }
     json(res, { ok: true })
     return
   }

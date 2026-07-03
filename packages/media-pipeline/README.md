@@ -13,20 +13,28 @@ This package replaces the former `@vmp/podcast-host` custom ffmpeg/VAAPI encoder
 
 ## Architecture
 
+Two ingest watchfolders let you A/B **fast-lane** (720p publishable first, then full ladder) vs **full-ladder-only** (single encode pass). Both paths log structured TTP with `pipelineMode` for comparison.
+
 ```text
 ┌─────────────────┐     POST /encoreJobs      ┌──────────────┐
 │ pipeline_watch  │ ─────────────────────────►│ encore-web   │
 │ (orchestrator)  │◄──── poll job status ─────│ + workers    │
 └────────┬────────┘                           └──────┬───────┘
-         │ shaka-packager, rclone                      │ FFmpeg
+         │ enqueue packaging (Redis)                  │ FFmpeg (+ GPU profiles when available)
          ▼                                             ▼
-   Cloudflare R2                              shared /media volume
-         │
+┌─────────────────┐     S3 upload              shared /media volume
+│ encore-packager │ ─────────────────────────► Cloudflare R2
+│ (scale workers) │     (or inline Shaka+rclone when PACKAGING_MODE=inline)
+└────────┬────────┘
          ▼
    @vmp/api Worker  ◄── pipeline-status callback (HMAC)
 ```
 
-Encore does **not** package HLS or upload to R2 — that matches [SVT’s design](https://svt.github.io/encore/) (“not a video packager”). VMP keeps Shaka Packager and rclone in the orchestrator, the same split Eyevinn documents for [Encore + Shaka Packager pipelines](https://eyevinntechnology.medium.com/vod-pipeline-with-svt-encore-and-shaka-packager-in-open-source-cloud-5906dfe1df5d).
+**Default (`PACKAGING_MODE=queue`):** Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
+
+**Inline fallback (`PACKAGING_MODE=inline`):** orchestrator keeps Shaka Packager + rclone (legacy path for local dev without packager).
+
+Encore does **not** package HLS — that matches [SVT’s design](https://svt.github.io/encore/).
 
 ## Contents
 
@@ -63,17 +71,19 @@ Bundled Compose stack: [`encore/docker-compose.yml`](encore/docker-compose.yml)
 
 | Service | Image | Role |
 | --- | --- | --- |
-| `redis` | `redis:8.6-alpine` | Job queue + storage (Encore requirement) |
+| `redis` | `redis:8.6-alpine` | Job queue (Encore + packager) |
 | `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API (`POST /encoreJobs`, Swagger UI) |
-| `encore-worker` | `ghcr.io/svt/encore-worker:latest` | Headless transcode workers (scale via `ENCORE_WORKER_REPLICAS`) |
+| `encore-worker` | `ghcr.io/svt/encore-worker:latest` | Transcode workers (scale via `ENCORE_WORKER_REPLICAS`; mount `/dev/dri` for VAAPI) |
+| `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + R2 upload (scale via `ENCORE_PACKAGER_REPLICAS`) |
 
 VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
 
 | Profile | Rendition | Notes |
 | --- | --- | --- |
-| `vmp-720p-audio` | 720p + AAC | Phase 1 — enables preview playback |
-| `vmp-1080p` | 1080p video-only | Phase 2 |
-| `vmp-480p` | 480p video-only | Phase 2 |
+| `vmp-720p-audio` (+ GPU variants) | 720p + AAC | Fast-lane phase 1 |
+| `vmp-full-ladder` (+ GPU VAAPI) | 1080p + 720p + 480p | Full ladder (single job) |
+| `vmp-1080p` / `vmp-480p` | Per-rendition | Inline `PACKAGING_MODE=inline` only |
+| `vmp-podcast-mp3` / `vmp-podcast-preview` | Audio sidecars | Queued path podcast MP3 |
 
 **Shared storage:** mount the same host tree Encore and the orchestrator use. Default Compose bind-mounts `${ENCORE_MEDIA_MOUNT:-/mnt}` → `/media` inside containers. On the host, set:
 
@@ -108,8 +118,24 @@ Expose the supervisor HTTP port to the Worker only (VPN, SSH tunnel, or reverse 
 | `MEDIA_HOST_ROOT` | `/mnt` | Host path prefix for inbox/tmp |
 | `ENCORE_POLL_MS` | `2000` | Job status poll interval |
 | `ENCORE_JOB_TIMEOUT_MS` | `7200000` | Per-rendition transcode timeout (2 h) |
+| `VMP_GPU_BACKEND` | `auto` | `auto` \| `vaapi` \| `nvenc` \| `cpu` — picks Encore profile variant |
+| `VAAPI_DEVICE` | `/dev/dri/renderD128` | Passed to worker Compose for VAAPI profiles |
 
-### VMP orchestrator (unchanged from podcast-host)
+### Pipeline mode (dual inbox)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `INBOX_FAST_LANE_DIR` | `/mnt/videos/inbox-fast-lane` | **fast_lane** — 720p first, then full ladder (720p encoded twice) |
+| `INBOX_FULL_LADDER_DIR` | `/mnt/videos/inbox-full-ladder` | **full_ladder** — single full ladder, `fully_processed` when done |
+| `INBOX_DIR` | — | Legacy: if set, subdirs `fast-lane` / `full-ladder` are used when the above are unset |
+| `PACKAGING_MODE` | `queue` | `queue` = encore-packager; `inline` = Shaka + rclone in orchestrator |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Packaging queue (supervisor + packager) |
+| `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
+| `PACKAGER_CALLBACK_URL` | `http://host.docker.internal:8788/vmp/api` | encore-packager success/failure callbacks |
+
+Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** for one-shot encoding. TTP logs include `pipelineMode` on every milestone for A/B analysis.
+
+### VMP orchestrator
 
 | Variable | Purpose |
 | --- | --- |
@@ -118,13 +144,13 @@ Expose the supervisor HTTP port to the Worker only (VPN, SSH tunnel, or reverse 
 | `VMP_API_PIPELINE_SECRET` | Shared HMAC with Worker `VMP_API_PIPELINE_SECRET` |
 | `VMP_UI_HOST` / `VMP_UI_PORT` | Supervisor dashboard + webhook bind (default `127.0.0.1:8788`) |
 | `VMP_RUN_PIPELINE` | `1` run watchfolder; `0` UI + preview jobs only |
-| `INBOX_DIR` | Watchfolder (default `/mnt/videos/inbox`) |
+| `INBOX_FAST_LANE_DIR` / `INBOX_FULL_LADDER_DIR` | Dual watchfolders (see above) |
 | `TMP_DIR_BASE` | Temp encode dirs (default `/mnt/tmp/video_pipeline`) |
 | `RCLONE_REMOTE`, `R2_BUCKET_NAME`, … | rclone → R2 (see legacy table in git history) |
 | `VMP_TTP_LOG_PATH` | Optional JSONL time-to-publish log |
 | `DD_*` | Datadog DogStatsD tags (see [datadog/README.md](datadog/README.md)) |
 
-**Removed:** `VAAPI_DEVICE` — hardware encoding is configured in Encore/worker images (CPU x264 profiles ship by default; swap profiles or worker FFmpeg builds for GPU).
+**GPU:** `VMP_GPU_BACKEND=auto` probes NVENC then VAAPI at job start and selects `*-gpu-nvenc` / `*-gpu-vaapi` Encore profiles when registered. Mount GPU devices on `encore-worker` in Compose.
 
 ### Time-to-publish (TTP) logging
 

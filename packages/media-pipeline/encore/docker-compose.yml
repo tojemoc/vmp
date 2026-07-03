@@ -47,6 +47,31 @@ services:
       - ./profiles:/profiles:ro
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
       - encore-shared-work:/shared/work
+    devices:
+      - ${VAAPI_DEVICE:-/dev/dri/renderD128}:/dev/dri/renderD128
+    group_add:
+      - video
+
+  encore-packager:
+    image: eyevinntechnology/encore-packager:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    deploy:
+      replicas: ${ENCORE_PACKAGER_REPLICAS:-1}
+    environment:
+      REDIS_URL: redis://redis:6379
+      REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
+      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://host.docker.internal:8788/vmp/api}
+      PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
+      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$EXTERNALID$}
+      HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-auto}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   encore-shared-work:
