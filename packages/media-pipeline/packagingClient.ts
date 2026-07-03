@@ -33,27 +33,42 @@ export function usesQueuedPackaging(): boolean {
 }
 
 export async function registerAndEnqueuePackaging(reg: PackagingRegistration): Promise<void> {
-  const res = await fetch(`${SUPERVISOR_BASE}/api/packaging/enqueue`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reg),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`packaging enqueue failed: HTTP ${res.status} ${text.slice(0, 300)}`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15_000)
+  try {
+    const res = await fetch(`${SUPERVISOR_BASE}/api/packaging/enqueue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reg),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`packaging enqueue failed: HTTP ${res.status} ${text.slice(0, 300)}`)
+    }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
 export async function waitForPackaging(jobId: string): Promise<PackagingStatus> {
   const started = Date.now()
   while (Date.now() - started <= PACKAGING_TIMEOUT_MS) {
-    const res = await fetch(`${SUPERVISOR_BASE}/api/packaging/status/${encodeURIComponent(jobId)}`)
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`packaging status failed: HTTP ${res.status} ${text.slice(0, 200)}`)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
+    try {
+      const res = await fetch(`${SUPERVISOR_BASE}/api/packaging/status/${encodeURIComponent(jobId)}`, {
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`packaging status failed: HTTP ${res.status} ${text.slice(0, 200)}`)
+      }
+      const body = (await res.json()) as PackagingStatus
+      if (body.status === 'success' || body.status === 'failed') return body
+    } finally {
+      clearTimeout(timeout)
     }
-    const body = (await res.json()) as PackagingStatus
-    if (body.status === 'success' || body.status === 'failed') return body
     await new Promise((r) => setTimeout(r, PACKAGING_POLL_MS))
   }
   throw new Error(`packaging job ${jobId} timed out after ${PACKAGING_TIMEOUT_MS}ms`)

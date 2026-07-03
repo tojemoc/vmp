@@ -57,10 +57,21 @@ export function toEncoreUri(hostPath: string): string {
   return resolved
 }
 
-async function encoreFetch(urlPath: string, init: RequestInit = {}): Promise<Response> {
+async function encoreFetch(urlPath: string, init: RequestInit = {}, timeoutMs?: number): Promise<Response> {
   const headers = { ...encoreHeaders(), ...(init.headers as Record<string, string> | undefined) }
-  const res = await fetch(`${ENCORE_BASE_URL}${urlPath}`, { ...init, headers })
-  return res
+  const controller = new AbortController()
+  const timeout = timeoutMs ?? 30_000
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const res = await fetch(`${ENCORE_BASE_URL}${urlPath}`, {
+      ...init,
+      headers,
+      signal: init.signal ?? controller.signal
+    })
+    return res
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function checkEncoreHealth(): Promise<void> {
@@ -114,7 +125,7 @@ export async function submitEncoreJob(options: {
 }
 
 export async function getEncoreJob(jobId: string): Promise<EncoreJob> {
-  const res = await encoreFetch(`/encoreJobs/${encodeURIComponent(jobId)}`, { method: 'GET' })
+  const res = await encoreFetch(`/encoreJobs/${encodeURIComponent(jobId)}`, { method: 'GET' }, 15_000)
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`Encore job fetch failed: HTTP ${res.status} ${text.slice(0, 300)}`)
@@ -227,7 +238,8 @@ export async function transcodeRenditionWithEncore(options: {
 }): Promise<string> {
   const profile = await resolveEncoreProfileName(ENCORE_PROFILES[options.rendition])
   const baseName = `vmp-${options.videoId}-${options.rendition}`
-  const encoreOutDir = path.join(options.outputDir, 'encore', options.rendition)
+  const attemptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const encoreOutDir = path.join(options.outputDir, 'encore', options.rendition, attemptId)
   await import('node:fs/promises').then((fs) => fs.mkdir(encoreOutDir, { recursive: true }))
 
   const jobId = await submitEncoreJob({

@@ -37,12 +37,19 @@ services:
       - redis
     deploy:
       replicas: ${ENCORE_WORKER_REPLICAS:-2}
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
       ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
       ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
       ENCORE_SETTINGS_POLL_DISABLED: "false"
       ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "true"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
     volumes:
       - ./profiles:/profiles:ro
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media

@@ -1233,6 +1233,16 @@ const server = http.createServer(async (req, res) => {
       json(res, { error: 'Missing required fields' }, 400)
       return
     }
+    const validStages: string[] = ['fast_lane_preview', 'full_ladder']
+    const validPipelineModes: string[] = ['fast_lane', 'full_ladder']
+    if (!validStages.includes(reg.stage)) {
+      json(res, { error: `Invalid stage: ${reg.stage}` }, 400)
+      return
+    }
+    if (!validPipelineModes.includes(reg.pipelineMode)) {
+      json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400)
+      return
+    }
     registerPackagingJob({
       jobId: String(reg.jobId),
       encoreJobUrl: String(reg.encoreJobUrl),

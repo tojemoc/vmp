@@ -106,7 +106,7 @@ sudo systemctl start vmp-supervisor
 sudo journalctl -u vmp-supervisor -f
 ```
 
-Expect boot log: `Encore API: http://127.0.0.1:8080`. Drop a test MP4 in `INBOX_DIR` and confirm phase-1 `preview_ready` callback.
+Expect boot log: `Encore API: http://127.0.0.1:8080`. Drop a test MP4 in `INBOX_FAST_LANE_DIR` and confirm phase-1 `preview_ready` callback.
 
 ### 8. Admin UI
 

@@ -19,8 +19,18 @@ let cached: GpuEncodeConfig | null = null
 function runQuick(cmd: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: 'ignore' })
-    child.on('error', () => resolve(false))
-    child.on('close', (code) => resolve(code === 0))
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL')
+      resolve(false)
+    }, 10_000)
+    child.on('error', () => {
+      clearTimeout(timeout)
+      resolve(false)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timeout)
+      resolve(code === 0)
+    })
   })
 }
 

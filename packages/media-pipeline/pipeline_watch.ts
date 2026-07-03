@@ -1040,14 +1040,6 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
     emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
     emitProgressCheckpoint(videoId, 'probe', PROGRESS.PROBE, 'probe complete')
 
-    await checkEncoreHealth()
-    const gpu = await detectGpuEncodeConfig()
-    await emitTtp(videoId, 'gpu_backend_detected', {
-      pipelineMode,
-      gpuBackend: gpu.backend,
-      profileSuffix: gpu.profileSuffix,
-    })
-
     if (usesQueuedPackaging()) {
       await runQueuedPipelineJob({
         videoId,
@@ -1061,26 +1053,35 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
         },
         notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
       })
-    } else if (pipelineMode === 'full_ladder') {
-      await runInlineFullLadderOnly(videoId, inputPath, tmpDir, hasAudio, pipelineMode)
-      assertNotStopped(videoId)
-      await waitWhilePaused(videoId)
-      if (hasAudio) {
-        await encodePodcastMp3(videoId, inputPath, tmpDir)
-          .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
-          .catch(async (err) => {
-            if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-            const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
-            log(`⚠️ ${videoId}: podcast MP3 failed: ${err instanceof Error ? err.message : String(err)}`)
-            emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
-            await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
-          })
-      } else {
-        emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
-        await emitTtp(videoId, 'podcast_mp3_skipped', {})
-      }
-      await runInlinePreviewMp3(videoId, tmpDir)
     } else {
+      await checkEncoreHealth()
+      const gpu = await detectGpuEncodeConfig()
+      await emitTtp(videoId, 'gpu_backend_detected', {
+        pipelineMode,
+        gpuBackend: gpu.backend,
+        profileSuffix: gpu.profileSuffix,
+      })
+
+      if (pipelineMode === 'full_ladder') {
+        await runInlineFullLadderOnly(videoId, inputPath, tmpDir, hasAudio, pipelineMode)
+        assertNotStopped(videoId)
+        await waitWhilePaused(videoId)
+        if (hasAudio) {
+          await encodePodcastMp3(videoId, inputPath, tmpDir)
+            .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
+            .catch(async (err) => {
+              if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
+              const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
+              log(`⚠️ ${videoId}: podcast MP3 failed: ${err instanceof Error ? err.message : String(err)}`)
+              emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
+              await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
+            })
+        } else {
+          emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
+          await emitTtp(videoId, 'podcast_mp3_skipped', {})
+        }
+        await runInlinePreviewMp3(videoId, tmpDir)
+      } else {
       await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
       assertNotStopped(videoId)
       await waitWhilePaused(videoId)
@@ -1111,6 +1112,7 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
       assertNotStopped(videoId)
       await waitWhilePaused(videoId)
       await runInlinePreviewMp3(videoId, tmpDir)
+      }
     }
 
     assertNotStopped(videoId)
