@@ -12,7 +12,7 @@ Environment=NODE_BIN=/usr/bin/node
 Environment=NPM_BIN=/usr/bin/npm
 EnvironmentFile=-/etc/vmp/env
 # ExecStart uses absolute script path under VMP_ROOT (no WorkingDirectory required)
-ExecStart=/bin/bash -c 'exec "${NODE_BIN}" "${VMP_ROOT}/packages/podcast-host/dist/supervisor.js"'
+ExecStart=/bin/bash -c 'exec "${NODE_BIN}" "${VMP_ROOT}/packages/media-pipeline/dist/supervisor.js"'
 Restart=on-failure
 RestartSec=5s
 KillMode=mixed

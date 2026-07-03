@@ -7,15 +7,15 @@ set -euo pipefail
 # Usage examples:
 #   # Dry-run copy plan (default)
 #   DB_NAME=video-subscription-db MODE_FLAG=--remote \
-#   bash packages/podcast-host/bin/video_id_r2_prefix_migrate.sh
+#   bash packages/media-pipeline/bin/video_id_r2_prefix_migrate.sh
 #
 #   # Apply copy to R2
 #   APPLY=1 DB_NAME=video-subscription-db MODE_FLAG=--remote \
-#   bash packages/podcast-host/bin/video_id_r2_prefix_migrate.sh
+#   bash packages/media-pipeline/bin/video_id_r2_prefix_migrate.sh
 #
 #   # Optionally delete old prefixes after successful copy
 #   APPLY=1 DELETE_OLD=1 DB_NAME=video-subscription-db MODE_FLAG=--remote \
-#   bash packages/podcast-host/bin/video_id_r2_prefix_migrate.sh
+#   bash packages/media-pipeline/bin/video_id_r2_prefix_migrate.sh
 
 DB_NAME="${DB_NAME:-video-subscription-db}"
 MODE_FLAG="${MODE_FLAG:-}"

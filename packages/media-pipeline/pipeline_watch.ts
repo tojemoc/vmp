@@ -13,6 +13,11 @@ import {
   setTtpSourceDuration,
 } from './ttpLog.js'
 import { gauge, histogram, increment } from './metrics.js'
+import {
+  checkEncoreHealth,
+  transcodeRenditionWithEncore,
+  type EncoreRenditionKey,
+} from './encoreClient.js'
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused'
 type PipelineStage =
@@ -38,7 +43,6 @@ type ProgressPhase = JobPhase
 
 const INBOX_DIR = (process.env.INBOX_DIR || '/mnt/videos/inbox').trim()
 const TMP_DIR_BASE = (process.env.TMP_DIR_BASE || '/mnt/tmp/video_pipeline').trim()
-const VAAPI_DEVICE = (process.env.VAAPI_DEVICE || '/dev/dri/renderD128').trim()
 const MAX_JOBS = Math.max(1, Number.parseInt(process.env.MAX_JOBS || '2', 10) || 2)
 const MP3_BITRATE = (process.env.MP3_BITRATE || '128k').trim()
 const PREVIEW_MP3_ENABLED = process.env.PREVIEW_MP3_ENABLED !== '0'
@@ -559,35 +563,39 @@ async function encodeRendition(
 ): Promise<string> {
   const r = RENDITION_CONFIG[key]
   emitPipelineEvent(videoId, options.stage, 'active', r.out)
-  const outPath = path.join(tmpDir, `${r.out}.tmp.${process.pid}`)
-  const args = [
-    '-hide_banner', '-y',
-    '-init_hw_device', `vaapi=vaapi0:${VAAPI_DEVICE}`,
-    '-i', inputPath, '-r', '30',
-    '-vf', `format=nv12,hwupload,scale_vaapi=w=${r.w}:h=${r.h}:force_original_aspect_ratio=decrease`,
-    '-map', '0:v:0',
-  ]
-  if (options.includeAudio) {
-    args.push('-map', '0:a?', '-c:a', 'aac', '-b:a', r.abr)
-  }
-  args.push(
-    '-c:v', 'h264_vaapi', '-g', '180', '-keyint_min', '180', '-sc_threshold', '0',
-    '-b:v', r.br, '-maxrate', r.max, '-bufsize', r.buf,
-    '-f', 'mp4',
-    outPath,
-  )
-  await runFfmpeg(args, `encode ${r.out}`, {
+
+  const encoreOutPath = await transcodeRenditionWithEncore({
     videoId,
-    stage: options.stage,
-    rendition: key,
-    durationSec: videoDurations.get(videoId) ?? null,
-    overallBase: options.overallBase,
-    overallSpan: options.overallSpan,
-    phase: stageToProgressPhase(options.stage),
+    inputPath,
+    outputDir: tmpDir,
+    rendition: key as EncoreRenditionKey,
+    targetFileName: r.out,
+    isCancelled: () => isJobStopped(videoId),
+    onProgress: (encoreProgress) => {
+      const durationSec = videoDurations.get(videoId) ?? null
+      const stageProgress = Math.min(1, Math.max(0, encoreProgress / 100))
+      const overallProgress = options.overallBase + options.overallSpan * stageProgress
+      maybeEmitEncodeProgress(
+        videoId,
+        options.stage,
+        key,
+        durationSec != null ? durationSec * stageProgress : 0,
+        durationSec ?? 0,
+        options.overallBase,
+        options.overallSpan,
+        null,
+        stageToProgressPhase(options.stage),
+      )
+      emitProgressCheckpoint(videoId, options.stage, overallProgress, `${key} ${encoreProgress}%`, key)
+    },
   })
-  emitProgressCheckpoint(videoId, options.stage, options.overallBase + options.overallSpan, `${key} done`, key)
+
   const finalPath = path.join(tmpDir, r.out)
-  await rename(outPath, finalPath)
+  if (encoreOutPath !== finalPath) {
+    await rename(encoreOutPath, finalPath)
+  }
+
+  emitProgressCheckpoint(videoId, options.stage, options.overallBase + options.overallSpan, `${key} done`, key)
   return finalPath
 }
 
@@ -1327,9 +1335,8 @@ function startPollingWatcher() {
 
 async function main() {
   await startIpcServer()
-  if (!existsSync(VAAPI_DEVICE)) {
-    throw new Error(`VAAPI device not found: ${VAAPI_DEVICE}`)
-  }
+  await checkEncoreHealth()
+  log(`🎞️  Encore API: ${(process.env.ENCORE_BASE_URL || 'http://127.0.0.1:8080').trim()}`)
   log(`☁️  Using R2 root: ${r2Root()}`)
   log('🔍 Resuming existing jobs...')
   await startupScan()

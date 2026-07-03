@@ -10,8 +10,8 @@
 
 ```yaml
 services:
-  podcast-host:
-    image: ghcr.io/ORG/vmp-podcast-host:${TAG}
+  media-pipeline:
+    image: ghcr.io/ORG/vmp-media-pipeline:${TAG}
     restart: unless-stopped
     stop_grace_period: 45s
     environment:
@@ -56,4 +56,4 @@ services:
 | --- | --- |
 | [Repository README](../../README.md) | Monorepo overview and documentation map |
 | [packages/offloading/README.md](README.md) | Garage compose, demote/promote scripts, env vars |
-| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline (often co-deployed on the same host) |
+| [packages/media-pipeline/README.md](../media-pipeline/README.md) | Media VM pipeline (often co-deployed on the same host) |

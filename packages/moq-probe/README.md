@@ -104,5 +104,5 @@ MoQ subscriber probe/recorder
 | Document | Description |
 | --- | --- |
 | [Repository README](../../README.md) | Monorepo overview and documentation map |
-| [packages/podcast-host/README.md](../podcast-host/README.md) | Current HLS encode + R2 upload pipeline on the media VM |
+| [packages/media-pipeline/README.md](../media-pipeline/README.md) | Current HLS encode + R2 upload pipeline on the media VM |
 | [AGENTS.md](../../AGENTS.md) | Video access flow, R2 proxy, and platform architecture |

@@ -1,0 +1,19 @@
+name: vmp-1080p
+description: VMP phase-2 — 1080p H.264 video-only
+scaling: bicubic
+encodes:
+  - type: X264Encode
+    suffix: _1080p
+    height: 1080
+    twoPass: false
+    params:
+      b:v: 5000k
+      maxrate: 5000k
+      bufsize: 10000k
+      r: 30
+      fps_mode: cfr
+      pix_fmt: yuv420p
+      g: 180
+      keyint_min: 180
+      sc_threshold: 0
+      profile:v: high

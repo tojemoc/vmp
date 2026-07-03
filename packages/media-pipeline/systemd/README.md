@@ -1,6 +1,6 @@
 # VMP media host (systemd)
 
-The `vmp-supervisor` unit runs the podcast-host supervisor: local dashboard, preview MP3 webhook, and the `pipeline_watch` child process.
+The `vmp-supervisor` unit runs the media-pipeline supervisor: local dashboard, preview MP3 webhook, and the `pipeline_watch` child process.
 
 ## Contents
 
@@ -16,7 +16,7 @@ The `vmp-supervisor` unit runs the podcast-host supervisor: local dashboard, pre
 ## Install the unit file
 
 ```bash
-sudo cp packages/podcast-host/systemd/vmp-supervisor.service /etc/systemd/system/
+sudo cp packages/media-pipeline/systemd/vmp-supervisor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
@@ -27,7 +27,7 @@ sudo systemctl daemon-reload
 | `VMP_ROOT` | Repository root (used in `ExecStart`) | Default `/root/vmp` in the unit; override in `/etc/vmp/env` |
 | `NODE_BIN` | Node binary | Default `/usr/bin/node` in the unit; override in `/etc/vmp/env` |
 | `NPM_BIN` | npm binary (deploy-time build only) | Default `/usr/bin/npm` in the unit; override in `/etc/vmp/env` |
-| `ExecStart` | Absolute path to `dist/supervisor.js` | `${NODE_BIN}` + `${VMP_ROOT}/packages/podcast-host/dist/supervisor.js` |
+| `ExecStart` | Absolute path to `dist/supervisor.js` | `${NODE_BIN}` + `${VMP_ROOT}/packages/media-pipeline/dist/supervisor.js` |
 
 `WorkingDirectory` is **not** set in the shipped unit: `ExecStart` uses an absolute script path, so changing `VMP_ROOT` in `/etc/vmp/env` is enough for a non-default install path.
 
@@ -69,7 +69,7 @@ NPM_BIN=/usr/local/bin/vmp-npm
 
 ```bash
 cd "${VMP_ROOT:-/root/vmp}"
-"${NPM_BIN:-npm}" run build --workspace=@vmp/podcast-host
+"${NPM_BIN:-npm}" run build --workspace=@vmp/media-pipeline
 ```
 
 The unit does **not** run `npm build` on every start (avoids latency and failures on restart).
@@ -96,7 +96,7 @@ EOF
 sudo chmod 600 /etc/vmp/env
 ```
 
-See [packages/podcast-host/README.md](../README.md) and root [AGENTS.md](../../../AGENTS.md) for the full list of optional settings (Brevo, Stripe callbacks, preview MP3, etc.).
+See [packages/media-pipeline/README.md](../README.md) and root [AGENTS.md](../../../AGENTS.md) for the full list of optional settings (Brevo, Stripe callbacks, preview MP3, etc.).
 
 ## Enable and start
 
@@ -115,7 +115,7 @@ Optional file logging for Datadog file tailing: see `vmp-supervisor-logfile.conf
 
 ## Datadog (metrics, logs, process checks)
 
-The transcoder emits DogStatsD metrics (`packages/podcast-host/metrics.ts`) and structured stdout lines (`VMP_TTP`, `VMP_PIPELINE_EVENT`). Agent install templates live in [packages/podcast-host/datadog/](../datadog/README.md).
+The transcoder emits DogStatsD metrics (`packages/media-pipeline/metrics.ts`) and structured stdout lines (`VMP_TTP`, `VMP_PIPELINE_EVENT`). Agent install templates live in [packages/media-pipeline/datadog/](../datadog/README.md).
 
 Quick env vars in `/etc/vmp/env`:
 
@@ -160,5 +160,5 @@ If a job exceeds that threshold, the supervisor **stops** sending `WATCHDOG=1`. 
 | Document | Description |
 | --- | --- |
 | [Repository README](../../../README.md) | Monorepo overview and documentation map |
-| [packages/podcast-host/README.md](../README.md) | Pipeline, supervisor, webhooks, TTP logging, env reference |
+| [packages/media-pipeline/README.md](../README.md) | Pipeline, supervisor, webhooks, TTP logging, env reference |
 | [AGENTS.md](../../../AGENTS.md) | Worker secrets and pipeline callback endpoints |

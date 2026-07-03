@@ -119,4 +119,4 @@ Mutating SQL can be recorded in `failover_write_log` for audit (`ENABLE_WRITE_LO
 | [Repository README](../../README.md) | Monorepo overview, local setup, documentation map |
 | [AGENTS.md](../../AGENTS.md) | Primary Worker API, D1 schema, secrets, replication queue bindings |
 | [DEPLOYMENT.md](../../DEPLOYMENT.md) | CI/CD, env templates, deploy workflow |
-| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline (primary encode path; separate from api-node) |
+| [packages/media-pipeline/README.md](../media-pipeline/README.md) | Media VM pipeline (SVT Encore + orchestrator; separate from api-node) |

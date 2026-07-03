@@ -1,6 +1,6 @@
 # Datadog on the transcoding VM
 
-The podcast-host package emits **DogStatsD metrics** from Node and writes structured logs to stdout (journald). Install the [Datadog Agent](https://docs.datadoghq.com/agent/) on the media VM and apply the templates in this directory.
+The media-pipeline package emits **DogStatsD metrics** from Node and writes structured logs to stdout (journald). Install the [Datadog Agent](https://docs.datadoghq.com/agent/) on the media VM and apply the templates in this directory.
 
 ## Quick install
 
@@ -9,8 +9,8 @@ The podcast-host package emits **DogStatsD metrics** from Node and writes struct
 DD_API_KEY=<your-api-key> DD_SITE="datadoghq.eu" bash -c "$(curl -L https://install.datadoghq.com/scripts/install_script.sh)"
 
 # 2. Copy integration configs
-sudo cp packages/podcast-host/datadog/conf.d/vmp.d/conf.yaml /etc/datadog-agent/conf.d/vmp.d/conf.yaml
-sudo cp packages/podcast-host/datadog/conf.d/process.d/conf.yaml /etc/datadog-agent/conf.d/process.d/conf.yaml
+sudo cp packages/media-pipeline/datadog/conf.d/vmp.d/conf.yaml /etc/datadog-agent/conf.d/vmp.d/conf.yaml
+sudo cp packages/media-pipeline/datadog/conf.d/process.d/conf.yaml /etc/datadog-agent/conf.d/process.d/conf.yaml
 
 # 3. Enable DogStatsD + logs in /etc/datadog-agent/datadog.yaml (see datadog.yaml.snippet)
 sudo systemctl restart datadog-agent
@@ -24,7 +24,7 @@ sudo systemctl restart datadog-agent
 
 ## Metrics (DogStatsD)
 
-Emitted by `packages/podcast-host/metrics.ts` — no npm dependency; UDP to `127.0.0.1:8125`.
+Emitted by `packages/media-pipeline/metrics.ts` — no npm dependency; UDP to `127.0.0.1:8125`.
 
 | Metric | Type | Source | Description |
 |--------|------|--------|-------------|

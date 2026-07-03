@@ -30,7 +30,7 @@ async function putWithRetry(
  * Sync HLS manifest objects from R2 (via S3-compatible endpoint) into the primary S3 bucket.
  * Segments are intentionally excluded — manifests only.
  *
- * TODO: configure dual-write from podcast-host so S3 stays current without this job.
+ * TODO: configure dual-write from media-pipeline so S3 stays current without this job.
  */
 export async function syncR2ManifestsToS3(env: R2SyncEnv): Promise<{ ok: boolean; synced: number; error?: string }> {
   const bucket = env.S3_BUCKET_NAME ?? process.env.S3_BUCKET_NAME

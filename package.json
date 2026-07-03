@@ -8,8 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
-    "podcast-host": "npm run start --workspace=@vmp/podcast-host",
-    "media-host": "npm run start --workspace=@vmp/podcast-host",
+    "media-pipeline": "npm run start --workspace=@vmp/media-pipeline",
+    "podcast-host": "npm run start --workspace=@vmp/media-pipeline",
+    "media-host": "npm run start --workspace=@vmp/media-pipeline",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "lint:unused-disable-directives": "eslint . --report-unused-disable-directives --max-warnings 0",

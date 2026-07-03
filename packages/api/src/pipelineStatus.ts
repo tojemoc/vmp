@@ -1,6 +1,6 @@
 /**
  * POST /api/admin/videos/:id/pipeline-status
- * Signed callback from podcast-host when HLS renditions become available.
+ * Signed callback from media-pipeline (Encore orchestrator) when HLS renditions become available.
  */
 
 import type { D1Database } from '@cloudflare/workers-types'

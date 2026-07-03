@@ -35,8 +35,8 @@
       "entry": ["src/index.ts"],
       "project": ["src/**/*.ts"]
     },
-    "packages/podcast-host": {
-      "entry": ["supervisor.ts", "pipeline_watch.ts", "render_podcast_preview_mp3.ts"],
+    "packages/media-pipeline": {
+      "entry": ["supervisor.ts", "pipeline_watch.ts", "render_podcast_preview_mp3.ts", "encoreClient.ts"],
       "project": ["*.ts"]
     }
   },

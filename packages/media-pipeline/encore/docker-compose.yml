@@ -1,0 +1,52 @@
+# SVT Encore stack for VMP media pipeline.
+# Docs: https://svt.github.io/encore/
+#
+# Mount the same host paths the orchestrator uses (INBOX_DIR, TMP_DIR_BASE).
+# Example: ENCORE_MEDIA_ROOT=/media with MEDIA_HOST_ROOT=/mnt on the orchestrator.
+
+services:
+  redis:
+    image: redis:8.6-alpine
+    restart: unless-stopped
+    ports:
+      - "${ENCORE_REDIS_PORT:-6379}:6379"
+
+  encore-web:
+    image: ghcr.io/svt/encore-web:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "${ENCORE_HTTP_PORT:-8080}:8080"
+    environment:
+      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
+      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
+      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      ENCORE_SETTINGS_SECURITY_ENABLED: "${ENCORE_SECURITY_ENABLED:-false}"
+      ENCORE_SETTINGS_SECURITY_USER_PASSWORD: "${ENCORE_USER_PASSWORD:-}"
+      ENCORE_SETTINGS_SECURITY_ADMIN_PASSWORD: "${ENCORE_ADMIN_PASSWORD:-}"
+    volumes:
+      - ./profiles:/profiles:ro
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+      - encore-shared-work:/shared/work
+
+  encore-worker:
+    image: ghcr.io/svt/encore-worker:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    deploy:
+      replicas: ${ENCORE_WORKER_REPLICAS:-2}
+    environment:
+      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
+      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
+      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      ENCORE_SETTINGS_POLL_DISABLED: "false"
+      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "true"
+    volumes:
+      - ./profiles:/profiles:ro
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+      - encore-shared-work:/shared/work
+
+volumes:
+  encore-shared-work:

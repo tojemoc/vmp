@@ -33,7 +33,7 @@ const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render
 const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0'
 const secret = process.env.VMP_WEBHOOK_SECRET?.trim()
 if (requireWebhookSecret && !secret) {
-  console.error('[vmp-podcast-host] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
+  console.error('[media-pipeline] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
   process.exit(1)
 }
 
@@ -50,7 +50,7 @@ const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
 const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1'
 const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main'
 const autoUpgradeRepoDir = process.env.VMP_AUTO_UPGRADE_REPO_DIR || '/workspace'
-const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/podcast-host'
+const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/media-pipeline'
 const autoUpgradeCheckMs = Math.max(60_000, Number.parseInt(process.env.VMP_AUTO_UPGRADE_CHECK_MS || '300000', 10) || 300000)
 
 function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
@@ -73,7 +73,7 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
     throw new Error(
       `${label} script points to TypeScript source ${resolved}. ` +
       `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
-      `Run \`npm run build --workspace=@vmp/podcast-host\`, then set ${envVarName} to ` +
+      `Run \`npm run build --workspace=@vmp/media-pipeline\`, then set ${envVarName} to ` +
       `${path.join(distDir, defaultScriptName)} or remove the override.`
     )
   }
@@ -93,7 +93,7 @@ function validatePipelineBundle(resolvedPipelineScript) {
   if (missing.length === 0) return
   throw new Error(
     `Pipeline script ${resolvedPipelineScript} imports missing module(s): ${missing.join(', ')}. ` +
-    'dist/ is not committed — run `npm run build --workspace=@vmp/podcast-host` after pulling changes.',
+    'dist/ is not committed — run `npm run build --workspace=@vmp/media-pipeline` after pulling changes.',
   )
 }
 
@@ -105,8 +105,8 @@ try {
   resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err)
-  console.error(`[vmp-podcast-host] ${message}`)
-  console.error('[vmp-podcast-host] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
+  console.error(`[media-pipeline] ${message}`)
+  console.error('[media-pipeline] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
   process.exit(1)
 }
 
@@ -674,7 +674,7 @@ function sdNotify(state: string, sync = false): boolean {
   const opts = { env: process.env, timeout: 2000 }
   const logFailure = (err: unknown): false => {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[vmp-podcast-host] sd_notify ${state}: ${msg}`)
+    console.error(`[media-pipeline] sd_notify ${state}: ${msg}`)
     return false
   }
   if (sync) {
@@ -760,11 +760,11 @@ async function checkAndApplyPodcastHostUpgrade() {
       autoUpgradeRepoDir,
     )
     if (!changed.stdout.trim()) return
-    pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
+    pushLog(`[upgrade] media-pipeline delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
     await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
     pulled = true
-    pushLog('[upgrade] pull successful; rebuilding @vmp/podcast-host')
-    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/podcast-host'], autoUpgradeRepoDir)
+    pushLog('[upgrade] pull successful; rebuilding @vmp/media-pipeline')
+    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/media-pipeline'], autoUpgradeRepoDir)
     pushLog('[upgrade] build successful; exiting for container/service restart')
     process.exit(0)
   } catch (err) {
@@ -1219,7 +1219,7 @@ server.listen(uiPort, uiHost, () => {
   )
   pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
   if (!sdNotify('READY=1', true)) {
-    console.error('[vmp-podcast-host] failed to notify systemd READY=1; exiting')
+    console.error('[media-pipeline] failed to notify systemd READY=1; exiting')
     process.exit(1)
   }
   startPipeline()

@@ -67,5 +67,5 @@ for production HTTPS exposure, including direct-fallback hostname (e.g.
 | --- | --- |
 | [Repository README](../../README.md) | Monorepo overview and documentation map |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker/Compose deployment recommendations for this package |
-| [packages/podcast-host/README.md](../podcast-host/README.md) | Media VM pipeline that writes objects to R2 |
+| [packages/media-pipeline/README.md](../media-pipeline/README.md) | Media VM pipeline that writes objects to R2 |
 | [AGENTS.md](../../AGENTS.md) | R2 storage and video access architecture |
