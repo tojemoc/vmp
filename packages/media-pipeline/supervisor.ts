@@ -44,6 +44,12 @@ if (requireWebhookSecret && !secret) {
   process.exit(1)
 }
 
+const packagerSecret = process.env.VMP_PACKAGER_SECRET?.trim()
+if (!packagerSecret) {
+  console.error('[media-pipeline] Set VMP_PACKAGER_SECRET for packager callback security')
+  process.exit(1)
+}
+
 const uiHost = process.env.VMP_UI_HOST || '127.0.0.1'
 const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10)
 const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
@@ -1283,6 +1289,14 @@ const server = http.createServer(async (req, res) => {
 
   const packagerCallbackMatch = url.pathname.match(/^\/vmp\/api\/packagerCallback\/(success|failure)$/)
   if (req.method === 'POST' && packagerCallbackMatch) {
+    // Verify shared secret
+    const secretHeader = req.headers['x-vmp-pipeline-secret']
+    const providedSecret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader
+    if (!providedSecret || providedSecret !== packagerSecret) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
+
     const outcome = packagerCallbackMatch[1]
     const body = await readJsonBody(req)
     if (body === null) {

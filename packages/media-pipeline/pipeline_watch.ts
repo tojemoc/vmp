@@ -247,7 +247,8 @@ const PROGRESS = {
   PROBE: 0.02,
   P1_ENCODE: { base: 0.02, span: 0.25 },
   P1_DONE: 0.30,
-  P2_1080: { base: 0.30, span: 0.20 },
+  P2_720: { base: 0.30, span: 0.10 },
+  P2_1080: { base: 0.40, span: 0.10 },
   P2_480: { base: 0.50, span: 0.15 },
   P2_PACKAGE: { base: 0.65, span: 0.07 },
   P2_UPLOAD: { base: 0.72, span: 0.08 },
@@ -893,8 +894,8 @@ async function runInlineFullLadderOnly(
     encodeRendition(videoId, inputPath, tmpDir, '720p', {
       includeAudio: hasAudio,
       stage: 'phase2_encode',
-      overallBase: PROGRESS.P2_1080.base,
-      overallSpan: PROGRESS.P2_1080.span,
+      overallBase: PROGRESS.P2_720.base,
+      overallSpan: PROGRESS.P2_720.span,
     }),
     encodeRendition(videoId, inputPath, tmpDir, '1080p', {
       includeAudio: false,

@@ -66,6 +66,11 @@ export async function waitForPackaging(jobId: string): Promise<PackagingStatus> 
       }
       const body = (await res.json()) as PackagingStatus
       if (body.status === 'success' || body.status === 'failed') return body
+    } catch (err) {
+      // Transient failure (network error, timeout, parse error) - continue polling unless we've exceeded overall timeout
+      clearTimeout(timeout)
+      await new Promise((r) => setTimeout(r, PACKAGING_POLL_MS))
+      continue
     } finally {
       clearTimeout(timeout)
     }

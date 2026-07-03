@@ -19,7 +19,7 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 ## Prerequisites
 
 - Docker (for bundled Encore stack) **or** a self-managed Encore install per [SVT docs](https://svt.github.io/encore/getting-started/)
-- Redis 8+ with JSON/Search modules (included in Compose)
+- Redis 8+ (standard Redis server; included in Compose)
 - Shared filesystem: inbox, temp dirs, and Encore `outputFolder` must be visible to Encore workers
 - Existing: ffmpeg/ffprobe (probe + podcast MP3), shaka-packager, rclone, inotifywait
 

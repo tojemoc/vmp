@@ -13,6 +13,7 @@ encodes:
       maxrate: 3000k
       bufsize: 6000k
       r: 30
+      fps_mode: cfr
       g: 180
       keyint_min: 180
       sc_threshold: 0

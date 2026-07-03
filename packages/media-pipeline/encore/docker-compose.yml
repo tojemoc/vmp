@@ -9,7 +9,7 @@ services:
     image: redis:8.6-alpine
     restart: unless-stopped
     ports:
-      - "${ENCORE_REDIS_PORT:-6379}:6379"
+      - "${ENCORE_REDIS_PORT:-127.0.0.1:6379}:6379"
 
   encore-web:
     image: ghcr.io/svt/encore-web:latest
@@ -22,7 +22,7 @@ services:
       ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
       ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
       ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
-      ENCORE_SETTINGS_SECURITY_ENABLED: "${ENCORE_SECURITY_ENABLED:-false}"
+      ENCORE_SETTINGS_SECURITY_ENABLED: "${ENCORE_SETTINGS_SECURITY_ENABLED:-true}"
       ENCORE_SETTINGS_SECURITY_USER_PASSWORD: "${ENCORE_USER_PASSWORD:-}"
       ENCORE_SETTINGS_SECURITY_ADMIN_PASSWORD: "${ENCORE_ADMIN_PASSWORD:-}"
     volumes:
