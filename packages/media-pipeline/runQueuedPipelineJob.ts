@@ -13,7 +13,7 @@ import {
   waitForEncoreJob,
 } from './encoreClient.js'
 import { detectGpuEncodeConfig } from './gpuDetect.js'
-import type { PipelineMode, PackagingStage } from './pipelineMode.js'
+import type { PipelineMode, PackagingStage, QueuedPipelineSubStage } from './pipelineMode.js'
 import { registerAndEnqueuePackaging, usesQueuedPackaging, waitForPackaging } from './packagingClient.js'
 import { emitTtp, type TtpMilestone } from './ttpLog.js'
 
@@ -24,7 +24,7 @@ export type QueuedPipelineContext = {
   tmpDir: string
   hasAudio: boolean
   isCancelled: () => boolean
-  emitStage: (stage: PackagingStage, status: string, detail?: string) => void
+  emitStage: (stage: PackagingStage, subStage: QueuedPipelineSubStage, status: string, detail?: string) => void
   notifyVideoAvailable: (stage: 'preview_ready' | 'fully_processed', renditions: string[]) => Promise<void>
 }
 
@@ -90,7 +90,7 @@ async function runEncoreAndPackage(
     profile,
     packagingStage: options.stage,
   })
-  ctx.emitStage(options.stage, 'active', `encore profile=${profile}`)
+  ctx.emitStage(options.stage, 'encode', 'active', `encore profile=${profile}`)
 
   const jobId = await submitEncoreJob({
     profile,
@@ -118,7 +118,7 @@ async function runEncoreAndPackage(
     pipelineMode: ctx.pipelineMode,
   })
 
-  ctx.emitStage(options.stage, 'active', 'packaging queued')
+  ctx.emitStage(options.stage, 'package', 'active', 'packaging queued')
   const pkg = await waitForPackaging(jobId)
   if (pkg.status === 'failed') {
     throw new Error(pkg.error || `packaging failed for ${jobId}`)

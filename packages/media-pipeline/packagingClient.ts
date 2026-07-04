@@ -18,8 +18,24 @@ function packagingAuthHeaders(): Record<string, string> {
   return { 'X-VMP-Packaging-Secret': PACKAGING_SECRET }
 }
 
+function httpStatusFromPackagingError(err: Error): number | null {
+  const match = err.message.match(/\bHTTP (\d{3})\b/)
+  if (!match) return null
+  const status = Number.parseInt(match[1], 10)
+  return Number.isFinite(status) ? status : null
+}
+
 function isTransientPackagingFetchError(err: unknown): boolean {
+  if (err instanceof SyntaxError) return false
   if (!(err instanceof Error)) return false
+
+  const status = httpStatusFromPackagingError(err)
+  if (status != null) {
+    if (status >= 500 && status <= 599) return true
+    if (status === 408 || status === 429) return true
+    return false
+  }
+
   const msg = err.message.toLowerCase()
   return msg.includes('fetch failed')
     || msg.includes('network')

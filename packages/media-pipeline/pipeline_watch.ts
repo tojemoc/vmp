@@ -1049,8 +1049,8 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
         tmpDir,
         hasAudio,
         isCancelled: () => isJobStopped(videoId),
-        emitStage: (packagingStage, status, detail) => {
-          const pipelineStage = packagingStageToPipelineStage(packagingStage, detail)
+        emitStage: (packagingStage, subStage, status, detail) => {
+          const pipelineStage = packagingStageToPipelineStage(packagingStage, subStage)
           emitPipelineEvent(videoId, pipelineStage, status as PipelineStatus, detail)
         },
         notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
