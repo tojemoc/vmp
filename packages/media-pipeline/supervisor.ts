@@ -23,6 +23,13 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
 import { gauge, increment } from './metrics.js'
+import {
+  getPackagingJob,
+  markPackagingFailed,
+  markPackagingSuccess,
+  registerPackagingJob,
+} from './packagingRegistry.js'
+import { enqueuePackagerJob } from './packagingQueue.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const pkgRoot = __dirname
@@ -32,8 +39,15 @@ const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render
 
 const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0'
 const secret = process.env.VMP_WEBHOOK_SECRET?.trim()
+const packagingSecret = (process.env.VMP_PACKAGING_SECRET || secret || '').trim()
 if (requireWebhookSecret && !secret) {
-  console.error('[vmp-podcast-host] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
+  console.error('[media-pipeline] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
+  process.exit(1)
+}
+
+const packagerSecret = process.env.VMP_PACKAGER_SECRET?.trim()
+if (!packagerSecret) {
+  console.error('[media-pipeline] Set VMP_PACKAGER_SECRET for packager callback security')
   process.exit(1)
 }
 
@@ -50,7 +64,7 @@ const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
 const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1'
 const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main'
 const autoUpgradeRepoDir = process.env.VMP_AUTO_UPGRADE_REPO_DIR || '/workspace'
-const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/podcast-host'
+const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/media-pipeline'
 const autoUpgradeCheckMs = Math.max(60_000, Number.parseInt(process.env.VMP_AUTO_UPGRADE_CHECK_MS || '300000', 10) || 300000)
 
 function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
@@ -73,7 +87,7 @@ function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
     throw new Error(
       `${label} script points to TypeScript source ${resolved}. ` +
       `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
-      `Run \`npm run build --workspace=@vmp/podcast-host\`, then set ${envVarName} to ` +
+      `Run \`npm run build --workspace=@vmp/media-pipeline\`, then set ${envVarName} to ` +
       `${path.join(distDir, defaultScriptName)} or remove the override.`
     )
   }
@@ -93,7 +107,7 @@ function validatePipelineBundle(resolvedPipelineScript) {
   if (missing.length === 0) return
   throw new Error(
     `Pipeline script ${resolvedPipelineScript} imports missing module(s): ${missing.join(', ')}. ` +
-    'dist/ is not committed — run `npm run build --workspace=@vmp/podcast-host` after pulling changes.',
+    'dist/ is not committed — run `npm run build --workspace=@vmp/media-pipeline` after pulling changes.',
   )
 }
 
@@ -105,8 +119,8 @@ try {
   resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err)
-  console.error(`[vmp-podcast-host] ${message}`)
-  console.error('[vmp-podcast-host] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
+  console.error(`[media-pipeline] ${message}`)
+  console.error('[media-pipeline] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
   process.exit(1)
 }
 
@@ -674,7 +688,7 @@ function sdNotify(state: string, sync = false): boolean {
   const opts = { env: process.env, timeout: 2000 }
   const logFailure = (err: unknown): false => {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[vmp-podcast-host] sd_notify ${state}: ${msg}`)
+    console.error(`[media-pipeline] sd_notify ${state}: ${msg}`)
     return false
   }
   if (sync) {
@@ -715,6 +729,22 @@ function verifySignature(rawBody, sigHeader, ts) {
   const a = Buffer.from(m[1], 'hex')
   const b = Buffer.from(expected, 'hex')
   return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+function timingSafeEqualString(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8')
+  const b = Buffer.from(expected, 'utf8')
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
+
+function verifyPackagingSecret(req: http.IncomingMessage): boolean {
+  if (!packagingSecret) {
+    return uiHost === '127.0.0.1' || uiHost === '::1' || uiHost === 'localhost'
+  }
+  const header = req.headers['x-vmp-packaging-secret']
+  const provided = (Array.isArray(header) ? header[0] : header) || ''
+  return timingSafeEqualString(provided, packagingSecret)
 }
 
 function json(res, obj, status = 200) {
@@ -760,11 +790,11 @@ async function checkAndApplyPodcastHostUpgrade() {
       autoUpgradeRepoDir,
     )
     if (!changed.stdout.trim()) return
-    pushLog(`[upgrade] podcast-host delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
+    pushLog(`[upgrade] media-pipeline delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
     await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
     pulled = true
-    pushLog('[upgrade] pull successful; rebuilding @vmp/podcast-host')
-    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/podcast-host'], autoUpgradeRepoDir)
+    pushLog('[upgrade] pull successful; rebuilding @vmp/media-pipeline')
+    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/media-pipeline'], autoUpgradeRepoDir)
     pushLog('[upgrade] build successful; exiting for container/service restart')
     process.exit(0)
   } catch (err) {
@@ -1209,6 +1239,113 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/packaging/enqueue') {
+    if (!verifyPackagingSecret(req)) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
+    const body = await readJsonBody(req)
+    if (body === null) {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return
+    }
+    const reg = body as {
+      jobId?: string
+      encoreJobUrl?: string
+      videoId?: string
+      stage?: string
+      pipelineMode?: string
+    }
+    if (!reg.jobId || !reg.encoreJobUrl || !reg.videoId || !reg.stage || !reg.pipelineMode) {
+      json(res, { error: 'Missing required fields' }, 400)
+      return
+    }
+    const validStages: string[] = ['fast_lane_preview', 'full_ladder']
+    const validPipelineModes: string[] = ['fast_lane', 'full_ladder']
+    if (!validStages.includes(reg.stage)) {
+      json(res, { error: `Invalid stage: ${reg.stage}` }, 400)
+      return
+    }
+    if (!validPipelineModes.includes(reg.pipelineMode)) {
+      json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400)
+      return
+    }
+    registerPackagingJob({
+      jobId: String(reg.jobId),
+      encoreJobUrl: String(reg.encoreJobUrl),
+      videoId: String(reg.videoId),
+      stage: reg.stage as 'fast_lane_preview' | 'full_ladder',
+      pipelineMode: reg.pipelineMode as 'fast_lane' | 'full_ladder',
+    })
+    try {
+      await enqueuePackagerJob(String(reg.jobId), String(reg.encoreJobUrl))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      markPackagingFailed(String(reg.jobId), msg)
+      json(res, { error: msg }, 502)
+      return
+    }
+    json(res, { ok: true, jobId: reg.jobId }, 202)
+    return
+  }
+
+  const packagingStatusMatch = url.pathname.match(/^\/api\/packaging\/status\/([^/]+)$/)
+  if (req.method === 'GET' && packagingStatusMatch) {
+    if (!verifyPackagingSecret(req)) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
+    const jobId = decodeURIComponent(packagingStatusMatch[1])
+    const job = getPackagingJob(jobId)
+    if (!job) {
+      json(res, { error: 'Not found' }, 404)
+      return
+    }
+    json(res, {
+      status: job.status,
+      outputPath: job.outputPath,
+      error: job.error,
+      stage: job.stage,
+      pipelineMode: job.pipelineMode,
+      videoId: job.videoId,
+    })
+    return
+  }
+
+  const packagerCallbackMatch = url.pathname.match(/^\/vmp\/api\/packagerCallback\/(success|failure)$/)
+  if (req.method === 'POST' && packagerCallbackMatch) {
+    // Verify shared secret
+    const secretHeader = req.headers['x-vmp-pipeline-secret']
+    const providedSecret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader
+    if (!providedSecret || providedSecret !== packagerSecret) {
+      json(res, { error: 'Unauthorized' }, 401)
+      return
+    }
+
+    const outcome = packagerCallbackMatch[1]
+    const body = await readJsonBody(req)
+    if (body === null) {
+      json(res, { error: 'Invalid JSON' }, 400)
+      return
+    }
+    const payload = body as { jobId?: string, outputPath?: string, error?: string, message?: string }
+    const jobId = String(payload.jobId || '').trim()
+    if (!jobId) {
+      json(res, { error: 'Missing jobId' }, 400)
+      return
+    }
+    if (outcome === 'success') {
+      markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined)
+      pushLog(`packager success jobId=${jobId}`)
+    } else {
+      const errMsg = String(payload.error || payload.message || 'packager failure')
+      markPackagingFailed(jobId, errMsg)
+      pushLog(`packager failure jobId=${jobId}: ${errMsg}`)
+    }
+    json(res, { ok: true })
+    return
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'Not found' }))
 })
@@ -1219,7 +1356,7 @@ server.listen(uiPort, uiHost, () => {
   )
   pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
   if (!sdNotify('READY=1', true)) {
-    console.error('[vmp-podcast-host] failed to notify systemd READY=1; exiting')
+    console.error('[media-pipeline] failed to notify systemd READY=1; exiting')
     process.exit(1)
   }
   startPipeline()

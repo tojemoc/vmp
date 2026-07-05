@@ -1,0 +1,7 @@
+name: vmp-podcast-mp3
+description: VMP full podcast MP3 extract
+encodes:
+  - type: AudioEncode
+    suffix: _podcast
+    bitrate: 128k
+    codec: libmp3lame

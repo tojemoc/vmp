@@ -1,0 +1,7 @@
+name: vmp-podcast-preview
+description: VMP preview podcast MP3 (set Encore job duration to preview seconds)
+encodes:
+  - type: AudioEncode
+    suffix: _preview
+    bitrate: 128k
+    codec: libmp3lame

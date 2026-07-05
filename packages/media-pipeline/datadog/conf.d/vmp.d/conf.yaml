@@ -1,4 +1,4 @@
-# Datadog log collection for VMP podcast-host / transcoder.
+# Datadog log collection for VMP media-pipeline / transcoder.
 # Install: sudo mkdir -p /etc/datadog-agent/conf.d/vmp.d && sudo cp this file there.
 
 logs:

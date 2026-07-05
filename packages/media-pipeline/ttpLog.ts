@@ -14,6 +14,7 @@ export type TtpMilestone =
   | 'inbox_close_write'
   | 'queue_enqueued'
   | 'processing_started'
+  | 'gpu_backend_detected'
   | 'file_stable'
   | 'probe_complete'
   | 'phase1_encode_start'
@@ -40,6 +41,7 @@ export type TtpJobState = {
   videoId: string
   source: string
   inputPath: string
+  pipelineMode: 'fast_lane' | 'full_ladder'
   inboxAtMs: number
   sourceDurationSec: number | null
   minimalReadyAtMs: number | null
@@ -68,21 +70,27 @@ function logTtpEmitError(milestone: string, err: unknown): void {
   process.stderr.write(`${isoNow()} VMP_TTP emit failed (${milestone}): ${msg}\n`)
 }
 
-export function beginTtpJob(videoId: string, source: string, inputPath: string): void {
+export function beginTtpJob(
+  videoId: string,
+  source: string,
+  inputPath: string,
+  options: { pipelineMode: 'fast_lane' | 'full_ladder' },
+): void {
   const inboxAtMs = Date.now()
   jobs.set(videoId, {
     videoId,
     source,
     inputPath,
+    pipelineMode: options.pipelineMode,
     inboxAtMs,
     sourceDurationSec: null,
     minimalReadyAtMs: null,
     fullReadyAtMs: null,
   })
-  emitTtp(videoId, 'inbox_close_write', { source, inputPath }).catch((err) =>
+  emitTtp(videoId, 'inbox_close_write', { source, inputPath, pipelineMode: options.pipelineMode }).catch((err) =>
     logTtpEmitError('inbox_close_write', err),
   )
-  emitTtp(videoId, 'queue_enqueued', { source }).catch((err) => logTtpEmitError('queue_enqueued', err))
+  emitTtp(videoId, 'queue_enqueued', { source, pipelineMode: options.pipelineMode }).catch((err) => logTtpEmitError('queue_enqueued', err))
 }
 
 export function getTtpJob(videoId: string): TtpJobState | undefined {
@@ -124,6 +132,7 @@ export async function emitTtp(
   if (state) {
     payload.elapsedMsSinceInbox = msSinceInbox(state, atMs)
     payload.source = state.source
+    payload.pipelineMode = state.pipelineMode
     if (state.sourceDurationSec != null) {
       payload.sourceDurationSec = state.sourceDurationSec
       payload.elapsedRatioOfSourceDuration = ratioToDuration(msSinceInbox(state, atMs), state.sourceDurationSec)
@@ -159,6 +168,7 @@ export async function emitTtpSummary(videoId: string, outcome: 'success' | 'fail
     at: isoNow(),
     source: state.source,
     inputPath: state.inputPath,
+    pipelineMode: state.pipelineMode,
     sourceDurationSec: durationSec,
     totalElapsedMs: totalMs,
     minimalPublishReadyElapsedMs: minimalMs,

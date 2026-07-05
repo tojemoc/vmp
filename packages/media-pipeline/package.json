@@ -1,8 +1,8 @@
 {
-  "name": "@vmp/podcast-host",
-  "version": "1.0.0",
+  "name": "@vmp/media-pipeline",
+  "version": "2.0.0",
   "private": true,
-  "description": "VM media host: HLS/podcast pipeline (watchfolder), preview MP3 webhook, local dashboard",
+  "description": "VMP media VM: SVT Encore transcoding orchestration, Shaka HLS packaging, R2 upload, podcast MP3",
   "type": "module",
   "scripts": {
     "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
@@ -10,6 +10,8 @@
     "start": "npm run build && node ./dist/supervisor.js",
     "supervisor": "npm run build && node ./dist/supervisor.js",
     "pipeline": "npm run build && node ./dist/pipeline_watch.js",
+    "encore:up": "docker compose -f encore/docker-compose.yml up -d",
+    "encore:down": "docker compose -f encore/docker-compose.yml down",
     "migrate:r2-video-prefixes": "bash ./bin/video_id_r2_prefix_migrate.sh",
     "render": "npm run build && node ./dist/render_podcast_preview_mp3.js",
     "ttp-report": "node ./scripts/ttp-report.mjs"
@@ -20,5 +22,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "redis": "^5.8.2"
   }
 }

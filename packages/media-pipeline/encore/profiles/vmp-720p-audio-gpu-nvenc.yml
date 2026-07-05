@@ -1,0 +1,23 @@
+name: vmp-720p-audio-gpu-nvenc
+description: VMP fast-lane 720p via NVENC (Encore worker needs NVIDIA + h264_nvenc FFmpeg)
+scaling: bicubic
+encodes:
+  - type: X264Encode
+    suffix: _720p
+    height: 720
+    twoPass: false
+    params:
+      c:v: h264_nvenc
+      b:v: 3000k
+      maxrate: 3000k
+      bufsize: 6000k
+      r: 30
+      fps_mode: cfr
+      pix_fmt: yuv420p
+      g: 180
+      keyint_min: 180
+      sc_threshold: 0
+      preset: p4
+    audioEncode:
+      type: AudioEncode
+      bitrate: 128k

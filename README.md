@@ -23,7 +23,7 @@ VMP is a Cloudflare-based video subscription platform with a Worker API, Nuxt we
 | `@vmp/web` | [`packages/web`](packages/web) | Nuxt 4 frontend deployed to Cloudflare Pages |
 | `@vmp/shared` | [`packages/shared`](packages/shared) | Shared TypeScript contracts |
 | `@vmp/api-node` | [`packages/api-node`](packages/api-node) | Deno Deploy backup API (Postgres + S3 adapters) — see [README](packages/api-node/README.md) |
-| `@vmp/podcast-host` | [`packages/podcast-host`](packages/podcast-host) | Media VM pipeline, supervisor, preview jobs — see [README](packages/podcast-host/README.md) |
+| `@vmp/media-pipeline` | [`packages/media-pipeline`](packages/media-pipeline) | Media VM: SVT Encore transcoding + Shaka HLS + R2 — see [README](packages/media-pipeline/README.md) |
 | `@vmp/offloading` | [`packages/offloading`](packages/offloading) | R2↔Garage hot/cold tier orchestration — see [README](packages/offloading/README.md) |
 | `@vmp/moq-probe` | [`packages/moq-probe`](packages/moq-probe) | MoQ broadcast diagnostic probe — see [README](packages/moq-probe/README.md) |
 
@@ -36,8 +36,9 @@ Core API and web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.m
 | [AGENTS.md](AGENTS.md) | Canonical agent/dev guide: git workflow, D1 schema, auth, secrets, roadmap |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Environment variables, CI/CD, multi-domain deploy |
 | [packages/api-node/README.md](packages/api-node/README.md) | Deno Deploy API backup, Postgres replication ingest |
-| [packages/podcast-host/README.md](packages/podcast-host/README.md) | Media pipeline, supervisor dashboard, webhooks, TTP logging |
-| [packages/podcast-host/systemd/README.md](packages/podcast-host/systemd/README.md) | `vmp-supervisor` systemd unit install and ops |
+| [packages/media-pipeline/README.md](packages/media-pipeline/README.md) | Encore transcoding orchestration, supervisor, webhooks, TTP logging |
+| [packages/media-pipeline/MIGRATION.md](packages/media-pipeline/MIGRATION.md) | Cutover guide from legacy `podcast-host` |
+| [packages/media-pipeline/systemd/README.md](packages/media-pipeline/systemd/README.md) | `vmp-supervisor` systemd unit install and ops |
 | [packages/offloading/README.md](packages/offloading/README.md) | Garage compose, demote/promote scripts |
 | [packages/offloading/DEPLOYMENT.md](packages/offloading/DEPLOYMENT.md) | Docker/Compose deployment for offloading |
 | [packages/moq-probe/README.md](packages/moq-probe/README.md) | Live MoQ probe usage and recorder recommendations |
@@ -143,4 +144,4 @@ Notes:
 
 - API entrypoint is TypeScript (`packages/api/src/index.ts`) referenced by `packages/api/wrangler.json`.
 - Worker/service scripts that must remain JavaScript at runtime (for browser/service-worker execution) are generated from TypeScript sources during build.
-- Media encoding on a VM is handled by [`@vmp/podcast-host`](packages/podcast-host/README.md); optional Deno backup API by [`@vmp/api-node`](packages/api-node/README.md).
+- Media encoding on a VM is handled by [`@vmp/media-pipeline`](packages/media-pipeline/README.md) (SVT Encore + orchestrator); optional Deno backup API by [`@vmp/api-node`](packages/api-node/README.md).

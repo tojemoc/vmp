@@ -1,0 +1,78 @@
+# SVT Encore stack for VMP media pipeline.
+# Docs: https://svt.github.io/encore/
+#
+# Mount the same host paths the orchestrator uses (INBOX_DIR, TMP_DIR_BASE).
+# Example: ENCORE_MEDIA_ROOT=/media with MEDIA_HOST_ROOT=/mnt on the orchestrator.
+#
+# GPU overrides (optional, CPU-only hosts use base file only):
+#   VAAPI:  docker compose -f encore/docker-compose.yml -f encore/docker-compose.vaapi.yml up -d
+#   NVIDIA: docker compose -f encore/docker-compose.yml -f encore/docker-compose.nvidia.yml up -d
+
+services:
+  redis:
+    image: redis:8.6-alpine
+    restart: unless-stopped
+    ports:
+      - "${ENCORE_REDIS_PORT:-127.0.0.1:6379}:6379"
+
+  encore-web:
+    image: ghcr.io/svt/encore-web:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "${ENCORE_HTTP_PORT:-8080}:8080"
+    environment:
+      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
+      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
+      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      ENCORE_SETTINGS_SECURITY_ENABLED: "${ENCORE_SETTINGS_SECURITY_ENABLED:-false}"
+      # Non-empty placeholders so ENCORE_SETTINGS_SECURITY_ENABLED=true works without silent empty-password auth.
+      ENCORE_SETTINGS_SECURITY_USER_PASSWORD: "${ENCORE_USER_PASSWORD:-change-me-in-production}"
+      ENCORE_SETTINGS_SECURITY_ADMIN_PASSWORD: "${ENCORE_ADMIN_PASSWORD:-change-me-in-production}"
+    volumes:
+      - ./profiles:/profiles:ro
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+      - encore-shared-work:/shared/work
+
+  encore-worker:
+    image: ghcr.io/svt/encore-worker:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    deploy:
+      replicas: ${ENCORE_WORKER_REPLICAS:-2}
+    environment:
+      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
+      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
+      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      ENCORE_SETTINGS_POLL_DISABLED: "false"
+      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "true"
+    volumes:
+      - ./profiles:/profiles:ro
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+      - encore-shared-work:/shared/work
+
+  encore-packager:
+    image: eyevinntechnology/encore-packager:latest
+    restart: unless-stopped
+    depends_on:
+      - redis
+    deploy:
+      replicas: ${ENCORE_PACKAGER_REPLICAS:-1}
+    environment:
+      REDIS_URL: redis://redis:6379
+      REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
+      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://host.docker.internal:8788/vmp/api}
+      PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
+      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$EXTERNALID$}
+      HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-auto}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  encore-shared-work:

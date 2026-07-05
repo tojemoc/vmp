@@ -1,0 +1,54 @@
+name: vmp-full-ladder-gpu-nvenc
+description: VMP full ladder via NVENC (Encore worker needs NVIDIA + h264_nvenc FFmpeg)
+scaling: bicubic
+encodes:
+  - type: X264Encode
+    suffix: _1080p
+    height: 1080
+    twoPass: false
+    params:
+      c:v: h264_nvenc
+      b:v: 5000k
+      maxrate: 5000k
+      bufsize: 10000k
+      r: 30
+      g: 180
+      keyint_min: 180
+      sc_threshold: 0
+      preset: p4
+      profile:v: high
+
+  - type: X264Encode
+    suffix: _720p
+    height: 720
+    twoPass: false
+    params:
+      c:v: h264_nvenc
+      b:v: 3000k
+      maxrate: 3000k
+      bufsize: 6000k
+      r: 30
+      g: 180
+      keyint_min: 180
+      sc_threshold: 0
+      preset: p4
+      profile:v: high
+    audioEncode:
+      type: AudioEncode
+      bitrate: 128k
+
+  - type: X264Encode
+    suffix: _480p
+    height: 480
+    twoPass: false
+    params:
+      c:v: h264_nvenc
+      b:v: 1500k
+      maxrate: 1500k
+      bufsize: 3000k
+      r: 30
+      g: 180
+      keyint_min: 180
+      sc_threshold: 0
+      preset: p4
+      profile:v: main
