@@ -35,6 +35,15 @@ export interface S3CompatibleStorageOptions {
   client?: S3Client
   /** Optional HTTP handler override (defaults to fetch-based handler). */
   requestHandler?: HttpHandler
+  /** Override S3 HTTP request timeout in ms (defaults to DEFAULT_S3_REQUEST_TIMEOUT_MS). */
+  requestTimeoutMs?: number
+}
+
+function createDefaultRequestHandler(requestTimeoutMs?: number): FetchHttpHandler {
+  return new FetchHttpHandler({
+    requestTimeout: requestTimeoutMs ?? DEFAULT_S3_REQUEST_TIMEOUT_MS,
+    keepAlive: true,
+  })
 }
 
 function bodyToWebStream(body: unknown): ReadableStream | null {
@@ -103,9 +112,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       ...(options.endpoint ? { endpoint: options.endpoint } : {}),
       ...(options.forcePathStyle ? { forcePathStyle: true } : {}),
       ...(credentials ? { credentials } : {}),
-      requestHandler: options.requestHandler ?? new FetchHttpHandler({
-        requestTimeout: DEFAULT_S3_REQUEST_TIMEOUT_MS,
-      }),
+      requestHandler: options.requestHandler ?? createDefaultRequestHandler(options.requestTimeoutMs),
     })
   }
 

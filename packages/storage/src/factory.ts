@@ -58,6 +58,7 @@ export function createStorageProvider(config: StorageProviderConfig): ObjectStor
     ...(credentials.accessKeyId !== undefined ? { accessKeyId: credentials.accessKeyId } : {}),
     ...(credentials.secretAccessKey !== undefined ? { secretAccessKey: credentials.secretAccessKey } : {}),
     forcePathStyle: config.forcePathStyle ?? config.type !== 'r2',
+    ...(config.requestTimeoutMs !== undefined ? { requestTimeoutMs: config.requestTimeoutMs } : {}),
   })
 }
 
@@ -70,12 +71,11 @@ export function createStorageProviderFromEnv(env: NodeJS.ProcessEnv = process.en
   'vmp-videos'
 
   if (type === 'b2') {
-    const region = env.B2_REGION ?? env.AWS_REGION
     const endpoint = env.B2_ENDPOINT ?? env.S3_ENDPOINT
     return createStorageProvider({
       type: 'b2',
       bucket,
-      ...(region !== undefined ? { region } : {}),
+      ...(env.B2_REGION !== undefined ? { region: env.B2_REGION } : {}),
       ...(endpoint !== undefined ? { endpoint } : {}),
       ...(env.B2_ACCESS_KEY_ID !== undefined ? { accessKeyId: env.B2_ACCESS_KEY_ID } : {}),
       ...(env.B2_SECRET_ACCESS_KEY !== undefined ? { secretAccessKey: env.B2_SECRET_ACCESS_KEY } : {}),
