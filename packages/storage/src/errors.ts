@@ -11,7 +11,16 @@ export function isAvailabilityError(err: unknown): boolean {
     return true
   }
   if (typeof status === 'number' && status >= 500) return true
-  if (err instanceof TypeError) return true
+  if (err instanceof TypeError) {
+    const message = err.message.toLowerCase()
+    return (
+      message.includes('fetch')
+      || message.includes('network')
+      || message.includes('failed to fetch')
+      || message.includes('terminated')
+      || message.includes('aborted')
+    )
+  }
   if (err instanceof Error) {
     const message = err.message.toLowerCase()
     if (

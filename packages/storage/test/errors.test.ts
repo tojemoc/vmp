@@ -18,4 +18,12 @@ describe('isAvailabilityError', () => {
     err.name = 'NoSuchKey'
     assert.equal(isAvailabilityError(err), false)
   })
+
+  it('does not treat unrelated TypeError as availability error', () => {
+    assert.equal(isAvailabilityError(new TypeError('Cannot read properties of undefined')), false)
+  })
+
+  it('treats fetch-related TypeError as availability error', () => {
+    assert.equal(isAvailabilityError(new TypeError('fetch failed')), true)
+  })
 })

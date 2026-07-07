@@ -86,3 +86,19 @@ export type StorageProviderConfig =
   | ({ type: 'r2' } & StorageProviderConfigBase)
   | ({ type: 'b2' } & StorageProviderConfigBase)
   | ({ type: 's3-compatible'; id?: string } & StorageProviderConfigBase)
+
+export type RcloneProviderConfig = {
+  type: 'rclone'
+  root: string
+  binary?: string
+}
+
+export type NodeStorageProviderConfig = StorageProviderConfig | RcloneProviderConfig
+
+export interface TieredStorageConfig {
+  hot: NodeStorageProviderConfig
+  cold: NodeStorageProviderConfig
+  maxHotAgeSeconds: number
+  listPrefix?: string
+  deleteHotAfterOffload?: boolean
+}

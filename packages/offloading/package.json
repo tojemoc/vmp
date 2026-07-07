@@ -8,9 +8,14 @@
     "lint": "eslint src --ext .ts,.vue,.tsx --max-warnings 0",
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/index.js",
+    "offload": "npm run build && node ./dist/index.js offload",
     "demote": "npm run build && node ./dist/index.js demote",
+    "demote-legacy": "npm run build && node ./dist/index.js demote-legacy",
     "promote": "npm run build && node ./dist/index.js promote",
     "trigger-promote": "npm run build && node ./dist/index.js trigger-promote"
+  },
+  "dependencies": {
+    "@vmp/storage": "*"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
