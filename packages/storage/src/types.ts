@@ -78,6 +78,8 @@ export interface StorageProviderConfigBase {
   accessKeyId?: string
   secretAccessKey?: string
   forcePathStyle?: boolean
+  /** S3 HTTP request timeout in ms (defaults to 30s). */
+  requestTimeoutMs?: number
 }
 
 export type StorageProviderConfig =
