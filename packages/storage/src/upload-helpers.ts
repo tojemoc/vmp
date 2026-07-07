@@ -2,6 +2,12 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ObjectStorageProvider } from './types.js'
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end--
+  return end === value.length ? value : value.slice(0, end)
+}
+
 async function walkFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
   const files: string[] = []
@@ -33,7 +39,7 @@ export async function uploadLocalDirectory(
   keyPrefix: string,
 ): Promise<void> {
   const files = await walkFiles(localDir)
-  const prefix = keyPrefix.replace(/\/+$/, '')
+  const prefix = trimTrailingSlashes(keyPrefix)
   for (const file of files) {
     const relative = path.relative(localDir, file).split(path.sep).join('/')
     const key = prefix ? `${prefix}/${relative}` : relative
@@ -47,7 +53,7 @@ export async function verifyRemoteDirectory(
   keyPrefix: string,
 ): Promise<void> {
   const files = await walkFiles(localDir)
-  const prefix = keyPrefix.replace(/\/+$/, '')
+  const prefix = trimTrailingSlashes(keyPrefix)
   for (const file of files) {
     const relative = path.relative(localDir, file).split(path.sep).join('/')
     const key = prefix ? `${prefix}/${relative}` : relative
