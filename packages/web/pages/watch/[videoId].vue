@@ -1796,7 +1796,6 @@ const initializeVideoElement = async (
   }
 
   video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true })
-  video.addEventListener('error', handleMediaError)
   video.addEventListener('waiting', handleWaiting)
   video.addEventListener('playing', handlePlaying)
   video.addEventListener('canplay', handleCanPlay)
@@ -1865,6 +1864,8 @@ const initializeVideoElement = async (
     })
   }
   ensureActive()
+
+  video.addEventListener('error', handleMediaError)
 
   applyPlaybackRate(video)
 

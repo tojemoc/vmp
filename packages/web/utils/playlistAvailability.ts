@@ -24,37 +24,10 @@ export function parseProxyErrorCode(payload: unknown): string | null {
   return typeof code === 'string' ? code : null
 }
 
-function mergeAbortSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
-  const defined = signals.filter((s): s is AbortSignal => s != null)
-  if (defined.length === 0) {
-    return new AbortController().signal
-  }
-  if (defined.length === 1) return defined[0]
-
-  const controller = new AbortController()
-  const onAbort = () => controller.abort()
-  for (const signal of defined) {
-    if (signal.aborted) {
-      controller.abort(signal.reason)
-      return controller.signal
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  }
-  return controller.signal
-}
-
-function timeoutAbortSignal(ms: number): AbortSignal {
-  const controller = new AbortController()
-  const id = setTimeout(
-    () => controller.abort(new DOMException('Playlist preflight timed out', 'TimeoutError')),
-    ms,
-  )
-  controller.signal.addEventListener('abort', () => clearTimeout(id), { once: true })
-  return controller.signal
-}
-
 function preflightFetchSignal(routeSignal?: AbortSignal): AbortSignal {
-  return mergeAbortSignals(routeSignal, timeoutAbortSignal(PLAYLIST_PREFLIGHT_TIMEOUT_MS))
+  const timeout = AbortSignal.timeout(PLAYLIST_PREFLIGHT_TIMEOUT_MS)
+  if (!routeSignal) return timeout
+  return AbortSignal.any([routeSignal, timeout])
 }
 
 /** Preflight a proxied HLS manifest before handing it to the player. */
@@ -83,7 +56,8 @@ export async function checkPlaylistAvailability(
     }
     return { ok: false, code: 'unknown' }
   } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    // Re-throw only when the caller cancelled; timeout aborts classify as unavailable.
+    if (err instanceof DOMException && err.name === 'AbortError' && signal?.aborted) throw err
     return { ok: false, code: 'storage_unavailable' }
   }
 }
