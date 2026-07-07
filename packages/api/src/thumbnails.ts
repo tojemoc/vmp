@@ -22,7 +22,8 @@
  */
 
 import { requireRole } from './auth.js'
-import type { D1Database, R2Bucket } from '@cloudflare/workers-types'
+import { getObjectStorage, type StorageEnv } from './objectStorage.js'
+import type { D1Database } from '@cloudflare/workers-types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -45,10 +46,9 @@ interface ThumbUrls {
   [key: string]: string | undefined
 }
 
-interface Env {
+interface Env extends StorageEnv {
   DB?: D1Database
   video_subscription_db?: D1Database
-  BUCKET: R2Bucket
   R2_BASE_URL?: string
 }
 
@@ -198,12 +198,14 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
   // Track which R2 keys we write so we can clean them up on any failure.
   const writtenKeys = []
   const thumbUrls: ThumbUrls = {}
+  const storage = getObjectStorage(env)
+  if (!storage) {
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
+  }
 
   try {
     // Store the original with its actual MIME type / extension.
-    await env.BUCKET.put(origKey, sourceBuffer, {
-      httpMetadata: { contentType: origContentType, cacheControl: THUMBNAIL_CACHE_CONTROL },
-    })
+    await storage.putObject(origKey, sourceBuffer, { contentType: origContentType })
     writtenKeys.push(origKey)
     thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`
 
@@ -221,17 +223,10 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
       }
 
       const variantKey = `thumbnails/${videoId}/${key}.jpg`
-      await env.BUCKET.put(
+      await storage.putObject(
         variantKey,
         await blob.arrayBuffer(),
-        // Use the blob's actual MIME type so the fallback (PNG source) is served
-        // with the correct Content-Type header, not a hardcoded image/jpeg.
-        {
-          httpMetadata: {
-            contentType: blob.type || 'image/jpeg',
-            cacheControl: THUMBNAIL_CACHE_CONTROL,
-          },
-        },
+        { contentType: blob.type || 'image/jpeg' },
       )
       writtenKeys.push(variantKey)
       thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`
@@ -246,12 +241,20 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
 
     const rowsChanged = Number(result.meta?.changes ?? 0)
     if (rowsChanged === 0) {
-      await Promise.allSettled(writtenKeys.map(k => env.BUCKET.delete(k)))
+      if (storage.deleteObjects) {
+        await storage.deleteObjects(writtenKeys)
+      } else {
+        await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)))
+      }
       return jsonResponse({ error: 'Video not found or could not be updated.' }, 404, corsHeaders)
     }
   } catch (err) {
     // Best-effort cleanup of any R2 objects written before the failure.
-    await Promise.allSettled(writtenKeys.map(k => env.BUCKET.delete(k)))
+    if (storage.deleteObjects) {
+      await storage.deleteObjects(writtenKeys).catch(() => {})
+    } else {
+      await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)))
+    }
     console.error('[thumbnails] Upload failed, R2 cleanup attempted:', err)
     return jsonResponse({ error: 'Failed to process thumbnail.' }, 500, corsHeaders)
   }
@@ -289,17 +292,23 @@ export async function handleThumbnailDelete(request: Request, env: Env, corsHead
   }
 
   const db = getDb(env)
+  const storage = getObjectStorage(env)
+  if (!storage) {
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
+  }
 
-  // Delete all known R2 keys in parallel.
-  // original.jpg and original.png are both attempted because the extension
-  // depends on what was uploaded; R2 silently ignores deletes for missing keys.
-  await Promise.all([
-    env.BUCKET.delete(`thumbnails/${videoId}/original.jpg`),
-    env.BUCKET.delete(`thumbnails/${videoId}/original.png`),
-    env.BUCKET.delete(`thumbnails/${videoId}/large.jpg`),
-    env.BUCKET.delete(`thumbnails/${videoId}/medium.jpg`),
-    env.BUCKET.delete(`thumbnails/${videoId}/small.jpg`),
-  ])
+  const keys = [
+    `thumbnails/${videoId}/original.jpg`,
+    `thumbnails/${videoId}/original.png`,
+    `thumbnails/${videoId}/large.jpg`,
+    `thumbnails/${videoId}/medium.jpg`,
+    `thumbnails/${videoId}/small.jpg`,
+  ]
+  if (storage.deleteObjects) {
+    await storage.deleteObjects(keys)
+  } else {
+    await Promise.all(keys.map((key) => storage.deleteObject(key)))
+  }
 
   // Clear thumbnail_url in D1.
   await db

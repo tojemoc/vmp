@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1080.0",
+    "@vmp/storage": "*",
     "postgres": "^3.4.7"
   },
   "devDependencies": {

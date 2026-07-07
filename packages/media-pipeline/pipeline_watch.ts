@@ -22,6 +22,12 @@ import { type PipelineMode, ingestLabelForMode, packagingStageToPipelineStage } 
 import { usesQueuedPackaging } from './packagingClient.js'
 import { runQueuedPipelineJob } from './runQueuedPipelineJob.js'
 import { detectGpuEncodeConfig } from './gpuDetect.js'
+import {
+  objectKey,
+  uploadDirectoryToStorage,
+  uploadFileToStorage,
+  verifyStorageDirectory,
+} from './storage.js'
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused'
 type PipelineStage =
@@ -423,42 +429,39 @@ function run(command: string, args: string[], label: string, { capture = false, 
   })
 }
 
-function r2Root(): string {
-  const rcloneRemote = (process.env.RCLONE_REMOTE || '').trim()
-  const bucketName = (process.env.R2_BUCKET_NAME || '').trim()
-  const bucket = (process.env.R2_BUCKET || 'vmp-videos').trim()
-  if (rcloneRemote) return bucketName ? `${rcloneRemote}:${bucketName}` : `${rcloneRemote}:`
-  return bucket.includes(':') ? bucket : `${bucket}:`
+async function storageCopyDir(localDir: string, keyPrefix: string, label: string, videoId?: string): Promise<void> {
+  await uploadDirectoryToStorage(localDir, keyPrefix, label)
+  if (videoId) log(`[${videoId}] ${label}`)
 }
 
-function r2Path(relativePath: string): string {
-  return `${r2Root().replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
+async function storageCopyFile(localFile: string, key: string, label: string, videoId?: string): Promise<void> {
+  await uploadFileToStorage(localFile, key, label)
+  if (videoId) log(`[${videoId}] ${label}`)
 }
 
-const RCLONE_TRANSFERS = Math.max(1, Number.parseInt(process.env.RCLONE_TRANSFERS || '4', 10) || 4)
-const RCLONE_CHECKERS = Math.max(1, Number.parseInt(process.env.RCLONE_CHECKERS || '8', 10) || 8)
-const RCLONE_UPLOAD_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RCLONE_UPLOAD_CONCURRENCY || '2', 10) || 2)
-
-/** R2-safe rclone flags; extend with space-separated RCLONE_EXTRA_ARGS. */
-function rcloneBaseArgs(): string[] {
-  const args = [
-    '--s3-no-check-bucket',
-    `--s3-upload-concurrency=${RCLONE_UPLOAD_CONCURRENCY}`,
-    '--retries', '5',
-    '--low-level-retries', '10',
-    '--log-level', process.env.RCLONE_LOG_LEVEL || 'NOTICE',
-  ]
-  const extra = (process.env.RCLONE_EXTRA_ARGS || '').trim()
-  if (extra) args.push(...extra.split(/\s+/).filter(Boolean))
-  return args
+async function storageCopySharedAudioAssets(tmpDir: string, keyPrefix: string, label: string, videoId?: string): Promise<void> {
+  const uploads: Promise<void>[] = []
+  const initPath = path.join(tmpDir, 'init_audio.mp4')
+  if (existsSync(initPath)) {
+    uploads.push(uploadFileToStorage(initPath, objectKey(keyPrefix, 'init_audio.mp4'), `${label} init_audio`))
+  }
+  const playlistPath = path.join(tmpDir, HLS_AUDIO_PLAYLIST)
+  if (existsSync(playlistPath)) {
+    uploads.push(uploadFileToStorage(playlistPath, objectKey(keyPrefix, HLS_AUDIO_PLAYLIST), `${label} audio playlist`))
+  }
+  const entries = await readdir(tmpDir)
+  for (const file of entries) {
+    if (/^seg_audio_\d+\.m4s$/.test(file)) {
+      uploads.push(uploadFileToStorage(path.join(tmpDir, file), objectKey(keyPrefix, file), `${label} ${file}`))
+    }
+  }
+  if (uploads.length) await Promise.all(uploads)
+  if (videoId) log(`[${videoId}] ${label}`)
 }
 
-function rcloneTransferArgs(): string[] {
-  return [
-    ...rcloneBaseArgs(),
-    '--transfers', String(RCLONE_TRANSFERS),
-    '--checkers', String(RCLONE_CHECKERS),
-  ]
+async function storageCheckDir(localDir: string, keyPrefix: string, label: string, videoId?: string): Promise<void> {
+  await verifyStorageDirectory(localDir, keyPrefix, label)
+  if (videoId) log(`[${videoId}] ${label}`)
 }
 
 function hash8(value: string): string {
@@ -661,35 +664,6 @@ async function packagePhase2Hls(tmpDir: string, hasAudio: boolean, videoId: stri
   await adoptShakaMasterM3u8(tmpDir, hasAudio, 2)
 }
 
-async function rcloneCopyDir(localDir: string, r2Dest: string, label: string, videoId?: string): Promise<void> {
-  await run('rclone', ['copy', localDir, r2Dest, ...rcloneTransferArgs()], label, { videoId })
-}
-
-async function rcloneCopyFile(localFile: string, r2Dest: string, label: string, videoId?: string): Promise<void> {
-  await run('rclone', ['copyto', localFile, r2Dest, ...rcloneTransferArgs()], label, { videoId })
-}
-
-async function rcloneCopySharedAudioAssets(tmpDir: string, r2Base: string, label: string, videoId?: string): Promise<void> {
-  const hasInit = existsSync(path.join(tmpDir, 'init_audio.mp4'))
-  const hasPlaylist = existsSync(path.join(tmpDir, HLS_AUDIO_PLAYLIST))
-  const entries = await readdir(tmpDir)
-  const hasSegments = entries.some((f) => /^seg_audio_\d+\.m4s$/.test(f))
-  if (!hasInit && !hasPlaylist && !hasSegments) return
-
-  await run('rclone', [
-    'copy', tmpDir, r2Base,
-    '--max-depth', '1',
-    '--include', 'init_audio.mp4',
-    '--include', HLS_AUDIO_PLAYLIST,
-    '--include', 'seg_audio_*.m4s',
-    ...rcloneTransferArgs(),
-  ], label, { videoId })
-}
-
-async function rcloneCheckDir(localDir: string, r2Dest: string, label: string, videoId?: string): Promise<void> {
-  await run('rclone', ['check', localDir, r2Dest, '--one-way', ...rcloneBaseArgs()], label, { videoId })
-}
-
 async function notifyVideoAvailable(
   videoId: string,
   stage: 'preview_ready' | 'fully_processed',
@@ -777,13 +751,13 @@ async function phase1EncodeAndPublish(
   setJobPhase(videoId, 'upload')
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'start')
   await emitTtp(videoId, 'phase1_upload_start', {})
-  const r2Base = r2Path(`videos/${videoId}`)
-  await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase1', videoId)
+  const r2Base = objectKey('videos', videoId)
+  await storageCopyDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'upload 720p phase1', videoId)
   if (hasAudio) {
-    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase1', videoId)
+    await storageCopySharedAudioAssets(tmpDir, r2Base, 'upload shared audio phase1', videoId)
   }
-  await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase1', videoId)
-  await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase1', videoId)
+  await storageCheckDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'check 720p phase1', videoId)
+  await storageCopyFile(path.join(tmpDir, 'master.m3u8'), objectKey(r2Base, 'master.m3u8'), 'upload master phase1', videoId)
   emitPipelineEvent(videoId, 'phase1_upload', 'active', 'done')
   await emitTtp(videoId, 'phase1_upload_done', {})
   emitProgressCheckpoint(videoId, 'phase1_upload', PROGRESS.P1_DONE, '720p on R2')
@@ -808,20 +782,20 @@ async function phase2PackageAndPublish(
   setJobPhase(videoId, 'upload')
   emitPipelineEvent(videoId, 'phase2_upload', 'active', 'start')
   await emitTtp(videoId, 'phase2_upload_start', {})
-  const r2Base = r2Path(`videos/${videoId}`)
-  await rcloneCopyDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone upload 1080p phase2', videoId)
+  const r2Base = objectKey('videos', videoId)
+  await storageCopyDir(path.join(tmpDir, '1080p'), objectKey(r2Base, '1080p'), 'upload 1080p phase2', videoId)
   emitProgressCheckpoint(videoId, 'phase2_upload', PROGRESS.P2_UPLOAD.base + PROGRESS.P2_UPLOAD.span * 0.25, '1080p uploading')
-  await rcloneCopyDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone upload 480p phase2', videoId)
-  await rcloneCopyDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone upload 720p phase2', videoId)
-  await rcloneCheckDir(path.join(tmpDir, '1080p'), `${r2Base}/1080p`, 'rclone check 1080p phase2', videoId)
-  await rcloneCheckDir(path.join(tmpDir, '480p'), `${r2Base}/480p`, 'rclone check 480p phase2', videoId)
-  await rcloneCheckDir(path.join(tmpDir, '720p'), `${r2Base}/720p`, 'rclone check 720p phase2', videoId)
+  await storageCopyDir(path.join(tmpDir, '480p'), objectKey(r2Base, '480p'), 'upload 480p phase2', videoId)
+  await storageCopyDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'upload 720p phase2', videoId)
+  await storageCheckDir(path.join(tmpDir, '1080p'), objectKey(r2Base, '1080p'), 'check 1080p phase2', videoId)
+  await storageCheckDir(path.join(tmpDir, '480p'), objectKey(r2Base, '480p'), 'check 480p phase2', videoId)
+  await storageCheckDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'check 720p phase2', videoId)
   if (hasAudio) {
-    await rcloneCopySharedAudioAssets(tmpDir, r2Base, 'rclone upload shared audio phase2', videoId)
+    await storageCopySharedAudioAssets(tmpDir, r2Base, 'upload shared audio phase2', videoId)
   }
 
   emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
-  await rcloneCopyFile(path.join(tmpDir, 'master.m3u8'), `${r2Base}/master.m3u8`, 'rclone upload master phase2', videoId)
+  await storageCopyFile(path.join(tmpDir, 'master.m3u8'), objectKey(r2Base, 'master.m3u8'), 'upload master phase2', videoId)
   emitPipelineEvent(videoId, 'phase2_upload', 'active', 'done')
   await emitTtp(videoId, 'phase2_upload_done', {})
   emitProgressCheckpoint(videoId, 'phase2_upload', PROGRESS.P2_DONE, 'all renditions on R2')
@@ -876,7 +850,7 @@ async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: stri
   )
   await rename(mp3Tmp, path.join(tmpDir, 'podcast.mp3'))
   setJobPhase(videoId, 'upload')
-  await run('rclone', ['copyto', path.join(tmpDir, 'podcast.mp3'), r2Path(`videos/${videoId}/podcast.mp3`)], 'upload podcast mp3', { videoId })
+  await storageCopyFile(path.join(tmpDir, 'podcast.mp3'), objectKey('videos', videoId, 'podcast.mp3'), 'upload podcast mp3', videoId)
   emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'done')
   emitProgressCheckpoint(videoId, 'podcast_mp3', PROGRESS.PODCAST.base + PROGRESS.PODCAST.span, 'podcast.mp3 on R2', 'mp3')
 }
@@ -963,9 +937,9 @@ async function runInlinePreviewMp3(videoId: string, tmpDir: string): Promise<voi
   }
   setJobPhase(videoId, 'upload')
   emitPipelineEvent(videoId, 'preview_upload', 'active', 'start')
-  await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.mp3'), r2Path(`videos/${videoId}/podcast_preview.mp3`)], 'upload preview mp3', { videoId })
+  await storageCopyFile(path.join(tmpDir, 'podcast_preview.mp3'), objectKey('videos', videoId, 'podcast_preview.mp3'), 'upload preview mp3', videoId)
   if (existsSync(path.join(tmpDir, 'podcast_preview.meta.json'))) {
-    await run('rclone', ['copyto', path.join(tmpDir, 'podcast_preview.meta.json'), r2Path(`videos/${videoId}/podcast_preview.meta.json`)], 'upload preview mp3 metadata', { videoId })
+    await storageCopyFile(path.join(tmpDir, 'podcast_preview.meta.json'), objectKey('videos', videoId, 'podcast_preview.meta.json'), 'upload preview mp3 metadata', videoId)
   }
   emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
   emitProgressCheckpoint(videoId, 'preview_upload', PROGRESS.PREVIEW.base + PROGRESS.PREVIEW.span, 'preview on R2', 'preview_mp3')
@@ -1480,7 +1454,7 @@ async function main() {
   for (const watch of INBOX_WATCHES) {
     log(`📥 Inbox [${watch.label}] pipelineMode=${watch.pipelineMode}: ${watch.dir}`)
   }
-  log(`☁️  Using R2 root: ${r2Root()}`)
+  log(`☁️  Using storage bucket: ${process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || 'vmp-videos'}`)
   log('🔍 Resuming existing jobs...')
   await startupScan()
   log('🎬 Watching for new uploads...')

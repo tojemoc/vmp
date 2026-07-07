@@ -7,6 +7,7 @@
 
 import { requireAuth, requireRole } from './auth.js'
 import { getSetting, setSettings } from './settingsStore.js'
+import { getObjectStorage } from './objectStorage.js'
 
 export type SellerJurisdiction = 'SK' | 'CZ'
 export type InvoiceFormat = 'peppol_ubl' | 'isdoc' | 'pdf_archive' | 'none'
@@ -594,10 +595,9 @@ export async function createInvoiceFromStripe(env: any, params: {
         vatRatePercent,
       })
       xmlR2Key = `einvoices/${invoiceId}/invoice.xml`
-      if (env.BUCKET && xmlPayload) {
-        await env.BUCKET.put(xmlR2Key, xmlPayload, {
-          httpMetadata: { contentType: 'application/xml' },
-        })
+      const storage = getObjectStorage(env)
+      if (storage && xmlPayload) {
+        await storage.putObject(xmlR2Key, xmlPayload, { contentType: 'application/xml' })
       }
     }
   }
@@ -858,9 +858,10 @@ export async function handleAdminEInvoiceById(request: any, env: any, corsHeader
   if (!row) return jsonResponse({ error: 'Invoice not found' }, 404, corsHeaders)
 
   let xmlPreview: string | null = null
-  if (row.xml_payload_r2_key && env.BUCKET) {
-    const object = await env.BUCKET.get(String(row.xml_payload_r2_key))
-    if (object) xmlPreview = await object.text()
+  const storage = getObjectStorage(env)
+  if (row.xml_payload_r2_key && storage) {
+    const object = await storage.getObject(String(row.xml_payload_r2_key))
+      if (object) xmlPreview = await new Response(object.body as ReadableStream).text()
   }
 
   return jsonResponse({

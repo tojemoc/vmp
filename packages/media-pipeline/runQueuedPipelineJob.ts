@@ -16,6 +16,7 @@ import { detectGpuEncodeConfig } from './gpuDetect.js'
 import type { PipelineMode, PackagingStage, QueuedPipelineSubStage } from './pipelineMode.js'
 import { registerAndEnqueuePackaging, usesQueuedPackaging, waitForPackaging } from './packagingClient.js'
 import { emitTtp, type TtpMilestone } from './ttpLog.js'
+import { objectKey, uploadFileToStorage } from './storage.js'
 
 export type QueuedPipelineContext = {
   videoId: string
@@ -39,20 +40,9 @@ async function run(cmd: string, args: string[], label: string): Promise<void> {
   })
 }
 
-function r2Root(): string {
-  const rcloneRemote = (process.env.RCLONE_REMOTE || '').trim()
-  const bucketName = (process.env.R2_BUCKET_NAME || '').trim()
-  const bucket = (process.env.R2_BUCKET || 'vmp-videos').trim()
-  if (rcloneRemote) return bucketName ? `${rcloneRemote}:${bucketName}` : `${rcloneRemote}:`
-  return bucket.includes(':') ? bucket : `${bucket}:`
-}
-
-function r2Path(relativePath: string): string {
-  return `${r2Root().replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
-}
 
 async function uploadLocalFile(localFile: string, relativeKey: string, label: string): Promise<void> {
-  await run('rclone', ['copyto', localFile, r2Path(relativeKey), '--s3-no-check-bucket'], label)
+  await uploadFileToStorage(localFile, relativeKey, label)
 }
 
 async function findNewestAudio(outputDir: string): Promise<string> {
@@ -147,7 +137,7 @@ async function runPodcastSidecars(ctx: QueuedPipelineContext): Promise<void> {
   })
   await waitForEncoreJob(podcastJobId, { isCancelled: ctx.isCancelled })
   const podcastFile = await findNewestAudio(podcastOut)
-  await uploadLocalFile(podcastFile, `videos/${ctx.videoId}/podcast.mp3`, 'upload podcast mp3')
+  await uploadLocalFile(podcastFile, objectKey('videos', ctx.videoId, 'podcast.mp3'), 'upload podcast mp3')
   await emitTtp(ctx.videoId, 'podcast_mp3_done', { pipelineMode: ctx.pipelineMode })
 
   if (!previewEnabled) {
@@ -168,7 +158,7 @@ async function runPodcastSidecars(ctx: QueuedPipelineContext): Promise<void> {
   })
   await waitForEncoreJob(previewJobId, { isCancelled: ctx.isCancelled })
   const previewFile = await findNewestAudio(previewOut)
-  await uploadLocalFile(previewFile, `videos/${ctx.videoId}/podcast_preview.mp3`, 'upload preview mp3')
+  await uploadLocalFile(previewFile, objectKey('videos', ctx.videoId, 'podcast_preview.mp3'), 'upload preview mp3')
   await emitTtp(ctx.videoId, 'preview_mp3_done', { pipelineMode: ctx.pipelineMode, previewSeconds })
 }
 
