@@ -131,7 +131,7 @@ import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { canonicalWatchToken, compareVideosNewestFirst, isValidVideoSlug, sanitizeVideoSlug } from '@vmp/shared'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig, collectPlacementVideoIds, normalizePlacementVideoRows } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
-import { getObjectStorage } from './objectStorage.js'
+import { getObjectStorage, parseHttpRangeHeader, storageGetResultToResponse } from './objectStorage.js'
 import type { ObjectStorageProvider } from '@vmp/storage/worker'
 import {
   enqueueReplicationBatch,
@@ -1473,13 +1473,27 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     effectivePreviewUntil = null
   }
 
-  // Strip vt from the upstream URL — R2 doesn't need it
-  const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
-  const upstreamHeaders = new Headers()
+  // Fetch object via storage provider (preferred) or public R2 URL fallback.
   const rangeHeader = request.headers.get('Range')
-  if (rangeHeader) upstreamHeaders.set('Range', rangeHeader)
+  const byteRange = parseHttpRangeHeader(rangeHeader)
+  const storage = getObjectStorage(env)
+  let upstreamResponse: Response
 
-  // vt to propagate to rewritten manifest/segment URLs
+  if (storage) {
+    const storageObject = await storage.getObject(normalizedPath, byteRange ? { range: byteRange } : undefined)
+    if (!storageObject) {
+      return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
+    }
+    upstreamResponse = storageGetResultToResponse(storageObject)
+  } else if (env.R2_BASE_URL) {
+    const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
+    const upstreamHeaders = new Headers()
+    if (rangeHeader) upstreamHeaders.set('Range', rangeHeader)
+    upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
+  } else {
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
+  }
+
   const vtForRewrite = requestUrl.searchParams.get('vt') ?? null
 
   const isSegment = objectPath.endsWith('.m4s')
@@ -1500,8 +1514,6 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
       })
     }
   }
-
-  const upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
 
   if (isSegment) {
     const referer = request.headers.get('referer') || ''

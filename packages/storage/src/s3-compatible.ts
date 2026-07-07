@@ -27,6 +27,8 @@ export interface S3CompatibleStorageOptions {
   accessKeyId?: string
   secretAccessKey?: string
   forcePathStyle?: boolean
+  /** Optional injected client (tests). */
+  client?: S3Client
 }
 
 function bodyToWebStream(body: unknown): ReadableStream | null {
@@ -85,7 +87,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       options.accessKeyId && options.secretAccessKey
         ? { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey }
         : undefined
-    this.client = new S3Client({
+    this.client = options.client ?? new S3Client({
       region: options.region ?? 'auto',
       ...(options.endpoint ? { endpoint: options.endpoint } : {}),
       ...(options.forcePathStyle ? { forcePathStyle: true } : {}),
