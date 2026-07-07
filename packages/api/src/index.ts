@@ -1435,23 +1435,25 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   // Every proxy request must carry a valid short-lived HMAC token issued by
   // handleVideoAccess.  This prevents direct enumeration / bulk downloading of
   // R2 segment URLs without going through the access-control layer.
+  const jwtSecret = typeof env.JWT_SECRET === 'string' ? env.JWT_SECRET.trim() : ''
+  if (!jwtSecret) {
+    return jsonResponse(
+      { error: 'Video playback is not configured', code: 'video_auth_not_configured' },
+      503,
+      corsHeaders,
+    )
+  }
+
+  const vtParam = requestUrl.searchParams.get('vt')
+  if (!vtParam) {
+    return jsonResponse({ error: 'Missing video token', code: 'video_token_missing' }, 403, corsHeaders)
+  }
+
   let tokenClaims = null
-  if (env.JWT_SECRET) {
-    const vtParam = requestUrl.searchParams.get('vt')
-    if (!vtParam) {
-      return new Response(JSON.stringify({ error: 'Missing video token' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
-    }
-    try {
-      tokenClaims = await verifyVideoToken(vtParam, env.JWT_SECRET)
-    } catch {
-      return new Response(JSON.stringify({ error: 'Invalid or expired video token' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
-    }
+  try {
+    tokenClaims = await verifyVideoToken(vtParam, jwtSecret)
+  } catch {
+    return jsonResponse({ error: 'Invalid or expired video token', code: 'video_token_invalid' }, 403, corsHeaders)
   }
 
   // Extract and decode videoId from path (videos/{id}/...). URL paths preserve
@@ -1510,12 +1512,20 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     try {
       const storageObject = await storage.getObject(normalizedPath, byteRange ? { range: byteRange } : undefined)
       if (!storageObject) {
-        return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
+        return jsonResponse(
+          { error: 'Video media is not available', code: 'media_not_available' },
+          404,
+          corsHeaders,
+        )
       }
       upstreamResponse = storageGetResultToResponse(storageObject)
     } catch (err) {
       console.error('[video-proxy] storage getObject failed:', err)
-      return jsonResponse({ error: 'Failed to fetch video object' }, 502, corsHeaders)
+      return jsonResponse(
+        { error: 'Video is temporarily unavailable', code: 'storage_unavailable' },
+        502,
+        corsHeaders,
+      )
     }
   } else if (env.R2_BASE_URL) {
     const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)

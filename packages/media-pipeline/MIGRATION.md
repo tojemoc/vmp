@@ -83,6 +83,14 @@ VAAPI_DEVICE=/dev/dri/renderD128
 
 Keep all existing `VMP_*`, `INBOX_DIR`, `RCLONE_*`, and `VMP_API_*` variables.
 
+If the supervisor listens on a public interface (e.g. `VMP_UI_HOST=0.0.0.0` for Worker webhooks), add:
+
+```bash
+VMP_SUPERVISOR_DASHBOARD_SECRET=<long-random-string>
+```
+
+Webhooks stay on HMAC (`VMP_WEBHOOK_SECRET`); the dashboard unlock form and job-control APIs require this separate secret.
+
 ### 5. Update systemd unit
 
 In `/etc/systemd/system/vmp-supervisor.service`, change paths:
