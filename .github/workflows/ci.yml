@@ -50,7 +50,11 @@ jobs:
           path: ~/.npm
 
       - name: Install dependencies (npm ci with npm install fallback)
-        run: npm ci || npm install
+        run: |
+          if ! npm ci; then
+            echo "::warning title=npm ci failed; using npm install fallback::Lockfile drift detected (package.json and package-lock.json may be out of sync). Regenerate and commit package-lock.json."
+            npm install
+          fi
 
       - name: Typecheck (affected)
         run: |
@@ -78,7 +82,11 @@ jobs:
           path: ~/.npm
 
       - name: Install dependencies (npm ci with npm install fallback)
-        run: npm ci || npm install
+        run: |
+          if ! npm ci; then
+            echo "::warning title=npm ci failed; using npm install fallback::Lockfile drift detected (package.json and package-lock.json may be out of sync). Regenerate and commit package-lock.json."
+            npm install
+          fi
 
       - name: Verify api-node (typecheck, tests, esbuild bundle)
         run: npm run verify:api-node
