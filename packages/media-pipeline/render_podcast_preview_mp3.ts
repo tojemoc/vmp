@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
+import { getPipelineStorage, objectKey, uploadFileToStorage } from './storage.js'
 
 let activeChild: ChildProcessWithoutNullStreams | null = null
 
@@ -20,16 +21,28 @@ function parseArgs(): { videoId: string, previewSeconds: number } {
   return { videoId: rawVideoId, previewSeconds: Math.floor(seconds) }
 }
 
-function buildR2Root(): string {
-  const rcloneRemote = env('RCLONE_REMOTE')
-  const bucketName = env('R2_BUCKET_NAME')
-  const bucket = env('R2_BUCKET', 'vmp-videos')
-  if (rcloneRemote) return bucketName ? `${rcloneRemote}:${bucketName}` : `${rcloneRemote}:`
-  return bucket.includes(':') ? bucket : `${bucket}:`
-}
 
-function r2Path(root: string, relativePath: string): string {
-  return `${root.replace(/\/+$/, '')}/${String(relativePath).replace(/^\/+/, '')}`
+async function downloadSourcePodcast(videoId: string, localIn: string): Promise<string> {
+  const storage = getPipelineStorage()
+  const candidates = [
+    objectKey('videos', videoId, 'podcast.mp3'),
+    objectKey('videos', videoId, 'processed', 'audio', 'podcast.mp3'),
+    objectKey('videos', videoId, 'processed', 'podcast.mp3'),
+  ]
+  let lastErr: unknown = null
+  for (const key of candidates) {
+    try {
+      const object = await storage.getObject(key)
+      if (!object) continue
+      const bytes = new Uint8Array(await new Response(object.body as ReadableStream).arrayBuffer())
+      await writeFile(localIn, bytes)
+      return key
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  const detail = lastErr instanceof Error ? ` Last error: ${lastErr.message}` : ''
+  throw new Error(`Could not locate source podcast MP3 in storage for video ${videoId}.${detail}`)
 }
 
 function run(command: string, args: readonly string[], label: string): Promise<void> {
@@ -77,30 +90,9 @@ async function runCapture(command: string, args: readonly string[], label: strin
   })
 }
 
-async function copyFirstAvailableSource(root: string, videoId: string, localIn: string): Promise<string> {
-  const candidates = [
-    r2Path(root, `videos/${videoId}/podcast.mp3`),
-    r2Path(root, `videos/${videoId}/processed/audio/podcast.mp3`),
-    r2Path(root, `videos/${videoId}/processed/podcast.mp3`),
-  ]
-  let lastErr = null
-  for (const remote of candidates) {
-    try {
-      await run('rclone', ['copyto', remote, localIn], `rclone copyto (${remote})`)
-      return remote
-    } catch (err) {
-      lastErr = err
-      // Try next candidate
-    }
-  }
-  const detail = lastErr instanceof Error ? ` Last error: ${lastErr.message}` : ''
-  throw new Error(`Could not locate source podcast MP3 in R2 for video ${videoId}.${detail}`)
-}
-
 async function main() {
   const { videoId, previewSeconds } = parseArgs()
   const mp3Bitrate = env('MP3_BITRATE', '128k')
-  const root = buildR2Root()
 
   const tempDir = await mkdtemp(path.join(tmpdir(), `vmp_podcast_preview_${videoId}_`))
   const localIn = path.join(tempDir, 'podcast.mp3')
@@ -126,7 +118,7 @@ async function main() {
   process.on('SIGTERM', onSigterm)
 
   try {
-    const sourceUsed = await copyFirstAvailableSource(root, videoId, localIn)
+    const sourceUsed = await downloadSourcePodcast(videoId, localIn)
     console.log(`[preview] source=${sourceUsed}`)
 
     const sourceDurationRaw = await runCapture(
@@ -167,8 +159,8 @@ async function main() {
       renderedAt: new Date().toISOString(),
     }))
 
-    await run('rclone', ['copyto', localOut, r2Path(root, `videos/${videoId}/podcast_preview.mp3`)], 'rclone preview upload')
-    await run('rclone', ['copyto', localMeta, r2Path(root, `videos/${videoId}/podcast_preview.meta.json`)], 'rclone preview metadata upload')
+    await uploadFileToStorage(localOut, objectKey('videos', videoId, 'podcast_preview.mp3'), 'preview upload')
+    await uploadFileToStorage(localMeta, objectKey('videos', videoId, 'podcast_preview.meta.json'), 'preview metadata upload')
     console.log(`[preview] done video=${videoId} seconds=${previewSeconds}`)
   } finally {
     process.off('SIGTERM', onSigterm)

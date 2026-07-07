@@ -1,6 +1,6 @@
 import type { CFEnvShape } from '../types.js'
 import type { PostgresD1Adapter } from '../bindings/db.js'
-import type { S3R2Adapter } from '../bindings/bucket.js'
+import type { ObjectStorageR2BucketBridge } from '@vmp/storage/node'
 import type { PostgresKVAdapter } from '../bindings/kv.js'
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy'
@@ -36,7 +36,7 @@ export async function buildHealthResponse(env: CFEnvShape): Promise<{ statusCode
     checks.database = { ok: false, error: 'not configured' }
   }
 
-  const bucket = env.BUCKET as S3R2Adapter | undefined
+  const bucket = env.BUCKET as ObjectStorageR2BucketBridge | undefined
   const s3TimeoutMs = Number.parseInt(process.env.HEALTH_S3_TIMEOUT_MS ?? '5000', 10) || 5000
   if (bucket?.ping) {
     try {

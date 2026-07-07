@@ -23,6 +23,7 @@ import {
 } from './offlineManifest.js'
 import type { OfflineRendition } from '@vmp/shared'
 import { resolveMediaEntrypointUrl } from './mediaEntrypoints.js'
+import { getObjectStorage, hasObjectStorage } from './objectStorage.js'
 
 const DEVICE_TOKEN_HEADER = 'x-vmp-device-token'
 
@@ -324,8 +325,9 @@ export async function handleRevokeOfflineDevice(
 }
 
 async function resolveAvailableOfflineR2Reader(env: any, videoId: string): Promise<OfflineR2Reader | null> {
-  if (env.BUCKET) {
-    const bucketReader = createBucketOfflineR2Reader(env.BUCKET, videoId)
+  const storage = getObjectStorage(env)
+  if (storage) {
+    const bucketReader = createBucketOfflineR2Reader(storage, videoId)
     if (await findMasterRelativePath(bucketReader)) return bucketReader
   }
   if (env.R2_BASE_URL) {
@@ -522,7 +524,7 @@ export async function handleDownloadAsset(
   videoIdParam: string,
   assetPath: string,
 ) {
-  if (!env.JWT_SECRET || (!env.BUCKET && !env.R2_BASE_URL)) {
+  if (!env.JWT_SECRET || (!hasObjectStorage(env) && !env.R2_BASE_URL)) {
     return errorResponse('Offline downloads not configured', 503, corsHeaders)
   }
 
@@ -570,19 +572,20 @@ export async function handleDownloadAsset(
 
   const objectPath = `videos/${resolvedVideoId}/${normalizedAsset}`
 
-  if (env.BUCKET) {
+  const storage = getObjectStorage(env)
+  if (storage) {
     const range = parseRangeHeader(request.headers.get('Range'))
-    const object = await env.BUCKET.get(objectPath, range ? { range } : undefined)
+    const object = await storage.getObject(objectPath, range ? { range } : undefined)
     if (object) {
       const headers = new Headers()
-      if (object.httpMetadata?.contentType) {
-        headers.set('Content-Type', object.httpMetadata.contentType)
+      if (object.contentType) {
+        headers.set('Content-Type', object.contentType)
       }
       if (object.range) {
         headers.set('Content-Length', String(object.range.length))
         headers.set(
           'Content-Range',
-          `bytes ${object.range.offset}-${object.range.offset + object.range.length - 1}/${object.size}`,
+          `bytes ${object.range.offset}-${object.range.offset + object.range.length - 1}/${object.size ?? '*'}`,
         )
         headers.set('Accept-Ranges', 'bytes')
       } else if (object.size !== undefined) {
@@ -594,7 +597,7 @@ export async function handleDownloadAsset(
       }
       headers.set('Cache-Control', 'private, no-store')
 
-      return new Response(object.body, {
+      return new Response(object.body as ReadableStream, {
         status: object.range ? 206 : 200,
         headers,
       })

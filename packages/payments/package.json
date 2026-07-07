@@ -1,0 +1,17 @@
+{
+  "name": "@vmp/payments",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pluggable payment provider registry (Stripe, Qerko, GoPay, Comgate)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
+  }
+}
