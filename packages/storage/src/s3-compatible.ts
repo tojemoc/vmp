@@ -8,7 +8,8 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { NodeHttpHandler } from '@smithy/node-http-handler'
+import { FetchHttpHandler } from '@smithy/fetch-http-handler'
+import type { HttpHandler } from '@smithy/core/protocols'
 import { Readable } from 'node:stream'
 import type {
   GetObjectOptions,
@@ -20,7 +21,6 @@ import type {
   PutObjectOptions,
 } from './types.js'
 
-export const DEFAULT_S3_CONNECTION_TIMEOUT_MS = 5_000
 export const DEFAULT_S3_REQUEST_TIMEOUT_MS = 30_000
 
 export interface S3CompatibleStorageOptions {
@@ -33,6 +33,8 @@ export interface S3CompatibleStorageOptions {
   forcePathStyle?: boolean
   /** Optional injected client (tests). */
   client?: S3Client
+  /** Optional HTTP handler override (defaults to fetch-based handler). */
+  requestHandler?: HttpHandler
 }
 
 function bodyToWebStream(body: unknown): ReadableStream | null {
@@ -100,8 +102,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       ...(options.endpoint ? { endpoint: options.endpoint } : {}),
       ...(options.forcePathStyle ? { forcePathStyle: true } : {}),
       ...(credentials ? { credentials } : {}),
-      requestHandler: new NodeHttpHandler({
-        connectionTimeout: DEFAULT_S3_CONNECTION_TIMEOUT_MS,
+      requestHandler: options.requestHandler ?? new FetchHttpHandler({
         requestTimeout: DEFAULT_S3_REQUEST_TIMEOUT_MS,
       }),
     })

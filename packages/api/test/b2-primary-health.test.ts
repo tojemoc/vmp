@@ -41,9 +41,6 @@ describe('B2PrimaryHealthDO', () => {
 
   it('re-extends cooldown when failures continue after cooldown elapsed', async () => {
     const doInstance = createDo()
-    for (let i = 0; i < B2_FAILURE_THRESHOLD; i++) {
-      await doInstance.recordFailure()
-    }
     await doInstance.state.storage.put('health', {
       consecutiveFailures: B2_FAILURE_THRESHOLD,
       openedAt: Date.now() - 61_000,
