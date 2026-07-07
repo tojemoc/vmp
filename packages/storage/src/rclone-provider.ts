@@ -1,14 +1,12 @@
 import { spawn } from 'node:child_process'
 import { Readable } from 'node:stream'
-import { StorageNotFoundError } from '../errors.js'
 import type {
   GetObjectOptions,
-  HeadObjectResult,
-  ListedObject,
+  GetObjectResult,
+  ObjectMetadata,
   ObjectStorageProvider,
   PutObjectOptions,
-  StorageObjectResponse,
-} from '../types.js'
+} from './types.js'
 
 function normalizePrefix(value: string): string {
   return value.replace(/^\/+/, '').replace(/\/+$/, '')
@@ -24,12 +22,14 @@ export interface RcloneProviderOptions {
 }
 
 export class RcloneProvider implements ObjectStorageProvider {
+  readonly id: string
   private readonly root: string
   private readonly binary: string
 
   constructor(options: RcloneProviderOptions) {
     this.root = options.root.replace(/\/+$/, '')
     this.binary = options.binary ?? 'rclone'
+    this.id = `rclone:${this.root}`
   }
 
   private resolve(key: string): string {
@@ -57,28 +57,38 @@ export class RcloneProvider implements ObjectStorageProvider {
     })
   }
 
-  async getObject(key: string, opts?: GetObjectOptions): Promise<StorageObjectResponse> {
+  async getObject(key: string, opts?: GetObjectOptions): Promise<GetObjectResult | null> {
     const normalized = normalizeKey(key)
     const head = await this.headObject(normalized)
-    if (!head) throw new StorageNotFoundError(normalized)
+    if (!head) return null
 
     const args = ['cat', this.resolve(normalized)]
-    if (opts?.range) args.push('--http-headers', `Range: ${opts.range}`)
+    if (opts?.range) {
+      const { offset, length } = opts.range
+      const end = length != null ? offset + length - 1 : ''
+      args.push('--http-headers', `Range: bytes=${offset}-${end}`)
+    }
 
     const child = spawn(this.binary, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    const body = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
+    const body = Readable.toWeb(child.stdout) as ReadableStream
     child.stderr.on('data', () => {})
     child.on('error', () => {})
 
-    const headers = new Headers()
-    headers.set('Content-Length', String(head.size))
-    if (head.contentType) headers.set('Content-Type', head.contentType)
-    if (head.lastModified) headers.set('Last-Modified', head.lastModified.toUTCString())
-
-    return { status: opts?.range ? 206 : 200, headers, body }
+    const result: GetObjectResult = {
+      body,
+      size: head.size,
+    }
+    if (head.contentType) result.contentType = head.contentType
+    if (opts?.range) {
+      result.range = {
+        offset: opts.range.offset,
+        length: opts.range.length ?? head.size - opts.range.offset,
+      }
+    }
+    return result
   }
 
-  async headObject(key: string): Promise<HeadObjectResult | null> {
+  async headObject(key: string): Promise<ObjectMetadata | null> {
     const normalized = normalizeKey(key)
     let stdout: string
     try {
@@ -95,7 +105,7 @@ export class RcloneProvider implements ObjectStorageProvider {
     }>
     const row = rows.find((entry) => !entry.IsDir)
     if (!row) return null
-    const result: HeadObjectResult = {
+    const result: ObjectMetadata = {
       key: normalized,
       size: Number(row.Size ?? 0),
     }
@@ -106,16 +116,21 @@ export class RcloneProvider implements ObjectStorageProvider {
 
   async putObject(
     key: string,
-    body: ReadableStream<Uint8Array> | Uint8Array,
+    body: ReadableStream | Uint8Array | ArrayBuffer | string,
     opts?: PutObjectOptions,
   ): Promise<void> {
     const normalized = normalizeKey(key)
     const args = ['rcat', this.resolve(normalized)]
     if (opts?.contentType) args.push('--header-upload', `Content-Type: ${opts.contentType}`)
 
-    const nodeStream = body instanceof Uint8Array
-      ? Readable.from(body)
-      : Readable.fromWeb(body as import('node:stream/web').ReadableStream)
+    let nodeStream: Readable
+    if (typeof body === 'string' || body instanceof Uint8Array || Buffer.isBuffer(body)) {
+      nodeStream = Readable.from(body)
+    } else if (body instanceof ReadableStream) {
+      nodeStream = Readable.fromWeb(body as import('node:stream/web').ReadableStream)
+    } else {
+      nodeStream = Readable.from(new Uint8Array(body))
+    }
 
     await this.run(args, `put ${normalized}`, nodeStream)
   }
@@ -124,7 +139,7 @@ export class RcloneProvider implements ObjectStorageProvider {
     await this.run(['deletefile', this.resolve(normalizeKey(key))], `delete ${key}`)
   }
 
-  async listObjects(keyPrefix: string): Promise<ListedObject[]> {
+  async listObjects(keyPrefix: string): Promise<ObjectMetadata[]> {
     const target = this.resolve(normalizePrefix(keyPrefix))
     const stdout = await this.run(['lsjson', '-R', target], `list ${target}`)
     const rows = JSON.parse(stdout) as Array<{
@@ -139,9 +154,17 @@ export class RcloneProvider implements ObjectStorageProvider {
       .filter((row) => !row.IsDir)
       .map((row) => {
         const key = `${base}/${row.Path || row.Name}`.replace(/\/{2,}/g, '/')
-        const entry: ListedObject = { key, size: Number(row.Size ?? 0) }
+        const entry: ObjectMetadata = { key, size: Number(row.Size ?? 0) }
         if (row.ModTime) entry.lastModified = new Date(row.ModTime)
         return entry
       })
+  }
+
+  async getSignedReadUrl(): Promise<string> {
+    throw new Error('RcloneProvider does not support signed URLs')
+  }
+
+  async getSignedWriteUrl(): Promise<string> {
+    throw new Error('RcloneProvider does not support signed URLs')
   }
 }

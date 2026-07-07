@@ -9,6 +9,7 @@ export class AgeBasedOffloadPolicy implements OffloadPolicy {
   constructor(private readonly maxHotAgeSeconds: number) {}
 
   shouldOffload(meta: ObjectMetadata): boolean {
+    if (!meta.lastModified) return false
     const ageSeconds = (Date.now() - meta.lastModified.getTime()) / 1000
     return ageSeconds > this.maxHotAgeSeconds
   }

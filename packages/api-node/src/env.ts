@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js'
-import { S3R2Adapter } from './bindings/bucket.js'
+import { createStorageProviderFromEnv, asR2Bucket } from '@vmp/storage/node'
 import { PostgresKVAdapter } from './bindings/kv.js'
 import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js'
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types'
@@ -34,14 +34,10 @@ export async function buildEnv(): Promise<CFEnvShape> {
 
   const kv = new PostgresKVAdapter(db)
 
-  let bucket: S3R2Adapter | undefined
-  if (process.env.S3_BUCKET_NAME) {
-    bucket = new S3R2Adapter({
-      bucket: process.env.S3_BUCKET_NAME,
-      region: process.env.AWS_REGION,
-      endpoint: process.env.S3_ENDPOINT,
-      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === '1',
-    })
+  let bucketBinding: ReturnType<typeof asR2Bucket> | undefined
+  if (process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME || process.env.STORAGE_BUCKET) {
+    const storage = createStorageProviderFromEnv()
+    bucketBinding = asR2Bucket(storage)
   }
 
   cachedDb = db
@@ -71,7 +67,7 @@ export async function buildEnv(): Promise<CFEnvShape> {
 
     DB: db as unknown as D1Database,
     video_subscription_db: db as unknown as D1Database,
-    BUCKET: bucket as unknown as R2Bucket,
+    BUCKET: bucketBinding,
     RATE_LIMIT_KV: kv as unknown as KVNamespace,
     SEGMENT_RATE_LIMITER: new InMemoryDurableObjectNamespace(),
     CF_COLO: process.env.CF_COLO ?? 'DENO',

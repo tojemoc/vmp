@@ -52,8 +52,6 @@ import {
 import { isAdministrativeRole } from './roles.js'
 import { buildEntrypointCandidates, resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
 import { B2PrimaryHealthDOBase } from './b2PrimaryHealth.js'
-import { createPlaybackStorage } from './playbackStorage.js'
-import { StorageNotFoundError } from '@vmp/storage'
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js'
 import { handleThumbnailUpload, handleThumbnailDelete, THUMBNAIL_CACHE_CONTROL } from './thumbnails.js'
 import {
@@ -134,6 +132,8 @@ import { getReadSession, applySessionBookmark } from './d1Session.js'
 import { canonicalWatchToken, compareVideosNewestFirst, isValidVideoSlug, sanitizeVideoSlug } from '@vmp/shared'
 import { placeHomepageVideos, normalizeHomepagePlacementConfig, collectPlacementVideoIds, normalizePlacementVideoRows } from './homepagePlacement.js'
 import { ensureAdminSettingsTable } from './adminSettingsTable.js'
+import { getObjectStorage, parseHttpRangeHeader, storageGetResultToResponse } from './objectStorage.js'
+import type { ObjectStorageProvider } from '@vmp/storage/worker'
 import {
   enqueueReplicationBatch,
   handleAdminReplicationSettings,
@@ -1479,9 +1479,10 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     effectivePreviewUntil = null
   }
 
-  // Strip vt from upstream handling — storage backends don't need it
   const vtForRewrite = requestUrl.searchParams.get('vt') ?? null
+  const isManifest = objectPath.endsWith('.m3u8')
   const rangeHeader = request.headers.get('Range')
+  const byteRange = isManifest ? undefined : parseHttpRangeHeader(rangeHeader)
 
   const isSegment = objectPath.endsWith('.m4s')
   let segmentDurationForAnalytics = null
@@ -1502,20 +1503,27 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     }
   }
 
+  const storage = getObjectStorage(env)
   let upstreamResponse: Response
-  try {
-    const storage = createPlaybackStorage(env)
-    const object = await storage.getObject(normalizedPath, rangeHeader ? { range: rangeHeader } : undefined)
-    upstreamResponse = new Response(object.body, {
-      status: object.status,
-      headers: object.headers,
-    })
-  } catch (err) {
-    if (err instanceof StorageNotFoundError) {
-      return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
+
+  if (storage) {
+    try {
+      const storageObject = await storage.getObject(normalizedPath, byteRange ? { range: byteRange } : undefined)
+      if (!storageObject) {
+        return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
+      }
+      upstreamResponse = storageGetResultToResponse(storageObject)
+    } catch (err) {
+      console.error('[video-proxy] storage getObject failed:', err)
+      return jsonResponse({ error: 'Failed to fetch video object' }, 502, corsHeaders)
     }
-    console.error('[video-proxy] storage getObject failed:', err)
-    return jsonResponse({ error: 'Failed to fetch video object' }, 502, corsHeaders)
+  } else if (env.R2_BASE_URL) {
+    const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
+    const upstreamHeaders = new Headers()
+    if (rangeHeader && !isManifest) upstreamHeaders.set('Range', rangeHeader)
+    upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
+  } else {
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
   }
 
   if (isSegment) {
@@ -1552,13 +1560,15 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)
     if (cacheControl) headers.set('Cache-Control', cacheControl)
     headers.delete('Content-Length')
+    headers.delete('Content-Range')
+    headers.delete('Accept-Ranges')
     for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
-    logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+    logRequest(request.method, requestUrl.pathname, 200, Date.now() - reqStart, {
       video_id: proxyVideoId,
       manifest_type: manifestType ?? 'segment',
       preview_enforced: effectivePreviewUntil !== null,
     })
-    return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
+    return new Response(rewrittenManifest, { status: 200, headers })
   }
   const headers = new Headers(upstreamResponse.headers)
   const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)
@@ -1866,9 +1876,10 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
   const db = getDatabaseBinding(env)
   try {
     // ── 1. Auto-register any R2 uploads that have no D1 row ──────────────────
-    if (env.BUCKET) {
-      const listed = await env.BUCKET.list({ prefix: 'videos/', delimiter: '/' })
-      const r2VideoIds = (listed.delimitedPrefixes ?? []).map((prefix: any) => {
+    const storage = getObjectStorage(env)
+    if (storage?.listObjectsPage) {
+      const listed = await storage.listObjectsPage({ prefix: 'videos/', delimiter: '/' })
+      const r2VideoIds = (listed.prefixes ?? []).map((prefix: string) => {
         // prefix looks like "videos/abc123/" — extract the folder name
         const parts = prefix.replace(/\/$/, '').split('/')
         return parts[parts.length - 1]
@@ -1908,8 +1919,8 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       let r2Exists = null
       if (video?.livestream_provider) {
         r2Exists = true
-      } else if (env.BUCKET) {
-        r2Exists = await hasProcessedPlaybackArtifact(env.BUCKET, video.id)
+      } else if (getObjectStorage(env)) {
+        r2Exists = await hasProcessedPlaybackArtifact(getObjectStorage(env)!, video.id)
       }
       const effectiveLivestreamStatus = video?.livestream_provider
         ? deriveEffectiveLivestreamStatus(video.livestream_status, video.publish_status)
@@ -2221,8 +2232,9 @@ async function handleAdminVideoUpdate(request: any, env: any, ctx: any, corsHead
 
   // Guard: refuse to publish if the processed playlist is missing from R2.
   // Livestream videos are allowed to publish without an uploaded VOD.
-  if (hasStatus && body.status === 'published' && env.BUCKET && !isLivestreamVideo) {
-    const exists = await hasProcessedPlaybackArtifact(env.BUCKET, videoId)
+  const storage = getObjectStorage(env)
+  if (hasStatus && body.status === 'published' && storage && !isLivestreamVideo) {
+    const exists = await hasProcessedPlaybackArtifact(storage, videoId)
     if (!exists) {
       return jsonResponse({
         error: 'Cannot publish: processed media not found in R2. Upload and process the video first.',
@@ -2464,15 +2476,21 @@ async function handleAdminVideoDelete(request: any, env: any, corsHeaders: any) 
     if (!video) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders)
     // Delete all R2 objects under videos/{videoId}/ (paginated)
     let deletedR2Objects = 0
-    if (env.BUCKET) {
-      let cursor
+    const storage = getObjectStorage(env)
+    if (storage?.listObjectsPage) {
+      let cursor: string | undefined
       do {
-        // @ts-expect-error TS(7022): 'listed' implicitly has type 'any' because it does... Remove this comment to see the full error message
-        const listed = await env.BUCKET.list({ prefix: `videos/${videoId}/`, cursor })
-        const keys = listed.objects.map((obj: any) => obj.key)
+        const listed = await storage.listObjectsPage({
+          prefix: `videos/${videoId}/`,
+          ...(cursor ? { cursor } : {}),
+        })
+        const keys = listed.objects.map((obj) => obj.key)
         if (keys.length > 0) {
-          // Use R2 bulk delete to keep Worker-to-R2 API calls low.
-          await env.BUCKET.delete(keys)
+          if (storage.deleteObjects) {
+            await storage.deleteObjects(keys)
+          } else {
+            for (const key of keys) await storage.deleteObject(key)
+          }
           deletedR2Objects += keys.length
         }
         cursor = listed.truncated ? listed.cursor : undefined
@@ -2629,8 +2647,9 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
   if (newVideo.publish_status !== 'draft') {
     return jsonResponse({ error: 'Target video must be a draft' }, 422, corsHeaders)
   }
-  if (env.BUCKET) {
-    const exists = await hasProcessedPlaybackArtifact(env.BUCKET, draftId)
+  const swapStorage = getObjectStorage(env)
+  if (swapStorage) {
+    const exists = await hasProcessedPlaybackArtifact(swapStorage, draftId)
     if (!exists) {
       return jsonResponse({
         error: 'Cannot swap: processed media not found in R2. Upload and process the target draft first.',
@@ -2707,18 +2726,15 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
 
   // Copy thumbnails only after the swap has committed so a failed swap never
   // overwrites the draft's existing thumbnail assets.
-  if (env.BUCKET && oldVideo.thumbnail_url) {
+  if (swapStorage && oldVideo.thumbnail_url) {
     const thumbnailFiles = ['original.jpg', 'large.jpg', 'medium.jpg', 'small.jpg']
     const copyResults = await Promise.allSettled(thumbnailFiles.map(async (file) => {
       const srcKey = `thumbnails/${publishedId}/${file}`
       const dstKey = `thumbnails/${draftId}/${file}`
-      const obj = await env.BUCKET.get(srcKey)
+      const obj = await swapStorage.getObject(srcKey)
       if (obj) {
-        await env.BUCKET.put(dstKey, obj.body, {
-          httpMetadata: {
-            ...obj.httpMetadata,
-            cacheControl: obj.httpMetadata?.cacheControl ?? THUMBNAIL_CACHE_CONTROL,
-          },
+        await swapStorage.putObject(dstKey, obj.body, {
+          ...(obj.contentType ? { contentType: obj.contentType } : {}),
         })
         return true
       }
@@ -2930,7 +2946,7 @@ async function handlePushUnsubscribe(request: any, env: any, corsHeaders: any) {
   }
 }
 
-async function hasProcessedPlaybackArtifact(bucket: any, videoId: any) {
+async function hasProcessedPlaybackArtifact(storage: ObjectStorageProvider, videoId: any) {
   const candidateKeys = [
     // Flat layout produced by the current upload script (rclone copies TMP_DIR
     // directly into videos/{id}/ with no processed/ subdirectory)
@@ -2941,7 +2957,7 @@ async function hasProcessedPlaybackArtifact(bucket: any, videoId: any) {
   ]
 
   for (const key of candidateKeys) {
-    const object = await bucket.head(key)
+    const object = await storage.headObject(key)
     if (object) return true
   }
   return false

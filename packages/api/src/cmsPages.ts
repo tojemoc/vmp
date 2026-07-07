@@ -3,11 +3,11 @@ import { isCmsSystemPageId, isCmsSystemSlug } from '@vmp/shared'
 import { requireAuth, requireRole } from './auth.js'
 import { parseCmsBlocks } from './cmsBlockValidation.js'
 import { CmsPagesRepository } from './cmsPagesRepository.js'
+import { getObjectStorage, type StorageEnv } from './objectStorage.js'
 
-type Env = {
+type Env = StorageEnv & {
   DB?: CmsPagesRepository extends { db: infer D } ? D : unknown
   video_subscription_db?: unknown
-  BUCKET?: { put(key: string, body: ArrayBuffer, opts?: { httpMetadata?: { contentType?: string } }): Promise<unknown> }
   R2_BASE_URL?: string
 }
 
@@ -236,7 +236,8 @@ export async function handleCmsMediaUpload(request: Request, env: Env, corsHeade
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
-  if (!env.BUCKET) return jsonResponse({ error: 'R2 bucket not configured' }, 503, corsHeaders)
+  const storage = getObjectStorage(env)
+  if (!storage) return jsonResponse({ error: 'R2 bucket not configured' }, 503, corsHeaders)
 
   const form = await request.formData().catch(() => null)
   const file = form?.get('image')
@@ -259,7 +260,7 @@ export async function handleCmsMediaUpload(request: Request, env: Env, corsHeade
   if (!base) return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders)
 
   const key = `cms/${Date.now()}-${crypto.randomUUID()}.${ext}`
-  await env.BUCKET.put(key, bytes, { httpMetadata: { contentType: file.type } })
+  await storage.putObject(key, new Uint8Array(bytes), { contentType: file.type })
 
   let width: number | null = null
   let height: number | null = null

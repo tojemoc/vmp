@@ -1,51 +1,102 @@
-export interface GetObjectOptions {
-  range?: string
+export interface ObjectMetadata {
+  key: string
+  size: number
+  etag?: string
+  lastModified?: Date
+  contentType?: string
 }
 
 export interface PutObjectOptions {
   contentType?: string
+  metadata?: Record<string, string>
   cacheControl?: string
+  /** Known object size in bytes; required for some S3-compatible stream uploads. */
+  contentLength?: number
 }
 
-export interface HeadObjectResult {
-  key: string
-  size: number
+export interface ByteRange {
+  offset: number
+  length?: number
+}
+
+export interface GetObjectOptions {
+  range?: ByteRange
+}
+
+export interface GetObjectResult {
+  body: ReadableStream | Uint8Array | ArrayBuffer
   contentType?: string
-  etag?: string
-  lastModified?: Date
+  size?: number
+  range?: { offset: number; length: number }
 }
 
-/** Object metadata used by offload policies — sourced from head/list APIs. */
-export type ObjectMetadata = HeadObjectResult & {
-  lastModified: Date
+export interface ListObjectsPageOptions {
+  prefix?: string
+  delimiter?: string
+  cursor?: string
+  limit?: number
 }
 
-export interface ListedObject {
-  key: string
-  size: number
-  lastModified?: Date
-}
-
-export interface StorageObjectResponse {
-  status: number
-  headers: Headers
-  body: ReadableStream<Uint8Array> | null
+export interface ListObjectsPageResult {
+  objects: ObjectMetadata[]
+  prefixes: string[]
+  truncated: boolean
+  cursor?: string
 }
 
 export interface ObjectStorageProvider {
-  getObject(key: string, opts?: GetObjectOptions): Promise<StorageObjectResponse>
-  headObject(key: string): Promise<HeadObjectResult | null>
+  readonly id: string
+
+  getObject(key: string, opts?: GetObjectOptions): Promise<GetObjectResult | null>
   putObject(
     key: string,
-    body: ReadableStream<Uint8Array> | Uint8Array,
+    body: ReadableStream | Uint8Array | ArrayBuffer | string,
     opts?: PutObjectOptions,
   ): Promise<void>
   deleteObject(key: string): Promise<void>
-  listObjects(prefix: string): Promise<ListedObject[]>
+  headObject(key: string): Promise<ObjectMetadata | null>
+  listObjects(prefix: string): Promise<ObjectMetadata[]>
+  listObjectsPage?(options: ListObjectsPageOptions): Promise<ListObjectsPageResult>
+  deleteObjects?(keys: string[]): Promise<void>
+  getSignedReadUrl(key: string, opts?: { expiresInSeconds?: number }): Promise<string>
+  getSignedWriteUrl(key: string, opts?: { expiresInSeconds?: number }): Promise<string>
+  ping?(): Promise<{ ok: boolean; latencyMs: number; error?: string }>
 }
 
 export interface PrimaryHealthTracker {
   isHealthy(): Promise<boolean>
   recordFailure(err: unknown): Promise<void>
   recordSuccess(): Promise<void>
+}
+
+export type StorageProviderType = 'r2' | 'b2' | 's3-compatible'
+
+export interface StorageProviderConfigBase {
+  bucket: string
+  region?: string
+  endpoint?: string
+  accessKeyId?: string
+  secretAccessKey?: string
+  forcePathStyle?: boolean
+}
+
+export type StorageProviderConfig =
+  | ({ type: 'r2' } & StorageProviderConfigBase)
+  | ({ type: 'b2' } & StorageProviderConfigBase)
+  | ({ type: 's3-compatible'; id?: string } & StorageProviderConfigBase)
+
+export type RcloneProviderConfig = {
+  type: 'rclone'
+  root: string
+  binary?: string
+}
+
+export type NodeStorageProviderConfig = StorageProviderConfig | RcloneProviderConfig
+
+export interface TieredStorageConfig {
+  hot: NodeStorageProviderConfig
+  cold: NodeStorageProviderConfig
+  maxHotAgeSeconds: number
+  listPrefix?: string
+  deleteHotAfterOffload?: boolean
 }

@@ -10,7 +10,6 @@ export function createAlwaysHealthyTracker(): PrimaryHealthTracker {
   }
 }
 
-/** Used when B2 is not configured — reads never consult health state. */
 export function createNoOpTracker(): PrimaryHealthTracker {
   return createAlwaysHealthyTracker()
 }

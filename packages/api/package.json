@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@sentry/cloudflare": "^10.63.0",
+    "@vmp/payments": "*",
     "@vmp/shared": "*",
     "@vmp/storage": "*"
   },

@@ -1,6 +1,5 @@
-import type { ObjectMetadata } from './types.js'
+import type { ObjectMetadata, ObjectStorageProvider } from './types.js'
 import type { OffloadPolicy } from './offloadPolicy.js'
-import type { ObjectStorageProvider } from './types.js'
 
 export interface OffloadMoveResult {
   key: string
@@ -42,14 +41,16 @@ export class ObjectOffloadJob {
       if (signal?.aborted) break
 
       const head = await hot.headObject(entry.key)
-      if (!head?.lastModified) {
+      const lastModified = head?.lastModified
+      if (!lastModified) {
         results.push({ key: entry.key, moved: false, skipped: 'missing_last_modified' })
         continue
       }
 
       const meta: ObjectMetadata = {
-        ...head,
-        lastModified: head.lastModified,
+        key: head.key,
+        size: head.size,
+        lastModified,
       }
 
       if (!policy.shouldOffload(meta)) {
@@ -57,7 +58,7 @@ export class ObjectOffloadJob {
         continue
       }
 
-      const ageSeconds = (Date.now() - meta.lastModified.getTime()) / 1000
+      const ageSeconds = (Date.now() - lastModified.getTime()) / 1000
       log('offload candidate', {
         key: entry.key,
         ageSeconds: Math.floor(ageSeconds),
@@ -71,13 +72,12 @@ export class ObjectOffloadJob {
 
       try {
         const object = await hot.getObject(entry.key)
-        if (!object.body) {
+        if (!object?.body) {
           results.push({ key: entry.key, moved: false, error: 'empty_body' })
           continue
         }
 
-        const contentType = object.headers.get('content-type') ?? undefined
-        const putOpts = contentType ? { contentType } : undefined
+        const putOpts = object.contentType ? { contentType: object.contentType } : undefined
         await cold.putObject(entry.key, object.body, putOpts)
 
         const coldHead = await cold.headObject(entry.key)

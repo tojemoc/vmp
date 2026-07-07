@@ -7,6 +7,7 @@ import type {
   OfflineManifestFile,
   OfflineRendition,
 } from '@vmp/shared'
+import type { ObjectStorageProvider } from '@vmp/storage/worker'
 export { isOfflineRendition } from '@vmp/shared'
 
 const RENDITION_RESOLUTION: Record<OfflineRendition, string> = {
@@ -31,7 +32,7 @@ export interface OfflineR2Reader {
   contentLength(relativePath: string): Promise<number | null>
 }
 
-export function createBucketOfflineR2Reader(bucket: R2Bucket, videoId: string): OfflineR2Reader {
+export function createBucketOfflineR2Reader(storage: ObjectStorageProvider, videoId: string): OfflineR2Reader {
   const keyPrefix = `videos/${videoId}/`
 
   return {
@@ -39,16 +40,16 @@ export function createBucketOfflineR2Reader(bucket: R2Bucket, videoId: string): 
       return `https://r2.local/${keyPrefix}${masterRelativePath}`
     },
     async exists(relativePath) {
-      const object = await bucket.head(`${keyPrefix}${relativePath}`)
+      const object = await storage.headObject(`${keyPrefix}${relativePath}`)
       return object !== null
     },
     async readText(relativePath) {
-      const object = await bucket.get(`${keyPrefix}${relativePath}`)
+      const object = await storage.getObject(`${keyPrefix}${relativePath}`)
       if (!object) throw new Error(`Playlist not found in R2: ${relativePath}`)
-      return object.text()
+      return new Response(object.body as ReadableStream).text()
     },
     async contentLength(relativePath) {
-      const object = await bucket.head(`${keyPrefix}${relativePath}`)
+      const object = await storage.headObject(`${keyPrefix}${relativePath}`)
       if (!object) return null
       return Number.isFinite(object.size) ? object.size : null
     },

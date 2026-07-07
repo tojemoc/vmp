@@ -1,40 +1,14 @@
-export type {
-  GetObjectOptions,
-  HeadObjectResult,
-  ListedObject,
-  ObjectMetadata,
-  ObjectStorageProvider,
-  PrimaryHealthTracker,
-  PutObjectOptions,
-  StorageObjectResponse,
-} from './types.js'
-
-export {
-  isAvailabilityError,
-  isNotFoundError,
-  isNotFoundHttpStatus,
-  StorageAvailabilityError,
-  StorageNotFoundError,
-} from './errors.js'
-
-export { S3FetchProvider, type S3FetchProviderConfig } from './s3FetchProvider.js'
-export { R2BindingProvider } from './r2BindingProvider.js'
-export { R2HttpProvider } from './r2HttpProvider.js'
+export * from './types.js'
+export * from './worker.js'
+export * from './node.js'
+export { createStorageProvider, createStorageProviderFromEnv } from './factory.js'
+export { isAvailabilityError } from './errors.js'
 export {
   PrimaryWithFailoverCache,
   type PrimaryWithFailoverCacheOptions,
-} from './primaryWithFailoverCache.js'
+} from './primary-with-failover-cache.js'
 export { TieredStorageProvider } from './tieredStorageProvider.js'
 export { AgeBasedOffloadPolicy, type OffloadPolicy } from './offloadPolicy.js'
-export {
-  createStorageProvider,
-  type StorageProviderConfig,
-  type TieredStorageConfig,
-  type R2HttpProviderConfig,
-  type S3CompatibleProviderConfig,
-  type RcloneProviderConfig,
-} from './config.js'
 export { ObjectOffloadJob, type OffloadMoveResult, type ObjectOffloadJobOptions } from './objectOffloadJob.js'
 export { dedupeByKey } from './dedupeByKey.js'
-
-export { createAlwaysHealthyTracker, createNoOpTracker } from './healthTrackers.js'
+export { createAlwaysHealthyTracker, createNoOpTracker } from './health-trackers.js'
