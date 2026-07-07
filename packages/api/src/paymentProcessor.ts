@@ -18,16 +18,21 @@ import {
   stripeGet,
   stripePost,
   stripeSubscriptionPeriodEndIso,
-  verifyStripeWebhook,
 } from './stripeClient.js'
 export { normalizeStripeStatus } from './stripeClient.js'
 import { isLegacyProviderConfigured } from './legacyProvider.js'
-import { startLegacyCheckout } from './legacyPayments.js'
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
 import { handleStripeInvoicePaid } from './eInvoicing.js'
+import {
+  fromApiProviderId,
+  getConfiguredProviderIds,
+  getPaymentProviderOrder,
+  getPaymentProviders,
+  toApiProviderId,
+} from './paymentProviders.js'
+import type { PaymentProviderId } from '@vmp/payments'
 
 type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'legacy'
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -94,39 +99,17 @@ async function buildAdminPlanList(env: any) {
   return plans
 }
 
-async function getPaymentProviderOrder(env: any): Promise<PaymentProvider[]> {
-  const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,legacy' })
-  const raw = String(stored ?? 'stripe,legacy').trim()
-  const providers = (raw ? raw : 'stripe,legacy')
-    .split(',')
-    .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'legacy')
-  return providers.length > 0 ? providers : ['stripe']
+async function getRunnableProviderIds(env: any): Promise<PaymentProviderId[]> {
+  const { runnable } = await getPaymentProviders(env)
+  return runnable
 }
 
-/** Gateways enabled for new checkouts (Stripe default; legacy optional). */
-async function getConfiguredProviders(env: any): Promise<PaymentProvider[]> {
-  const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' })
-  const raw = String(stored ?? 'stripe').trim()
-  let configured = (raw ? raw : 'stripe')
-    .split(',')
-    .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PaymentProvider => v === 'stripe' || v === 'legacy')
-  if (configured.length === 0) configured = ['stripe']
-  return configured
+async function getConfiguredProvidersForApi(env: any): Promise<Array<'stripe' | 'legacy'>> {
+  const enabled = await getConfiguredProviderIds(env)
+  return enabled.map(toApiProviderId)
 }
 
-/** Gateways that can actually run checkout in this environment (requires provider credentials). */
-async function getRunnableProviders(env: any): Promise<PaymentProvider[]> {
-  const configured = await getConfiguredProviders(env)
-  const available = configured.filter((provider) => {
-    if (provider === 'stripe') return Boolean(env.STRIPE_SECRET_KEY)
-    if (provider === 'legacy') return isLegacyProviderConfigured(env)
-    return false
-  })
-  if (available.length > 0) return available
-  return Boolean(env.STRIPE_SECRET_KEY) ? ['stripe'] : []
-}
+// ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function parseConfiguredPrice(value: unknown): number | null {
   if (value === '' || value == null) return null
@@ -134,7 +117,7 @@ function parseConfiguredPrice(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null
 }
 
-async function getPricingSettings(env: any, provider?: PaymentProvider) {
+async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
   const prefix = provider ? `${provider}_` : ''
   const [monthly, yearly, club] = await Promise.all([
     getSetting(env, `${prefix}monthly_price_eur`, { ttlSeconds: 300 }),
@@ -148,7 +131,7 @@ async function getPricingSettings(env: any, provider?: PaymentProvider) {
   }
 }
 
-async function getEffectivePricingSettings(env: any, provider: PaymentProvider) {
+async function getEffectivePricingSettings(env: any, provider: 'stripe' | 'legacy') {
   const [providerPricing, fallbackPricing] = await Promise.all([
     getPricingSettings(env, provider),
     getPricingSettings(env),
@@ -193,7 +176,7 @@ async function upsertSubscriptionRow(
     userId: string
     planType: PlanType
     status: SubscriptionStatus
-    provider: PaymentProvider
+    provider: 'stripe' | 'legacy'
     providerSubscriptionId: string | null
     providerCustomerId: string | null
     stripeSubscriptionId?: string | null
@@ -278,9 +261,9 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       getEffectivePricingSettings(env, 'stripe'),
       getEffectivePricingSettings(env, 'legacy'),
       getAllowedPlans(env),
-      getConfiguredProviders(env),
-      getPaymentProviderOrder(env),
-      getRunnableProviders(env),
+      getConfiguredProvidersForApi(env),
+      getPaymentProviderOrder(env).then((ids) => ids.map(toApiProviderId)),
+      getRunnableProviderIds(env).then((ids) => ids.map(toApiProviderId)),
     ])
     const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p))
     const pricingNotConfigured = (
@@ -641,20 +624,21 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
   try {
     const db = getDb(env)
-    const configuredProviders = await getConfiguredProviders(env)
-    const runnableProviders = await getRunnableProviders(env)
+    const { providers, enabled, runnable } = await getPaymentProviders(env)
     const providerOrder = await getPaymentProviderOrder(env)
     const orderedRunnable = [
-      ...providerOrder.filter((p) => runnableProviders.includes(p)),
-      ...runnableProviders.filter((p) => !providerOrder.includes(p)),
+      ...providerOrder.filter((p) => runnable.includes(p)),
+      ...runnable.filter((p) => !providerOrder.includes(p)),
     ]
-    const defaultProvider: PaymentProvider = orderedRunnable[0] ?? 'stripe'
-    const selectedProvider = String(body?.provider ?? '').trim().toLowerCase() as PaymentProvider
-    const provider: PaymentProvider = selectedProvider && providerOrder.includes(selectedProvider)
-      ? selectedProvider
-      : defaultProvider
+    const selectedRaw = String(body?.provider ?? '').trim().toLowerCase()
+    const selectedId = fromApiProviderId(selectedRaw) ?? fromApiProviderId(selectedRaw === 'legacy' ? 'qerko' : selectedRaw)
+    const providerId: PaymentProviderId = selectedId && providerOrder.includes(selectedId)
+      ? selectedId
+      : (orderedRunnable[0] ?? 'stripe')
+    const provider = providers.get(providerId)
+    const apiProvider = toApiProviderId(providerId)
 
-    const promoResolution = provider === 'stripe'
+    const promoResolution = providerId === 'stripe'
       ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType, 'stripe')
       : { ok: false, reason: 'empty' }
     const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null
@@ -665,17 +649,34 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, promoResolution.status ?? 400, corsHeaders)
     }
 
-    if (!configuredProviders.includes(provider)) {
+    if (!enabled.includes(providerId)) {
       return jsonResponse({
         error: 'Requested payment provider is not enabled.',
         code: 'provider_not_enabled',
       }, 400, corsHeaders)
     }
-    if (!runnableProviders.includes(provider)) {
+    if (!provider || !runnable.includes(providerId)) {
       return jsonResponse({
         error: 'This payment provider is enabled in settings but is not configured on the server (missing API credentials).',
         code: 'provider_not_configured',
       }, 503, corsHeaders)
+    }
+
+    if (!provider.capabilities.newSubscriptions) {
+      const legacyRelink = await db.prepare(`
+        SELECT purchase_id FROM subscriptions
+        WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
+          AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+        ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+        LIMIT 1
+      `).bind(user.sub).first()
+      const bodyPurchaseId = String(body?.purchaseId ?? '').trim()
+      if (!legacyRelink && !bodyPurchaseId) {
+        return jsonResponse({
+          error: 'This payment provider is only available for migrated subscriptions.',
+          code: 'provider_migration_only',
+        }, 400, corsHeaders)
+      }
     }
 
     // Guard: don't create a new checkout session if the user already has an
@@ -692,65 +693,40 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       }, 409, corsHeaders)
     }
 
-    const frontendUrl = String(env.FRONTEND_URL ?? 'http://localhost:3000').replace(/\/$/, '')
     const returnPath = normalizeReturnPath(body?.returnPath)
-    if (provider === 'stripe') {
-      const priceId = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 })
-      if (!priceId) {
-        return jsonResponse({
-          error: 'Stripe prices not yet configured. Ask an admin to set stripe_price_* in admin_settings.',
-          code: 'prices_not_configured',
-        }, 503, corsHeaders)
-      }
-
-      const sessionPayload: any = {
-        mode: 'subscription',
-        ui_mode: 'elements',
-        // Curated list for the Payment Element (not dynamic payment methods): limits
-        // the "Pay by card" path to card + PayPal + SEPA debit. Omitting
-        // payment_method_types would surface every method enabled in the Stripe Dashboard
-        // (e.g. Bancontact, Revolut Pay). Prices are EUR; sepa_debit requires EUR.
-        payment_method_types: ['card', 'paypal', 'sepa_debit'],
-        line_items: [{ price: priceId, quantity: 1 }],
-        customer_email: user.email,
-        metadata: {
-          userId: user.sub,
-          provider: 'stripe',
-          planType,
-          promoCodeId: promoMeta?.promoCodeId ?? '',
-          promoCode: promoMeta?.promoCode ?? '',
-          promoRewardType: promoMeta?.rewardType ?? '',
+    const session = await provider.createCheckoutSession({
+      userId: user.sub,
+      email: user.email,
+      planType,
+      returnPath,
+      ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
+      ...(promoMeta ? {
+        promo: {
+          stripeCouponId: promoMeta.stripeCouponId,
+          metadata: {
+            promoCodeId: promoMeta.promoCodeId ?? '',
+            promoCode: promoMeta.promoCode ?? '',
+            promoRewardType: promoMeta.rewardType ?? '',
+          },
         },
-        return_url: `${frontendUrl}${returnPath}?session_id={CHECKOUT_SESSION_ID}`,
-      }
-      if (promoMeta?.stripeCouponId) {
-        sessionPayload.discounts = [{ coupon: promoMeta.stripeCouponId }]
-      }
-      const session = await stripePost('/checkout/sessions', sessionPayload, env)
+      } : {}),
+    })
 
-      if (session.error || !session.client_secret) {
-        const stripeMessage = typeof session.error?.message === 'string'
-          ? session.error.message
-          : null
-        console.error('Stripe checkout session error:', session.error)
-        const stripeStatus = session.error?.code === 'stripe_timeout' ? 504 : 502
-        return jsonResponse({
-          error: stripeMessage ?? 'Failed to create checkout session',
-          code: session.error?.code ?? 'stripe_checkout_failed',
-        }, stripeStatus, corsHeaders)
-      }
-
-      return jsonResponse({ clientSecret: session.client_secret, provider }, 200, corsHeaders)
+    if (session.clientSecret) {
+      return jsonResponse({ clientSecret: session.clientSecret, provider: apiProvider }, 200, corsHeaders)
     }
-
-    if (provider === 'legacy') {
-      return startLegacyCheckout(env, user, body, corsHeaders)
+    if (session.checkoutUrl) {
+      return jsonResponse({
+        checkoutUrl: session.checkoutUrl,
+        provider: apiProvider,
+        orderId: session.orderId,
+      }, 200, corsHeaders)
     }
 
     return jsonResponse({
-      error: 'Requested payment provider is not supported.',
-      code: 'provider_not_supported',
-    }, 400, corsHeaders)
+      error: 'Failed to create checkout session',
+      code: 'checkout_failed',
+    }, 502, corsHeaders)
   } catch (err: unknown) {
     console.error('handleCheckout error:', err)
     const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
@@ -766,12 +742,14 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
  * Verifies Stripe signature and handles subscription lifecycle events.
  */
 export async function handleWebhook(request: any, env: any, corsHeaders: any) {
-  // Read raw body as text — must be done before any parsing to keep the
-  // exact bytes Stripe used when generating the signature.
   const rawBody = await request.text()
   const sigHeader = request.headers.get('Stripe-Signature') ?? ''
-
-  const valid = await verifyStripeWebhook(rawBody, sigHeader, env.STRIPE_WEBHOOK_SECRET)
+  const { providers } = await getPaymentProviders(env)
+  const stripeProvider = providers.get('stripe')
+  if (!stripeProvider) {
+    return jsonResponse({ error: 'Stripe provider not configured' }, 503, corsHeaders)
+  }
+  const valid = await stripeProvider.verifyWebhookSignature(rawBody, sigHeader)
   if (!valid) {
     return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders)
   }
