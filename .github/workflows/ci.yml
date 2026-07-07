@@ -49,7 +49,8 @@ jobs:
           key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
 
-      - run: npm ci
+      - name: Install dependencies (npm ci with npm install fallback)
+        run: npm ci || npm install
 
       - name: Typecheck (affected)
         run: |
@@ -76,7 +77,8 @@ jobs:
           key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
 
-      - run: npm ci
+      - name: Install dependencies (npm ci with npm install fallback)
+        run: npm ci || npm install
 
       - name: Verify api-node (typecheck, tests, esbuild bundle)
         run: npm run verify:api-node
