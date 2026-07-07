@@ -61,8 +61,10 @@ export class ObjectStorageR2BucketBridge {
     options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> },
   ) {
     await this.storage.putObject(key, value as ReadableStream, {
-      contentType: options?.httpMetadata?.contentType,
-      metadata: options?.customMetadata,
+      ...(options?.httpMetadata?.contentType !== undefined
+        ? { contentType: options.httpMetadata.contentType }
+        : {}),
+      ...(options?.customMetadata !== undefined ? { metadata: options.customMetadata } : {}),
     })
     return this.head(key)
   }

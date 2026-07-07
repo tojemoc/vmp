@@ -23,33 +23,40 @@ function resolveCredentials(config: StorageProviderConfig): {
     return { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
   }
   if (config.type === 'r2') {
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY
     return {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
+      ...(accessKeyId !== undefined ? { accessKeyId } : {}),
+      ...(secretAccessKey !== undefined ? { secretAccessKey } : {}),
     }
   }
   if (config.type === 'b2') {
+    const accessKeyId = process.env.B2_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID
+    const secretAccessKey = process.env.B2_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY
     return {
-      accessKeyId: process.env.B2_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.B2_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
+      ...(accessKeyId !== undefined ? { accessKeyId } : {}),
+      ...(secretAccessKey !== undefined ? { secretAccessKey } : {}),
     }
   }
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY
   return {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    ...(accessKeyId !== undefined ? { accessKeyId } : {}),
+    ...(secretAccessKey !== undefined ? { secretAccessKey } : {}),
   }
 }
 
 export function createStorageProvider(config: StorageProviderConfig): ObjectStorageProvider {
   const id = config.type === 's3-compatible' ? (config.id ?? 's3-compatible') : config.type
   const credentials = resolveCredentials(config)
+  const endpoint = resolveEndpoint(config)
   return new S3CompatibleStorageProvider({
     id,
     bucket: config.bucket,
     region: config.region ?? (config.type === 'b2' ? 'us-west-004' : 'auto'),
-    endpoint: resolveEndpoint(config),
-    accessKeyId: credentials.accessKeyId,
-    secretAccessKey: credentials.secretAccessKey,
+    ...(endpoint !== undefined ? { endpoint } : {}),
+    ...(credentials.accessKeyId !== undefined ? { accessKeyId: credentials.accessKeyId } : {}),
+    ...(credentials.secretAccessKey !== undefined ? { secretAccessKey: credentials.secretAccessKey } : {}),
     forcePathStyle: config.forcePathStyle ?? config.type !== 'r2',
   })
 }
@@ -63,37 +70,45 @@ export function createStorageProviderFromEnv(env: NodeJS.ProcessEnv = process.en
   'vmp-videos'
 
   if (type === 'b2') {
+    const region = env.B2_REGION ?? env.AWS_REGION
+    const endpoint = env.B2_ENDPOINT ?? env.S3_ENDPOINT
     return createStorageProvider({
       type: 'b2',
       bucket,
-      region: env.B2_REGION ?? env.AWS_REGION,
-      endpoint: env.B2_ENDPOINT ?? env.S3_ENDPOINT,
-      accessKeyId: env.B2_ACCESS_KEY_ID,
-      secretAccessKey: env.B2_SECRET_ACCESS_KEY,
+      ...(region !== undefined ? { region } : {}),
+      ...(endpoint !== undefined ? { endpoint } : {}),
+      ...(env.B2_ACCESS_KEY_ID !== undefined ? { accessKeyId: env.B2_ACCESS_KEY_ID } : {}),
+      ...(env.B2_SECRET_ACCESS_KEY !== undefined ? { secretAccessKey: env.B2_SECRET_ACCESS_KEY } : {}),
       ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
     })
   }
 
   if (type === 's3-compatible') {
+    const region = env.AWS_REGION
+    const endpoint = env.S3_ENDPOINT
     return createStorageProvider({
       type: 's3-compatible',
       id: env.STORAGE_PROVIDER_ID ?? 's3-compatible',
       bucket,
-      region: env.AWS_REGION,
-      endpoint: env.S3_ENDPOINT,
-      accessKeyId: env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+      ...(region !== undefined ? { region } : {}),
+      ...(endpoint !== undefined ? { endpoint } : {}),
+      ...(env.AWS_ACCESS_KEY_ID !== undefined ? { accessKeyId: env.AWS_ACCESS_KEY_ID } : {}),
+      ...(env.AWS_SECRET_ACCESS_KEY !== undefined ? { secretAccessKey: env.AWS_SECRET_ACCESS_KEY } : {}),
       ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
     })
   }
 
+  const region = env.AWS_REGION ?? 'auto'
+  const endpoint = env.S3_ENDPOINT ?? env.R2_ENDPOINT
+  const accessKeyId = env.R2_ACCESS_KEY_ID ?? env.AWS_ACCESS_KEY_ID
+  const secretAccessKey = env.R2_SECRET_ACCESS_KEY ?? env.AWS_SECRET_ACCESS_KEY
   return createStorageProvider({
     type: 'r2',
     bucket,
-    region: env.AWS_REGION ?? 'auto',
-    endpoint: env.S3_ENDPOINT ?? env.R2_ENDPOINT,
-    accessKeyId: env.R2_ACCESS_KEY_ID ?? env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? env.AWS_SECRET_ACCESS_KEY,
+    region,
+    ...(endpoint !== undefined ? { endpoint } : {}),
+    ...(accessKeyId !== undefined ? { accessKeyId } : {}),
+    ...(secretAccessKey !== undefined ? { secretAccessKey } : {}),
     ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
   })
 }
