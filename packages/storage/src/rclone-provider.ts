@@ -170,28 +170,28 @@ export class RcloneProvider implements ObjectStorageProvider {
 
   async headObject(key: string): Promise<ObjectMetadata | null> {
     const normalized = normalizeKey(key)
-    let stdout: string
     try {
-      stdout = await this.run(['lsjson', this.resolve(normalized)], `stat ${normalized}`)
+      const stdout = await this.run(['lsjson', this.resolve(normalized)], `stat ${normalized}`)
+      const rows = JSON.parse(stdout) as Array<{
+        Name: string
+        Size?: number
+        IsDir?: boolean
+        ModTime?: string
+        MimeType?: string
+      }>
+      if (!Array.isArray(rows)) return null
+      const row = rows.find((entry) => !entry.IsDir)
+      if (!row) return null
+      const result: ObjectMetadata = {
+        key: normalized,
+        size: Number(row.Size ?? 0),
+      }
+      if (row.MimeType) result.contentType = row.MimeType
+      if (row.ModTime) result.lastModified = new Date(row.ModTime)
+      return result
     } catch {
       return null
     }
-    const rows = JSON.parse(stdout) as Array<{
-      Name: string
-      Size?: number
-      IsDir?: boolean
-      ModTime?: string
-      MimeType?: string
-    }>
-    const row = rows.find((entry) => !entry.IsDir)
-    if (!row) return null
-    const result: ObjectMetadata = {
-      key: normalized,
-      size: Number(row.Size ?? 0),
-    }
-    if (row.MimeType) result.contentType = row.MimeType
-    if (row.ModTime) result.lastModified = new Date(row.ModTime)
-    return result
   }
 
   async putObject(
@@ -220,24 +220,36 @@ export class RcloneProvider implements ObjectStorageProvider {
   }
 
   async listObjects(keyPrefix: string): Promise<ObjectMetadata[]> {
-    const target = this.resolve(normalizePrefix(keyPrefix))
-    const stdout = await this.run(['lsjson', '-R', target], `list ${target}`)
-    const rows = JSON.parse(stdout) as Array<{
-      Path: string
-      Name: string
-      Size?: number
-      IsDir?: boolean
-      ModTime?: string
-    }>
     const base = normalizePrefix(keyPrefix)
-    return rows
-      .filter((row) => !row.IsDir)
-      .map((row) => {
-        const key = collapseSlashes(`${base}/${row.Path || row.Name}`)
+    const results: ObjectMetadata[] = []
+    const queue: Array<{ path: string; relative: string }> = [
+      { path: this.resolve(base), relative: base },
+    ]
+
+    while (queue.length > 0) {
+      const { path, relative } = queue.shift()!
+      const stdout = await this.run(['lsjson', path], `list ${path}`)
+      const rows = JSON.parse(stdout) as Array<{
+        Name: string
+        Size?: number
+        IsDir?: boolean
+        ModTime?: string
+      }>
+
+      for (const row of rows) {
+        if (row.IsDir) {
+          const childRelative = relative ? `${relative}/${row.Name}` : row.Name
+          queue.push({ path: `${path}/${row.Name}`, relative: childRelative })
+          continue
+        }
+        const key = collapseSlashes(relative ? `${relative}/${row.Name}` : row.Name)
         const entry: ObjectMetadata = { key, size: Number(row.Size ?? 0) }
         if (row.ModTime) entry.lastModified = new Date(row.ModTime)
-        return entry
-      })
+        results.push(entry)
+      }
+    }
+
+    return results
   }
 
   async getSignedReadUrl(): Promise<string> {
