@@ -51,6 +51,9 @@ import {
 } from './payments.js'
 import { isAdministrativeRole } from './roles.js'
 import { buildEntrypointCandidates, resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
+import { B2PrimaryHealthDOBase } from './b2PrimaryHealth.js'
+import { createPlaybackStorage } from './playbackStorage.js'
+import { StorageNotFoundError } from '@vmp/storage'
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js'
 import { handleThumbnailUpload, handleThumbnailDelete, THUMBNAIL_CACHE_CONTROL } from './thumbnails.js'
 import {
@@ -388,6 +391,11 @@ export const SegmentRateLimiterDO = Sentry.instrumentDurableObjectWithSentry(
   (env) => buildSentryOptions(env as Record<string, unknown>),
   // Sentry bundles its own workers-types; cast avoids duplicate-type friction in tsc.
   SegmentRateLimiterDOBase as never,
+)
+
+export const B2PrimaryHealthDO = Sentry.instrumentDurableObjectWithSentry(
+  (env) => buildSentryOptions(env as Record<string, unknown>),
+  B2PrimaryHealthDOBase as never,
 )
 
 function logRequest(method: string, path: string, status: number, durationMs: number, extra?: Record<string, unknown>) {
@@ -1471,14 +1479,9 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     effectivePreviewUntil = null
   }
 
-  // Strip vt from the upstream URL — R2 doesn't need it
-  const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
-  const upstreamHeaders = new Headers()
-  const rangeHeader = request.headers.get('Range')
-  if (rangeHeader) upstreamHeaders.set('Range', rangeHeader)
-
-  // vt to propagate to rewritten manifest/segment URLs
+  // Strip vt from upstream handling — storage backends don't need it
   const vtForRewrite = requestUrl.searchParams.get('vt') ?? null
+  const rangeHeader = request.headers.get('Range')
 
   const isSegment = objectPath.endsWith('.m4s')
   let segmentDurationForAnalytics = null
@@ -1499,7 +1502,21 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     }
   }
 
-  const upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
+  let upstreamResponse: Response
+  try {
+    const storage = createPlaybackStorage(env)
+    const object = await storage.getObject(normalizedPath, rangeHeader ? { range: rangeHeader } : undefined)
+    upstreamResponse = new Response(object.body, {
+      status: object.status,
+      headers: object.headers,
+    })
+  } catch (err) {
+    if (err instanceof StorageNotFoundError) {
+      return jsonResponse({ error: 'Not found' }, 404, corsHeaders)
+    }
+    console.error('[video-proxy] storage getObject failed:', err)
+    return jsonResponse({ error: 'Failed to fetch video object' }, 502, corsHeaders)
+  }
 
   if (isSegment) {
     const referer = request.headers.get('referer') || ''

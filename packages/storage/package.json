@@ -1,0 +1,26 @@
+{
+  "name": "@vmp/storage",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Object storage abstractions — B2 primary with R2 failover cache",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint src --ext .ts --max-warnings 0",
+    "test": "tsx --test ./test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260628.1",
+    "@types/node": "^26.1.0",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3"
+  }
+}

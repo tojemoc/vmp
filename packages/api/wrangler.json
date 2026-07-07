@@ -32,6 +32,10 @@
 	      {
 	        "name": "SEGMENT_RATE_LIMITER",
 	        "class_name": "SegmentRateLimiterDO"
+	      },
+	      {
+	        "name": "B2_PRIMARY_HEALTH",
+	        "class_name": "B2PrimaryHealthDO"
 	      }
 	    ]
 	  },
@@ -63,6 +67,10 @@
 	    {
 	      "tag": "v1",
 	      "new_sqlite_classes": ["SegmentRateLimiterDO"]
+	    },
+	    {
+	      "tag": "v2",
+	      "new_sqlite_classes": ["B2PrimaryHealthDO"]
 	    }
 	  ],
 	"vars": {
