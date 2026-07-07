@@ -204,12 +204,18 @@ export class RcloneProvider implements ObjectStorageProvider {
     if (opts?.contentType) args.push('--header-upload', `Content-Type: ${opts.contentType}`)
 
     let nodeStream: Readable
-    if (typeof body === 'string' || body instanceof Uint8Array || Buffer.isBuffer(body)) {
+    if (typeof body === 'string') {
       nodeStream = Readable.from(body)
     } else if (body instanceof ReadableStream) {
       nodeStream = Readable.fromWeb(body as import('node:stream/web').ReadableStream)
+    } else if (body instanceof Uint8Array) {
+      nodeStream = Readable.from(Buffer.from(body))
+    } else if (body instanceof ArrayBuffer) {
+      nodeStream = Readable.from(Buffer.from(body))
+    } else if (Buffer.isBuffer(body)) {
+      nodeStream = Readable.from(body)
     } else {
-      nodeStream = Readable.from(new Uint8Array(body))
+      nodeStream = Readable.from(Buffer.from(body))
     }
 
     await this.run(args, `put ${normalized}`, nodeStream)
