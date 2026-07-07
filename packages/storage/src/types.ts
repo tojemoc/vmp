@@ -9,6 +9,7 @@ export interface ObjectMetadata {
 export interface PutObjectOptions {
   contentType?: string
   metadata?: Record<string, string>
+  cacheControl?: string
 }
 
 export interface ByteRange {

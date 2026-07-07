@@ -596,7 +596,10 @@ export async function createInvoiceFromStripe(env: any, params: {
       })
       xmlR2Key = `einvoices/${invoiceId}/invoice.xml`
       const storage = getObjectStorage(env)
-      if (storage && xmlPayload) {
+      if (!storage) {
+        invoiceErrorMessage = 'Object storage not configured for invoice XML.'
+        xmlR2Key = null
+      } else if (xmlPayload) {
         await storage.putObject(xmlR2Key, xmlPayload, { contentType: 'application/xml' })
       }
     }

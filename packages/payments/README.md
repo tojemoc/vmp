@@ -43,4 +43,4 @@ GoPay / Comgate are registered stubs — enable in settings only after real impl
 
 ## GoPay / Comgate assumptions (confirm with product)
 
-Stub capabilities are set to `{ newSubscriptions: true, migrationOnly: false, recurringPayments: true, refunds: true, webhooks: true }`. Treat as placeholder until PSP contracts are finalized.
+Stub capabilities are set to all `false` until real implementations land. Treat as placeholder until PSP contracts are finalized.

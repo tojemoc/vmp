@@ -118,6 +118,17 @@ async function verifyStripeWebhook(rawBody: string, sigHeader: string, secret: s
   return false
 }
 
+function assertNoStripeError(result: Record<string, unknown>, fallbackMessage: string): void {
+  if (!result.error) return
+  const err = new Error(
+    typeof (result.error as { message?: string } | undefined)?.message === 'string'
+      ? (result.error as { message: string }).message
+      : fallbackMessage,
+  )
+  Object.assign(err, { code: 'stripe_api_failed', stripeError: result.error })
+  throw err
+}
+
 export function createStripeProvider(config: StripePaymentsConfig): PaymentProvider {
   return {
     id: 'stripe',
@@ -141,10 +152,10 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: input.email,
         metadata: {
+          ...(input.promo?.metadata ?? {}),
           userId: input.userId,
           provider: 'stripe',
           planType: input.planType,
-          ...(input.promo?.metadata ?? {}),
         },
         return_url: `${frontendUrl}${input.returnPath}?session_id={CHECKOUT_SESSION_ID}`,
       }
@@ -152,14 +163,9 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         sessionPayload.discounts = [{ coupon: input.promo.stripeCouponId }]
       }
       const session = await stripePost(config, '/checkout/sessions', sessionPayload)
-      if (session.error || !session.client_secret) {
-        const err = new Error(
-          typeof (session.error as { message?: string } | undefined)?.message === 'string'
-            ? (session.error as { message: string }).message
-            : 'Failed to create checkout session',
-        )
-        Object.assign(err, { code: 'stripe_checkout_failed', stripeError: session.error })
-        throw err
+      assertNoStripeError(session, 'Failed to create checkout session')
+      if (!session.client_secret) {
+        throw new Error('Failed to create checkout session')
       }
       return {
         provider: 'stripe',
@@ -176,6 +182,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         items: [{ price: priceId }],
         metadata: { userId: input.userId, planType: input.planType },
       })
+      assertNoStripeError(sub, 'Failed to create subscription')
       return {
         id: String(sub.id ?? ''),
         customerId: typeof sub.customer === 'string' ? sub.customer : null,
@@ -185,7 +192,8 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
     },
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
-      await stripePost(config, `/subscriptions/${encodeURIComponent(subscriptionId)}`, { cancel_at_period_end: true })
+      const result = await stripePost(config, `/subscriptions/${encodeURIComponent(subscriptionId)}`, { cancel_at_period_end: true })
+      assertNoStripeError(result, 'Failed to cancel subscription')
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {
@@ -195,11 +203,12 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
     },
 
     async refund(paymentId: string, opts?: RefundOptions): Promise<void> {
-      await stripePost(config, '/refunds', {
+      const result = await stripePost(config, '/refunds', {
         payment_intent: paymentId,
         ...(opts?.amountMinor != null ? { amount: opts.amountMinor } : {}),
         ...(opts?.reason ? { reason: opts.reason } : {}),
       })
+      assertNoStripeError(result, 'Failed to create refund')
     },
 
     async verifyWebhookSignature(rawBody: Buffer | string, signatureHeader: string): Promise<boolean> {

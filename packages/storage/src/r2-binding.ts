@@ -45,11 +45,11 @@ export class R2BindingStorageProvider implements ObjectStorageProvider {
     body: ReadableStream | Buffer | Uint8Array | string,
     opts?: PutObjectOptions,
   ): Promise<void> {
-    const value = body instanceof Uint8Array || body instanceof ArrayBuffer
-      ? body
-      : body
-    await this.bucket.put(key, value as Parameters<R2Bucket['put']>[1], {
-      ...(opts?.contentType ? { httpMetadata: { contentType: opts.contentType } } : {}),
+    await this.bucket.put(key, body as Parameters<R2Bucket['put']>[1], {
+      httpMetadata: {
+        ...(opts?.contentType ? { contentType: opts.contentType } : {}),
+        ...(opts?.cacheControl ? { cacheControl: opts.cacheControl } : {}),
+      },
       ...(opts?.metadata ? { customMetadata: opts.metadata } : {}),
     })
   }

@@ -40,5 +40,8 @@ export function providerIdToDbProvider(id: PaymentProviderId): string {
 
 export function dbProviderToProviderId(dbProvider: string): PaymentProviderId {
   const normalized = normalizeProviderId(dbProvider)
-  return normalized ?? 'stripe'
+  if (!normalized) {
+    throw new Error(`Unrecognized payment provider in database: ${String(dbProvider)}`)
+  }
+  return normalized
 }

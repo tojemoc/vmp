@@ -1474,8 +1474,9 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   }
 
   // Fetch object via storage provider (preferred) or public R2 URL fallback.
+  const isManifest = objectPath.endsWith('.m3u8')
   const rangeHeader = request.headers.get('Range')
-  const byteRange = parseHttpRangeHeader(rangeHeader)
+  const byteRange = isManifest ? undefined : parseHttpRangeHeader(rangeHeader)
   const storage = getObjectStorage(env)
   let upstreamResponse: Response
 
@@ -1488,7 +1489,7 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
   } else if (env.R2_BASE_URL) {
     const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`)
     const upstreamHeaders = new Headers()
-    if (rangeHeader) upstreamHeaders.set('Range', rangeHeader)
+    if (rangeHeader && !isManifest) upstreamHeaders.set('Range', rangeHeader)
     upstreamResponse = await fetch(upstreamUrl, { method: request.method, headers: upstreamHeaders })
   } else {
     return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
@@ -1549,13 +1550,15 @@ async function handleVideoProxy(request: any, env: any, corsHeaders: any, ctx: a
     const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)
     if (cacheControl) headers.set('Cache-Control', cacheControl)
     headers.delete('Content-Length')
+    headers.delete('Content-Range')
+    headers.delete('Accept-Ranges')
     for (const [k, v] of Object.entries(corsHeaders as CorsHeaders)) headers.set(k, v)
-    logRequest(request.method, requestUrl.pathname, upstreamResponse.status, Date.now() - reqStart, {
+    logRequest(request.method, requestUrl.pathname, 200, Date.now() - reqStart, {
       video_id: proxyVideoId,
       manifest_type: manifestType ?? 'segment',
       preview_enforced: effectivePreviewUntil !== null,
     })
-    return new Response(rewrittenManifest, { status: upstreamResponse.status, headers })
+    return new Response(rewrittenManifest, { status: 200, headers })
   }
   const headers = new Headers(upstreamResponse.headers)
   const cacheControl = getVideoProxyCacheControl(objectPath, manifestType)

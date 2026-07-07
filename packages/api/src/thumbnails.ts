@@ -205,7 +205,10 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
 
   try {
     // Store the original with its actual MIME type / extension.
-    await storage.putObject(origKey, sourceBuffer, { contentType: origContentType })
+    await storage.putObject(origKey, sourceBuffer, {
+      contentType: origContentType,
+      cacheControl: THUMBNAIL_CACHE_CONTROL,
+    })
     writtenKeys.push(origKey)
     thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`
 
@@ -226,7 +229,10 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
       await storage.putObject(
         variantKey,
         await blob.arrayBuffer(),
-        { contentType: blob.type || 'image/jpeg' },
+        {
+          contentType: blob.type || 'image/jpeg',
+          cacheControl: THUMBNAIL_CACHE_CONTROL,
+        },
       )
       writtenKeys.push(variantKey)
       thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`
@@ -242,7 +248,7 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     const rowsChanged = Number(result.meta?.changes ?? 0)
     if (rowsChanged === 0) {
       if (storage.deleteObjects) {
-        await storage.deleteObjects(writtenKeys)
+        await storage.deleteObjects(writtenKeys).catch(() => {})
       } else {
         await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)))
       }

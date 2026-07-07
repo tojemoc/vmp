@@ -42,21 +42,14 @@ function bodyToWebStream(body: unknown): ReadableStream | null {
   return new Response(body as BodyInit).body
 }
 
-async function readBodyAsBuffer(body: unknown): Promise<ArrayBuffer | Uint8Array | string> {
-  if (!body) return new Uint8Array()
-  if (typeof body === 'string') return body
-  if (body instanceof Uint8Array) return body
-  if (body instanceof ArrayBuffer) return body
-  if (typeof Readable !== 'undefined' && body instanceof Readable) {
-    const chunks: Buffer[] = []
-    for await (const chunk of body) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    }
-    return Buffer.concat(chunks)
+function toS3PutBody(body: ReadableStream | Buffer | Uint8Array | string) {
+  if (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array) {
+    return body
   }
-  const stream = bodyToWebStream(body)
-  if (!stream) return new Uint8Array()
-  return new Response(stream).arrayBuffer()
+  if (body instanceof ReadableStream) {
+    return Readable.fromWeb(body as import('stream/web').ReadableStream)
+  }
+  throw new Error('Unsupported putObject body type')
 }
 
 function toObjectMetadata(key: string, head: {
@@ -142,13 +135,13 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
     body: ReadableStream | Buffer | Uint8Array | string,
     opts?: PutObjectOptions,
   ): Promise<void> {
-    const payload = await readBodyAsBuffer(body)
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        Body: payload instanceof ArrayBuffer ? Buffer.from(payload) : payload,
+        Body: toS3PutBody(body),
         ContentType: opts?.contentType,
+        CacheControl: opts?.cacheControl,
         Metadata: opts?.metadata,
       }),
     )

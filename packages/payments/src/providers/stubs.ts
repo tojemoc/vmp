@@ -11,11 +11,11 @@ import type {
 } from '../types.js'
 
 const STUB_CAPABILITIES: PaymentProviderCapabilities = {
-  newSubscriptions: true,
+  newSubscriptions: false,
   migrationOnly: false,
-  recurringPayments: true,
-  refunds: true,
-  webhooks: true,
+  recurringPayments: false,
+  refunds: false,
+  webhooks: false,
 }
 
 function stubProvider(id: 'gopay' | 'comgate', label: string): PaymentProvider {
@@ -44,5 +44,3 @@ export function createGoPayProvider(_config: unknown): PaymentProvider {
 export function createComgateProvider(_config: unknown): PaymentProvider {
   return stubProvider('comgate', 'Comgate')
 }
-
-export type { PaymentProvider, CheckoutSession, Subscription, PaymentCustomer }

@@ -1,5 +1,7 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import type { ObjectStorageProvider } from './types.js'
 
 function trimTrailingSlashes(value: string): string {
@@ -28,8 +30,8 @@ export async function uploadLocalFile(
   key: string,
   opts?: { contentType?: string },
 ): Promise<void> {
-  const body = await readFile(localFile)
   const contentType = opts?.contentType ?? guessContentType(localFile)
+  const body = Readable.toWeb(createReadStream(localFile)) as ReadableStream
   await storage.putObject(key, body, { contentType })
 }
 

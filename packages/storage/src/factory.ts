@@ -70,7 +70,7 @@ export function createStorageProviderFromEnv(env: NodeJS.ProcessEnv = process.en
       endpoint: env.B2_ENDPOINT ?? env.S3_ENDPOINT,
       accessKeyId: env.B2_ACCESS_KEY_ID,
       secretAccessKey: env.B2_SECRET_ACCESS_KEY,
-      forcePathStyle: env.S3_FORCE_PATH_STYLE === '1',
+      ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
     })
   }
 
@@ -83,7 +83,7 @@ export function createStorageProviderFromEnv(env: NodeJS.ProcessEnv = process.en
       endpoint: env.S3_ENDPOINT,
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-      forcePathStyle: env.S3_FORCE_PATH_STYLE === '1',
+      ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
     })
   }
 
@@ -94,6 +94,6 @@ export function createStorageProviderFromEnv(env: NodeJS.ProcessEnv = process.en
     endpoint: env.S3_ENDPOINT ?? env.R2_ENDPOINT,
     accessKeyId: env.R2_ACCESS_KEY_ID ?? env.AWS_ACCESS_KEY_ID,
     secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? env.AWS_SECRET_ACCESS_KEY,
-    forcePathStyle: env.S3_FORCE_PATH_STYLE === '1',
+    ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
   })
 }
