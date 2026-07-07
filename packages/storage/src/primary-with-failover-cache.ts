@@ -1,4 +1,5 @@
 import { isAvailabilityError } from './errors.js'
+import { assertAllSettled } from './settled-errors.js'
 import type {
   GetObjectOptions,
   GetObjectResult,
@@ -100,28 +101,59 @@ export class PrimaryWithFailoverCache implements ObjectStorageProvider {
   }
 
   async deleteObject(key: string): Promise<void> {
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       this.primary.deleteObject(key),
       this.cache.deleteObject(key),
     ])
+    assertAllSettled('deleteObject', results)
   }
 
   async deleteObjects(keys: string[]): Promise<void> {
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       this.primary.deleteObjects?.(keys) ?? Promise.all(keys.map((k) => this.primary.deleteObject(k))),
       this.cache.deleteObjects?.(keys) ?? Promise.all(keys.map((k) => this.cache.deleteObject(k))),
     ])
+    assertAllSettled('deleteObjects', results)
   }
 
   async listObjects(prefix: string): Promise<ObjectMetadata[]> {
-    return this.primary.listObjects(prefix)
+    if (await this.primaryHealth.isHealthy()) {
+      try {
+        const result = await this.primary.listObjects(prefix)
+        await this.primaryHealth.recordSuccess()
+        return result
+      } catch (err) {
+        await this.primaryHealth.recordFailure(err)
+        if (!isAvailabilityError(err)) throw err
+      }
+    }
+    return await this.cache.listObjects(prefix)
   }
 
   async listObjectsPage(options: ListObjectsPageOptions): Promise<ListObjectsPageResult> {
-    if (this.primary.listObjectsPage) {
-      return this.primary.listObjectsPage(options)
+    if (await this.primaryHealth.isHealthy()) {
+      try {
+        if (this.primary.listObjectsPage) {
+          const result = await this.primary.listObjectsPage(options)
+          await this.primaryHealth.recordSuccess()
+          return result
+        }
+        const objects = await this.primary.listObjects(options.prefix ?? '')
+        await this.primaryHealth.recordSuccess()
+        return {
+          objects,
+          prefixes: [],
+          truncated: false,
+        }
+      } catch (err) {
+        await this.primaryHealth.recordFailure(err)
+        if (!isAvailabilityError(err)) throw err
+      }
     }
-    const objects = await this.primary.listObjects(options.prefix ?? '')
+    if (this.cache.listObjectsPage) {
+      return this.cache.listObjectsPage(options)
+    }
+    const objects = await this.cache.listObjects(options.prefix ?? '')
     return {
       objects,
       prefixes: [],

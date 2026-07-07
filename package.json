@@ -17,7 +17,7 @@
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,vue,js,mjs,cjs,json,md}\"",
     "knip": "knip",
     "typecheck": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/storage && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/api-node && npm run typecheck --workspace=@vmp/web",
-    "typecheck:deploy": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web && npm run typecheck:scripts --workspace=@vmp/web && npm run build:sw-push --workspace=@vmp/web && npm run verify:deploy --workspace=@vmp/api-node",
+    "typecheck:deploy": "npm run typecheck --workspace=@vmp/shared && npm run typecheck --workspace=@vmp/storage && npm run typecheck --workspace=@vmp/api && npm run typecheck --workspace=@vmp/web && npm run typecheck:scripts --workspace=@vmp/web && npm run build:sw-push --workspace=@vmp/web && npm run verify:deploy --workspace=@vmp/api-node",
     "verify:api-node": "npm run verify:deploy --workspace=@vmp/api-node",
     "deploy:api": "npm run deploy --workspace=@vmp/api",
     "deploy:web": "npm run deploy --workspace=@vmp/web",
