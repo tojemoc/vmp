@@ -1282,7 +1282,8 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       markPackagingFailed(String(reg.jobId), msg)
-      json(res, { error: msg }, 502)
+      console.error('[supervisor] Failed to enqueue packaging job:', msg)
+      json(res, { error: 'Failed to enqueue packaging job' }, 502)
       return
     }
     json(res, { ok: true, jobId: reg.jobId }, 202)
