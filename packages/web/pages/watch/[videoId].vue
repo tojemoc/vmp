@@ -614,7 +614,7 @@ import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/us
 import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
-import { checkPlaylistAvailability, isPlaybackUnavailableCode } from '~/utils/playlistAvailability'
+import { checkPlaylistAvailability, isPlaybackUnavailableCode, isPlaybackUnavailableError, PlaybackUnavailableError } from '~/utils/playlistAvailability'
 import strings from '~/utils/strings'
 import { routeParamMatchesVideoMeta } from '~/utils/watchRouteMeta'
 import { usePushAttribution } from '~/composables/usePushAttribution'
@@ -1534,6 +1534,11 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
 
   ensureCurrent()
 
+  const prevAccessNotFound = accessNotFound.value
+  const prevPlaybackUnavailable = playbackUnavailable.value
+  const prevRateLimited = rateLimited.value
+  const prevVideoNotFound = videoNotFound.value
+
   accessNotFound.value = false
   playbackUnavailable.value = false
   autoplayBlocked.value = false
@@ -1546,10 +1551,10 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   playingOffline.value = false
   const preserveWatchShell = Boolean(
     videoData.value &&
-    !accessNotFound.value &&
-    !playbackUnavailable.value &&
-    !videoNotFound.value &&
-    !rateLimited.value
+    !prevAccessNotFound &&
+    !prevPlaybackUnavailable &&
+    !prevVideoNotFound &&
+    !prevRateLimited
   )
   isNavigatingToAnotherVideo.value = preserveWatchShell
   if (!preserveWatchShell) {
@@ -1655,7 +1660,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     }
   } catch (e: any) {
     if (e.name === 'AbortError' || options.signal?.aborted || !guard()) return
-    if (e.message === strings.playbackUnavailableMessage) {
+    if (isPlaybackUnavailableError(e)) {
       error.value = null
       playbackUnavailable.value = true
       await loadBrowseRecommendations(options.signal)
@@ -1779,7 +1784,7 @@ const initializeVideoElement = async (
     if (!isCurrentInvocation()) return
     error.value = null
     playbackUnavailable.value = true
-    void loadBrowseRecommendations()
+    void loadBrowseRecommendations(signal)
   }
   handleWaiting  = () => { if (isCurrentInvocation()) buffering.value = true }
   handlePlaying  = () => { if (isCurrentInvocation()) buffering.value = false }
@@ -1848,7 +1853,7 @@ const initializeVideoElement = async (
       }
       const onError = () => {
         cleanup()
-        reject(new Error(strings.playbackUnavailableMessage))
+        reject(new PlaybackUnavailableError())
       }
       const onSignalAbort = () => {
         cleanup()

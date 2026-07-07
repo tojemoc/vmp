@@ -823,6 +823,7 @@ async function checkAndApplyPodcastHostUpgrade() {
 }
 
 function dashboardHtml() {
+  const dashboardAuthRequired = Boolean(dashboardSecret)
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -886,6 +887,7 @@ function dashboardHtml() {
   </section>
   </div>
   <script>
+    const dashboardAuthRequired = ${dashboardAuthRequired ? 'true' : 'false'}
     function supervisorToken() {
       return sessionStorage.getItem('vmp_supervisor_token') || ''
     }
@@ -918,8 +920,19 @@ function dashboardHtml() {
       showDashboard()
       tick()
     })
-    if (!supervisorToken()) showAuthGate('')
-    else showDashboard()
+    function startDashboardRefresh() {
+      tick()
+      setInterval(tick, 3000)
+    }
+    if (!dashboardAuthRequired) {
+      showDashboard()
+      startDashboardRefresh()
+    } else if (!supervisorToken()) {
+      showAuthGate('')
+    } else {
+      showDashboard()
+      startDashboardRefresh()
+    }
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, '&amp;')
@@ -1004,8 +1017,10 @@ function dashboardHtml() {
       try {
         const r = await fetch('/api/status', { headers: supervisorAuthHeaders() })
         if (r.status === 401) {
-          sessionStorage.removeItem('vmp_supervisor_token')
-          showAuthGate('Invalid or missing dashboard secret.')
+          if (dashboardAuthRequired) {
+            sessionStorage.removeItem('vmp_supervisor_token')
+            showAuthGate('Invalid or missing dashboard secret.')
+          }
           return
         }
         const d = await r.json()
@@ -1043,10 +1058,6 @@ function dashboardHtml() {
       } catch (e) {
         document.getElementById('pipeline').textContent = 'Error: ' + e
       }
-    }
-    if (supervisorToken()) {
-      tick()
-      setInterval(tick, 3000)
     }
   </script>
 </body>

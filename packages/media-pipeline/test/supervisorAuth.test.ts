@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  isDashboardAuthConfigured,
   isExternallyAuthenticatedPath,
   isLoopbackHost,
   requiresDashboardAuth,
@@ -18,9 +19,15 @@ describe('supervisorAuth', () => {
     assert.equal(isExternallyAuthenticatedPath('/api/podcast-preview-rebuild', 'POST'), true)
     assert.equal(isExternallyAuthenticatedPath('/api/packaging/enqueue', 'POST'), true)
     assert.equal(isExternallyAuthenticatedPath('/vmp/api/packagerCallback/success', 'POST'), true)
+    assert.equal(requiresDashboardAuth('/', 'GET'), false)
     assert.equal(requiresDashboardAuth('/api/podcast-preview-rebuild', 'POST'), false)
     assert.equal(requiresDashboardAuth('/api/status', 'GET'), true)
     assert.equal(requiresDashboardAuth('/api/jobs/foo/stop', 'POST'), true)
+  })
+
+  it('reports whether dashboard auth is configured', () => {
+    assert.equal(isDashboardAuthConfigured(''), false)
+    assert.equal(isDashboardAuthConfigured('  secret  '), true)
   })
 
   it('verifies dashboard bearer token with timing-safe compare', () => {

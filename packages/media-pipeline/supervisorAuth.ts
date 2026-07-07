@@ -39,9 +39,14 @@ export function isExternallyAuthenticatedPath(pathname: string, method: string):
  * when configured (mandatory on non-loopback bind addresses).
  */
 export function requiresDashboardAuth(pathname: string, method: string): boolean {
+  if (pathname === '/' && method === 'GET') return false
   if (pathname === '/health' && method === 'GET') return false
   if (isExternallyAuthenticatedPath(pathname, method)) return false
   return true
+}
+
+export function isDashboardAuthConfigured(dashboardSecret: string): boolean {
+  return Boolean(dashboardSecret.trim())
 }
 
 export function extractSupervisorToken(req: IncomingMessage): string {
