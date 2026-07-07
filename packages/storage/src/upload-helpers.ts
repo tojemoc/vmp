@@ -30,9 +30,10 @@ export async function uploadLocalFile(
   key: string,
   opts?: { contentType?: string },
 ): Promise<void> {
+  const fileStat = await stat(localFile)
   const contentType = opts?.contentType ?? guessContentType(localFile)
   const body = Readable.toWeb(createReadStream(localFile)) as ReadableStream
-  await storage.putObject(key, body, { contentType })
+  await storage.putObject(key, body, { contentType, contentLength: fileStat.size })
 }
 
 export async function uploadLocalDirectory(

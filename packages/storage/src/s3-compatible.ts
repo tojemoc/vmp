@@ -52,6 +52,17 @@ function toS3PutBody(body: ReadableStream | Buffer | Uint8Array | string) {
   throw new Error('Unsupported putObject body type')
 }
 
+function resolveContentLength(
+  body: ReadableStream | Buffer | Uint8Array | string,
+  opts?: PutObjectOptions,
+): number | undefined {
+  if (opts?.contentLength != null) return opts.contentLength
+  if (typeof body === 'string') return Buffer.byteLength(body)
+  if (Buffer.isBuffer(body)) return body.length
+  if (body instanceof Uint8Array) return body.byteLength
+  return undefined
+}
+
 function toObjectMetadata(key: string, head: {
   ContentLength?: number
   ETag?: string
@@ -135,11 +146,13 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
     body: ReadableStream | Buffer | Uint8Array | string,
     opts?: PutObjectOptions,
   ): Promise<void> {
+    const contentLength = resolveContentLength(body, opts)
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: toS3PutBody(body),
+        ...(contentLength != null ? { ContentLength: contentLength } : {}),
         ContentType: opts?.contentType,
         CacheControl: opts?.cacheControl,
         Metadata: opts?.metadata,
@@ -157,13 +170,18 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       await this.deleteObject(keys[0]!)
       return
     }
-    const response = await this.client.send(
-      new DeleteObjectsCommand({
-        Bucket: this.bucket,
-        Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: false },
-      }),
-    )
-    const errors = response.Errors ?? []
+    const BATCH_SIZE = 1000
+    const errors: { Key?: string; Code?: string; Message?: string }[] = []
+    for (let offset = 0; offset < keys.length; offset += BATCH_SIZE) {
+      const batch = keys.slice(offset, offset + BATCH_SIZE)
+      const response = await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: false },
+        }),
+      )
+      if (response.Errors?.length) errors.push(...response.Errors)
+    }
     if (errors.length > 0) {
       const detail = errors
         .map((e) => `${e.Key ?? '?'}: ${e.Code ?? 'Error'} ${e.Message ?? ''}`.trim())

@@ -10,6 +10,8 @@ export interface PutObjectOptions {
   contentType?: string
   metadata?: Record<string, string>
   cacheControl?: string
+  /** Known object size in bytes; required for some S3-compatible stream uploads. */
+  contentLength?: number
 }
 
 export interface ByteRange {
