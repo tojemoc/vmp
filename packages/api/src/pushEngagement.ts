@@ -4,7 +4,7 @@
 
 import { requireRole } from './auth.js'
 import { getPushDeliveryQueue, QUEUE_SEND_BATCH_MAX } from './queueBindings.js'
-import { getSetting, setSettings } from './settingsStore.js'
+import { getSetting, getSettings, setSettings } from './settingsStore.js'
 import { sendPushNotification } from './webpush.js'
 
 function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
@@ -53,31 +53,31 @@ export async function isPushTierDeliveryEnabled(env: any) {
 }
 
 export async function getPushTierSettings(env: any) {
-  const [
-    immediateMax,
-    fastMax,
-    slowMax,
-    immediateDelay,
-    fastDelay,
-    slowDelay,
-    dormantDelay,
-    dormantSkip,
-    maxDelayHours,
-    minCampaigns,
-    dormantCampaigns,
-  ] = await Promise.all([
-    getSetting(env, 'push_tier_immediate_max_seconds', { defaultValue: '900' }),
-    getSetting(env, 'push_tier_fast_max_seconds', { defaultValue: '3600' }),
-    getSetting(env, 'push_tier_slow_max_seconds', { defaultValue: '14400' }),
-    getSetting(env, 'push_tier_immediate_delay_seconds', { defaultValue: '0' }),
-    getSetting(env, 'push_tier_fast_delay_seconds', { defaultValue: '1800' }),
-    getSetting(env, 'push_tier_slow_delay_seconds', { defaultValue: '7200' }),
-    getSetting(env, 'push_tier_dormant_delay_seconds', { defaultValue: '21600' }),
-    getSetting(env, 'push_tier_dormant_skip', { defaultValue: '0' }),
-    getSetting(env, 'push_tier_max_delay_hours', { defaultValue: '6' }),
-    getSetting(env, 'push_tier_min_campaigns_unknown', { defaultValue: '2' }),
-    getSetting(env, 'push_tier_dormant_campaigns', { defaultValue: '3' }),
-  ])
+  const keys = [
+    'push_tier_immediate_max_seconds',
+    'push_tier_fast_max_seconds',
+    'push_tier_slow_max_seconds',
+    'push_tier_immediate_delay_seconds',
+    'push_tier_fast_delay_seconds',
+    'push_tier_slow_delay_seconds',
+    'push_tier_dormant_delay_seconds',
+    'push_tier_dormant_skip',
+    'push_tier_max_delay_hours',
+    'push_tier_min_campaigns_unknown',
+    'push_tier_dormant_campaigns',
+  ] as const
+  const values = await getSettings(env, keys, { defaultValue: null })
+  const immediateMax = values.push_tier_immediate_max_seconds ?? '900'
+  const fastMax = values.push_tier_fast_max_seconds ?? '3600'
+  const slowMax = values.push_tier_slow_max_seconds ?? '14400'
+  const immediateDelay = values.push_tier_immediate_delay_seconds ?? '0'
+  const fastDelay = values.push_tier_fast_delay_seconds ?? '1800'
+  const slowDelay = values.push_tier_slow_delay_seconds ?? '7200'
+  const dormantDelay = values.push_tier_dormant_delay_seconds ?? '21600'
+  const dormantSkip = values.push_tier_dormant_skip ?? '0'
+  const maxDelayHours = values.push_tier_max_delay_hours ?? '6'
+  const minCampaigns = values.push_tier_min_campaigns_unknown ?? '2'
+  const dormantCampaigns = values.push_tier_dormant_campaigns ?? '3'
   return {
     immediateMaxSeconds: Number.parseInt(String(immediateMax), 10) || 900,
     fastMaxSeconds: Number.parseInt(String(fastMax), 10) || 3600,
@@ -722,10 +722,10 @@ export async function ensurePushTierDefaultSettings(env: any) {
     ['push_tier_min_campaigns_unknown', '2'],
     ['push_tier_dormant_campaigns', '3'],
   ]
-  const missing: [string, string][] = []
-  for (const [key, value] of defaults) {
-    const existing = await getSetting(env, key)
-    if (existing == null || existing === '') missing.push([key, value])
-  }
+  const existingSettings = await getSettings(env, defaults.map(([key]) => key), { defaultValue: null })
+  const missing: [string, string][] = defaults.filter(([key]) => {
+    const existing = existingSettings[key]
+    return existing == null || existing === ''
+  })
   if (missing.length) await setSettings(env, missing)
 }
