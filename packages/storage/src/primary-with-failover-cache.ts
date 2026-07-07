@@ -58,10 +58,17 @@ export class PrimaryWithFailoverCache implements ObjectStorageProvider {
   }
 
   async getSignedReadUrl(key: string, opts?: { expiresInSeconds?: number }): Promise<string> {
-    if (await this.primary.headObject(key)) {
-      return this.primary.getSignedReadUrl(key, opts)
+    if (await this.primaryHealth.isHealthy()) {
+      try {
+        const head = await this.primary.headObject(key)
+        await this.primaryHealth.recordSuccess()
+        if (head) return await this.primary.getSignedReadUrl(key, opts)
+      } catch (err) {
+        await this.primaryHealth.recordFailure(err)
+        if (!isAvailabilityError(err)) throw err
+      }
     }
-    return this.cache.getSignedReadUrl(key, opts)
+    return await this.cache.getSignedReadUrl(key, opts)
   }
 
   async getSignedWriteUrl(key: string, opts?: { expiresInSeconds?: number }): Promise<string> {
@@ -75,12 +82,12 @@ export class PrimaryWithFailoverCache implements ObjectStorageProvider {
   ): Promise<void> {
     if (body instanceof ReadableStream) {
       const [primaryBody, cacheBody] = body.tee()
-      await this.primary.putObject(key, primaryBody, opts)
-      try {
-        await this.cache.putObject(key, cacheBody, opts)
-      } catch (err) {
-        this.logReplicationFailure(key, err)
-      }
+      await Promise.all([
+        this.primary.putObject(key, primaryBody, opts),
+        this.cache.putObject(key, cacheBody, opts).catch((err) => {
+          this.logReplicationFailure(key, err)
+        }),
+      ])
       return
     }
 

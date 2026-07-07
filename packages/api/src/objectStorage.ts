@@ -5,9 +5,16 @@ export type StorageEnv = PlaybackStorageEnv & {
   STORAGE?: ObjectStorageProvider
 }
 
+const playbackByEnv = new WeakMap<PlaybackStorageEnv, ObjectStorageProvider>()
+
 export function getObjectStorage(env: StorageEnv): ObjectStorageProvider | undefined {
   if (env.STORAGE) return env.STORAGE
-  return createPlaybackStorage(env)
+  const cached = playbackByEnv.get(env)
+  if (cached) return cached
+  const created = createPlaybackStorage(env)
+  if (!created) return undefined
+  playbackByEnv.set(env, created)
+  return created
 }
 
 export function hasObjectStorage(env: StorageEnv): boolean {

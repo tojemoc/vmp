@@ -38,4 +38,19 @@ describe('B2PrimaryHealthDO', () => {
     await doInstance.recordSuccess()
     assert.equal(await doInstance.isHealthy(), true)
   })
+
+  it('re-extends cooldown when failures continue after cooldown elapsed', async () => {
+    const doInstance = createDo()
+    for (let i = 0; i < B2_FAILURE_THRESHOLD; i++) {
+      await doInstance.recordFailure()
+    }
+    await doInstance.state.storage.put('health', {
+      consecutiveFailures: B2_FAILURE_THRESHOLD,
+      openedAt: Date.now() - 61_000,
+    })
+    assert.equal(await doInstance.isHealthy(), true)
+
+    await doInstance.recordFailure()
+    assert.equal(await doInstance.isHealthy(), false)
+  })
 })
