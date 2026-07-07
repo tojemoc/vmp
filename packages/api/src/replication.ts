@@ -17,6 +17,8 @@ const DEFAULT_BATCH_SIZE = 100
 const MAX_BATCH_SIZE = 500
 const CURSOR_ROW_LIMIT = 1000
 const REPLICATION_FETCH_TIMEOUT_MS = 10000
+const REPLICATION_MAX_ATTEMPTS = 3
+const REPLICATION_RETRY_BASE_DELAY_MS = 250
 const DEFAULT_MANUAL_PUSH_MAX_ROUNDS = 50
 const MAX_MANUAL_PUSH_MAX_ROUNDS = 200
 
@@ -38,22 +40,40 @@ async function postReplicationEventsToTarget(env: any, events: unknown[]): Promi
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
   }
-  let response: Response
-  try {
-    response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(REPLICATION_FETCH_TIMEOUT_MS),
-    })
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error(`Replication target request timed out after ${REPLICATION_FETCH_TIMEOUT_MS}ms`)
+  let response: Response | null = null
+  let lastError: Error | null = null
+  for (let attempt = 1; attempt <= REPLICATION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      response = await fetch(targetUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(REPLICATION_FETCH_TIMEOUT_MS),
+      })
+      break
+    } catch (error) {
+      const isTimeout = error instanceof Error && error.name === 'TimeoutError'
+      const isAbort = error instanceof Error && error.name === 'AbortError'
+      const isNetworkTypeError = error instanceof TypeError
+      if (isTimeout || isAbort || isNetworkTypeError) {
+        const reason = isTimeout
+          ? `timed out after ${REPLICATION_FETCH_TIMEOUT_MS}ms`
+          : isAbort
+            ? 'was aborted'
+            : 'failed due to a transient network error'
+        lastError = new Error(`Replication target request ${reason} (attempt ${attempt}/${REPLICATION_MAX_ATTEMPTS})`)
+        if (attempt < REPLICATION_MAX_ATTEMPTS) {
+          const backoffMs = REPLICATION_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1))
+          await new Promise((resolve) => setTimeout(resolve, backoffMs))
+          continue
+        }
+        break
+      }
+      throw error
     }
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Replication target request aborted')
-    }
-    throw error
+  }
+  if (!response) {
+    throw lastError ?? new Error('Replication target request failed before receiving a response')
   }
   const bodyText = await response.text()
   if (!response.ok) {
