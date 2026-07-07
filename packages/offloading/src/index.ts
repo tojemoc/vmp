@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   const mode = process.argv[2]
   if (!mode) {
     console.error('Usage: <cmd> <mode>')
-    console.error('Available modes: offload | demote-legacy | promote | trigger-promote')
+    console.error('Available modes: offload | demote | demote-legacy | promote | trigger-promote')
     process.exit(1)
   }
 

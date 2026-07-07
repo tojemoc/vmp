@@ -40,16 +40,16 @@ export class ObjectOffloadJob {
     for (const entry of listed) {
       if (signal?.aborted) break
 
-      const head = await hot.headObject(entry.key)
-      const lastModified = head?.lastModified
+      const head = entry.lastModified ? null : await hot.headObject(entry.key)
+      const lastModified = entry.lastModified ?? head?.lastModified
       if (!lastModified) {
         results.push({ key: entry.key, moved: false, skipped: 'missing_last_modified' })
         continue
       }
 
       const meta: ObjectMetadata = {
-        key: head.key,
-        size: head.size,
+        key: entry.key,
+        size: head?.size ?? entry.size,
         lastModified,
       }
 

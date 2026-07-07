@@ -57,6 +57,29 @@ export class RcloneProvider implements ObjectStorageProvider {
     })
   }
 
+  private spawnCatStream(args: string[], label: string): ReadableStream {
+    const child = spawn(this.binary, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+    let stderr = ''
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+    return new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        child.stdout.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
+        child.stdout.on('end', () => {
+          // Wait for process exit before closing so non-zero codes surface as errors.
+        })
+        child.on('error', (err) => controller.error(err))
+        child.on('close', (code) => {
+          if (code === 0) controller.close()
+          else controller.error(new Error(`${label} failed (${code}): ${stderr.slice(-400)}`))
+        })
+      },
+      cancel: () => {
+        child.kill()
+      },
+    })
+  }
+
   async getObject(key: string, opts?: GetObjectOptions): Promise<GetObjectResult | null> {
     const normalized = normalizeKey(key)
     const head = await this.headObject(normalized)
@@ -64,15 +87,13 @@ export class RcloneProvider implements ObjectStorageProvider {
 
     const args = ['cat', this.resolve(normalized)]
     if (opts?.range) {
-      const { offset, length } = opts.range
-      const end = length != null ? offset + length - 1 : ''
-      args.push('--http-headers', `Range: bytes=${offset}-${end}`)
+      args.push('--offset', String(opts.range.offset))
+      if (opts.range.length != null) {
+        args.push('--count', String(opts.range.length))
+      }
     }
 
-    const child = spawn(this.binary, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    const body = Readable.toWeb(child.stdout) as ReadableStream
-    child.stderr.on('data', () => {})
-    child.on('error', () => {})
+    const body = this.spawnCatStream(args, `cat ${normalized}`)
 
     const result: GetObjectResult = {
       body,

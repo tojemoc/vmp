@@ -6,6 +6,7 @@
 export const B2_HEALTH_DO_NAME = 'b2-primary-health'
 export const B2_FAILURE_THRESHOLD = 3
 export const B2_HEALTH_COOLDOWN_MS = 60_000
+export const B2_IS_HEALTHY_CACHE_TTL_MS = 2_000
 
 interface HealthState {
   consecutiveFailures: number
@@ -98,6 +99,8 @@ export interface B2HealthBinding {
 
 export function createDurableObjectHealthTracker(binding: B2HealthBinding) {
   const stub = binding.get(binding.idFromName(B2_HEALTH_DO_NAME))
+  let cachedHealthy: boolean | null = null
+  let cachedAt = 0
 
   async function call<T>(action: HealthAction): Promise<T> {
     const response = await stub.fetch('https://b2-health.internal/', {
@@ -113,15 +116,25 @@ export function createDurableObjectHealthTracker(binding: B2HealthBinding) {
 
   return {
     async isHealthy(): Promise<boolean> {
+      const now = Date.now()
+      if (cachedHealthy !== null && now - cachedAt < B2_IS_HEALTHY_CACHE_TTL_MS) {
+        return cachedHealthy
+      }
       try {
         const result = await call<{ healthy: boolean }>('isHealthy')
-        return result.healthy === true
+        cachedHealthy = result.healthy === true
+        cachedAt = now
+        return cachedHealthy
       } catch (err) {
         console.error('[b2-health] isHealthy failed, assuming healthy:', err)
+        cachedHealthy = true
+        cachedAt = now
         return true
       }
     },
     async recordFailure(): Promise<void> {
+      cachedHealthy = false
+      cachedAt = Date.now()
       try {
         await call('recordFailure')
       } catch (err) {
@@ -129,6 +142,8 @@ export function createDurableObjectHealthTracker(binding: B2HealthBinding) {
       }
     },
     async recordSuccess(): Promise<void> {
+      cachedHealthy = true
+      cachedAt = Date.now()
       try {
         await call('recordSuccess')
       } catch (err) {

@@ -1,4 +1,5 @@
 import { dedupeByKey } from './dedupeByKey.js'
+import { assertAllSettled } from './settled-errors.js'
 import type {
   GetObjectOptions,
   GetObjectResult,
@@ -40,17 +41,19 @@ export class TieredStorageProvider implements ObjectStorageProvider {
   }
 
   async deleteObject(key: string): Promise<void> {
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       this.hot.deleteObject(key),
       this.cold.deleteObject(key),
     ])
+    assertAllSettled('deleteObject', results)
   }
 
   async deleteObjects(keys: string[]): Promise<void> {
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       this.hot.deleteObjects?.(keys) ?? Promise.all(keys.map((k) => this.hot.deleteObject(k))),
       this.cold.deleteObjects?.(keys) ?? Promise.all(keys.map((k) => this.cold.deleteObject(k))),
     ])
+    assertAllSettled('deleteObjects', results)
   }
 
   async listObjects(prefix: string): Promise<ObjectMetadata[]> {
