@@ -8,12 +8,40 @@ import type {
   PutObjectOptions,
 } from './types.js'
 
+function trimLeadingSlashes(value: string): string {
+  let start = 0
+  while (start < value.length && value[start] === '/') start++
+  return start === 0 ? value : value.slice(start)
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end--
+  return end === value.length ? value : value.slice(0, end)
+}
+
 function normalizePrefix(value: string): string {
-  return value.replace(/^\/+/, '').replace(/\/+$/, '')
+  return trimTrailingSlashes(trimLeadingSlashes(value))
 }
 
 function normalizeKey(key: string): string {
-  return key.replace(/^\/+/, '')
+  return trimLeadingSlashes(key)
+}
+
+function collapseSlashes(path: string): string {
+  let out = ''
+  let prevSlash = false
+  for (let i = 0; i < path.length; i++) {
+    const ch = path[i]!
+    if (ch === '/') {
+      if (!prevSlash) out += ch
+      prevSlash = true
+    } else {
+      out += ch
+      prevSlash = false
+    }
+  }
+  return out
 }
 
 export interface RcloneProviderOptions {
@@ -27,7 +55,7 @@ export class RcloneProvider implements ObjectStorageProvider {
   private readonly binary: string
 
   constructor(options: RcloneProviderOptions) {
-    this.root = options.root.replace(/\/+$/, '')
+    this.root = trimTrailingSlashes(options.root)
     this.binary = options.binary ?? 'rclone'
     this.id = `rclone:${this.root}`
   }
@@ -205,7 +233,7 @@ export class RcloneProvider implements ObjectStorageProvider {
     return rows
       .filter((row) => !row.IsDir)
       .map((row) => {
-        const key = `${base}/${row.Path || row.Name}`.replace(/\/{2,}/g, '/')
+        const key = collapseSlashes(`${base}/${row.Path || row.Name}`)
         const entry: ObjectMetadata = { key, size: Number(row.Size ?? 0) }
         if (row.ModTime) entry.lastModified = new Date(row.ModTime)
         return entry
