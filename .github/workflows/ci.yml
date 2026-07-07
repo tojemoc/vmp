@@ -39,15 +39,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
-          package-manager-cache: false
+          cache: npm
 
       - uses: nrwl/nx-set-shas@v4
-
-      - name: Mount npm cache
-        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
-        with:
-          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
-          path: ~/.npm
 
       - name: Install dependencies (npm ci with npm install fallback)
         run: |
@@ -73,13 +67,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
-          package-manager-cache: false
-
-      - name: Mount npm cache
-        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
-        with:
-          key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
-          path: ~/.npm
+          cache: npm
 
       - name: Install dependencies (npm ci with npm install fallback)
         run: |
