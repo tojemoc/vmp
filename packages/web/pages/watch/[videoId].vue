@@ -80,6 +80,42 @@
         </div>
       </div>
 
+      <!-- Playback temporarily unavailable -->
+      <div v-else-if="playbackUnavailable" class="max-w-6xl mx-auto space-y-8">
+        <div class="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-8">
+          <div class="flex items-start space-x-4">
+            <div class="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center">
+              <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="flex-1">
+              <h1 class="text-2xl font-bold text-amber-900 dark:text-amber-100 mb-2">{{ strings.playbackUnavailableTitle }}</h1>
+              <p class="text-amber-800 dark:text-amber-300 mb-6">{{ strings.playbackUnavailableMessage }}</p>
+              <NuxtLink
+                to="/"
+                class="inline-flex items-center px-4 py-2 text-sm font-semibold text-amber-900 dark:text-amber-100 bg-white dark:bg-amber-950 border border-amber-300 dark:border-amber-700 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900 transition-colors"
+              >
+                {{ strings.backToHomepage }}
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="recommendations.length" class="space-y-4">
+          <h2 class="text-lg font-bold text-gray-900 dark:text-white px-2">{{ strings.playbackUnavailableSuggestions }}</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <VideoCard
+              v-for="rec in recommendations"
+              :key="rec.id"
+              :video="rec"
+              :show-description="true"
+              :show-relative-timestamp="true"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Error State -->
       <div v-else-if="error" class="max-w-4xl mx-auto">
         <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6">
@@ -578,6 +614,7 @@ import { isLiveRecommendation, useMoqLivePlayerControls } from '~/composables/us
 import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate'
 import { sizeUrl } from '~/composables/useThumbnail'
 import { renderMarkdownToHtml } from '~/utils/markdown'
+import { checkPlaylistAvailability, isPlaybackUnavailableCode } from '~/utils/playlistAvailability'
 import strings from '~/utils/strings'
 import { routeParamMatchesVideoMeta } from '~/utils/watchRouteMeta'
 import { usePushAttribution } from '~/composables/usePushAttribution'
@@ -754,6 +791,7 @@ const rateLimited         = ref(false)
 const rateLimitRetryAfter = ref<number | null>(null)
 const rateLimitCurrent    = ref(0)
 const rateLimitLimit      = ref(0)
+const playbackUnavailable = ref(false)
 const autoplayBlocked     = ref(false)
 const autoplayMuting      = ref(false)
 const autoplayPlayError   = ref(false)
@@ -1497,6 +1535,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   ensureCurrent()
 
   accessNotFound.value = false
+  playbackUnavailable.value = false
   autoplayBlocked.value = false
   autoplayMuting.value = false
   buffering.value = false
@@ -1508,6 +1547,7 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
   const preserveWatchShell = Boolean(
     videoData.value &&
     !accessNotFound.value &&
+    !playbackUnavailable.value &&
     !videoNotFound.value &&
     !rateLimited.value
   )
@@ -1584,6 +1624,18 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     }
     const playlistUrl = videoData.value?.video?.playlistUrl
     if (playlistUrl && !rateLimited.value) {
+      const availability = await checkPlaylistAvailability(playlistUrl, options.signal)
+      ensureCurrent()
+      if (!availability.ok && isPlaybackUnavailableCode(availability.code)) {
+        playbackUnavailable.value = true
+        await loadBrowseRecommendations(options.signal)
+        ensureCurrent()
+        loading.value = false
+        isNavigatingToAnotherVideo.value = false
+        return
+      }
+    }
+    if (playlistUrl && !rateLimited.value) {
       error.value = null
       let resolvedPlaylist = playlistUrl
       if (videoData.value?.hasAccess) {
@@ -1603,7 +1655,13 @@ const loadVideoForRoute = async (targetVideoId: string, options: LoadVideoForRou
     }
   } catch (e: any) {
     if (e.name === 'AbortError' || options.signal?.aborted || !guard()) return
-    error.value = e.message
+    if (e.message === strings.playbackUnavailableMessage) {
+      error.value = null
+      playbackUnavailable.value = true
+      await loadBrowseRecommendations(options.signal)
+    } else {
+      error.value = e.message
+    }
     loading.value = false
     isNavigatingToAnotherVideo.value = false
   }
@@ -1719,7 +1777,9 @@ const initializeVideoElement = async (
   handleLoadedMetadata = () => { console.log('Video metadata loaded') }
   handleMediaError = () => {
     if (!isCurrentInvocation()) return
-    error.value = strings.videoPlaybackError
+    error.value = null
+    playbackUnavailable.value = true
+    void loadBrowseRecommendations()
   }
   handleWaiting  = () => { if (isCurrentInvocation()) buffering.value = true }
   handlePlaying  = () => { if (isCurrentInvocation()) buffering.value = false }
@@ -1788,7 +1848,7 @@ const initializeVideoElement = async (
       }
       const onError = () => {
         cleanup()
-        reject(new Error(strings.mediaFailedToLoad))
+        reject(new Error(strings.playbackUnavailableMessage))
       }
       const onSignalAbort = () => {
         cleanup()

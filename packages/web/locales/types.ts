@@ -218,6 +218,9 @@ export type StringsDefinition = {
   videoNotFoundTitle: string
   videoNotFoundMessage: string
   videoNotFoundSuggestions: string
+  playbackUnavailableTitle: string
+  playbackUnavailableMessage: string
+  playbackUnavailableSuggestions: string
   rateLimitExceeded: string
   mediaFailedToLoad: string
   liveCanvasUnavailable: string

@@ -106,6 +106,8 @@ Expose the supervisor HTTP port to the Worker only (VPN, SSH tunnel, or reverse 
 
 `https://your-media-host/vmp/api/podcast-preview-rebuild`
 
+When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `VMP_SUPERVISOR_DASHBOARD_SECRET` and enter it in the dashboard unlock form. Webhook paths remain authenticated via HMAC (`VMP_WEBHOOK_SECRET`); packaging callbacks use their own secrets.
+
 ## Environment
 
 ### Encore
@@ -140,6 +142,7 @@ Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** f
 | Variable | Purpose |
 | --- | --- |
 | `VMP_WEBHOOK_SECRET` | Same as `podcast_rebuild_webhook_secret` in D1 |
+| `VMP_SUPERVISOR_DASHBOARD_SECRET` | Protects dashboard + `/api/status` + job control (required when `VMP_UI_HOST` is not loopback) |
 | `VMP_API_BASE_URL` | Worker base URL for pipeline status callbacks |
 | `VMP_API_PIPELINE_SECRET` | Shared HMAC with Worker `VMP_API_PIPELINE_SECRET` |
 | `VMP_UI_HOST` / `VMP_UI_PORT` | Supervisor dashboard + webhook bind (default `127.0.0.1:8788`) |

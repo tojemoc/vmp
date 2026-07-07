@@ -4,6 +4,7 @@
  *
  * Environment:
  *   VMP_WEBHOOK_SECRET     — HMAC secret (same as admin_settings); required unless VMP_REQUIRE_WEBHOOK_SECRET=0
+ *   VMP_SUPERVISOR_DASHBOARD_SECRET — protects dashboard + job control (required when VMP_UI_HOST is not loopback)
  *   VMP_UI_HOST            — default 127.0.0.1
  *   VMP_UI_PORT            — default 8788
  *   VMP_PIPELINE_SCRIPT    — default: pipeline_watch.js next to this file
@@ -30,6 +31,12 @@ import {
   registerPackagingJob,
 } from './packagingRegistry.js'
 import { enqueuePackagerJob } from './packagingQueue.js'
+import {
+  isLoopbackHost,
+  REBUILD_WEBHOOK_PATHS,
+  requiresDashboardAuth,
+  verifyDashboardSecret,
+} from './supervisorAuth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const pkgRoot = __dirname
@@ -53,6 +60,14 @@ if (!packagerSecret) {
 
 const uiHost = process.env.VMP_UI_HOST || '127.0.0.1'
 const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10)
+const dashboardSecret = (process.env.VMP_SUPERVISOR_DASHBOARD_SECRET || '').trim()
+if (!isLoopbackHost(uiHost) && !dashboardSecret) {
+  console.error(
+    '[media-pipeline] VMP_SUPERVISOR_DASHBOARD_SECRET is required when VMP_UI_HOST is not loopback (current: ' +
+    `${uiHost}). Webhooks stay public with HMAC; set a dashboard secret for /api/status and job control.`,
+  )
+  process.exit(1)
+}
 const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
 const MAX_GPU_JOBS = Math.max(1, Number.parseInt(process.env.VMP_GPU_CONCURRENCY || '1', 10) || 1)
 const MAX_UPLOAD_JOBS = Math.max(1, Number.parseInt(process.env.VMP_UPLOAD_CONCURRENCY || '2', 10) || 2)
@@ -837,6 +852,14 @@ function dashboardHtml() {
 <body>
   <h1>VMP media host</h1>
   <p>Local observability for <code>video_pipeline_watch</code> and preview MP3 jobs. Refreshes every 3s.</p>
+  <section id="auth-gate" style="display:none">
+    <h2>Dashboard access</h2>
+    <p>Enter <code>VMP_SUPERVISOR_DASHBOARD_SECRET</code> to view pipeline status and job controls.</p>
+    <p><input id="supervisor-token-input" type="password" placeholder="Dashboard secret" style="min-width:18rem;padding:0.35rem 0.5rem" />
+    <button class="btn" id="supervisor-token-save" type="button">Unlock</button></p>
+    <p id="auth-gate-error" class="fail" style="display:none"></p>
+  </section>
+  <div id="dashboard-content">
   <section>
     <h2>Pipeline</h2>
     <div id="pipeline">Loading…</div>
@@ -861,7 +884,42 @@ function dashboardHtml() {
     <h2>Recent log</h2>
     <pre id="log">Loading…</pre>
   </section>
+  </div>
   <script>
+    function supervisorToken() {
+      return sessionStorage.getItem('vmp_supervisor_token') || ''
+    }
+    function supervisorAuthHeaders(extra) {
+      const headers = Object.assign({}, extra || {})
+      const token = supervisorToken()
+      if (token) headers['X-VMP-Supervisor-Token'] = token
+      return headers
+    }
+    function showAuthGate(message) {
+      document.getElementById('auth-gate').style.display = 'block'
+      document.getElementById('dashboard-content').style.display = 'none'
+      const err = document.getElementById('auth-gate-error')
+      if (message) {
+        err.textContent = message
+        err.style.display = 'block'
+      } else {
+        err.style.display = 'none'
+      }
+    }
+    function showDashboard() {
+      document.getElementById('auth-gate').style.display = 'none'
+      document.getElementById('dashboard-content').style.display = 'block'
+    }
+    document.getElementById('supervisor-token-save').addEventListener('click', () => {
+      const input = document.getElementById('supervisor-token-input')
+      const value = input && 'value' in input ? String(input.value || '').trim() : ''
+      if (!value) return
+      sessionStorage.setItem('vmp_supervisor_token', value)
+      showDashboard()
+      tick()
+    })
+    if (!supervisorToken()) showAuthGate('')
+    else showDashboard()
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, '&amp;')
@@ -910,7 +968,11 @@ function dashboardHtml() {
       return '<span class="badge" data-action="priority" data-video="' + escapeHtml(j.videoId || '') + '" title="Click to edit priority">' + p + '</span>'
     }
     async function postJob(path, body) {
-      await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+      await fetch(path, {
+        method: 'POST',
+        headers: supervisorAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: body ? JSON.stringify(body) : undefined,
+      })
     }
     document.addEventListener('click', async (ev) => {
       const el = ev.target
@@ -940,7 +1002,12 @@ function dashboardHtml() {
     })
     async function tick() {
       try {
-        const r = await fetch('/api/status')
+        const r = await fetch('/api/status', { headers: supervisorAuthHeaders() })
+        if (r.status === 401) {
+          sessionStorage.removeItem('vmp_supervisor_token')
+          showAuthGate('Invalid or missing dashboard secret.')
+          return
+        }
         const d = await r.json()
         const p = d.pipeline || {}
         document.getElementById('pipeline').innerHTML =
@@ -977,23 +1044,36 @@ function dashboardHtml() {
         document.getElementById('pipeline').textContent = 'Error: ' + e
       }
     }
-    tick()
-    setInterval(tick, 3000)
+    if (supervisorToken()) {
+      tick()
+      setInterval(tick, 3000)
+    }
   </script>
 </body>
 </html>`
 }
 
-const REBUILD_WEBHOOK_PATHS = new Set([
-  '/api/podcast-preview-rebuild',
-  '/vmp/api/podcast-preview-rebuild',
-  '/vmp/podcast-preview-rebuild',
-])
+function rejectUnauthorizedDashboard(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  pathname: string,
+  method: string,
+): boolean {
+  if (!requiresDashboardAuth(pathname, method)) return false
+  if (verifyDashboardSecret(req, dashboardSecret)) return false
+  res.writeHead(401, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ error: 'Unauthorized', code: 'dashboard_auth_required' }))
+  return true
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${uiHost}:${uiPort}`)
+  const pathname = url.pathname
+  const method = req.method || 'GET'
 
-  if (req.method === 'GET' && url.pathname === '/') {
+  if (rejectUnauthorizedDashboard(req, res, pathname, method)) return
+
+  if (method === 'GET' && pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(dashboardHtml())
     return
