@@ -37,13 +37,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
-          package-manager-cache: false
-
-      - name: Mount npm cache
-        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
-        with:
-          key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
-          path: ~/.npm
+          cache: npm
 
       - name: Deploy staging Cloudflare API and Web
         uses: ./.github/actions/deploy-cloudflare
@@ -74,13 +68,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
-          package-manager-cache: false
-
-      - name: Mount npm cache
-        uses: useblacksmith/stickydisk@13af8883542ca949a717e70fef89d15edbb29d88
-        with:
-          key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
-          path: ~/.npm
+          cache: npm
 
       - name: Deploy production Cloudflare API and Web
         uses: ./.github/actions/deploy-cloudflare

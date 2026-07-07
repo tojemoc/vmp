@@ -1,0 +1,32 @@
+name: Delete legacy sticky disks
+
+# One-time cleanup after migrating npm caching from stickydisk to setup-node.
+# Sticky disks bill at $0.50/GB/month until deleted or 7 days without use.
+# Run manually once after the stickydisk removal PR merges, then delete this workflow.
+#
+# Orphaned disks from older package-lock.json hashes must be removed from the
+# Blacksmith dashboard or via stickydisk-delete with each key listed there.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  delete-legacy-npm-sticky-disks:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Delete CI npm sticky disk (current lockfile)
+        uses: useblacksmith/stickydisk-delete@v1
+        with:
+          delete-key: ${{ github.repository }}-${{ runner.os }}-node22-npm-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Delete deploy npm sticky disk (current lockfile)
+        uses: useblacksmith/stickydisk-delete@v1
+        with:
+          delete-key: ${{ github.repository }}-${{ runner.os }}-node-lts-npm-${{ hashFiles('**/package-lock.json') }}
