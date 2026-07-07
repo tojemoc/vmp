@@ -17,6 +17,9 @@ function mockProvider(overrides: Partial<ObjectStorageProvider> = {}): ObjectSto
     },
     async putObject() {},
     async deleteObject() {},
+    async listObjects() {
+      return []
+    },
     ...overrides,
   }
 }

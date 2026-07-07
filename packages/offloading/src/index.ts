@@ -2,6 +2,7 @@ import { loadConfig } from './config.js'
 import { MetricsStore } from './metrics-store.js'
 import { MetadataStore } from './metadata-store.js'
 import { TierOffloader } from './offloader.js'
+import { runAgeBasedOffload } from './objectOffloadJob.js'
 import { StorageClient } from './storage.js'
 import type { PromotionTrigger } from './types.js'
 
@@ -21,12 +22,7 @@ function parsePromotionTrigger(raw: string | undefined): PromotionTrigger | null
 
 async function main(): Promise<void> {
   const config = loadConfig()
-  const metadata = new MetadataStore(config.metadataFile)
-  const metrics = new MetricsStore(config.metricsFile)
-  const hotStorage = new StorageClient(config.r2Root)
-  const coldStorage = new StorageClient(config.garageRoot)
-  const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
-  log(`config r2Root=${config.r2Root} garageRoot=${config.garageRoot} metadataFile=${config.metadataFile} metricsFile=${config.metricsFile} keyPrefix=${config.keyPrefix}`)
+  log(`config r2Root=${config.r2Root} garageRoot=${config.garageRoot} listPrefix=${config.listPrefix} maxHotAgeSeconds=${config.maxHotAgeSeconds} deleteHotAfterOffload=${config.deleteHotAfterOffload}`)
 
   const abortController = new AbortController()
   const onSignal = (signal: NodeJS.Signals): void => {
@@ -39,18 +35,36 @@ async function main(): Promise<void> {
   const mode = process.argv[2]
   if (!mode) {
     console.error('Usage: <cmd> <mode>')
-    console.error('Available modes: demote | promote | trigger-promote')
+    console.error('Available modes: offload | demote-legacy | promote | trigger-promote')
     process.exit(1)
   }
-  if (mode === 'demote') {
-    if (abortController.signal.aborted) return
-    const demoted = await offloader.demoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
-    log(`demoted videos: ${demoted.length}`)
+
+  if (mode === 'offload' || mode === 'demote') {
+    const moved = await runAgeBasedOffload(config, abortController.signal)
+    log(`offloaded objects: ${moved}`)
+    return
+  }
+
+  // Legacy video-level demotion/promotion using metadata store + traffic counters.
+  const metadata = new MetadataStore(config.metadataFile)
+  const metrics = new MetricsStore(config.metricsFile)
+  const hotStorage = new StorageClient(config.r2Root, config.rcloneBinary)
+  const coldStorage = new StorageClient(config.garageRoot, config.rcloneBinary)
+  const offloader = new TierOffloader(config, hotStorage, coldStorage, metadata, metrics)
+
+  if (mode === 'demote-legacy') {
+    const demoted = await offloader.demoteEligibleVideos({
+      integrityMode: 'size',
+      signal: abortController.signal,
+    })
+    log(`legacy demoted videos: ${demoted.length}`)
     return
   }
   if (mode === 'promote') {
-    if (abortController.signal.aborted) return
-    const promoted = await offloader.promoteEligibleVideos({ integrityMode: 'size', signal: abortController.signal })
+    const promoted = await offloader.promoteEligibleVideos({
+      integrityMode: 'size',
+      signal: abortController.signal,
+    })
     log(`promoted videos: ${promoted.length}`)
     return
   }
@@ -63,7 +77,7 @@ async function main(): Promise<void> {
     log(`promoted video: ${trigger.videoId}`)
     return
   }
-  throw new Error('Unknown mode. Use one of: demote | promote | trigger-promote')
+  throw new Error('Unknown mode. Use one of: offload | demote | demote-legacy | promote | trigger-promote')
 }
 
 main().catch((error) => {

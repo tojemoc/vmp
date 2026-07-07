@@ -1,6 +1,8 @@
+import { dedupeByKey } from './dedupeByKey.js'
 import { isAvailabilityError } from './errors.js'
 import type {
   GetObjectOptions,
+  ListedObject,
   ObjectStorageProvider,
   PrimaryHealthTracker,
   PutObjectOptions,
@@ -82,5 +84,13 @@ export class PrimaryWithFailoverCache implements ObjectStorageProvider {
       this.primary.deleteObject(key),
       this.cache.deleteObject(key),
     ])
+  }
+
+  async listObjects(prefix: string): Promise<ListedObject[]> {
+    const [primaryList, cacheList] = await Promise.all([
+      this.primary.listObjects(prefix),
+      this.cache.listObjects(prefix),
+    ])
+    return dedupeByKey([...primaryList, ...cacheList])
   }
 }

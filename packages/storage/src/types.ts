@@ -15,6 +15,17 @@ export interface HeadObjectResult {
   lastModified?: Date
 }
 
+/** Object metadata used by offload policies — sourced from head/list APIs. */
+export type ObjectMetadata = HeadObjectResult & {
+  lastModified: Date
+}
+
+export interface ListedObject {
+  key: string
+  size: number
+  lastModified?: Date
+}
+
 export interface StorageObjectResponse {
   status: number
   headers: Headers
@@ -30,6 +41,7 @@ export interface ObjectStorageProvider {
     opts?: PutObjectOptions,
   ): Promise<void>
   deleteObject(key: string): Promise<void>
+  listObjects(prefix: string): Promise<ListedObject[]>
 }
 
 export interface PrimaryHealthTracker {

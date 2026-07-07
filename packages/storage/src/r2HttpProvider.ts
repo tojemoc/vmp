@@ -6,6 +6,7 @@ import {
 import type {
   GetObjectOptions,
   HeadObjectResult,
+  ListedObject,
   ObjectStorageProvider,
   PutObjectOptions,
   StorageObjectResponse,
@@ -100,5 +101,10 @@ export class R2HttpProvider implements ObjectStorageProvider {
     if (!response.ok && response.status !== 404) {
       throw new StorageAvailabilityError(key, `R2 HTTP DELETE returned ${response.status}`, response.status)
     }
+  }
+
+  async listObjects(_prefix: string): Promise<ListedObject[]> {
+    // Public HTTP endpoints typically do not expose unauthenticated bucket listing.
+    return []
   }
 }

@@ -1,6 +1,8 @@
 export type {
   GetObjectOptions,
   HeadObjectResult,
+  ListedObject,
+  ObjectMetadata,
   ObjectStorageProvider,
   PrimaryHealthTracker,
   PutObjectOptions,
@@ -9,6 +11,7 @@ export type {
 
 export {
   isAvailabilityError,
+  isNotFoundError,
   isNotFoundHttpStatus,
   StorageAvailabilityError,
   StorageNotFoundError,
@@ -21,5 +24,17 @@ export {
   PrimaryWithFailoverCache,
   type PrimaryWithFailoverCacheOptions,
 } from './primaryWithFailoverCache.js'
+export { TieredStorageProvider } from './tieredStorageProvider.js'
+export { AgeBasedOffloadPolicy, type OffloadPolicy } from './offloadPolicy.js'
+export {
+  createStorageProvider,
+  type StorageProviderConfig,
+  type TieredStorageConfig,
+  type R2HttpProviderConfig,
+  type S3CompatibleProviderConfig,
+  type RcloneProviderConfig,
+} from './config.js'
+export { ObjectOffloadJob, type OffloadMoveResult, type ObjectOffloadJobOptions } from './objectOffloadJob.js'
+export { dedupeByKey } from './dedupeByKey.js'
 
 export { createAlwaysHealthyTracker, createNoOpTracker } from './healthTrackers.js'

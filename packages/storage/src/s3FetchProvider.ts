@@ -7,6 +7,7 @@ import {
 import type {
   GetObjectOptions,
   HeadObjectResult,
+  ListedObject,
   ObjectStorageProvider,
   PutObjectOptions,
   StorageObjectResponse,
@@ -22,6 +23,40 @@ export interface S3FetchProviderConfig {
 
 function normalizeKey(key: string): string {
   return key.replace(/^\/+/, '')
+}
+
+function buildListUrl(config: S3FetchProviderConfig, prefix: string, continuationToken?: string): string {
+  const endpoint = config.endpoint.replace(/\/+$/, '')
+  const bucket = config.bucket.replace(/^\/+|\/+$/g, '')
+  const base = endpoint.includes(bucket) ? endpoint : `${endpoint}/${bucket}`
+  const params = new URLSearchParams({ 'list-type': '2', prefix: normalizeKey(prefix) })
+  if (continuationToken) params.set('continuation-token', continuationToken)
+  return `${base}?${params.toString()}`
+}
+
+function parseListObjectsXml(xml: string): { objects: ListedObject[]; truncated: boolean; nextToken?: string } {
+  const objects: ListedObject[] = []
+  const contentsBlocks = xml.match(/<Contents>[\s\S]*?<\/Contents>/g) ?? []
+  for (const block of contentsBlocks) {
+    const key = block.match(/<Key>([^<]*)<\/Key>/)?.[1]
+    if (!key) continue
+    const size = Number.parseInt(block.match(/<Size>(\d+)<\/Size>/)?.[1] ?? '0', 10)
+    const lastModifiedRaw = block.match(/<LastModified>([^<]*)<\/LastModified>/)?.[1]
+    const entry: ListedObject = {
+      key,
+      size: Number.isFinite(size) ? size : 0,
+    }
+    if (lastModifiedRaw) entry.lastModified = new Date(lastModifiedRaw)
+    objects.push(entry)
+  }
+  const truncated = /<IsTruncated>true<\/IsTruncated>/i.test(xml)
+  const nextToken = xml.match(/<NextContinuationToken>([^<]*)<\/NextContinuationToken>/)?.[1]
+  const result: { objects: ListedObject[]; truncated: boolean; nextToken?: string } = {
+    objects,
+    truncated,
+  }
+  if (nextToken) result.nextToken = nextToken
+  return result
 }
 
 function buildObjectUrl(config: S3FetchProviderConfig, key: string): string {
@@ -142,5 +177,23 @@ export class S3FetchProvider implements ObjectStorageProvider {
     if (!response.ok && response.status !== 404) {
       throw new StorageAvailabilityError(key, `DELETE returned ${response.status}`, response.status)
     }
+  }
+
+  async listObjects(prefix: string): Promise<ListedObject[]> {
+    const out: ListedObject[] = []
+    let continuationToken: string | undefined
+    do {
+      const url = buildListUrl(this.config, prefix, continuationToken)
+      const signed = await this.client.sign(url, { method: 'GET' })
+      const response = await fetch(signed)
+      if (!response.ok) {
+        throw new StorageAvailabilityError(prefix, `LIST returned ${response.status}`, response.status)
+      }
+      const xml = await response.text()
+      const page = parseListObjectsXml(xml)
+      out.push(...page.objects)
+      continuationToken = page.truncated ? page.nextToken : undefined
+    } while (continuationToken)
+    return out
   }
 }

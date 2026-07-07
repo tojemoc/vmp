@@ -36,3 +36,7 @@ export function isAvailabilityError(err: unknown): boolean {
 export function isNotFoundHttpStatus(status: number): boolean {
   return status === 404 || status === 410
 }
+
+export function isNotFoundError(err: unknown): boolean {
+  return err instanceof StorageNotFoundError
+}

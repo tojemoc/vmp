@@ -3,6 +3,7 @@ import { StorageNotFoundError } from './errors.js'
 import type {
   GetObjectOptions,
   HeadObjectResult,
+  ListedObject,
   ObjectStorageProvider,
   PutObjectOptions,
   StorageObjectResponse,
@@ -10,6 +11,13 @@ import type {
 
 function normalizeKey(key: string): string {
   return key.replace(/^\/+/, '')
+}
+
+function isOffsetLengthRange(
+  range: R2Range,
+): range is { offset: number; length: number } {
+  return typeof (range as { offset?: number }).offset === 'number'
+    && typeof (range as { length?: number }).length === 'number'
 }
 
 function parseRangeHeader(range: string): R2Range | undefined {
@@ -65,7 +73,7 @@ export class R2BindingProvider implements ObjectStorageProvider {
 
     const headers = buildResponseHeaders(object)
     const body = object.body as unknown as ReadableStream<Uint8Array> | null
-    if (object.range && 'offset' in object.range && 'length' in object.range) {
+    if (object.range && isOffsetLengthRange(object.range)) {
       const start = object.range.offset
       const end = object.range.offset + object.range.length - 1
       headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`)
@@ -107,5 +115,26 @@ export class R2BindingProvider implements ObjectStorageProvider {
 
   async deleteObject(key: string): Promise<void> {
     await this.bucket.delete(normalizeKey(key))
+  }
+
+  async listObjects(prefix: string): Promise<ListedObject[]> {
+    const normalized = prefix.replace(/^\/+/, '')
+    const out: ListedObject[] = []
+    let cursor: string | undefined
+    do {
+      const listOptions: { prefix: string; limit: number; cursor?: string } = {
+        prefix: normalized,
+        limit: 1000,
+      }
+      if (cursor) listOptions.cursor = cursor
+      const listed = await this.bucket.list(listOptions)
+      for (const obj of listed.objects) {
+        const entry: ListedObject = { key: obj.key, size: obj.size }
+        if (obj.uploaded) entry.lastModified = obj.uploaded
+        out.push(entry)
+      }
+      cursor = listed.truncated ? listed.cursor : undefined
+    } while (cursor)
+    return out
   }
 }

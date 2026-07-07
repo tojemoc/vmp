@@ -25,8 +25,12 @@ Tiered storage offloading service for VMP:
 ## Scripts
 
 - `npm run build` - compile TypeScript to `dist/`
-- `npm run demote` - run one demotion pass
-- `npm run promote` - run one promotion pass
+- `npm run offload` - age-based object offload (hot → cold) via `@vmp/storage`
+- `npm run demote` - alias for `offload`
+- `npm run demote-legacy` - previous video-level demotion using traffic metadata
+- `npm run promote` - legacy promotion pass (Garage → R2)
+
+Scheduling is **external** (cron/systemd on the VM) — this package exposes CLI modes only; there is no in-process scheduler.
 
 ## Environment
 
@@ -35,8 +39,10 @@ Copy `.env.example` and set values as needed.
 Core settings:
 
 - `OFFLOAD_R2_ROOT` / `OFFLOAD_GARAGE_ROOT`
-- `OFFLOAD_KEY_PREFIX` (keep identical path structure)
-- `OFFLOAD_METADATA_FILE` (JSON metadata state)
+- `OFFLOAD_KEY_PREFIX` / `OFFLOAD_LIST_PREFIX` (keep identical path structure)
+- `OFFLOAD_MAX_HOT_AGE_SECONDS` (defaults to `OFFLOAD_RETENTION_DAYS` × 86400)
+- `OFFLOAD_DELETE_FROM_HOT` (defaults to `OFFLOAD_DELETE_FROM_R2`, which defaults to `0`)
+- `OFFLOAD_METADATA_FILE` (legacy demote/promote only)
 - `OFFLOAD_RETENTION_DAYS`
 - `OFFLOAD_DEMOTION_MAX_RPM_10M`
 - `OFFLOAD_PROMOTION_BURST_RPM`

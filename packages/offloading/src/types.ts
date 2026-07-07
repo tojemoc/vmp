@@ -26,8 +26,11 @@ export interface OffloadConfig {
   tmpDir: string
   rcloneBinary: string
   keyPrefix: string
+  listPrefix: string
   dryRun: boolean
   deleteFromR2AfterDemotion: boolean
+  deleteHotAfterOffload: boolean
+  maxHotAgeSeconds: number
   demotion: {
     minAgeDays: number
     maxRequestsPerMinute: number
