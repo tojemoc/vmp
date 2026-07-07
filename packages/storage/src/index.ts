@@ -1,25 +1,10 @@
-export type {
-  GetObjectOptions,
-  HeadObjectResult,
-  ObjectStorageProvider,
-  PrimaryHealthTracker,
-  PutObjectOptions,
-  StorageObjectResponse,
-} from './types.js'
-
-export {
-  isAvailabilityError,
-  isNotFoundHttpStatus,
-  StorageAvailabilityError,
-  StorageNotFoundError,
-} from './errors.js'
-
-export { S3FetchProvider, type S3FetchProviderConfig } from './s3FetchProvider.js'
-export { R2BindingProvider } from './r2BindingProvider.js'
-export { R2HttpProvider } from './r2HttpProvider.js'
+export * from './types.js'
+export * from './worker.js'
+export * from './node.js'
+export { createStorageProvider, createStorageProviderFromEnv } from './factory.js'
+export { isAvailabilityError } from './errors.js'
 export {
   PrimaryWithFailoverCache,
   type PrimaryWithFailoverCacheOptions,
-} from './primaryWithFailoverCache.js'
-
-export { createAlwaysHealthyTracker, createNoOpTracker } from './healthTrackers.js'
+} from './primary-with-failover-cache.js'
+export { createAlwaysHealthyTracker, createNoOpTracker } from './health-trackers.js'

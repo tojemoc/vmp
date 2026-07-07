@@ -1,4 +1,6 @@
-import { ListObjectsV2Command, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { createStorageProvider } from '@vmp/storage/node'
+import type { ObjectStorageProvider } from '@vmp/storage/node'
+
 /** Env fields used by optional R2→S3 manifest sync. */
 interface R2SyncEnv {
   S3_BUCKET_NAME?: string
@@ -8,13 +10,14 @@ interface R2SyncEnv {
 const MAX_PUT_ATTEMPTS = 3
 
 async function putWithRetry(
-  s3: S3Client,
-  params: { Bucket: string; Key: string; Body: Uint8Array; ContentType: string },
+  storage: ObjectStorageProvider,
+  key: string,
+  body: Uint8Array,
 ): Promise<void> {
   let lastErr: unknown
   for (let attempt = 0; attempt < MAX_PUT_ATTEMPTS; attempt++) {
     try {
-      await s3.send(new PutObjectCommand(params))
+      await storage.putObject(key, body, { contentType: 'application/vnd.apple.mpegurl' })
       return
     } catch (err) {
       lastErr = err
@@ -29,13 +32,11 @@ async function putWithRetry(
 /**
  * Sync HLS manifest objects from R2 (via S3-compatible endpoint) into the primary S3 bucket.
  * Segments are intentionally excluded — manifests only.
- *
- * TODO: configure dual-write from media-pipeline so S3 stays current without this job.
  */
 export async function syncR2ManifestsToS3(env: R2SyncEnv): Promise<{ ok: boolean; synced: number; error?: string }> {
   const bucket = env.S3_BUCKET_NAME ?? process.env.S3_BUCKET_NAME
   const r2Bucket = process.env.R2_BUCKET_NAME
-  const r2Endpoint = process.env.R2_S3_ENDPOINT
+  const r2Endpoint = process.env.R2_S3_ENDPOINT ?? process.env.R2_ENDPOINT ?? process.env.S3_ENDPOINT
   const r2AccessKey = process.env.R2_ACCESS_KEY_ID
   const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY
 
@@ -46,47 +47,44 @@ export async function syncR2ManifestsToS3(env: R2SyncEnv): Promise<{ ok: boolean
     return { ok: false, synced: 0, error: 'R2_BUCKET_NAME is required for manifest sync' }
   }
 
-  const r2 = new S3Client({
-    region: 'auto',
+  const source = createStorageProvider({
+    type: 'r2',
+    bucket: r2Bucket,
     endpoint: r2Endpoint,
-    credentials: { accessKeyId: r2AccessKey, secretAccessKey: r2SecretKey },
+    accessKeyId: r2AccessKey,
+    secretAccessKey: r2SecretKey,
     forcePathStyle: true,
   })
-  const s3 = new S3Client({
+  const target = createStorageProvider({
+    type: 's3-compatible',
+    id: 's3-primary',
+    bucket,
     region: env.AWS_REGION ?? process.env.AWS_REGION ?? 'us-east-1',
   })
 
   let synced = 0
-  let continuationToken: string | undefined
+  let cursor: string | undefined
   try {
     do {
-      const listed = await r2.send(
-        new ListObjectsV2Command({
-          Bucket: r2Bucket,
-          Prefix: 'videos/',
-          ContinuationToken: continuationToken,
-        }),
-      )
-      for (const obj of listed.Contents ?? []) {
-        const key = obj.Key
-        if (!key || !key.endsWith('.m3u8')) continue
+      if (!source.listObjectsPage) {
+        return { ok: false, synced, error: 'Source storage does not support paginated listing' }
+      }
+      const listed = await source.listObjectsPage({ prefix: 'videos/', cursor })
+      for (const obj of listed.objects) {
+        const key = obj.key
+        if (!key.endsWith('.m3u8')) continue
         try {
-          const got = await r2.send(new GetObjectCommand({ Bucket: r2Bucket, Key: key }))
-          const body = await got.Body?.transformToByteArray()
-          if (!body) continue
-          await putWithRetry(s3, {
-            Bucket: bucket,
-            Key: key,
-            Body: body,
-            ContentType: 'application/vnd.apple.mpegurl',
-          })
+          const got = await source.getObject(key)
+          if (!got) continue
+          const body = new Uint8Array(await new Response(got.body as ReadableStream).arrayBuffer())
+          await putWithRetry(target, key, body)
           synced++
         } catch (err) {
           console.error(`[r2sync] failed to sync manifest ${key}:`, err)
         }
       }
-      continuationToken = listed.NextContinuationToken
-    } while (continuationToken)
+      cursor = listed.truncated ? listed.cursor : undefined
+    } while (cursor)
     return { ok: true, synced }
   } catch (err) {
     return { ok: false, synced, error: err instanceof Error ? err.message : String(err) }

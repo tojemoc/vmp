@@ -9,6 +9,7 @@ import {
 } from './adminUserPolicy.js'
 import { parseCsvUserRows } from './userImportCsv.js'
 import { log } from './logger.js'
+import { getObjectStorage } from './objectStorage.js'
 
 const PILLS_KEY_HASH_PREFIX = 'pbkdf2'
 const PILLS_KEY_HASH_LEGACY_PREFIX = 'sha256'
@@ -664,7 +665,8 @@ export async function handleAdminPillImageUpload(request: any, env: any, corsHea
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
   }
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
-  if (!env.BUCKET) return jsonResponse({ error: 'R2 bucket not configured' }, 503, corsHeaders)
+  const storage = getObjectStorage(env)
+  if (!storage) return jsonResponse({ error: 'R2 bucket not configured' }, 503, corsHeaders)
   const form = await request.formData().catch(() => null)
   const file = form?.get('image')
   if (!file || typeof file === 'string') return jsonResponse({ error: 'Missing image file' }, 400, corsHeaders)
@@ -682,7 +684,7 @@ export async function handleAdminPillImageUpload(request: any, env: any, corsHea
     return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders)
   }
   const key = `pills/${Date.now()}-${crypto.randomUUID()}.${ext}`
-  await env.BUCKET.put(key, bytes, { httpMetadata: { contentType: file.type } })
+  await storage.putObject(key, bytes, { contentType: file.type })
   const imageUrl = `${base}/${key}`
   return jsonResponse({ ok: true, imageUrl, key }, 200, corsHeaders)
 }
