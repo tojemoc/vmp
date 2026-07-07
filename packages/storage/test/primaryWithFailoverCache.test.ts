@@ -100,6 +100,32 @@ describe('PrimaryWithFailoverCache', () => {
     assert.equal(result, null)
   })
 
+  it('falls back to cache signed read URL when primary headObject fails', async () => {
+    const primary = mockProvider({
+      id: 'primary',
+      async headObject() {
+        const err = new Error('Service Unavailable') as Error & { $metadata?: { httpStatusCode: number } }
+        err.$metadata = { httpStatusCode: 503 }
+        throw err
+      },
+      async getSignedReadUrl() {
+        throw new Error('primary signed url should not be called')
+      },
+    })
+    let cacheCalled = false
+    const cache = mockProvider({
+      id: 'cache',
+      async getSignedReadUrl() {
+        cacheCalled = true
+        return 'https://cache.example/signed'
+      },
+    })
+    const storage = new PrimaryWithFailoverCache(primary, cache, mockHealth())
+    const url = await storage.getSignedReadUrl('videos/vid/seg.m4s')
+    assert.equal(url, 'https://cache.example/signed')
+    assert.equal(cacheCalled, true)
+  })
+
   it('reads cache when primary is unhealthy without calling primary', async () => {
     let primaryCalled = false
     const primary = mockProvider({

@@ -78,7 +78,7 @@ export class B2PrimaryHealthDOBase {
     const current = await this.readState()
     const consecutiveFailures = current.consecutiveFailures + 1
     const openedAt = consecutiveFailures >= B2_FAILURE_THRESHOLD
-      ? (current.openedAt ?? Date.now())
+      ? Date.now()
       : current.openedAt
     await this.writeState({ consecutiveFailures, openedAt })
   }
