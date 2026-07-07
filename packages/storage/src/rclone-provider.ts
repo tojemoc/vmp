@@ -51,31 +51,62 @@ export class RcloneProvider implements ObjectStorageProvider {
       if (stdin) {
         stdin.pipe(child.stdin)
         stdin.on('error', reject)
+        child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+          if (err.code === 'EPIPE') return
+          reject(err)
+        })
       } else {
         child.stdin.end()
       }
     })
   }
 
-  private spawnCatStream(args: string[], label: string): ReadableStream {
+  private spawnCatStream(args: string[], label: string): ReadableStream<Uint8Array> {
     const child = spawn(this.binary, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
     let stderr = ''
+    let closed = false
+
+    const fail = (controller: ReadableStreamDefaultController<Uint8Array>, err: unknown) => {
+      if (closed) return
+      closed = true
+      child.kill()
+      controller.error(err)
+    }
+
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
     return new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        child.stdout.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)))
-        child.stdout.on('end', () => {
-          // Wait for process exit before closing so non-zero codes surface as errors.
+      start(controller) {
+        child.stdout.on('data', (chunk: Buffer) => {
+          if (closed) return
+          try {
+            controller.enqueue(new Uint8Array(chunk))
+            if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+              child.stdout.pause()
+            }
+          } catch (err) {
+            fail(controller, err)
+          }
         })
-        child.on('error', (err) => controller.error(err))
+        child.stdout.on('end', () => {
+          child.stdout.pause()
+        })
+        child.on('error', (err) => fail(controller, err))
         child.on('close', (code) => {
+          if (closed) return
+          closed = true
           if (code === 0) controller.close()
           else controller.error(new Error(`${label} failed (${code}): ${stderr.slice(-400)}`))
         })
       },
-      cancel: () => {
-        child.kill()
+      pull() {
+        child.stdout.resume()
+      },
+      cancel() {
+        if (!closed) {
+          closed = true
+          child.kill()
+        }
       },
     })
   }
