@@ -8,6 +8,8 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { FetchHttpHandler } from '@smithy/fetch-http-handler'
+import type { HttpHandler } from '@smithy/core/protocols'
 import { Readable } from 'node:stream'
 import type {
   GetObjectOptions,
@@ -19,6 +21,8 @@ import type {
   PutObjectOptions,
 } from './types.js'
 
+export const DEFAULT_S3_REQUEST_TIMEOUT_MS = 30_000
+
 export interface S3CompatibleStorageOptions {
   id: string
   bucket: string
@@ -29,6 +33,17 @@ export interface S3CompatibleStorageOptions {
   forcePathStyle?: boolean
   /** Optional injected client (tests). */
   client?: S3Client
+  /** Optional HTTP handler override (defaults to fetch-based handler). */
+  requestHandler?: HttpHandler
+  /** Override S3 HTTP request timeout in ms (defaults to DEFAULT_S3_REQUEST_TIMEOUT_MS). */
+  requestTimeoutMs?: number
+}
+
+function createDefaultRequestHandler(requestTimeoutMs?: number): FetchHttpHandler {
+  return new FetchHttpHandler({
+    requestTimeout: requestTimeoutMs ?? DEFAULT_S3_REQUEST_TIMEOUT_MS,
+    keepAlive: true,
+  })
 }
 
 function bodyToWebStream(body: unknown): ReadableStream | null {
@@ -64,17 +79,18 @@ function resolveContentLength(
 }
 
 function toObjectMetadata(key: string, head: {
-  ContentLength?: number
-  ETag?: string
-  LastModified?: Date
-  ContentType?: string
+  ContentLength?: number | undefined
+  ETag?: string | undefined
+  LastModified?: Date | undefined
+  ContentType?: string | undefined
 }): ObjectMetadata {
+  const etag = head.ETag?.replace(/"/g, '')
   return {
     key,
     size: head.ContentLength ?? 0,
-    etag: head.ETag?.replace(/"/g, ''),
-    lastModified: head.LastModified,
-    contentType: head.ContentType,
+    ...(etag !== undefined ? { etag } : {}),
+    ...(head.LastModified !== undefined ? { lastModified: head.LastModified } : {}),
+    ...(head.ContentType !== undefined ? { contentType: head.ContentType } : {}),
   }
 }
 
@@ -96,6 +112,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       ...(options.endpoint ? { endpoint: options.endpoint } : {}),
       ...(options.forcePathStyle ? { forcePathStyle: true } : {}),
       ...(credentials ? { credentials } : {}),
+      requestHandler: options.requestHandler ?? createDefaultRequestHandler(options.requestTimeoutMs),
     })
   }
 
@@ -129,9 +146,9 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       }
       return {
         body: stream,
-        contentType: out.ContentType,
-        size: out.ContentLength,
-        range: parsedRange,
+        ...(out.ContentType !== undefined ? { contentType: out.ContentType } : {}),
+        ...(out.ContentLength !== undefined ? { size: out.ContentLength } : {}),
+        ...(parsedRange !== undefined ? { range: parsedRange } : {}),
       }
     } catch (err: unknown) {
       const code = (err as { name?: string }).name
@@ -153,9 +170,9 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
         Key: key,
         Body: toS3PutBody(body),
         ...(contentLength != null ? { ContentLength: contentLength } : {}),
-        ContentType: opts?.contentType,
-        CacheControl: opts?.cacheControl,
-        Metadata: opts?.metadata,
+        ...(opts?.contentType !== undefined ? { ContentType: opts.contentType } : {}),
+        ...(opts?.cacheControl !== undefined ? { CacheControl: opts.cacheControl } : {}),
+        ...(opts?.metadata !== undefined ? { Metadata: opts.metadata } : {}),
       }),
     )
   }
@@ -171,7 +188,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       return
     }
     const BATCH_SIZE = 1000
-    const errors: { Key?: string; Code?: string; Message?: string }[] = []
+    const errors: { Key?: string | undefined; Code?: string | undefined; Message?: string | undefined }[] = []
     for (let offset = 0; offset < keys.length; offset += BATCH_SIZE) {
       const batch = keys.slice(offset, offset + BATCH_SIZE)
       const response = await this.client.send(
@@ -228,7 +245,7 @@ export class S3CompatibleStorageProvider implements ObjectStorageProvider {
       objects,
       prefixes: (out.CommonPrefixes ?? []).map((p) => p.Prefix!).filter(Boolean),
       truncated: Boolean(out.IsTruncated),
-      cursor: out.NextContinuationToken,
+      ...(out.NextContinuationToken !== undefined ? { cursor: out.NextContinuationToken } : {}),
     }
   }
 

@@ -1,31 +1,26 @@
 import type { GetObjectResult, ObjectStorageProvider } from '@vmp/storage/worker'
-import { wrapR2Bucket } from '@vmp/storage/worker'
-import type { R2Bucket } from '@cloudflare/workers-types'
+import { createPlaybackStorage, type PlaybackStorageEnv } from './playbackStorage.js'
 
-const storageByBucket = new WeakMap<R2Bucket, ObjectStorageProvider>()
-
-export type StorageEnv = {
-  BUCKET?: R2Bucket
+export type StorageEnv = PlaybackStorageEnv & {
   STORAGE?: ObjectStorageProvider
 }
 
-/** Composition-root accessor: prefer injected STORAGE, else wrap the R2 binding. */
+const playbackByEnv = new WeakMap<PlaybackStorageEnv, ObjectStorageProvider>()
+
 export function getObjectStorage(env: StorageEnv): ObjectStorageProvider | undefined {
   if (env.STORAGE) return env.STORAGE
-  if (!env.BUCKET) return undefined
-  let cached = storageByBucket.get(env.BUCKET)
-  if (!cached) {
-    cached = wrapR2Bucket(env.BUCKET)
-    storageByBucket.set(env.BUCKET, cached)
-  }
-  return cached
+  const cached = playbackByEnv.get(env)
+  if (cached) return cached
+  const created = createPlaybackStorage(env)
+  if (!created) return undefined
+  playbackByEnv.set(env, created)
+  return created
 }
 
 export function hasObjectStorage(env: StorageEnv): boolean {
   return Boolean(getObjectStorage(env))
 }
 
-/** Parse `Range: bytes=start-end` into provider byte-range options. */
 export function parseHttpRangeHeader(rangeHeader: string | null): { offset: number; length?: number } | undefined {
   if (!rangeHeader) return undefined
   const match = /^bytes=(\d+)-(\d*)$/i.exec(rangeHeader.trim())
@@ -38,7 +33,6 @@ export function parseHttpRangeHeader(rangeHeader: string | null): { offset: numb
   return { offset, length: end - offset + 1 }
 }
 
-/** Build an HTTP Response from a storage getObject result (streaming body, Range metadata). */
 export function storageGetResultToResponse(result: GetObjectResult): Response {
   const headers = new Headers()
   if (result.contentType) headers.set('Content-Type', result.contentType)

@@ -63,6 +63,12 @@ export interface ObjectStorageProvider {
   ping?(): Promise<{ ok: boolean; latencyMs: number; error?: string }>
 }
 
+export interface PrimaryHealthTracker {
+  isHealthy(): Promise<boolean>
+  recordFailure(err: unknown): Promise<void>
+  recordSuccess(): Promise<void>
+}
+
 export type StorageProviderType = 'r2' | 'b2' | 's3-compatible'
 
 export interface StorageProviderConfigBase {
@@ -72,6 +78,8 @@ export interface StorageProviderConfigBase {
   accessKeyId?: string
   secretAccessKey?: string
   forcePathStyle?: boolean
+  /** S3 HTTP request timeout in ms (defaults to 30s). */
+  requestTimeoutMs?: number
 }
 
 export type StorageProviderConfig =
