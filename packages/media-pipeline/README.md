@@ -74,6 +74,7 @@ Bundled Compose stack: [`encore/docker-compose.yml`](encore/docker-compose.yml)
 | `redis` | `redis:8.6-alpine` | Job queue (Encore + packager) |
 | `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API (`POST /encoreJobs`, Swagger UI) |
 | `encore-worker` | `ghcr.io/svt/encore-worker:latest` | Transcode workers (scale via `ENCORE_WORKER_REPLICAS`; mount `/dev/dri` for VAAPI) |
+| `vmp-supervisor` | `ghcr.io/tojemoc/vmp-media-pipeline:latest` | Watchfolder orchestrator, dashboard, webhooks, packaging queue API |
 | `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + R2 upload (scale via `ENCORE_PACKAGER_REPLICAS`) |
 
 VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
@@ -96,11 +97,20 @@ If Encore runs natively (JAR) on the same host without path translation, omit `E
 
 Official Encore docs: [Getting started](https://svt.github.io/encore/getting-started/) · [OpenAPI](https://svt.github.io/encore-doc/openapi.html)
 
-## Run supervisor (systemd)
+## Run supervisor
 
-Point `WorkingDirectory` at the monorepo root. **`dist/` is gitignored** — run `npm run build --workspace=@vmp/media-pipeline` after every `git pull` that touches this package.
+**Recommended (Docker):** the supervisor runs in the same Compose stack as Encore — no host Node/npm or systemd required.
 
-Production unit template: [systemd/vmp-supervisor.service](systemd/vmp-supervisor.service) — full install guide in [systemd/README.md](systemd/README.md).
+```bash
+cd packages/media-pipeline/encore
+cp .env.example .env   # fill secrets
+docker compose up -d
+curl -fsS http://127.0.0.1:8788/health
+```
+
+Image: `ghcr.io/tojemoc/vmp-media-pipeline` (built on every merge to `main` via `.github/workflows/media-pipeline-docker.yml`). Override with `VMP_SUPERVISOR_IMAGE` or `docker compose build vmp-supervisor` for a local build from the repo checkout.
+
+**Alternative (systemd):** install the unit from [systemd/README.md](systemd/README.md). Requires `npm run build --workspace=@vmp/media-pipeline` on the host and a system Node binary (or `NODE_BIN` in `/etc/vmp/env` for NVM).
 
 Expose the supervisor HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy). Admin webhook URL:
 
@@ -133,7 +143,7 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `PACKAGING_MODE` | `queue` | `queue` = encore-packager; `inline` = Shaka + rclone in orchestrator |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Packaging queue (supervisor + packager) |
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
-| `PACKAGER_CALLBACK_URL` | `http://host.docker.internal:8788/vmp/api` | encore-packager success/failure callbacks |
+| `PACKAGER_CALLBACK_URL` | `http://vmp-supervisor:8788/vmp/api` (Compose) | encore-packager success/failure callbacks |
 
 Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** for one-shot encoding. TTP logs include `pipelineMode` on every milestone for A/B analysis.
 

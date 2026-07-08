@@ -28,6 +28,11 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 ### 1. Drain in-flight jobs
 
 ```bash
+# Docker (recommended)
+cd packages/media-pipeline/encore
+docker compose stop vmp-supervisor
+
+# Or systemd
 sudo systemctl stop vmp-supervisor
 # Wait until no active encodes (check dashboard http://127.0.0.1:8788/ or logs)
 ```
@@ -41,12 +46,14 @@ npm install
 npm run build --workspace=@vmp/media-pipeline
 ```
 
-### 3. Start Encore
+### 3. Start Encore + supervisor (Docker)
 
 ```bash
-cd packages/media-pipeline
-docker compose -f encore/docker-compose.yml up -d
+cd packages/media-pipeline/encore
+cp .env.example .env   # fill secrets (or symlink /etc/vmp/env and set VMP_ENV_FILE)
+docker compose up -d
 curl -sf http://127.0.0.1:8080/actuator/health
+curl -sf http://127.0.0.1:8788/health
 ```
 
 Tune worker count:
@@ -60,15 +67,16 @@ ENCORE_WORKER_REPLICAS=4 docker compose -f encore/docker-compose.yml up -d --sca
 Add:
 
 ```bash
-ENCORE_BASE_URL=http://127.0.0.1:8080
-MEDIA_HOST_ROOT=/mnt
-ENCORE_MEDIA_ROOT=/media   # if Compose mounts /mnt → /media in containers
-INBOX_FAST_LANE_DIR=/mnt/videos/inbox-fast-lane
-INBOX_FULL_LADDER_DIR=/mnt/videos/inbox-full-ladder
+ENCORE_BASE_URL=http://encore-web:8080
+MEDIA_HOST_ROOT=/media
+ENCORE_MEDIA_ROOT=/media
+INBOX_FAST_LANE_DIR=/media/videos/inbox-fast-lane
+INBOX_FULL_LADDER_DIR=/media/videos/inbox-full-ladder
+TMP_DIR_BASE=/media/tmp/video_pipeline
 PACKAGING_MODE=queue
-REDIS_URL=redis://127.0.0.1:6379
+REDIS_URL=redis://redis:6379
 VMP_GPU_BACKEND=auto
-PACKAGER_CALLBACK_URL=http://127.0.0.1:8788/vmp/api
+PACKAGER_CALLBACK_URL=http://vmp-supervisor:8788/vmp/api
 PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
 S3_ENDPOINT_URL=https://YOUR_ACCOUNT.r2.cloudflarestorage.com
 AWS_ACCESS_KEY_ID=...
@@ -91,13 +99,12 @@ VMP_SUPERVISOR_DASHBOARD_SECRET=<long-random-string>
 
 Webhooks stay on HMAC (`VMP_WEBHOOK_SECRET`); the dashboard unlock form and job-control APIs require this separate secret.
 
-### 5. Update systemd unit
+### 5. Systemd unit (optional)
 
-In `/etc/systemd/system/vmp-supervisor.service`, change paths:
+If you run the supervisor on the host instead of Docker, update `/etc/systemd/system/vmp-supervisor.service` paths and set `NODE_BIN` when using NVM:
 
 ```ini
-ExecStartPre=/usr/bin/npm run build --workspace=@vmp/media-pipeline
-ExecStart=.../node .../vmp/packages/media-pipeline/dist/supervisor.js
+NODE_BIN=/root/.nvm/versions/node/v24.14.1/bin/node
 ```
 
 Copy the maintained template from `packages/media-pipeline/systemd/vmp-supervisor.service` if unsure.
@@ -107,6 +114,16 @@ Copy the maintained template from `packages/media-pipeline/systemd/vmp-superviso
 Process search strings now reference `packages/media-pipeline/dist/`. Re-copy templates from `packages/media-pipeline/datadog/conf.d/process.d/conf.yaml`.
 
 ### 7. Start supervisor
+
+**Docker (recommended):**
+
+```bash
+cd packages/media-pipeline/encore
+docker compose up -d vmp-supervisor
+docker compose logs -f vmp-supervisor
+```
+
+**Systemd:**
 
 ```bash
 sudo systemctl daemon-reload
@@ -137,4 +154,4 @@ No changes — podcast rebuild webhook URL and D1 secrets are unchanged.
 
 **Does the API Worker need redeploying?** No — callback payloads and R2 layout are unchanged. Update `AGENTS.md` references only.
 
-**CI changes?** None — the media VM is deployed manually via systemd, not GitHub Actions.
+**CI changes?** Merges to `main` publish `ghcr.io/tojemoc/vmp-media-pipeline` via `.github/workflows/media-pipeline-docker.yml`. Pull `:latest` or a commit SHA tag on the media VM; no host `npm build` required when using Compose.

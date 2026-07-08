@@ -1,12 +1,17 @@
-# SVT Encore stack for VMP media pipeline.
+# SVT Encore stack + VMP supervisor for the media pipeline.
 # Docs: https://svt.github.io/encore/
 #
 # Mount the same host paths the orchestrator uses (INBOX_DIR, TMP_DIR_BASE).
 # Example: ENCORE_MEDIA_ROOT=/media with MEDIA_HOST_ROOT=/mnt on the orchestrator.
 #
+# Secrets: copy encore/.env.example to encore/.env (or set VMP_ENV_FILE).
+#
 # GPU overrides (optional, CPU-only hosts use base file only):
 #   VAAPI:  docker compose -f encore/docker-compose.yml -f encore/docker-compose.vaapi.yml up -d
 #   NVIDIA: docker compose -f encore/docker-compose.yml -f encore/docker-compose.nvidia.yml up -d
+#
+# Supervisor image: ghcr.io/tojemoc/vmp-media-pipeline (built by .github/workflows/media-pipeline-docker.yml).
+# Local build: docker compose -f encore/docker-compose.yml build vmp-supervisor
 
 services:
   redis:
@@ -53,17 +58,50 @@ services:
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
       - encore-shared-work:/shared/work
 
+  vmp-supervisor:
+    image: ${VMP_SUPERVISOR_IMAGE:-ghcr.io/tojemoc/vmp-media-pipeline:latest}
+    build:
+      context: ../../..
+      dockerfile: packages/media-pipeline/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - encore-web
+    ports:
+      - "${VMP_UI_BIND:-127.0.0.1:8788}:8788"
+    env_file:
+      - path: ${VMP_ENV_FILE:-.env}
+        required: false
+    environment:
+      VMP_UI_HOST: "0.0.0.0"
+      VMP_UI_PORT: "8788"
+      ENCORE_BASE_URL: http://encore-web:8080
+      REDIS_URL: redis://redis:6379
+      MEDIA_HOST_ROOT: /media
+      ENCORE_MEDIA_ROOT: /media
+      INBOX_FAST_LANE_DIR: ${INBOX_FAST_LANE_DIR:-/media/videos/inbox-fast-lane}
+      INBOX_FULL_LADDER_DIR: ${INBOX_FULL_LADDER_DIR:-/media/videos/inbox-full-ladder}
+      TMP_DIR_BASE: ${TMP_DIR_BASE:-/media/tmp/video_pipeline}
+      PACKAGING_MODE: ${PACKAGING_MODE:-queue}
+      PACKAGER_CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
+    volumes:
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+    stop_grace_period: 45s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   encore-packager:
     image: eyevinntechnology/encore-packager:latest
     restart: unless-stopped
     depends_on:
       - redis
+      - vmp-supervisor
     deploy:
       replicas: ${ENCORE_PACKAGER_REPLICAS:-1}
     environment:
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
-      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://host.docker.internal:8788/vmp/api}
+      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
       PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
       OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$EXTERNALID$}
       HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
