@@ -5,8 +5,7 @@ VMP media VM orchestration around **[SVT Encore](https://svt.github.io/encore/)*
 This package replaces the former `@vmp/podcast-host` custom ffmpeg/VAAPI encoder. Encore handles **video transcoding**; VMP still owns:
 
 1. **Watchfolder intake** (`pipeline_watch.ts`) — inbox → stable file detection → video ID assignment
-2. **Shaka Packager** — fMP4 HLS ladder (`master.m3u8`, per-rendition playlists, shared audio)
-3. **rclone → Cloudflare R2** — same object layout as before (`videos/{id}/…`)
+2. **encore-packager** — Shaka-based fMP4 HLS ladder + R2 upload (`master.m3u8`, per-rendition playlists, shared audio)
 4. **Podcast MP3** — full `podcast.mp3` + preview jobs (`render_podcast_preview_mp3.ts`)
 5. **Worker callbacks** — HMAC-signed `POST /api/admin/videos/:id/pipeline-status`
 6. **Preview rebuild webhook** — supervisor accepts API-signed `podcast_preview_rebuild` events
@@ -24,15 +23,13 @@ Two ingest watchfolders let you A/B **fast-lane** (720p publishable first, then 
          ▼                                             ▼
 ┌─────────────────┐     S3 upload              shared /media volume
 │ encore-packager │ ─────────────────────────► Cloudflare R2
-│ (scale workers) │     (or inline Shaka+rclone when PACKAGING_MODE=inline)
+│ (scale workers) │
 └────────┬────────┘
          ▼
    @vmp/api Worker  ◄── pipeline-status callback (HMAC)
 ```
 
-**Default (`PACKAGING_MODE=queue`):** Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
-
-**Inline fallback (`PACKAGING_MODE=inline`):** orchestrator keeps Shaka Packager + rclone (legacy path for local dev without packager).
+Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
 
 Encore does **not** package HLS — that matches [SVT’s design](https://svt.github.io/encore/).
 
@@ -74,6 +71,7 @@ Bundled Compose stack: [`encore/docker-compose.yml`](encore/docker-compose.yml)
 | `redis` | `redis:8.6-alpine` | Job queue (Encore + packager) |
 | `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API (`POST /encoreJobs`, Swagger UI) |
 | `encore-worker` | `ghcr.io/svt/encore-worker:latest` | Transcode workers (scale via `ENCORE_WORKER_REPLICAS`; mount `/dev/dri` for VAAPI) |
+| `vmp-supervisor` | `ghcr.io/tojemoc/vmp-media-pipeline:latest` | Watchfolder orchestrator, dashboard, webhooks, packaging queue API |
 | `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + R2 upload (scale via `ENCORE_PACKAGER_REPLICAS`) |
 
 VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
@@ -82,7 +80,6 @@ VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
 | --- | --- | --- |
 | `vmp-720p-audio` (+ GPU variants) | 720p + AAC | Fast-lane phase 1 |
 | `vmp-full-ladder` (+ GPU VAAPI) | 1080p + 720p + 480p | Full ladder (single job) |
-| `vmp-1080p` / `vmp-480p` | Per-rendition | Inline `PACKAGING_MODE=inline` only |
 | `vmp-podcast-mp3` / `vmp-podcast-preview` | Audio sidecars | Queued path podcast MP3 |
 
 **Shared storage:** mount the same host tree Encore and the orchestrator use. Default Compose bind-mounts `${ENCORE_MEDIA_MOUNT:-/mnt}` → `/media` inside containers. On the host, set:
@@ -96,11 +93,20 @@ If Encore runs natively (JAR) on the same host without path translation, omit `E
 
 Official Encore docs: [Getting started](https://svt.github.io/encore/getting-started/) · [OpenAPI](https://svt.github.io/encore-doc/openapi.html)
 
-## Run supervisor (systemd)
+## Run supervisor
 
-Point `WorkingDirectory` at the monorepo root. **`dist/` is gitignored** — run `npm run build --workspace=@vmp/media-pipeline` after every `git pull` that touches this package.
+**Recommended (Docker):** the supervisor runs in the same Compose stack as Encore — no host Node/npm or systemd required.
 
-Production unit template: [systemd/vmp-supervisor.service](systemd/vmp-supervisor.service) — full install guide in [systemd/README.md](systemd/README.md).
+```bash
+cd packages/media-pipeline/encore
+cp .env.example .env   # fill secrets
+docker compose up -d
+curl -fsS http://127.0.0.1:8788/health
+```
+
+Image: `ghcr.io/tojemoc/vmp-media-pipeline` (built on every merge to `main` via `.github/workflows/media-pipeline-docker.yml`). Override with `VMP_SUPERVISOR_IMAGE` or `docker compose build vmp-supervisor` for a local build from the repo checkout.
+
+**Alternative (systemd):** install the unit from [systemd/README.md](systemd/README.md). Requires `npm run build --workspace=@vmp/media-pipeline` on the host and a system Node binary (or `NODE_BIN` in `/etc/vmp/env` for NVM).
 
 Expose the supervisor HTTP port to the Worker only (VPN, SSH tunnel, or reverse proxy). Admin webhook URL:
 
@@ -130,10 +136,9 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `INBOX_FAST_LANE_DIR` | `/mnt/videos/inbox-fast-lane` | **fast_lane** — 720p first, then full ladder (720p encoded twice) |
 | `INBOX_FULL_LADDER_DIR` | `/mnt/videos/inbox-full-ladder` | **full_ladder** — single full ladder, `fully_processed` when done |
 | `INBOX_DIR` | — | Legacy: if set, subdirs `fast-lane` / `full-ladder` are used when the above are unset |
-| `PACKAGING_MODE` | `queue` | `queue` = encore-packager; `inline` = Shaka + rclone in orchestrator |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Packaging queue (supervisor + packager) |
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
-| `PACKAGER_CALLBACK_URL` | `http://host.docker.internal:8788/vmp/api` | encore-packager success/failure callbacks |
+| `PACKAGER_CALLBACK_URL` | `http://vmp-supervisor:8788/vmp/api` (Compose) | encore-packager success/failure callbacks |
 
 Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** for one-shot encoding. TTP logs include `pipelineMode` on every milestone for A/B analysis.
 
@@ -149,7 +154,6 @@ Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** f
 | `VMP_RUN_PIPELINE` | `1` run watchfolder; `0` UI + preview jobs only |
 | `INBOX_FAST_LANE_DIR` / `INBOX_FULL_LADDER_DIR` | Dual watchfolders (see above) |
 | `TMP_DIR_BASE` | Temp encode dirs (default `/mnt/tmp/video_pipeline`) |
-| `RCLONE_REMOTE`, `R2_BUCKET_NAME`, … | rclone → R2 (see legacy table in git history) |
 | `VMP_TTP_LOG_PATH` | Optional JSONL time-to-publish log |
 | `DD_*` | Datadog DogStatsD tags (see [datadog/README.md](datadog/README.md)) |
 

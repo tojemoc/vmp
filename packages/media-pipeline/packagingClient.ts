@@ -9,7 +9,6 @@ import type { PipelineMode } from './pipelineMode.js'
 const SUPERVISOR_BASE = (process.env.VMP_SUPERVISOR_URL || `http://127.0.0.1:${process.env.VMP_UI_PORT || '8788'}`).trim().replace(/\/+$/, '')
 const PACKAGING_POLL_MS = Math.max(500, Number.parseInt(process.env.PACKAGING_POLL_MS || '2000', 10) || 2000)
 const PACKAGING_TIMEOUT_MS = Math.max(60_000, Number.parseInt(process.env.PACKAGING_TIMEOUT_MS || '3600000', 10) || 3_600_000)
-const PACKAGING_MODE = (process.env.PACKAGING_MODE || 'queue').trim().toLowerCase()
 const PACKAGING_SECRET = (process.env.VMP_PACKAGING_SECRET || process.env.VMP_WEBHOOK_SECRET || '').trim()
 const PACKAGING_FETCH_TIMEOUT_MS = Math.max(5_000, Number.parseInt(process.env.PACKAGING_FETCH_TIMEOUT_MS || '15000', 10) || 15_000)
 
@@ -61,10 +60,6 @@ export type PackagingStatus = {
   stage?: PackagingStage
   pipelineMode?: PipelineMode
   videoId?: string
-}
-
-export function usesQueuedPackaging(): boolean {
-  return PACKAGING_MODE !== 'inline'
 }
 
 export async function registerAndEnqueuePackaging(reg: PackagingRegistration): Promise<void> {

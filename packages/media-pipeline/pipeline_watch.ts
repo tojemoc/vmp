@@ -19,9 +19,7 @@ import {
   type EncoreRenditionKey,
 } from './encoreClient.js'
 import { type PipelineMode, ingestLabelForMode, packagingStageToPipelineStage } from './pipelineMode.js'
-import { usesQueuedPackaging } from './packagingClient.js'
 import { runQueuedPipelineJob } from './runQueuedPipelineJob.js'
-import { detectGpuEncodeConfig } from './gpuDetect.js'
 import {
   objectKey,
   uploadDirectoryToStorage,
@@ -527,143 +525,6 @@ async function probeSource(filePath: string, videoId?: string): Promise<{ hasAud
   return { hasAudio, durationSec }
 }
 
-function buildMasterM3u8Lines(hasAudio: boolean, videoStreamInfs: string[]): string[] {
-  const lines = ['#EXTM3U', '#EXT-X-VERSION:3']
-  if (hasAudio) {
-    lines.push(
-      `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${HLS_AUDIO_GROUP_ID}",NAME="Main",DEFAULT=YES,AUTOSELECT=YES,URI="${HLS_AUDIO_PLAYLIST}"`,
-    )
-  }
-  for (const streamInf of videoStreamInfs) {
-    if (hasAudio && streamInf.startsWith('#EXT-X-STREAM-INF')) {
-      lines.push(`${streamInf},AUDIO="${HLS_AUDIO_GROUP_ID}"`)
-    } else {
-      lines.push(streamInf)
-    }
-  }
-  return lines
-}
-
-async function writePhase1MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
-  const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
-    '720p/playlist.m3u8',
-  ])
-  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
-}
-
-async function writePhase2MasterM3u8(tmpDir: string, hasAudio: boolean): Promise<void> {
-  const lines = buildMasterM3u8Lines(hasAudio, [
-    '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
-    '1080p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"',
-    '720p/playlist.m3u8',
-    '#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=854x480,CODECS="avc1.640028,mp4a.40.2"',
-    '480p/playlist.m3u8',
-  ])
-  await writeFile(path.join(tmpDir, 'master.m3u8'), `${lines.join('\n')}\n`)
-}
-
-/** Prefer shaka-packager master (CODECS + fMP4 version); hand-written master is fallback only. */
-async function adoptShakaMasterM3u8(tmpDir: string, hasAudio: boolean, phase: 1 | 2): Promise<void> {
-  const shakaMaster = path.join(tmpDir, 'master.m3u8.shaka')
-  const master = path.join(tmpDir, 'master.m3u8')
-  if (existsSync(shakaMaster)) {
-    await rename(shakaMaster, master)
-    return
-  }
-  log(`⚠️ shaka master missing for phase${phase}; using fallback master writer`)
-  if (phase === 1) await writePhase1MasterM3u8(tmpDir, hasAudio)
-  else await writePhase2MasterM3u8(tmpDir, hasAudio)
-}
-
-async function encodeRendition(
-  videoId: string,
-  inputPath: string,
-  tmpDir: string,
-  key: RenditionKey,
-  options: { includeAudio: boolean, stage: PipelineStage, overallBase: number, overallSpan: number },
-): Promise<string> {
-  const r = RENDITION_CONFIG[key]
-  emitPipelineEvent(videoId, options.stage, 'active', r.out)
-
-  const encoreOutPath = await transcodeRenditionWithEncore({
-    videoId,
-    inputPath,
-    outputDir: tmpDir,
-    rendition: key as EncoreRenditionKey,
-    targetFileName: r.out,
-    isCancelled: () => isJobStopped(videoId),
-    onProgress: (encoreProgress) => {
-      const durationSec = videoDurations.get(videoId) ?? null
-      const stageProgress = Math.min(1, Math.max(0, encoreProgress / 100))
-      const overallProgress = options.overallBase + options.overallSpan * stageProgress
-      maybeEmitEncodeProgress(
-        videoId,
-        options.stage,
-        key,
-        durationSec != null ? durationSec * stageProgress : 0,
-        durationSec ?? 0,
-        options.overallBase,
-        options.overallSpan,
-        null,
-        stageToProgressPhase(options.stage),
-      )
-      emitProgressCheckpoint(videoId, options.stage, overallProgress, `${key} ${encoreProgress}%`, key)
-    },
-  })
-
-  const finalPath = path.join(tmpDir, r.out)
-  if (encoreOutPath !== finalPath) {
-    await rename(encoreOutPath, finalPath)
-  }
-
-  emitProgressCheckpoint(videoId, options.stage, options.overallBase + options.overallSpan, `${key} done`, key)
-  return finalPath
-}
-
-async function packagePhase1Hls(tmpDir: string, hasAudio: boolean, videoId: string): Promise<void> {
-  await mkdir(path.join(tmpDir, '720p'), { recursive: true })
-  const shakaArgs = [
-    `input=${path.join(tmpDir, '720p.mp4')},stream=video,init_segment=${path.join(tmpDir, '720p/init_720.mp4')},segment_template=${path.join(tmpDir, '720p/seg_720_$Number$.m4s')},playlist_name=720p/playlist.m3u8`,
-  ]
-  if (hasAudio) {
-    shakaArgs.push(
-      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
-    )
-  }
-  shakaArgs.push(
-    '--segment_duration', '6',
-    '--fragment_duration', '6',
-    '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
-  )
-  await run('shaka-packager', shakaArgs, 'shaka-packager phase1', { videoId })
-  await adoptShakaMasterM3u8(tmpDir, hasAudio, 1)
-}
-
-async function packagePhase2Hls(tmpDir: string, hasAudio: boolean, videoId: string): Promise<void> {
-  for (const sub of ['1080p', '720p', '480p'] as const) {
-    await mkdir(path.join(tmpDir, sub), { recursive: true })
-  }
-  const shakaArgs = [
-    `input=${path.join(tmpDir, '1080p.mp4')},stream=video,init_segment=${path.join(tmpDir, '1080p/init_1080.mp4')},segment_template=${path.join(tmpDir, '1080p/seg_1080_$Number$.m4s')},playlist_name=1080p/playlist.m3u8`,
-    `input=${path.join(tmpDir, '720p.mp4')},stream=video,init_segment=${path.join(tmpDir, '720p/init_720.mp4')},segment_template=${path.join(tmpDir, '720p/seg_720_$Number$.m4s')},playlist_name=720p/playlist.m3u8`,
-    `input=${path.join(tmpDir, '480p.mp4')},stream=video,init_segment=${path.join(tmpDir, '480p/init_480.mp4')},segment_template=${path.join(tmpDir, '480p/seg_480_$Number$.m4s')},playlist_name=480p/playlist.m3u8`,
-  ]
-  if (hasAudio) {
-    shakaArgs.push(
-      `input=${path.join(tmpDir, '720p.mp4')},stream=audio,init_segment=${path.join(tmpDir, 'init_audio.mp4')},segment_template=${path.join(tmpDir, 'seg_audio_$Number$.m4s')},playlist_name=${HLS_AUDIO_PLAYLIST}`,
-    )
-  }
-  shakaArgs.push(
-    '--segment_duration', '6',
-    '--fragment_duration', '6',
-    '--hls_master_playlist_output', path.join(tmpDir, 'master.m3u8.shaka'),
-  )
-  await run('shaka-packager', shakaArgs, 'shaka-packager phase2', { videoId })
-  await adoptShakaMasterM3u8(tmpDir, hasAudio, 2)
-}
-
 async function notifyVideoAvailable(
   videoId: string,
   stage: 'preview_ready' | 'fully_processed',
@@ -724,226 +585,6 @@ async function notifyVideoAvailable(
   }
 
   await attempt(false)
-}
-
-async function phase1EncodeAndPublish(
-  videoId: string,
-  inputPath: string,
-  tmpDir: string,
-  hasAudio: boolean,
-): Promise<Phase1Result> {
-  setJobPhase(videoId, 'phase1')
-  await emitTtp(videoId, 'phase1_encode_start', { initialRendition: '720p' })
-  emitPipelineEvent(videoId, 'phase1_encode', 'active', '720p')
-  const audioTmpPath = await encodeRendition(videoId, inputPath, tmpDir, '720p', {
-    includeAudio: hasAudio,
-    stage: 'phase1_encode',
-    overallBase: PROGRESS.P1_ENCODE.base,
-    overallSpan: PROGRESS.P1_ENCODE.span,
-  })
-  emitPipelineEvent(videoId, 'phase1_encode', 'active', 'done')
-  await emitTtp(videoId, 'phase1_encode_done', { initialRendition: '720p' })
-
-  emitPipelineEvent(videoId, 'phase1_encode', 'active', 'packaging_hls')
-  await packagePhase1Hls(tmpDir, hasAudio, videoId)
-  emitProgressCheckpoint(videoId, 'phase1_encode', PROGRESS.P1_DONE - 0.02, 'packaged')
-
-  setJobPhase(videoId, 'upload')
-  emitPipelineEvent(videoId, 'phase1_upload', 'active', 'start')
-  await emitTtp(videoId, 'phase1_upload_start', {})
-  const r2Base = objectKey('videos', videoId)
-  await storageCopyDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'upload 720p phase1', videoId)
-  if (hasAudio) {
-    await storageCopySharedAudioAssets(tmpDir, r2Base, 'upload shared audio phase1', videoId)
-  }
-  await storageCheckDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'check 720p phase1', videoId)
-  await storageCopyFile(path.join(tmpDir, 'master.m3u8'), objectKey(r2Base, 'master.m3u8'), 'upload master phase1', videoId)
-  emitPipelineEvent(videoId, 'phase1_upload', 'active', 'done')
-  await emitTtp(videoId, 'phase1_upload_done', {})
-  emitProgressCheckpoint(videoId, 'phase1_upload', PROGRESS.P1_DONE, '720p on R2')
-
-  await notifyVideoAvailable(videoId, 'preview_ready', ['720p'])
-  emitPipelineEvent(videoId, 'phase1_available', 'success', 'preview_ready')
-  await emitTtp(videoId, 'minimal_publish_ready', { renditionsOnR2: ['720p'], masterManifest: `videos/${videoId}/master.m3u8` })
-
-  return { audioTmpPath: hasAudio ? audioTmpPath : null, hasAudio }
-}
-
-async function phase2PackageAndPublish(
-  videoId: string,
-  tmpDir: string,
-  hasAudio: boolean,
-): Promise<void> {
-  emitPipelineEvent(videoId, 'phase2_package', 'active', 'start')
-  await packagePhase2Hls(tmpDir, hasAudio, videoId)
-  emitProgressCheckpoint(videoId, 'phase2_package', PROGRESS.P2_PACKAGE.base + PROGRESS.P2_PACKAGE.span, 'packaged')
-  emitPipelineEvent(videoId, 'phase2_package', 'active', 'done')
-
-  setJobPhase(videoId, 'upload')
-  emitPipelineEvent(videoId, 'phase2_upload', 'active', 'start')
-  await emitTtp(videoId, 'phase2_upload_start', {})
-  const r2Base = objectKey('videos', videoId)
-  await storageCopyDir(path.join(tmpDir, '1080p'), objectKey(r2Base, '1080p'), 'upload 1080p phase2', videoId)
-  emitProgressCheckpoint(videoId, 'phase2_upload', PROGRESS.P2_UPLOAD.base + PROGRESS.P2_UPLOAD.span * 0.25, '1080p uploading')
-  await storageCopyDir(path.join(tmpDir, '480p'), objectKey(r2Base, '480p'), 'upload 480p phase2', videoId)
-  await storageCopyDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'upload 720p phase2', videoId)
-  await storageCheckDir(path.join(tmpDir, '1080p'), objectKey(r2Base, '1080p'), 'check 1080p phase2', videoId)
-  await storageCheckDir(path.join(tmpDir, '480p'), objectKey(r2Base, '480p'), 'check 480p phase2', videoId)
-  await storageCheckDir(path.join(tmpDir, '720p'), objectKey(r2Base, '720p'), 'check 720p phase2', videoId)
-  if (hasAudio) {
-    await storageCopySharedAudioAssets(tmpDir, r2Base, 'upload shared audio phase2', videoId)
-  }
-
-  emitPipelineEvent(videoId, 'phase2_manifest_swap', 'active', 'upload_master')
-  await storageCopyFile(path.join(tmpDir, 'master.m3u8'), objectKey(r2Base, 'master.m3u8'), 'upload master phase2', videoId)
-  emitPipelineEvent(videoId, 'phase2_upload', 'active', 'done')
-  await emitTtp(videoId, 'phase2_upload_done', {})
-  emitProgressCheckpoint(videoId, 'phase2_upload', PROGRESS.P2_DONE, 'all renditions on R2')
-
-  await notifyVideoAvailable(videoId, 'fully_processed', ['1080p', '720p', '480p'])
-  emitPipelineEvent(videoId, 'multi_rendition_ready', 'success', 'fully_processed')
-  await emitTtp(videoId, 'full_renditions_ready', { renditionsOnR2: ['1080p', '720p', '480p'] })
-}
-
-async function phase2RemainingRenditions(
-  videoId: string,
-  inputPath: string,
-  tmpDir: string,
-  hasAudio: boolean,
-): Promise<void> {
-  setJobPhase(videoId, 'phase2')
-  await emitTtp(videoId, 'phase2_encode_start', { renditions: ['1080p', '480p'] })
-  emitPipelineEvent(videoId, 'phase2_encode', 'active', '1080p+480p')
-  await encodeRendition(videoId, inputPath, tmpDir, '1080p', {
-    includeAudio: false,
-    stage: 'phase2_encode',
-    overallBase: PROGRESS.P2_1080.base,
-    overallSpan: PROGRESS.P2_1080.span,
-  })
-  await encodeRendition(videoId, inputPath, tmpDir, '480p', {
-    includeAudio: false,
-    stage: 'phase2_encode',
-    overallBase: PROGRESS.P2_480.base,
-    overallSpan: PROGRESS.P2_480.span,
-  })
-  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'done')
-  await emitTtp(videoId, 'phase2_encode_done', {})
-  await phase2PackageAndPublish(videoId, tmpDir, hasAudio)
-}
-
-async function encodePodcastMp3(videoId: string, inputPath: string, tmpDir: string): Promise<void> {
-  setJobPhase(videoId, 'podcast')
-  emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'start')
-  const mp3Tmp = path.join(tmpDir, `podcast.mp3.tmp.${process.pid}`)
-  await runFfmpeg(
-    ['-hide_banner', '-y', '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', mp3Tmp],
-    'encode podcast mp3',
-    {
-      videoId,
-      stage: 'podcast_mp3',
-      rendition: 'mp3',
-      durationSec: videoDurations.get(videoId) ?? null,
-      overallBase: PROGRESS.PODCAST.base,
-      overallSpan: PROGRESS.PODCAST.span,
-      phase: 'podcast',
-    },
-  )
-  await rename(mp3Tmp, path.join(tmpDir, 'podcast.mp3'))
-  setJobPhase(videoId, 'upload')
-  await storageCopyFile(path.join(tmpDir, 'podcast.mp3'), objectKey('videos', videoId, 'podcast.mp3'), 'upload podcast mp3', videoId)
-  emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'done')
-  emitProgressCheckpoint(videoId, 'podcast_mp3', PROGRESS.PODCAST.base + PROGRESS.PODCAST.span, 'podcast.mp3 on R2', 'mp3')
-}
-
-async function runInlineFullLadderOnly(
-  videoId: string,
-  inputPath: string,
-  tmpDir: string,
-  hasAudio: boolean,
-  pipelineMode: PipelineMode,
-): Promise<void> {
-  await emitTtp(videoId, 'phase2_encode_start', { pipelineMode, renditions: ['1080p', '720p', '480p'] })
-  emitPipelineEvent(videoId, 'phase2_encode', 'active', 'full-ladder-inline')
-  await Promise.all([
-    encodeRendition(videoId, inputPath, tmpDir, '720p', {
-      includeAudio: hasAudio,
-      stage: 'phase2_encode',
-      overallBase: PROGRESS.P2_720.base,
-      overallSpan: PROGRESS.P2_720.span,
-    }),
-    encodeRendition(videoId, inputPath, tmpDir, '1080p', {
-      includeAudio: false,
-      stage: 'phase2_encode',
-      overallBase: PROGRESS.P2_1080.base,
-      overallSpan: PROGRESS.P2_1080.span,
-    }),
-    encodeRendition(videoId, inputPath, tmpDir, '480p', {
-      includeAudio: false,
-      stage: 'phase2_encode',
-      overallBase: PROGRESS.P2_480.base,
-      overallSpan: PROGRESS.P2_480.span,
-    }),
-  ])
-  await emitTtp(videoId, 'phase2_encode_done', { pipelineMode })
-  await phase2PackageAndPublish(videoId, tmpDir, hasAudio)
-}
-
-async function runInlinePreviewMp3(videoId: string, tmpDir: string): Promise<void> {
-  if (!PREVIEW_MP3_ENABLED || !existsSync(path.join(tmpDir, 'podcast.mp3'))) {
-    emitPipelineEvent(videoId, 'preview_render', 'active', 'skipped')
-    await emitTtp(videoId, 'preview_mp3_skipped', {})
-    return
-  }
-  setJobPhase(videoId, 'preview')
-  assertNotStopped(videoId)
-  await waitWhilePaused(videoId)
-  if (PREVIEW_MP3_LOCK_SECONDS > 0) {
-    emitPipelineEvent(videoId, 'preview_wait', 'active', `${PREVIEW_MP3_LOCK_SECONDS}s`)
-    await new Promise((r) => setTimeout(r, PREVIEW_MP3_LOCK_SECONDS * 1000))
-  }
-  emitPipelineEvent(videoId, 'preview_render', 'active', `${PREVIEW_MP3_SECONDS}s`)
-  const prevTmp = path.join(tmpDir, `podcast_preview.mp3.tmp.${process.pid}`)
-  await runFfmpeg(
-    ['-hide_banner', '-y', '-i', path.join(tmpDir, 'podcast.mp3'), '-t', String(PREVIEW_MP3_SECONDS), '-vn', '-c:a', 'libmp3lame', '-b:a', MP3_BITRATE, '-f', 'mp3', prevTmp],
-    'encode preview mp3',
-    {
-      videoId,
-      stage: 'preview_render',
-      rendition: 'preview_mp3',
-      durationSec: PREVIEW_MP3_SECONDS,
-      overallBase: PROGRESS.PREVIEW.base,
-      overallSpan: PROGRESS.PREVIEW.span,
-      phase: 'preview',
-    },
-  )
-  await rename(prevTmp, path.join(tmpDir, 'podcast_preview.mp3'))
-  const probe = await run(
-    'ffprobe',
-    ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path.join(tmpDir, 'podcast_preview.mp3')],
-    'probe preview mp3 duration',
-    { capture: true, videoId },
-  )
-  const measuredDurationSeconds = Math.round(Number.parseFloat((probe.stdout || '').trim()))
-  if (Number.isFinite(measuredDurationSeconds) && measuredDurationSeconds > 0) {
-    await writeFile(
-      path.join(tmpDir, 'podcast_preview.meta.json'),
-      JSON.stringify({
-        videoId,
-        requestedPreviewSeconds: PREVIEW_MP3_SECONDS,
-        measuredDurationSeconds,
-        renderedAt: new Date().toISOString(),
-      }),
-    )
-  }
-  setJobPhase(videoId, 'upload')
-  emitPipelineEvent(videoId, 'preview_upload', 'active', 'start')
-  await storageCopyFile(path.join(tmpDir, 'podcast_preview.mp3'), objectKey('videos', videoId, 'podcast_preview.mp3'), 'upload preview mp3', videoId)
-  if (existsSync(path.join(tmpDir, 'podcast_preview.meta.json'))) {
-    await storageCopyFile(path.join(tmpDir, 'podcast_preview.meta.json'), objectKey('videos', videoId, 'podcast_preview.meta.json'), 'upload preview mp3 metadata', videoId)
-  }
-  emitPipelineEvent(videoId, 'preview_upload', 'active', 'done')
-  emitProgressCheckpoint(videoId, 'preview_upload', PROGRESS.PREVIEW.base + PROGRESS.PREVIEW.span, 'preview on R2', 'preview_mp3')
-  await emitTtp(videoId, 'preview_mp3_done', { previewSeconds: PREVIEW_MP3_SECONDS })
 }
 
 async function completePipelineSuccess(
@@ -1015,81 +656,19 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
     emitPipelineEvent(videoId, 'probe', 'active', `hasAudio=${hasAudio}${durationSec != null ? ` durationSec=${durationSec.toFixed(1)}` : ''}`)
     emitProgressCheckpoint(videoId, 'probe', PROGRESS.PROBE, 'probe complete')
 
-    if (usesQueuedPackaging()) {
-      await runQueuedPipelineJob({
-        videoId,
-        inputPath,
-        pipelineMode,
-        tmpDir,
-        hasAudio,
-        isCancelled: () => isJobStopped(videoId),
-        emitStage: (packagingStage, subStage, status, detail) => {
-          const pipelineStage = packagingStageToPipelineStage(packagingStage, subStage)
-          emitPipelineEvent(videoId, pipelineStage, status as PipelineStatus, detail)
-        },
-        notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
-      })
-    } else {
-      await checkEncoreHealth()
-      const gpu = await detectGpuEncodeConfig()
-      await emitTtp(videoId, 'gpu_backend_detected', {
-        pipelineMode,
-        gpuBackend: gpu.backend,
-        profileSuffix: gpu.profileSuffix,
-      })
-
-      if (pipelineMode === 'full_ladder') {
-        await runInlineFullLadderOnly(videoId, inputPath, tmpDir, hasAudio, pipelineMode)
-        assertNotStopped(videoId)
-        await waitWhilePaused(videoId)
-        if (hasAudio) {
-          await encodePodcastMp3(videoId, inputPath, tmpDir)
-            .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
-            .catch(async (err) => {
-              if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-              const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
-              log(`⚠️ ${videoId}: podcast MP3 failed: ${err instanceof Error ? err.message : String(err)}`)
-              emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
-              await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
-            })
-        } else {
-          emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
-          await emitTtp(videoId, 'podcast_mp3_skipped', {})
-        }
-        await runInlinePreviewMp3(videoId, tmpDir)
-      } else {
-      await phase1EncodeAndPublish(videoId, inputPath, tmpDir, hasAudio)
-      assertNotStopped(videoId)
-      await waitWhilePaused(videoId)
-      emitPipelineEvent(videoId, 'phase1_available', 'active', 'preview_ready')
-
-      const podcastTask = hasAudio
-        ? encodePodcastMp3(videoId, inputPath, tmpDir)
-          .then(() => emitTtp(videoId, 'podcast_mp3_done', {}))
-          .catch(async (err) => {
-            if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-            const detail = err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220)
-            log(`⚠️ ${videoId}: podcast MP3 failed (video still watchable at 720p): ${err instanceof Error ? err.message : String(err)}`)
-            emitPipelineEvent(videoId, 'podcast_mp3', 'failed', detail)
-            await emitTtp(videoId, 'podcast_mp3_failed', { error: detail })
-          })
-        : (async () => {
-          emitPipelineEvent(videoId, 'podcast_mp3', 'active', 'skipped_no_audio')
-          await emitTtp(videoId, 'podcast_mp3_skipped', {})
-        })()
-
-      const phase2Task = phase2RemainingRenditions(videoId, inputPath, tmpDir, hasAudio).catch((err) => {
-        if (isJobStopped(videoId)) throw new JobStoppedError(videoId)
-        log(`⚠️ ${videoId}: phase2 failed (720p HLS remains available): ${err instanceof Error ? err.message : String(err)}`)
-        emitPipelineEvent(videoId, 'phase2_upload', 'failed', err instanceof Error ? err.message.slice(0, 220) : String(err).slice(0, 220))
-      })
-
-      await Promise.all([podcastTask, phase2Task])
-      assertNotStopped(videoId)
-      await waitWhilePaused(videoId)
-      await runInlinePreviewMp3(videoId, tmpDir)
-      }
-    }
+    await runQueuedPipelineJob({
+      videoId,
+      inputPath,
+      pipelineMode,
+      tmpDir,
+      hasAudio,
+      isCancelled: () => isJobStopped(videoId),
+      emitStage: (packagingStage, subStage, status, detail) => {
+        const pipelineStage = packagingStageToPipelineStage(packagingStage, subStage)
+        emitPipelineEvent(videoId, pipelineStage, status as PipelineStatus, detail)
+      },
+      notifyVideoAvailable: (stage, renditions) => notifyVideoAvailable(videoId, stage, renditions as RenditionKey[]),
+    })
 
     assertNotStopped(videoId)
     await waitWhilePaused(videoId)
@@ -1450,7 +1029,7 @@ async function main() {
   await startIpcServer()
   await checkEncoreHealth()
   log(`🎞️  Encore API: ${(process.env.ENCORE_BASE_URL || 'http://127.0.0.1:8080').trim()}`)
-  log(`📦 Packaging mode: ${usesQueuedPackaging() ? 'queue (encore-packager)' : 'inline (shaka+rclone)'}`)
+  log('📦 Packaging: queue-only (encore-packager)')
   for (const watch of INBOX_WATCHES) {
     log(`📥 Inbox [${watch.label}] pipelineMode=${watch.pipelineMode}: ${watch.dir}`)
   }

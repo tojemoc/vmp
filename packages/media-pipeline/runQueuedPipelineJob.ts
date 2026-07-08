@@ -14,7 +14,7 @@ import {
 } from './encoreClient.js'
 import { detectGpuEncodeConfig } from './gpuDetect.js'
 import type { PipelineMode, PackagingStage, QueuedPipelineSubStage } from './pipelineMode.js'
-import { registerAndEnqueuePackaging, usesQueuedPackaging, waitForPackaging } from './packagingClient.js'
+import { registerAndEnqueuePackaging, waitForPackaging } from './packagingClient.js'
 import { emitTtp, type TtpMilestone } from './ttpLog.js'
 import { objectKey, uploadFileToStorage } from './storage.js'
 
@@ -163,9 +163,6 @@ async function runPodcastSidecars(ctx: QueuedPipelineContext): Promise<void> {
 }
 
 export async function runQueuedPipelineJob(ctx: QueuedPipelineContext): Promise<void> {
-  if (!usesQueuedPackaging()) {
-    throw new Error('runQueuedPipelineJob requires PACKAGING_MODE=queue')
-  }
   await checkEncoreHealth()
   const gpu = await detectGpuEncodeConfig()
   await emitTtp(ctx.videoId, 'gpu_backend_detected', {

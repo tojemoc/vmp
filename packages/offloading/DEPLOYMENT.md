@@ -11,7 +11,7 @@
 ```yaml
 services:
   media-pipeline:
-    image: ghcr.io/ORG/vmp-media-pipeline:${TAG}
+    image: ghcr.io/tojemoc/vmp-media-pipeline:${TAG}
     restart: unless-stopped
     stop_grace_period: 45s
     environment:
