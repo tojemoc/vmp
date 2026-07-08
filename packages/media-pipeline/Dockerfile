@@ -11,9 +11,11 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 ARG SHAKA_PACKAGER_VERSION=v3.2.0
+ARG SHAKA_PACKAGER_SHA256=88b022b8cb12602ddb539972efd07a3496ea64f8662a484798c96e95afa41fd8
 RUN curl -fsSL \
     "https://github.com/shaka-project/shaka-packager/releases/download/${SHAKA_PACKAGER_VERSION}/packager-linux-x64" \
     -o /usr/local/bin/shaka-packager \
+  && echo "${SHAKA_PACKAGER_SHA256}  /usr/local/bin/shaka-packager" | sha256sum -c - \
   && chmod +x /usr/local/bin/shaka-packager
 
 WORKDIR /app
@@ -24,6 +26,7 @@ COPY packages/media-pipeline/package*.json ./packages/media-pipeline/
 RUN npm ci --workspaces --include-workspace-root
 COPY . .
 RUN npm run build --workspace=@vmp/media-pipeline
+RUN npm prune --omit=dev --workspaces --include-workspace-root
 ENV NODE_ENV=production
 RUN groupadd -r app && useradd -r -g app app
 RUN chown -R app:app /app
