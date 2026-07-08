@@ -82,7 +82,6 @@ services:
       INBOX_FAST_LANE_DIR: ${INBOX_FAST_LANE_DIR:-/media/videos/inbox-fast-lane}
       INBOX_FULL_LADDER_DIR: ${INBOX_FULL_LADDER_DIR:-/media/videos/inbox-full-ladder}
       TMP_DIR_BASE: ${TMP_DIR_BASE:-/media/tmp/video_pipeline}
-      PACKAGING_MODE: ${PACKAGING_MODE:-queue}
       PACKAGER_CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
     volumes:
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media

@@ -1,22 +1,13 @@
 FROM node:22-bookworm-slim
 
-# Runtime tools: watchfolder (inotifywait), podcast MP3 (ffmpeg), inline packaging (shaka+rclone).
+# Runtime tools: watchfolder (inotifywait) and podcast MP3 rendering (ffmpeg).
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     ffmpeg \
     inotify-tools \
-    rclone \
   && rm -rf /var/lib/apt/lists/*
-
-ARG SHAKA_PACKAGER_VERSION=v3.2.0
-ARG SHAKA_PACKAGER_SHA256=88b022b8cb12602ddb539972efd07a3496ea64f8662a484798c96e95afa41fd8
-RUN curl -fsSL \
-    "https://github.com/shaka-project/shaka-packager/releases/download/${SHAKA_PACKAGER_VERSION}/packager-linux-x64" \
-    -o /usr/local/bin/shaka-packager \
-  && echo "${SHAKA_PACKAGER_SHA256}  /usr/local/bin/shaka-packager" | sha256sum -c - \
-  && chmod +x /usr/local/bin/shaka-packager
 
 WORKDIR /app
 COPY package*.json ./

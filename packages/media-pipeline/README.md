@@ -5,8 +5,7 @@ VMP media VM orchestration around **[SVT Encore](https://svt.github.io/encore/)*
 This package replaces the former `@vmp/podcast-host` custom ffmpeg/VAAPI encoder. Encore handles **video transcoding**; VMP still owns:
 
 1. **Watchfolder intake** (`pipeline_watch.ts`) — inbox → stable file detection → video ID assignment
-2. **Shaka Packager** — fMP4 HLS ladder (`master.m3u8`, per-rendition playlists, shared audio)
-3. **rclone → Cloudflare R2** — same object layout as before (`videos/{id}/…`)
+2. **encore-packager** — Shaka-based fMP4 HLS ladder + R2 upload (`master.m3u8`, per-rendition playlists, shared audio)
 4. **Podcast MP3** — full `podcast.mp3` + preview jobs (`render_podcast_preview_mp3.ts`)
 5. **Worker callbacks** — HMAC-signed `POST /api/admin/videos/:id/pipeline-status`
 6. **Preview rebuild webhook** — supervisor accepts API-signed `podcast_preview_rebuild` events
@@ -24,15 +23,13 @@ Two ingest watchfolders let you A/B **fast-lane** (720p publishable first, then 
          ▼                                             ▼
 ┌─────────────────┐     S3 upload              shared /media volume
 │ encore-packager │ ─────────────────────────► Cloudflare R2
-│ (scale workers) │     (or inline Shaka+rclone when PACKAGING_MODE=inline)
+│ (scale workers) │
 └────────┬────────┘
          ▼
    @vmp/api Worker  ◄── pipeline-status callback (HMAC)
 ```
 
-**Default (`PACKAGING_MODE=queue`):** Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
-
-**Inline fallback (`PACKAGING_MODE=inline`):** orchestrator keeps Shaka Packager + rclone (legacy path for local dev without packager).
+Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
 
 Encore does **not** package HLS — that matches [SVT’s design](https://svt.github.io/encore/).
 
@@ -83,7 +80,6 @@ VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
 | --- | --- | --- |
 | `vmp-720p-audio` (+ GPU variants) | 720p + AAC | Fast-lane phase 1 |
 | `vmp-full-ladder` (+ GPU VAAPI) | 1080p + 720p + 480p | Full ladder (single job) |
-| `vmp-1080p` / `vmp-480p` | Per-rendition | Inline `PACKAGING_MODE=inline` only |
 | `vmp-podcast-mp3` / `vmp-podcast-preview` | Audio sidecars | Queued path podcast MP3 |
 
 **Shared storage:** mount the same host tree Encore and the orchestrator use. Default Compose bind-mounts `${ENCORE_MEDIA_MOUNT:-/mnt}` → `/media` inside containers. On the host, set:
@@ -140,7 +136,6 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `INBOX_FAST_LANE_DIR` | `/mnt/videos/inbox-fast-lane` | **fast_lane** — 720p first, then full ladder (720p encoded twice) |
 | `INBOX_FULL_LADDER_DIR` | `/mnt/videos/inbox-full-ladder` | **full_ladder** — single full ladder, `fully_processed` when done |
 | `INBOX_DIR` | — | Legacy: if set, subdirs `fast-lane` / `full-ladder` are used when the above are unset |
-| `PACKAGING_MODE` | `queue` | `queue` = encore-packager; `inline` = Shaka + rclone in orchestrator |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Packaging queue (supervisor + packager) |
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
 | `PACKAGER_CALLBACK_URL` | `http://vmp-supervisor:8788/vmp/api` (Compose) | encore-packager success/failure callbacks |
@@ -159,7 +154,6 @@ Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** f
 | `VMP_RUN_PIPELINE` | `1` run watchfolder; `0` UI + preview jobs only |
 | `INBOX_FAST_LANE_DIR` / `INBOX_FULL_LADDER_DIR` | Dual watchfolders (see above) |
 | `TMP_DIR_BASE` | Temp encode dirs (default `/mnt/tmp/video_pipeline`) |
-| `RCLONE_REMOTE`, `R2_BUCKET_NAME`, … | rclone → R2 (see legacy table in git history) |
 | `VMP_TTP_LOG_PATH` | Optional JSONL time-to-publish log |
 | `DD_*` | Datadog DogStatsD tags (see [datadog/README.md](datadog/README.md)) |
 

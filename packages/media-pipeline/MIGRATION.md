@@ -9,10 +9,10 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 | Package name | `@vmp/podcast-host` | `@vmp/media-pipeline` |
 | Transcoding | Inline ffmpeg + VAAPI in `pipeline_watch.ts` | Encore REST API + worker pool |
 | New services | — | Redis, `encore-web`, `encore-worker`, `encore-packager` (Compose) |
-| HLS packaging | Shaka Packager in orchestrator | **encore-packager** (default) or inline Shaka |
+| HLS packaging | Shaka Packager in orchestrator | **encore-packager** |
 | Ingest | Single `INBOX_DIR` | Dual inbox: `INBOX_FAST_LANE_DIR` + `INBOX_FULL_LADDER_DIR` |
 | GPU | `VAAPI_DEVICE` on host ffmpeg | Encore GPU profiles (`VMP_GPU_BACKEND=auto`, worker `/dev/dri`) |
-| R2 upload | rclone | rclone (inline) or packager → S3 (queue mode) |
+| R2 upload | rclone | packager → S3 |
 | Worker webhooks | pipeline-status + preview rebuild | **Unchanged** (same HMAC contracts) |
 | R2 key layout | `videos/{id}/…` | **Unchanged** |
 
@@ -21,7 +21,7 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 - Docker (for bundled Encore stack) **or** a self-managed Encore install per [SVT docs](https://svt.github.io/encore/getting-started/)
 - Redis 8+ (standard Redis server; included in Compose)
 - Shared filesystem: inbox, temp dirs, and Encore `outputFolder` must be visible to Encore workers
-- Existing: ffmpeg/ffprobe (probe + podcast MP3), shaka-packager, rclone, inotifywait
+- Existing: ffmpeg/ffprobe (probe + podcast MP3), inotifywait
 
 ## Cutover steps
 
@@ -73,7 +73,6 @@ ENCORE_MEDIA_ROOT=/media
 INBOX_FAST_LANE_DIR=/media/videos/inbox-fast-lane
 INBOX_FULL_LADDER_DIR=/media/videos/inbox-full-ladder
 TMP_DIR_BASE=/media/tmp/video_pipeline
-PACKAGING_MODE=queue
 REDIS_URL=redis://redis:6379
 VMP_GPU_BACKEND=auto
 PACKAGER_CALLBACK_URL=http://vmp-supervisor:8788/vmp/api
@@ -89,7 +88,7 @@ Optional GPU on workers:
 VAAPI_DEVICE=/dev/dri/renderD128
 ```
 
-Keep all existing `VMP_*`, `INBOX_DIR`, `RCLONE_*`, and `VMP_API_*` variables.
+Keep all existing `VMP_*`, `INBOX_DIR`, and `VMP_API_*` variables.
 
 If the supervisor listens on a public interface (e.g. `VMP_UI_HOST=0.0.0.0` for Worker webhooks), add:
 
