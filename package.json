@@ -30,7 +30,7 @@
     "@eslint/js": "^10.0.1",
     "@nx/nuxt": "23.0.1",
     "@nx/vite": "23.0.1",
-    "@vue/language-core": "^3.3.6",
+    "@vue/language-core": "^3.3.7",
     "eslint": "^10.6.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-vue": "^10.9.2",
