@@ -24,18 +24,18 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/net": "^0.1.6",
-    "@moq/watch": "^0.2.18",
+    "@moq/net": "^0.1.9",
+    "@moq/watch": "^0.3.1",
     "@nuxtjs/color-mode": "^4.0.0",
-    "@sentry/nuxt": "^10.63.0",
-    "@stripe/stripe-js": "^9.9.0",
-    "@tiptap/core": "^3.27.3",
-    "@tiptap/extension-link": "^3.27.3",
-    "@tiptap/extension-placeholder": "^3.27.3",
-    "@tiptap/html": "^3.27.3",
-    "@tiptap/pm": "^3.27.1",
-    "@tiptap/starter-kit": "^3.27.3",
-    "@tiptap/vue-3": "^3.27.3",
+    "@sentry/nuxt": "^10.66.0",
+    "@stripe/stripe-js": "^9.10.0",
+    "@tiptap/core": "^3.28.0",
+    "@tiptap/extension-link": "^3.28.0",
+    "@tiptap/extension-placeholder": "^3.28.0",
+    "@tiptap/html": "^3.28.0",
+    "@tiptap/pm": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
+    "@tiptap/vue-3": "^3.28.0",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vmp/shared": "*",
     "media-chrome": "^4.19.0",
@@ -45,16 +45,16 @@
     "unsane": "^0.0.19",
     "video.js": "^8.23.9",
     "videojs-video-element": "^1.4.8",
-    "vue": "^3.5.39"
+    "vue": "^3.5.40"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.1",
     "@types/qrcode": "^1.5.6",
-    "tsx": "^4.23.0",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
-    "vue-tsc": "^3.3.6",
-    "wrangler": "^4.107.0"
+    "vue-tsc": "^3.3.7",
+    "wrangler": "^4.112.0"
   },
   "nx": {
     "targets": {
