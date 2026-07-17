@@ -16,6 +16,8 @@ COPY packages/storage/package*.json ./packages/storage/
 COPY packages/media-pipeline/package*.json ./packages/media-pipeline/
 RUN npm ci --workspaces --include-workspace-root
 COPY . .
+# media-pipeline build compiles @vmp/storage first (exports → dist/; plain node
+# cannot remap ./foo.js → ./foo.ts when loading storage TypeScript source).
 RUN npm run build --workspace=@vmp/media-pipeline
 RUN npm prune --omit=dev --workspaces --include-workspace-root
 ENV NODE_ENV=production

@@ -21,7 +21,7 @@
     "verify:api-node": "npm run verify:deploy --workspace=@vmp/api-node",
     "deploy:api": "npm run deploy --workspace=@vmp/api",
     "deploy:web": "npm run deploy --workspace=@vmp/web",
-    "install:api-node": "npm ci --include-workspace-root --workspace=@vmp/shared --workspace=@vmp/api --workspace=@vmp/api-node",
+    "install:api-node": "npm ci --include-workspace-root --workspace=@vmp/shared --workspace=@vmp/storage --workspace=@vmp/api --workspace=@vmp/api-node",
     "build:api-node": "npm run build --workspace=@vmp/api-node",
     "db:create": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0001_canonical_schema.sql",
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"

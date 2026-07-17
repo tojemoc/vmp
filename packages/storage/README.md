@@ -62,3 +62,5 @@ Implement `ObjectStorageProvider` in a new class (e.g. local filesystem for test
 
 - `@vmp/storage/worker` — R2 binding adapter (Cloudflare Workers)
 - `@vmp/storage/node` — S3 factory, upload helpers, R2Bucket bridge for api-node
+
+Package `exports` resolve to compiled `dist/*.js` at runtime (TypeScript sources remain the `types` entry). Run `npm run build --workspace=@vmp/storage` before plain `node` consumers (`media-pipeline`, `offloading`) or Wrangler; Node's built-in type stripping does not remap `./foo.js` imports to `./foo.ts`.
