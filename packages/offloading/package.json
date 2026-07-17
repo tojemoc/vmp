@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint src --ext .ts,.vue,.tsx --max-warnings 0",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build --workspace=@vmp/storage && tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/index.js",
     "offload": "npm run build && node ./dist/index.js offload",
     "demote": "npm run build && node ./dist/index.js demote",

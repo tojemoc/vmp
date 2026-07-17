@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build --workspace=@vmp/storage && tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/supervisor.js",
     "supervisor": "npm run build && node ./dist/supervisor.js",
     "pipeline": "npm run build && node ./dist/pipeline_watch.js",

@@ -5,11 +5,24 @@
   "type": "module",
   "description": "Pluggable object storage providers (R2, B2, S3-compatible)",
   "exports": {
-    ".": "./src/index.ts",
-    "./worker": "./src/worker.ts",
-    "./node": "./src/node.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./src/worker.ts",
+      "import": "./dist/worker.js",
+      "default": "./dist/worker.js"
+    },
+    "./node": {
+      "types": "./src/node.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test ./test/*.test.ts"
   },

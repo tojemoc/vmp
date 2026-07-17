@@ -8,15 +8,18 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/storage/package.json ./packages/storage/
 COPY packages/api/package.json ./packages/api/
 COPY packages/api-node/package.json ./packages/api-node/
 
 RUN npm ci --include-workspace-root \
     --workspace=@vmp/shared \
+    --workspace=@vmp/storage \
     --workspace=@vmp/api \
     --workspace=@vmp/api-node
 
 COPY packages/shared ./packages/shared
+COPY packages/storage/src ./packages/storage/src
 COPY packages/api/src ./packages/api/src
 COPY packages/api/migrations ./packages/api/migrations
 COPY packages/api-node/src ./packages/api-node/src
