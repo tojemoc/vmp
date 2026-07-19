@@ -6,6 +6,10 @@
 #
 # Secrets: copy encore/.env.example to encore/.env (or set VMP_ENV_FILE).
 #
+# Encoding: encore-web polls Redis and runs FFmpeg (poll-disabled defaults to false).
+# Separate encore-worker containers are ONE-SHOT (poll once → exit) and are NOT in
+# this file — see docker-compose.workers.yml for optional KEDA-style workers.
+#
 # GPU overrides (optional, CPU-only hosts use base file only):
 #   VAAPI:  docker compose -f encore/docker-compose.yml -f encore/docker-compose.vaapi.yml up -d
 #   NVIDIA: docker compose -f encore/docker-compose.yml -f encore/docker-compose.nvidia.yml up -d
@@ -31,29 +35,12 @@ services:
       ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
       ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
       ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      # Web node encodes jobs (JobPoller). Set true only when using dedicated workers.
+      ENCORE_SETTINGS_POLL_DISABLED: "${ENCORE_SETTINGS_POLL_DISABLED:-false}"
       ENCORE_SETTINGS_SECURITY_ENABLED: "${ENCORE_SETTINGS_SECURITY_ENABLED:-false}"
       # Non-empty placeholders so ENCORE_SETTINGS_SECURITY_ENABLED=true works without silent empty-password auth.
       ENCORE_SETTINGS_SECURITY_USER_PASSWORD: "${ENCORE_USER_PASSWORD:-change-me-in-production}"
       ENCORE_SETTINGS_SECURITY_ADMIN_PASSWORD: "${ENCORE_ADMIN_PASSWORD:-change-me-in-production}"
-    volumes:
-      - ./profiles:/profiles:ro
-      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
-      - encore-shared-work:/shared/work
-
-  encore-worker:
-    image: ghcr.io/svt/encore-worker:latest
-    restart: unless-stopped
-    depends_on:
-      - redis
-    deploy:
-      replicas: ${ENCORE_WORKER_REPLICAS:-2}
-    environment:
-      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
-      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
-      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
-      ENCORE_SETTINGS_POLL_DISABLED: "false"
-      # false = keep polling forever. true = process current queue then exit (crash-loops under restart: unless-stopped).
-      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "false"
     volumes:
       - ./profiles:/profiles:ro
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
@@ -103,7 +90,8 @@ services:
       REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
       CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
       PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
-      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$EXTERNALID$}
+      # $$ escapes Compose interpolation so encore-packager sees $EXTERNALID$
+      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$$EXTERNALID$$}
       HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}

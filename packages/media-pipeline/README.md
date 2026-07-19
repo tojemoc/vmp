@@ -69,10 +69,11 @@ Bundled Compose stack: [`encore/docker-compose.yml`](encore/docker-compose.yml)
 | Service | Image | Role |
 | --- | --- | --- |
 | `redis` | `redis:8.6-alpine` | Job queue (Encore + packager) |
-| `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API (`POST /encoreJobs`, Swagger UI) |
-| `encore-worker` | `ghcr.io/svt/encore-worker:latest` | Transcode workers (scale via `ENCORE_WORKER_REPLICAS`; mount `/dev/dri` for VAAPI) |
+| `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API + job poller / FFmpeg encode (`POST /encoreJobs`, Swagger UI) |
 | `vmp-supervisor` | `ghcr.io/tojemoc/vmp-media-pipeline:latest` | Watchfolder orchestrator, dashboard, webhooks, packaging queue API |
 | `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + R2 upload (scale via `ENCORE_PACKAGER_REPLICAS`) |
+
+**Encore workers:** `ghcr.io/svt/encore-worker` is a **one-shot** process (poll once → exit). SVT intends them for on-demand scaling (e.g. KEDA), not a long-running Compose service — putting them under `restart: unless-stopped` causes a restart storm when the queue is empty. Default compose encodes on `encore-web`. Optional overlay: `docker-compose.workers.yml`.
 
 VMP-specific encoding profiles live in [`encore/profiles/`](encore/profiles/):
 
@@ -157,7 +158,7 @@ Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** f
 | `VMP_TTP_LOG_PATH` | Optional JSONL time-to-publish log |
 | `DD_*` | Datadog DogStatsD tags (see [datadog/README.md](datadog/README.md)) |
 
-**GPU:** `VMP_GPU_BACKEND=auto` probes NVENC then VAAPI at job start and selects `*-gpu-nvenc` / `*-gpu-vaapi` Encore profiles when registered. Mount GPU devices on `encore-worker` in Compose.
+**GPU:** `VMP_GPU_BACKEND=auto` probes NVENC then VAAPI at job start and selects `*-gpu-nvenc` / `*-gpu-vaapi` Encore profiles when registered. Mount GPU devices on `encore-web` via `docker-compose.vaapi.yml` / `docker-compose.nvidia.yml`.
 
 ### Time-to-publish (TTP) logging
 

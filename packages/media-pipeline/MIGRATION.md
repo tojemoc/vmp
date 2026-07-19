@@ -8,7 +8,7 @@ This guide covers moving a production media VM from the legacy in-repo ffmpeg/VA
 | --- | --- | --- |
 | Package name | `@vmp/podcast-host` | `@vmp/media-pipeline` |
 | Transcoding | Inline ffmpeg + VAAPI in `pipeline_watch.ts` | Encore REST API + worker pool |
-| New services | — | Redis, `encore-web`, `encore-worker`, `encore-packager` (Compose) |
+| New services | — | Redis, `encore-web`, `encore-packager`, `vmp-supervisor` (Compose; optional one-shot `encore-worker` via overlay) |
 | HLS packaging | Shaka Packager in orchestrator | **encore-packager** |
 | Ingest | Single `INBOX_DIR` | Dual inbox: `INBOX_FAST_LANE_DIR` + `INBOX_FULL_LADDER_DIR` |
 | GPU | `VAAPI_DEVICE` on host ffmpeg | Encore GPU profiles (`VMP_GPU_BACKEND=auto`, worker `/dev/dri`) |
@@ -59,7 +59,8 @@ curl -sf http://127.0.0.1:8788/health
 Tune worker count:
 
 ```bash
-ENCORE_WORKER_REPLICAS=4 docker compose -f encore/docker-compose.yml up -d --scale encore-worker=4
+# Optional KEDA-style one-shot workers (not needed for single-VM; encore-web encodes by default):
+# docker compose -f encore/docker-compose.yml -f encore/docker-compose.workers.yml up -d
 ```
 
 ### 4. Update `/etc/vmp/env`

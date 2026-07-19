@@ -1,9 +1,11 @@
-# Optional VAAPI GPU override for encore-worker (CPU-only hosts use base compose only).
+# Optional VAAPI GPU override for encore-web (CPU-only hosts use base compose only).
 # Usage: docker compose -f encore/docker-compose.yml -f encore/docker-compose.vaapi.yml up -d
 # Combine with NVIDIA override only if your host supports both paths.
+#
+# If you also use docker-compose.workers.yml, add the same devices to encore-worker.
 
 services:
-  encore-worker:
+  encore-web:
     devices:
       - ${VAAPI_DEVICE:-/dev/dri/renderD128}:/dev/dri/renderD128
     group_add:
