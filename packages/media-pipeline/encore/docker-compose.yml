@@ -52,7 +52,8 @@ services:
       ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
       ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
       ENCORE_SETTINGS_POLL_DISABLED: "false"
-      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "true"
+      # false = keep polling forever. true = process current queue then exit (crash-loops under restart: unless-stopped).
+      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "false"
     volumes:
       - ./profiles:/profiles:ro
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
