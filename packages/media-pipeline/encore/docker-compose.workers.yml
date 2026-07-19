@@ -1,0 +1,35 @@
+# Optional one-shot Encore workers (SVT design: poll once → exit).
+# Docs: https://svt.github.io/encore/getting-started/ — “Workers are typically
+# launched on demand (e.g. Kubernetes jobs via KEDA) rather than kept running.”
+#
+# Do NOT use restart: unless-stopped here — empty queue → exit 0 → restart storm.
+#
+# Usage (with poll disabled on web so only workers encode):
+#   ENCORE_SETTINGS_POLL_DISABLED=true docker compose \
+#     -f docker-compose.yml -f docker-compose.workers.yml up -d
+#
+# For a long-running local pool without KEDA, prefer encoding on encore-web
+# (default compose) instead of this file.
+
+services:
+  encore-web:
+    environment:
+      ENCORE_SETTINGS_POLL_DISABLED: "${ENCORE_SETTINGS_POLL_DISABLED:-true}"
+
+  encore-worker:
+    image: ghcr.io/svt/encore-worker:latest
+    restart: "no"
+    depends_on:
+      - redis
+    deploy:
+      replicas: ${ENCORE_WORKER_REPLICAS:-2}
+    environment:
+      ENCORE_SETTINGS_REDIS_URI: redis://redis:6379
+      ENCORE_SETTINGS_PROFILE_LOCATION: file:/profiles/profiles.yml
+      ENCORE_SETTINGS_SHARED_WORK_DIR: /shared/work
+      # Drain remaining jobs then exit (good for KEDA / batch workers).
+      ENCORE_SETTINGS_WORKER_DRAIN_QUEUE: "${ENCORE_SETTINGS_WORKER_DRAIN_QUEUE:-true}"
+    volumes:
+      - ./profiles:/profiles:ro
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
+      - encore-shared-work:/shared/work
