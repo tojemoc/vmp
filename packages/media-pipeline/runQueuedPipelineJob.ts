@@ -91,6 +91,9 @@ async function runEncoreAndPackage(
     priority: options.priority ?? 50,
     duration: options.duration,
   })
+  process.stdout.write(
+    `${new Date().toISOString()} 🎞️  ${ctx.videoId} encore job submitted id=${jobId} profile=${profile} stage=${options.stage}\n`,
+  )
 
   await waitForEncoreJob(jobId, { isCancelled: ctx.isCancelled })
   await emitTtp(ctx.videoId, options.ttpEncodeDone, {
