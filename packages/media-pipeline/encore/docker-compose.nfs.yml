@@ -1,0 +1,17 @@
+# Run encore-web + vmp-supervisor + encore-packager as the TrueNAS NFS mapall UID/GID.
+# Example (TrueNAS mapall 3000:3000):
+#   MEDIA_USER=3000:3000 docker compose -f docker-compose.yml -f docker-compose.nfs.yml up -d
+#
+# Without this, the images run as uid 1000 (encore-web / encore-packager) and uid 999
+# (vmp-supervisor), which cannot read/write an NFS export that squashes to another user.
+# encore-packager must also read Encore outputs under /media/tmp (owned by MEDIA_USER).
+
+services:
+  encore-web:
+    user: "${MEDIA_USER:-3000:3000}"
+
+  vmp-supervisor:
+    user: "${MEDIA_USER:-3000:3000}"
+
+  encore-packager:
+    user: "${MEDIA_USER:-3000:3000}"

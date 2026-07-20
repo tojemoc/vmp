@@ -72,3 +72,53 @@ export function verifyDashboardSecret(req: IncomingMessage, dashboardSecret: str
   if (!provided) return false
   return timingSafeEqualString(provided, dashboardSecret)
 }
+
+/**
+ * Eyevinn encore-packager only supports Basic auth via CALLBACK_URL
+ * (`http://user:password@host/path`). We also accept `x-vmp-pipeline-secret`
+ * for manual/testing clients.
+ */
+export function verifyPackagerCallbackSecret(req: IncomingMessage, packagerSecret: string): boolean {
+  if (!packagerSecret) return true
+
+  const header = req.headers['x-vmp-pipeline-secret']
+  const fromHeader = Array.isArray(header) ? header[0] : header
+  if (typeof fromHeader === 'string' && fromHeader.length > 0) {
+    return timingSafeEqualString(fromHeader, packagerSecret)
+  }
+
+  const auth = req.headers.authorization
+  if (typeof auth === 'string' && auth.startsWith('Basic ')) {
+    try {
+      const decoded = Buffer.from(auth.slice('Basic '.length).trim(), 'base64').toString('utf8')
+      const colon = decoded.indexOf(':')
+      const password = colon >= 0 ? decoded.slice(colon + 1) : decoded
+      return timingSafeEqualString(password, packagerSecret)
+    } catch {
+      return false
+    }
+  }
+
+  return false
+}
+
+/**
+ * Success callbacks include `jobId`. Failure callbacks from Eyevinn only send
+ * `{ message }` where `message` is the raw Redis queue JSON (`{ jobId, url }`).
+ */
+export function resolvePackagerCallbackJobId(payload: {
+  jobId?: unknown
+  message?: unknown
+}): string {
+  const direct = String(payload.jobId || '').trim()
+  if (direct) return direct
+
+  const raw = String(payload.message || '').trim()
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw) as { jobId?: unknown }
+    return String(parsed.jobId || '').trim()
+  } catch {
+    return ''
+  }
+}

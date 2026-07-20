@@ -5,7 +5,9 @@ import {
   isExternallyAuthenticatedPath,
   isLoopbackHost,
   requiresDashboardAuth,
+  resolvePackagerCallbackJobId,
   verifyDashboardSecret,
+  verifyPackagerCallbackSecret,
 } from '../supervisorAuth.js'
 
 describe('supervisorAuth', () => {
@@ -41,5 +43,34 @@ describe('supervisorAuth', () => {
     assert.equal(verifyDashboardSecret(okReq, secret), true)
     assert.equal(verifyDashboardSecret(badReq, secret), false)
     assert.equal(verifyDashboardSecret(okReq, ''), true)
+  })
+
+  it('verifies packager callbacks via Basic auth or x-vmp-pipeline-secret', () => {
+    const secret = 'packager-secret'
+    const basic = Buffer.from(`vmp:${secret}`).toString('base64')
+    const basicReq = {
+      headers: { authorization: `Basic ${basic}` },
+    } as unknown as import('node:http').IncomingMessage
+    const headerReq = {
+      headers: { 'x-vmp-pipeline-secret': secret },
+    } as unknown as import('node:http').IncomingMessage
+    const badReq = {
+      headers: { authorization: `Basic ${Buffer.from('vmp:wrong').toString('base64')}` },
+    } as unknown as import('node:http').IncomingMessage
+    assert.equal(verifyPackagerCallbackSecret(basicReq, secret), true)
+    assert.equal(verifyPackagerCallbackSecret(headerReq, secret), true)
+    assert.equal(verifyPackagerCallbackSecret(badReq, secret), false)
+    assert.equal(verifyPackagerCallbackSecret(basicReq, ''), true)
+  })
+
+  it('resolves packager jobId from Eyevinn failure message payload', () => {
+    assert.equal(resolvePackagerCallbackJobId({ jobId: 'abc' }), 'abc')
+    assert.equal(
+      resolvePackagerCallbackJobId({
+        message: JSON.stringify({ jobId: 'from-redis', url: 'http://encore-web:8080/encoreJobs/x' }),
+      }),
+      'from-redis',
+    )
+    assert.equal(resolvePackagerCallbackJobId({ message: 'not-json' }), '')
   })
 })

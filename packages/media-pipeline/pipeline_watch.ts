@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { mkdir, readdir, rm, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -612,6 +612,57 @@ async function completePipelineSuccess(
   stoppedVideos.delete(videoId)
 }
 
+function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM: process exists but we cannot signal it (still a live lock holder).
+    // ESRCH / other: PID is gone or not usable — treat as dead.
+    return Boolean(err && typeof err === 'object' && 'code' in err && err.code === 'EPERM')
+  }
+}
+
+/** Skip only when another live process holds the lock; reclaim stale locks from prior container runs. */
+async function reclaimOrSkipLock(lockFile: string, videoId: string): Promise<'skip' | 'proceed'> {
+  if (!existsSync(lockFile)) return 'proceed'
+  let ownerPid: number
+  try {
+    ownerPid = Number.parseInt((await readFile(lockFile, 'utf8')).trim(), 10)
+  } catch {
+    ownerPid = Number.NaN
+  }
+  if (Number.isInteger(ownerPid) && ownerPid > 0 && ownerPid !== process.pid && isPidAlive(ownerPid)) {
+    emitPipelineEvent(videoId, 'deduped', 'active', `already_processing pid=${ownerPid}`)
+    log(`⏭️  ${videoId} skipped: lock held by live pid=${ownerPid}`)
+    return 'skip'
+  }
+  log(`♻️  ${videoId} reclaiming stale lock (owner=${Number.isFinite(ownerPid) ? ownerPid : 'unknown'})`)
+  await rm(lockFile, { force: true })
+  return 'proceed'
+}
+
+async function clearOrphanLocksAtStartup(): Promise<void> {
+  if (!existsSync(TMP_DIR_BASE)) return
+  const entries = await readdir(TMP_DIR_BASE).catch(() => [] as string[])
+  let cleared = 0
+  for (const name of entries) {
+    const lockFile = path.join(TMP_DIR_BASE, name, '.lock')
+    if (!existsSync(lockFile)) continue
+    let ownerPid: number
+    try {
+      ownerPid = Number.parseInt((await readFile(lockFile, 'utf8')).trim(), 10)
+    } catch {
+      ownerPid = Number.NaN
+    }
+    if (Number.isInteger(ownerPid) && ownerPid > 0 && isPidAlive(ownerPid)) continue
+    await rm(lockFile, { force: true })
+    cleared += 1
+  }
+  if (cleared > 0) log(`♻️  Cleared ${cleared} orphan job lock(s) under ${TMP_DIR_BASE}`)
+}
+
 async function processVideo(videoId: string, inputPath: string, source: string, pipelineMode: PipelineMode): Promise<void> {
   const jobStartMs = Date.now()
   increment('vmp.transcoder.job.started', 1, { source, pipeline_mode: pipelineMode })
@@ -623,17 +674,16 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
   await mkdir(tmpDir, { recursive: true })
   if (existsSync(doneFlag)) {
     emitPipelineEvent(videoId, 'done', 'success', 'already_done')
+    log(`⏭️  ${videoId} skipped: already done (${doneFlag})`)
     return
   }
-  if (existsSync(lockFile)) {
-    emitPipelineEvent(videoId, 'deduped', 'active', 'already_processing')
-    return
-  }
+  if ((await reclaimOrSkipLock(lockFile, videoId)) === 'skip') return
   await writeFile(lockFile, String(process.pid))
   jobInputPaths.set(videoId, inputPath)
   ensureJobHandle(videoId, 'phase1')
   await emitTtp(videoId, 'processing_started', { pipelineMode })
   emitPipelineEvent(videoId, 'detected', 'active', `source=${source} mode=${pipelineMode}`)
+  log(`🎬 ${videoId} processing started (${pipelineMode}) input=${inputPath}`)
   try {
     assertNotStopped(videoId)
     await waitWhilePaused(videoId)
@@ -688,9 +738,12 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
     await rm(lockFile, { force: true })
     videoDurations.delete(videoId)
     progressEmitState.delete(videoId)
+    // Allow the same inbox UUID to be picked up again (restart or later rescan/retry).
+    enqueuedVideoIds.delete(videoId)
     throw err
   } finally {
     if (cancelled) {
+      enqueuedVideoIds.delete(videoId)
       await cleanupCancelledJob(videoId, lockFile, inputPath)
     }
   }
@@ -950,12 +1003,18 @@ function drain(): void {
 
 async function startupScan(): Promise<void> {
   await mkdir(TMP_DIR_BASE, { recursive: true })
+  await clearOrphanLocksAtStartup()
   for (const watch of INBOX_WATCHES) {
     await mkdir(watch.dir, { recursive: true })
     const entries = await readdir(watch.dir)
     for (const file of entries) {
       await intakeInboxBasename(file, watch.dir, watch.pipelineMode, 'startup_scan')
     }
+  }
+  if (queue.length > 0 || running > 0) {
+    log(`📋 startup_scan queued ${queue.length} job(s) (${running} already running)`)
+  } else {
+    log('📋 startup_scan: no inbox videos to process')
   }
 }
 

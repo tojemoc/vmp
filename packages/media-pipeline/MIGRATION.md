@@ -76,11 +76,14 @@ INBOX_FULL_LADDER_DIR=/media/videos/inbox-full-ladder
 TMP_DIR_BASE=/media/tmp/video_pipeline
 REDIS_URL=redis://redis:6379
 VMP_GPU_BACKEND=auto
-PACKAGER_CALLBACK_URL=http://vmp-supervisor:8788/vmp/api
+# base64url charset only: A–Z a–z 0–9 - _ (Compose embeds this in CALLBACK_URL Basic auth)
+VMP_PACKAGER_SECRET=replace-with-base64url-secret
 PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
-S3_ENDPOINT_URL=https://YOUR_ACCOUNT.r2.cloudflarestorage.com
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
+S3_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+# Required for encore-packager S3 uploads (R2 or other S3-compatible). Empty keys → packaging fails.
+AWS_ACCESS_KEY_ID=your-r2-access-key-id
+AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
+AWS_REGION=auto
 ```
 
 Optional GPU on workers:
@@ -119,8 +122,12 @@ Process search strings now reference `packages/media-pipeline/dist/`. Re-copy te
 
 ```bash
 cd packages/media-pipeline/encore
-docker compose up -d vmp-supervisor
-docker compose logs -f vmp-supervisor
+# Compose interpolates ${VMP_PACKAGER_SECRET} into CALLBACK_URL from the shell / project .env
+# (env_file alone injects into containers but does not expand compose ${…} defaults).
+set -a && . /etc/vmp/env && set +a
+# Or: ln -sf /etc/vmp/env .env   then rely on Compose’s automatic .env load
+docker compose up -d
+docker compose logs -f vmp-supervisor encore-packager
 ```
 
 **Systemd:**
