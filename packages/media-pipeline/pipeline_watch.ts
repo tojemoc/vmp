@@ -736,9 +736,12 @@ async function processVideo(videoId: string, inputPath: string, source: string, 
     await rm(lockFile, { force: true })
     videoDurations.delete(videoId)
     progressEmitState.delete(videoId)
+    // Allow the same inbox UUID to be picked up again (restart or later rescan/retry).
+    enqueuedVideoIds.delete(videoId)
     throw err
   } finally {
     if (cancelled) {
+      enqueuedVideoIds.delete(videoId)
       await cleanupCancelledJob(videoId, lockFile, inputPath)
     }
   }
@@ -1005,6 +1008,11 @@ async function startupScan(): Promise<void> {
     for (const file of entries) {
       await intakeInboxBasename(file, watch.dir, watch.pipelineMode, 'startup_scan')
     }
+  }
+  if (queue.length > 0 || running > 0) {
+    log(`📋 startup_scan queued ${queue.length} job(s) (${running} already running)`)
+  } else {
+    log('📋 startup_scan: no inbox videos to process')
   }
 }
 
