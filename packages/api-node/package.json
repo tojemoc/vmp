@@ -22,11 +22,11 @@
     "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260708.1",
+    "@cloudflare/workers-types": "^4.20260628.1",
     "@sentry/cloudflare": "^10.63.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.1",
     "tsx": "^4.23.0",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }

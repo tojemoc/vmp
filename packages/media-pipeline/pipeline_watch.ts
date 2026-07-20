@@ -625,7 +625,7 @@ function isPidAlive(pid: number): boolean {
 /** Skip only when another live process holds the lock; reclaim stale locks from prior container runs. */
 async function reclaimOrSkipLock(lockFile: string, videoId: string): Promise<'skip' | 'proceed'> {
   if (!existsSync(lockFile)) return 'proceed'
-  let ownerPid = Number.NaN
+  let ownerPid: number
   try {
     ownerPid = Number.parseInt((await readFile(lockFile, 'utf8')).trim(), 10)
   } catch {
@@ -648,7 +648,7 @@ async function clearOrphanLocksAtStartup(): Promise<void> {
   for (const name of entries) {
     const lockFile = path.join(TMP_DIR_BASE, name, '.lock')
     if (!existsSync(lockFile)) continue
-    let ownerPid = Number.NaN
+    let ownerPid: number
     try {
       ownerPid = Number.parseInt((await readFile(lockFile, 'utf8')).trim(), 10)
     } catch {
