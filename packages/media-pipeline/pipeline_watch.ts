@@ -617,8 +617,10 @@ function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (err) {
+    // EPERM: process exists but we cannot signal it (still a live lock holder).
+    // ESRCH / other: PID is gone or not usable — treat as dead.
+    return Boolean(err && typeof err === 'object' && 'code' in err && err.code === 'EPERM')
   }
 }
 

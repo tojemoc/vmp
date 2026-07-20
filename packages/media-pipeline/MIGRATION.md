@@ -76,15 +76,13 @@ INBOX_FULL_LADDER_DIR=/media/videos/inbox-full-ladder
 TMP_DIR_BASE=/media/tmp/video_pipeline
 REDIS_URL=redis://redis:6379
 VMP_GPU_BACKEND=auto
-# Must embed VMP_PACKAGER_SECRET as Basic auth (Eyevinn packager has no custom headers)
-PACKAGER_CALLBACK_URL=http://vmp:YOUR_PACKAGER_SECRET@vmp-supervisor:8788/vmp/api
+# URL-safe secret (no @ : /). Compose builds CALLBACK_URL for encore-packager from this.
+VMP_PACKAGER_SECRET=replace-with-long-random-string
 PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
 S3_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
-S3_ENDPOINT_URL=https://YOUR_ACCOUNT.r2.cloudflarestorage.com
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=auto
 ```
 
 Optional GPU on workers:
@@ -123,8 +121,8 @@ Process search strings now reference `packages/media-pipeline/dist/`. Re-copy te
 
 ```bash
 cd packages/media-pipeline/encore
-docker compose up -d vmp-supervisor
-docker compose logs -f vmp-supervisor
+docker compose up -d
+docker compose logs -f vmp-supervisor encore-packager
 ```
 
 **Systemd:**
