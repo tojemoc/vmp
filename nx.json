@@ -2,101 +2,61 @@
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "targetDefaults": {
     "test": {
-      "dependsOn": [
-        "^test"
-      ],
-      "outputs": [
-        "{projectRoot}/packages/api/test"
-      ],
+      "dependsOn": ["^test"],
+      "outputs": ["{projectRoot}/packages/api/test"],
       "cache": true
     },
     "typecheck": {
-      "dependsOn": [
-        "^typecheck"
-      ],
-      "outputs": [
-        "{projectRoot}/packages/web/.nuxt/types"
-      ],
+      "dependsOn": ["^typecheck"],
+      "outputs": ["{projectRoot}/packages/web/.nuxt/types"],
       "cache": true
     },
     "dev": {
-      "dependsOn": [
-        "^dev"
-      ]
+      "dependsOn": ["^dev"]
     },
     "deploy": {
-      "dependsOn": [
-        "^deploy"
-      ]
+      "dependsOn": ["^deploy"]
     },
     "db:create": {
-      "dependsOn": [
-        "^db:create"
-      ]
+      "dependsOn": ["^db:create"]
     },
     "db:seed": {
-      "dependsOn": [
-        "^db:seed"
-      ]
+      "dependsOn": ["^db:seed"]
     },
     "db:teardown": {
-      "dependsOn": [
-        "^db:teardown"
-      ]
+      "dependsOn": ["^db:teardown"]
     },
     "db:reset": {
-      "dependsOn": [
-        "^db:reset"
-      ]
+      "dependsOn": ["^db:reset"]
     },
     "db:migration-backfill": {
-      "dependsOn": [
-        "^db:migration-backfill"
-      ]
+      "dependsOn": ["^db:migration-backfill"]
     },
     "db:migration-verify": {
-      "dependsOn": [
-        "^db:migration-verify"
-      ]
+      "dependsOn": ["^db:migration-verify"]
     },
     "start": {
-      "dependsOn": [
-        "^start"
-      ]
+      "dependsOn": ["^start"]
     },
     "predev": {
-      "dependsOn": [
-        "^predev"
-      ]
+      "dependsOn": ["^predev"]
     },
     "prebuild": {
-      "dependsOn": [
-        "^prebuild"
-      ]
+      "dependsOn": ["^prebuild"]
     },
     "predeploy": {
-      "dependsOn": [
-        "^predeploy"
-      ]
+      "dependsOn": ["^predeploy"]
     },
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "{projectRoot}/dist"
-      ],
+      "dependsOn": ["^build"],
+      "outputs": ["{projectRoot}/dist"],
       "cache": true
     },
     "generate": {
-      "dependsOn": [
-        "^generate"
-      ]
+      "dependsOn": ["^generate"]
     },
     "preview": {
-      "dependsOn": [
-        "^preview"
-      ]
+      "dependsOn": ["^preview"]
     }
   },
   "analytics": true,
