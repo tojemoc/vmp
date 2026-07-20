@@ -35,7 +35,9 @@ import {
   isLoopbackHost,
   REBUILD_WEBHOOK_PATHS,
   requiresDashboardAuth,
+  resolvePackagerCallbackJobId,
   verifyDashboardSecret,
+  verifyPackagerCallbackSecret,
 } from './supervisorAuth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -1406,10 +1408,8 @@ const server = http.createServer(async (req, res) => {
 
   const packagerCallbackMatch = url.pathname.match(/^\/vmp\/api\/packagerCallback\/(success|failure)$/)
   if (req.method === 'POST' && packagerCallbackMatch) {
-    // Verify shared secret
-    const secretHeader = req.headers['x-vmp-pipeline-secret']
-    const providedSecret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader
-    if (!providedSecret || providedSecret !== packagerSecret) {
+    // Eyevinn encore-packager authenticates via Basic auth in CALLBACK_URL (not a custom header).
+    if (!verifyPackagerCallbackSecret(req, packagerSecret || '')) {
       json(res, { error: 'Unauthorized' }, 401)
       return
     }
@@ -1421,7 +1421,7 @@ const server = http.createServer(async (req, res) => {
       return
     }
     const payload = body as { jobId?: string, outputPath?: string, error?: string, message?: string }
-    const jobId = String(payload.jobId || '').trim()
+    const jobId = resolvePackagerCallbackJobId(payload)
     if (!jobId) {
       json(res, { error: 'Missing jobId' }, 400)
       return

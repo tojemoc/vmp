@@ -76,8 +76,12 @@ INBOX_FULL_LADDER_DIR=/media/videos/inbox-full-ladder
 TMP_DIR_BASE=/media/tmp/video_pipeline
 REDIS_URL=redis://redis:6379
 VMP_GPU_BACKEND=auto
-PACKAGER_CALLBACK_URL=http://vmp-supervisor:8788/vmp/api
+# Must embed VMP_PACKAGER_SECRET as Basic auth (Eyevinn packager has no custom headers)
+PACKAGER_CALLBACK_URL=http://vmp:YOUR_PACKAGER_SECRET@vmp-supervisor:8788/vmp/api
 PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
+S3_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
 S3_ENDPOINT_URL=https://YOUR_ACCOUNT.r2.cloudflarestorage.com
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...

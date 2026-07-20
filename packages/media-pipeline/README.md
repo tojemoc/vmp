@@ -145,7 +145,8 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `INBOX_DIR` | — | Legacy: if set, subdirs `fast-lane` / `full-ladder` are used when the above are unset |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Packaging queue (supervisor + packager) |
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
-| `PACKAGER_CALLBACK_URL` | `http://vmp-supervisor:8788/vmp/api` (Compose) | encore-packager success/failure callbacks |
+| `PACKAGER_CALLBACK_URL` | `http://vmp:$VMP_PACKAGER_SECRET@vmp-supervisor:8788/vmp/api` | encore-packager callbacks (Basic auth; Eyevinn does not send custom headers) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_ENDPOINT_URL` | — | R2 credentials for encore-packager (`PACKAGE_OUTPUT_FOLDER=s3://…`) |
 
 Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** for one-shot encoding. TTP logs include `pipelineMode` on every milestone for A/B analysis.
 

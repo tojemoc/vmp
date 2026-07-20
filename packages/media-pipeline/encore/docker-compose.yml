@@ -88,10 +88,16 @@ services:
       - vmp-supervisor
     deploy:
       replicas: ${ENCORE_PACKAGER_REPLICAS:-1}
+    env_file:
+      - path: ${VMP_ENV_FILE:-.env}
+        required: false
     environment:
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
-      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
+      # Eyevinn packager only supports Basic auth (user:pass in URL). Password must
+      # match VMP_PACKAGER_SECRET on vmp-supervisor. Use a URL-safe secret (no @ : /).
+      # Override with PACKAGER_CALLBACK_URL if you need a custom host/path.
+      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp:${VMP_PACKAGER_SECRET}@vmp-supervisor:8788/vmp/api}
       PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
       # $$ escapes Compose interpolation so encore-packager sees $EXTERNALID$
       OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$$EXTERNALID$$}
@@ -100,6 +106,9 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-auto}
+    volumes:
+      # Same tree as encore-web — packager reads Encore output paths under /media/tmp
+      - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
