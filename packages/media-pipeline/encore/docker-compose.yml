@@ -95,7 +95,7 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
       # Eyevinn packager only supports Basic auth (user:pass in URL). Password must
-      # match VMP_PACKAGER_SECRET on vmp-supervisor. Use a URL-safe secret (no @ : /).
+      # match VMP_PACKAGER_SECRET on vmp-supervisor. Use base64url (A–Z a–z 0–9 - _).
       # Override with PACKAGER_CALLBACK_URL if you need a custom host/path.
       CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp:${VMP_PACKAGER_SECRET}@vmp-supervisor:8788/vmp/api}
       PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
