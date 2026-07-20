@@ -90,6 +90,12 @@ MEDIA_HOST_ROOT=/mnt
 ENCORE_MEDIA_ROOT=/media   # path as seen inside Encore containers
 ```
 
+**TrueNAS / NFS `mapall`:** stock images run as uid `1000` (encore-web) and `999` (vmp-supervisor). If the share squashes to another user (e.g. `3000:3000`), those containers get `Permission denied` on `/media`. Run:
+
+```bash
+MEDIA_USER=3000:3000 docker compose -f docker-compose.yml -f docker-compose.nfs.yml up -d
+```
+
 If Encore runs natively (JAR) on the same host without path translation, omit `ENCORE_MEDIA_ROOT` or set it equal to `MEDIA_HOST_ROOT`.
 
 Official Encore docs: [Getting started](https://svt.github.io/encore/getting-started/) · [OpenAPI](https://svt.github.io/encore-doc/openapi.html)

@@ -14,6 +14,9 @@
 #   VAAPI:  docker compose -f encore/docker-compose.yml -f encore/docker-compose.vaapi.yml up -d
 #   NVIDIA: docker compose -f encore/docker-compose.yml -f encore/docker-compose.nvidia.yml up -d
 #
+# NFS / TrueNAS mapall (run containers as the mapped UID:GID):
+#   MEDIA_USER=3000:3000 docker compose -f encore/docker-compose.yml -f encore/docker-compose.nfs.yml up -d
+#
 # Supervisor image: ghcr.io/tojemoc/vmp-media-pipeline (built by .github/workflows/media-pipeline-docker.yml).
 # Local build: docker compose -f encore/docker-compose.yml build vmp-supervisor
 
