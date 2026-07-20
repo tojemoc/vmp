@@ -28,21 +28,21 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@nx/nuxt": "23.0.1",
-    "@nx/vite": "23.0.1",
-    "@vue/language-core": "^3.3.6",
-    "eslint": "^10.6.0",
+    "@nx/nuxt": "23.1.0",
+    "@nx/vite": "23.1.0",
+    "@vue/language-core": "^3.3.7",
+    "eslint": "^10.7.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-vue": "^10.9.2",
     "globals": "^17.7.0",
-    "knip": "^6.25.0",
-    "nuxt": "^4.4.8",
-    "nx": "23.0.1",
-    "prettier": "^3.9.4",
+    "knip": "^6.27.0",
+    "nuxt": "^4.5.0",
+    "nx": "23.1.0",
+    "prettier": "^3.9.5",
     "typescript": "^7.0.2",
-    "typescript-eslint": "^8.63.0",
+    "typescript-eslint": "^8.64.0",
     "vue-eslint-parser": "^10.4.0",
-    "ws": "8.21.0"
+    "ws": "8.21.1"
   },
   "packageManager": "npm@11.15.0",
   "engines": {
@@ -56,6 +56,6 @@
     "better-sqlite3": "^12.10.0",
     "tmp": ">=0.2.6",
     "form-data": "4.0.6",
-    "ws": "8.21.0"
+    "ws": "8.21.1"
   }
 }
