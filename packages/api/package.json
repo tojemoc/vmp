@@ -20,15 +20,15 @@
     "db:migration-verify": "bash ./scripts/migration_integrity_check.sh"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^10.63.0",
+    "@sentry/cloudflare": "^10.66.0",
     "@vmp/payments": "*",
     "@vmp/shared": "*",
     "@vmp/storage": "*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260628.1",
-    "@types/node": "^26.1.0",
-    "tsx": "^4.23.0",
-    "wrangler": "^4.107.0"
+    "@cloudflare/workers-types": "^5.20260719.1",
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "wrangler": "^4.112.0"
   }
 }
