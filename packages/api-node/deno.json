@@ -5,7 +5,13 @@
 
   "deploy": {
     "org": "tjm",
-    "app": "vmp"
+    "app": "vmp",
+    "install": "node ./scripts/deno-deploy-install.mjs",
+    "build": "npm run build",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./dist/server.js"
+    }
   },
 
   "exports": {
