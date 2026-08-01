@@ -4,10 +4,8 @@
   "version": "1.0.0",
 
   "deploy": {
-    "org": "tjm",
-    "app": "vmp",
-    "install": "node ./scripts/deno-deploy-install.mjs",
-    "build": "npm run build",
+    "install": "deno run -A ./scripts/deno-deploy-install.mjs",
+    "build": "deno run -A ./scripts/build.mjs",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./dist/server.js"
