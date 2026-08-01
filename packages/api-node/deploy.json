@@ -4,5 +4,5 @@
   "nodeVersion": "24.11.0",
   "rootDirectory": "packages/api-node",
   "runtimeEntrypoint": "dist/server.js",
-  "notes": "Deno Deploy builds from the linked repo on every push (PR previews and production on main). Keep packages/api-node/deno.json deploy block as org/app only so dashboard install/build/runtime stay in effect (source install/build/runtime overrides the dashboard). Bundle via scripts/build.mjs (createRequire banner + workspace aliases). Optional lean installer: scripts/deno-deploy-install.mjs. PR gate: npm run verify:api-node in ci.yml. Deploy gate: Deno Deploy build status on the PR."
+  "notes": "Deno Deploy builds from the linked repo on every push (PR previews and production on main). packages/api-node/deno.json keeps deploy.org/app only so dashboard install/build/runtime remain authoritative (putting install/build/runtime in source overrides the dashboard entirely). Bundle via scripts/build.mjs (createRequire banner for AWS SDK ESM, workspace aliases). Optional lean installer for dashboard install command: node/deno scripts/deno-deploy-install.mjs. PR gate: npm run verify:api-node (includes smoke:bundle). Deploy gate: Deno Deploy build status — check console.deno.com logs if red."
 }
