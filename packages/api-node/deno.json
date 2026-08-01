@@ -4,8 +4,6 @@
   "version": "1.0.0",
 
   "deploy": {
-    "org": "tjm",
-    "app": "vmp",
     "install": "deno run -A ./scripts/deno-deploy-install.mjs",
     "build": "deno run -A ./scripts/build.mjs",
     "runtime": {
