@@ -4,5 +4,5 @@
   "nodeVersion": "24.11.0",
   "rootDirectory": "packages/api-node",
   "runtimeEntrypoint": "dist/server.js",
-  "notes": "Deno Deploy builds from the linked repo on every push (PR previews and production on main). Install/build/runtime are defined in packages/api-node/deno.json (lean install via scripts/deno-deploy-install.mjs — do not use root npm ci; the monorepo lockfile includes optional native platform packages that fail npm ci on Linux). PR gate: npm run verify:api-node in ci.yml. Deploy gate: Deno Deploy build status on the PR."
+  "notes": "Deno Deploy builds from the linked repo on every push (PR previews and production on main). Install/build/runtime are defined in deno.json (repo root and packages/api-node) using scripts/deno-deploy-install.mjs — do not use root npm ci; the monorepo lockfile includes optional native platform packages that fail npm ci on Linux. Prefer app directory packages/api-node in the Deno dashboard; root deno.json covers app-directory=repo-root. PR gate: npm run verify:api-node in ci.yml. Deploy gate: Deno Deploy build status on the PR."
 }

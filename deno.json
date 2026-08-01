@@ -2,5 +2,13 @@
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "nodeModulesDir": "auto",
   "unstable": ["sloppy-imports"],
-  "workspace": ["packages/api-node"]
+  "workspace": ["packages/api-node"],
+  "deploy": {
+    "install": "cd packages/api-node && deno run -A ./scripts/deno-deploy-install.mjs",
+    "build": "cd packages/api-node && deno run -A ./scripts/build.mjs",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./packages/api-node/dist/server.js"
+    }
+  }
 }
