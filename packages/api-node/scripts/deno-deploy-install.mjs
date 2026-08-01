@@ -14,7 +14,7 @@
  * can resolve them when bundling ../api and ../storage sources.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,8 +26,17 @@ for (const name of siblingNames) {
   if (!existsSync(entry)) {
     console.error(
       `[deno-deploy-install] Missing packages/${name} at ${entry}. ` +
-        'Deno Deploy app directory must be packages/api-node inside a full repo checkout.',
+        'Deno Deploy needs a full monorepo checkout (app directory = repo root, or ' +
+        'packages/api-node with sibling packages present).',
     )
+    console.error('[deno-deploy-install] packageRoot=', packageRoot)
+    console.error('[deno-deploy-install] parent listing:')
+    try {
+      const { readdirSync } = await import('node:fs')
+      console.error(readdirSync(path.join(packageRoot, '..')).join('\n'))
+    } catch (err) {
+      console.error(String(err))
+    }
     process.exit(1)
   }
 }
