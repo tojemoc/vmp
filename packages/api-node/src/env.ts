@@ -59,11 +59,6 @@ export async function buildEnv(): Promise<CFEnvShape> {
     SENDER_EMAIL: process.env.SENDER_EMAIL,
     SENDER_NAME: process.env.SENDER_NAME,
     STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
-    MEDIA_CONVERT_ENABLED: process.env.MEDIA_CONVERT_ENABLED,
-    MEDIA_CONVERT_INPUT_PREFIX: process.env.MEDIA_CONVERT_INPUT_PREFIX,
-    MEDIA_CONVERT_OUTPUT_PREFIX: process.env.MEDIA_CONVERT_OUTPUT_PREFIX,
-    MEDIA_CONVERT_MAX_UPLOAD_MB: process.env.MEDIA_CONVERT_MAX_UPLOAD_MB,
-    MEDIA_CONVERT_PRICE_HD_PER_MIN: process.env.MEDIA_CONVERT_PRICE_HD_PER_MIN,
 
     DB: db as unknown as D1Database,
     video_subscription_db: db as unknown as D1Database,

@@ -17,7 +17,7 @@ the browser is running an **older JS bundle**, not current `main`:
 
 1. **Service worker cache** — PWA uses Workbox with `registerType: 'prompt'`. Hard-refresh or unregister the service worker (DevTools → Application → Service workers → Unregister), then reload.
 2. **Stale deployment** — Confirm staging/production was deployed after the #384 merge (push to `main` triggers staging CD).
-3. **Backup hostname** — Failover to a Vercel-hosted build would 404 that path on Cloudflare Pages; primary analytics are Umami (GTM gateway) and Sentry.
+3. **Wrong hostname / stale Worker** — Confirm the URL is served by `vmp-web-worker-dev` or `vmp-web-worker-prod` (not a deprecated Pages project). Primary analytics are Umami (GTM gateway) and Sentry.
 
 No code change is required once clients pick up a post-#384 build.
 

@@ -1,5 +1,7 @@
 # Stripe Express Checkout (Apple Pay / Google Pay) — Investigation
 
+> **Archived.** Historical investigation. Not current product docs. See [docs/README.md](../README.md).
+
 **Status:** Investigation only (no implementation in this PR).  
 **Date:** 2026-05-29  
 **Context:** Add a wallet option beside card payments in the premium checkout UI, using Stripe’s [Express Checkout Element](https://docs.stripe.com/elements/express-checkout-element).

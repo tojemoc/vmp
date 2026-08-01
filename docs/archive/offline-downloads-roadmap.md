@@ -1,5 +1,7 @@
 # Offline Downloads — Architecture & Roadmap
 
+> **Archived.** Milestones below were used during implementation. For current behavior, prefer code under `packages/api` / `packages/web` and [docs/README.md](../README.md).
+
 Status: **M1–M6 implemented** (API + client storage, playback, UI, revalidation).
 
 ## Goals

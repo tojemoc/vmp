@@ -1,5 +1,16 @@
 # Deployment and Environment Strategy
 
+Operational deploy guide for VMP. For product architecture and package overview, see [README.md](README.md). For agent/dev workflow, see [AGENTS.md](AGENTS.md).
+
+## Contents
+
+- [Unified environment variables](#unified-environment-variables)
+- [Multi-domain setup](#multi-domain-setup)
+- [CI/CD flow](#cicd-flow)
+- [Fresh infrastructure bootstrap runbook](#fresh-infrastructure-bootstrap-runbook)
+- [Rollback notes (staging/production)](#rollback-notes-stagingproduction)
+- [Livestream notes (Media over QUIC)](#livestream-notes-media-over-quic)
+
 ## Unified environment variables
 
 Use the root `.env.example` as the single source template for all runtime values.
@@ -128,7 +139,7 @@ Use this when staging/production D1, KV, and/or R2 were intentionally reset.
 - D1 database
 - KV namespace(s)
 - R2 bucket(s)
-- Update Worker/Page bindings to point to recreated resources.
+- Update Worker bindings to point to recreated resources.
 
 1. Restore required secrets (per environment)
 

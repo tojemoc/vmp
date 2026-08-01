@@ -1,6 +1,8 @@
 # Admin homescreen layout — redesign plan
 
-This document is a **plan only** (no implementation in the current PR). It captures the target experience described for the admin “homescreen layout” editor.
+> **Archived.** Historical planning note. Not the source of truth for current admin UI behavior. See [docs/README.md](../README.md).
+
+This document is a **plan only**. It captures the target experience described for the admin “homescreen layout” editor.
 
 ## Problem with the current admin UI
 
