@@ -34,6 +34,12 @@ await esbuild.build({
   outdir: 'dist',
   outExtension: { '.js': '.js' },
   packages: 'bundle',
+  // AWS SDK / Smithy ship CJS that does `require('node:https')`. esbuild's default
+  // ESM require shim throws ("Dynamic require … is not supported"), which breaks
+  // Deno Deploy preview warmup. Provide a real createRequire for those calls.
+  banner: {
+    js: "import { createRequire as __apiNodeCreateRequire } from 'node:module'; const require = __apiNodeCreateRequire(import.meta.url);",
+  },
   alias: {
     // CI can invoke api-node build without full workspace link metadata.
     // Resolve workspace packages to source directly; runtime npm dependencies are

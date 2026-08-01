@@ -33,6 +33,8 @@ Run locally before opening a PR:
 npm run verify:api-node
 ```
 
+That gate typechecks, unit-tests, esbuild-bundles `dist/server.js`, and smoke-loads the bundle (expects a clean `DATABASE_URL` boot error — catches ESM/`node:https` require regressions that break Deno Deploy warmup).
+
 Required GitHub configuration: none for Deno Deploy upload (git integration handles deploy). Optional repo variable `API_URL_BACKUP` for manual smoke scripts.
 
 ## Contents
