@@ -107,7 +107,7 @@ Full Cloud-agent local notes (secrets, gotchas): [AGENTS.md → Cursor Cloud-spe
 | --- | --- |
 | Push to `main` | Staging: API Worker + web Worker (`vmp-web-worker-dev`) via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) |
 | Tag `v*.*.*` | Production: API Worker + web Worker (`vmp-web-worker-prod`) |
-| Push / PR (Deno git integration) | `@vmp/api-node` on Deno Deploy — **not** from `deploy.yml` |
+| Push / PR (Deno git integration) | `@vmp/api-node` preview/production build on Deno Deploy — **not** from `deploy.yml`. PR check status is **pending until** `deploy/tjm/vmp` clears; maintainer log review on [console.deno.com](https://console.deno.com) is required when that check stays red. |
 
 Manual commands:
 
@@ -136,4 +136,4 @@ Transcoding runs on a **media VM** via [`@vmp/media-pipeline`](packages/media-pi
 2. encore-packager (Shaka) → fMP4 HLS ladder uploaded to R2
 3. HMAC callback to `POST /api/admin/videos/:id/pipeline-status`
 
-There is **no** AWS Elemental MediaConvert (or Bunny Stream admin uploader) path in this repo anymore. Historical `media_convert_jobs` D1 tables may still exist from old migrations; they are not used by a live upload/transcode UI.
+There is **no** AWS Elemental MediaConvert admin upload/transcode UI in this repo anymore. The historical `media_convert_jobs` D1 table remains: playback and offline-download code may still read completed **Bunny Stream** rows (`provider = 'bunnystream'`, `bunny_playback_url`) as an alternate HLS entrypoint. Do not drop that table without a migration that replaces those reads.

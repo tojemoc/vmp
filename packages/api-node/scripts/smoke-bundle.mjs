@@ -35,7 +35,9 @@ child.stderr.on('data', (chunk) => {
   stderr += chunk
 })
 
+let timedOut = false
 const timeout = setTimeout(() => {
+  timedOut = true
   child.kill('SIGKILL')
 }, 10_000)
 
@@ -45,10 +47,27 @@ const exitCode = await new Promise((resolve) => {
 clearTimeout(timeout)
 
 const combined = `${stdout}\n${stderr}`
+
+if (timedOut) {
+  console.error(
+    '[smoke-bundle] FAIL: process did not exit within 10s (killed by timeout).\n' +
+      combined,
+  )
+  process.exit(1)
+}
+
 if (/Dynamic require of ["']node:https["'] is not supported/i.test(combined)) {
   console.error(
     '[smoke-bundle] FAIL: bundle crashes on AWS SDK CJS require under ESM.\n' +
       'Fix packages/api-node/scripts/build.mjs (createRequire banner) and rebuild.\n' +
+      combined,
+  )
+  process.exit(1)
+}
+
+if (exitCode === 0) {
+  console.error(
+    '[smoke-bundle] FAIL: expected non-zero exit without DATABASE_URL; got 0.\n' +
       combined,
   )
   process.exit(1)

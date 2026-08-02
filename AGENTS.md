@@ -63,7 +63,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Package | Path | Runtime |
 |---|---|---|
 | `@vmp/api` | `packages/api` | Cloudflare Worker (TypeScript) — REST API, auth, Stripe, push, thumbnails |
-| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) — Cloudflare **Worker** SSR (`wrangler.workers.toml`) |
+| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) — Cloudflare **Worker** SSR (`packages/web/wrangler.workers.toml`) |
 | `@vmp/shared` | `packages/shared` | Shared TypeScript types |
 | `@vmp/storage` | `packages/storage` | Pluggable object storage (R2 / S3-compatible) |
 | `@vmp/payments` | `packages/payments` | Payment provider registry (Stripe, legacy Qerko) |
@@ -77,7 +77,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Video/asset storage | Cloudflare R2 |
 | API + auth backend | Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite) |
-| Config format | `wrangler.json` (not `.toml`) |
+| Config format | `wrangler.json` for `@vmp/api` (exception: `@vmp/web` uses `wrangler.workers.toml`) |
 | Frontend | Nuxt 4 on Cloudflare Workers (`vmp-web-worker-dev` / `vmp-web-worker-prod`) + `@vmp/api` API Worker |
 | Email | Brevo Transactional API |
 | Payments | Stripe (card, PayPal, SEPA via Checkout); optional legacy provider for grandfathered subs |
