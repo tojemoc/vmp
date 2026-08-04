@@ -7,18 +7,21 @@
   "description": "VMP API on Deno Deploy (Postgres D1 shim, S3/R2, SQL-backed KV for @vmp/api Worker code)",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "smoke:bundle": "node scripts/smoke-bundle.mjs",
     "start": "node dist/server.js",
     "dev": "npm run build && node --watch dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "verify:deploy": "npm run typecheck && npm run test && npm run build"
+    "verify:deploy": "npm run typecheck && npm run test && npm run build && npm run smoke:bundle"
   },
   "engines": {
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1090.0",
-    "@vmp/storage": "*",
+    "@aws-sdk/s3-request-presigner": "^3.1090.0",
+    "@smithy/fetch-http-handler": "^5.6.6",
+    "@vmp/storage": "file:../storage",
     "postgres": "^3.4.7"
   },
   "devDependencies": {

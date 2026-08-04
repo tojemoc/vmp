@@ -2,7 +2,7 @@
  * Offline downloads API — device registration (M1) and download licensing (M2).
  *
  * V1 uses Store & License: plaintext CMAF in OPFS on the client; server gates
- * authorize/asset access. See docs/offline-downloads-roadmap.md.
+ * authorize/asset access. See docs/archive/offline-downloads-roadmap.md.
  */
 
 import { requireAuth } from './auth.js'

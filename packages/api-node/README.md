@@ -33,6 +33,8 @@ Run locally before opening a PR:
 npm run verify:api-node
 ```
 
+That gate typechecks, unit-tests, esbuild-bundles `dist/server.js`, and smoke-loads the bundle (expects a clean `DATABASE_URL` boot error — catches ESM/`node:https` require regressions that break Deno Deploy warmup).
+
 Required GitHub configuration: none for Deno Deploy upload (git integration handles deploy). Optional repo variable `API_URL_BACKUP` for manual smoke scripts.
 
 ## Contents
@@ -67,8 +69,9 @@ The Worker `fetch()` entry in `packages/api/src/index.ts` is invoked unchanged. 
 
 1. Provision **Prisma Postgres** (or attach external Postgres) in the [Deno Deploy dashboard](https://console.deno.com) and assign it to the app — `DATABASE_URL` is injected automatically per environment.
 2. Link the GitHub repository in Deno Deploy (git builds run on every push; PR previews and `main` → production).
-3. Copy Worker secrets into Deno Deploy env vars (see `.env.example`).
-4. `GET /api/health` should return `"mode": "deno-deploy"` and `"checks.database": { "ok": true, "backend": "postgres" }`.
+3. Set the app directory to `packages/api-node`. Dashboard install/build/runtime options are documented in [`deploy.json`](deploy.json) (lean package-local install via `node scripts/deno-deploy-install.mjs` — do **not** run root `npm ci`; the monorepo lockfile includes optional native platform packages that fail on Linux).
+4. Copy Worker secrets into Deno Deploy env vars (see `.env.example`).
+5. `GET /api/health` should return `"mode": "deno-deploy"` and `"checks.database": { "ok": true, "backend": "postgres" }`.
 
 ## CI verify (same as local release)
 

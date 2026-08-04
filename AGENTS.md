@@ -58,13 +58,17 @@ Document what you ruled out in PR comments so reviewers do not chase the wrong d
 
 ## Project overview
 
-VMP (Video Monetization Platform) is a subscription-gated HLS video streaming platform. npm workspaces monorepo with three packages:
+VMP (Video Monetization Platform) is a subscription-gated HLS video streaming platform. npm workspaces monorepo — see [README.md](README.md) for the full package table. Core packages:
 
 | Package | Path | Runtime |
 |---|---|---|
-| `@vmp/api` | `packages/api` | Cloudflare Worker (JS) — REST API, auth, Stripe, push, thumbnails |
-| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) — Cloudflare **Worker** SSR (`wrangler.workers.toml`) |
-| `@vmp/shared` | `packages/shared` | Shared TS types |
+| `@vmp/api` | `packages/api` | Cloudflare Worker (TypeScript) — REST API, auth, Stripe, push, thumbnails |
+| `@vmp/web` | `packages/web` | Nuxt 4 / Vue 3 frontend (TypeScript) — Cloudflare **Worker** SSR (`packages/web/wrangler.workers.toml`) |
+| `@vmp/shared` | `packages/shared` | Shared TypeScript types |
+| `@vmp/storage` | `packages/storage` | Pluggable object storage (R2 / S3-compatible) |
+| `@vmp/payments` | `packages/payments` | Payment provider registry (Stripe, legacy Qerko) |
+| `@vmp/api-node` | `packages/api-node` | Deno Deploy backup API (Postgres + S3 adapters) |
+| `@vmp/media-pipeline` | `packages/media-pipeline` | Media VM: SVT Encore + Shaka HLS → R2 |
 
 ### Infrastructure
 
@@ -73,7 +77,7 @@ VMP (Video Monetization Platform) is a subscription-gated HLS video streaming pl
 | Video/asset storage | Cloudflare R2 |
 | API + auth backend | Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite) |
-| Config format | `wrangler.json` (not `.toml`) |
+| Config format | `wrangler.json` for `@vmp/api` (exception: `@vmp/web` uses `wrangler.workers.toml`) |
 | Frontend | Nuxt 4 on Cloudflare Workers (`vmp-web-worker-dev` / `vmp-web-worker-prod`) + `@vmp/api` API Worker |
 | Email | Brevo Transactional API |
 | Payments | Stripe (card, PayPal, SEPA via Checkout); optional legacy provider for grandfathered subs |
@@ -104,7 +108,7 @@ Migrations live in `packages/api/migrations/` — always add a new numbered file
 
 ### Auth system (DO NOT rewrite)
 
-Fully implemented in `packages/api/src/auth.js`. Key exports:
+Fully implemented in `packages/api/src/auth.ts`. Key exports:
 - `handleRequestMagicLink` — `POST /api/auth/magic-link`
 - `handleVerifyMagicLink` — `GET /api/auth/verify?token=`
 - `handleRefreshToken` — `POST /api/auth/refresh`

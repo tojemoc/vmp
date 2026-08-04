@@ -34,13 +34,13 @@ Admin dashboard copy is listed under `strings.admin` as an **inventory** for tra
 
 VMP is designed for **one language per deployment** — e.g. a Slovak client instance with `NUXT_PUBLIC_UI_LOCALE=sk`, a Czech client with `NUXT_PUBLIC_UI_LOCALE=cs`.
 
-Set at build time in Cloudflare Pages / local dev:
+Set at **build time** for the web Worker (or local `nuxi` / `npm run build`):
 
 ```bash
 NUXT_PUBLIC_UI_LOCALE=sk API_URL=https://api.example.sk npm run build --workspace=@vmp/web
 ```
 
-Staging deploys via `.github/workflows/deploy.yml` on push to `main`. Set `NUXT_PUBLIC_UI_LOCALE=sk` in the Cloudflare Pages project env (or workflow `env:` block) before flipping a Slovak instance.
+Staging deploys via `.github/workflows/deploy.yml` on push to `main`. Set `NUXT_PUBLIC_UI_LOCALE=sk` in the GitHub Actions / repository variables used by that workflow before flipping a Slovak instance. Runtime Worker vars alone do not change language — rebuild and redeploy. See [packages/web/docs/workers-deploy-env.md](../packages/web/docs/workers-deploy-env.md).
 
 `runtimeConfig.public.uiLocale` and `<html lang="…">` follow this value. There is no language picker in the header by default.
 

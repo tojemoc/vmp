@@ -18,11 +18,6 @@ export interface CFEnvShape {
   SENDER_EMAIL?: string
   SENDER_NAME?: string
   STRIPE_PUBLISHABLE_KEY?: string
-  MEDIA_CONVERT_ENABLED?: string
-  MEDIA_CONVERT_INPUT_PREFIX?: string
-  MEDIA_CONVERT_OUTPUT_PREFIX?: string
-  MEDIA_CONVERT_MAX_UPLOAD_MB?: string
-  MEDIA_CONVERT_PRICE_HD_PER_MIN?: string
 
   DB?: D1Database
   video_subscription_db?: D1Database
