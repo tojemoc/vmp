@@ -7,15 +7,22 @@ import { createClient } from 'redis'
 const REDIS_URL = (process.env.REDIS_URL || 'redis://127.0.0.1:6379').trim()
 const REDIS_QUEUE = (process.env.REDIS_QUEUE || 'packaging-queue').trim()
 
-let client: ReturnType<typeof createClient> | null = null
-let connectPromise: Promise<ReturnType<typeof createClient>> | null = null
+/** Concrete client type from default createClient() (RESP3 in redis@6). */
+type PackagingRedisClient = ReturnType<typeof createPackagingClient>
 
-async function getRedis(): Promise<ReturnType<typeof createClient>> {
+function createPackagingClient() {
+  return createClient({ url: REDIS_URL })
+}
+
+let client: PackagingRedisClient | null = null
+let connectPromise: Promise<PackagingRedisClient> | null = null
+
+async function getRedis(): Promise<PackagingRedisClient> {
   if (client?.isOpen) return client
   if (connectPromise) return connectPromise
 
   connectPromise = (async () => {
-    const newClient = createClient({ url: REDIS_URL })
+    const newClient = createPackagingClient()
     newClient.on('error', (err) => {
       process.stderr.write(`[packaging-queue] redis error: ${err instanceof Error ? err.message : String(err)}\n`)
     })
