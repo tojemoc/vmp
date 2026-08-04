@@ -18,7 +18,7 @@
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "typescript": "^6.0.3"
   },
   "engines": {
@@ -26,6 +26,6 @@
   },
   "dependencies": {
     "@vmp/storage": "*",
-    "redis": "^5.8.2"
+    "redis": "^6.1.0"
   }
 }
