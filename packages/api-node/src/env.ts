@@ -1,47 +1,47 @@
-import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js'
-import { createStorageProviderFromEnv, asR2Bucket } from '@vmp/storage/node'
-import { PostgresKVAdapter } from './bindings/kv.js'
-import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js'
-import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types'
-import type { CFEnvShape } from './types.js'
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
+import { asR2Bucket, createStorageProviderFromEnv } from '@vmp/storage/node';
+import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js';
+import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js';
+import { PostgresKVAdapter } from './bindings/kv.js';
+import type { CFEnvShape } from './types.js';
 
-const workspaceRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
+const workspaceRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 
-let cachedEnv: CFEnvShape | null = null
-let cachedDb: PostgresD1Adapter | null = null
-let cachedKv: PostgresKVAdapter | null = null
-let envBuildPromise: Promise<CFEnvShape> | null = null
+let cachedEnv: CFEnvShape | null = null;
+let cachedDb: PostgresD1Adapter | null = null;
+let cachedKv: PostgresKVAdapter | null = null;
+let envBuildPromise: Promise<CFEnvShape> | null = null;
 
 export function migrationsDir(): string {
-  const bundleDir = dirname(fileURLToPath(import.meta.url))
-  const colocated = resolve(bundleDir, 'migrations')
-  if (existsSync(colocated)) return colocated
-  return resolve(workspaceRoot, 'packages/api/migrations')
+  const bundleDir = dirname(fileURLToPath(import.meta.url));
+  const colocated = resolve(bundleDir, 'migrations');
+  if (existsSync(colocated)) return colocated;
+  return resolve(workspaceRoot, 'packages/api/migrations');
 }
 
 export async function buildEnv(): Promise<CFEnvShape> {
-  const databaseUrl = resolveDatabaseUrl()
+  const databaseUrl = resolveDatabaseUrl();
   const db = new PostgresD1Adapter({
     databaseUrl,
     enableWriteLog: process.env.ENABLE_WRITE_LOG !== '0',
     maxConnections: Number.parseInt(process.env.DATABASE_POOL_SIZE ?? '5', 10) || 5,
-  })
-  const runMigrations = process.env.RUN_MIGRATIONS !== '0'
-  await db.init(runMigrations ? migrationsDir() : undefined)
+  });
+  const runMigrations = process.env.RUN_MIGRATIONS !== '0';
+  await db.init(runMigrations ? migrationsDir() : undefined);
 
-  const kv = new PostgresKVAdapter(db)
+  const kv = new PostgresKVAdapter(db);
 
-  let bucketBinding: ReturnType<typeof asR2Bucket> | undefined
+  let bucketBinding: ReturnType<typeof asR2Bucket> | undefined;
   if (process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME || process.env.STORAGE_BUCKET) {
-    const storage = createStorageProviderFromEnv()
-    bucketBinding = asR2Bucket(storage)
+    const storage = createStorageProviderFromEnv();
+    bucketBinding = asR2Bucket(storage);
   }
 
-  cachedDb = db
-  cachedKv = kv
+  cachedDb = db;
+  cachedKv = kv;
 
   const env: CFEnvShape = {
     JWT_SECRET: process.env.JWT_SECRET,
@@ -66,36 +66,36 @@ export async function buildEnv(): Promise<CFEnvShape> {
     RATE_LIMIT_KV: kv as unknown as KVNamespace,
     SEGMENT_RATE_LIMITER: new InMemoryDurableObjectNamespace(),
     CF_COLO: process.env.CF_COLO ?? 'DENO',
-  }
+  };
 
-  cachedEnv = env
-  return env
+  cachedEnv = env;
+  return env;
 }
 
 export async function getEnv(): Promise<CFEnvShape> {
-  if (cachedEnv) return cachedEnv
-  if (envBuildPromise) return envBuildPromise
+  if (cachedEnv) return cachedEnv;
+  if (envBuildPromise) return envBuildPromise;
   envBuildPromise = buildEnv()
     .then((env) => {
-      cachedEnv = env
-      return env
+      cachedEnv = env;
+      return env;
     })
     .finally(() => {
-      envBuildPromise = null
-    })
-  return envBuildPromise
+      envBuildPromise = null;
+    });
+  return envBuildPromise;
 }
 
 export async function rebuildEnv(): Promise<CFEnvShape> {
-  await cachedDb?.close()
-  cachedKv?.stop()
-  cachedEnv = null
-  cachedDb = null
-  cachedKv = null
-  envBuildPromise = null
-  return getEnv()
+  await cachedDb?.close();
+  cachedKv?.stop();
+  cachedEnv = null;
+  cachedDb = null;
+  cachedKv = null;
+  envBuildPromise = null;
+  return getEnv();
 }
 
 export function getDbAdapter(): PostgresD1Adapter | null {
-  return cachedDb
+  return cachedDb;
 }

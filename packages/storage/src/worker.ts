@@ -1,2 +1,2 @@
-export * from './types.js'
-export { wrapR2Bucket, R2BindingStorageProvider } from './r2-binding.js'
+export { R2BindingStorageProvider, wrapR2Bucket } from './r2-binding.js';
+export * from './types.js';
