@@ -14,7 +14,6 @@ import {
   packagingStageToPipelineStage,
 } from './pipelineMode.js';
 import { runQueuedPipelineJob } from './runQueuedPipelineJob.js';
-import { objectKey, uploadFileToStorage, verifyStorageDirectory } from './storage.js';
 import { beginTtpJob, emitTtp, emitTtpSummary, setTtpSourceDuration } from './ttpLog.js';
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused';
@@ -101,7 +100,6 @@ const PIPELINE_CALLBACK_TIMEOUT_MS = Math.max(
   5_000,
   Number.parseInt(process.env.PIPELINE_CALLBACK_TIMEOUT_MS || '15000', 10) || 15_000,
 );
-const HLS_AUDIO_PLAYLIST = 'audio.m3u8';
 
 function log(msg: string): void {
   process.stdout.write(`${new Date().toISOString()} ${msg}\n`);
@@ -488,55 +486,6 @@ function run(
       );
     });
   });
-}
-
-async function storageCopySharedAudioAssets(
-  tmpDir: string,
-  keyPrefix: string,
-  label: string,
-  videoId?: string,
-): Promise<void> {
-  const uploads: Promise<void>[] = [];
-  const initPath = path.join(tmpDir, 'init_audio.mp4');
-  if (existsSync(initPath)) {
-    uploads.push(
-      uploadFileToStorage(initPath, objectKey(keyPrefix, 'init_audio.mp4'), `${label} init_audio`),
-    );
-  }
-  const playlistPath = path.join(tmpDir, HLS_AUDIO_PLAYLIST);
-  if (existsSync(playlistPath)) {
-    uploads.push(
-      uploadFileToStorage(
-        playlistPath,
-        objectKey(keyPrefix, HLS_AUDIO_PLAYLIST),
-        `${label} audio playlist`,
-      ),
-    );
-  }
-  const entries = await readdir(tmpDir);
-  for (const file of entries) {
-    if (/^seg_audio_\d+\.m4s$/.test(file)) {
-      uploads.push(
-        uploadFileToStorage(
-          path.join(tmpDir, file),
-          objectKey(keyPrefix, file),
-          `${label} ${file}`,
-        ),
-      );
-    }
-  }
-  if (uploads.length) await Promise.all(uploads);
-  if (videoId) log(`[${videoId}] ${label}`);
-}
-
-async function storageCheckDir(
-  localDir: string,
-  keyPrefix: string,
-  label: string,
-  videoId?: string,
-): Promise<void> {
-  await verifyStorageDirectory(localDir, keyPrefix, label);
-  if (videoId) log(`[${videoId}] ${label}`);
 }
 
 function hash8(value: string): string {
