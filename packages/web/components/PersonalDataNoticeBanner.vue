@@ -13,7 +13,9 @@
       role="region"
       aria-label="Personal data notice"
     >
-      <div class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div
+        class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+      >
         <p class="text-sm leading-relaxed text-slate-200">
           {{ strings.personalDataBannerSummary }}
           {{ ' ' }}
@@ -39,8 +41,19 @@
             :aria-label="strings.dismiss"
             @click="onAcknowledge"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -50,15 +63,15 @@
 </template>
 
 <script setup lang="ts">
-import strings from '~/utils/strings'
+  import strings from '~/utils/strings';
 
-const { showBanner, acknowledgeNotice } = usePersonalDataNotice()
+  const { showBanner, acknowledgeNotice } = usePersonalDataNotice();
 
-function onAcknowledge() {
-  acknowledgeNotice()
-}
+  function onAcknowledge() {
+    acknowledgeNotice();
+  }
 
-function onLearnMore() {
-  acknowledgeNotice()
-}
+  function onLearnMore() {
+    acknowledgeNotice();
+  }
 </script>

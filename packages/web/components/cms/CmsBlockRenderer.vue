@@ -11,12 +11,12 @@
 
       <figure v-else-if="block.type === 'image'" class="space-y-2">
         <img
-          v-if="imageUrls[block.imageId]"
-          :src="imageUrls[block.imageId]"
+          v-if="resolvedImageUrls[block.imageId]"
+          :src="resolvedImageUrls[block.imageId]"
           :alt="block.caption || ''"
           class="w-full rounded-lg border border-gray-200 dark:border-gray-800"
           loading="lazy"
-        />
+        >
         <figcaption
           v-if="block.caption"
           class="text-sm text-gray-500 dark:text-gray-400 text-center"
@@ -30,13 +30,13 @@
         class="rounded-lg border px-4 py-3 text-sm leading-relaxed"
         :class="calloutClass(block.variant)"
       >
-        <CmsRichTextContent class="prose prose-sm dark:prose-invert max-w-none" :content="block.content" />
+        <CmsRichTextContent
+          class="prose prose-sm dark:prose-invert max-w-none"
+          :content="block.content"
+        />
       </div>
 
-      <hr
-        v-else-if="block.type === 'divider'"
-        class="border-gray-200 dark:border-gray-800"
-      >
+      <hr v-else-if="block.type === 'divider'" class="border-gray-200 dark:border-gray-800">
 
       <div
         v-else-if="block.type === 'table'"
@@ -78,56 +78,58 @@
 </template>
 
 <script setup lang="ts">
-import type { CmsBlock, CmsCalloutVariant } from '@vmp/shared'
+  import type { CmsBlock, CmsCalloutVariant } from '@vmp/shared';
 
-const props = defineProps<{
-  blocks: CmsBlock[]
-  imageUrls?: Record<string, string>
-}>()
+  const props = defineProps<{
+    blocks: CmsBlock[];
+    imageUrls?: Record<string, string>;
+  }>();
 
-const imageUrls = computed(() => props.imageUrls ?? {})
+  const resolvedImageUrls = computed(() => props.imageUrls ?? {});
 
-function calloutClass(variant: CmsCalloutVariant) {
-  if (variant === 'warning') {
-    return 'border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100'
+  function calloutClass(variant: CmsCalloutVariant) {
+    if (variant === 'warning') {
+      return 'border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100';
+    }
+    if (variant === 'error') {
+      return 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100';
+    }
+    return 'border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100';
   }
-  if (variant === 'error') {
-    return 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-900 dark:text-red-100'
-  }
-  return 'border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-100'
-}
 
-function sectionClass(block: CmsBlock) {
-  if (block.type !== 'rich_text') return ''
-  const content = block.content as { content?: Array<{ type?: string; attrs?: { level?: number } }> }
-  const first = content?.content?.[0]
-  if (first?.type === 'heading' && first.attrs?.level === 2) {
-    return 'space-y-3'
+  function sectionClass(block: CmsBlock) {
+    if (block.type !== 'rich_text') return '';
+    const content = block.content as {
+      content?: Array<{ type?: string; attrs?: { level?: number } }>;
+    };
+    const first = content?.content?.[0];
+    if (first?.type === 'heading' && first.attrs?.level === 2) {
+      return 'space-y-3';
+    }
+    return '';
   }
-  return ''
-}
 </script>
 
 <style scoped>
-.cms-rich-text :deep(h2) {
-  @apply text-xl font-semibold text-gray-900 dark:text-white;
-}
-.cms-rich-text :deep(h3) {
-  @apply text-lg font-semibold text-gray-900 dark:text-white;
-}
-.cms-rich-text :deep(h4) {
-  @apply text-base font-semibold text-gray-900 dark:text-white;
-}
-.cms-rich-text :deep(p) {
-  @apply mt-3 text-gray-600 dark:text-gray-300 leading-relaxed;
-}
-.cms-rich-text :deep(p:first-child) {
-  @apply mt-0;
-}
-.cms-rich-text :deep(ul) {
-  @apply mt-3 list-disc pl-5 space-y-1 text-gray-600 dark:text-gray-300;
-}
-.cms-rich-text :deep(a) {
-  @apply text-blue-600 dark:text-blue-400 hover:underline;
-}
+  .cms-rich-text :deep(h2) {
+    @apply text-xl font-semibold text-gray-900 dark:text-white;
+  }
+  .cms-rich-text :deep(h3) {
+    @apply text-lg font-semibold text-gray-900 dark:text-white;
+  }
+  .cms-rich-text :deep(h4) {
+    @apply text-base font-semibold text-gray-900 dark:text-white;
+  }
+  .cms-rich-text :deep(p) {
+    @apply mt-3 text-gray-600 dark:text-gray-300 leading-relaxed;
+  }
+  .cms-rich-text :deep(p:first-child) {
+    @apply mt-0;
+  }
+  .cms-rich-text :deep(ul) {
+    @apply mt-3 list-disc pl-5 space-y-1 text-gray-600 dark:text-gray-300;
+  }
+  .cms-rich-text :deep(a) {
+    @apply text-blue-600 dark:text-blue-400 hover:underline;
+  }
 </style>

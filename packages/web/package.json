@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
+    "lint": "biome check .",
     "build:sw-push": "tsc --ignoreConfig sw-push.ts --target ES2022 --module ES2020 --lib ES2022,WebWorker --skipLibCheck --outDir public --removeComments",
     "build:sw-offline": "tsc --ignoreConfig sw-offline-media.ts --target ES2022 --module ES2020 --lib ES2022,WebWorker --skipLibCheck --outDir public --removeComments",
     "build:sw-scripts": "npm run build:sw-push && npm run build:sw-offline",
@@ -24,8 +24,8 @@
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "dependencies": {
-    "@moq/net": "^0.1.9",
-    "@moq/watch": "^0.3.2",
+    "@moq/net": "^0.2.2",
+    "@moq/watch": "^0.4.3",
     "@nuxtjs/color-mode": "^4.0.0",
     "@sentry/nuxt": "^10.69.0",
     "@stripe/stripe-js": "^9.12.1",
@@ -45,14 +45,15 @@
     "unsane": "^0.0.19",
     "video.js": "^8.23.9",
     "videojs-video-element": "^1.4.8",
-    "vue": "^3.5.40"
+    "vue": "^3.5.40",
+    "@moq/signals": "^0.2.0"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
     "@types/node": "^26.1.2",
     "@types/qrcode": "^1.5.6",
-    "tsx": "^4.23.1",
-    "typescript": "^6.0.3",
+    "tsx": "^4.23.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vue-tsc": "^3.3.8",
     "wrangler": "^4.115.0"
   },

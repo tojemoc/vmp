@@ -1,4 +1,4 @@
-import type { StringsDefinition } from '../types'
+import type { StringsDefinition } from '../types';
 
 /** Draft catalog — validate in context (declension, register). See docs/i18n-prep.md. */
 
@@ -24,12 +24,14 @@ export const strings: StringsDefinition = {
   notificationsUnsupportedContext: 'Oznámení nejsou v tomto kontextu prohlížeče dostupná.',
   notificationsUnsupportedIosSafari:
     'Na iPhonu/iPadu přidejte tuto stránku na Domovskou obrazovku a otevřete ji jako nainstalovanou webovou aplikaci, abyste mohli povolit oznámení.',
-  notificationsUnsupportedSafari: 'Tento kontext Safari momentálně nepodporuje web push pro tuto aplikaci.',
+  notificationsUnsupportedSafari:
+    'Tento kontext Safari momentálně nepodporuje web push pro tuto aplikaci.',
   notificationsEnabled: 'Oznámení povolena.',
   notificationsTurnedOff: 'Oznámení vypnuta.',
   notificationsBrowserBlocked:
     'Oznámení prohlížeče byla blokována. Povolte oznámení v nastavení prohlížeče a zkuste to znovu.',
-  notificationsNotConfigured: 'Push služba momentálně není nakonfigurována. Zkuste to prosím později.',
+  notificationsNotConfigured:
+    'Push služba momentálně není nakonfigurována. Zkuste to prosím později.',
   notificationsEnableFailed: 'Nepodařilo se povolit oznámení. Zkuste to prosím znovu.',
   notificationsUnsubscribeSyncFailed:
     'Oznámení byla v tomto prohlížeči vypnuta, ale nepodařilo se nám synchronizovat tuto změnu se serverem.',
@@ -75,9 +77,11 @@ export const strings: StringsDefinition = {
   authVerifyRequestNewLink: 'Požádat o nový odkaz',
 
   pwaLoginTitle: 'Přihlásit se do aplikace',
-  pwaLoginIntro: 'Poprvé to vyžaduje několik dalších kroků. Postupujte opatrně podle každého kroku.',
+  pwaLoginIntro:
+    'Poprvé to vyžaduje několik dalších kroků. Postupujte opatrně podle každého kroku.',
   pwaLoginEmailLabel: 'E-mailová adresa',
-  pwaLoginPushStep: 'Povolte oznámení, abychom vám po potvrzení v e-mailu mohli odeslat přihlášení do této aplikace.',
+  pwaLoginPushStep:
+    'Povolte oznámení, abychom vám po potvrzení v e-mailu mohli odeslat přihlášení do této aplikace.',
   pwaLoginPushAlreadyGranted:
     'Oznámení jsou na tomto zařízení již povolena. Klepněte níže pro opětovné odeslání e-mailu na přihlášení, nebo vypněte oznámení a začněte znovu.',
   pwaLoginResendEmail: 'Znovu odeslat e-mail na přihlášení',
@@ -109,10 +113,12 @@ export const strings: StringsDefinition = {
   authVerifyPwaPushDone: 'Hotovo! Vraťte se do aplikace VMP na Domovské obrazovce.',
   authVerifyPwaPushDoneHint:
     'Klepněte na oznámení o přihlášení, pokud ho vidíte. Pokud ještě nejste přihlášeni, úplně zavřete aplikaci a znovu ji otevřete z Domovské obrazovky.',
-  authVerifyPwaPushDeliverFailed: 'Nepodařilo se odeslat přihlášení do aplikace. Můžete se přihlásit v Safari.',
+  authVerifyPwaPushDeliverFailed:
+    'Nepodařilo se odeslat přihlášení do aplikace. Můžete se přihlásit v Safari.',
   authVerifyPwaPushAttemptNotFound: 'Relace přihlášení vypršela. Začněte prosím znovu v aplikaci.',
   authVerifyPwaPushNoPushSubscription: 'Push odběr se nenašel. Začněte prosím znovu v aplikaci.',
-  authVerifyPwaPushPushFailed: 'Nepodařilo se dosáhnout aplikace. Ujistěte se, že je nainstalována, a zkuste znovu.',
+  authVerifyPwaPushPushFailed:
+    'Nepodařilo se dosáhnout aplikace. Ujistěte se, že je nainstalována, a zkuste znovu.',
 
   // ── Two-factor authentication ──────────────────────────────────────────────
   totpVerifyTitle: 'Dvoufaktorové ověření',
@@ -145,7 +151,8 @@ export const strings: StringsDefinition = {
   totpSetupConfirming: 'Potvrzuje se…',
   totpSetupEnabledTitle: '2FA povoleno',
   totpSetupEnabledBody: 'Váš účet je nyní chráněn. Přesměrovává se…',
-  totpSetupAlreadyEnabled: 'Dvoufaktorové ověření je již povoleno. Vypněte ho na stránce účtu, pokud chcete nastavit nový autentifikátor.',
+  totpSetupAlreadyEnabled:
+    'Dvoufaktorové ověření je již povoleno. Vypněte ho na stránce účtu, pokud chcete nastavit nový autentifikátor.',
   totpSetupFailedLoad: 'Nepodařilo se načíst nastavení. Obnovte prosím stránku.',
   totpSetupLoadFailed: 'Nepodařilo se načíst nastavení',
   totpSetupConfirmationFailed: 'Potvrzení selhalo',
@@ -168,7 +175,8 @@ export const strings: StringsDefinition = {
 
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Objevte prémiový video obsah',
-  heroSubtitleDefault: 'Sledujte bezplatné ukázky nebo odemkněte plný přístup s prémiovým předplatným',
+  heroSubtitleDefault:
+    'Sledujte bezplatné ukázky nebo odemkněte plný přístup s prémiovým předplatným',
   loadingVideos: 'Načítají se videa...',
   errorLoadingVideos: 'Chyba při načítání videí',
   failedToLoadVideos: 'Nepodařilo se načíst videa',
@@ -229,7 +237,8 @@ export const strings: StringsDefinition = {
   videoNotFoundMessage: 'Toto video mohlo být odstraněno, přejmenováno, nebo je odkaz neplatný.',
   videoNotFoundSuggestions: 'Mohlo by se vám líbit',
   playbackUnavailableTitle: 'Toto video je dočasně nedostupné',
-  playbackUnavailableMessage: 'Video se teď nepodařilo načíst. Úložiště se možná obnovuje, nebo soubor ještě není na serverech. Ostatní videa by měla fungovat.',
+  playbackUnavailableMessage:
+    'Video se teď nepodařilo načíst. Úložiště se možná obnovuje, nebo soubor ještě není na serverech. Ostatní videa by měla fungovat.',
   playbackUnavailableSuggestions: 'Zkuste místo toho jedno z těchto',
   rateLimitExceeded: 'Příliš mnoho požadavků. Zkuste to prosím později.',
   mediaFailedToLoad: 'Média se nepodařilo načíst',
@@ -269,19 +278,22 @@ export const strings: StringsDefinition = {
     `Váš přístup je aktivní, dokud dokončíme migraci. Pokud jste dříve platili přes ${provider}, předplatné může být potřeba obnovit. V případě problémů nás kontaktujte.`,
   accountRelinkStatusNeedsRelink: 'Vyžaduje propojení',
   accountRelinkLegacyProviderFallback: 'našeho předchozího poskytovatele',
-  accountRelinkCheckoutIntro: 'Vyberte plán a pokračujte na naši zabezpečenou platební stránku pro propojení karty nebo bankovního účtu.',
+  accountRelinkCheckoutIntro:
+    'Vyberte plán a pokračujte na naši zabezpečenou platební stránku pro propojení karty nebo bankovního účtu.',
   accountRelinkCheckoutWorking: 'Přesměrovávám…',
   accountManagePaymentMethod: 'Spravovat platební metodu',
   offlineDownloadMenuLabel: 'Stáhnout offline',
   offlineDownloadResume: 'Pokračovat ve stahování',
   offlineDownloadPwaRequiredTitle: 'Pro stahování nainstalujte aplikaci',
-  offlineDownloadPwaRequiredMessage: 'Offline stahování je dostupné pouze v nainstalované aplikaci. Přidejte si VMP na domovskou obrazovku a video otevřete z aplikace.',
+  offlineDownloadPwaRequiredMessage:
+    'Offline stahování je dostupné pouze v nainstalované aplikaci. Přidejte si VMP na domovskou obrazovku a video otevřete z aplikace.',
   offlineDownloadPwaRequiredDismiss: 'Rozumím',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba sítě. Zkuste to prosím znovu.',
 
   podcastRssTitle: 'Podcast RSS',
-  podcastRssIntro: 'Použijte svou osobní URL v podcast aplikaci pro plné epizody během předplatného.',
+  podcastRssIntro:
+    'Použijte svou osobní URL v podcast aplikaci pro plné epizody během předplatného.',
   podcastRssPersonalLabel: 'Vaše osobní URL',
   copy: 'Kopírovat',
   copied: 'Zkopírováno',
@@ -307,8 +319,10 @@ export const strings: StringsDefinition = {
   offlineDownloadStatusUpdateAvailable: 'Dostupná aktualizace',
   offlineDownloadStatusLicenseExpired: 'Licence vypršela',
   offlineDownloadsTitle: 'Offline stahování',
-  offlineDownloadsIntro: 'Videa uložená v tomto zařízení pro offline přehrávání. Licence se obnovují při aktivním předplatném.',
-  offlineDownloadsEmpty: 'Zatím žádná offline stahování. Otevřete video v aplikaci a použijte Stáhnout.',
+  offlineDownloadsIntro:
+    'Videa uložená v tomto zařízení pro offline přehrávání. Licence se obnovují při aktivním předplatném.',
+  offlineDownloadsEmpty:
+    'Zatím žádná offline stahování. Otevřete video v aplikaci a použijte Stáhnout.',
   offlineStorageUsed: (amount: string) => `Využité offline úložiště: ${amount}`,
   offlineStorageQuota: (amount: string) => `z ${amount} dostupných`,
   offlinePlaybackBadge: 'Přehrává se z offline stažení',
@@ -334,9 +348,11 @@ export const strings: StringsDefinition = {
   checkoutStripeLoading: 'Načítá se bezpečná platba…',
   checkoutStripeProcessing: 'Zpracovává se…',
   checkoutStripeNotConfigured: 'Platby kartou nejsou nakonfigurovány.',
-  checkoutStripeSdkUnavailable: 'Stripe platbu se nepodařilo načíst. Obnovte prosím stránku a zkuste znovu.',
+  checkoutStripeSdkUnavailable:
+    'Stripe platbu se nepodařilo načíst. Obnovte prosím stránku a zkuste znovu.',
   checkoutStripeIncomplete: 'Platba nebyla dokončena. Zkuste to prosím znovu.',
-  checkoutBlurbEmbedded: 'Platba přes Apple Pay, Google Pay, kartu, PayPal nebo bankovní debet. Zrušení kdykoli.',
+  checkoutBlurbEmbedded:
+    'Platba přes Apple Pay, Google Pay, kartu, PayPal nebo bankovní debet. Zrušení kdykoli.',
   checkoutBlurbDefault: 'Bezpečná platba. Zrušení kdykoli.',
   checkoutBlurbStripe: 'Bezpečná platba. Zrušení kdykoli.',
   checkoutBlurbBoth: 'Bezpečná platba. Zrušení kdykoli.',
@@ -443,4 +459,4 @@ export const strings: StringsDefinition = {
     filterPlaceholder: 'Filtr…',
     superAdminOnlyEdit: 'Tento účet může měnit pouze super administrátor',
   },
-}
+};

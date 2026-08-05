@@ -7,7 +7,9 @@
       </p>
     </div>
 
-    <div v-if="message" class="rounded-lg border px-4 py-3 text-sm" :class="messageClass">{{ message }}</div>
+    <div v-if="message" class="rounded-lg border px-4 py-3 text-sm" :class="messageClass">
+      {{ message }}
+    </div>
 
     <!-- Site footer (system page) -->
     <section
@@ -44,7 +46,10 @@
               :checked="footerLinkPageIds.includes(page.id)"
               @change="toggleFooterLink(page.id, ($event.target as HTMLInputElement).checked)"
             >
-            <span>{{ page.title }} <span class="text-gray-500 dark:text-gray-400">(/{{ page.slug }})</span></span>
+            <span
+              >{{ page.title }}
+              <span class="text-gray-500 dark:text-gray-400">(/{{ page.slug }})</span></span
+            >
           </label>
         </div>
         <button
@@ -56,7 +61,9 @@
           {{ savingFooterLinks ? 'Saving…' : 'Save footer links' }}
         </button>
       </div>
-      <p v-else class="text-sm text-gray-500 dark:text-gray-400">Publish CMS pages to add them as footer links.</p>
+      <p v-else class="text-sm text-gray-500 dark:text-gray-400">
+        Publish CMS pages to add them as footer links.
+      </p>
     </section>
 
     <div class="flex flex-wrap gap-2">
@@ -79,10 +86,16 @@
 
     <!-- Page list -->
     <div v-if="!editing" class="space-y-3">
-      <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadPages">
+      <button
+        type="button"
+        class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        @click="loadPages"
+      >
         Refresh
       </button>
-      <div v-if="!regularPages.length" class="text-sm text-gray-500 dark:text-gray-400">No pages yet.</div>
+      <div v-if="!regularPages.length" class="text-sm text-gray-500 dark:text-gray-400">
+        No pages yet.
+      </div>
       <div
         v-for="page in regularPages"
         :key="page.id"
@@ -101,14 +114,21 @@
           </span>
         </div>
         <div class="flex flex-wrap gap-2 text-sm">
-          <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="editPage(page)">Edit</button>
+          <button
+            type="button"
+            class="text-blue-600 dark:text-blue-400 hover:underline"
+            @click="editPage(page)"
+          >
+            Edit
+          </button>
           <a
             v-if="page.status === 'published'"
             :href="`/${page.slug}`"
             target="_blank"
             rel="noopener noreferrer"
             class="text-gray-600 dark:text-gray-400 hover:underline"
-          >View</a>
+            >View</a
+          >
           <button
             v-if="page.status === 'draft' && page.id !== CMS_FOOTER_PAGE_ID"
             type="button"
@@ -130,7 +150,9 @@
             type="button"
             class="text-red-600 dark:text-red-400 hover:underline"
             @click="deletePage(page.id)"
-          >Delete</button>
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>
@@ -170,7 +192,9 @@
         </p>
 
         <label v-if="isFooterEdit && footerLinkCandidates.length" class="block space-y-2">
-          <span class="text-sm font-medium text-gray-900 dark:text-white">Footer navigation links</span>
+          <span class="text-sm font-medium text-gray-900 dark:text-white"
+            >Footer navigation links</span
+          >
           <div class="grid gap-2 rounded-md border border-gray-200 dark:border-gray-700 p-3">
             <label
               v-for="page in footerLinkCandidates"
@@ -201,14 +225,44 @@
           <div class="flex items-center justify-between">
             <p class="text-sm font-medium text-gray-900 dark:text-white">Content blocks</p>
             <div class="flex flex-wrap gap-1">
-              <button type="button" class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="addBlock('rich_text')">+ Text</button>
-              <button type="button" class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="pickImage">+ Image</button>
-              <button type="button" class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="addBlock('callout')">+ Callout</button>
-              <button type="button" class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="addBlock('divider')">+ Divider</button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                @click="addBlock('rich_text')"
+              >
+                + Text
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                @click="pickImage"
+              >
+                + Image
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                @click="addBlock('callout')"
+              >
+                + Callout
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                @click="addBlock('divider')"
+              >
+                + Divider
+              </button>
             </div>
           </div>
 
-          <input ref="imageInputEl" type="file" accept="image/*" class="hidden" @change="onImageSelected">
+          <input
+            ref="imageInputEl"
+            type="file"
+            accept="image/*"
+            class="hidden"
+            @change="onImageSelected"
+          >
 
           <div
             v-for="(block, index) in form.content"
@@ -216,18 +270,38 @@
             class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2"
           >
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ block.type }}</span>
+              <span
+                class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                >{{ block.type }}</span
+              >
               <div class="flex gap-2 text-xs">
-                <button type="button" class="text-gray-600 dark:text-gray-400 hover:underline" :disabled="index === 0" @click="moveBlock(index, -1)">Up</button>
-                <button type="button" class="text-gray-600 dark:text-gray-400 hover:underline" :disabled="index === form.content.length - 1" @click="moveBlock(index, 1)">Down</button>
-                <button type="button" class="text-red-600 dark:text-red-400 hover:underline" @click="removeBlock(index)">Remove</button>
+                <button
+                  type="button"
+                  class="text-gray-600 dark:text-gray-400 hover:underline"
+                  :disabled="index === 0"
+                  @click="moveBlock(index, -1)"
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  class="text-gray-600 dark:text-gray-400 hover:underline"
+                  :disabled="index === form.content.length - 1"
+                  @click="moveBlock(index, 1)"
+                >
+                  Down
+                </button>
+                <button
+                  type="button"
+                  class="text-red-600 dark:text-red-400 hover:underline"
+                  @click="removeBlock(index)"
+                >
+                  Remove
+                </button>
               </div>
             </div>
 
-            <CmsRichTextEditor
-              v-if="block.type === 'rich_text'"
-              v-model="block.content"
-            />
+            <CmsRichTextEditor v-if="block.type === 'rich_text'" v-model="block.content" />
 
             <div v-else-if="block.type === 'callout'" class="space-y-2">
               <select
@@ -241,7 +315,10 @@
               <CmsRichTextEditor v-model="block.content" />
             </div>
 
-            <div v-else-if="block.type === 'image'" class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <div
+              v-else-if="block.type === 'image'"
+              class="space-y-2 text-sm text-gray-600 dark:text-gray-300"
+            >
               <img
                 v-if="previewImageUrls[block.imageId]"
                 :src="previewImageUrls[block.imageId]"
@@ -256,11 +333,19 @@
               >
             </div>
 
-            <div v-else-if="block.type === 'table'" class="text-xs text-gray-500 dark:text-gray-400">
+            <div
+              v-else-if="block.type === 'table'"
+              class="text-xs text-gray-500 dark:text-gray-400"
+            >
               Table block (edit rows in JSON via API for now)
             </div>
 
-            <p v-else-if="block.type === 'divider'" class="text-xs text-gray-500 dark:text-gray-400">Horizontal divider</p>
+            <p
+              v-else-if="block.type === 'divider'"
+              class="text-xs text-gray-500 dark:text-gray-400"
+            >
+              Horizontal divider
+            </p>
           </div>
         </div>
 
@@ -293,17 +378,37 @@
         </div>
 
         <details v-if="form.id" class="rounded-lg border border-gray-200 dark:border-gray-700">
-          <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">Revision history</summary>
+          <summary
+            class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white"
+          >
+            Revision history
+          </summary>
           <div class="px-4 pb-4 space-y-2 border-t border-gray-100 dark:border-gray-800 pt-3">
-            <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadRevisions">Refresh revisions</button>
-            <div v-if="!revisions.length" class="text-sm text-gray-500 dark:text-gray-400">No revisions yet.</div>
+            <button
+              type="button"
+              class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              @click="loadRevisions"
+            >
+              Refresh revisions
+            </button>
+            <div v-if="!revisions.length" class="text-sm text-gray-500 dark:text-gray-400">
+              No revisions yet.
+            </div>
             <div
               v-for="revision in revisions"
               :key="revision.id"
               class="flex items-center justify-between gap-2 text-sm border-b border-gray-100 dark:border-gray-800 py-2"
             >
-              <span class="text-gray-600 dark:text-gray-300">{{ new Date(revision.createdAt).toLocaleString() }}</span>
-              <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="restoreRevision(revision.id)">Restore</button>
+              <span class="text-gray-600 dark:text-gray-300"
+                >{{ new Date(revision.createdAt).toLocaleString() }}</span
+              >
+              <button
+                type="button"
+                class="text-blue-600 dark:text-blue-400 hover:underline"
+                @click="restoreRevision(revision.id)"
+              >
+                Restore
+              </button>
             </div>
           </div>
         </details>
@@ -311,8 +416,12 @@
 
       <div>
         <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">Preview</p>
-        <div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 p-6 min-h-[24rem]">
-          <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">{{ form.title || 'Untitled' }}</h1>
+        <div
+          class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 p-6 min-h-[24rem]"
+        >
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+            {{ form.title || 'Untitled' }}
+          </h1>
           <CmsBlockRenderer :blocks="form.content" :image-urls="previewImageUrls" />
         </div>
       </div>
@@ -321,361 +430,398 @@
 </template>
 
 <script setup lang="ts">
-import type { CmsBlock, CmsCalloutBlock, CmsImageBlock, CmsPage, CmsPageRevision, CmsRichTextBlock } from '@vmp/shared'
-import { CMS_FOOTER_PAGE_ID } from '@vmp/shared'
-import { emptyTiptapDoc } from '~/utils/cmsRichText'
-import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs'
+  import type {
+    CmsBlock,
+    CmsCalloutBlock,
+    CmsImageBlock,
+    CmsPage,
+    CmsPageRevision,
+    CmsRichTextBlock,
+  } from '@vmp/shared';
+  import { CMS_FOOTER_PAGE_ID } from '@vmp/shared';
+  import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs';
+  import { emptyTiptapDoc } from '~/utils/cmsRichText';
 
-const config = useRuntimeConfig()
-const { authHeader } = useAuth()
+  const config = useRuntimeConfig();
+  const { authHeader } = useAuth();
 
-const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '')
+  const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '');
 
-const pages = ref<CmsPage[]>([])
-const revisions = ref<CmsPageRevision[]>([])
-const editing = ref(false)
-const isFooterEdit = ref(false)
-const saving = ref(false)
-const savingFooterLinks = ref(false)
-const footerLinkPageIds = ref<string[]>([])
-const message = ref('')
-const messageTone = ref<'ok' | 'error'>('ok')
-const slugTouched = ref(false)
-const imageInputEl = ref<HTMLInputElement | null>(null)
-const previewImageUrls = ref<Record<string, string>>({})
+  const pages = ref<CmsPage[]>([]);
+  const revisions = ref<CmsPageRevision[]>([]);
+  const editing = ref(false);
+  const isFooterEdit = ref(false);
+  const saving = ref(false);
+  const savingFooterLinks = ref(false);
+  const footerLinkPageIds = ref<string[]>([]);
+  const message = ref('');
+  const messageTone = ref<'ok' | 'error'>('ok');
+  const slugTouched = ref(false);
+  const imageInputEl = ref<HTMLInputElement | null>(null);
+  const previewImageUrls = ref<Record<string, string>>({});
 
-const form = reactive({
-  id: '' as string | null,
-  title: '',
-  slug: '',
-  description: '',
-  status: 'draft' as 'draft' | 'published',
-  content: [] as CmsBlock[],
-})
+  const form = reactive({
+    id: '' as string | null,
+    title: '',
+    slug: '',
+    description: '',
+    status: 'draft' as 'draft' | 'published',
+    content: [] as CmsBlock[],
+  });
 
-const messageClass = computed(() =>
-  messageTone.value === 'ok'
-    ? 'border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
-    : 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100',
-)
+  const messageClass = computed(() =>
+    messageTone.value === 'ok'
+      ? 'border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
+      : 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100',
+  );
 
-const regularPages = computed(() => pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID))
+  const regularPages = computed(() => pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID));
 
-const footerLinkCandidates = computed(() =>
-  pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID && page.status === 'published'),
-)
+  const footerLinkCandidates = computed(() =>
+    pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID && page.status === 'published'),
+  );
 
-function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
-  message.value = text
-  messageTone.value = tone
-}
-
-function slugify(input: string) {
-  const slug = input.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120)
-  return slug || 'untitled'
-}
-
-function onSlugInput() {
-  slugTouched.value = true
-}
-
-function normalizeSlugField() {
-  form.slug = slugify(form.slug)
-}
-
-function maybeAutoSlug() {
-  if (!slugTouched.value) form.slug = slugify(form.title)
-}
-
-function newRichTextBlock(): CmsRichTextBlock {
-  return { type: 'rich_text', content: emptyTiptapDoc() }
-}
-
-function newCalloutBlock(): CmsCalloutBlock {
-  return { type: 'callout', variant: 'info', content: emptyTiptapDoc() }
-}
-
-function addBlock(type: CmsBlock['type']) {
-  if (type === 'rich_text') form.content.push(newRichTextBlock())
-  else if (type === 'callout') form.content.push(newCalloutBlock())
-  else if (type === 'divider') form.content.push({ type: 'divider' })
-}
-
-function removeBlock(index: number) {
-  form.content.splice(index, 1)
-}
-
-function moveBlock(index: number, delta: number) {
-  const target = index + delta
-  if (target < 0 || target >= form.content.length) return
-  const item = form.content[index]
-  if (!item) return
-  form.content.splice(index, 1)
-  form.content.splice(target, 0, item)
-}
-
-function resetForm() {
-  form.id = null
-  form.title = ''
-  form.slug = ''
-  form.description = ''
-  form.status = 'draft'
-  form.content = [newRichTextBlock()]
-  slugTouched.value = false
-  revisions.value = []
-}
-
-function startCreate() {
-  isFooterEdit.value = false
-  resetForm()
-  editing.value = true
-}
-
-function cancelEdit() {
-  editing.value = false
-  isFooterEdit.value = false
-  resetForm()
-}
-
-async function loadFooterConfig() {
-  try {
-    const res = await $fetch<{ linkPageIds?: string[] }>(`${apiUrl}/api/admin/site-footer`, { headers: authHeader() })
-    footerLinkPageIds.value = Array.isArray(res.linkPageIds) ? [...res.linkPageIds] : []
-  } catch {
-    footerLinkPageIds.value = []
+  function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
+    message.value = text;
+    messageTone.value = tone;
   }
-}
 
-function toggleFooterLink(pageId: string, checked: boolean) {
-  if (checked) {
-    if (!footerLinkPageIds.value.includes(pageId)) {
-      footerLinkPageIds.value = [...footerLinkPageIds.value, pageId]
-    }
-  } else {
-    footerLinkPageIds.value = footerLinkPageIds.value.filter((id) => id !== pageId)
+  function slugify(input: string) {
+    const slug = input
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 120);
+    return slug || 'untitled';
   }
-}
 
-async function saveFooterLinks() {
-  savingFooterLinks.value = true
-  try {
-    await $fetch(`${apiUrl}/api/admin/site-footer`, {
-      method: 'PATCH',
-      headers: { ...authHeader(), 'Content-Type': 'application/json' },
-      body: { linkPageIds: footerLinkPageIds.value },
-    })
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to save footer links', 'error')
-    throw err
-  } finally {
-    savingFooterLinks.value = false
+  function onSlugInput() {
+    slugTouched.value = true;
   }
-}
 
-async function saveFooterLinksOnly() {
-  try {
-    await saveFooterLinks()
-    setMessage('Footer links saved.')
-  } catch {
-    // Error message already set in saveFooterLinks.
+  function normalizeSlugField() {
+    form.slug = slugify(form.slug);
   }
-}
 
-async function editFooter() {
-  await loadFooterConfig()
-  const footerPage = pages.value.find((page) => page.id === CMS_FOOTER_PAGE_ID)
-  if (!footerPage) {
-    setMessage('Footer page is missing. Run the latest database migration.', 'error')
-    return
+  function maybeAutoSlug() {
+    if (!slugTouched.value) form.slug = slugify(form.title);
   }
-  isFooterEdit.value = true
-  editPage(footerPage)
-}
 
-function editPage(page: CmsPage) {
-  isFooterEdit.value = page.id === CMS_FOOTER_PAGE_ID
-  form.id = page.id
-  form.title = page.title
-  form.slug = page.slug
-  form.description = page.description ?? ''
-  form.status = page.status
-  form.content = JSON.parse(JSON.stringify(page.content)) as CmsBlock[]
-  slugTouched.value = true
-  editing.value = true
-  void loadRevisions()
-  void refreshPreviewImages()
-}
-
-async function loadPages() {
-  try {
-    const res = await $fetch<{ pages: CmsPage[] }>(`${apiUrl}/api/pages`, { headers: authHeader() })
-    pages.value = res.pages
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to load pages', 'error')
+  function newRichTextBlock(): CmsRichTextBlock {
+    return { type: 'rich_text', content: emptyTiptapDoc() };
   }
-}
 
-async function savePage() {
-  saving.value = true
-  try {
-    const payload = {
-      title: form.title.trim(),
-      slug: slugify(form.slug.trim()),
-      description: form.description.trim() || null,
-      status: form.status,
-      content: form.content,
-    }
-    if (!payload.title || !payload.slug) throw new Error('Title and slug are required')
-    if (isCmsReservedSlug(payload.slug)) {
-      throw new Error(`Slug "${payload.slug}" is reserved and cannot be used for a CMS page`)
-    }
-
-    if (form.id) {
-      const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages/${form.id}`, {
-        method: 'PUT',
-        headers: { ...authHeader(), 'Content-Type': 'application/json' },
-        body: payload,
-      })
-      form.status = res.page.status
-      if (isFooterEdit.value) await saveFooterLinks()
-      setMessage(isFooterEdit.value ? 'Footer saved.' : 'Page saved.')
-      await loadPages()
-      await loadRevisions()
-    } else {
-      const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages`, {
-        method: 'POST',
-        headers: { ...authHeader(), 'Content-Type': 'application/json' },
-        body: payload,
-      })
-      form.id = res.page.id
-      form.status = res.page.status
-      setMessage('Page created.')
-      await loadPages()
-    }
-    await refreshPreviewImages()
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to save page', 'error')
-  } finally {
-    saving.value = false
+  function newCalloutBlock(): CmsCalloutBlock {
+    return { type: 'callout', variant: 'info', content: emptyTiptapDoc() };
   }
-}
 
-async function saveAndPublish() {
-  await savePage()
-  if (!form.id) return
-  await publishPage(form.id)
-}
-
-async function publishPage(id: string) {
-  try {
-    await $fetch(`${apiUrl}/api/pages/${id}/publish`, { method: 'POST', headers: authHeader() })
-    if (form.id === id) form.status = 'published'
-    setMessage('Page published.')
-    await loadPages()
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to publish', 'error')
+  function addBlock(type: CmsBlock['type']) {
+    if (type === 'rich_text') form.content.push(newRichTextBlock());
+    else if (type === 'callout') form.content.push(newCalloutBlock());
+    else if (type === 'divider') form.content.push({ type: 'divider' });
   }
-}
 
-async function unpublishPage(id: string) {
-  try {
-    await $fetch(`${apiUrl}/api/pages/${id}/unpublish`, { method: 'POST', headers: authHeader() })
-    if (form.id === id) form.status = 'draft'
-    setMessage('Page unpublished.')
-    await loadPages()
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to unpublish', 'error')
+  function removeBlock(index: number) {
+    form.content.splice(index, 1);
   }
-}
 
-async function deletePage(id: string) {
-  if (!confirm('Delete this page?')) return
-  try {
-    await $fetch(`${apiUrl}/api/pages/${id}`, { method: 'DELETE', headers: authHeader() })
-    if (form.id === id) cancelEdit()
-    setMessage('Page deleted.')
-    await loadPages()
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to delete', 'error')
+  function moveBlock(index: number, delta: number) {
+    const target = index + delta;
+    if (target < 0 || target >= form.content.length) return;
+    const item = form.content[index];
+    if (!item) return;
+    form.content.splice(index, 1);
+    form.content.splice(target, 0, item);
   }
-}
 
-async function loadRevisions() {
-  if (!form.id) return
-  try {
-    const res = await $fetch<{ revisions: CmsPageRevision[] }>(`${apiUrl}/api/pages/${form.id}/revisions`, {
-      headers: authHeader(),
-    })
-    revisions.value = res.revisions
-  } catch {
-    revisions.value = []
+  function resetForm() {
+    form.id = null;
+    form.title = '';
+    form.slug = '';
+    form.description = '';
+    form.status = 'draft';
+    form.content = [newRichTextBlock()];
+    slugTouched.value = false;
+    revisions.value = [];
   }
-}
 
-async function restoreRevision(revisionId: string) {
-  if (!form.id || !confirm('Restore this revision? Current content will be replaced.')) return
-  try {
-    const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages/${form.id}/revisions/${revisionId}/restore`, {
-      method: 'POST',
-      headers: authHeader(),
-    })
-    editPage(res.page)
-    setMessage('Revision restored.')
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Failed to restore revision', 'error')
+  function startCreate() {
+    isFooterEdit.value = false;
+    resetForm();
+    editing.value = true;
   }
-}
 
-function pickImage() {
-  imageInputEl.value?.click()
-}
-
-async function onImageSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-
-  const formData = new FormData()
-  formData.append('image', file)
-  try {
-    const res = await $fetch<{ media: { id: string; url?: string } }>(`${apiUrl}/api/admin/cms/media`, {
-      method: 'POST',
-      headers: authHeader(),
-      body: formData,
-    })
-    const block: CmsImageBlock = { type: 'image', imageId: res.media.id, caption: '' }
-    form.content.push(block)
-    if (res.media.url) previewImageUrls.value[res.media.id] = res.media.url
-    setMessage('Image uploaded.')
-  } catch (err: unknown) {
-    setMessage(err instanceof Error ? err.message : 'Image upload failed', 'error')
+  function cancelEdit() {
+    editing.value = false;
+    isFooterEdit.value = false;
+    resetForm();
   }
-}
 
-async function refreshPreviewImages() {
-  const ids = form.content
-    .filter((b): b is CmsImageBlock => b.type === 'image')
-    .map((b) => b.imageId)
-  const urls: Record<string, string> = { ...previewImageUrls.value }
-  await Promise.all(ids.map(async (id) => {
-    if (urls[id]) return
+  async function loadFooterConfig() {
     try {
-      const res = await $fetch<{ media: { url?: string } }>(`${apiUrl}/api/cms/media/${id}`)
-      if (res.media?.url) urls[id] = res.media.url
-    } catch { /* ignore */ }
-  }))
-  previewImageUrls.value = urls
-}
+      const res = await $fetch<{ linkPageIds?: string[] }>(`${apiUrl}/api/admin/site-footer`, {
+        headers: authHeader(),
+      });
+      footerLinkPageIds.value = Array.isArray(res.linkPageIds) ? [...res.linkPageIds] : [];
+    } catch {
+      footerLinkPageIds.value = [];
+    }
+  }
 
-function loadPreview() {
-  void refreshPreviewImages()
-}
+  function toggleFooterLink(pageId: string, checked: boolean) {
+    if (checked) {
+      if (!footerLinkPageIds.value.includes(pageId)) {
+        footerLinkPageIds.value = [...footerLinkPageIds.value, pageId];
+      }
+    } else {
+      footerLinkPageIds.value = footerLinkPageIds.value.filter((id) => id !== pageId);
+    }
+  }
 
-watch(() => form.slug, () => { slugTouched.value = true })
+  async function saveFooterLinks() {
+    savingFooterLinks.value = true;
+    try {
+      await $fetch(`${apiUrl}/api/admin/site-footer`, {
+        method: 'PATCH',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: { linkPageIds: footerLinkPageIds.value },
+      });
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to save footer links', 'error');
+      throw err;
+    } finally {
+      savingFooterLinks.value = false;
+    }
+  }
 
-onMounted(() => {
-  void loadPages()
-  void loadFooterConfig()
-})
+  async function saveFooterLinksOnly() {
+    try {
+      await saveFooterLinks();
+      setMessage('Footer links saved.');
+    } catch {
+      // Error message already set in saveFooterLinks.
+    }
+  }
+
+  async function editFooter() {
+    await loadFooterConfig();
+    const footerPage = pages.value.find((page) => page.id === CMS_FOOTER_PAGE_ID);
+    if (!footerPage) {
+      setMessage('Footer page is missing. Run the latest database migration.', 'error');
+      return;
+    }
+    isFooterEdit.value = true;
+    editPage(footerPage);
+  }
+
+  function editPage(page: CmsPage) {
+    isFooterEdit.value = page.id === CMS_FOOTER_PAGE_ID;
+    form.id = page.id;
+    form.title = page.title;
+    form.slug = page.slug;
+    form.description = page.description ?? '';
+    form.status = page.status;
+    form.content = JSON.parse(JSON.stringify(page.content)) as CmsBlock[];
+    slugTouched.value = true;
+    editing.value = true;
+    void loadRevisions();
+    void refreshPreviewImages();
+  }
+
+  async function loadPages() {
+    try {
+      const res = await $fetch<{ pages: CmsPage[] }>(`${apiUrl}/api/pages`, {
+        headers: authHeader(),
+      });
+      pages.value = res.pages;
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to load pages', 'error');
+    }
+  }
+
+  async function savePage() {
+    saving.value = true;
+    try {
+      const payload = {
+        title: form.title.trim(),
+        slug: slugify(form.slug.trim()),
+        description: form.description.trim() || null,
+        status: form.status,
+        content: form.content,
+      };
+      if (!payload.title || !payload.slug) throw new Error('Title and slug are required');
+      if (isCmsReservedSlug(payload.slug)) {
+        throw new Error(`Slug "${payload.slug}" is reserved and cannot be used for a CMS page`);
+      }
+
+      if (form.id) {
+        const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages/${form.id}`, {
+          method: 'PUT',
+          headers: { ...authHeader(), 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        form.status = res.page.status;
+        if (isFooterEdit.value) await saveFooterLinks();
+        setMessage(isFooterEdit.value ? 'Footer saved.' : 'Page saved.');
+        await loadPages();
+        await loadRevisions();
+      } else {
+        const res = await $fetch<{ page: CmsPage }>(`${apiUrl}/api/pages`, {
+          method: 'POST',
+          headers: { ...authHeader(), 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        form.id = res.page.id;
+        form.status = res.page.status;
+        setMessage('Page created.');
+        await loadPages();
+      }
+      await refreshPreviewImages();
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to save page', 'error');
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  async function saveAndPublish() {
+    await savePage();
+    if (!form.id) return;
+    await publishPage(form.id);
+  }
+
+  async function publishPage(id: string) {
+    try {
+      await $fetch(`${apiUrl}/api/pages/${id}/publish`, { method: 'POST', headers: authHeader() });
+      if (form.id === id) form.status = 'published';
+      setMessage('Page published.');
+      await loadPages();
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to publish', 'error');
+    }
+  }
+
+  async function unpublishPage(id: string) {
+    try {
+      await $fetch(`${apiUrl}/api/pages/${id}/unpublish`, {
+        method: 'POST',
+        headers: authHeader(),
+      });
+      if (form.id === id) form.status = 'draft';
+      setMessage('Page unpublished.');
+      await loadPages();
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to unpublish', 'error');
+    }
+  }
+
+  async function deletePage(id: string) {
+    if (!confirm('Delete this page?')) return;
+    try {
+      await $fetch(`${apiUrl}/api/pages/${id}`, { method: 'DELETE', headers: authHeader() });
+      if (form.id === id) cancelEdit();
+      setMessage('Page deleted.');
+      await loadPages();
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to delete', 'error');
+    }
+  }
+
+  async function loadRevisions() {
+    if (!form.id) return;
+    try {
+      const res = await $fetch<{ revisions: CmsPageRevision[] }>(
+        `${apiUrl}/api/pages/${form.id}/revisions`,
+        {
+          headers: authHeader(),
+        },
+      );
+      revisions.value = res.revisions;
+    } catch {
+      revisions.value = [];
+    }
+  }
+
+  async function restoreRevision(revisionId: string) {
+    if (!form.id || !confirm('Restore this revision? Current content will be replaced.')) return;
+    try {
+      const res = await $fetch<{ page: CmsPage }>(
+        `${apiUrl}/api/pages/${form.id}/revisions/${revisionId}/restore`,
+        {
+          method: 'POST',
+          headers: authHeader(),
+        },
+      );
+      editPage(res.page);
+      setMessage('Revision restored.');
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Failed to restore revision', 'error');
+    }
+  }
+
+  function pickImage() {
+    imageInputEl.value?.click();
+  }
+
+  async function onImageSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await $fetch<{ media: { id: string; url?: string } }>(
+        `${apiUrl}/api/admin/cms/media`,
+        {
+          method: 'POST',
+          headers: authHeader(),
+          body: formData,
+        },
+      );
+      const block: CmsImageBlock = { type: 'image', imageId: res.media.id, caption: '' };
+      form.content.push(block);
+      if (res.media.url) previewImageUrls.value[res.media.id] = res.media.url;
+      setMessage('Image uploaded.');
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Image upload failed', 'error');
+    }
+  }
+
+  async function refreshPreviewImages() {
+    const ids = form.content
+      .filter((b): b is CmsImageBlock => b.type === 'image')
+      .map((b) => b.imageId);
+    const urls: Record<string, string> = { ...previewImageUrls.value };
+    await Promise.all(
+      ids.map(async (id) => {
+        if (urls[id]) return;
+        try {
+          const res = await $fetch<{ media: { url?: string } }>(`${apiUrl}/api/cms/media/${id}`);
+          if (res.media?.url) urls[id] = res.media.url;
+        } catch {
+          /* ignore */
+        }
+      }),
+    );
+    previewImageUrls.value = urls;
+  }
+
+  function loadPreview() {
+    void refreshPreviewImages();
+  }
+
+  watch(
+    () => form.slug,
+    () => {
+      slugTouched.value = true;
+    },
+  );
+
+  onMounted(() => {
+    void loadPages();
+    void loadFooterConfig();
+  });
 </script>

@@ -1,18 +1,18 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import {
   buildOfflineMasterPlaylist,
   offlineMediaUrl,
   rewritePlaylistForOffline,
-} from '../utils/offline/localManifest'
+} from '../utils/offline/localManifest';
 
 describe('offline localManifest', () => {
   it('builds offline media URLs under the service worker prefix', () => {
     assert.equal(
       offlineMediaUrl('vid-1', '720p/seg.m4s'),
       '/__vmp/offline-media/vid-1/720p/seg.m4s',
-    )
-  })
+    );
+  });
 
   it('rewrites relative segment URIs to offline media URLs', () => {
     const input = [
@@ -21,28 +21,24 @@ describe('offline localManifest', () => {
       '#EXT-X-MAP:URI="init.mp4"',
       '#EXTINF:6.000,',
       'seg_00001.m4s',
-    ].join('\n')
+    ].join('\n');
 
-    const output = rewritePlaylistForOffline(input, 'vid-2', '720p/playlist.m3u8')
-    assert.match(output, /\/__vmp\/offline-media\/vid-2\/720p\/init\.mp4/)
-    assert.match(output, /\/__vmp\/offline-media\/vid-2\/720p\/seg_00001\.m4s/)
-  })
+    const output = rewritePlaylistForOffline(input, 'vid-2', '720p/playlist.m3u8');
+    assert.match(output, /\/__vmp\/offline-media\/vid-2\/720p\/init\.mp4/);
+    assert.match(output, /\/__vmp\/offline-media\/vid-2\/720p\/seg_00001\.m4s/);
+  });
 
   it('builds a master playlist referencing offline variant manifest', () => {
-    const master = buildOfflineMasterPlaylist('vid-3', '720p', true)
-    assert.match(master, /offline-audio\.m3u8/)
-    assert.match(master, /\/__vmp\/offline-media\/vid-3\/720p\/offline-playlist\.m3u8/)
-  })
+    const master = buildOfflineMasterPlaylist('vid-3', '720p', true);
+    assert.match(master, /offline-audio\.m3u8/);
+    assert.match(master, /\/__vmp\/offline-media\/vid-3\/720p\/offline-playlist\.m3u8/);
+  });
 
   it('rewrites root-relative segment URIs without folding in baseDir', () => {
-    const input = [
-      '#EXTM3U',
-      '#EXTINF:6.000,',
-      '/720p/seg_00001.m4s',
-    ].join('\n')
+    const input = ['#EXTM3U', '#EXTINF:6.000,', '/720p/seg_00001.m4s'].join('\n');
 
-    const output = rewritePlaylistForOffline(input, 'vid-4', '720p/playlist.m3u8')
-    assert.match(output, /\/__vmp\/offline-media\/vid-4\/720p\/seg_00001\.m4s/)
-    assert.doesNotMatch(output, /playlist\.m3u8\/720p/)
-  })
-})
+    const output = rewritePlaylistForOffline(input, 'vid-4', '720p/playlist.m3u8');
+    assert.match(output, /\/__vmp\/offline-media\/vid-4\/720p\/seg_00001\.m4s/);
+    assert.doesNotMatch(output, /playlist\.m3u8\/720p/);
+  });
+});

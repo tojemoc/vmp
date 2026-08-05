@@ -56,83 +56,86 @@
           left: `${item.leftPercent}%`,
           transform: item.anchor === 'start' ? 'none' : item.anchor === 'end' ? 'translateX(-100%)' : 'translateX(-50%)',
         }"
-      >{{ item.label }}</span>
+        >{{ item.label }}</span
+      >
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-export type AdminLineChartPoint = {
-  label: string
-  value: number
-}
+  export type AdminLineChartPoint = {
+    label: string;
+    value: number;
+  };
 
-const props = withDefaults(defineProps<{
-  points: AdminLineChartPoint[]
-  ariaLabel?: string
-  strokeClass?: string
-  height?: number
-}>(), {
-  ariaLabel: 'Line chart',
-  strokeClass: 'stroke-blue-500 text-blue-500',
-  height: 160,
-})
+  const props = withDefaults(
+    defineProps<{
+      points: AdminLineChartPoint[];
+      ariaLabel?: string;
+      strokeClass?: string;
+      height?: number;
+    }>(),
+    {
+      ariaLabel: 'Line chart',
+      strokeClass: 'stroke-blue-500 text-blue-500',
+      height: 160,
+    },
+  );
 
-const width = 640
-const height = computed(() => props.height)
-const padding = { top: 12, right: 12, bottom: 8, left: 44 }
+  const width = 640;
+  const height = computed(() => props.height);
+  const padding = { top: 12, right: 12, bottom: 8, left: 44 };
 
-const values = computed(() => props.points.map((p) => Math.max(0, Number(p.value) || 0)))
-const maxValue = computed(() => Math.max(1, ...values.value, 0))
+  const values = computed(() => props.points.map((p) => Math.max(0, Number(p.value) || 0)));
+  const maxValue = computed(() => Math.max(1, ...values.value, 0));
 
-const chartPoints = computed(() => {
-  const count = props.points.length
-  if (count === 0) return []
-  const innerW = width - padding.left - padding.right
-  const innerH = height.value - padding.top - padding.bottom
-  return props.points.map((point, index) => {
-    const x = count === 1
-      ? padding.left + innerW / 2
-      : padding.left + (index / (count - 1)) * innerW
-    const y = padding.top + innerH - (Math.max(0, point.value) / maxValue.value) * innerH
-    return { x, y, label: point.label, value: point.value }
-  })
-})
+  const chartPoints = computed(() => {
+    const count = props.points.length;
+    if (count === 0) return [];
+    const innerW = width - padding.left - padding.right;
+    const innerH = height.value - padding.top - padding.bottom;
+    return props.points.map((point, index) => {
+      const x =
+        count === 1 ? padding.left + innerW / 2 : padding.left + (index / (count - 1)) * innerW;
+      const y = padding.top + innerH - (Math.max(0, point.value) / maxValue.value) * innerH;
+      return { x, y, label: point.label, value: point.value };
+    });
+  });
 
-const points = chartPoints
-const polylinePoints = computed(() => chartPoints.value.map((p) => `${p.x},${p.y}`).join(' '))
+  const points = chartPoints;
+  const polylinePoints = computed(() => chartPoints.value.map((p) => `${p.x},${p.y}`).join(' '));
 
-const yTicks = computed(() => {
-  const innerH = height.value - padding.top - padding.bottom
-  return [0, 0.5, 1].map((ratio) => ({
-    y: padding.top + innerH * (1 - ratio),
-    label: Math.round(maxValue.value * ratio),
-  }))
-})
+  const yTicks = computed(() => {
+    const innerH = height.value - padding.top - padding.bottom;
+    return [0, 0.5, 1].map((ratio) => ({
+      y: padding.top + innerH * (1 - ratio),
+      label: Math.round(maxValue.value * ratio),
+    }));
+  });
 
-function xToPercent(x: number): number {
-  return (x / width) * 100
-}
+  function xToPercent(x: number): number {
+    return (x / width) * 100;
+  }
 
-const xLabelPositions = computed(() => {
-  const pts = chartPoints.value
-  if (pts.length === 0) return []
+  const xLabelPositions = computed(() => {
+    const pts = chartPoints.value;
+    if (pts.length === 0) return [];
 
-  const toPosition = (index: number) => {
-    const point = pts[index]
-    const anchor = index === 0 ? 'start' : index === pts.length - 1 ? 'end' : 'center'
-    return {
-      label: point?.label ?? '',
-      leftPercent: xToPercent(point?.x ?? padding.left),
-      anchor: anchor as 'start' | 'center' | 'end',
+    const toPosition = (index: number) => {
+      const point = pts[index];
+      const anchor = index === 0 ? 'start' : index === pts.length - 1 ? 'end' : 'center';
+      return {
+        label: point?.label ?? '',
+        leftPercent: xToPercent(point?.x ?? padding.left),
+        anchor: anchor as 'start' | 'center' | 'end',
+      };
+    };
+
+    if (pts.length <= 4) {
+      return pts.map((_, index) => toPosition(index));
     }
-  }
 
-  if (pts.length <= 4) {
-    return pts.map((_, index) => toPosition(index))
-  }
-
-  const picks = [0, Math.floor(pts.length / 2), pts.length - 1]
-  return [...new Set(picks)].map((index) => toPosition(index))
-})
+    const picks = [0, Math.floor(pts.length / 2), pts.length - 1];
+    return [...new Set(picks)].map((index) => toPosition(index));
+  });
 </script>

@@ -21,50 +21,50 @@
  * shared across all component instances without a Pinia store.
  */
 
-export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer'
+export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
 
 export interface AuthUser {
-  id:          string
-  email:       string
-  role:        Role
-  totpEnabled: boolean
-  totpRequired?: boolean
+  id: string;
+  email: string;
+  role: Role;
+  totpEnabled: boolean;
+  totpRequired?: boolean;
 }
 
 export type MagicPwaHandoffResult =
   | { kind: '2fa'; pendingToken: string }
   | { kind: 'handoff'; handoffCode: string; totpRequired: boolean }
-  | { kind: 'session'; user: AuthUser }
+  | { kind: 'session'; user: AuthUser };
 
 export interface SubscriptionData {
-  id:               string
-  planType:         string   // 'monthly' | 'yearly' | 'club'
-  status:           string   // 'active' | 'cancelled' | 'past_due' | 'trialing' | 'needs_relink'
-  provider?:        string | null
-  providerCustomerId?: string | null
-  stripeCustomerId: string | null
-  currentPeriodEnd: string | null
-  createdAt:        string
-  updatedAt:        string
-  legacyManageUrl?: string | null
-  showLegacyManageButton?: boolean
-  legacyProviderName?: string | null
+  id: string;
+  planType: string; // 'monthly' | 'yearly' | 'club'
+  status: string; // 'active' | 'cancelled' | 'past_due' | 'trialing' | 'needs_relink'
+  provider?: string | null;
+  providerCustomerId?: string | null;
+  stripeCustomerId: string | null;
+  currentPeriodEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+  legacyManageUrl?: string | null;
+  showLegacyManageButton?: boolean;
+  legacyProviderName?: string | null;
 }
 
 // Module-level state — shared across all useAuth() calls in the same tab.
 // This is the idiomatic Nuxt 4 / Composition API singleton pattern.
-const user         = ref<AuthUser | null>(null)
-const accessToken  = ref<string | null>(null)
-const subscription = ref<SubscriptionData | null>(null)
-const initialised  = ref(false)
-let   refreshTimer: ReturnType<typeof setTimeout> | null = null
-let   refreshInFlight: Promise<boolean> | null = null
+const user = ref<AuthUser | null>(null);
+const accessToken = ref<string | null>(null);
+const subscription = ref<SubscriptionData | null>(null);
+const initialised = ref(false);
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
 /** Bumped on clearSession/logout so in-flight refresh cannot restore a stale session. */
-let   sessionVersion = 0
+let sessionVersion = 0;
 
 export function useAuth() {
-  const config = useRuntimeConfig()
-  const apiUrl = config.public.apiUrl as string
+  const config = useRuntimeConfig();
+  const apiUrl = config.public.apiUrl as string;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -75,13 +75,14 @@ export function useAuth() {
    */
   function parseJwtPayload(token: string): Record<string, unknown> | null {
     try {
-      const payloadB64 = token.split('.')[1]
-      if (!payloadB64) return null
-      const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/') +
-        '=='.slice(0, (4 - (payloadB64.length % 4)) % 4)
-      return JSON.parse(atob(padded))
+      const payloadB64 = token.split('.')[1];
+      if (!payloadB64) return null;
+      const padded =
+        payloadB64.replace(/-/g, '+').replace(/_/g, '/') +
+        '=='.slice(0, (4 - (payloadB64.length % 4)) % 4);
+      return JSON.parse(atob(padded));
     } catch {
-      return null
+      return null;
     }
   }
 
@@ -91,33 +92,36 @@ export function useAuth() {
    * keep the session seamless.
    */
   function setAccessToken(token: string, authUser: AuthUser) {
-    accessToken.value = token
-    user.value = { ...authUser, totpEnabled: !!authUser.totpEnabled }
+    accessToken.value = token;
+    user.value = { ...authUser, totpEnabled: !!authUser.totpEnabled };
 
-    if (refreshTimer) clearTimeout(refreshTimer)
+    if (refreshTimer) clearTimeout(refreshTimer);
 
-    const payload = parseJwtPayload(token)
+    const payload = parseJwtPayload(token);
     if (payload?.exp && typeof payload.exp === 'number') {
-      const expiresInMs = payload.exp * 1000 - Date.now()
-      const refreshInMs = Math.max(0, expiresInMs - 2 * 60 * 1000) // 2 min early
-      refreshTimer = setTimeout(() => silentRefresh(), refreshInMs)
+      const expiresInMs = payload.exp * 1000 - Date.now();
+      const refreshInMs = Math.max(0, expiresInMs - 2 * 60 * 1000); // 2 min early
+      refreshTimer = setTimeout(() => silentRefresh(), refreshInMs);
     }
   }
 
   function isAccessTokenExpired(): boolean {
-    const token = accessToken.value
-    if (!token) return true
-    const payload = parseJwtPayload(token)
-    if (!payload?.exp || typeof payload.exp !== 'number') return false
-    return payload.exp * 1000 <= Date.now() + 30_000
+    const token = accessToken.value;
+    if (!token) return true;
+    const payload = parseJwtPayload(token);
+    if (!payload?.exp || typeof payload.exp !== 'number') return false;
+    return payload.exp * 1000 <= Date.now() + 30_000;
   }
 
   function clearSession() {
-    sessionVersion++
-    user.value = null
-    accessToken.value = null
-    subscription.value = null
-    if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null }
+    sessionVersion++;
+    user.value = null;
+    accessToken.value = null;
+    subscription.value = null;
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
   }
 
   // ── API calls ─────────────────────────────────────────────────────────────
@@ -127,16 +131,19 @@ export function useAuth() {
    * Sends a sign-in email. The user then clicks the link, which lands on
    * /auth/verify?token=... and this composable's verify() is called.
    */
-  async function signIn(email: string, redirectPath?: string): Promise<{ ok: boolean; message: string }> {
+  async function signIn(
+    email: string,
+    redirectPath?: string,
+  ): Promise<{ ok: boolean; message: string }> {
     const res = await fetch(`${apiUrl}/api/auth/magic-link`, {
-      method:      'POST',
-      credentials: 'include',          // needed so the Set-Cookie from verify() works
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ email, redirect: redirectPath }),
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Failed to send sign-in link')
-    return data
+      method: 'POST',
+      credentials: 'include', // needed so the Set-Cookie from verify() works
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirect: redirectPath }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to send sign-in link');
+    return data;
   }
 
   /**
@@ -146,19 +153,21 @@ export function useAuth() {
    * If the user requires 2FA, returns { requiresTwoFactor: true, pendingToken }
    * instead of an AuthUser — the caller must redirect to /auth/2fa.
    */
-  async function verify(token: string): Promise<AuthUser | { requiresTwoFactor: true; pendingToken: string }> {
+  async function verify(
+    token: string,
+  ): Promise<AuthUser | { requiresTwoFactor: true; pendingToken: string }> {
     const res = await fetch(`${apiUrl}/api/auth/verify?token=${encodeURIComponent(token)}`, {
-      credentials: 'include',    // lets the browser store the Set-Cookie refresh token
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Verification failed')
+      credentials: 'include', // lets the browser store the Set-Cookie refresh token
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Verification failed');
 
     if (data.requiresTwoFactor) {
-      return { requiresTwoFactor: true, pendingToken: data.pendingToken }
+      return { requiresTwoFactor: true, pendingToken: data.pendingToken };
     }
 
-    setAccessToken(data.accessToken, data.user)
-    return data.user
+    setAccessToken(data.accessToken, data.user);
+    return data.user;
   }
 
   /**
@@ -168,25 +177,25 @@ export function useAuth() {
    */
   async function magicPwaHandoff(token: string): Promise<MagicPwaHandoffResult> {
     const res = await fetch(`${apiUrl}/api/auth/magic-pwa-handoff`, {
-      method:      'POST',
+      method: 'POST',
       credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ token }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Verification failed')
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Verification failed');
 
     if (data.requiresTwoFactor && typeof data.pendingToken === 'string') {
-      return { kind: '2fa', pendingToken: data.pendingToken }
+      return { kind: '2fa', pendingToken: data.pendingToken };
     }
     if (typeof data.handoffCode === 'string' && data.handoffCode.length > 0) {
-      return { kind: 'handoff', handoffCode: data.handoffCode, totpRequired: !!data.totpRequired }
+      return { kind: 'handoff', handoffCode: data.handoffCode, totpRequired: !!data.totpRequired };
     }
     if (typeof data.accessToken === 'string' && data.user) {
-      setAccessToken(data.accessToken, data.user)
-      return { kind: 'session', user: data.user }
+      setAccessToken(data.accessToken, data.user);
+      return { kind: 'session', user: data.user };
     }
-    throw new Error('Unexpected sign-in response')
+    throw new Error('Unexpected sign-in response');
   }
 
   /**
@@ -194,15 +203,15 @@ export function useAuth() {
    */
   async function redeemPwaHandoff(code: string): Promise<AuthUser> {
     const res = await fetch(`${apiUrl}/api/auth/redeem-pwa-handoff`, {
-      method:      'POST',
+      method: 'POST',
       credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ code }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Verification failed')
-    setAccessToken(data.accessToken, data.user)
-    return data.user
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Verification failed');
+    setAccessToken(data.accessToken, data.user);
+    return data.user;
   }
 
   /**
@@ -212,20 +221,20 @@ export function useAuth() {
    */
   async function verifyTotp(code: string, pendingToken: string): Promise<AuthUser> {
     const res = await fetch(`${apiUrl}/api/auth/2fa/verify`, {
-      method:      'POST',
+      method: 'POST',
       credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ code, pendingToken }),
-    })
-    const data = await res.json()
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, pendingToken }),
+    });
+    const data = await res.json();
     if (!res.ok) {
-      const err = new Error(data.error || 'Verification failed') as Error & { code?: string }
-      err.code = data.code
-      throw err
+      const err = new Error(data.error || 'Verification failed') as Error & { code?: string };
+      err.code = data.code;
+      throw err;
     }
 
-    setAccessToken(data.accessToken, data.user)
-    return data.user
+    setAccessToken(data.accessToken, data.user);
+    return data.user;
   }
 
   /**
@@ -236,63 +245,63 @@ export function useAuth() {
    * for an unauthenticated visitor.
    */
   async function refreshSession(): Promise<boolean> {
-    if (refreshInFlight) return refreshInFlight
+    if (refreshInFlight) return refreshInFlight;
 
-    const versionAtStart = sessionVersion
+    const versionAtStart = sessionVersion;
 
     refreshInFlight = (async () => {
       try {
         const res = await fetch(`${apiUrl}/api/auth/refresh`, {
-          method:      'POST',
+          method: 'POST',
           credentials: 'include',
-        })
-        if (res.status === 204) return false
+        });
+        if (res.status === 204) return false;
         if (!res.ok) {
           // Only clear on explicit auth failure — transient/network errors should not log the user out.
           if (versionAtStart === sessionVersion && (res.status === 401 || res.status === 403)) {
-            clearSession()
+            clearSession();
           }
-          return false
+          return false;
         }
-        if (versionAtStart !== sessionVersion) return false
+        if (versionAtStart !== sessionVersion) return false;
 
-        const data = await res.json()
-        if (versionAtStart !== sessionVersion) return false
+        const data = await res.json();
+        if (versionAtStart !== sessionVersion) return false;
 
-        setAccessToken(data.accessToken, data.user)
-        return versionAtStart === sessionVersion
+        setAccessToken(data.accessToken, data.user);
+        return versionAtStart === sessionVersion;
       } catch {
         // Network blip while backgrounded (common on iOS PWAs) — keep session for retry on focus.
-        return false
+        return false;
       }
-    })()
+    })();
 
     try {
-      return await refreshInFlight
+      return await refreshInFlight;
     } finally {
-      refreshInFlight = null
+      refreshInFlight = null;
     }
   }
 
   async function silentRefresh() {
-    const ok = await refreshSession()
+    const ok = await refreshSession();
     if (!ok && isAccessTokenExpired()) {
       // JWT already expired and refresh failed — session is unusable.
-      clearSession()
+      clearSession();
     }
   }
 
   /** Refresh when the app returns to foreground or before a protected API call. */
   async function ensureFreshSession(): Promise<boolean> {
     if (!user.value && !accessToken.value) {
-      return refreshSession()
+      return refreshSession();
     }
     if (isAccessTokenExpired()) {
-      const ok = await refreshSession()
-      if (!ok) clearSession()
-      return ok
+      const ok = await refreshSession();
+      if (!ok) clearSession();
+      return ok;
     }
-    return true
+    return true;
   }
 
   /**
@@ -301,10 +310,10 @@ export function useAuth() {
    */
   async function logout() {
     await fetch(`${apiUrl}/api/auth/logout`, {
-      method:      'POST',
+      method: 'POST',
       credentials: 'include',
-    }).catch(() => {})  // best-effort; clear locally even if the request fails
-    clearSession()
+    }).catch(() => {}); // best-effort; clear locally even if the request fails
+    clearSession();
   }
 
   /**
@@ -316,7 +325,7 @@ export function useAuth() {
    *   })
    */
   function authHeader(): Record<string, string> {
-    return accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}
+    return accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {};
   }
 
   /**
@@ -326,22 +335,22 @@ export function useAuth() {
    * to avoid an extra round-trip for users who are just browsing.
    */
   async function fetchSubscription(): Promise<void> {
-    if (!accessToken.value) return
+    if (!accessToken.value) return;
     try {
       const res = await fetch(`${apiUrl}/api/account/subscription`, {
-        headers:     authHeader(),
+        headers: authHeader(),
         credentials: 'include',
-      })
+      });
       if (res.ok) {
-        const data = await res.json()
-        subscription.value = data.subscription ?? null
+        const data = await res.json();
+        subscription.value = data.subscription ?? null;
       } else {
         // Non-OK response (e.g. 401 after token expiry) — clear stale entitlements
-        subscription.value = null
+        subscription.value = null;
       }
     } catch {
       // Network error — clear stale entitlements rather than showing wrong access
-      subscription.value = null
+      subscription.value = null;
     }
   }
 
@@ -350,22 +359,22 @@ export function useAuth() {
    * It silently tries to restore the session from the refresh cookie.
    */
   async function initialise() {
-    if (initialised.value) return
-    await refreshSession()
-    initialised.value = true
+    if (initialised.value) return;
+    await refreshSession();
+    initialised.value = true;
   }
 
   function markTotpEnabled() {
-    if (user.value) user.value = { ...user.value, totpEnabled: true }
+    if (user.value) user.value = { ...user.value, totpEnabled: true };
   }
 
   function markTotpDisabled(authUser?: Pick<AuthUser, 'totpEnabled' | 'totpRequired'>) {
-    if (!user.value) return
+    if (!user.value) return;
     user.value = {
       ...user.value,
       totpEnabled: authUser?.totpEnabled ?? false,
       totpRequired: authUser?.totpRequired ?? user.value.totpRequired,
-    }
+    };
   }
 
   /**
@@ -374,15 +383,15 @@ export function useAuth() {
    * rather than requiring a separate /refresh round-trip).
    */
   function applyNewSession(token: string, authUser: AuthUser) {
-    setAccessToken(token, authUser)
+    setAccessToken(token, authUser);
   }
 
   return {
     // State
-    user:         readonly(user),
-    accessToken:  readonly(accessToken),
+    user: readonly(user),
+    accessToken: readonly(accessToken),
     subscription: readonly(subscription),
-    initialised:  readonly(initialised),
+    initialised: readonly(initialised),
 
     // Methods
     signIn,
@@ -401,15 +410,18 @@ export function useAuth() {
     applyNewSession,
 
     // Role / subscription helpers
-    isLoggedIn:     computed(() => user.value !== null),
-    isPremium:      computed(() => {
-      if (user.value?.role && user.value.role !== 'viewer') return true
-      if (!subscription.value) return false
-      if (subscription.value.status !== 'active' && subscription.value.status !== 'trialing') return false
-      if (!subscription.value.currentPeriodEnd) return true
-      return new Date(subscription.value.currentPeriodEnd) > new Date()
+    isLoggedIn: computed(() => user.value !== null),
+    isPremium: computed(() => {
+      if (user.value?.role && user.value.role !== 'viewer') return true;
+      if (!subscription.value) return false;
+      if (subscription.value.status !== 'active' && subscription.value.status !== 'trialing')
+        return false;
+      if (!subscription.value.currentPeriodEnd) return true;
+      return new Date(subscription.value.currentPeriodEnd) > new Date();
     }),
-    canEditContent: computed(() => ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? '')),
-    isAdmin:        computed(() => ['admin', 'super_admin'].includes(user.value?.role ?? '')),
-  }
+    canEditContent: computed(() =>
+      ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? ''),
+    ),
+    isAdmin: computed(() => ['admin', 'super_admin'].includes(user.value?.role ?? '')),
+  };
 }

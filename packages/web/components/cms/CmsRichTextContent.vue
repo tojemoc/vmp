@@ -3,20 +3,25 @@
 </template>
 
 <script setup lang="ts">
-import type { CmsRichTextDocument } from '@vmp/shared'
+  import type { CmsRichTextDocument } from '@vmp/shared';
 
-const props = defineProps<{
-  content: CmsRichTextDocument
-}>()
+  const props = defineProps<{
+    content: CmsRichTextDocument;
+  }>();
 
-const html = ref('')
+  const html = ref('');
 
-async function loadHtml() {
-  const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender')
-  html.value = await renderCmsRichTextHtml(props.content)
-}
+  async function loadHtml() {
+    const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender');
+    html.value = await renderCmsRichTextHtml(props.content);
+  }
 
-await loadHtml()
+  await loadHtml();
 
-watch(() => props.content, () => { void loadHtml() })
+  watch(
+    () => props.content,
+    () => {
+      void loadHtml();
+    },
+  );
 </script>

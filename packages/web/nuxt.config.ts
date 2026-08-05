@@ -1,10 +1,10 @@
-import { readBuildInfoDefaults } from './utils/buildInfoSource'
-import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv'
-import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions'
+import { readBuildInfoDefaults } from './utils/buildInfoSource';
+import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
+import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
-loadMonorepoRootEnv()
+loadMonorepoRootEnv();
 
-const buildInfo = readBuildInfoDefaults()
+const buildInfo = readBuildInfoDefaults();
 
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
@@ -17,20 +17,15 @@ export default defineNuxtConfig({
     // must not treat them as fatal — disabling manifest prefetch avoids the noise.
     'build:manifest'(manifest) {
       for (const key in manifest) {
-        const file = manifest[key]
-        if (file) file.prefetch = false
+        const file = manifest[key];
+        if (file) file.prefetch = false;
       }
     },
   },
 
   sourcemap: { client: 'hidden' },
 
-  modules: [
-    '@nuxtjs/tailwindcss',
-    '@nuxtjs/color-mode',
-    '@vite-pwa/nuxt',
-    '@sentry/nuxt/module',
-  ],
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@sentry/nuxt/module'],
 
   sentry: {
     org: 'tojemoc',
@@ -53,19 +48,17 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      include: [
-        'media-chrome',
-      ],
+      include: ['media-chrome'],
     },
     build: {
       rollupOptions: {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules/video.js') || id.includes('videojs-video-element')) {
-              return 'videojs'
+              return 'videojs';
             }
             if (id.includes('node_modules/@tiptap/')) {
-              return 'tiptap'
+              return 'tiptap';
             }
           },
         },
@@ -117,7 +110,7 @@ export default defineNuxtConfig({
         // iOS home screen icon (Safari ignores the web manifest icons array)
         { rel: 'apple-touch-icon', href: '/icons/pwa-192.png' },
       ],
-    }
+    },
   },
 
   pwa: {
@@ -144,7 +137,12 @@ export default defineNuxtConfig({
         { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
         // Separate maskable entry required by Chrome's installability audit
-        { src: '/icons/pwa-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        {
+          src: '/icons/pwa-512-maskable.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
       ],
     },
     workbox: {
@@ -168,4 +166,4 @@ export default defineNuxtConfig({
       type: 'classic', // Workbox uses importScripts(); must not be 'module'
     },
   },
-})
+});

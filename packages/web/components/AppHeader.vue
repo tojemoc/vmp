@@ -3,9 +3,18 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <NuxtLink to="/" class="flex min-w-0 items-center space-x-2 shrink">
-          <img :src="siteSettings.logoUrl || '/icons/pwa-192.png'" alt="" aria-hidden="true" class="w-8 h-8 rounded-lg shrink-0" />
-          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden">{{ siteSettings.siteNameShort }}</span>
-          <span class="hidden sm:block text-xl font-bold text-gray-900 dark:text-white max-w-[12rem] md:max-w-none truncate">
+          <img
+            :src="siteSettings.logoUrl || '/icons/pwa-192.png'"
+            alt=""
+            aria-hidden="true"
+            class="w-8 h-8 rounded-lg shrink-0"
+          >
+          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden"
+            >{{ siteSettings.siteNameShort }}</span
+          >
+          <span
+            class="hidden sm:block text-xl font-bold text-gray-900 dark:text-white max-w-[12rem] md:max-w-none truncate"
+          >
             {{ siteSettings.siteName }}
           </span>
         </NuxtLink>
@@ -29,8 +38,18 @@
               aria-controls="account-menu"
               @click="dropdownOpen = !dropdownOpen"
             >
-              <svg class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01" />
+              <svg
+                class="w-5 h-5 text-gray-600 dark:text-gray-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 12h.01M12 12h.01M19 12h.01"
+                />
               </svg>
             </button>
 
@@ -50,7 +69,9 @@
               >
                 <div class="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
                   <p class="text-xs text-gray-500 dark:text-gray-400">{{ strings.signedInAs }}</p>
-                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate mt-0.5">{{ user?.email }}</p>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white truncate mt-0.5">
+                    {{ user?.email }}
+                  </p>
                   <p class="text-xs mt-1" :class="roleBadgeClass">{{ roleLabel }}</p>
                 </div>
 
@@ -113,115 +134,120 @@
 </template>
 
 <script setup lang="ts">
-import strings from '~/utils/strings'
+  import strings from '~/utils/strings';
 
-const { user, isLoggedIn, canEditContent, logout } = useAuth()
-const { siteSettings } = useSiteSettings()
-const {
-  isSupported: pushSupported,
-  supportReason: pushSupportReason,
-  permission: pushPermission,
-  isSubscribed: pushSubscribed,
-  pushError,
-  subscribe: pushSubscribe,
-  unsubscribe: pushUnsubscribe,
-  clearError: clearPushError,
-} = usePushNotifications()
-const { startLoginFlow } = useLoginFlow()
+  const { user, isLoggedIn, canEditContent, logout } = useAuth();
+  const { siteSettings } = useSiteSettings();
+  const {
+    isSupported: pushSupported,
+    supportReason: pushSupportReason,
+    permission: pushPermission,
+    isSubscribed: pushSubscribed,
+    pushError,
+    subscribe: pushSubscribe,
+    unsubscribe: pushUnsubscribe,
+    clearError: clearPushError,
+  } = usePushNotifications();
+  const { startLoginFlow } = useLoginFlow();
 
-const router = useRouter()
-const dropdownOpen = ref(false)
-const dropdownRef  = ref<HTMLElement | null>(null)
-const pushToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
-let pushToastTimer: ReturnType<typeof setTimeout> | null = null
+  const router = useRouter();
+  const dropdownOpen = ref(false);
+  const dropdownRef = ref<HTMLElement | null>(null);
+  const pushToast = ref<{ type: 'success' | 'error'; message: string } | null>(null);
+  let pushToastTimer: ReturnType<typeof setTimeout> | null = null;
 
-const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error')
+  const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error');
 
-const pushBellTitle = computed(() => {
-  if (!pushSupported.value) return pushSupportReason.value || strings.notificationsUnsupportedContext
-  if (pushPermission.value === 'denied') return strings.notificationsBlocked
-  if (pushSubscribed.value) return strings.notificationsOn
-  return strings.notificationsClickEnable
-})
+  const pushBellTitle = computed(() => {
+    if (!pushSupported.value)
+      return pushSupportReason.value || strings.notificationsUnsupportedContext;
+    if (pushPermission.value === 'denied') return strings.notificationsBlocked;
+    if (pushSubscribed.value) return strings.notificationsOn;
+    return strings.notificationsClickEnable;
+  });
 
-function showPushToast(type: 'success' | 'error', message: string) {
-  pushToast.value = { type, message }
-  if (pushToastTimer) clearTimeout(pushToastTimer)
-  pushToastTimer = setTimeout(() => { pushToast.value = null }, 2800)
-}
-
-async function handleBellClick() {
-  if (!pushSupported.value) {
-    showPushToast('error', pushSupportReason.value || strings.notificationsUnsupportedContext)
-    dropdownOpen.value = false
-    return
+  function showPushToast(type: 'success' | 'error', message: string) {
+    pushToast.value = { type, message };
+    if (pushToastTimer) clearTimeout(pushToastTimer);
+    pushToastTimer = setTimeout(() => {
+      pushToast.value = null;
+    }, 2800);
   }
-  if (pushPermission.value === 'denied') {
-    showPushToast('error', pushError.value || strings.notificationsBlockedSettings)
-    clearPushError()
-    dropdownOpen.value = false
-    return
-  }
-  try {
-    if (pushSubscribed.value) {
-      const before = pushSubscribed.value
-      await pushUnsubscribe()
-      if (pushError.value) {
-        showPushToast('error', pushError.value)
-        clearPushError()
-      } else if (before && !pushSubscribed.value) {
-        showPushToast('success', strings.notificationsTurnedOff)
-      }
-    } else {
-      const before = pushSubscribed.value
-      await pushSubscribe()
-      if (!before && pushSubscribed.value) showPushToast('success', strings.notificationsEnabled)
-      else if (pushError.value) {
-        showPushToast('error', pushError.value)
-        clearPushError()
-      }
+
+  async function handleBellClick() {
+    if (!pushSupported.value) {
+      showPushToast('error', pushSupportReason.value || strings.notificationsUnsupportedContext);
+      dropdownOpen.value = false;
+      return;
     }
-  } catch (err: any) {
-    showPushToast('error', pushError.value || err.message)
-    clearPushError()
-  } finally {
-    dropdownOpen.value = false
+    if (pushPermission.value === 'denied') {
+      showPushToast('error', pushError.value || strings.notificationsBlockedSettings);
+      clearPushError();
+      dropdownOpen.value = false;
+      return;
+    }
+    try {
+      if (pushSubscribed.value) {
+        const before = pushSubscribed.value;
+        await pushUnsubscribe();
+        if (pushError.value) {
+          showPushToast('error', pushError.value);
+          clearPushError();
+        } else if (before && !pushSubscribed.value) {
+          showPushToast('success', strings.notificationsTurnedOff);
+        }
+      } else {
+        const before = pushSubscribed.value;
+        await pushSubscribe();
+        if (!before && pushSubscribed.value) showPushToast('success', strings.notificationsEnabled);
+        else if (pushError.value) {
+          showPushToast('error', pushError.value);
+          clearPushError();
+        }
+      }
+    } catch (err: any) {
+      showPushToast('error', pushError.value || err.message);
+      clearPushError();
+    } finally {
+      dropdownOpen.value = false;
+    }
   }
-}
 
-onMounted(() => {
-  document.addEventListener('mousedown', handleOutsideClick)
-})
-onUnmounted(() => {
-  document.removeEventListener('mousedown', handleOutsideClick)
-  if (pushToastTimer) clearTimeout(pushToastTimer)
-})
+  onMounted(() => {
+    document.addEventListener('mousedown', handleOutsideClick);
+  });
+  onUnmounted(() => {
+    document.removeEventListener('mousedown', handleOutsideClick);
+    if (pushToastTimer) clearTimeout(pushToastTimer);
+  });
 
-function handleOutsideClick(e: MouseEvent) {
-  if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
-    dropdownOpen.value = false
+  function handleOutsideClick(e: MouseEvent) {
+    if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
+      dropdownOpen.value = false;
+    }
   }
-}
 
-async function handleLogout() {
-  dropdownOpen.value = false
-  await logout()
-  router.push('/')
-}
+  async function handleLogout() {
+    dropdownOpen.value = false;
+    await logout();
+    router.push('/');
+  }
 
-async function handleSignIn() {
-  await startLoginFlow()
-}
+  async function handleSignIn() {
+    await startLoginFlow();
+  }
 
-const roleLabel = computed(() => strings.roleLabel(user.value?.role))
-const ROLE_BADGE_CLASSES: Record<string, string> = {
-  super_admin: 'text-purple-700 dark:text-purple-300',
-  admin: 'text-blue-700 dark:text-blue-300',
-  editor: 'text-emerald-700 dark:text-emerald-300',
-  analyst: 'text-amber-700 dark:text-amber-300',
-  moderator: 'text-orange-700 dark:text-orange-300',
-  viewer: 'text-gray-700 dark:text-gray-400',
-}
+  const roleLabel = computed(() => strings.roleLabel(user.value?.role));
+  const ROLE_BADGE_CLASSES: Record<string, string> = {
+    super_admin: 'text-purple-700 dark:text-purple-300',
+    admin: 'text-blue-700 dark:text-blue-300',
+    editor: 'text-emerald-700 dark:text-emerald-300',
+    analyst: 'text-amber-700 dark:text-amber-300',
+    moderator: 'text-orange-700 dark:text-orange-300',
+    viewer: 'text-gray-700 dark:text-gray-400',
+  };
 
-const roleBadgeClass = computed(() => ROLE_BADGE_CLASSES[user.value?.role ?? ''] ?? ROLE_BADGE_CLASSES.viewer)
+  const roleBadgeClass = computed(
+    () => ROLE_BADGE_CLASSES[user.value?.role ?? ''] ?? ROLE_BADGE_CLASSES.viewer,
+  );
 </script>

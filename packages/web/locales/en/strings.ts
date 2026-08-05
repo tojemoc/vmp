@@ -1,4 +1,4 @@
-import type { StringsDefinition } from '../types'
+import type { StringsDefinition } from '../types';
 
 export const strings: StringsDefinition = {
   // ── Site-wide ──────────────────────────────────────────────────────────────
@@ -22,7 +22,8 @@ export const strings: StringsDefinition = {
   notificationsUnsupportedContext: 'Notifications are unavailable in this browser context.',
   notificationsUnsupportedIosSafari:
     'On iPhone/iPad, add this site to your Home Screen and open it as an installed web app to enable notifications.',
-  notificationsUnsupportedSafari: 'This Safari context does not currently support web push for this app.',
+  notificationsUnsupportedSafari:
+    'This Safari context does not currently support web push for this app.',
   notificationsEnabled: 'Notifications enabled.',
   notificationsTurnedOff: 'Notifications turned off.',
   notificationsBrowserBlocked:
@@ -75,7 +76,8 @@ export const strings: StringsDefinition = {
   pwaLoginTitle: 'Sign in to the app',
   pwaLoginIntro: 'This takes a few extra steps the first time. Follow each step carefully.',
   pwaLoginEmailLabel: 'Email address',
-  pwaLoginPushStep: 'Allow notifications so we can send your sign-in to this app after you confirm in email.',
+  pwaLoginPushStep:
+    'Allow notifications so we can send your sign-in to this app after you confirm in email.',
   pwaLoginPushAlreadyGranted:
     'Notifications are already allowed on this device. Tap below to resend the sign-in email, or turn notifications off to start over.',
   pwaLoginResendEmail: 'Resend sign-in email',
@@ -107,9 +109,11 @@ export const strings: StringsDefinition = {
   authVerifyPwaPushDone: 'Done! Switch back to the VMP app on your Home Screen.',
   authVerifyPwaPushDoneHint:
     'Tap the sign-in notification if you see it. If you are not signed in yet, close the app completely and open it again from your Home Screen.',
-  authVerifyPwaPushDeliverFailed: 'We could not send the sign-in to your app. You can sign in in Safari instead.',
+  authVerifyPwaPushDeliverFailed:
+    'We could not send the sign-in to your app. You can sign in in Safari instead.',
   authVerifyPwaPushAttemptNotFound: 'The login session expired. Please start again in the app.',
-  authVerifyPwaPushNoPushSubscription: 'Push subscription not found. Please start again in the app.',
+  authVerifyPwaPushNoPushSubscription:
+    'Push subscription not found. Please start again in the app.',
   authVerifyPwaPushPushFailed: 'Could not reach the app. Make sure it is installed and try again.',
 
   // ── Two-factor authentication ──────────────────────────────────────────────
@@ -143,7 +147,8 @@ export const strings: StringsDefinition = {
   totpSetupConfirming: 'Confirming…',
   totpSetupEnabledTitle: '2FA enabled',
   totpSetupEnabledBody: 'Your account is now protected. Redirecting…',
-  totpSetupAlreadyEnabled: 'Two-factor authentication is already enabled. Disable it from your account page to set up a new authenticator.',
+  totpSetupAlreadyEnabled:
+    'Two-factor authentication is already enabled. Disable it from your account page to set up a new authenticator.',
   totpSetupFailedLoad: 'Failed to load setup. Please refresh.',
   totpSetupLoadFailed: 'Failed to load setup',
   totpSetupConfirmationFailed: 'Confirmation failed',
@@ -227,7 +232,8 @@ export const strings: StringsDefinition = {
   videoNotFoundMessage: 'This video may have been removed, renamed, or the link is incorrect.',
   videoNotFoundSuggestions: 'You might like these instead',
   playbackUnavailableTitle: 'This video is temporarily unavailable',
-  playbackUnavailableMessage: 'We could not load the video right now. Storage may be recovering, or this file may not be on our servers yet. Other videos should still work.',
+  playbackUnavailableMessage:
+    'We could not load the video right now. Storage may be recovering, or this file may not be on our servers yet. Other videos should still work.',
   playbackUnavailableSuggestions: 'Try one of these instead',
   rateLimitExceeded: 'Too many requests. Please try again later.',
   mediaFailedToLoad: 'Media failed to load',
@@ -267,13 +273,15 @@ export const strings: StringsDefinition = {
     `Your access is active while we complete the migration. If you previously paid via ${provider}, your subscription may need to be renewed. Contact us if you experience any issues.`,
   accountRelinkStatusNeedsRelink: 'Needs relink',
   accountRelinkLegacyProviderFallback: 'our previous provider',
-  accountRelinkCheckoutIntro: 'Choose your plan and continue to our secure payment page to link your card or bank account.',
+  accountRelinkCheckoutIntro:
+    'Choose your plan and continue to our secure payment page to link your card or bank account.',
   accountRelinkCheckoutWorking: 'Redirecting…',
   accountManagePaymentMethod: 'Manage payment method',
   offlineDownloadMenuLabel: 'Download for offline',
   offlineDownloadResume: 'Resume download',
   offlineDownloadPwaRequiredTitle: 'Install the app to download',
-  offlineDownloadPwaRequiredMessage: 'Offline downloads are only available in the installed app. Add VMP to your home screen, then open the video from the app to download it.',
+  offlineDownloadPwaRequiredMessage:
+    'Offline downloads are only available in the installed app. Add VMP to your home screen, then open the video from the app to download it.',
   offlineDownloadPwaRequiredDismiss: 'Got it',
   offlineTapToUnmute: 'Tap to unmute',
   networkError: 'Network error. Please try again.',
@@ -287,7 +295,8 @@ export const strings: StringsDefinition = {
   rssLoadNetworkError: 'Network error while loading RSS URLs.',
 
   offlineDownloadTitle: 'Offline download',
-  offlineDownloadHint: 'Save this video for playback without a network connection in the installed app.',
+  offlineDownloadHint:
+    'Save this video for playback without a network connection in the installed app.',
   offlineDownloadQuality: 'Quality',
   offlineDownloadStart: 'Download',
   offlineDownloadWorking: 'Starting…',
@@ -305,7 +314,8 @@ export const strings: StringsDefinition = {
   offlineDownloadStatusUpdateAvailable: 'Update available',
   offlineDownloadStatusLicenseExpired: 'License expired',
   offlineDownloadsTitle: 'Offline downloads',
-  offlineDownloadsIntro: 'Videos saved on this device for offline playback. Licenses renew while you have an active subscription.',
+  offlineDownloadsIntro:
+    'Videos saved on this device for offline playback. Licenses renew while you have an active subscription.',
   offlineDownloadsEmpty: 'No offline downloads yet. Open a video in the app and use Download.',
   offlineStorageUsed: (amount: string) => `Offline storage used: ${amount}`,
   offlineStorageQuota: (amount: string) => `of ${amount} available`,
@@ -332,9 +342,11 @@ export const strings: StringsDefinition = {
   checkoutStripeLoading: 'Loading secure checkout…',
   checkoutStripeProcessing: 'Processing…',
   checkoutStripeNotConfigured: 'Card payments are not configured.',
-  checkoutStripeSdkUnavailable: 'Stripe checkout could not be loaded. Please refresh and try again.',
+  checkoutStripeSdkUnavailable:
+    'Stripe checkout could not be loaded. Please refresh and try again.',
   checkoutStripeIncomplete: 'Payment was not completed. Please try again.',
-  checkoutBlurbEmbedded: 'Pay with Apple Pay, Google Pay, card, PayPal, or bank debit. Cancel any time.',
+  checkoutBlurbEmbedded:
+    'Pay with Apple Pay, Google Pay, card, PayPal, or bank debit. Cancel any time.',
   checkoutBlurbDefault: 'Secure checkout. Cancel any time.',
   checkoutBlurbStripe: 'Secure checkout. Cancel any time.',
   checkoutBlurbBoth: 'Secure checkout. Cancel any time.',
@@ -441,4 +453,4 @@ export const strings: StringsDefinition = {
     filterPlaceholder: 'Filter…',
     superAdminOnlyEdit: 'Only a super admin may change this account',
   },
-}
+};

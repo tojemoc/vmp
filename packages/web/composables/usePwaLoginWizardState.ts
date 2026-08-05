@@ -1,17 +1,17 @@
-const pwaLoginWizardOpen = ref(false)
+const pwaLoginWizardOpen = ref(false);
 
 export function usePwaLoginWizardState() {
   function openPwaPushLoginWizard() {
-    pwaLoginWizardOpen.value = true
+    pwaLoginWizardOpen.value = true;
   }
 
   function closePwaPushLoginWizard() {
-    pwaLoginWizardOpen.value = false
+    pwaLoginWizardOpen.value = false;
   }
 
   return {
     isPwaPushLoginWizardOpen: readonly(pwaLoginWizardOpen),
     openPwaPushLoginWizard,
     closePwaPushLoginWizard,
-  }
+  };
 }

@@ -1,4 +1,4 @@
-import type { StringsDefinition } from '../types'
+import type { StringsDefinition } from '../types';
 
 /** Draft catalog — validate in context (declension, register). See docs/i18n-prep.md. */
 
@@ -24,12 +24,14 @@ export const strings: StringsDefinition = {
   notificationsUnsupportedContext: 'Notifikácie nie sú v tomto kontexte prehliadača dostupné.',
   notificationsUnsupportedIosSafari:
     'Na iPhone/iPade pridajte túto stránku na Domovskú obrazovku a otvorte ju ako nainštalovanú webovú aplikáciu, aby ste mohli povoliť notifikácie.',
-  notificationsUnsupportedSafari: 'Tento kontext Safari momentálne nepodporuje web push pre túto aplikáciu.',
+  notificationsUnsupportedSafari:
+    'Tento kontext Safari momentálne nepodporuje web push pre túto aplikáciu.',
   notificationsEnabled: 'Notifikácie povolené.',
   notificationsTurnedOff: 'Notifikácie vypnuté.',
   notificationsBrowserBlocked:
     'Notifikácie prehliadača boli zablokované. Povoľte notifikácie v nastaveniach prehliadača a skúste znova.',
-  notificationsNotConfigured: 'Push služba momentálne nie je nakonfigurovaná. Skúste to prosím neskôr.',
+  notificationsNotConfigured:
+    'Push služba momentálne nie je nakonfigurovaná. Skúste to prosím neskôr.',
   notificationsEnableFailed: 'Nepodarilo sa povoliť notifikácie. Skúste to prosím znova.',
   notificationsUnsubscribeSyncFailed:
     'Notifikácie boli v tomto prehliadači vypnuté, ale nepodarilo sa nám synchronizovať túto zmenu so serverom.',
@@ -75,9 +77,11 @@ export const strings: StringsDefinition = {
   authVerifyRequestNewLink: 'Požiadať o nový odkaz',
 
   pwaLoginTitle: 'Prihlásiť sa do aplikácie',
-  pwaLoginIntro: 'Prvýkrát to vyžaduje niekoľko ďalších krokov. Postupujte opatrne podľa každého kroku.',
+  pwaLoginIntro:
+    'Prvýkrát to vyžaduje niekoľko ďalších krokov. Postupujte opatrne podľa každého kroku.',
   pwaLoginEmailLabel: 'E-mailová adresa',
-  pwaLoginPushStep: 'Povoľte notifikácie, aby sme vám po potvrdení v e-maile mohli odoslať prihlásenie do tejto aplikácie.',
+  pwaLoginPushStep:
+    'Povoľte notifikácie, aby sme vám po potvrdení v e-maile mohli odoslať prihlásenie do tejto aplikácie.',
   pwaLoginPushAlreadyGranted:
     'Notifikácie sú na tomto zariadení už povolené. Klepnite nižšie pre opätovné odoslanie e-mailu na prihlásenie, alebo vypnite notifikácie a začnite odznova.',
   pwaLoginResendEmail: 'Znova odoslať e-mail na prihlásenie',
@@ -109,10 +113,13 @@ export const strings: StringsDefinition = {
   authVerifyPwaPushDone: 'Hotovo! Vráťte sa do aplikácie VMP na Domovskej obrazovke.',
   authVerifyPwaPushDoneHint:
     'Klepnite na notifikáciu o prihlásení, ak ju vidíte. Ak ešte nie ste prihlásení, úplne zatvorte aplikáciu a znova ju otvorte z Domovskej obrazovky.',
-  authVerifyPwaPushDeliverFailed: 'Nepodarilo sa odoslať prihlásenie do aplikácie. Môžete sa prihlásiť v Safari.',
-  authVerifyPwaPushAttemptNotFound: 'Relácia prihlásenia vypršala. Začnite prosím znova v aplikácii.',
+  authVerifyPwaPushDeliverFailed:
+    'Nepodarilo sa odoslať prihlásenie do aplikácie. Môžete sa prihlásiť v Safari.',
+  authVerifyPwaPushAttemptNotFound:
+    'Relácia prihlásenia vypršala. Začnite prosím znova v aplikácii.',
   authVerifyPwaPushNoPushSubscription: 'Push odber sa nenašiel. Začnite prosím znova v aplikácii.',
-  authVerifyPwaPushPushFailed: 'Nepodarilo sa dosiahnuť aplikáciu. Uistite sa, že je nainštalovaná, a skúste znova.',
+  authVerifyPwaPushPushFailed:
+    'Nepodarilo sa dosiahnuť aplikáciu. Uistite sa, že je nainštalovaná, a skúste znova.',
 
   // ── Two-factor authentication ──────────────────────────────────────────────
   totpVerifyTitle: 'Dvojfaktorové overenie',
@@ -145,7 +152,8 @@ export const strings: StringsDefinition = {
   totpSetupConfirming: 'Potvrdzuje sa…',
   totpSetupEnabledTitle: '2FA povolené',
   totpSetupEnabledBody: 'Váš účet je teraz chránený. Presmerováva sa…',
-  totpSetupAlreadyEnabled: 'Dvojfaktorové overenie je už povolené. Vypnite ho na stránke účtu, ak chcete nastaviť nový autentifikátor.',
+  totpSetupAlreadyEnabled:
+    'Dvojfaktorové overenie je už povolené. Vypnite ho na stránke účtu, ak chcete nastaviť nový autentifikátor.',
   totpSetupFailedLoad: 'Nepodarilo sa načítať nastavenie. Obnovte prosím stránku.',
   totpSetupLoadFailed: 'Nepodarilo sa načítať nastavenie',
   totpSetupConfirmationFailed: 'Potvrdenie zlyhalo',
@@ -168,7 +176,8 @@ export const strings: StringsDefinition = {
 
   // ── Homepage ───────────────────────────────────────────────────────────────
   heroTitleDefault: 'Objavte prémiový video obsah',
-  heroSubtitleDefault: 'Sledujte bezplatné ukážky alebo odomknite plný prístup s prémiovým predplatným',
+  heroSubtitleDefault:
+    'Sledujte bezplatné ukážky alebo odomknite plný prístup s prémiovým predplatným',
   loadingVideos: 'Načítavajú sa videá...',
   errorLoadingVideos: 'Chyba pri načítavaní videí',
   failedToLoadVideos: 'Nepodarilo sa načítať videá',
@@ -229,7 +238,8 @@ export const strings: StringsDefinition = {
   videoNotFoundMessage: 'Toto video mohlo byť odstránené, premenované, alebo je odkaz neplatný.',
   videoNotFoundSuggestions: 'Mohlo by sa vám páčiť',
   playbackUnavailableTitle: 'Toto video je dočasne nedostupné',
-  playbackUnavailableMessage: 'Video sa teraz nepodarilo načítať. Úložisko sa možno obnovuje, alebo súbor ešte nie je na serveroch. Ostatné videá by mali fungovať.',
+  playbackUnavailableMessage:
+    'Video sa teraz nepodarilo načítať. Úložisko sa možno obnovuje, alebo súbor ešte nie je na serveroch. Ostatné videá by mali fungovať.',
   playbackUnavailableSuggestions: 'Skúste namiesto toho jedno z týchto',
   rateLimitExceeded: 'Príliš veľa požiadaviek. Skúste to prosím neskôr.',
   mediaFailedToLoad: 'Médiá sa nepodarilo načítať',
@@ -249,7 +259,8 @@ export const strings: StringsDefinition = {
   manageSubscription: 'Spravovať predplatné',
   openingPortal: 'Otvára sa…',
   subscribedWelcome: 'Teraz ste predplatiteľom!',
-  subscribedWelcomeDetail: 'Vitajte vo VMP Premium. Užite si neobmedzený prístup ku všetkému obsahu.',
+  subscribedWelcomeDetail:
+    'Vitajte vo VMP Premium. Užite si neobmedzený prístup ku všetkému obsahu.',
   renewsOn: 'Obnoví sa',
   accessUntil: 'Prístup do',
   planMonthly: 'Mesačné',
@@ -269,19 +280,22 @@ export const strings: StringsDefinition = {
     `Váš prístup je aktívny, kým dokončíme migráciu. Ak ste predtým platili cez ${provider}, predplatné môže byť potrebné obnoviť. V prípade problémov nás kontaktujte.`,
   accountRelinkStatusNeedsRelink: 'Vyžaduje prepojenie',
   accountRelinkLegacyProviderFallback: 'nášho predchádzajúceho poskytovateľa',
-  accountRelinkCheckoutIntro: 'Vyberte plán a pokračujte na našu zabezpečenú platobnú stránku na prepojenie karty alebo bankového účtu.',
+  accountRelinkCheckoutIntro:
+    'Vyberte plán a pokračujte na našu zabezpečenú platobnú stránku na prepojenie karty alebo bankového účtu.',
   accountRelinkCheckoutWorking: 'Presmerovávam…',
   accountManagePaymentMethod: 'Spravovať platobnú metódu',
   offlineDownloadMenuLabel: 'Stiahnuť na offline',
   offlineDownloadResume: 'Pokračovať v sťahovaní',
   offlineDownloadPwaRequiredTitle: 'Na sťahovanie nainštalujte aplikáciu',
-  offlineDownloadPwaRequiredMessage: 'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
+  offlineDownloadPwaRequiredMessage:
+    'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
   offlineDownloadPwaRequiredDismiss: 'Rozumiem',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 
   podcastRssTitle: 'Podcast RSS',
-  podcastRssIntro: 'Použite svoju osobnú URL v podcast aplikácii pre plné epizódy počas predplatného.',
+  podcastRssIntro:
+    'Použite svoju osobnú URL v podcast aplikácii pre plné epizódy počas predplatného.',
   podcastRssPersonalLabel: 'Vaša osobná URL',
   copy: 'Kopírovať',
   copied: 'Skopírované',
@@ -307,8 +321,10 @@ export const strings: StringsDefinition = {
   offlineDownloadStatusUpdateAvailable: 'Dostupná aktualizácia',
   offlineDownloadStatusLicenseExpired: 'Licencia vypršala',
   offlineDownloadsTitle: 'Offline sťahovania',
-  offlineDownloadsIntro: 'Videá uložené v tomto zariadení na offline prehrávanie. Licencie sa obnovujú pri aktívnom predplatnom.',
-  offlineDownloadsEmpty: 'Zatiaľ žiadne offline sťahovania. Otvorte video v aplikácii a použite Stiahnuť.',
+  offlineDownloadsIntro:
+    'Videá uložené v tomto zariadení na offline prehrávanie. Licencie sa obnovujú pri aktívnom predplatnom.',
+  offlineDownloadsEmpty:
+    'Zatiaľ žiadne offline sťahovania. Otvorte video v aplikácii a použite Stiahnuť.',
   offlineStorageUsed: (amount: string) => `Použité offline úložisko: ${amount}`,
   offlineStorageQuota: (amount: string) => `z ${amount} dostupných`,
   offlinePlaybackBadge: 'Prehráva sa z offline sťahovania',
@@ -334,9 +350,11 @@ export const strings: StringsDefinition = {
   checkoutStripeLoading: 'Načítava sa bezpečná platba…',
   checkoutStripeProcessing: 'Spracováva sa…',
   checkoutStripeNotConfigured: 'Platby kartou nie sú nakonfigurované.',
-  checkoutStripeSdkUnavailable: 'Stripe platbu sa nepodarilo načítať. Obnovte prosím stránku a skúste znova.',
+  checkoutStripeSdkUnavailable:
+    'Stripe platbu sa nepodarilo načítať. Obnovte prosím stránku a skúste znova.',
   checkoutStripeIncomplete: 'Platba nebola dokončená. Skúste to prosím znova.',
-  checkoutBlurbEmbedded: 'Platba cez Apple Pay, Google Pay, kartu, PayPal alebo bankový debet. Zrušenie kedykoľvek.',
+  checkoutBlurbEmbedded:
+    'Platba cez Apple Pay, Google Pay, kartu, PayPal alebo bankový debet. Zrušenie kedykoľvek.',
   checkoutBlurbDefault: 'Bezpečná platba. Zrušenie kedykoľvek.',
   checkoutBlurbStripe: 'Bezpečná platba. Zrušenie kedykoľvek.',
   checkoutBlurbBoth: 'Bezpečná platba. Zrušenie kedykoľvek.',
@@ -443,4 +461,4 @@ export const strings: StringsDefinition = {
     filterPlaceholder: 'Filter…',
     superAdminOnlyEdit: 'Tento účet môže meniť len super administrátor',
   },
-}
+};

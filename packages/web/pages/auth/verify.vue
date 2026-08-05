@@ -9,7 +9,6 @@
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
     <div class="w-full max-w-sm text-center">
-
       <!-- Verifying -->
       <div
         v-if="state === 'verifying'"
@@ -41,7 +40,9 @@
       <!-- PWA push-login: confirm signing into Home Screen app -->
       <div v-else-if="state === 'pwa_push_prompt'" class="space-y-6 text-left">
         <div>
-          <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyPwaPushTitle }}</h2>
+          <h2 class="text-lg font-semibold text-white mb-2">
+            {{ strings.authVerifyPwaPushTitle }}
+          </h2>
         </div>
         <p v-if="errorMessage" class="text-red-400 text-sm leading-relaxed">{{ errorMessage }}</p>
         <div class="flex flex-col gap-3">
@@ -62,7 +63,10 @@
         </div>
       </div>
 
-      <div v-else-if="state === 'pwa_push_done' || state === 'pwa_2fa_done'" class="space-y-4 text-left">
+      <div
+        v-else-if="state === 'pwa_push_done' || state === 'pwa_2fa_done'"
+        class="space-y-4 text-left"
+      >
         <p class="text-gray-300 text-sm leading-relaxed">{{ strings.authVerifyPwaPushDone }}</p>
         <p class="text-gray-500 text-xs leading-relaxed">{{ strings.authVerifyPwaPushDoneHint }}</p>
       </div>
@@ -70,7 +74,9 @@
       <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
       <div v-else-if="state === 'handoff_wait'" class="space-y-6 text-left">
         <div>
-          <h2 class="text-lg font-semibold text-white mb-2">{{ strings.authVerifyHandoffTitle }}</h2>
+          <h2 class="text-lg font-semibold text-white mb-2">
+            {{ strings.authVerifyHandoffTitle }}
+          </h2>
           <p class="text-gray-400 text-sm leading-relaxed">{{ strings.authVerifyHandoffBody }}</p>
         </div>
         <div class="flex flex-col gap-3">
@@ -93,9 +99,16 @@
 
       <!-- Error -->
       <div v-else-if="state === 'error'" class="space-y-6">
-        <div class="w-14 h-14 mx-auto rounded-full bg-red-950 border border-red-800 flex items-center justify-center">
+        <div
+          class="w-14 h-14 mx-auto rounded-full bg-red-950 border border-red-800 flex items-center justify-center"
+        >
           <svg class="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </div>
         <div>
@@ -110,270 +123,284 @@
           {{ strings.authVerifyRequestNewLink }}
         </button>
       </div>
-
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useRoute, navigateTo } from '#app'
-import strings from '~/utils/strings'
-import { isInstalledPwa } from '~/utils/pwa'
+  import { navigateTo, useRoute } from '#app';
+  import { isInstalledPwa } from '~/utils/pwa';
+  import strings from '~/utils/strings';
 
-const route = useRoute()
-const { verify, magicPwaHandoff, redeemPwaHandoff, canEditContent, user } = useAuth()
-const { deliverMagicLinkToPwa } = usePwaPushLogin()
-const { startLoginFlow } = useLoginFlow()
+  const route = useRoute();
+  const { verify, magicPwaHandoff, redeemPwaHandoff, canEditContent, user } = useAuth();
+  const { deliverMagicLinkToPwa } = usePwaPushLogin();
+  const { startLoginFlow } = useLoginFlow();
 
-function isDisplayStandalone() {
-  if (import.meta.server) return false
-  return window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-}
-
-function isIosLike() {
-  if (import.meta.server) return false
-  const ua = navigator.userAgent || ''
-  return /iP(ad|hone|od)/i.test(ua)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-}
-
-/** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
-function shouldUseIosMagicHandoff(): boolean {
-  return isIosLike() && !isDisplayStandalone()
-}
-
-/** After handoff code is in the URL: defer redeem in iOS Safari so cookies attach where the user chooses. */
-function shouldDeferHandoffRedeem(): boolean {
-  return isIosLike() && !isDisplayStandalone()
-}
-
-// Must start with a single slash; rejects //evil.com and external URLs.
-function safeRedirect(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
-  const t = value.trim()
-  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback
-  return t
-}
-
-function firstQueryString(v: unknown): string {
-  if (typeof v === 'string') return v.trim()
-  if (Array.isArray(v) && typeof v[0] === 'string') return v[0].trim()
-  return ''
-}
-
-type State = 'verifying' | 'error' | 'handoff_wait' | 'pwa_push_prompt' | 'pwa_push_sending' | 'pwa_push_done' | 'pwa_2fa_done'
-
-function initialVerifyState(): State {
-  if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done'
-  if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait'
-  const token = firstQueryString(route.query.token)
-  if (token && isPwaPushLoginLink()) return 'pwa_push_prompt'
-  return 'verifying'
-}
-
-const state = ref<State>(initialVerifyState())
-const errorMessage = ref('')
-const copyHint = ref<string>(strings.authVerifyHandoffCopyLink)
-const handoffCodeForSafari = ref<string | null>(null)
-const magicTokenForFlow = ref<string | null>(null)
-
-async function navigateAfterFullSession(redirect: string) {
-  const u = user.value
-  if (!u) {
-    await navigateTo(redirect)
-    return
+  function isDisplayStandalone() {
+    if (import.meta.server) return false;
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+    );
   }
-  if (canEditContent.value && u.totpRequired && !u.totpEnabled) {
-    await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
-    return
+
+  function isIosLike() {
+    if (import.meta.server) return false;
+    const ua = navigator.userAgent || '';
+    return (
+      /iP(ad|hone|od)/i.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    );
   }
-  await navigateTo(redirect)
-}
 
-async function finishInSafari() {
-  const code = handoffCodeForSafari.value
-  if (!code) return
-  state.value = 'verifying'
-  try {
-    const redirect = safeRedirect(route.query.redirect, '/')
-    await redeemPwaHandoff(code)
-    if (!user.value) throw new Error(strings.authVerifySignInIncomplete)
-    await navigateAfterFullSession(redirect)
-  } catch (e: any) {
-    state.value = 'error'
-    errorMessage.value = e?.message || strings.authVerifyErrorGeneric
+  /** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
+  function shouldUseIosMagicHandoff(): boolean {
+    return isIosLike() && !isDisplayStandalone();
   }
-}
 
-function isPwaPushLoginLink(): boolean {
-  const pwa = firstQueryString(route.query.pwa)
-  return pwa === '1' && !isInstalledPwa()
-}
-
-function pwaPushDeliverErrorMessage(code: string | undefined): string {
-  switch (code) {
-    case 'attempt_not_found':
-      return strings.authVerifyPwaPushAttemptNotFound
-    case 'no_push_subscription':
-      return strings.authVerifyPwaPushNoPushSubscription
-    case 'push_failed':
-      return strings.authVerifyPwaPushPushFailed
-    default:
-      return strings.authVerifyPwaPushDeliverFailed
+  /** After handoff code is in the URL: defer redeem in iOS Safari so cookies attach where the user chooses. */
+  function shouldDeferHandoffRedeem(): boolean {
+    return isIosLike() && !isDisplayStandalone();
   }
-}
 
-async function deliverToInstalledPwa() {
-  const token = magicTokenForFlow.value
-  if (!token) return
-  state.value = 'pwa_push_sending'
-  errorMessage.value = ''
-  try {
-    const result = await deliverMagicLinkToPwa(token)
-    if (result.code === 'requires_2fa' && result.pendingToken) {
-      const redirect = safeRedirect(route.query.redirect, '/')
-      if (import.meta.client && token) {
-        try { sessionStorage.setItem('vmp_pwa_magic_token', token) } catch { /* ignore */ }
-      }
-      await navigateTo(
-        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1`,
-      )
-      return
+  // Must start with a single slash; rejects //evil.com and external URLs.
+  function safeRedirect(value: unknown, fallback: string): string {
+    if (typeof value !== 'string') return fallback;
+    const t = value.trim();
+    if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback;
+    return t;
+  }
+
+  function firstQueryString(v: unknown): string {
+    if (typeof v === 'string') return v.trim();
+    if (Array.isArray(v) && typeof v[0] === 'string') return v[0].trim();
+    return '';
+  }
+
+  type State =
+    | 'verifying'
+    | 'error'
+    | 'handoff_wait'
+    | 'pwa_push_prompt'
+    | 'pwa_push_sending'
+    | 'pwa_push_done'
+    | 'pwa_2fa_done';
+
+  function initialVerifyState(): State {
+    if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done';
+    if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait';
+    const token = firstQueryString(route.query.token);
+    if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
+    return 'verifying';
+  }
+
+  const state = ref<State>(initialVerifyState());
+  const errorMessage = ref('');
+  const copyHint = ref<string>(strings.authVerifyHandoffCopyLink);
+  const handoffCodeForSafari = ref<string | null>(null);
+  const magicTokenForFlow = ref<string | null>(null);
+
+  async function navigateAfterFullSession(redirect: string) {
+    const u = user.value;
+    if (!u) {
+      await navigateTo(redirect);
+      return;
     }
-    if (!result.delivered) {
-      state.value = 'pwa_push_prompt'
-      errorMessage.value = pwaPushDeliverErrorMessage(result.code)
-      return
+    if (canEditContent.value && u.totpRequired && !u.totpEnabled) {
+      await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
+      return;
     }
-    state.value = 'pwa_push_done'
-  } catch (e: unknown) {
-    state.value = 'error'
-    errorMessage.value = e instanceof Error ? e.message : strings.authVerifyPwaPushDeliverFailed
+    await navigateTo(redirect);
   }
-}
 
-async function signInHereInstead() {
-  const token = magicTokenForFlow.value
-  if (!token) return
-  state.value = 'verifying'
-  await runNormalTokenVerify(token)
-}
+  async function finishInSafari() {
+    const code = handoffCodeForSafari.value;
+    if (!code) return;
+    state.value = 'verifying';
+    try {
+      const redirect = safeRedirect(route.query.redirect, '/');
+      await redeemPwaHandoff(code);
+      if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
+      await navigateAfterFullSession(redirect);
+    } catch (e: any) {
+      state.value = 'error';
+      errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
+    }
+  }
 
-async function runNormalTokenVerify(token: string) {
-  const redirect = safeRedirect(route.query.redirect, '/')
-  try {
-    if (shouldUseIosMagicHandoff()) {
-      const mh = await magicPwaHandoff(token)
-      if (mh.kind === '2fa') {
-        await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
-        )
-        return
-      }
-      if (mh.kind === 'handoff') {
-        await navigateTo(
-          { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
-          { replace: true },
-        )
-        return
-      }
-      if (mh.kind === 'session') {
-        if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
-          await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
-          return
+  function isPwaPushLoginLink(): boolean {
+    const pwa = firstQueryString(route.query.pwa);
+    return pwa === '1' && !isInstalledPwa();
+  }
+
+  function pwaPushDeliverErrorMessage(code: string | undefined): string {
+    switch (code) {
+      case 'attempt_not_found':
+        return strings.authVerifyPwaPushAttemptNotFound;
+      case 'no_push_subscription':
+        return strings.authVerifyPwaPushNoPushSubscription;
+      case 'push_failed':
+        return strings.authVerifyPwaPushPushFailed;
+      default:
+        return strings.authVerifyPwaPushDeliverFailed;
+    }
+  }
+
+  async function deliverToInstalledPwa() {
+    const token = magicTokenForFlow.value;
+    if (!token) return;
+    state.value = 'pwa_push_sending';
+    errorMessage.value = '';
+    try {
+      const result = await deliverMagicLinkToPwa(token);
+      if (result.code === 'requires_2fa' && result.pendingToken) {
+        const redirect = safeRedirect(route.query.redirect, '/');
+        if (import.meta.client && token) {
+          try {
+            sessionStorage.setItem('vmp_pwa_magic_token', token);
+          } catch {
+            /* ignore */
+          }
         }
-        await navigateTo(redirect)
+        await navigateTo(
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1`,
+        );
+        return;
       }
-      return
+      if (!result.delivered) {
+        state.value = 'pwa_push_prompt';
+        errorMessage.value = pwaPushDeliverErrorMessage(result.code);
+        return;
+      }
+      state.value = 'pwa_push_done';
+    } catch (e: unknown) {
+      state.value = 'error';
+      errorMessage.value = e instanceof Error ? e.message : strings.authVerifyPwaPushDeliverFailed;
     }
-
-    const result = await verify(token)
-    if ('requiresTwoFactor' in result) {
-      await navigateTo(
-        `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
-      )
-      return
-    }
-    if (canEditContent.value && result.totpRequired && !result.totpEnabled) {
-      await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`)
-      return
-    }
-    await navigateTo(redirect)
-  } catch (err: unknown) {
-    state.value = 'error'
-    errorMessage.value = err instanceof Error ? err.message : strings.authVerifyErrorGeneric
   }
-}
 
-async function copyHandoffUrl() {
-  const code = handoffCodeForSafari.value
-  if (!code || import.meta.server) return
-  const path = `/auth/verify?handoff=${encodeURIComponent(code)}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`
-  const url = `${window.location.origin}${path}`
-  try {
-    await navigator.clipboard.writeText(url)
-    copyHint.value = strings.authVerifyHandoffCopied
-  } catch {
-    copyHint.value = url
+  async function signInHereInstead() {
+    const token = magicTokenForFlow.value;
+    if (!token) return;
+    state.value = 'verifying';
+    await runNormalTokenVerify(token);
   }
-}
 
-async function requestNewLink() {
-  await startLoginFlow()
-}
-
-watch(
-  () => route.fullPath,
-  async () => {
-    if (import.meta.server) return
-
-    errorMessage.value = ''
-
-    const redirect = safeRedirect(firstQueryString(route.query.redirect) || undefined, '/')
-    const handoff = firstQueryString(route.query.handoff) || undefined
-    const token = firstQueryString(route.query.token) || undefined
-    const pwaDone = firstQueryString(route.query.pwa_done)
-
-    if (pwaDone === '1') {
-      state.value = 'pwa_2fa_done'
-      return
-    }
-
-    if (handoff) {
-      handoffCodeForSafari.value = handoff
-      if (shouldDeferHandoffRedeem()) {
-        state.value = 'handoff_wait'
-        return
+  async function runNormalTokenVerify(token: string) {
+    const redirect = safeRedirect(route.query.redirect, '/');
+    try {
+      if (shouldUseIosMagicHandoff()) {
+        const mh = await magicPwaHandoff(token);
+        if (mh.kind === '2fa') {
+          await navigateTo(
+            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+          );
+          return;
+        }
+        if (mh.kind === 'handoff') {
+          await navigateTo(
+            { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
+            { replace: true },
+          );
+          return;
+        }
+        if (mh.kind === 'session') {
+          if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
+            await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
+            return;
+          }
+          await navigateTo(redirect);
+        }
+        return;
       }
-      state.value = 'verifying'
-      try {
-        await redeemPwaHandoff(handoff)
-        if (!user.value) throw new Error(strings.authVerifySignInIncomplete)
-        await navigateAfterFullSession(redirect)
-      } catch (e: any) {
-        state.value = 'error'
-        errorMessage.value = e?.message || strings.authVerifyErrorGeneric
+
+      const result = await verify(token);
+      if ('requiresTwoFactor' in result) {
+        await navigateTo(
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+        );
+        return;
       }
-      return
+      if (canEditContent.value && result.totpRequired && !result.totpEnabled) {
+        await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
+        return;
+      }
+      await navigateTo(redirect);
+    } catch (err: unknown) {
+      state.value = 'error';
+      errorMessage.value = err instanceof Error ? err.message : strings.authVerifyErrorGeneric;
     }
+  }
 
-    if (!token) {
-      state.value = 'error'
-      errorMessage.value = strings.authVerifyNoToken
-      return
+  async function copyHandoffUrl() {
+    const code = handoffCodeForSafari.value;
+    if (!code || import.meta.server) return;
+    const path = `/auth/verify?handoff=${encodeURIComponent(code)}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`;
+    const url = `${window.location.origin}${path}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      copyHint.value = strings.authVerifyHandoffCopied;
+    } catch {
+      copyHint.value = url;
     }
+  }
 
-    magicTokenForFlow.value = token
+  async function requestNewLink() {
+    await startLoginFlow();
+  }
 
-    if (isPwaPushLoginLink()) {
-      state.value = 'pwa_push_prompt'
-      return
-    }
+  watch(
+    () => route.fullPath,
+    async () => {
+      if (import.meta.server) return;
 
-    state.value = 'verifying'
-    await runNormalTokenVerify(token)
-  },
-  { immediate: true },
-)
+      errorMessage.value = '';
+
+      const redirect = safeRedirect(firstQueryString(route.query.redirect) || undefined, '/');
+      const handoff = firstQueryString(route.query.handoff) || undefined;
+      const token = firstQueryString(route.query.token) || undefined;
+      const pwaDone = firstQueryString(route.query.pwa_done);
+
+      if (pwaDone === '1') {
+        state.value = 'pwa_2fa_done';
+        return;
+      }
+
+      if (handoff) {
+        handoffCodeForSafari.value = handoff;
+        if (shouldDeferHandoffRedeem()) {
+          state.value = 'handoff_wait';
+          return;
+        }
+        state.value = 'verifying';
+        try {
+          await redeemPwaHandoff(handoff);
+          if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
+          await navigateAfterFullSession(redirect);
+        } catch (e: any) {
+          state.value = 'error';
+          errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
+        }
+        return;
+      }
+
+      if (!token) {
+        state.value = 'error';
+        errorMessage.value = strings.authVerifyNoToken;
+        return;
+      }
+
+      magicTokenForFlow.value = token;
+
+      if (isPwaPushLoginLink()) {
+        state.value = 'pwa_push_prompt';
+        return;
+      }
+
+      state.value = 'verifying';
+      await runNormalTokenVerify(token);
+    },
+    { immediate: true },
+  );
 </script>

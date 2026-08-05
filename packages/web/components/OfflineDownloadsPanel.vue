@@ -1,136 +1,151 @@
 <script setup lang="ts">
-import type { StoredDownload } from '~/utils/offline/types'
+  import type { StoredDownload } from '~/utils/offline/types';
 
-const { strings } = useStrings()
-const {
-  downloads,
-  storageSummary,
-  offlineDownloadsEnabled,
-  refreshDownloads,
-  removeDownload,
-  startDownload,
-  pauseDownload,
-  watchProgress,
-  isDownloadActive,
-} = useOfflineDownloads()
+  const { strings } = useStrings();
+  const {
+    downloads,
+    storageSummary,
+    offlineDownloadsEnabled,
+    refreshDownloads,
+    removeDownload,
+    startDownload,
+    pauseDownload,
+    watchProgress,
+    isDownloadActive,
+  } = useOfflineDownloads();
 
-const loading = ref(true)
-const workingId = ref<string | null>(null)
-const error = ref<string | null>(null)
-const progressByVideo = ref<Record<string, { percent: number; status: string | null }>>({})
+  const loading = ref(true);
+  const workingId = ref<string | null>(null);
+  const error = ref<string | null>(null);
+  const progressByVideo = ref<Record<string, { percent: number; status: string | null }>>({});
 
-const unsubscribeFns: Array<() => void> = []
+  const unsubscribeFns: Array<() => void> = [];
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
-}
-
-function statusLabel(record: StoredDownload): string {
-  const s = strings.value
-  switch (record.status) {
-    case 'completed': return s.offlineDownloadStatusDownloaded
-    case 'downloading': return s.offlineDownloadStatusDownloading
-    case 'paused': return s.offlineDownloadStatusPaused
-    case 'failed': return s.offlineDownloadStatusFailed
-    case 'update_available': return s.offlineDownloadStatusUpdateAvailable
-    case 'license_expired': return s.offlineDownloadStatusLicenseExpired
-    default: return record.status
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
-}
 
-function bindProgressListeners(records: readonly StoredDownload[]) {
-  for (const unsub of unsubscribeFns) unsub()
-  unsubscribeFns.length = 0
-  for (const record of records) {
-    if (!['downloading', 'paused', 'failed'].includes(record.status) && !isDownloadActive(record.videoId)) {
-      continue
+  function statusLabel(record: StoredDownload): string {
+    const s = strings.value;
+    switch (record.status) {
+      case 'completed':
+        return s.offlineDownloadStatusDownloaded;
+      case 'downloading':
+        return s.offlineDownloadStatusDownloading;
+      case 'paused':
+        return s.offlineDownloadStatusPaused;
+      case 'failed':
+        return s.offlineDownloadStatusFailed;
+      case 'update_available':
+        return s.offlineDownloadStatusUpdateAvailable;
+      case 'license_expired':
+        return s.offlineDownloadStatusLicenseExpired;
+      default:
+        return record.status;
     }
-    const unsub = watchProgress(record.videoId, (p) => {
-      const percent = p.totalBytes
-        ? Math.min(100, Math.round((p.bytesDownloaded / p.totalBytes) * 100))
-        : 0
-      progressByVideo.value = {
-        ...progressByVideo.value,
-        [record.videoId]: { percent, status: p.status },
+  }
+
+  function bindProgressListeners(records: readonly StoredDownload[]) {
+    for (const unsub of unsubscribeFns) unsub();
+    unsubscribeFns.length = 0;
+    for (const record of records) {
+      if (
+        !['downloading', 'paused', 'failed'].includes(record.status) &&
+        !isDownloadActive(record.videoId)
+      ) {
+        continue;
       }
-    })
-    unsubscribeFns.push(unsub)
+      const unsub = watchProgress(record.videoId, (p) => {
+        const percent = p.totalBytes
+          ? Math.min(100, Math.round((p.bytesDownloaded / p.totalBytes) * 100))
+          : 0;
+        progressByVideo.value = {
+          ...progressByVideo.value,
+          [record.videoId]: { percent, status: p.status },
+        };
+      });
+      unsubscribeFns.push(unsub);
+    }
   }
-}
 
-onMounted(async () => {
-  try {
-    await refreshDownloads()
-    bindProgressListeners(downloads.value)
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
-  } finally {
-    loading.value = false
+  onMounted(async () => {
+    try {
+      await refreshDownloads();
+      bindProgressListeners(downloads.value);
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed;
+    } finally {
+      loading.value = false;
+    }
+  });
+
+  onUnmounted(() => {
+    for (const unsub of unsubscribeFns) unsub();
+  });
+
+  watch(
+    downloads,
+    (records) => {
+      bindProgressListeners(records);
+    },
+    { deep: true },
+  );
+
+  const quotaPercent = computed(() => {
+    const { usedBytes, quotaBytes } = storageSummary.value;
+    if (!quotaBytes || quotaBytes <= 0) return null;
+    return Math.min(100, Math.round((usedBytes / quotaBytes) * 100));
+  });
+
+  function recordPercent(record: StoredDownload): number | null {
+    const live = progressByVideo.value[record.videoId];
+    if (live) return live.percent;
+    if (record.status === 'downloading' && record.totalBytes > 0) {
+      return Math.min(100, Math.round((record.bytesDownloaded / record.totalBytes) * 100));
+    }
+    return null;
   }
-})
 
-onUnmounted(() => {
-  for (const unsub of unsubscribeFns) unsub()
-})
-
-watch(downloads, (records) => {
-  bindProgressListeners(records)
-}, { deep: true })
-
-const quotaPercent = computed(() => {
-  const { usedBytes, quotaBytes } = storageSummary.value
-  if (!quotaBytes || quotaBytes <= 0) return null
-  return Math.min(100, Math.round((usedBytes / quotaBytes) * 100))
-})
-
-function recordPercent(record: StoredDownload): number | null {
-  const live = progressByVideo.value[record.videoId]
-  if (live) return live.percent
-  if (record.status === 'downloading' && record.totalBytes > 0) {
-    return Math.min(100, Math.round((record.bytesDownloaded / record.totalBytes) * 100))
+  async function handleRemove(record: StoredDownload) {
+    if (!confirm(strings.value.offlineDownloadRemoveConfirm(record.videoTitle || record.videoId)))
+      return;
+    workingId.value = record.videoId;
+    error.value = null;
+    try {
+      await removeDownload(record.videoId);
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed;
+    } finally {
+      workingId.value = null;
+    }
   }
-  return null
-}
 
-async function handleRemove(record: StoredDownload) {
-  if (!confirm(strings.value.offlineDownloadRemoveConfirm(record.videoTitle || record.videoId))) return
-  workingId.value = record.videoId
-  error.value = null
-  try {
-    await removeDownload(record.videoId)
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
-  } finally {
-    workingId.value = null
+  async function handleUpdate(record: StoredDownload) {
+    workingId.value = record.videoId;
+    error.value = null;
+    try {
+      await startDownload(record.videoId, record.rendition);
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed;
+    } finally {
+      workingId.value = null;
+    }
   }
-}
 
-async function handleUpdate(record: StoredDownload) {
-  workingId.value = record.videoId
-  error.value = null
-  try {
-    await startDownload(record.videoId, record.rendition)
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
-  } finally {
-    workingId.value = null
+  async function handlePause(record: StoredDownload) {
+    workingId.value = record.videoId;
+    error.value = null;
+    try {
+      await pauseDownload(record.videoId);
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed;
+    } finally {
+      workingId.value = null;
+    }
   }
-}
-
-async function handlePause(record: StoredDownload) {
-  workingId.value = record.videoId
-  error.value = null
-  try {
-    await pauseDownload(record.videoId)
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : strings.value.offlineDownloadFailed
-  } finally {
-    workingId.value = null
-  }
-}
 </script>
 
 <template>
@@ -139,8 +154,12 @@ async function handlePause(record: StoredDownload) {
     class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
   >
     <div>
-      <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ strings.offlineDownloadsTitle }}</h2>
-      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ strings.offlineDownloadsIntro }}</p>
+      <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+        {{ strings.offlineDownloadsTitle }}
+      </h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        {{ strings.offlineDownloadsIntro }}
+      </p>
     </div>
 
     <div v-if="storageSummary.downloadCount > 0 || storageSummary.usedBytes > 0" class="space-y-2">
@@ -179,15 +198,13 @@ async function handlePause(record: StoredDownload) {
             {{ record.videoTitle || record.videoId }}
           </p>
           <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-            {{ record.rendition }} · {{ statusLabel(record) }}
+            {{ record.rendition }}
+            · {{ statusLabel(record) }}
             <span v-if="record.status === 'completed'">
               · {{ formatBytes(record.bytesDownloaded) }}
             </span>
           </p>
-          <div
-            v-if="recordPercent(record) !== null"
-            class="mt-2 space-y-1"
-          >
+          <div v-if="recordPercent(record) !== null" class="mt-2 space-y-1">
             <div class="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
               <div
                 class="h-full bg-blue-600 transition-all"
