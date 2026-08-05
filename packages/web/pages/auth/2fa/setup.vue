@@ -37,7 +37,7 @@
         <div
           class="inline-block w-8 h-8 border-4 border-gray-300 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin"
         ></div>
-        <p class="text-gray-500 dark:text-gray-500 text-sm">{{ strings.totpSetupGenerating }}</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ strings.totpSetupGenerating }}</p>
       </div>
 
       <!-- Error loading setup -->
@@ -69,7 +69,7 @@
           class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col items-center gap-4"
         >
           <canvas ref="qrCanvas" class="rounded-lg"></canvas>
-          <p class="text-xs text-gray-500 dark:text-gray-500 text-center">
+          <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
             {{ strings.totpSetupManualEntry }}
           </p>
           <div
