@@ -3,6 +3,14 @@
   "name": "@vmp/api-node",
   "version": "1.0.0",
 
+  "nodeModulesDir": "manual",
+
+  "imports": {
+    "@vmp/storage": "../storage/src/index.ts",
+    "@vmp/storage/node": "../storage/src/node.ts",
+    "@vmp/storage/worker": "../storage/src/worker.ts"
+  },
+
   "deploy": {
     "org": "tjm",
     "app": "vmp"
