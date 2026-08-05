@@ -7,8 +7,8 @@
  * Set VMP_TTP_LOG_PATH to append the same JSON (one object per line) to a file for analysis.
  */
 
-import { appendFile } from 'node:fs/promises'
-import { histogram } from './metrics.js'
+import { appendFile } from 'node:fs/promises';
+import { histogram } from './metrics.js';
 
 export type TtpMilestone =
   | 'inbox_close_write'
@@ -35,39 +35,39 @@ export type TtpMilestone =
   | 'preview_mp3_done'
   | 'preview_mp3_skipped'
   | 'pipeline_done'
-  | 'pipeline_failed'
+  | 'pipeline_failed';
 
 export type TtpJobState = {
-  videoId: string
-  source: string
-  inputPath: string
-  pipelineMode: 'fast_lane' | 'full_ladder'
-  inboxAtMs: number
-  sourceDurationSec: number | null
-  minimalReadyAtMs: number | null
-  fullReadyAtMs: number | null
-}
+  videoId: string;
+  source: string;
+  inputPath: string;
+  pipelineMode: 'fast_lane' | 'full_ladder';
+  inboxAtMs: number;
+  sourceDurationSec: number | null;
+  minimalReadyAtMs: number | null;
+  fullReadyAtMs: number | null;
+};
 
-const jobs = new Map<string, TtpJobState>()
+const jobs = new Map<string, TtpJobState>();
 
-const ttpLogPath = (process.env.VMP_TTP_LOG_PATH || '').trim()
+const ttpLogPath = (process.env.VMP_TTP_LOG_PATH || '').trim();
 
 function isoNow(): string {
-  return new Date().toISOString()
+  return new Date().toISOString();
 }
 
 function msSinceInbox(state: TtpJobState, atMs = Date.now()): number {
-  return Math.max(0, atMs - state.inboxAtMs)
+  return Math.max(0, atMs - state.inboxAtMs);
 }
 
 function ratioToDuration(elapsedMs: number | null, durationSec: number | null): number | null {
-  if (elapsedMs == null || elapsedMs < 0 || durationSec == null || durationSec <= 0) return null
-  return Number((elapsedMs / 1000 / durationSec).toFixed(4))
+  if (elapsedMs == null || elapsedMs < 0 || durationSec == null || durationSec <= 0) return null;
+  return Number((elapsedMs / 1000 / durationSec).toFixed(4));
 }
 
 function logTtpEmitError(milestone: string, err: unknown): void {
-  const msg = err instanceof Error ? err.message : String(err)
-  process.stderr.write(`${isoNow()} VMP_TTP emit failed (${milestone}): ${msg}\n`)
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`${isoNow()} VMP_TTP emit failed (${milestone}): ${msg}\n`);
 }
 
 export function beginTtpJob(
@@ -76,7 +76,7 @@ export function beginTtpJob(
   inputPath: string,
   options: { pipelineMode: 'fast_lane' | 'full_ladder' },
 ): void {
-  const inboxAtMs = Date.now()
+  const inboxAtMs = Date.now();
   jobs.set(videoId, {
     videoId,
     source,
@@ -86,32 +86,36 @@ export function beginTtpJob(
     sourceDurationSec: null,
     minimalReadyAtMs: null,
     fullReadyAtMs: null,
-  })
-  emitTtp(videoId, 'inbox_close_write', { source, inputPath, pipelineMode: options.pipelineMode }).catch((err) =>
-    logTtpEmitError('inbox_close_write', err),
-  )
-  emitTtp(videoId, 'queue_enqueued', { source, pipelineMode: options.pipelineMode }).catch((err) => logTtpEmitError('queue_enqueued', err))
+  });
+  emitTtp(videoId, 'inbox_close_write', {
+    source,
+    inputPath,
+    pipelineMode: options.pipelineMode,
+  }).catch((err) => logTtpEmitError('inbox_close_write', err));
+  emitTtp(videoId, 'queue_enqueued', { source, pipelineMode: options.pipelineMode }).catch((err) =>
+    logTtpEmitError('queue_enqueued', err),
+  );
 }
 
 export function getTtpJob(videoId: string): TtpJobState | undefined {
-  return jobs.get(videoId)
+  return jobs.get(videoId);
 }
 
 export function setTtpSourceDuration(videoId: string, sourceDurationSec: number): void {
-  const state = jobs.get(videoId)
-  if (!state) return
-  state.sourceDurationSec = sourceDurationSec
+  const state = jobs.get(videoId);
+  if (!state) return;
+  state.sourceDurationSec = sourceDurationSec;
 }
 
 async function writeTtpPayload(payload: Record<string, unknown>): Promise<void> {
-  const line = `VMP_TTP\t${JSON.stringify(payload)}\n`
-  process.stdout.write(line)
-  if (!ttpLogPath) return
+  const line = `VMP_TTP\t${JSON.stringify(payload)}\n`;
+  process.stdout.write(line);
+  if (!ttpLogPath) return;
   try {
-    await appendFile(ttpLogPath, line, 'utf8')
+    await appendFile(ttpLogPath, line, 'utf8');
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    process.stderr.write(`${isoNow()} VMP_TTP file append failed: ${msg}\n`)
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`${isoNow()} VMP_TTP file append failed: ${msg}\n`);
   }
 }
 
@@ -120,45 +124,53 @@ export async function emitTtp(
   milestone: TtpMilestone,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  const state = jobs.get(videoId)
-  const atMs = Date.now()
+  const state = jobs.get(videoId);
+  const atMs = Date.now();
   const payload: Record<string, unknown> = {
     type: 'ttp_milestone',
     videoId,
     milestone,
     at: isoNow(),
     ...extra,
-  }
+  };
   if (state) {
-    payload.elapsedMsSinceInbox = msSinceInbox(state, atMs)
-    payload.source = state.source
-    payload.pipelineMode = state.pipelineMode
+    payload.elapsedMsSinceInbox = msSinceInbox(state, atMs);
+    payload.source = state.source;
+    payload.pipelineMode = state.pipelineMode;
     if (state.sourceDurationSec != null) {
-      payload.sourceDurationSec = state.sourceDurationSec
-      payload.elapsedRatioOfSourceDuration = ratioToDuration(msSinceInbox(state, atMs), state.sourceDurationSec)
+      payload.sourceDurationSec = state.sourceDurationSec;
+      payload.elapsedRatioOfSourceDuration = ratioToDuration(
+        msSinceInbox(state, atMs),
+        state.sourceDurationSec,
+      );
     }
     if (milestone === 'minimal_publish_ready') {
-      state.minimalReadyAtMs = atMs
-      payload.minimalRenditions = ['720p']
-      payload.publishHint = '720p HLS on R2; suitable for minimal publish / preview access'
+      state.minimalReadyAtMs = atMs;
+      payload.minimalRenditions = ['720p'];
+      payload.publishHint = '720p HLS on R2; suitable for minimal publish / preview access';
     }
     if (milestone === 'full_renditions_ready') {
-      state.fullReadyAtMs = atMs
-      payload.renditions = ['1080p', '720p', '480p']
-      payload.publishHint = 'all renditions on R2; suitable for full-quality publish'
+      state.fullReadyAtMs = atMs;
+      payload.renditions = ['1080p', '720p', '480p'];
+      payload.publishHint = 'all renditions on R2; suitable for full-quality publish';
     }
   }
-  await writeTtpPayload(payload)
+  await writeTtpPayload(payload);
 }
 
-export async function emitTtpSummary(videoId: string, outcome: 'success' | 'failed', detail = ''): Promise<void> {
-  const state = jobs.get(videoId)
-  if (!state) return
-  const atMs = Date.now()
-  const minimalMs = state.minimalReadyAtMs != null ? state.minimalReadyAtMs - state.inboxAtMs : null
-  const fullMs = state.fullReadyAtMs != null ? state.fullReadyAtMs - state.inboxAtMs : null
-  const totalMs = atMs - state.inboxAtMs
-  const durationSec = state.sourceDurationSec
+export async function emitTtpSummary(
+  videoId: string,
+  outcome: 'success' | 'failed',
+  detail = '',
+): Promise<void> {
+  const state = jobs.get(videoId);
+  if (!state) return;
+  const atMs = Date.now();
+  const minimalMs =
+    state.minimalReadyAtMs != null ? state.minimalReadyAtMs - state.inboxAtMs : null;
+  const fullMs = state.fullReadyAtMs != null ? state.fullReadyAtMs - state.inboxAtMs : null;
+  const totalMs = atMs - state.inboxAtMs;
+  const durationSec = state.sourceDurationSec;
 
   await writeTtpPayload({
     type: 'ttp_summary',
@@ -177,11 +189,11 @@ export async function emitTtpSummary(videoId: string, outcome: 'success' | 'fail
     fullRenditionsReadyRatioOfSourceDuration: ratioToDuration(fullMs, durationSec),
     phase2AfterMinimalMs:
       minimalMs != null && fullMs != null ? Math.max(0, fullMs - minimalMs) : null,
-  })
+  });
 
-  if (minimalMs != null) histogram('vmp.transcoder.ttp.minimal_publish_ms', minimalMs, { outcome })
-  if (fullMs != null) histogram('vmp.transcoder.ttp.full_renditions_ms', fullMs, { outcome })
-  histogram('vmp.transcoder.ttp.total_ms', totalMs, { outcome })
+  if (minimalMs != null) histogram('vmp.transcoder.ttp.minimal_publish_ms', minimalMs, { outcome });
+  if (fullMs != null) histogram('vmp.transcoder.ttp.full_renditions_ms', fullMs, { outcome });
+  histogram('vmp.transcoder.ttp.total_ms', totalMs, { outcome });
 
-  jobs.delete(videoId)
+  jobs.delete(videoId);
 }
