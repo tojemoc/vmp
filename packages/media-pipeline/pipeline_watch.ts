@@ -14,12 +14,7 @@ import {
   packagingStageToPipelineStage,
 } from './pipelineMode.js';
 import { runQueuedPipelineJob } from './runQueuedPipelineJob.js';
-import {
-  objectKey,
-  uploadDirectoryToStorage,
-  uploadFileToStorage,
-  verifyStorageDirectory,
-} from './storage.js';
+import { objectKey, uploadFileToStorage, verifyStorageDirectory } from './storage.js';
 import { beginTtpJob, emitTtp, emitTtpSummary, setTtpSourceDuration } from './ttpLog.js';
 
 type PipelineStatus = 'active' | 'success' | 'failed' | 'paused';
@@ -86,14 +81,6 @@ const INBOX_WATCHES: InboxWatchConfig[] = [
   { dir: INBOX_FULL_LADDER_DIR, pipelineMode: 'full_ladder', label: 'full-ladder' },
 ];
 const MAX_JOBS = Math.max(1, Number.parseInt(process.env.MAX_JOBS || '2', 10) || 2);
-const PREVIEW_MP3_SECONDS = Math.max(
-  1,
-  Number.parseInt(process.env.PREVIEW_MP3_SECONDS || '180', 10) || 180,
-);
-const PREVIEW_MP3_LOCK_SECONDS = Math.max(
-  0,
-  Number.parseInt(process.env.PREVIEW_MP3_LOCK_SECONDS || '60', 10) || 60,
-);
 const VIDEO_ID_STRATEGY = (process.env.VIDEO_ID_STRATEGY || 'random').trim();
 const VIDEO_ID_SANITIZE_MODE = (process.env.VIDEO_ID_SANITIZE_MODE || 'slug-hash').trim();
 const WAIT_STABLE_TIMEOUT_MS = Math.max(
@@ -114,25 +101,7 @@ const PIPELINE_CALLBACK_TIMEOUT_MS = Math.max(
   5_000,
   Number.parseInt(process.env.PIPELINE_CALLBACK_TIMEOUT_MS || '15000', 10) || 15_000,
 );
-const HLS_AUDIO_GROUP_ID = 'audio';
 const HLS_AUDIO_PLAYLIST = 'audio.m3u8';
-
-const RENDITION_CONFIG: Record<
-  RenditionKey,
-  { out: string; w: string; h: string; br: string; max: string; buf: string; abr: string }
-> = {
-  '1080p': { out: '1080p.mp4', w: '1920', h: '1080', br: '5M', max: '5M', buf: '10M', abr: '128k' },
-  '720p': { out: '720p.mp4', w: '1280', h: '720', br: '3M', max: '3M', buf: '6M', abr: '128k' },
-  '480p': {
-    out: '480p.mp4',
-    w: '854',
-    h: '480',
-    br: '1500k',
-    max: '1500k',
-    buf: '3000k',
-    abr: '96k',
-  },
-};
 
 function log(msg: string): void {
   process.stdout.write(`${new Date().toISOString()} ${msg}\n`);
@@ -519,26 +488,6 @@ function run(
       );
     });
   });
-}
-
-async function storageCopyDir(
-  localDir: string,
-  keyPrefix: string,
-  label: string,
-  videoId?: string,
-): Promise<void> {
-  await uploadDirectoryToStorage(localDir, keyPrefix, label);
-  if (videoId) log(`[${videoId}] ${label}`);
-}
-
-async function storageCopyFile(
-  localFile: string,
-  key: string,
-  label: string,
-  videoId?: string,
-): Promise<void> {
-  await uploadFileToStorage(localFile, key, label);
-  if (videoId) log(`[${videoId}] ${label}`);
 }
 
 async function storageCopySharedAudioAssets(
