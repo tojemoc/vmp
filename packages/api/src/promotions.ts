@@ -266,35 +266,46 @@ export async function applyPromoRedemption(
   if (!promoCode || !promoCode.is_active) return;
   if (Number(promoCode.used_count || 0) >= Number(promoCode.max_uses || 0)) return;
 
-  // Insert first so ON CONFLICT is a no-op for repeat redemptions; only then consume capacity.
-  const insertResult = await db
-    .prepare(`
-    INSERT INTO promo_redemptions (
-      id, promo_code_id, user_id, subscription_id, provider, plan_type, granted_until
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(promo_code_id, user_id) DO NOTHING
-  `)
-    .bind(
-      crypto.randomUUID(),
-      params.promoCodeId,
-      params.userId,
-      params.providerSubscriptionId ?? null,
-      params.provider,
-      params.planType,
-      params.grantedUntil ?? null,
-    )
-    .run();
+  // Atomic reserve: insert only when capacity remains, then increment only for that new row.
+  const redemptionId = crypto.randomUUID();
+  const batchResults = await db.batch([
+    db
+      .prepare(`
+      INSERT INTO promo_redemptions (
+        id, promo_code_id, user_id, subscription_id, provider, plan_type, granted_until
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?
+      FROM promo_codes
+      WHERE id = ? AND is_active = 1 AND used_count < max_uses
+      ON CONFLICT(promo_code_id, user_id) DO NOTHING
+    `)
+      .bind(
+        redemptionId,
+        params.promoCodeId,
+        params.userId,
+        params.providerSubscriptionId ?? null,
+        params.provider,
+        params.planType,
+        params.grantedUntil ?? null,
+        params.promoCodeId,
+      ),
+    db
+      .prepare(`
+      UPDATE promo_codes
+      SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND used_count < max_uses
+        AND EXISTS (SELECT 1 FROM promo_redemptions WHERE id = ?)
+    `)
+      .bind(params.promoCodeId, redemptionId),
+  ]);
 
-  if ((insertResult?.meta?.changes ?? 0) === 0) return;
-
-  await db
-    .prepare(`
-    UPDATE promo_codes
-    SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND used_count < max_uses
-  `)
-    .bind(params.promoCodeId)
-    .run();
+  const inserted = (batchResults?.[0]?.meta?.changes ?? 0) > 0;
+  const incremented = (batchResults?.[1]?.meta?.changes ?? 0) > 0;
+  if (inserted && !incremented) {
+    // Should not happen inside a batch transaction; compensate if the runtime reports a split.
+    await db.prepare('DELETE FROM promo_redemptions WHERE id = ?').bind(redemptionId).run();
+  }
 }
 
 export async function handleAdminPromoCampaigns(request: any, env: any, corsHeaders: any) {

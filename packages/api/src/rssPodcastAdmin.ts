@@ -113,6 +113,7 @@ export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[
       },
       body: rawBody,
       signal: controller.signal,
+      redirect: 'error',
     });
 
     let text: string;

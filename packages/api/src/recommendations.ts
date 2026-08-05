@@ -137,7 +137,9 @@ export async function handleVideoRecommendations(
   );
   const resolvedDefault = Number.isFinite(defaultLimit) && defaultLimit >= 1 ? defaultLimit : 5;
   const resolvedMax =
-    Number.isFinite(maxLimit) && maxLimit >= 1 ? Math.max(resolvedDefault, maxLimit) : 20;
+    Number.isFinite(maxLimit) && maxLimit >= 1
+      ? Math.max(resolvedDefault, maxLimit)
+      : resolvedDefault;
   const limitRaw = Number(url.searchParams.get('limit') ?? resolvedDefault);
   const limit = Number.isFinite(limitRaw)
     ? Math.min(resolvedMax, Math.max(1, Math.floor(limitRaw)))
