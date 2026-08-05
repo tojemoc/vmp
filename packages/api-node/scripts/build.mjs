@@ -1,16 +1,16 @@
-import * as esbuild from 'esbuild'
-import { existsSync, mkdirSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const apiEntry = path.join(packageRoot, '../api/src/index.ts')
-const sharedEntry = path.join(packageRoot, '../shared/src/index.ts')
-const paymentsEntry = path.join(packageRoot, '../payments/src/index.ts')
-const storageRoot = path.join(packageRoot, '../storage/src')
-const storageIndex = path.join(storageRoot, 'index.ts')
-const storageNode = path.join(storageRoot, 'node.ts')
-const storageWorker = path.join(storageRoot, 'worker.ts')
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const apiEntry = path.join(packageRoot, '../api/src/index.ts');
+const sharedEntry = path.join(packageRoot, '../shared/src/index.ts');
+const paymentsEntry = path.join(packageRoot, '../payments/src/index.ts');
+const storageRoot = path.join(packageRoot, '../storage/src');
+const storageIndex = path.join(storageRoot, 'index.ts');
+const storageNode = path.join(storageRoot, 'node.ts');
+const storageWorker = path.join(storageRoot, 'worker.ts');
 
 for (const required of [
   ['Worker sources', apiEntry],
@@ -21,11 +21,11 @@ for (const required of [
   if (!existsSync(required[1])) {
     throw new Error(
       `[build] Missing ${required[0]} at ${required[1]}. Deploy checkout must include packages/api, packages/shared, packages/payments, and packages/storage (esbuild bundles them into dist/).`,
-    )
+    );
   }
 }
 
-mkdirSync('dist', { recursive: true })
+mkdirSync('dist', { recursive: true });
 
 await esbuild.build({
   entryPoints: ['src/server.ts'],
@@ -58,6 +58,6 @@ await esbuild.build({
   },
   sourcemap: true,
   logLevel: 'info',
-})
+});
 
-console.log('[build] api-node bundle complete')
+console.log('[build] api-node bundle complete');

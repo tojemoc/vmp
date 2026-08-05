@@ -36,7 +36,12 @@
       "project": ["src/**/*.ts"]
     },
     "packages/media-pipeline": {
-      "entry": ["supervisor.ts", "pipeline_watch.ts", "render_podcast_preview_mp3.ts", "encoreClient.ts"],
+      "entry": [
+        "supervisor.ts",
+        "pipeline_watch.ts",
+        "render_podcast_preview_mp3.ts",
+        "encoreClient.ts"
+      ],
       "project": ["*.ts"]
     }
   },

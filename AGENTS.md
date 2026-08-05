@@ -234,7 +234,8 @@ npx wrangler d1 execute video-subscription-db --local \
 
 ### Lint / TypeScript
 
-- No ESLint config exists in the repo.
+- Lint/format: Biome (`biome.json`). `npm run lint` → `biome check .`; `npm run format` → `biome format --write .`.
+- TypeScript is dual-installed: `npx tsc` is TypeScript **7** (`@typescript/native`), while `require('typescript')` resolves to TypeScript **6** (`@typescript/typescript6`) for `vue-tsc` / tooling that still need the JS compiler API.
 - TypeScript check for shared: `cd packages/shared && npx tsc --noEmit`
 - Nuxt typecheck (`npx nuxi typecheck`) requires a `tsconfig.json` in `packages/web` — the repo does not ship one; run `npx nuxi prepare` first to generate `.nuxt/tsconfig.json`.
 
