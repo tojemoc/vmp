@@ -1,4 +1,4 @@
-import type { OfflineRendition } from '@vmp/shared'
+import type { OfflineRendition } from '@vmp/shared';
 import {
   checkManifestUpdates,
   getDownloadRecord,
@@ -7,88 +7,94 @@ import {
   listDownloadRecords,
   pauseOfflineDownload,
   removeOfflineDownload,
-  revalidateOfflineLicenses,
   resumeQueuedDownloads,
+  revalidateOfflineLicenses,
   startOfflineDownload,
   subscribeDownloadProgress,
-} from '~/utils/offline/downloadManager'
-import { getOfflinePlaylistUrl } from '~/utils/offline/mediaSourceProvider'
-import { isOpfsSupported } from '~/utils/offline/opfsStore'
-import type { DownloadProgress, StoredDownload } from '~/utils/offline/types'
-import { isInstalledPwa } from '~/utils/pwa'
+} from '~/utils/offline/downloadManager';
+import { getOfflinePlaylistUrl } from '~/utils/offline/mediaSourceProvider';
+import { isOpfsSupported } from '~/utils/offline/opfsStore';
+import type { DownloadProgress, StoredDownload } from '~/utils/offline/types';
+import { isInstalledPwa } from '~/utils/pwa';
 
-const downloads = ref<StoredDownload[]>([])
-const storageSummary = ref({ usedBytes: 0, quotaBytes: null as number | null, downloadCount: 0 })
-const progressByVideo = ref<Record<string, DownloadProgress>>({})
-const initialised = ref(false)
+const downloads = ref<StoredDownload[]>([]);
+const storageSummary = ref({ usedBytes: 0, quotaBytes: null as number | null, downloadCount: 0 });
+const progressByVideo = ref<Record<string, DownloadProgress>>({});
+const initialised = ref(false);
 
 function offlineDownloadsEnabled(): boolean {
-  if (import.meta.server) return false
-  return isInstalledPwa() || import.meta.dev
+  if (import.meta.server) return false;
+  return isInstalledPwa() || import.meta.dev;
 }
 
 export function useOfflineDownloads() {
-  const config = useRuntimeConfig()
-  const apiUrl = config.public.apiUrl as string
-  const { isPremium, authHeader, ensureFreshSession } = useAuth()
+  const config = useRuntimeConfig();
+  const apiUrl = config.public.apiUrl as string;
+  const { isPremium, authHeader, ensureFreshSession } = useAuth();
 
   async function refreshDownloads(): Promise<void> {
-    downloads.value = await listDownloadRecords()
-    storageSummary.value = await getStorageSummary()
+    downloads.value = await listDownloadRecords();
+    storageSummary.value = await getStorageSummary();
   }
 
   async function initialiseOfflineDownloads(): Promise<void> {
-    if (initialised.value || !offlineDownloadsEnabled()) return
+    if (initialised.value || !offlineDownloadsEnabled()) return;
     try {
-      await refreshDownloads()
-      const headers = authHeader()
+      await refreshDownloads();
+      const headers = authHeader();
       if (Object.keys(headers).length > 0) {
-        await revalidateOfflineLicenses(apiUrl)
-        await checkManifestUpdates(apiUrl, headers)
-        await resumeQueuedDownloads(apiUrl, headers)
-        await refreshDownloads()
+        await revalidateOfflineLicenses(apiUrl);
+        await checkManifestUpdates(apiUrl, headers);
+        await resumeQueuedDownloads(apiUrl, headers);
+        await refreshDownloads();
       }
-      initialised.value = true
+      initialised.value = true;
     } catch (err) {
-      initialised.value = false
-      throw err
+      initialised.value = false;
+      throw err;
     }
   }
 
-  async function startDownload(videoId: string, rendition: OfflineRendition = '720p'): Promise<void> {
+  async function startDownload(
+    videoId: string,
+    rendition: OfflineRendition = '720p',
+  ): Promise<void> {
     if (!offlineDownloadsEnabled()) {
-      throw new Error('Offline downloads require the installed app')
+      throw new Error('Offline downloads require the installed app');
     }
-    const ok = await ensureFreshSession()
-    if (!ok) throw new Error('Sign in required')
+    const ok = await ensureFreshSession();
+    if (!ok) throw new Error('Sign in required');
     await startOfflineDownload({
       apiUrl,
       authHeaders: authHeader(),
       videoId,
       rendition,
-    })
-    await refreshDownloads()
+    });
+    await refreshDownloads();
   }
 
   async function pauseDownload(videoId: string): Promise<void> {
-    await pauseOfflineDownload(videoId)
-    await refreshDownloads()
+    await pauseOfflineDownload(videoId);
+    await refreshDownloads();
   }
 
   async function removeDownload(videoId: string): Promise<void> {
-    await removeOfflineDownload(apiUrl, authHeader(), videoId)
-    await refreshDownloads()
+    await removeOfflineDownload(apiUrl, authHeader(), videoId);
+    await refreshDownloads();
   }
 
   async function getOfflineSource(videoId: string) {
-    return getOfflinePlaylistUrl(videoId)
+    return getOfflinePlaylistUrl(videoId);
   }
 
-  function watchProgress(videoId: string, handler: (progress: DownloadProgress) => void): () => void {
+  function watchProgress(
+    videoId: string,
+    handler: (progress: DownloadProgress) => void,
+  ): () => void {
     return subscribeDownloadProgress(videoId, (progress) => {
-      progressByVideo.value = { ...progressByVideo.value, [videoId]: progress }
-      handler(progress)
-    })
+      progressByVideo.value = { ...progressByVideo.value, [videoId]: progress };
+      handler(progress);
+    });
   }
 
   return {
@@ -107,5 +113,5 @@ export function useOfflineDownloads() {
     getDownloadRecord,
     isDownloadActive,
     watchProgress,
-  }
+  };
 }

@@ -3,21 +3,21 @@
  * provides them reactively to the header, page title, and anywhere else.
  */
 
-import strings from '~/utils/strings'
+import strings from '~/utils/strings';
 
 interface SiteSettings {
-  siteName: string
-  siteNameShort: string
-  siteDescription: string
-  logoUrl: string
-  faviconUrl: string
-  supportEmail: string
-  gtmEnabled: boolean
-  gtmContainerId: string
-  gtmMeasurementPath: string
+  siteName: string;
+  siteNameShort: string;
+  siteDescription: string;
+  logoUrl: string;
+  faviconUrl: string;
+  supportEmail: string;
+  gtmEnabled: boolean;
+  gtmContainerId: string;
+  gtmMeasurementPath: string;
 }
 
-const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
+const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk';
 
 function defaultSiteSettings(): SiteSettings {
   return {
@@ -30,11 +30,11 @@ function defaultSiteSettings(): SiteSettings {
     gtmEnabled: false,
     gtmContainerId: '',
     gtmMeasurementPath: '',
-  }
+  };
 }
 
 function mapSiteSettings(data: Record<string, unknown> | null | undefined): SiteSettings {
-  if (!data) return defaultSiteSettings()
+  if (!data) return defaultSiteSettings();
   return {
     siteName: String(data.site_name || strings.siteName),
     siteNameShort: String(data.site_name_short || strings.siteNameShort),
@@ -45,34 +45,31 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     gtmEnabled: String(data.gtm_enabled ?? '0') === '1',
     gtmContainerId: String(data.gtm_container_id || ''),
     gtmMeasurementPath: String(data.gtm_measurement_path || ''),
-  }
+  };
 }
 
 export function useSiteSettings() {
-  const config = useRuntimeConfig()
+  const config = useRuntimeConfig();
 
-  const { data, refresh } = useAsyncData(
-    'site-settings',
-    async () => {
-      try {
-        const res = await fetch(`${config.public.apiUrl}/api/site-settings`)
-        if (!res.ok) return null
-        return await res.json()
-      } catch {
-        return null
-      }
-    },
-  )
+  const { data, refresh } = useAsyncData('site-settings', async () => {
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/site-settings`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 
-  const siteSettings = computed(() => mapSiteSettings(data.value))
+  const siteSettings = computed(() => mapSiteSettings(data.value));
 
   /** @deprecated Prefer relying on useAsyncData; kept for callers that explicitly refresh. */
   async function fetchSiteSettings() {
-    await refresh()
+    await refresh();
   }
 
   return {
     siteSettings: readonly(siteSettings),
     fetchSiteSettings,
-  }
+  };
 }

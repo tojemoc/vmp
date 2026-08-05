@@ -1,6 +1,6 @@
-import { defineCatalog } from '../defineCatalog'
-import { personalData } from './personalData'
-import { strings } from './strings'
+import { defineCatalog } from '../defineCatalog';
+import { personalData } from './personalData';
+import { strings } from './strings';
 
 export const sk = defineCatalog(
   'sk',
@@ -22,4 +22,4 @@ export const sk = defineCatalog(
     },
   },
   personalData,
-)
+);

@@ -6,37 +6,40 @@
  * feed URL includes a stable HMAC token.
  */
 
-import { requireAuth } from './auth.js'
-import { computeRssTokenHex } from './rssToken.js'
-import { getRequestPublicOrigin } from './requestPublicOrigin.js'
+import { requireAuth } from './auth.js';
+import { getRequestPublicOrigin } from './requestPublicOrigin.js';
+import { computeRssTokenHex } from './rssToken.js';
 
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  })
+  });
 }
 
 export async function handleGetAccountRss(request: any, env: any, corsHeaders: any) {
-  let user
+  let user;
   try {
-    user = await requireAuth(request, env)
+    user = await requireAuth(request, env);
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
-  const rssSecret = env.RSS_SECRET?.trim()
+  const rssSecret = env.RSS_SECRET?.trim();
   if (!rssSecret) {
-    return jsonResponse({ error: 'RSS not configured' }, 503, corsHeaders)
+    return jsonResponse({ error: 'RSS not configured' }, 503, corsHeaders);
   }
 
-  const origin = getRequestPublicOrigin(request, env)
-  const userId = user.sub
-  const token = await computeRssTokenHex(rssSecret, userId)
+  const origin = getRequestPublicOrigin(request, env);
+  const userId = user.sub;
+  const token = await computeRssTokenHex(rssSecret, userId);
 
-  return jsonResponse({
-    publicUrl: `${origin}/api/feed/public`,
-    personalUrl: `${origin}/api/feed/${encodeURIComponent(userId)}/${token}`,
-  }, 200, corsHeaders)
+  return jsonResponse(
+    {
+      publicUrl: `${origin}/api/feed/public`,
+      personalUrl: `${origin}/api/feed/${encodeURIComponent(userId)}/${token}`,
+    },
+    200,
+    corsHeaders,
+  );
 }
-

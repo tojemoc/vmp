@@ -12,6 +12,6 @@
  */
 
 export default defineNuxtPlugin(async () => {
-  const { initialise } = useAuth()
-  await initialise()
-})
+  const { initialise } = useAuth();
+  await initialise();
+});

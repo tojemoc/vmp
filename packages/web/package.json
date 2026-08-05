@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
+    "lint": "biome check .",
     "build:sw-push": "tsc --ignoreConfig sw-push.ts --target ES2022 --module ES2020 --lib ES2022,WebWorker --skipLibCheck --outDir public --removeComments",
     "build:sw-offline": "tsc --ignoreConfig sw-offline-media.ts --target ES2022 --module ES2020 --lib ES2022,WebWorker --skipLibCheck --outDir public --removeComments",
     "build:sw-scripts": "npm run build:sw-push && npm run build:sw-offline",
@@ -52,7 +52,7 @@
     "@types/node": "^26.1.2",
     "@types/qrcode": "^1.5.6",
     "tsx": "^4.23.1",
-    "typescript": "^6.0.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vue-tsc": "^3.3.8",
     "wrangler": "^4.115.0"
   },

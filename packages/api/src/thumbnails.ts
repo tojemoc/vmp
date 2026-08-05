@@ -21,50 +21,54 @@
  * warning is logged.  This is a known limitation noted below.
  */
 
-import { requireRole } from './auth.js'
-import { getObjectStorage, type StorageEnv } from './objectStorage.js'
-import type { D1Database } from '@cloudflare/workers-types'
+import type { D1Database } from '@cloudflare/workers-types';
+import { requireRole } from './auth.js';
+import { getObjectStorage, type StorageEnv } from './objectStorage.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const SIZES = [
-  { key: 'large',  width: 1280, height: 720, quality: 85 },
-  { key: 'medium', width:  640, height: 360, quality: 82 },
-  { key: 'small',  width:  320, height: 180, quality: 80 },
-]
+  { key: 'large', width: 1280, height: 720, quality: 85 },
+  { key: 'medium', width: 640, height: 360, quality: 82 },
+  { key: 'small', width: 320, height: 180, quality: 80 },
+];
 
 /** Edge-cache thumbnails aggressively; ?v= on URLs busts cache after re-upload. */
-export const THUMBNAIL_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+export const THUMBNAIL_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
 interface ThumbUrls {
-  original?: string
-  large?: string
-  medium?: string
-  small?: string
-  [key: string]: string | undefined
+  original?: string;
+  large?: string;
+  medium?: string;
+  small?: string;
+  [key: string]: string | undefined;
 }
 
 interface Env extends StorageEnv {
-  DB?: D1Database
-  video_subscription_db?: D1Database
-  R2_BASE_URL?: string
+  DB?: D1Database;
+  video_subscription_db?: D1Database;
+  R2_BASE_URL?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function jsonResponse(body: unknown | Record<string, unknown>, status: number, corsHeaders: HeadersInit) {
+function jsonResponse(
+  body: unknown | Record<string, unknown>,
+  status: number,
+  corsHeaders: HeadersInit,
+) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  })
+  });
 }
 
 function getDb(env: Env) {
-  const db = env.DB || env.video_subscription_db
-  if (!db) throw new Error('Database binding not configured')
-  return db
+  const db = env.DB || env.video_subscription_db;
+  if (!db) throw new Error('Database binding not configured');
+  return db;
 }
 
 /**
@@ -73,9 +77,9 @@ function getDb(env: Env) {
  * (the MIME validation gate above should prevent this path in practice).
  */
 function extensionForMime(mimeType: string) {
-  if (mimeType === 'image/jpeg') return { ext: 'jpg', contentType: 'image/jpeg' }
-  if (mimeType === 'image/png')  return { ext: 'png', contentType: 'image/png' }
-  return { ext: 'img', contentType: 'application/octet-stream' }
+  if (mimeType === 'image/jpeg') return { ext: 'jpg', contentType: 'image/jpeg' };
+  if (mimeType === 'image/png') return { ext: 'png', contentType: 'image/png' };
+  return { ext: 'img', contentType: 'application/octet-stream' };
 }
 
 /**
@@ -92,19 +96,25 @@ function extensionForMime(mimeType: string) {
  * @param {number}      quality  — integer 0–100; divided by 100 for the Canvas API
  * @returns {Promise<Blob>}
  */
-async function resizeImage(sourceBuffer: ArrayBuffer, sourceMime: string, targetWidth: number, targetHeight: number, quality: number) {
-  const blob   = new Blob([sourceBuffer], { type: sourceMime })
+async function resizeImage(
+  sourceBuffer: ArrayBuffer,
+  sourceMime: string,
+  targetWidth: number,
+  targetHeight: number,
+  quality: number,
+) {
+  const blob = new Blob([sourceBuffer], { type: sourceMime });
   const bitmap = await createImageBitmap(blob, {
-    resizeWidth:   targetWidth,
-    resizeHeight:  targetHeight,
+    resizeWidth: targetWidth,
+    resizeHeight: targetHeight,
     resizeQuality: 'high',
-  })
-  const canvas = new OffscreenCanvas(targetWidth, targetHeight)
-  const ctx    = canvas.getContext('2d')
-  if (!ctx) throw new Error('2D canvas context is unavailable')
-  ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight)
+  });
+  const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context is unavailable');
+  ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
   // Sized variants are always output as JPEG regardless of the source format.
-  return canvas.convertToBlob({ type: 'image/jpeg', quality: quality / 100 })
+  return canvas.convertToBlob({ type: 'image/jpeg', quality: quality / 100 });
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -120,87 +130,92 @@ async function resizeImage(sourceBuffer: ArrayBuffer, sourceMime: string, target
  */
 export async function handleThumbnailUpload(request: Request, env: Env, corsHeaders: HeadersInit) {
   try {
-    await requireRole(request, env, 'editor', 'admin', 'super_admin')
+    await requireRole(request, env, 'editor', 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
+    return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders);
   }
 
-  const url   = new URL(request.url)
-  const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
-  if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  let videoId: string
+  const url = new URL(request.url);
+  const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/);
+  if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+  let videoId: string;
   try {
-    videoId = decodeURIComponent(match[1]!)
+    videoId = decodeURIComponent(match[1]!);
   } catch {
-    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders);
   }
 
   // ── Verify the video exists in D1 before doing any work ──────────────────
   // This check must happen before reading the request body so we fail fast
   // and never write orphaned R2 objects for a non-existent video.
-  const db = getDb(env)
-  const existing = await db.prepare('SELECT id FROM videos WHERE id = ?').bind(videoId).first()
+  const db = getDb(env);
+  const existing = await db.prepare('SELECT id FROM videos WHERE id = ?').bind(videoId).first();
   if (!existing) {
-    return jsonResponse({ error: 'Video not found.' }, 404, corsHeaders)
+    return jsonResponse({ error: 'Video not found.' }, 404, corsHeaders);
   }
 
   // Reject obviously-oversized requests before reading the body.
-  const contentLength = parseInt(request.headers.get('content-length') || '0', 10)
+  const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
   if (contentLength > MAX_BYTES) {
-    return jsonResponse({ error: 'File too large. Maximum size is 10 MB.' }, 413, corsHeaders)
+    return jsonResponse({ error: 'File too large. Maximum size is 10 MB.' }, 413, corsHeaders);
   }
 
-  let formData
+  let formData;
   try {
-    formData = await request.formData()
+    formData = await request.formData();
   } catch {
-    return jsonResponse({ error: 'Invalid multipart form data.' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Invalid multipart form data.' }, 400, corsHeaders);
   }
 
-  const file = formData.get('thumbnail')
+  const file = formData.get('thumbnail');
   if (!file || typeof file === 'string') {
-    return jsonResponse({ error: 'Missing "thumbnail" field in form data.' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Missing "thumbnail" field in form data.' }, 400, corsHeaders);
   }
 
   // Only JPEG and PNG are accepted.
   if (!['image/jpeg', 'image/png'].includes(file.type)) {
     return jsonResponse(
-      { error: `Unsupported file type "${file.type}". Only image/jpeg and image/png are accepted.` },
+      {
+        error: `Unsupported file type "${file.type}". Only image/jpeg and image/png are accepted.`,
+      },
       415,
       corsHeaders,
-    )
+    );
   }
 
   // Secondary size guard (Content-Length header may be absent or spoofed).
-  const sourceBuffer = await file.arrayBuffer()
+  const sourceBuffer = await file.arrayBuffer();
   if (sourceBuffer.byteLength > MAX_BYTES) {
-    return jsonResponse({ error: 'File too large. Maximum size is 10 MB.' }, 413, corsHeaders)
+    return jsonResponse({ error: 'File too large. Maximum size is 10 MB.' }, 413, corsHeaders);
   }
 
-  const r2BaseUrl = (env.R2_BASE_URL || '').replace(/\/$/, '')
+  const r2BaseUrl = (env.R2_BASE_URL || '').replace(/\/$/, '');
   // Change the URL on each upload so CDN/browser caches cannot serve stale images.
-  const cacheVersion = Date.now().toString()
+  const cacheVersion = Date.now().toString();
 
   // Derive the correct extension and content-type from the uploaded file's MIME type.
-  const { ext: origExt, contentType: origContentType } = extensionForMime(file.type)
-  const origKey = `thumbnails/${videoId}/original.${origExt}`
+  const { ext: origExt, contentType: origContentType } = extensionForMime(file.type);
+  const origKey = `thumbnails/${videoId}/original.${origExt}`;
 
   // Detect Canvas API availability once before the loop.
   // Only when the APIs are absent do we fall back to storing original bytes for
   // the sized variants.  Errors thrown by a present createImageBitmap (e.g. a
   // corrupt or mislabeled image) are NOT capability failures — they propagate to
   // the outer try/catch which cleans up any partial R2 writes.
-  const canResize = typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function'
+  const canResize =
+    typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function';
   if (!canResize) {
-    console.warn('[thumbnails] OffscreenCanvas/createImageBitmap unavailable — storing original bytes for all size variants.')
+    console.warn(
+      '[thumbnails] OffscreenCanvas/createImageBitmap unavailable — storing original bytes for all size variants.',
+    );
   }
 
   // Track which R2 keys we write so we can clean them up on any failure.
-  const writtenKeys = []
-  const thumbUrls: ThumbUrls = {}
-  const storage = getObjectStorage(env)
+  const writtenKeys = [];
+  const thumbUrls: ThumbUrls = {};
+  const storage = getObjectStorage(env);
   if (!storage) {
-    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders);
   }
 
   try {
@@ -208,9 +223,9 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     await storage.putObject(origKey, sourceBuffer, {
       contentType: origContentType,
       cacheControl: THUMBNAIL_CACHE_CONTROL,
-    })
-    writtenKeys.push(origKey)
-    thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`
+    });
+    writtenKeys.push(origKey);
+    thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`;
 
     // Resize to each size variant.
     // When the Canvas API is unavailable the original bytes are stored instead
@@ -218,24 +233,20 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     // When the Canvas API IS present but throws (decode error, corrupt image),
     // the error propagates out of this try block so partial writes are cleaned up.
     for (const { key, width, height, quality } of SIZES) {
-      let blob
+      let blob;
       if (canResize) {
-        blob = await resizeImage(sourceBuffer, file.type, width, height, quality)
+        blob = await resizeImage(sourceBuffer, file.type, width, height, quality);
       } else {
-        blob = new Blob([sourceBuffer], { type: file.type })
+        blob = new Blob([sourceBuffer], { type: file.type });
       }
 
-      const variantKey = `thumbnails/${videoId}/${key}.jpg`
-      await storage.putObject(
-        variantKey,
-        await blob.arrayBuffer(),
-        {
-          contentType: blob.type || 'image/jpeg',
-          cacheControl: THUMBNAIL_CACHE_CONTROL,
-        },
-      )
-      writtenKeys.push(variantKey)
-      thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`
+      const variantKey = `thumbnails/${videoId}/${key}.jpg`;
+      await storage.putObject(variantKey, await blob.arrayBuffer(), {
+        contentType: blob.type || 'image/jpeg',
+        cacheControl: THUMBNAIL_CACHE_CONTROL,
+      });
+      writtenKeys.push(variantKey);
+      thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`;
     }
 
     // Update D1 to point at the large variant.
@@ -243,29 +254,29 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     const result = await db
       .prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ?')
       .bind(thumbUrls.large, videoId)
-      .run()
+      .run();
 
-    const rowsChanged = Number(result.meta?.changes ?? 0)
+    const rowsChanged = Number(result.meta?.changes ?? 0);
     if (rowsChanged === 0) {
       if (storage.deleteObjects) {
-        await storage.deleteObjects(writtenKeys).catch(() => {})
+        await storage.deleteObjects(writtenKeys).catch(() => {});
       } else {
-        await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)))
+        await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)));
       }
-      return jsonResponse({ error: 'Video not found or could not be updated.' }, 404, corsHeaders)
+      return jsonResponse({ error: 'Video not found or could not be updated.' }, 404, corsHeaders);
     }
   } catch (err) {
     // Best-effort cleanup of any R2 objects written before the failure.
     if (storage.deleteObjects) {
-      await storage.deleteObjects(writtenKeys).catch(() => {})
+      await storage.deleteObjects(writtenKeys).catch(() => {});
     } else {
-      await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)))
+      await Promise.allSettled(writtenKeys.map((k) => storage.deleteObject(k)));
     }
-    console.error('[thumbnails] Upload failed, R2 cleanup attempted:', err)
-    return jsonResponse({ error: 'Failed to process thumbnail.' }, 500, corsHeaders)
+    console.error('[thumbnails] Upload failed, R2 cleanup attempted:', err);
+    return jsonResponse({ error: 'Failed to process thumbnail.' }, 500, corsHeaders);
   }
 
-  return jsonResponse({ ok: true, thumbnails: thumbUrls }, 200, corsHeaders)
+  return jsonResponse({ ok: true, thumbnails: thumbUrls }, 200, corsHeaders);
 }
 
 /**
@@ -282,25 +293,25 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
  */
 export async function handleThumbnailDelete(request: Request, env: Env, corsHeaders: HeadersInit) {
   try {
-    await requireRole(request, env, 'editor', 'admin', 'super_admin')
+    await requireRole(request, env, 'editor', 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
+    return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders);
   }
 
-  const url   = new URL(request.url)
-  const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/)
-  if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders)
-  let videoId: string
+  const url = new URL(request.url);
+  const match = url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/thumbnail$/);
+  if (!match) return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+  let videoId: string;
   try {
-    videoId = decodeURIComponent(match[1]!)
+    videoId = decodeURIComponent(match[1]!);
   } catch {
-    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Invalid video id encoding.' }, 400, corsHeaders);
   }
 
-  const db = getDb(env)
-  const storage = getObjectStorage(env)
+  const db = getDb(env);
+  const storage = getObjectStorage(env);
   if (!storage) {
-    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders)
+    return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders);
   }
 
   const keys = [
@@ -309,18 +320,15 @@ export async function handleThumbnailDelete(request: Request, env: Env, corsHead
     `thumbnails/${videoId}/large.jpg`,
     `thumbnails/${videoId}/medium.jpg`,
     `thumbnails/${videoId}/small.jpg`,
-  ]
+  ];
   if (storage.deleteObjects) {
-    await storage.deleteObjects(keys)
+    await storage.deleteObjects(keys);
   } else {
-    await Promise.all(keys.map((key) => storage.deleteObject(key)))
+    await Promise.all(keys.map((key) => storage.deleteObject(key)));
   }
 
   // Clear thumbnail_url in D1.
-  await db
-    .prepare('UPDATE videos SET thumbnail_url = NULL WHERE id = ?')
-    .bind(videoId)
-    .run()
+  await db.prepare('UPDATE videos SET thumbnail_url = NULL WHERE id = ?').bind(videoId).run();
 
-  return jsonResponse({ ok: true }, 200, corsHeaders)
+  return jsonResponse({ ok: true }, 200, corsHeaders);
 }

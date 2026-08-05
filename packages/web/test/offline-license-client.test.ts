@@ -1,7 +1,7 @@
-import { describe, it } from 'node:test'
-import assert from 'node:assert/strict'
-import { isLicensePlaybackAllowed, isLicenseRevalidationDue } from '../utils/offline/licenseClient'
-import type { OfflineLicense } from '@vmp/shared'
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import type { OfflineLicense } from '@vmp/shared';
+import { isLicensePlaybackAllowed, isLicenseRevalidationDue } from '../utils/offline/licenseClient';
 
 function sampleLicense(overrides: Partial<OfflineLicense> = {}): OfflineLicense {
   return {
@@ -16,30 +16,36 @@ function sampleLicense(overrides: Partial<OfflineLicense> = {}): OfflineLicense 
     nextValidationDueAt: new Date(Date.now() + 86_400_000).toISOString(),
     signature: 'sig',
     ...overrides,
-  }
+  };
 }
 
 describe('offline licenseClient', () => {
   it('allows playback for active unexpired licenses', () => {
-    assert.equal(isLicensePlaybackAllowed(sampleLicense()), true)
-  })
+    assert.equal(isLicensePlaybackAllowed(sampleLicense()), true);
+  });
 
   it('blocks revoked or expired licenses', () => {
-    assert.equal(isLicensePlaybackAllowed(sampleLicense({ playbackState: 'revoked' })), false)
+    assert.equal(isLicensePlaybackAllowed(sampleLicense({ playbackState: 'revoked' })), false);
     assert.equal(
-      isLicensePlaybackAllowed(sampleLicense({ expiresAt: new Date(Date.now() - 1000).toISOString() })),
+      isLicensePlaybackAllowed(
+        sampleLicense({ expiresAt: new Date(Date.now() - 1000).toISOString() }),
+      ),
       false,
-    )
-  })
+    );
+  });
 
   it('detects revalidation due dates', () => {
     assert.equal(
-      isLicenseRevalidationDue(sampleLicense({ nextValidationDueAt: new Date(Date.now() - 1000).toISOString() })),
+      isLicenseRevalidationDue(
+        sampleLicense({ nextValidationDueAt: new Date(Date.now() - 1000).toISOString() }),
+      ),
       true,
-    )
+    );
     assert.equal(
-      isLicenseRevalidationDue(sampleLicense({ nextValidationDueAt: new Date(Date.now() + 86_400_000).toISOString() })),
+      isLicenseRevalidationDue(
+        sampleLicense({ nextValidationDueAt: new Date(Date.now() + 86_400_000).toISOString() }),
+      ),
       false,
-    )
-  })
-})
+    );
+  });
+});

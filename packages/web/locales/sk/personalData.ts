@@ -1,4 +1,4 @@
-import type { PersonalDataPage } from '../types'
+import type { PersonalDataPage } from '../types';
 
 export const personalData: PersonalDataPage = {
   metaTitle: 'Spracovanie osobných údajov',
@@ -148,4 +148,4 @@ export const personalData: PersonalDataPage = {
       necessary: 'Funkčné — až po potvrdení informácie',
     },
   ],
-}
+};

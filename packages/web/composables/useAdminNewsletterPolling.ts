@@ -1,4 +1,4 @@
-import { ref, watch, onUnmounted, type Ref } from 'vue'
+import { onUnmounted, type Ref, ref, watch } from 'vue';
 
 /**
  * Polls Brevo campaign list while the Newsletter admin tab is active.
@@ -6,85 +6,85 @@ import { ref, watch, onUnmounted, type Ref } from 'vue'
  * Backs off on errors (caps interval growth).
  */
 export function useAdminNewsletterPolling(options: {
-  pollIntervalMs: Ref<number>
-  isActive: Ref<boolean>
-  isAdmin: Ref<boolean>
-  loadCampaigns: () => Promise<void>
+  pollIntervalMs: Ref<number>;
+  isActive: Ref<boolean>;
+  isAdmin: Ref<boolean>;
+  loadCampaigns: () => Promise<void>;
 }) {
-  const { pollIntervalMs, isActive, isAdmin, loadCampaigns } = options
+  const { pollIntervalMs, isActive, isAdmin, loadCampaigns } = options;
 
-  const lastCampaignsOkAt = ref<string | null>(null)
-  const lastCampaignsError = ref<string | null>(null)
-  const pollAttempt = ref(0)
+  const lastCampaignsOkAt = ref<string | null>(null);
+  const lastCampaignsError = ref<string | null>(null);
+  const pollAttempt = ref(0);
 
-  let timer: ReturnType<typeof setTimeout> | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null;
   /** Incremented on every stop/start so in-flight async from an older run is ignored. */
-  let pollGeneration = 0
+  let pollGeneration = 0;
 
   const baseMs = () => {
-    const raw = pollIntervalMs.value
-    const n = Number.isFinite(raw) && raw >= 60_000 ? raw : 600_000
-    if (import.meta.dev) return Math.min(n, 120_000)
-    return n
-  }
+    const raw = pollIntervalMs.value;
+    const n = Number.isFinite(raw) && raw >= 60_000 ? raw : 600_000;
+    if (import.meta.dev) return Math.min(n, 120_000);
+    return n;
+  };
 
   const schedule = (delay: number, generation: number) => {
-    if (generation !== pollGeneration) return
-    if (timer != null) clearTimeout(timer)
+    if (generation !== pollGeneration) return;
+    if (timer != null) clearTimeout(timer);
     timer = setTimeout(() => {
-      void tick(generation)
-    }, delay)
-  }
+      void tick(generation);
+    }, delay);
+  };
 
   const tick = async (generation: number) => {
-    if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
+    if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return;
     try {
-      await loadCampaigns()
-      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
-      lastCampaignsError.value = null
-      lastCampaignsOkAt.value = new Date().toISOString()
-      pollAttempt.value = 0
-      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
-      schedule(baseMs(), generation)
+      await loadCampaigns();
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return;
+      lastCampaignsError.value = null;
+      lastCampaignsOkAt.value = new Date().toISOString();
+      pollAttempt.value = 0;
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return;
+      schedule(baseMs(), generation);
     } catch (e: unknown) {
-      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
-      const msg = e instanceof Error ? e.message : String(e)
-      lastCampaignsError.value = msg
-      pollAttempt.value += 1
-      const backoff = Math.min(300_000, baseMs() * 2 ** Math.min(pollAttempt.value, 4))
-      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return
-      schedule(backoff, generation)
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return;
+      const msg = e instanceof Error ? e.message : String(e);
+      lastCampaignsError.value = msg;
+      pollAttempt.value += 1;
+      const backoff = Math.min(300_000, baseMs() * 2 ** Math.min(pollAttempt.value, 4));
+      if (generation !== pollGeneration || !isActive.value || !isAdmin.value) return;
+      schedule(backoff, generation);
     }
-  }
+  };
 
   const start = () => {
-    const g = ++pollGeneration
-    void tick(g)
-  }
+    const g = ++pollGeneration;
+    void tick(g);
+  };
 
   const stop = () => {
-    pollGeneration += 1
+    pollGeneration += 1;
     if (timer != null) {
-      clearTimeout(timer)
-      timer = null
+      clearTimeout(timer);
+      timer = null;
     }
-  }
+  };
 
   watch(
     [isActive, isAdmin, pollIntervalMs],
     () => {
-      stop()
-      if (isActive.value && isAdmin.value) start()
+      stop();
+      if (isActive.value && isAdmin.value) start();
     },
     { immediate: true },
-  )
+  );
 
   onUnmounted(() => {
-    stop()
-  })
+    stop();
+  });
 
   return {
     lastCampaignsOkAt,
     lastCampaignsError,
-  }
+  };
 }

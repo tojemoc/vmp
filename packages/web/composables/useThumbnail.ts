@@ -12,13 +12,13 @@
  * The frontend substitutes the size token to request the appropriate variant.
  */
 
-import type { Ref } from 'vue'
+import type { Ref } from 'vue';
 
-type ThumbnailSize = 'large' | 'medium' | 'small'
+type ThumbnailSize = 'large' | 'medium' | 'small';
 
 // Match size token in the path, allowing an optional query string (e.g. ?t=123)
 // so cache-busted URLs like ".../large.jpg?t=123" still get rewritten.
-const SIZE_RE = /(\/)(large|medium|small)(\.jpg)(\?.*)?$/
+const SIZE_RE = /(\/)(large|medium|small)(\.jpg)(\?.*)?$/;
 
 /**
  * Pure helper — swap the size token in a thumbnail URL.
@@ -26,12 +26,12 @@ const SIZE_RE = /(\/)(large|medium|small)(\.jpg)(\?.*)?$/
  */
 /** Returns `undefined` when there is no URL so Vue `img :src` matches `string | undefined`. */
 export function sizeUrl(url: string | null | undefined, size: ThumbnailSize): string | undefined {
-  if (!url) return undefined
+  if (!url) return undefined;
   return url.replace(
     SIZE_RE,
     (_match, slash: string, _currentSize: string, ext: string, query: string | undefined) =>
       `${slash}${size}${ext}${query ?? ''}`,
-  )
+  );
 }
 
 /**
@@ -40,8 +40,8 @@ export function sizeUrl(url: string | null | undefined, size: ThumbnailSize): st
  * would 404 and show empty gray boxes (especially on mobile).
  */
 export function adminTableThumbUrl(url: string | null | undefined): string | undefined {
-  if (!url) return undefined
-  return url
+  if (!url) return undefined;
+  return url;
 }
 
 /**
@@ -50,8 +50,8 @@ export function adminTableThumbUrl(url: string | null | undefined): string | und
  */
 export function useThumbnail(thumbnailUrl: Ref<string | null | undefined>) {
   function sizedUrl(size: ThumbnailSize): string | undefined {
-    return sizeUrl(thumbnailUrl.value, size)
+    return sizeUrl(thumbnailUrl.value, size);
   }
 
-  return { sizedUrl }
+  return { sizedUrl };
 }

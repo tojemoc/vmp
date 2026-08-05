@@ -9,7 +9,7 @@
  * (instead of module-scope variables in this file).
  */
 
-import { getSetting } from './settingsStore.js'
+import { getSetting } from './settingsStore.js';
 
 /**
  * Read rate_limit_anon from admin_settings via settingsStore/getSetting.
@@ -17,22 +17,25 @@ import { getSetting } from './settingsStore.js'
  */
 async function getRateLimitValue(env: any) {
   const parseRateLimit = (raw: any) => {
-    const parsed = Number.parseInt(String(raw ?? '5'), 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5
-  }
+    const parsed = Number.parseInt(String(raw ?? '5'), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+  };
 
   try {
-    const raw = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 60, defaultValue: '5' })
-    return parseRateLimit(raw)
+    const raw = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 60, defaultValue: '5' });
+    return parseRateLimit(raw);
   } catch {
     // Keep retries short on transient failures.
     try {
-      const retryValue = await getSetting(env, 'rate_limit_anon', { ttlSeconds: 5, defaultValue: '5' })
-      return parseRateLimit(retryValue)
+      const retryValue = await getSetting(env, 'rate_limit_anon', {
+        ttlSeconds: 5,
+        defaultValue: '5',
+      });
+      return parseRateLimit(retryValue);
     } catch {
       // Best effort only.
     }
-    return 5
+    return 5;
   }
 }
 
@@ -45,38 +48,41 @@ async function getRateLimitValue(env: any) {
  *   { limited: true, retryAfter, limit, current } — request is blocked (429)
  */
 export async function checkAnonymousRateLimit(request: any, env: any, ctx?: ExecutionContext) {
-  const db = env.DB || env.video_subscription_db
-  if (!db) return null // Database binding not configured — skip silently
+  const db = env.DB || env.video_subscription_db;
+  if (!db) return null; // Database binding not configured — skip silently
 
   // Use CF-Connecting-IP (set by Cloudflare) as the client identifier.
   // Fall back to X-Forwarded-For for local dev / non-CF environments.
   const ip =
     request.headers.get('CF-Connecting-IP') ||
     request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    'unknown'
+    'unknown';
 
-  const now = new Date()
+  const now = new Date();
   // e.g. "2026-03-30T14" — one bucket per UTC hour
-  const hourKey = now.toISOString().slice(0, 13)
+  const hourKey = now.toISOString().slice(0, 13);
 
   // Opportunistic cleanup runs before the counter check and, when available,
   // is dispatched asynchronously to avoid adding latency to request handling.
   if (Math.random() < 0.01) {
-    const cleanupPromise = db.prepare('DELETE FROM anonymous_rate_limits WHERE expires_at <= CURRENT_TIMESTAMP').run()
+    const cleanupPromise = db
+      .prepare('DELETE FROM anonymous_rate_limits WHERE expires_at <= CURRENT_TIMESTAMP')
+      .run()
       .catch(() => {
         // Cleanup failures are non-fatal for request handling.
-      })
+      });
     if (ctx?.waitUntil) {
-      ctx.waitUntil(cleanupPromise)
+      ctx.waitUntil(cleanupPromise);
     } else {
-      await cleanupPromise
+      await cleanupPromise;
     }
   }
 
-  const limit = await getRateLimitValue(env)
-  let current = 0
+  const limit = await getRateLimitValue(env);
+  let current = 0;
   try {
-    const upsert = await db.prepare(`
+    const upsert = await db
+      .prepare(`
       INSERT INTO anonymous_rate_limits (
         ip, bucket_hour, request_count, expires_at, updated_at
       ) VALUES (
@@ -87,23 +93,29 @@ export async function checkAnonymousRateLimit(request: any, env: any, ctx?: Exec
         expires_at = datetime('now', '+3700 seconds'),
         updated_at = CURRENT_TIMESTAMP
       RETURNING request_count
-    `).bind(ip, hourKey).first()
-    current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0
+    `)
+      .bind(ip, hourKey)
+      .first();
+    current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0;
   } catch (error) {
     // Fail-open for anonymous traffic when D1 is transiently unavailable.
-    const redactedIp = ip ? '[REDACTED_IP]' : 'unknown'
-    console.error('Anonymous rate-limit counter upsert failed; allowing request', { ip: redactedIp, hourKey, error })
-    current = 0
+    const redactedIp = ip ? '[REDACTED_IP]' : 'unknown';
+    console.error('Anonymous rate-limit counter upsert failed; allowing request', {
+      ip: redactedIp,
+      hourKey,
+      error,
+    });
+    current = 0;
   }
 
   if (current > limit) {
     // Seconds remaining in the current UTC hour
-    const minutesElapsed = now.getUTCMinutes()
-    const secondsElapsed = now.getUTCSeconds()
-    const retryAfter = (60 - minutesElapsed) * 60 - secondsElapsed
+    const minutesElapsed = now.getUTCMinutes();
+    const secondsElapsed = now.getUTCSeconds();
+    const retryAfter = (60 - minutesElapsed) * 60 - secondsElapsed;
 
-    return { limited: true, retryAfter, limit, current }
+    return { limited: true, retryAfter, limit, current };
   }
 
-  return { limited: false, current, limit }
+  return { limited: false, current, limit };
 }

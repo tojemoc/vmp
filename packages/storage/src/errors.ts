@@ -1,36 +1,36 @@
 export function isAvailabilityError(err: unknown): boolean {
-  const code = (err as { name?: string }).name
-  const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
-  if (code === 'NoSuchKey' || code === 'NotFound' || status === 404) return false
+  const code = (err as { name?: string }).name;
+  const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+  if (code === 'NoSuchKey' || code === 'NotFound' || status === 404) return false;
   if (
-    code === 'TimeoutError'
-    || code === 'RequestTimeout'
-    || code === 'NetworkingError'
-    || code === 'AbortError'
+    code === 'TimeoutError' ||
+    code === 'RequestTimeout' ||
+    code === 'NetworkingError' ||
+    code === 'AbortError'
   ) {
-    return true
+    return true;
   }
-  if (typeof status === 'number' && status >= 500) return true
+  if (typeof status === 'number' && status >= 500) return true;
   if (err instanceof TypeError) {
-    const message = err.message.toLowerCase()
+    const message = err.message.toLowerCase();
     return (
-      message.includes('fetch')
-      || message.includes('network')
-      || message.includes('failed to fetch')
-      || message.includes('terminated')
-      || message.includes('aborted')
-    )
+      message.includes('fetch') ||
+      message.includes('network') ||
+      message.includes('failed to fetch') ||
+      message.includes('terminated') ||
+      message.includes('aborted')
+    );
   }
   if (err instanceof Error) {
-    const message = err.message.toLowerCase()
+    const message = err.message.toLowerCase();
     if (
-      message.includes('network')
-      || message.includes('timeout')
-      || message.includes('timed out')
-      || message.includes('abort')
+      message.includes('network') ||
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('abort')
     ) {
-      return true
+      return true;
     }
   }
-  return false
+  return false;
 }

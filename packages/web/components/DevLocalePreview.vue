@@ -9,7 +9,9 @@
       <span v-if="isDevLocalePreview" class="text-amber-300">(override)</span>
     </p>
     <p class="text-amber-200/90 leading-relaxed">
-      Review SK/CZ copy in real UI flows. Edit <code class="text-amber-100">locales/{{ locale }}/</code> — HMR updates strings.
+      Review SK/CZ copy in real UI flows. Edit
+      <code class="text-amber-100">locales/{{ locale }}/</code>
+      — HMR updates strings.
     </p>
     <div class="flex flex-wrap gap-1.5">
       <button
@@ -39,15 +41,15 @@
 </template>
 
 <script setup lang="ts">
-import { SUPPORTED_UI_LOCALES } from '~/locales'
-import type { UiLocale } from '~/locales'
-import { clearDevUiLocalePreview, setDevUiLocalePreview } from '~/utils/resolveUiLocale'
+  import type { UiLocale } from '~/locales';
+  import { SUPPORTED_UI_LOCALES } from '~/locales';
+  import { clearDevUiLocalePreview, setDevUiLocalePreview } from '~/utils/resolveUiLocale';
 
-const locales = SUPPORTED_UI_LOCALES
-const { locale, isDevLocalePreview } = useUiLocale()
+  const locales = SUPPORTED_UI_LOCALES;
+  const { locale, isDevLocalePreview } = useUiLocale();
 
-function selectLocale(code: UiLocale) {
-  if (locale.value === code) return
-  setDevUiLocalePreview(code)
-}
+  function selectLocale(code: UiLocale) {
+    if (locale.value === code) return;
+    setDevUiLocalePreview(code);
+  }
 </script>

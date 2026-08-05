@@ -1,2 +1,2 @@
-export { normalizeStripeStatus } from './stripeClient.js'
-export { handleWebhook } from './paymentProcessor.js'
+export { handleWebhook } from './paymentProcessor.js';
+export { normalizeStripeStatus } from './stripeClient.js';

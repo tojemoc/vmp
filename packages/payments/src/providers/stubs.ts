@@ -1,4 +1,4 @@
-import { NotImplementedError } from '../errors.js'
+import { NotImplementedError } from '../errors.js';
 import type {
   CheckoutSession,
   CreateCheckoutSessionInput,
@@ -8,7 +8,7 @@ import type {
   PaymentProviderCapabilities,
   RefundOptions,
   Subscription,
-} from '../types.js'
+} from '../types.js';
 
 const STUB_CAPABILITIES: PaymentProviderCapabilities = {
   newSubscriptions: false,
@@ -16,13 +16,13 @@ const STUB_CAPABILITIES: PaymentProviderCapabilities = {
   recurringPayments: false,
   refunds: false,
   webhooks: false,
-}
+};
 
 function stubProvider(id: 'gopay' | 'comgate', label: string): PaymentProvider {
-  const message = `${label} support is not yet implemented`
+  const message = `${label} support is not yet implemented`;
   const throwNI = () => {
-    throw new NotImplementedError(message)
-  }
+    throw new NotImplementedError(message);
+  };
   return {
     id,
     capabilities: STUB_CAPABILITIES,
@@ -34,13 +34,13 @@ function stubProvider(id: 'gopay' | 'comgate', label: string): PaymentProvider {
     refund: async () => throwNI(),
     verifyWebhookSignature: () => throwNI(),
     handleWebhook: async () => throwNI(),
-  }
+  };
 }
 
 export function createGoPayProvider(_config: unknown): PaymentProvider {
-  return stubProvider('gopay', 'GoPay')
+  return stubProvider('gopay', 'GoPay');
 }
 
 export function createComgateProvider(_config: unknown): PaymentProvider {
-  return stubProvider('comgate', 'Comgate')
+  return stubProvider('comgate', 'Comgate');
 }

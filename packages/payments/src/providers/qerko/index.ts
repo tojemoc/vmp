@@ -1,7 +1,4 @@
-import type {
-  PaymentProvider,
-  QerkoPaymentsConfig,
-} from '../../types.js'
+import type { PaymentProvider, QerkoPaymentsConfig } from '../../types.js';
 
 export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvider {
   return {
@@ -22,13 +19,13 @@ export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvide
     refund: (paymentId, opts) => config.refund(paymentId, opts),
 
     verifyWebhookSignature(rawBody, signatureHeader) {
-      const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody)
-      return config.verifyWebhook(body, signatureHeader || null)
+      const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
+      return config.verifyWebhook(body, signatureHeader || null);
     },
 
     handleWebhook(rawBody) {
-      const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody)
-      return config.parseWebhook(body)
+      const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
+      return config.parseWebhook(body);
     },
-  }
+  };
 }

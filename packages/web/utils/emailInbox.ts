@@ -1,17 +1,15 @@
-import { isIosLike } from '~/utils/pwa'
+import { isIosLike } from '~/utils/pwa';
 
-const GMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com'])
-const OUTLOOK_DOMAINS = new Set([
-  'outlook.com',
-  'hotmail.com',
-  'live.com',
-  'msn.com',
-])
+const GMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com']);
+const OUTLOOK_DOMAINS = new Set(['outlook.com', 'hotmail.com', 'live.com', 'msn.com']);
 
 function emailDomain(email: string): string {
-  const at = email.lastIndexOf('@')
-  if (at < 0) return ''
-  return email.slice(at + 1).trim().toLowerCase()
+  const at = email.lastIndexOf('@');
+  if (at < 0) return '';
+  return email
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
 }
 
 /**
@@ -19,27 +17,30 @@ function emailDomain(email: string): string {
  * There is no universal scheme; `mailto:` always opens a new message.
  */
 export function getNativeEmailInboxHref(email = ''): string {
-  if (import.meta.server) return 'message://'
+  if (import.meta.server) return 'message://';
 
-  const ua = navigator.userAgent
-  const domain = emailDomain(email)
-  const onMobile = /Android|iPhone|iPad|iPod/i.test(ua) || isIosLike()
+  const ua = navigator.userAgent;
+  const domain = emailDomain(email);
+  const onMobile = /Android|iPhone|iPad|iPod/i.test(ua) || isIosLike();
 
   if (onMobile) {
-    if (GMAIL_DOMAINS.has(domain)) return 'googlegmail://'
-    if (OUTLOOK_DOMAINS.has(domain)) return 'ms-outlook://emails/inbox'
-    if (isIosLike()) return 'message://'
-    return 'message://'
+    if (GMAIL_DOMAINS.has(domain)) return 'googlegmail://';
+    if (OUTLOOK_DOMAINS.has(domain)) return 'ms-outlook://emails/inbox';
+    if (isIosLike()) return 'message://';
+    return 'message://';
   }
 
-  if (/Macintosh|Mac OS X/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
-    return 'message://'
+  if (
+    /Macintosh|Mac OS X/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  ) {
+    return 'message://';
   }
 
   if (/Windows/i.test(ua)) {
-    if (OUTLOOK_DOMAINS.has(domain)) return 'ms-outlook://emails/inbox'
-    return 'outlookmail:'
+    if (OUTLOOK_DOMAINS.has(domain)) return 'ms-outlook://emails/inbox';
+    return 'outlookmail:';
   }
 
-  return 'message://'
+  return 'message://';
 }
