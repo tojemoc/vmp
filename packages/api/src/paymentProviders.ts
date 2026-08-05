@@ -16,7 +16,8 @@ import { startLegacyCheckout } from './legacyPayments.js';
 import { isLegacyProviderConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
 import { getSetting } from './settingsStore.js';
 
-const ALL_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'comgate'];
+/** Runnable / exposable providers only — stub IDs (gopay, comgate) are not API-mapped. */
+const ALL_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko'];
 const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
 
 async function priceIdForPlan(env: any, planType: PlanType): Promise<string | null> {
@@ -111,7 +112,9 @@ export async function getPaymentProviders(env: any) {
 }
 
 export function toApiProviderId(id: PaymentProviderId): 'stripe' | 'legacy' {
-  return id === 'qerko' ? 'legacy' : 'stripe';
+  if (id === 'qerko') return 'legacy';
+  if (id === 'stripe') return 'stripe';
+  throw new Error(`Unsupported payment provider for API mapping: ${id}`);
 }
 
 export function fromApiProviderId(raw: string): PaymentProviderId | null {

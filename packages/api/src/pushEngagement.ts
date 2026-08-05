@@ -564,6 +564,8 @@ function computePushDelaySeconds(scheduledAt: unknown) {
   return Math.max(0, Math.min(86400, Math.floor((scheduledMs - now) / 1000)));
 }
 
+export { computePushDelaySeconds };
+
 export async function enqueueOverduePushDeliveries(env: any) {
   const db = getDb(env);
   const queue = getPushDeliveryQueue(env);

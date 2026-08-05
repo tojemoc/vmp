@@ -5,19 +5,8 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-
-// Inline copies of small pure helpers for unit testing without DB mocks.
-function computePushDelaySeconds(scheduledAt: unknown) {
-  const scheduledMs = Date.parse(String(scheduledAt));
-  const now = Date.now();
-  if (!Number.isFinite(scheduledMs)) return 0;
-  if (scheduledMs <= now) return 0;
-  return Math.max(0, Math.min(86400, Math.floor((scheduledMs - now) / 1000)));
-}
-
-function rowCursor(updatedAt: unknown, id: unknown) {
-  return `${String(updatedAt ?? '')}|${String(id ?? '')}`;
-}
+import { computePushDelaySeconds } from '../src/pushEngagement.js';
+import { rowCursor } from '../src/replication.js';
 
 describe('computePushDelaySeconds', () => {
   it('returns 0 for past or invalid scheduled_at', () => {

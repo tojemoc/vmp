@@ -1,4 +1,5 @@
 import { requireRole } from './auth.js';
+import { getDb } from './d1Session.js';
 import { getReplicationQueue, QUEUE_SEND_BATCH_MAX } from './queueBindings.js';
 import {
   assertReplicationIngestAccepted,
@@ -157,12 +158,6 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   });
 }
 
-function getDb(env: any) {
-  const db = env.DB || env.video_subscription_db;
-  if (!db) throw new Error('D1 binding not found');
-  return db;
-}
-
 async function ensureReplicationStateTable(db: any) {
   await db
     .prepare(`
@@ -223,6 +218,8 @@ function parseManualPushMaxRounds(input: unknown) {
 function rowCursor(updatedAt: unknown, id: unknown) {
   return `${String(updatedAt ?? '')}|${String(id ?? '')}`;
 }
+
+export { rowCursor };
 
 function parseCursor(cursor: string) {
   if (!cursor) return { updatedAt: '', id: '' };

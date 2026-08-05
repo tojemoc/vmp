@@ -192,6 +192,7 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      LEGACY_ESHOP_WEBHOOK_SECRET: 'webhook-secret',
       FRONTEND_URL: 'https://app.example.com',
       API_URL: 'https://api.example.com',
     };
@@ -229,6 +230,7 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      LEGACY_ESHOP_WEBHOOK_SECRET: 'webhook-secret',
       FRONTEND_URL: 'https://app.example.com',
       API_URL: 'https://api.example.com',
     };
@@ -277,6 +279,7 @@ describe('validateLegacyBatch', () => {
       LEGACY_ESHOP_API_URL: 'https://legacy-api.example.com/api/v2/eshop',
       LEGACY_ESHOP_MERCHANT_ID: 'merchant',
       LEGACY_ESHOP_API_KEY: 'secret',
+      LEGACY_ESHOP_WEBHOOK_SECRET: 'webhook-secret',
       FRONTEND_URL: 'https://app.example.com',
       API_URL: 'https://api.example.com',
     };

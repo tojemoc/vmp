@@ -54,6 +54,14 @@ describe('Datadog worker log helpers', () => {
       buildDatadogIntakeUrl({ DD_SITE: 'datadoghq.com' }),
       'https://http-intake.logs.datadoghq.com/api/v2/logs',
     );
+    assert.equal(
+      buildDatadogIntakeUrl({ DD_SITE: 'https://custom.example/api/v2/logs' }),
+      'https://custom.example/api/v2/logs',
+    );
+    assert.throws(
+      () => buildDatadogIntakeUrl({ DD_SITE: 'http://insecure.example/api/v2/logs' }),
+      /https/,
+    );
   });
 
   it('formatLogMessage builds human-readable summaries', () => {

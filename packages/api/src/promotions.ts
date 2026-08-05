@@ -42,6 +42,42 @@ async function getAllowedPlansFromSettings(env: any): Promise<string[]> {
   return plans.length > 0 ? Array.from(new Set(plans)) : ['monthly', 'yearly', 'club'];
 }
 
+async function getPromoQuantityMax(env: any): Promise<number> {
+  return clampInt(
+    await getSetting(env, 'promo_code_quantity_max', { defaultValue: '200' }),
+    200,
+    1,
+    10_000,
+  );
+}
+
+async function getPromoMaxUsesCeiling(env: any): Promise<number> {
+  return clampInt(
+    await getSetting(env, 'promo_code_max_uses_max', { defaultValue: '100000' }),
+    100000,
+    1,
+    10_000_000,
+  );
+}
+
+async function getIsicFreeSlotsLimitMax(env: any): Promise<number> {
+  return clampInt(
+    await getSetting(env, 'isic_free_slots_limit_max', { defaultValue: '1000000' }),
+    1_000_000,
+    0,
+    10_000_000,
+  );
+}
+
+async function getIsicRenewalMonthsMax(env: any): Promise<number> {
+  return clampInt(
+    await getSetting(env, 'isic_renewal_months_max', { defaultValue: '36' }),
+    36,
+    1,
+    120,
+  );
+}
+
 async function isPromotionsEnabled(env: any): Promise<boolean> {
   const raw = await getSetting(env, 'promotions_enabled', { defaultValue: '1' });
   return String(raw ?? '1').trim() === '1';
@@ -230,18 +266,8 @@ export async function applyPromoRedemption(
   if (!promoCode || !promoCode.is_active) return;
   if (Number(promoCode.used_count || 0) >= Number(promoCode.max_uses || 0)) return;
 
-  const incrementResult = await db
-    .prepare(`
-    UPDATE promo_codes
-    SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND used_count < max_uses
-  `)
-    .bind(params.promoCodeId)
-    .run();
-
-  if ((incrementResult?.meta?.changes ?? 0) === 0) return;
-
-  await db
+  // Insert first so ON CONFLICT is a no-op for repeat redemptions; only then consume capacity.
+  const insertResult = await db
     .prepare(`
     INSERT INTO promo_redemptions (
       id, promo_code_id, user_id, subscription_id, provider, plan_type, granted_until
@@ -257,6 +283,17 @@ export async function applyPromoRedemption(
       params.planType,
       params.grantedUntil ?? null,
     )
+    .run();
+
+  if ((insertResult?.meta?.changes ?? 0) === 0) return;
+
+  await db
+    .prepare(`
+    UPDATE promo_codes
+    SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND used_count < max_uses
+  `)
+    .bind(params.promoCodeId)
     .run();
 }
 
@@ -388,10 +425,12 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
         corsHeaders,
       );
 
-    const quantity = clampInt(body?.quantity, 1, 1, 200);
+    const quantityMax = await getPromoQuantityMax(env);
+    const maxUsesCeiling = await getPromoMaxUsesCeiling(env);
+    const quantity = clampInt(body?.quantity, 1, 1, quantityMax);
     const baseCode = normalizeCode(body?.code);
     const rewardType = normalizeRewardType(body?.rewardType);
-    const maxUses = clampInt(body?.maxUses, 1, 1, 100000);
+    const maxUses = clampInt(body?.maxUses, 1, 1, maxUsesCeiling);
     const allowedPlansFromSettings = await getAllowedPlansFromSettings(env);
     const allowedPlans = parseAllowedPlanTypes(body?.allowedPlanTypes, allowedPlansFromSettings);
     const expiresAtParsed = parseOptionalIsoDate(body?.expiresAt);
@@ -474,7 +513,7 @@ export async function handleAdminPromoCodes(request: any, env: any, corsHeaders:
     }
     if (Object.hasOwn(body ?? {}, 'maxUses')) {
       updates.push('max_uses = ?');
-      values.push(clampInt(body.maxUses, 1, 1, 100000));
+      values.push(clampInt(body.maxUses, 1, 1, await getPromoMaxUsesCeiling(env)));
     }
     if (Object.hasOwn(body ?? {}, 'isActive')) {
       updates.push('is_active = ?');
@@ -546,9 +585,10 @@ export async function handlePromoValidate(request: any, env: any, corsHeaders: a
   const planType = String(body?.planType ?? 'monthly')
     .trim()
     .toLowerCase();
-  if (!['monthly', 'yearly', 'club'].includes(planType)) {
+  const allowedPlans = await getAllowedPlansFromSettings(env);
+  if (!allowedPlans.includes(planType)) {
     return jsonResponse(
-      { error: 'planType must be one of monthly, yearly, club' },
+      { error: `planType must be one of ${allowedPlans.join(', ')}` },
       400,
       corsHeaders,
     );
@@ -640,9 +680,9 @@ export async function handleAdminIsicCampaigns(request: any, env: any, corsHeade
         name,
         typeof body?.description === 'string' ? body.description.trim() : null,
         body?.isActive === false ? 0 : 1,
-        clampInt(body?.freeSlotsLimit, 0, 0, 1_000_000),
+        clampInt(body?.freeSlotsLimit, 0, 0, await getIsicFreeSlotsLimitMax(env)),
         clampPercent(body?.discountPercent, 0),
-        clampInt(body?.renewalMonths, 12, 1, 36),
+        clampInt(body?.renewalMonths, 12, 1, await getIsicRenewalMonthsMax(env)),
         normalizePopupBehavior(body?.popupBehavior),
         typeof body?.countryScope === 'string' && body.countryScope.trim()
           ? body.countryScope.trim().toUpperCase()
@@ -690,7 +730,7 @@ export async function handleAdminIsicCampaigns(request: any, env: any, corsHeade
     }
     if (Object.hasOwn(body ?? {}, 'freeSlotsLimit')) {
       updates.push('free_slots_limit = ?');
-      values.push(clampInt(body.freeSlotsLimit, 0, 0, 1_000_000));
+      values.push(clampInt(body.freeSlotsLimit, 0, 0, await getIsicFreeSlotsLimitMax(env)));
     }
     if (Object.hasOwn(body ?? {}, 'discountPercent')) {
       updates.push('discount_percent = ?');
@@ -698,7 +738,7 @@ export async function handleAdminIsicCampaigns(request: any, env: any, corsHeade
     }
     if (Object.hasOwn(body ?? {}, 'renewalMonths')) {
       updates.push('renewal_months = ?');
-      values.push(clampInt(body.renewalMonths, 12, 1, 36));
+      values.push(clampInt(body.renewalMonths, 12, 1, await getIsicRenewalMonthsMax(env)));
     }
     if (Object.hasOwn(body ?? {}, 'popupBehavior')) {
       updates.push('popup_behavior = ?');

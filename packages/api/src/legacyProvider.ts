@@ -99,7 +99,8 @@ export function isLegacyProviderConfigured(
   return Boolean(
     base &&
       String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() &&
-      String(env.LEGACY_ESHOP_API_KEY ?? '').trim(),
+      String(env.LEGACY_ESHOP_API_KEY ?? '').trim() &&
+      String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim(),
   );
 }
 
@@ -300,7 +301,21 @@ export async function probeLegacyCardOnFile(
 ): Promise<LegacyValidationProbeResult> {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim();
   const frontendUrl = requireConfiguredUrl(env.FRONTEND_URL, 'FRONTEND_URL');
-  const amountMinor = input.amountMinor ?? 100;
+  if (input.amountMinor == null || !Number.isFinite(input.amountMinor) || input.amountMinor <= 0) {
+    throw new Error('amountMinor is required for legacy card-on-file probe');
+  }
+  const currency = String(input.currency ?? '')
+    .trim()
+    .toUpperCase();
+  if (!currency) {
+    throw new Error('currency is required for legacy card-on-file probe');
+  }
+  const planType = String(input.planType ?? '')
+    .trim()
+    .toLowerCase();
+  if (!planType) {
+    throw new Error('planType is required for legacy card-on-file probe');
+  }
   const body = {
     idMerchant,
     idOrder: input.idOrder,
@@ -311,13 +326,13 @@ export async function probeLegacyCardOnFile(
     cardOnFile: input.purchaseId,
     bill: {
       id: `probe-${input.idOrder}`,
-      currency: input.currency ?? 'EUR',
-      subscriptionType: mapPlanTypeToSubscriptionType(input.planType ?? 'monthly'),
+      currency,
+      subscriptionType: mapPlanTypeToSubscriptionType(planType),
       subscriptionPeriodSize: 1,
       items: [
         {
           name: 'Migration validation probe',
-          price: formatLegacyBillPrice(amountMinor),
+          price: formatLegacyBillPrice(input.amountMinor),
           quantity: '1',
         },
       ],

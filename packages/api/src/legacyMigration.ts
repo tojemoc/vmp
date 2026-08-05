@@ -42,6 +42,7 @@ import {
   isLegacySandboxConfigured,
   probeLegacyCardOnFile,
 } from './legacyProvider.js';
+import { getSetting } from './settingsStore.js';
 
 type LegacyMigrationEnv = {
   DB?: D1Database;
@@ -209,6 +210,28 @@ export async function validateLegacyBatch(
     );
   }
 
+  const amountRaw = Number.parseInt(
+    String(
+      await getSetting(
+        { ...env, DB: env.DB ?? env.video_subscription_db ?? db },
+        'legacy_validation_probe_amount_minor',
+        { defaultValue: '100' },
+      ),
+    ),
+    10,
+  );
+  const amountMinor = Number.isFinite(amountRaw) && amountRaw > 0 ? amountRaw : 100;
+  const currency =
+    String(
+      await getSetting(
+        { ...env, DB: env.DB ?? env.video_subscription_db ?? db },
+        'legacy_validation_probe_currency',
+        { defaultValue: 'EUR' },
+      ),
+    )
+      .trim()
+      .toUpperCase() || 'EUR';
+
   const limit = Math.min(Math.max(batchSize, 1), 100);
   const rows = await db
     .prepare(`
@@ -240,6 +263,8 @@ export async function validateLegacyBatch(
       purchaseId,
       idOrder,
       planType: String(row.plan_type ?? 'monthly'),
+      amountMinor,
+      currency,
     });
 
     details.push({

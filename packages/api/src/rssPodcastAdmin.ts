@@ -114,9 +114,23 @@ export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[
       body: rawBody,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
 
-    const text = await res.text().catch(() => '');
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      console.error('deliverPodcastPreviewRebuildWebhook body read:', err);
+      return {
+        delivered: false,
+        code: 'webhook_error',
+        videoCount: videos.length,
+        eligibleCount: payloadVideos.length,
+        skippedFullUnlockCount,
+        webhookStatus: res.status,
+        detail: 'Failed to read webhook response body',
+      };
+    }
+
     const parsed = (() => {
       try {
         return text ? JSON.parse(text) : null;
@@ -151,7 +165,6 @@ export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[
       rejected: Array.isArray(parsed?.rejected) ? parsed.rejected : [],
     };
   } catch (err) {
-    clearTimeout(timeoutId);
     const isAbort = err instanceof Error && err.name === 'AbortError';
     console.error('deliverPodcastPreviewRebuildWebhook:', err);
     return {
@@ -161,6 +174,8 @@ export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[
       eligibleCount: payloadVideos.length,
       skippedFullUnlockCount,
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -226,8 +241,8 @@ export async function handleRssPodcastWebhookConfig(request: any, env: any, cors
     if (webhookUrl) {
       try {
         const u = new URL(webhookUrl);
-        if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-          return jsonResponse({ error: 'webhookUrl must be http(s)' }, 400, corsHeaders);
+        if (u.protocol !== 'https:') {
+          return jsonResponse({ error: 'webhookUrl must be https' }, 400, corsHeaders);
         }
       } catch {
         return jsonResponse({ error: 'Invalid webhookUrl' }, 400, corsHeaders);

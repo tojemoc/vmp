@@ -76,7 +76,10 @@ export function normalizeDatadogSite(site: string): string {
 
 export function buildDatadogIntakeUrl(env: Record<string, unknown>): string {
   const configured = String(env.DD_SITE ?? 'datadoghq.eu').trim() || 'datadoghq.eu';
-  if (configured.startsWith('http')) {
+  if (/^http:\/\//i.test(configured)) {
+    throw new Error('DD_SITE must use https://; insecure http intake URLs are rejected');
+  }
+  if (/^https:\/\//i.test(configured)) {
     const base = configured.replace(/\/$/, '');
     return base.includes('/api/v2/logs') ? base : `${base}/api/v2/logs`;
   }

@@ -3,6 +3,7 @@
  */
 
 import { getDb } from './d1Session.js';
+import { getSetting } from './settingsStore.js';
 
 type RecommendationVideo = {
   id: string;
@@ -126,8 +127,21 @@ export async function handleVideoRecommendations(
 
   const url = new URL(request.url);
   const videoId = String(url.searchParams.get('videoId') ?? '').trim();
-  const limitRaw = Number(url.searchParams.get('limit') ?? 5);
-  const limit = Number.isFinite(limitRaw) ? Math.min(20, Math.max(1, Math.floor(limitRaw))) : 5;
+  const defaultLimit = Number.parseInt(
+    String((await getSetting(env, 'recommendations_default_limit', { defaultValue: '5' })) ?? '5'),
+    10,
+  );
+  const maxLimit = Number.parseInt(
+    String((await getSetting(env, 'recommendations_max_limit', { defaultValue: '20' })) ?? '20'),
+    10,
+  );
+  const resolvedDefault = Number.isFinite(defaultLimit) && defaultLimit >= 1 ? defaultLimit : 5;
+  const resolvedMax =
+    Number.isFinite(maxLimit) && maxLimit >= 1 ? Math.max(resolvedDefault, maxLimit) : 20;
+  const limitRaw = Number(url.searchParams.get('limit') ?? resolvedDefault);
+  const limit = Number.isFinite(limitRaw)
+    ? Math.min(resolvedMax, Math.max(1, Math.floor(limitRaw)))
+    : resolvedDefault;
 
   if (!videoId) {
     return jsonResponse({ error: 'videoId is required' }, 400, corsHeaders);
