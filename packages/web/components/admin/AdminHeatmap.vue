@@ -22,34 +22,40 @@
 </template>
 
 <script setup lang="ts">
-export type AdminHeatmapBucket = {
-  positionPercent: number
-  watchSeconds: number
-}
+  export type AdminHeatmapBucket = {
+    positionPercent: number;
+    watchSeconds: number;
+  };
 
-const props = withDefaults(defineProps<{
-  buckets: AdminHeatmapBucket[]
-  ariaLabel?: string
-}>(), {
-  ariaLabel: 'Video engagement heatmap',
-})
+  const props = withDefaults(
+    defineProps<{
+      buckets: AdminHeatmapBucket[];
+      ariaLabel?: string;
+    }>(),
+    {
+      ariaLabel: 'Video engagement heatmap',
+    },
+  );
 
-function heatColor(intensity: number) {
-  const alpha = Math.max(0.12, Math.min(1, intensity))
-  return `rgba(16, 185, 129, ${alpha})`
-}
+  function heatColor(intensity: number) {
+    const alpha = Math.max(0.12, Math.min(1, intensity));
+    return `rgba(16, 185, 129, ${alpha})`;
+  }
 
-const normalizedBuckets = computed(() => {
-  const buckets = props.buckets ?? []
-  const max = buckets.reduce((peak, bucket) => Math.max(peak, Number(bucket.watchSeconds) || 0), 0)
-  const safeMax = max > 0 ? max : 1
-  return buckets.map((bucket) => {
-    const watchSeconds = Number(bucket.watchSeconds) || 0
-    return {
-      positionPercent: bucket.positionPercent,
-      watchSeconds,
-      color: heatColor(watchSeconds / safeMax),
-    }
-  })
-})
+  const normalizedBuckets = computed(() => {
+    const buckets = props.buckets ?? [];
+    const max = buckets.reduce(
+      (peak, bucket) => Math.max(peak, Number(bucket.watchSeconds) || 0),
+      0,
+    );
+    const safeMax = max > 0 ? max : 1;
+    return buckets.map((bucket) => {
+      const watchSeconds = Number(bucket.watchSeconds) || 0;
+      return {
+        positionPercent: bucket.positionPercent,
+        watchSeconds,
+        color: heatColor(watchSeconds / safeMax),
+      };
+    });
+  });
 </script>

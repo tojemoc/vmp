@@ -11,10 +11,7 @@
       leave-from-class="opacity-100 translate-y-0"
       leave-to-class="opacity-0 -translate-y-2"
     >
-      <div
-        v-if="showPwaBanner"
-        class="bg-blue-600 text-white px-4 py-2.5"
-      >
+      <div v-if="showPwaBanner" class="bg-blue-600 text-white px-4 py-2.5">
         <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <p class="text-sm font-medium">{{ strings.pwaInstallPrompt }}</p>
           <div class="flex items-center gap-2 shrink-0">
@@ -30,7 +27,12 @@
               @click="dismissPwaBanner"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -50,7 +52,13 @@
               v-if="pill.image_url"
               class="w-10 h-10 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-800 flex-shrink-0"
             >
-              <img :src="pill.image_url" :alt="pill.label" class="w-full h-full object-cover" loading="lazy" decoding="async" />
+              <img
+                :src="pill.image_url"
+                :alt="pill.label"
+                class="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
+              >
             </div>
             <div
               v-else
@@ -60,15 +68,23 @@
               {{ pill.label?.charAt(0)?.toUpperCase() || '?' }}
             </div>
             <div class="min-w-0">
-              <p class="text-sm font-medium text-gray-900 dark:text-white truncate leading-tight">{{ pill.label }}</p>
-              <p class="text-lg font-bold leading-tight" :style="{ color: pill.color || '#2563eb' }">{{ formatPillValue(pill) }}</p>
+              <p class="text-sm font-medium text-gray-900 dark:text-white truncate leading-tight">
+                {{ pill.label }}
+              </p>
+              <p
+                class="text-lg font-bold leading-tight"
+                :style="{ color: pill.color || '#2563eb' }"
+              >
+                {{ formatPillValue(pill) }}
+              </p>
               <a
                 v-if="pill.value_mode === 'graph_embed' && pill.graph_embed_url"
                 :href="pill.graph_embed_url"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              >{{ strings.openGraph }}</a>
+                >{{ strings.openGraph }}</a
+              >
             </div>
           </div>
         </div>
@@ -76,13 +92,20 @@
 
       <!-- Loading State -->
       <div v-if="loading" class="text-center py-20">
-        <div class="inline-block w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+        <div
+          class="inline-block w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"
+        ></div>
         <p class="mt-4 text-gray-600 dark:text-gray-400">{{ strings.loadingVideos }}</p>
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6">
-        <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">{{ strings.errorLoadingVideos }}</h3>
+      <div
+        v-else-if="error"
+        class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-6"
+      >
+        <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-2">
+          {{ strings.errorLoadingVideos }}
+        </h3>
         <p class="text-red-700 dark:text-red-300">{{ error }}</p>
       </div>
 
@@ -93,8 +116,12 @@
           class="space-y-3"
         >
           <div v-if="block.title || block.body">
-            <h2 v-if="block.title" class="text-xl font-bold text-gray-900 dark:text-white">{{ block.title }}</h2>
-            <p v-if="block.body" class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ block.body }}</p>
+            <h2 v-if="block.title" class="text-xl font-bold text-gray-900 dark:text-white">
+              {{ block.title }}
+            </h2>
+            <p v-if="block.body" class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              {{ block.body }}
+            </p>
           </div>
 
           <div v-if="block.type === 'top_video'" class="space-y-4">
@@ -112,7 +139,10 @@
             />
           </div>
 
-          <div v-else-if="block.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div
+            v-else-if="block.type === 'featured_row'"
+            class="grid grid-cols-1 sm:grid-cols-2 gap-5"
+          >
             <VideoCard
               v-for="video in block.videos"
               :key="`featured-row-${video.id}`"
@@ -125,12 +155,11 @@
             />
           </div>
 
-          <div v-else-if="block.type === 'page_banner'" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <NuxtLink
-              :to="`/${block.pageSlug}`"
-              class="block"
-              :aria-label="bannerLinkLabel(block)"
-            >
+          <div
+            v-else-if="block.type === 'page_banner'"
+            class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
+          >
+            <NuxtLink :to="`/${block.pageSlug}`" class="block" :aria-label="bannerLinkLabel(block)">
               <picture>
                 <source
                   v-if="block.mobileImageId && bannerImageUrls[block.mobileImageId]"
@@ -150,12 +179,20 @@
 
           <div v-else-if="block.type === 'category'" class="space-y-2">
             <div v-if="block.categorySection" class="flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ block.categorySection.category.name }}</h3>
-              <NuxtLink :to="`/category/${block.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ block.categorySection.category.name }}
+              </h3>
+              <NuxtLink
+                :to="`/category/${block.categorySection.category.slug}`"
+                class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              >
                 {{ strings.categoryMoreLink }}
               </NuxtLink>
             </div>
-            <div v-if="block.categorySection" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div
+              v-if="block.categorySection"
+              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+            >
               <VideoCard
                 v-for="video in block.categorySection.visible"
                 :key="`category-block-${block.id}-${video.id}`"
@@ -163,20 +200,31 @@
                 :show-description="false"
                 :show-relative-timestamp="true"
                 :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                :image-loading="videoCardImageLoading(video.id)"
+                :image-fetch-priority="videoCardImageFetchPriority(video.id)"
               />
             </div>
           </div>
-          <div v-else-if="block.type === 'category_with_side_mini'" class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <div
+            v-else-if="block.type === 'category_with_side_mini'"
+            class="grid grid-cols-1 xl:grid-cols-3 gap-5"
+          >
             <section class="xl:col-span-2 space-y-3">
               <div v-if="block.primary.categorySection" class="flex items-center justify-between">
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ block.primary.categorySection.category.name }}</h3>
-                <NuxtLink :to="`/category/${block.primary.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                  {{ block.primary.categorySection.category.name }}
+                </h3>
+                <NuxtLink
+                  :to="`/category/${block.primary.categorySection.category.slug}`"
+                  class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                >
                   {{ strings.categoryMoreLink }}
                 </NuxtLink>
               </div>
-              <div v-if="block.primary.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div
+                v-if="block.primary.categorySection"
+                class="grid grid-cols-1 sm:grid-cols-2 gap-5"
+              >
                 <VideoCard
                   v-for="video in block.primary.categorySection.visible"
                   :key="`paired-main-${block.primary.id}-${video.id}`"
@@ -184,15 +232,20 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                  :image-loading="videoCardImageLoading(video.id)"
+                  :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
             </section>
             <aside class="space-y-3">
               <div v-if="block.sideMini.categorySection" class="flex items-center justify-between">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ block.sideMini.categorySection.category.name }}</h3>
-                <NuxtLink :to="`/category/${block.sideMini.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+                  {{ block.sideMini.categorySection.category.name }}
+                </h3>
+                <NuxtLink
+                  :to="`/category/${block.sideMini.categorySection.category.slug}`"
+                  class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                >
                   {{ strings.categoryMoreLink }}
                 </NuxtLink>
               </div>
@@ -205,8 +258,8 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                  :image-loading="videoCardImageLoading(video.id)"
+                  :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
             </aside>
@@ -223,8 +276,12 @@
               class="rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-3 bg-white dark:bg-gray-900"
             >
               <div v-if="child.title || child.body">
-                <h3 v-if="child.title" class="font-semibold text-gray-900 dark:text-white">{{ child.title }}</h3>
-                <p v-if="child.body" class="text-sm text-gray-600 dark:text-gray-400">{{ child.body }}</p>
+                <h3 v-if="child.title" class="font-semibold text-gray-900 dark:text-white">
+                  {{ child.title }}
+                </h3>
+                <p v-if="child.body" class="text-sm text-gray-600 dark:text-gray-400">
+                  {{ child.body }}
+                </p>
               </div>
               <div v-if="child.type === 'top_video'" class="space-y-3">
                 <VideoCard
@@ -236,11 +293,14 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                  :image-loading="videoCardImageLoading(video.id)"
+                  :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
-              <div v-else-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                v-else-if="child.type === 'featured_row'"
+                class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+              >
                 <VideoCard
                   v-for="video in child.videos"
                   :key="`split-featured-${child.id}-${video.id}`"
@@ -248,14 +308,19 @@
                   :show-description="false"
                   :show-relative-timestamp="true"
                   :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                  :image-loading="videoCardImageLoading(video.id)"
+                  :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                 />
               </div>
               <div v-else-if="child.categorySection" class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <h4 class="font-semibold text-gray-900 dark:text-white">{{ child.categorySection.category.name }}</h4>
-                  <NuxtLink :to="`/category/${child.categorySection.category.slug}`" class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                  <h4 class="font-semibold text-gray-900 dark:text-white">
+                    {{ child.categorySection.category.name }}
+                  </h4>
+                  <NuxtLink
+                    :to="`/category/${child.categorySection.category.slug}`"
+                    class="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
                     {{ strings.categoryMoreLink }}
                   </NuxtLink>
                 </div>
@@ -267,8 +332,8 @@
                     :show-description="false"
                     :show-relative-timestamp="true"
                     :clamp-title="false"
-              :image-loading="videoCardImageLoading(video.id)"
-              :image-fetch-priority="videoCardImageFetchPriority(video.id)"
+                    :image-loading="videoCardImageLoading(video.id)"
+                    :image-fetch-priority="videoCardImageFetchPriority(video.id)"
                   />
                 </div>
               </div>
@@ -277,7 +342,10 @@
         </section>
       </div>
 
-      <div v-else-if="videos.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div
+        v-else-if="videos.length > 0"
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+      >
         <VideoCard
           v-for="video in videos"
           :key="`home-fallback-${video.id}`"
@@ -292,12 +360,21 @@
 
       <!-- Empty State -->
       <div v-else class="text-center py-20">
-        <div class="w-16 h-16 mx-auto mb-4 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center">
+        <div
+          class="w-16 h-16 mx-auto mb-4 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center"
+        >
           <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+            />
           </svg>
         </div>
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ strings.noVideosTitle }}</h3>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          {{ strings.noVideosTitle }}
+        </h3>
         <p class="text-gray-600 dark:text-gray-400">{{ strings.noVideosSubtitle }}</p>
       </div>
     </main>
@@ -305,212 +382,223 @@
 </template>
 
 <script setup lang="ts">
-import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderPageBannerBlock } from '~/composables/useHomepageLayout'
-import { buildHomepageRenderModel, orderLayoutBlocksForViewport } from '~/composables/useHomepageLayout'
-import { sizeUrl } from '~/composables/useThumbnail'
-import strings from '~/utils/strings'
-import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls'
+  import type {
+    HomepageLayoutBlock,
+    HomepagePlacementResponse,
+    HomepageRenderPageBannerBlock,
+  } from '~/composables/useHomepageLayout';
+  import {
+    buildHomepageRenderModel,
+    orderLayoutBlocksForViewport,
+  } from '~/composables/useHomepageLayout';
+  import { sizeUrl } from '~/composables/useThumbnail';
+  import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls';
+  import strings from '~/utils/strings';
 
-const { siteSettings } = useSiteSettings()
-usePageSeo(
-  computed(() => ({
-    description: siteSettings.value.siteDescription,
-    image: siteSettings.value.logoUrl || undefined,
-  })),
-)
+  const { siteSettings } = useSiteSettings();
+  usePageSeo(
+    computed(() => ({
+      description: siteSettings.value.siteDescription,
+      image: siteSettings.value.logoUrl || undefined,
+    })),
+  );
 
-// ── PWA install banner ────────────────────────────────────────────────────────
-const { $pwa } = useNuxtApp()
-const pwaBannerDismissed = ref(false)
-/** Defer until after mount so SSR HTML matches the first client paint (avoids hydration mismatch). */
-const pwaBannerReady = ref(false)
-const showPwaBanner = computed(
-  () => pwaBannerReady.value && !pwaBannerDismissed.value && !!($pwa as any)?.showInstallPrompt,
-)
-function installPwa() {
-  ;($pwa as any)?.install?.()
-  pwaBannerDismissed.value = true
-}
-function dismissPwaBanner() {
-  pwaBannerDismissed.value = true
-}
-
-const config = useRuntimeConfig()
-
-type HomePill = {
-  id: string
-  label: string
-  value: number
-  value_secondary?: number | null
-  value_mode?: 'number' | 'percentage' | 'agree_disagree' | 'graph_embed'
-  graph_embed_url?: string | null
-  graph_payload_json?: string | null
-  color: string
-  image_url?: string
-}
-
-type HomepageContentResponse = {
-  homepageConfig?: {
-    layoutBlocks?: HomepageLayoutBlock[]
+  // ── PWA install banner ────────────────────────────────────────────────────────
+  const { $pwa } = useNuxtApp();
+  const pwaBannerDismissed = ref(false);
+  /** Defer until after mount so SSR HTML matches the first client paint (avoids hydration mismatch). */
+  const pwaBannerReady = ref(false);
+  const showPwaBanner = computed(
+    () => pwaBannerReady.value && !pwaBannerDismissed.value && !!($pwa as any)?.showInstallPrompt,
+  );
+  function installPwa() {
+    ($pwa as any)?.install?.();
+    pwaBannerDismissed.value = true;
   }
-}
+  function dismissPwaBanner() {
+    pwaBannerDismissed.value = true;
+  }
 
-type PillsResponse = {
-  pills?: HomePill[]
-}
+  const config = useRuntimeConfig();
 
-const homepageContentAsync = useAsyncData('homepage-content', () =>
-  $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`),
-)
-const placementAsync = useAsyncData('homepage-placement', () =>
-  $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
-)
-const pillsAsync = useAsyncData('homepage-pills', () =>
-  $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),
-)
+  type HomePill = {
+    id: string;
+    label: string;
+    value: number;
+    value_secondary?: number | null;
+    value_mode?: 'number' | 'percentage' | 'agree_disagree' | 'graph_embed';
+    graph_embed_url?: string | null;
+    graph_payload_json?: string | null;
+    color: string;
+    image_url?: string;
+  };
 
-await Promise.all([homepageContentAsync, placementAsync, pillsAsync])
+  type HomepageContentResponse = {
+    homepageConfig?: {
+      layoutBlocks?: HomepageLayoutBlock[];
+    };
+  };
 
-const {
-  data: homepageContent,
-  pending: homepageContentPending,
-  error: homepageContentError,
-} = homepageContentAsync
+  type PillsResponse = {
+    pills?: HomePill[];
+  };
 
-const {
-  data: placementData,
-  pending: placementPending,
-  error: placementError,
-} = placementAsync
+  const homepageContentAsync = useAsyncData('homepage-content', () =>
+    $fetch<HomepageContentResponse>(`${config.public.apiUrl}/api/homepage/content`),
+  );
+  const placementAsync = useAsyncData('homepage-placement', () =>
+    $fetch<HomepagePlacementResponse>(`${config.public.apiUrl}/api/homepage/placement`),
+  );
+  const pillsAsync = useAsyncData('homepage-pills', () =>
+    $fetch<PillsResponse>(`${config.public.apiUrl}/api/pills`),
+  );
 
-const {
-  data: pillsData,
-  pending: pillsPending,
-  error: pillsError,
-} = pillsAsync
+  await Promise.all([homepageContentAsync, placementAsync, pillsAsync]);
 
-const layoutBlocks = computed(() => {
-  const blocks = homepageContent.value?.homepageConfig?.layoutBlocks
-  return Array.isArray(blocks) ? blocks : []
-})
-const placement = computed(() => placementData.value ?? null)
-const videos = computed<any[]>(() => Array.isArray(placementData.value?.videos) ? placementData.value.videos : [])
-const pills = computed(() => Array.isArray(pillsData.value?.pills) ? pillsData.value.pills : [])
-const loading = computed(() =>
-  (homepageContentPending.value || placementPending.value || pillsPending.value)
-  && !placementData.value
-  && !homepageContent.value,
-)
-const error = computed(() =>
-  homepageContentError.value?.message
-  || placementError.value?.message
-  || pillsError.value?.message
-  || null,
-)
+  const {
+    data: homepageContent,
+    pending: homepageContentPending,
+    error: homepageContentError,
+  } = homepageContentAsync;
 
-function bannerLinkLabel(block: HomepageRenderPageBannerBlock): string {
-  const title = block.title?.trim()
-  if (title) return title
-  const alt = block.alt?.trim()
-  if (alt) return alt
-  const slug = block.pageSlug?.trim()
-  if (slug) return `Go to ${slug}`
-  return 'Learn more'
-}
+  const { data: placementData, pending: placementPending, error: placementError } = placementAsync;
 
-function bannerImageAlt(block: HomepageRenderPageBannerBlock): string {
-  const alt = block.alt?.trim()
-  if (alt) return alt
-  const title = block.title?.trim()
-  if (title) return title
-  return ''
-}
+  const { data: pillsData, pending: pillsPending, error: pillsError } = pillsAsync;
 
-function formatPillValue(pill: HomePill) {
-  const mode = pill.value_mode || 'number'
-  if (mode === 'percentage') return `${pill.value}%`
-  if (mode === 'agree_disagree') return `${pill.value}/${Number(pill.value_secondary || 0)}`
-  if (mode === 'graph_embed') return 'Graph'
-  return String(pill.value)
-}
+  const layoutBlocks = computed(() => {
+    const blocks = homepageContent.value?.homepageConfig?.layoutBlocks;
+    return Array.isArray(blocks) ? blocks : [];
+  });
+  const placement = computed(() => placementData.value ?? null);
+  const videos = computed<any[]>(() =>
+    Array.isArray(placementData.value?.videos) ? placementData.value.videos : [],
+  );
+  const pills = computed(() =>
+    Array.isArray(pillsData.value?.pills) ? pillsData.value.pills : [],
+  );
+  const loading = computed(
+    () =>
+      (homepageContentPending.value || placementPending.value || pillsPending.value) &&
+      !placementData.value &&
+      !homepageContent.value,
+  );
+  const error = computed(
+    () =>
+      homepageContentError.value?.message ||
+      placementError.value?.message ||
+      pillsError.value?.message ||
+      null,
+  );
 
-const isMobileViewport = ref(false)
+  function bannerLinkLabel(block: HomepageRenderPageBannerBlock): string {
+    const title = block.title?.trim();
+    if (title) return title;
+    const alt = block.alt?.trim();
+    if (alt) return alt;
+    const slug = block.pageSlug?.trim();
+    if (slug) return `Go to ${slug}`;
+    return 'Learn more';
+  }
 
-const effectiveLayoutBlocks = computed(() =>
-  orderLayoutBlocksForViewport(layoutBlocks.value, isMobileViewport.value),
-)
+  function bannerImageAlt(block: HomepageRenderPageBannerBlock): string {
+    const alt = block.alt?.trim();
+    if (alt) return alt;
+    const title = block.title?.trim();
+    if (title) return title;
+    return '';
+  }
 
-const homepageRenderModel = computed(() =>
-  buildHomepageRenderModel({
-    videos: videos.value,
-    layoutBlocks: effectiveLayoutBlocks.value,
-    placement: placement.value,
-  }),
-)
+  function formatPillValue(pill: HomePill) {
+    const mode = pill.value_mode || 'number';
+    if (mode === 'percentage') return `${pill.value}%`;
+    if (mode === 'agree_disagree') return `${pill.value}/${Number(pill.value_secondary || 0)}`;
+    if (mode === 'graph_embed') return 'Graph';
+    return String(pill.value);
+  }
 
-/** First visible card is the mobile LCP candidate — load its thumbnail eagerly. */
-const lcpVideoId = computed(() => {
-  for (const block of homepageRenderModel.value.blockItems) {
-    if (block.type === 'top_video' && block.videos[0]?.id) return block.videos[0].id
-    if (block.type === 'featured_row' && block.videos[0]?.id) return block.videos[0].id
-    if (block.type === 'category' && block.categorySection?.visible[0]?.id) {
-      return block.categorySection.visible[0].id
-    }
-    if (block.type === 'category_with_side_mini') {
-      const primaryVideo = block.primary.categorySection?.visible[0]?.id
-      if (primaryVideo) return primaryVideo
-    }
-    if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
-      for (const child of block.children) {
-        if (child.type === 'top_video' && child.videos[0]?.id) return child.videos[0].id
-        if (child.type === 'featured_row' && child.videos[0]?.id) return child.videos[0].id
-        if (child.categorySection?.visible[0]?.id) return child.categorySection.visible[0].id
+  const isMobileViewport = ref(false);
+
+  const effectiveLayoutBlocks = computed(() =>
+    orderLayoutBlocksForViewport(layoutBlocks.value, isMobileViewport.value),
+  );
+
+  const homepageRenderModel = computed(() =>
+    buildHomepageRenderModel({
+      videos: videos.value,
+      layoutBlocks: effectiveLayoutBlocks.value,
+      placement: placement.value,
+    }),
+  );
+
+  /** First visible card is the mobile LCP candidate — load its thumbnail eagerly. */
+  const lcpVideoId = computed(() => {
+    for (const block of homepageRenderModel.value.blockItems) {
+      if (block.type === 'top_video' && block.videos[0]?.id) return block.videos[0].id;
+      if (block.type === 'featured_row' && block.videos[0]?.id) return block.videos[0].id;
+      if (block.type === 'category' && block.categorySection?.visible[0]?.id) {
+        return block.categorySection.visible[0].id;
+      }
+      if (block.type === 'category_with_side_mini') {
+        const primaryVideo = block.primary.categorySection?.visible[0]?.id;
+        if (primaryVideo) return primaryVideo;
+      }
+      if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
+        for (const child of block.children) {
+          if (child.type === 'top_video' && child.videos[0]?.id) return child.videos[0].id;
+          if (child.type === 'featured_row' && child.videos[0]?.id) return child.videos[0].id;
+          if (child.categorySection?.visible[0]?.id) return child.categorySection.visible[0].id;
+        }
       }
     }
+    return videos.value[0]?.id ?? null;
+  });
+
+  function videoCardImageLoading(videoId: string): 'lazy' | 'eager' {
+    return videoId === lcpVideoId.value ? 'eager' : 'lazy';
   }
-  return videos.value[0]?.id ?? null
-})
 
-function videoCardImageLoading(videoId: string): 'lazy' | 'eager' {
-  return videoId === lcpVideoId.value ? 'eager' : 'lazy'
-}
-
-function videoCardImageFetchPriority(videoId: string): 'high' | 'auto' {
-  return videoId === lcpVideoId.value ? 'high' : 'auto'
-}
-const bannerImageUrls = ref<Record<string, string>>({})
-
-const bannerImageIds = computed(() => {
-  const ids = new Set<string>()
-  for (const block of homepageRenderModel.value.blockItems) {
-    if (block.type !== 'page_banner') continue
-    if (block.imageId) ids.add(block.imageId)
-    if (block.mobileImageId) ids.add(block.mobileImageId)
+  function videoCardImageFetchPriority(videoId: string): 'high' | 'auto' {
+    return videoId === lcpVideoId.value ? 'high' : 'auto';
   }
-  return [...ids]
-})
+  const bannerImageUrls = ref<Record<string, string>>({});
 
-async function loadBannerImageUrls() {
-  const apiBase = String(config.public.apiUrl || '').replace(/\/$/, '')
-  const fetched = await fetchCmsMediaUrls(apiBase, bannerImageIds.value)
-  bannerImageUrls.value = { ...bannerImageUrls.value, ...fetched }
-}
+  const bannerImageIds = computed(() => {
+    const ids = new Set<string>();
+    for (const block of homepageRenderModel.value.blockItems) {
+      if (block.type !== 'page_banner') continue;
+      if (block.imageId) ids.add(block.imageId);
+      if (block.mobileImageId) ids.add(block.mobileImageId);
+    }
+    return [...ids];
+  });
 
-function updateMobileViewport() {
-  if (import.meta.client) isMobileViewport.value = window.innerWidth < 1024
-}
+  async function loadBannerImageUrls() {
+    const apiBase = String(config.public.apiUrl || '').replace(/\/$/, '');
+    const fetched = await fetchCmsMediaUrls(apiBase, bannerImageIds.value);
+    bannerImageUrls.value = { ...bannerImageUrls.value, ...fetched };
+  }
 
-onMounted(() => {
-  pwaBannerReady.value = true
-  updateMobileViewport()
-  if (import.meta.client) window.addEventListener('resize', updateMobileViewport)
-})
+  function updateMobileViewport() {
+    if (import.meta.client) isMobileViewport.value = window.innerWidth < 1024;
+  }
 
-onUnmounted(() => {
-  if (import.meta.client) window.removeEventListener('resize', updateMobileViewport)
-})
+  onMounted(() => {
+    pwaBannerReady.value = true;
+    updateMobileViewport();
+    if (import.meta.client) window.addEventListener('resize', updateMobileViewport);
+  });
 
-if (import.meta.client) {
-  watch(bannerImageIds, () => { void loadBannerImageUrls() }, { immediate: true })
-}
+  onUnmounted(() => {
+    if (import.meta.client) window.removeEventListener('resize', updateMobileViewport);
+  });
+
+  if (import.meta.client) {
+    watch(
+      bannerImageIds,
+      () => {
+        void loadBannerImageUrls();
+      },
+      { immediate: true },
+    );
+  }
 </script>

@@ -13,7 +13,11 @@
         viewBox="0 0 20 20"
         aria-hidden="true"
       >
-        <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+        <path
+          fill-rule="evenodd"
+          d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+          clip-rule="evenodd"
+        />
       </svg>
     </div>
 
@@ -35,11 +39,7 @@
       {{ strings.checkoutPremiumSubtitle }}
     </p>
 
-    <div
-      v-if="loadingPrices"
-      class="grid gap-2 mb-4"
-      :class="planGridClass"
-    >
+    <div v-if="loadingPrices" class="grid gap-2 mb-4" :class="planGridClass">
       <div
         v-for="i in 3"
         :key="i"
@@ -60,9 +60,15 @@
         >
           {{ strings.checkoutMostPopular }}
         </div>
-        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanMonthly }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('monthly')) }}</p>
-        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerMonth }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
+          {{ strings.checkoutPlanMonthly }}
+        </p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">
+          {{ formatPrice(planPrice('monthly')) }}
+        </p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">
+          {{ strings.checkoutPerMonth }}
+        </p>
       </button>
 
       <button
@@ -71,9 +77,15 @@
         :class="planButtonClass('yearly')"
         @click="selectedPlan = 'yearly'"
       >
-        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanYearly }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('yearly')) }}</p>
-        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
+          {{ strings.checkoutPlanYearly }}
+        </p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">
+          {{ formatPrice(planPrice('yearly')) }}
+        </p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">
+          {{ strings.checkoutPerYear }}
+        </p>
       </button>
 
       <button
@@ -82,9 +94,15 @@
         :class="planButtonClass('club')"
         @click="selectedPlan = 'club'"
       >
-        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">{{ strings.checkoutPlanClub }}</p>
-        <p class="text-base font-bold leading-tight" :class="planPriceClass">{{ formatPrice(planPrice('club')) }}</p>
-        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">{{ strings.checkoutPerYear }}</p>
+        <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
+          {{ strings.checkoutPlanClub }}
+        </p>
+        <p class="text-base font-bold leading-tight" :class="planPriceClass">
+          {{ formatPrice(planPrice('club')) }}
+        </p>
+        <p class="text-[10px] mt-0.5 leading-tight" :class="planSubtextClass">
+          {{ strings.checkoutPerYear }}
+        </p>
       </button>
     </div>
 
@@ -97,7 +115,10 @@
     </div>
 
     <div class="mb-3 text-left">
-      <label class="text-xs uppercase tracking-wide block mb-1" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
+      <label
+        class="text-xs uppercase tracking-wide block mb-1"
+        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+      >
         {{ strings.checkoutPromoLabel }}
       </label>
       <div class="flex flex-wrap items-center gap-2">
@@ -151,10 +172,7 @@
       </button>
     </div>
 
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn"
-      class="mb-4 text-left"
-    >
+    <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
       <StripeEmbeddedCheckout
         v-if="stripeCheckoutMounted && showStripeCheckout"
         :plan-type="selectedPlan"
@@ -189,10 +207,16 @@
               :class="moreOptionClass"
               @click="selectCardMethod"
             >
-              <p class="font-semibold" :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'">
+              <p
+                class="font-semibold"
+                :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'"
+              >
                 {{ strings.checkoutPayByCard }}
               </p>
-              <p class="text-xs mt-0.5" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'">
+              <p
+                class="text-xs mt-0.5"
+                :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
+              >
                 {{ strings.checkoutPayByCardHint }}
               </p>
             </button>
@@ -201,7 +225,10 @@
       </StripeEmbeddedCheckout>
     </div>
 
-    <p class="text-xs mt-3" :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'">
+    <p
+      class="text-xs mt-3"
+      :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+    >
       {{ checkoutBlurb }}
     </p>
     <p
@@ -210,7 +237,11 @@
       :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
     >
       {{ strings.checkoutSignInBefore }}
-      <button type="button" class="text-blue-500 dark:text-blue-400 hover:underline" @click="goToLogin">
+      <button
+        type="button"
+        class="text-blue-500 dark:text-blue-400 hover:underline"
+        @click="goToLogin"
+      >
         {{ strings.signIn }}
       </button>
     </p>
@@ -218,380 +249,394 @@
 </template>
 
 <script setup lang="ts">
-import strings from '~/utils/strings'
+  import strings from '~/utils/strings';
 
-const props = withDefaults(defineProps<{
-  /** Base path for post-login return (e.g. `/account` or `/watch/abc`). */
-  returnPath: string
-  /** When true, append `showPremium=1` to login redirect (watch page). */
-  reopenPremiumOnReturn?: boolean
-  /** Load pricing immediately (account page). When false, parent controls via `active`. */
-  active?: boolean
-  /** Use account-page styling instead of dark modal styling. */
-  embedded?: boolean
-  /** Tighter layout for the watch-page premium overlay. */
-  compact?: boolean
-}>(), {
-  reopenPremiumOnReturn: false,
-  active: true,
-  embedded: false,
-  compact: false,
-})
+  const props = withDefaults(
+    defineProps<{
+      /** Base path for post-login return (e.g. `/account` or `/watch/abc`). */
+      returnPath: string;
+      /** When true, append `showPremium=1` to login redirect (watch page). */
+      reopenPremiumOnReturn?: boolean;
+      /** Load pricing immediately (account page). When false, parent controls via `active`. */
+      active?: boolean;
+      /** Use account-page styling instead of dark modal styling. */
+      embedded?: boolean;
+      /** Tighter layout for the watch-page premium overlay. */
+      compact?: boolean;
+    }>(),
+    {
+      reopenPremiumOnReturn: false,
+      active: true,
+      embedded: false,
+      compact: false,
+    },
+  );
 
-const config = useRuntimeConfig()
-const apiUrl = config.public.apiUrl as string
-const route = useRoute()
-const { isLoggedIn, authHeader } = useAuth()
-const { startLoginFlow } = useLoginFlow()
+  const config = useRuntimeConfig();
+  const apiUrl = config.public.apiUrl as string;
+  const route = useRoute();
+  const { isLoggedIn, authHeader } = useAuth();
+  const { startLoginFlow } = useLoginFlow();
 
-type PlanType = 'monthly' | 'yearly' | 'club'
-type PaymentProvider = 'stripe' | 'legacy'
+  type PlanType = 'monthly' | 'yearly' | 'club';
+  type PaymentProvider = 'stripe' | 'legacy';
 
-interface Prices { monthly: number; yearly: number; club: number }
-
-const defaultPrices: Prices = { monthly: 6.90, yearly: 74.90, club: 109.00 }
-const prices = ref<Prices>({ ...defaultPrices })
-const legacyPrices = ref<Prices>({ ...defaultPrices })
-const enabledProviders = ref<PaymentProvider[]>(['stripe'])
-const loadingPrices = ref(false)
-const priceError = ref(false)
-const selectedPlan = ref<PlanType>('monthly')
-const legacyCheckoutStarting = ref(false)
-const walletAvailable = ref(false)
-/** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
-const walletDetectionDone = ref(false)
-const moreExpanded = ref(false)
-const cardMethodSelected = ref(false)
-const checkoutError = ref<string | null>(null)
-const promoCodeInput = ref('')
-const promoValidating = ref(false)
-const promoError = ref<string | null>(null)
-const promoApplied = ref<null | { code: string; rewardType: string }>(null)
-/** Bumped on each validatePromoCode() so in-flight responses cannot overwrite newer state. */
-let promoValidationGeneration = 0
-
-const planLabelClass = computed(() =>
-  props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
-)
-const planPriceClass = computed(() =>
-  props.embedded ? 'text-gray-900 dark:text-white' : 'text-white',
-)
-const planSubtextClass = computed(() =>
-  props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500',
-)
-
-/** Three columns by default; stack only on very narrow viewports where columns would crowd. */
-const planGridClass = computed(() =>
-  'grid-cols-3 max-[22rem]:grid-cols-1',
-)
-
-/** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
-const pendingLegacyCheckoutIntent = ref(false)
-
-const stripeCheckoutMounted = computed(() => true)
-
-const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'))
-
-const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'))
-
-const checkoutBlurb = computed(() => {
-  if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth
-  if (showLegacyCheckout.value) return strings.checkoutBlurbDefault
-  return strings.checkoutBlurbEmbedded
-})
-
-const legacyButtonClass = computed(() => {
-  if (props.embedded) {
-    return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800'
+  interface Prices {
+    monthly: number;
+    yearly: number;
+    club: number;
   }
-  return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500'
-})
 
-const legacyPlanPrice = computed(() => {
-  const plan = selectedPlan.value
-  const legacy = legacyPrices.value[plan]
-  if (Number.isFinite(legacy)) return Number(legacy)
-  return planPrice(plan)
-})
+  const defaultPrices: Prices = { monthly: 6.9, yearly: 74.9, club: 109.0 };
+  const prices = ref<Prices>({ ...defaultPrices });
+  const legacyPrices = ref<Prices>({ ...defaultPrices });
+  const enabledProviders = ref<PaymentProvider[]>(['stripe']);
+  const loadingPrices = ref(false);
+  const priceError = ref(false);
+  const selectedPlan = ref<PlanType>('monthly');
+  const legacyCheckoutStarting = ref(false);
+  const walletAvailable = ref(false);
+  /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
+  const walletDetectionDone = ref(false);
+  const moreExpanded = ref(false);
+  const cardMethodSelected = ref(false);
+  const checkoutError = ref<string | null>(null);
+  const promoCodeInput = ref('');
+  const promoValidating = ref(false);
+  const promoError = ref<string | null>(null);
+  const promoApplied = ref<null | { code: string; rewardType: string }>(null);
+  /** Bumped on each validatePromoCode() so in-flight responses cannot overwrite newer state. */
+  let promoValidationGeneration = 0;
 
-/** Apple / Google Pay above the fold (mount express until detection finishes). */
-const showWalletSurface = computed(() => {
-  if (!walletDetectionDone.value) return true
-  return walletAvailable.value
-})
+  const planLabelClass = computed(() =>
+    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400',
+  );
+  const planPriceClass = computed(() =>
+    props.embedded ? 'text-gray-900 dark:text-white' : 'text-white dark:text-white',
+  );
+  const planSubtextClass = computed(() =>
+    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400',
+  );
 
-/** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
-const showCardSurface = computed(() => {
-  if (!walletDetectionDone.value) return false
-  return moreExpanded.value && cardMethodSelected.value
-})
+  /** Three columns by default; stack only on very narrow viewports where columns would crowd. */
+  const planGridClass = computed(() => 'grid-cols-3 max-[22rem]:grid-cols-1');
 
-const showMoreToggle = computed(() => walletDetectionDone.value)
+  /** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
+  const pendingLegacyCheckoutIntent = ref(false);
 
-const moreToggleClass = computed(() => {
-  if (props.embedded) {
+  const stripeCheckoutMounted = computed(() => true);
+
+  const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'));
+
+  const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
+
+  const checkoutBlurb = computed(() => {
+    if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
+    if (showLegacyCheckout.value) return strings.checkoutBlurbDefault;
+    return strings.checkoutBlurbEmbedded;
+  });
+
+  const legacyButtonClass = computed(() => {
+    if (props.embedded) {
+      return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800';
+    }
+    return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
+  });
+
+  const legacyPlanPrice = computed(() => {
+    const plan = selectedPlan.value;
+    const legacy = legacyPrices.value[plan];
+    if (Number.isFinite(legacy)) return Number(legacy);
+    return planPrice(plan);
+  });
+
+  /** Apple / Google Pay above the fold (mount express until detection finishes). */
+  const showWalletSurface = computed(() => {
+    if (!walletDetectionDone.value) return true;
+    return walletAvailable.value;
+  });
+
+  /** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
+  const showCardSurface = computed(() => {
+    if (!walletDetectionDone.value) return false;
+    return moreExpanded.value && cardMethodSelected.value;
+  });
+
+  const showMoreToggle = computed(() => walletDetectionDone.value);
+
+  const moreToggleClass = computed(() => {
+    if (props.embedded) {
+      return moreExpanded.value
+        ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white'
+        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500';
+    }
     return moreExpanded.value
-      ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white'
-      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500'
-  }
-  return moreExpanded.value
-    ? 'border-gray-500 bg-gray-800 text-white'
-    : 'border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500 hover:text-white'
-})
+      ? 'border-gray-500 bg-gray-800 text-white'
+      : 'border-gray-600 bg-gray-800/80 text-gray-300 hover:border-gray-500 hover:text-white';
+  });
 
-const moreOptionClass = computed(() => {
-  if (props.embedded) {
+  const moreOptionClass = computed(() => {
+    if (props.embedded) {
+      return cardMethodSelected.value
+        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500';
+    }
     return cardMethodSelected.value
-      ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
-      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
+      ? 'border-blue-500 bg-blue-500/10'
+      : 'border-gray-700 bg-gray-800 hover:border-gray-500';
+  });
+
+  function onWalletAvailable(available: boolean) {
+    walletDetectionDone.value = true;
+    walletAvailable.value = available;
+    if (!available) {
+      moreExpanded.value = false;
+      cardMethodSelected.value = false;
+    }
   }
-  return cardMethodSelected.value
-    ? 'border-blue-500 bg-blue-500/10'
-    : 'border-gray-700 bg-gray-800 hover:border-gray-500'
-})
 
-function onWalletAvailable(available: boolean) {
-  walletDetectionDone.value = true
-  walletAvailable.value = available
-  if (!available) {
-    moreExpanded.value = false
-    cardMethodSelected.value = false
+  function toggleMore() {
+    moreExpanded.value = !moreExpanded.value;
+    if (!moreExpanded.value) {
+      cardMethodSelected.value = false;
+    }
   }
-}
 
-function toggleMore() {
-  moreExpanded.value = !moreExpanded.value
-  if (!moreExpanded.value) {
-    cardMethodSelected.value = false
+  function selectCardMethod() {
+    cardMethodSelected.value = true;
   }
-}
 
-function selectCardMethod() {
-  cardMethodSelected.value = true
-}
-
-function planButtonClass(plan: PlanType): string {
-  const selected = selectedPlan.value === plan
-  if (props.embedded) {
+  function planButtonClass(plan: PlanType): string {
+    const selected = selectedPlan.value === plan;
+    if (props.embedded) {
+      return selected
+        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
+        : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500';
+    }
     return selected
-      ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10'
-      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
-  }
-  return selected
-    ? 'border-blue-500 bg-blue-500/10'
-    : 'border-gray-700 bg-gray-800 hover:border-gray-500'
-}
-
-function formatPrice(amount: number | null | undefined): string {
-  if (amount == null || !Number.isFinite(amount)) return '…'
-  return `€${amount.toFixed(2)}`
-}
-
-function planPrice(plan: PlanType): number | null {
-  const value = prices.value[plan]
-  return Number.isFinite(value) ? Number(value) : null
-}
-
-function buildLoginRedirect(plan: PlanType): string {
-  const params = new URLSearchParams()
-  if (props.reopenPremiumOnReturn) params.set('showPremium', '1')
-  params.set('checkout_plan', plan)
-  params.set('checkout_provider', 'stripe')
-  const joiner = props.returnPath.includes('?') ? '&' : '?'
-  return `${props.returnPath}${joiner}${params.toString()}`
-}
-
-async function loadPrices() {
-  loadingPrices.value = true
-  priceError.value = false
-  try {
-    const res = await fetch(`${apiUrl}/api/account/pricing`)
-    if (!res.ok) {
-      priceError.value = true
-      return
-    }
-
-    const data = await res.json()
-    const fallback: Prices = {
-      monthly: Number(data.monthly ?? defaultPrices.monthly),
-      yearly: Number(data.yearly ?? defaultPrices.yearly),
-      club: Number(data.club ?? defaultPrices.club),
-    }
-
-    const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {}
-    const legacyRaw = data?.pricesByProvider?.legacy ?? {}
-    prices.value = {
-      monthly: Number(stripeRaw.monthly ?? fallback.monthly),
-      yearly: Number(stripeRaw.yearly ?? fallback.yearly),
-      club: Number(stripeRaw.club ?? fallback.club),
-    }
-    legacyPrices.value = {
-      monthly: Number(legacyRaw.monthly ?? fallback.monthly),
-      yearly: Number(legacyRaw.yearly ?? fallback.yearly),
-      club: Number(legacyRaw.club ?? fallback.club),
-    }
-
-    const providers = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
-      : ['stripe']
-    enabledProviders.value = providers.length ? providers : ['stripe']
-
-    const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => planPrice(plan) != null)
-    if (!hasVisiblePrice) {
-      priceError.value = true
-    }
-  } catch {
-    priceError.value = true
-  } finally {
-    loadingPrices.value = false
-    if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
-      pendingLegacyCheckoutIntent.value = false
-      void startLegacyCheckout()
-    }
-  }
-}
-
-async function startLegacyCheckout() {
-  checkoutError.value = null
-  if (!isLoggedIn.value) {
-    await startLoginFlow(props.returnPath)
-    return
+      ? 'border-blue-500 bg-blue-500/10'
+      : 'border-gray-700 bg-gray-800 hover:border-gray-500';
   }
 
-  legacyCheckoutStarting.value = true
-  try {
-    const res = await fetch(`${apiUrl}/api/payments/checkout`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        planType: selectedPlan.value,
-        provider: 'legacy',
-        returnPath: props.returnPath,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok || !data.checkoutUrl) {
-      checkoutError.value = data.error ?? strings.checkoutStartFailed
-      return
-    }
-    window.location.href = String(data.checkoutUrl)
-  } catch {
-    checkoutError.value = strings.networkError
-  } finally {
-    legacyCheckoutStarting.value = false
-  }
-}
-
-async function goToLogin() {
-  await startLoginFlow(props.returnPath)
-}
-
-function isStalePromoValidation(
-  generation: number,
-  planAtRequest: PlanType,
-  codeAtRequest: string,
-): boolean {
-  if (generation !== promoValidationGeneration) return true
-  if (selectedPlan.value !== planAtRequest) return true
-  if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true
-  return false
-}
-
-async function validatePromoCode() {
-  promoError.value = null
-  promoApplied.value = null
-  const code = promoCodeInput.value.trim().toUpperCase()
-  promoCodeInput.value = code
-  if (!code) return
-
-  if (!isLoggedIn.value) {
-    promoError.value = strings.checkoutPromoSignIn
-    return
+  function formatPrice(amount: number | null | undefined): string {
+    if (amount == null || !Number.isFinite(amount)) return '…';
+    return `€${amount.toFixed(2)}`;
   }
 
-  const generation = ++promoValidationGeneration
-  const planAtRequest = selectedPlan.value
+  function planPrice(plan: PlanType): number | null {
+    const value = prices.value[plan];
+    return Number.isFinite(value) ? Number(value) : null;
+  }
 
-  promoValidating.value = true
-  try {
-    const res = await fetch(`${apiUrl}/api/account/promotions/validate`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ promoCode: code, planType: planAtRequest, provider: 'stripe' }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (isStalePromoValidation(generation, planAtRequest, code)) return
-    if (!res.ok || !data?.valid) {
-      promoError.value = data?.error || strings.checkoutPromoInvalid
-      return
-    }
-    promoApplied.value = {
-      code: String(data?.promo?.code || code),
-      rewardType: String(data?.promo?.rewardType || 'free_month'),
-    }
-  } catch {
-    if (isStalePromoValidation(generation, planAtRequest, code)) return
-    promoError.value = strings.checkoutPromoValidateNetworkError
-  } finally {
-    if (generation === promoValidationGeneration) {
-      promoValidating.value = false
+  function buildLoginRedirect(plan: PlanType): string {
+    const params = new URLSearchParams();
+    if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
+    params.set('checkout_plan', plan);
+    params.set('checkout_provider', 'stripe');
+    const joiner = props.returnPath.includes('?') ? '&' : '?';
+    return `${props.returnPath}${joiner}${params.toString()}`;
+  }
+
+  async function loadPrices() {
+    loadingPrices.value = true;
+    priceError.value = false;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/pricing`);
+      if (!res.ok) {
+        priceError.value = true;
+        return;
+      }
+
+      const data = await res.json();
+      const fallback: Prices = {
+        monthly: Number(data.monthly ?? defaultPrices.monthly),
+        yearly: Number(data.yearly ?? defaultPrices.yearly),
+        club: Number(data.club ?? defaultPrices.club),
+      };
+
+      const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {};
+      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
+      prices.value = {
+        monthly: Number(stripeRaw.monthly ?? fallback.monthly),
+        yearly: Number(stripeRaw.yearly ?? fallback.yearly),
+        club: Number(stripeRaw.club ?? fallback.club),
+      };
+      legacyPrices.value = {
+        monthly: Number(legacyRaw.monthly ?? fallback.monthly),
+        yearly: Number(legacyRaw.yearly ?? fallback.yearly),
+        club: Number(legacyRaw.club ?? fallback.club),
+      };
+
+      const providers = Array.isArray(data.enabledProviders)
+        ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+        : ['stripe'];
+      enabledProviders.value = providers.length ? providers : ['stripe'];
+
+      const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some(
+        (plan) => planPrice(plan) != null,
+      );
+      if (!hasVisiblePrice) {
+        priceError.value = true;
+      }
+    } catch {
+      priceError.value = true;
+    } finally {
+      loadingPrices.value = false;
+      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
+        pendingLegacyCheckoutIntent.value = false;
+        void startLegacyCheckout();
+      }
     }
   }
-}
 
-function clearPromoCode() {
-  promoCodeInput.value = ''
-  promoApplied.value = null
-  promoError.value = null
-}
+  async function startLegacyCheckout() {
+    checkoutError.value = null;
+    if (!isLoggedIn.value) {
+      await startLoginFlow(props.returnPath);
+      return;
+    }
 
-function applyCheckoutIntentFromRoute() {
-  const q = route.query
-  const plan = q.checkout_plan
-  if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
-    selectedPlan.value = plan
-  }
-  const provider = q.checkout_provider
-  if (provider === 'legacy') {
-    if (showLegacyCheckout.value) {
-      void startLegacyCheckout()
-    } else {
-      pendingLegacyCheckoutIntent.value = true
+    legacyCheckoutStarting.value = true;
+    try {
+      const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          planType: selectedPlan.value,
+          provider: 'legacy',
+          returnPath: props.returnPath,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkoutUrl) {
+        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        return;
+      }
+      window.location.href = String(data.checkoutUrl);
+    } catch {
+      checkoutError.value = strings.networkError;
+    } finally {
+      legacyCheckoutStarting.value = false;
     }
   }
-}
 
-async function activatePanel() {
-  applyCheckoutIntentFromRoute()
-  clearPromoCode()
-  await loadPrices()
-}
-
-watch(() => props.active, (isActive) => {
-  if (isActive) activatePanel()
-}, { immediate: true })
-
-watch(selectedPlan, () => {
-  promoApplied.value = null
-  promoError.value = null
-  walletDetectionDone.value = false
-  walletAvailable.value = false
-  moreExpanded.value = false
-  cardMethodSelected.value = false
-})
-
-watch(promoCodeInput, (newInput) => {
-  const trimmed = newInput.trim()
-  const appliedCode = promoApplied.value?.code ?? ''
-  if (trimmed !== appliedCode) {
-    promoApplied.value = null
-    promoError.value = null
+  async function goToLogin() {
+    await startLoginFlow(props.returnPath);
   }
-})
 
-watch(() => route.fullPath, () => {
-  if (props.active) applyCheckoutIntentFromRoute()
-})
+  function isStalePromoValidation(
+    generation: number,
+    planAtRequest: PlanType,
+    codeAtRequest: string,
+  ): boolean {
+    if (generation !== promoValidationGeneration) return true;
+    if (selectedPlan.value !== planAtRequest) return true;
+    if (promoCodeInput.value.trim().toUpperCase() !== codeAtRequest) return true;
+    return false;
+  }
+
+  async function validatePromoCode() {
+    promoError.value = null;
+    promoApplied.value = null;
+    const code = promoCodeInput.value.trim().toUpperCase();
+    promoCodeInput.value = code;
+    if (!code) return;
+
+    if (!isLoggedIn.value) {
+      promoError.value = strings.checkoutPromoSignIn;
+      return;
+    }
+
+    const generation = ++promoValidationGeneration;
+    const planAtRequest = selectedPlan.value;
+
+    promoValidating.value = true;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/promotions/validate`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ promoCode: code, planType: planAtRequest, provider: 'stripe' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (isStalePromoValidation(generation, planAtRequest, code)) return;
+      if (!res.ok || !data?.valid) {
+        promoError.value = data?.error || strings.checkoutPromoInvalid;
+        return;
+      }
+      promoApplied.value = {
+        code: String(data?.promo?.code || code),
+        rewardType: String(data?.promo?.rewardType || 'free_month'),
+      };
+    } catch {
+      if (isStalePromoValidation(generation, planAtRequest, code)) return;
+      promoError.value = strings.checkoutPromoValidateNetworkError;
+    } finally {
+      if (generation === promoValidationGeneration) {
+        promoValidating.value = false;
+      }
+    }
+  }
+
+  function clearPromoCode() {
+    promoCodeInput.value = '';
+    promoApplied.value = null;
+    promoError.value = null;
+  }
+
+  function applyCheckoutIntentFromRoute() {
+    const q = route.query;
+    const plan = q.checkout_plan;
+    if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
+      selectedPlan.value = plan;
+    }
+    const provider = q.checkout_provider;
+    if (provider === 'legacy') {
+      if (showLegacyCheckout.value) {
+        void startLegacyCheckout();
+      } else {
+        pendingLegacyCheckoutIntent.value = true;
+      }
+    }
+  }
+
+  async function activatePanel() {
+    applyCheckoutIntentFromRoute();
+    clearPromoCode();
+    await loadPrices();
+  }
+
+  watch(
+    () => props.active,
+    (isActive) => {
+      if (isActive) activatePanel();
+    },
+    { immediate: true },
+  );
+
+  watch(selectedPlan, () => {
+    promoApplied.value = null;
+    promoError.value = null;
+    walletDetectionDone.value = false;
+    walletAvailable.value = false;
+    moreExpanded.value = false;
+    cardMethodSelected.value = false;
+  });
+
+  watch(promoCodeInput, (newInput) => {
+    const trimmed = newInput.trim();
+    const appliedCode = promoApplied.value?.code ?? '';
+    if (trimmed !== appliedCode) {
+      promoApplied.value = null;
+      promoError.value = null;
+    }
+  });
+
+  watch(
+    () => route.fullPath,
+    () => {
+      if (props.active) applyCheckoutIntentFromRoute();
+    },
+  );
 </script>

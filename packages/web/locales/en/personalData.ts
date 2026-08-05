@@ -1,4 +1,4 @@
-import type { PersonalDataPage } from '../types'
+import type { PersonalDataPage } from '../types';
 
 export const personalData: PersonalDataPage = {
   metaTitle: 'Personal data processing',
@@ -148,4 +148,4 @@ export const personalData: PersonalDataPage = {
       necessary: 'Functional — only after you acknowledge the notice',
     },
   ],
-}
+};

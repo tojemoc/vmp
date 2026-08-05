@@ -13,7 +13,9 @@
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Admin Console</h1>
-          <p class="text-gray-600 dark:text-gray-400">Homepage curation + uploader controls in one place.</p>
+          <p class="text-gray-600 dark:text-gray-400">
+            Homepage curation + uploader controls in one place.
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <span
@@ -43,7 +45,11 @@
         {{ saveMessage }}
       </div>
 
-      <div role="tablist" aria-label="Admin sections" class="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain border-b border-gray-200 px-4 dark:border-gray-800 sm:mx-0 sm:px-0 whitespace-nowrap pb-1">
+      <div
+        role="tablist"
+        aria-label="Admin sections"
+        class="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain border-b border-gray-200 px-4 dark:border-gray-800 sm:mx-0 sm:px-0 whitespace-nowrap pb-1"
+      >
         <button
           v-for="tab in adminTabs"
           :key="tab.id"
@@ -54,7 +60,9 @@
           class="px-4 py-2 text-sm font-medium -mb-px border-b-2"
           :class="activeAdminTab===tab.id ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400'"
           @click="setAdminTab(tab.id)"
-        >{{ tab.label }}</button>
+        >
+          {{ tab.label }}
+        </button>
       </div>
 
       <section class="min-w-0 space-y-8">
@@ -63,9 +71,12 @@
           role="alert"
           class="p-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40"
         >
-          <p class="text-sm font-medium text-amber-900 dark:text-amber-200">{{ orphanedFeaturedPinsWarning }}</p>
+          <p class="text-sm font-medium text-amber-900 dark:text-amber-200">
+            {{ orphanedFeaturedPinsWarning }}
+          </p>
           <p class="text-xs text-amber-800 dark:text-amber-300 mt-1">
-            Add a <span class="font-semibold">Featured row</span> block below to show pinned videos on the homepage, or unpin them above and save.
+            Add a <span class="font-semibold">Featured row</span> block below to show pinned videos
+            on the homepage, or unpin them above and save.
           </p>
         </div>
 
@@ -87,40 +98,73 @@
               class="text-left group"
               @click="openPicker(slotIndex)"
             >
-              <div class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2 ring-2 ring-transparent group-hover:ring-blue-500 transition-all">
-                <img v-if="video?.thumbnail_url" :src="video.thumbnail_url" :alt="video.title" class="w-full h-full object-cover" />
-                <div v-else class="w-full h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">Select featured video</div>
+              <div
+                class="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2 ring-2 ring-transparent group-hover:ring-blue-500 transition-all"
+              >
+                <img
+                  v-if="video?.thumbnail_url"
+                  :src="video.thumbnail_url"
+                  :alt="video.title"
+                  class="w-full h-full object-cover"
+                >
+                <div
+                  v-else
+                  class="w-full h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                >
+                  Select featured video
+                </div>
               </div>
-              <h3 class="font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1">{{ video?.title || `Slot ${slotIndex + 1}` }}</h3>
-              <p class="text-xs text-gray-600 dark:text-gray-400">{{ video?.id || 'No video selected' }}</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1">
+                {{ video?.title || `Slot ${slotIndex + 1}` }}
+              </h3>
+              <p class="text-xs text-gray-600 dark:text-gray-400">
+                {{ video?.id || 'No video selected' }}
+              </p>
             </button>
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'homepage'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <div
+          v-if="activeAdminTab === 'homepage'"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
           <div class="mb-4">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Homepage blocks</h2>
           </div>
           <AdminHomepageBlockEditor v-model="layoutBlocks" :categories="categories" />
         </div>
 
-        <div v-if="activeAdminTab === 'homepage'" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
+        <div
+          v-if="activeAdminTab === 'homepage'"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6"
+        >
           <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Live homepage preview</h2>
-            <p class="text-xs text-gray-500 dark:text-gray-400">Matches public rendering. Save applies changes.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Matches public rendering. Save applies changes.
+            </p>
           </div>
-          <div class="rounded-xl border border-gray-200 dark:border-gray-800 p-5 space-y-8 bg-gray-50/50 dark:bg-gray-950/50">
+          <div
+            class="rounded-xl border border-gray-200 dark:border-gray-800 p-5 space-y-8 bg-gray-50/50 dark:bg-gray-950/50"
+          >
             <section
               v-for="block in homepagePreviewModel.blockItems"
               :key="`preview-block-${block?.id}`"
               class="space-y-3"
             >
               <div>
-                <h3 class="text-xl font-semibold text-gray-900 dark:text-white">{{ block.title || block.type }}</h3>
-                <p v-if="block.body" class="text-sm text-gray-600 dark:text-gray-400">{{ block.body }}</p>
+                <h3 class="text-xl font-semibold text-gray-900 dark:text-white">
+                  {{ block.title || block.type }}
+                </h3>
+                <p v-if="block.body" class="text-sm text-gray-600 dark:text-gray-400">
+                  {{ block.body }}
+                </p>
               </div>
 
-              <div v-if="block.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                v-if="block.type === 'featured_row'"
+                class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+              >
                 <VideoCard
                   v-for="video in block.videos"
                   :key="`preview-featured-${video.id}`"
@@ -143,8 +187,13 @@
               </div>
 
               <div v-else-if="block.type === 'category'" class="space-y-3">
-                <p v-if="block.expandedFromHalf" class="text-xs text-amber-700 dark:text-amber-300">Expanded to full width — row partner has no published videos.</p>
-                <div v-if="block.categorySection" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <p v-if="block.expandedFromHalf" class="text-xs text-amber-700 dark:text-amber-300">
+                  Expanded to full width — row partner has no published videos.
+                </p>
+                <div
+                  v-if="block.categorySection"
+                  class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+                >
                   <VideoCard
                     v-for="video in block.categorySection.visible"
                     :key="`preview-category-video-${block.categorySection.category.id}-${video.id}`"
@@ -153,11 +202,19 @@
                     :show-relative-timestamp="true"
                   />
                 </div>
-                <p v-else class="text-xs text-gray-500 dark:text-gray-400">No category selected or no videos available.</p>
+                <p v-else class="text-xs text-gray-500 dark:text-gray-400">
+                  No category selected or no videos available.
+                </p>
               </div>
-              <div v-else-if="block.type === 'category_with_side_mini'" class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div
+                v-else-if="block.type === 'category_with_side_mini'"
+                class="grid grid-cols-1 xl:grid-cols-3 gap-4"
+              >
                 <div class="xl:col-span-2 space-y-3">
-                  <div v-if="block.primary.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div
+                    v-if="block.primary.categorySection"
+                    class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                  >
                     <VideoCard
                       v-for="video in block.primary.categorySection.visible"
                       :key="`preview-paired-main-${block.primary.id}-${video.id}`"
@@ -168,8 +225,13 @@
                   </div>
                 </div>
                 <div class="space-y-3">
-                  <div v-if="block.sideMini.categorySection" class="flex items-center justify-between">
-                    <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ block.sideMini.categorySection.category.name }}</h4>
+                  <div
+                    v-if="block.sideMini.categorySection"
+                    class="flex items-center justify-between"
+                  >
+                    <h4 class="text-base font-semibold text-gray-900 dark:text-white">
+                      {{ block.sideMini.categorySection.category.name }}
+                    </h4>
                   </div>
                   <div v-if="block.sideMini.categorySection" class="space-y-3">
                     <VideoCard
@@ -184,15 +246,26 @@
                 </div>
               </div>
 
-              <div v-else-if="block.type === 'split_horizontal' || block.type === 'split_vertical'" class="grid gap-4" :class="block.type === 'split_horizontal' ? 'md:grid-cols-2' : 'grid-cols-1'">
+              <div
+                v-else-if="block.type === 'split_horizontal' || block.type === 'split_vertical'"
+                class="grid gap-4"
+                :class="block.type === 'split_horizontal' ? 'md:grid-cols-2' : 'grid-cols-1'"
+              >
                 <section
                   v-for="child in block.children"
                   :key="`preview-split-child-${child.id}`"
                   class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-3"
                 >
-                  <h4 class="font-semibold text-gray-900 dark:text-white">{{ child.title || child.type }}</h4>
-                  <p v-if="child.body" class="text-sm text-gray-600 dark:text-gray-400">{{ child.body }}</p>
-                  <div v-if="child.type === 'featured_row'" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <h4 class="font-semibold text-gray-900 dark:text-white">
+                    {{ child.title || child.type }}
+                  </h4>
+                  <p v-if="child.body" class="text-sm text-gray-600 dark:text-gray-400">
+                    {{ child.body }}
+                  </p>
+                  <div
+                    v-if="child.type === 'featured_row'"
+                    class="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                  >
                     <VideoCard
                       v-for="video in child.videos"
                       :key="`preview-split-featured-${child.id}-${video.id}`"
@@ -211,7 +284,10 @@
                       :show-relative-timestamp="true"
                     />
                   </div>
-                  <div v-else-if="child.categorySection" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div
+                    v-else-if="child.categorySection"
+                    class="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                  >
                     <VideoCard
                       v-for="video in child.categorySection.visible"
                       :key="`preview-split-category-video-${child.id}-${video.id}`"
@@ -222,13 +298,20 @@
                   </div>
                 </section>
               </div>
-              <p v-else class="text-xs text-gray-500 dark:text-gray-400">No videos assigned to this block.</p>
+              <p v-else class="text-xs text-gray-500 dark:text-gray-400">
+                No videos assigned to this block.
+              </p>
             </section>
           </div>
         </div>
 
         <!-- Video Management -->
-        <div v-if="activeAdminTab === 'videos'" id="videos-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
+        <div
+          v-if="activeAdminTab === 'videos'"
+          id="videos-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Video management</h2>
             <button
@@ -239,28 +322,64 @@
               Create new livestream
             </button>
           </div>
-          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Set preview lock per video: 0s means premium-only access, while matching full duration unlocks the full video.</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Set preview lock per video: 0s means premium-only access, while matching full duration
+            unlocks the full video.
+          </p>
           <div>
             <div v-if="videosLoading" class="space-y-3">
-              <div v-for="n in 4" :key="n" class="h-14 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
+              <div
+                v-for="n in 4"
+                :key="n"
+                class="h-14 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse"
+              />
             </div>
-            <div v-else-if="!chronologicallySortedUploads.length" class="text-sm text-gray-500 dark:text-gray-400 py-4">
+            <div
+              v-else-if="!chronologicallySortedUploads.length"
+              class="text-sm text-gray-500 dark:text-gray-400 py-4"
+            >
               No videos found. Upload via rclone — they'll appear here as drafts.
             </div>
             <div v-else class="w-full min-w-0 overflow-x-auto overscroll-x-contain">
               <table class="min-w-[920px] w-full text-sm">
                 <thead>
-                  <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium w-16">Thumb</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Title</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Status</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium w-[1%] whitespace-nowrap">Category</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Duration</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Preview lock</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Views</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Uploaded</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">Notifications</th>
-                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 font-medium">Actions</th>
+                  <tr
+                    class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                  >
+                    <th
+                      class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium w-16"
+                    >
+                      Thumb
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Title
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Status
+                    </th>
+                    <th
+                      class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium w-[1%] whitespace-nowrap"
+                    >
+                      Category
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Duration
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Preview lock
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Views
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Uploaded
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pr-4 font-medium">
+                      Notifications
+                    </th>
+                    <th class="sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 font-medium">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -283,16 +402,25 @@
                           height="36"
                           decoding="async"
                           class="absolute inset-0 w-full h-full object-cover"
-                        />
+                        >
                         <!-- Placeholder with upload icon -->
                         <div
                           v-else
                           class="absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-blue-500 transition-colors"
                         >
-                          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round"
+                          <svg
+                            class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
                               d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775
-                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095" />
+                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095"
+                            />
                           </svg>
                         </div>
                         <!-- Hover replace overlay (only when thumbnail exists) -->
@@ -301,10 +429,19 @@
                           class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all
                                  flex items-center justify-center opacity-0 group-hover:opacity-100"
                         >
-                          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round"
+                          <svg
+                            class="w-5 h-5 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
                               d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775
-                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095" />
+                                 5.25 5.25 0 0 1 10.338-2.32 3.75 3.75 0 0 1 3.571 5.095"
+                            />
                           </svg>
                         </div>
                         <!-- Uploading spinner overlay -->
@@ -312,10 +449,16 @@
                           v-if="uploadingFor === video.id"
                           class="absolute inset-0 bg-black/60 flex items-center justify-center"
                         >
-                          <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                          <div
+                            class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+                          ></div>
                         </div>
                         <!-- R2 missing warning -->
-                        <span v-if="video.r2_exists === false" class="absolute inset-0 flex items-center justify-center bg-red-900/60 text-white text-xs">⚠</span>
+                        <span
+                          v-if="video.r2_exists === false"
+                          class="absolute inset-0 flex items-center justify-center bg-red-900/60 text-white text-xs"
+                          >⚠</span
+                        >
                       </label>
                       <input
                         :id="`thumb-input-${video.id}`"
@@ -325,7 +468,7 @@
                         @focus="thumbInputFocused = video.id"
                         @blur="thumbInputFocused = null"
                         @change="(e) => handleThumbnailSelect(e, video)"
-                      />
+                      >
                     </td>
                     <td class="py-3 pr-4 max-w-[12rem]">
                       <div v-if="editingTitle?.id === video.id" class="flex items-center gap-1">
@@ -337,24 +480,43 @@
                           @keydown.enter="saveTitleEdit(video)"
                           @keydown.escape="editingTitle = null"
                           @blur="saveTitleEdit(video)"
-                        />
+                        >
                       </div>
                       <div v-else class="group/title flex min-w-0 items-center gap-1">
-                        <p class="min-w-0 font-medium text-gray-900 dark:text-white line-clamp-2 break-words">{{ video.title }}</p>
+                        <p
+                          class="min-w-0 font-medium text-gray-900 dark:text-white line-clamp-2 break-words"
+                        >
+                          {{ video.title }}
+                        </p>
                         <button
                           class="opacity-0 group-hover/title:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity"
                           title="Rename"
                           @click="startTitleEdit(video)"
                         >
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          <svg
+                            class="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
                           </svg>
                         </button>
                       </div>
-                      <p class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ video.id }}</p>
+                      <p class="text-xs text-gray-400 dark:text-gray-500 truncate">
+                        {{ video.id }}
+                      </p>
                       <!-- Vanity slug editor -->
                       <div class="mt-0.5 group/slug flex items-center gap-1 min-w-0">
-                        <div v-if="editingSlug?.id === video.id" class="flex items-center gap-1 w-full">
+                        <div
+                          v-if="editingSlug?.id === video.id"
+                          class="flex items-center gap-1 w-full"
+                        >
                           <input
                             ref="slugInputEl"
                             v-model="editingSlug.value"
@@ -364,17 +526,31 @@
                             @keydown.enter="saveSlugEdit(video)"
                             @keydown.escape="editingSlug = null"
                             @blur="saveSlugEdit(video)"
-                          />
+                          >
                         </div>
                         <template v-else>
-                          <span class="text-xs truncate font-mono" :class="video.slug ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-600'">{{ video.slug || '—' }}</span>
+                          <span
+                            class="text-xs truncate font-mono"
+                            :class="video.slug ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-600'"
+                            >{{ video.slug || '—' }}</span
+                          >
                           <button
                             class="opacity-0 group-hover/slug:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity flex-shrink-0"
                             title="Edit slug"
                             @click="startSlugEdit(video)"
                           >
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            <svg
+                              class="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
                             </svg>
                           </button>
                           <a
@@ -384,15 +560,28 @@
                             class="opacity-0 group-hover/slug:opacity-100 p-0.5 text-gray-400 hover:text-blue-500 transition-opacity flex-shrink-0"
                             title="Open watch page"
                           >
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            <svg
+                              class="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.5"
+                                d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
+                              />
                             </svg>
                           </a>
                         </template>
                       </div>
                       <!-- Legacy slug redirect editor -->
                       <div class="mt-0.5 group/legacy flex items-center gap-1 min-w-0">
-                        <div v-if="editingLegacySlug?.id === video.id" class="flex items-center gap-1 w-full">
+                        <div
+                          v-if="editingLegacySlug?.id === video.id"
+                          class="flex items-center gap-1 w-full"
+                        >
                           <input
                             ref="legacySlugInputEl"
                             v-model="editingLegacySlug.value"
@@ -402,10 +591,13 @@
                             @keydown.enter="saveLegacySlugEdit(video)"
                             @keydown.escape="editingLegacySlug = null"
                             @blur="saveLegacySlugEdit(video)"
-                          />
+                          >
                         </div>
                         <template v-else>
-                          <span class="text-[11px] truncate font-mono" :class="video.legacy_slug ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-600'">
+                          <span
+                            class="text-[11px] truncate font-mono"
+                            :class="video.legacy_slug ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-600'"
+                          >
                             legacy: {{ video.legacy_slug || '—' }}
                           </span>
                           <button
@@ -413,8 +605,18 @@
                             title="Edit legacy slug redirect"
                             @click="startLegacySlugEdit(video)"
                           >
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            <svg
+                              class="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
                             </svg>
                           </button>
                           <a
@@ -424,29 +626,59 @@
                             class="opacity-0 group-hover/legacy:opacity-100 p-0.5 text-gray-400 hover:text-amber-500 transition-opacity flex-shrink-0"
                             title="Open legacy URL"
                           >
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            <svg
+                              class="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="1.5"
+                                d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
+                              />
                             </svg>
                           </a>
                         </template>
                       </div>
                       <!-- Description summary -->
                       <div class="mt-1 flex items-start gap-2 min-w-0">
-                        <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 min-w-0">{{ video.description || '—' }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 min-w-0">
+                          {{ video.description || '—' }}
+                        </p>
                         <button
                           type="button"
                           class="p-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity flex-shrink-0"
                           title="Edit description"
                           @click="openDescriptionModal(video)"
                         >
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          <svg
+                            class="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
                           </svg>
                         </button>
                       </div>
                       <div class="mt-1 flex flex-wrap gap-1">
-                        <span v-if="video.livestream_provider" class="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 px-2 py-0.5 text-[10px] font-semibold">🔴 Live</span>
-                        <span v-if="video.r2_exists === false && !video.livestream_provider" class="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-2 py-0.5 text-[10px] font-semibold">⚠ R2 missing</span>
+                        <span
+                          v-if="video.livestream_provider"
+                          class="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 px-2 py-0.5 text-[10px] font-semibold"
+                          >🔴 Live</span
+                        >
+                        <span
+                          v-if="video.r2_exists === false && !video.livestream_provider"
+                          class="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 px-2 py-0.5 text-[10px] font-semibold"
+                          >⚠ R2 missing</span
+                        >
                       </div>
                     </td>
                     <td class="py-3 pr-4">
@@ -457,13 +689,23 @@
                         >
                           {{ statusBadgeLabel(video) }}
                         </span>
-                        <span v-if="video.livestream_provider" class="block text-[11px] text-purple-600 dark:text-purple-300">
+                        <span
+                          v-if="video.livestream_provider"
+                          class="block text-[11px] text-purple-600 dark:text-purple-300"
+                        >
                           stream: {{ video.livestream_status || 'draft' }}
                         </span>
-                        <span v-if="video.livestream_moq_endpoint" class="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-[18rem]" :title="video.livestream_moq_endpoint">
+                        <span
+                          v-if="video.livestream_moq_endpoint"
+                          class="block text-[11px] text-gray-600 dark:text-gray-300 truncate max-w-[18rem]"
+                          :title="video.livestream_moq_endpoint"
+                        >
                           MoQ endpoint: {{ video.livestream_moq_endpoint }}
                         </span>
-                        <span v-if="video.livestream_moq_broadcast" class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono">
+                        <span
+                          v-if="video.livestream_moq_broadcast"
+                          class="block text-[11px] text-gray-600 dark:text-gray-300 font-mono"
+                        >
                           MoQ broadcast: {{ video.livestream_moq_broadcast }}
                         </span>
                       </div>
@@ -493,14 +735,21 @@
                           :max="getActualDuration(video)"
                           :disabled="Boolean(video.livestream_provider)"
                           class="w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-                        />
-                        <button class="text-xs text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap" @click="previewLockByVideoId[video.id] = getActualDuration(video)">Unlock full</button>
+                        >
+                        <button
+                          class="text-xs text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
+                          @click="previewLockByVideoId[video.id] = getActualDuration(video)"
+                        >
+                          Unlock full
+                        </button>
                       </div>
                     </td>
                     <td class="py-3 pr-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                       {{ Number(video.total_views || 0).toLocaleString() }}
                     </td>
-                    <td class="py-3 pr-4 text-gray-600 dark:text-gray-400 align-top whitespace-nowrap">
+                    <td
+                      class="py-3 pr-4 text-gray-600 dark:text-gray-400 align-top whitespace-nowrap"
+                    >
                       {{ formatDateTime(video.upload_date) }}
                     </td>
                     <td class="py-3 pr-4">
@@ -512,14 +761,17 @@
                         @click="sendNotification(video)"
                       >
                         <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a2 2 0 002-2H8a2 2 0 002 2z" />
+                          <path
+                            d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a2 2 0 002-2H8a2 2 0 002 2z"
+                          />
                         </svg>
                         {{ notifying[video.id] ? 'Sending…' : 'Notify' }}
                       </button>
                       <span
                         v-else-if="video.publish_status === 'published' && isVideoNotified(video)"
                         class="text-xs font-semibold text-emerald-600 dark:text-emerald-300"
-                      >Notified</span>
+                        >Notified</span
+                      >
                       <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
                     </td>
                     <td class="py-3">
@@ -529,31 +781,41 @@
                           class="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50"
                           :disabled="statusUpdating[video.id]"
                           @click="updateVideoStatus(video, 'published', null)"
-                        >Publish</button>
+                        >
+                          Publish
+                        </button>
                         <button
                           type="button"
                           class="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-50"
                           :disabled="statusUpdating[video.id]"
                           @click="openScheduleModal(video)"
-                        >Schedule</button>
+                        >
+                          Schedule
+                        </button>
                         <button
                           v-if="video.publish_status !== 'draft'"
                           class="px-2 py-1 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-medium disabled:opacity-50"
                           :disabled="statusUpdating[video.id]"
                           @click="openConfirmModal(video, 'revert_to_draft')"
-                        >Revert to draft</button>
+                        >
+                          Revert to draft
+                        </button>
                         <button
                           v-if="video.publish_status === 'published'"
                           class="px-2 py-1 text-xs rounded bg-purple-600 hover:bg-purple-700 text-white font-medium"
                           title="Swap this published video with a draft"
                           @click="openSwapModal(video)"
-                        >Swap</button>
+                        >
+                          Swap
+                        </button>
                         <button
                           class="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50"
                           :disabled="trashing[video.id] || statusUpdating[video.id]"
                           :title="`Permanently delete ${video.title} from D1 and R2`"
                           @click="openConfirmModal(video, 'trash')"
-                        >{{ trashing[video.id] ? 'Deleting…' : 'Trash' }}</button>
+                        >
+                          {{ trashing[video.id] ? 'Deleting…' : 'Trash' }}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -561,17 +823,28 @@
               </table>
             </div>
           </div>
-
         </div>
 
-
-        <div v-if="activeAdminTab === 'categories'" id="categories-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
+        <div
+          v-if="activeAdminTab === 'categories'"
+          id="categories-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4"
+        >
           <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Category management</h2>
-            <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="loadCategories">Refresh</button>
+            <button
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm"
+              @click="loadCategories"
+            >
+              Refresh
+            </button>
           </div>
 
-          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+          <div
+            v-if="!isAdmin"
+            class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          >
             Only admins and super_admin can create, update, or delete categories.
           </div>
 
@@ -584,20 +857,49 @@
               + New category
             </button>
 
-            <div v-if="categoryCreateExpanded" class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+            <div
+              v-if="categoryCreateExpanded"
+              class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3"
+            >
               <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <input v-model="categoryForm.name" type="text" placeholder="Name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <input v-model="categoryForm.slug" type="text" placeholder="slug-name" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <input v-model.number="categoryForm.sortOrder" type="number" placeholder="Sort order" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                <select v-model="categoryForm.direction" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                <input
+                  v-model="categoryForm.name"
+                  type="text"
+                  placeholder="Name"
+                  class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
+                <input
+                  v-model="categoryForm.slug"
+                  type="text"
+                  placeholder="slug-name"
+                  class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
+                <input
+                  v-model.number="categoryForm.sortOrder"
+                  type="number"
+                  placeholder="Sort order"
+                  class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
+                <select
+                  v-model="categoryForm.direction"
+                  class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
                   <option value="desc">desc</option>
                   <option value="asc">asc</option>
                 </select>
               </div>
-              <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createCategory">Create category</button>
+              <button
+                class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+                @click="createCategory"
+              >
+                Create category
+              </button>
             </div>
 
-            <p class="text-xs text-gray-500 dark:text-gray-400">Ordering rule: categories with <code>sort_order &lt;= 0</code> are P0 and render before all standard categories. Drag rows to reorder.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Ordering rule: categories with <code>sort_order &lt;= 0</code> are P0 and render
+              before all standard categories. Drag rows to reorder.
+            </p>
 
             <div class="space-y-2">
               <div
@@ -610,13 +912,26 @@
                 @drop="onCategoryDrop(categoryIndex)"
               >
                 <span class="cursor-move text-gray-400" title="Drag to reorder">⠿</span>
-                <span class="font-medium text-gray-900 dark:text-white min-w-[8rem]">{{ category.name }}</span>
-                <span class="text-xs font-mono text-gray-500 dark:text-gray-400">{{ category.slug }}</span>
-                <span class="px-2 py-0.5 rounded-full text-xs" :class="category.sort_order <= 0 ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'">
+                <span class="font-medium text-gray-900 dark:text-white min-w-[8rem]"
+                  >{{ category.name }}</span
+                >
+                <span class="text-xs font-mono text-gray-500 dark:text-gray-400"
+                  >{{ category.slug }}</span
+                >
+                <span
+                  class="px-2 py-0.5 rounded-full text-xs"
+                  :class="category.sort_order <= 0 ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'"
+                >
                   {{ category.sort_order <= 0 ? 'P0' : `#${category.sort_order}` }}
                 </span>
-                <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ category.direction }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ category.video_count ?? 0 }} videos</span>
+                <span
+                  class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >{{ category.direction }}</span
+                >
+                <span class="text-xs text-gray-500 dark:text-gray-400"
+                  >{{ category.video_count ?? 0 }}
+                  videos</span
+                >
                 <div class="ml-auto flex flex-wrap items-center gap-1">
                   <button
                     type="button"
@@ -636,7 +951,13 @@
                   >
                     Move down
                   </button>
-                  <button type="button" class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800" @click="openCategoryDrawer(category)">Edit</button>
+                  <button
+                    type="button"
+                    class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    @click="openCategoryDrawer(category)"
+                  >
+                    Edit
+                  </button>
                 </div>
               </div>
             </div>
@@ -652,18 +973,36 @@
           </template>
         </div>
 
-        <div v-if="activeAdminTab === 'pills'" id="pills-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
+        <div
+          v-if="activeAdminTab === 'pills'"
+          id="pills-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5"
+        >
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Pills management</h2>
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">External API key</h3>
             <p class="text-sm text-gray-600 dark:text-gray-400">
-              Current key: <span class="font-mono">{{ pillsApiKeyMeta.maskedKey || 'not set' }}</span>
-              <span v-if="pillsApiKeyMeta.managedByEnv" class="ml-2 text-amber-600 dark:text-amber-400">(managed by environment secret)</span>
+              Current key:
+              <span class="font-mono">{{ pillsApiKeyMeta.maskedKey || 'not set' }}</span>
+              <span
+                v-if="pillsApiKeyMeta.managedByEnv"
+                class="ml-2 text-amber-600 dark:text-amber-400"
+                >(managed by environment secret)</span
+              >
             </p>
-            <details class="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/50">
-              <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white">API reference</summary>
-              <pre class="px-3 pb-3 text-xs overflow-x-auto text-gray-800 dark:text-gray-200 font-mono whitespace-pre-wrap"><code>POST /api/pills/update
+            <details
+              class="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950/50"
+            >
+              <summary
+                class="cursor-pointer px-3 py-2 text-sm font-semibold text-gray-900 dark:text-white"
+              >
+                API reference
+              </summary>
+              <pre
+                class="px-3 pb-3 text-xs overflow-x-auto text-gray-800 dark:text-gray-200 font-mono whitespace-pre-wrap"
+              ><code>POST /api/pills/update
 Header: x-api-key: &lt;your-key&gt;
 Header: Content-Type: application/json
 
@@ -691,95 +1030,286 @@ Response 401: invalid or missing x-api-key
 Response 429: rate limit exceeded — retry after the Retry-After header value (seconds)</code></pre>
             </details>
             <div v-if="!pillsApiKeyMeta.managedByEnv" class="flex flex-wrap gap-2">
-              <input v-model="pillsApiKey" type="text" placeholder="Enter new API key" class="min-w-[18rem] px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="savePillsApiKey">Save API key</button>
+              <input
+                v-model="pillsApiKey"
+                type="text"
+                placeholder="Enter new API key"
+                class="min-w-[18rem] px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <button
+                class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+                @click="savePillsApiKey"
+              >
+                Save API key
+              </button>
             </div>
           </div>
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">Create pill</h3>
             <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input v-model="newPill.label" type="text" placeholder="Label" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input v-model.number="newPill.value" type="number" placeholder="Value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <select v-model="newPill.valueMode" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              <input
+                v-model="newPill.label"
+                type="text"
+                placeholder="Label"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                v-model.number="newPill.value"
+                type="number"
+                placeholder="Value"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <select
+                v-model="newPill.valueMode"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
                 <option value="number">Number</option>
                 <option value="percentage">Percentage</option>
                 <option value="agree_disagree">Agree/Disagree</option>
                 <option value="graph_embed">Graph/Embed</option>
               </select>
-              <input v-model="newPill.color" type="text" placeholder="#2563eb" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+              <input
+                v-model="newPill.color"
+                type="text"
+                placeholder="#2563eb"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
             </div>
-            <div v-if="newPill.valueMode === 'agree_disagree'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <input v-model="newPill.valueSecondary" type="number" placeholder="Disagree value" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+            <div
+              v-if="newPill.valueMode === 'agree_disagree'"
+              class="grid grid-cols-1 md:grid-cols-2 gap-2"
+            >
+              <input
+                v-model="newPill.valueSecondary"
+                type="number"
+                placeholder="Disagree value"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
             </div>
-            <div v-if="newPill.valueMode === 'graph_embed'" class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <input v-model="newPill.graphEmbedUrl" type="url" placeholder="Flourish/embed URL" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <textarea v-model="newPill.graphPayloadJson" rows="2" placeholder='{"series":[...]}' class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
+            <div
+              v-if="newPill.valueMode === 'graph_embed'"
+              class="grid grid-cols-1 md:grid-cols-2 gap-2"
+            >
+              <input
+                v-model="newPill.graphEmbedUrl"
+                type="url"
+                placeholder="Flourish/embed URL"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <textarea
+                v-model="newPill.graphPayloadJson"
+                rows="2"
+                placeholder='{"series":[...]}'
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+              />
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input v-model="newPill.imageUrl" type="url" placeholder="Image URL (optional)" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input type="file" accept="image/*" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200" @change="uploadPillImage($event, null)" />
-              <button class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="createPill">Create</button>
+              <input
+                v-model="newPill.imageUrl"
+                type="url"
+                placeholder="Image URL (optional)"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                type="file"
+                accept="image/*"
+                class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200"
+                @change="uploadPillImage($event, null)"
+              >
+              <button
+                class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+                @click="createPill"
+              >
+                Create
+              </button>
             </div>
           </div>
 
           <div class="space-y-2">
-            <div v-for="(pill, idx) in adminPills" :key="pill.id" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
-              <input v-model="pill.label" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input v-model.number="pill.value" type="number" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <select v-model="pill.value_mode" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+            <div
+              v-for="(pill, idx) in adminPills"
+              :key="pill.id"
+              class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-2 gap-2 items-start"
+            >
+              <input
+                v-model="pill.label"
+                type="text"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                v-model.number="pill.value"
+                type="number"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <select
+                v-model="pill.value_mode"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
                 <option value="number">Number</option>
                 <option value="percentage">Percentage</option>
                 <option value="agree_disagree">Agree/Disagree</option>
                 <option value="graph_embed">Graph/Embed</option>
               </select>
-              <input v-if="pill.value_mode === 'agree_disagree'" v-model.number="pill.value_secondary" type="number" placeholder="Secondary value" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_embed_url" type="url" placeholder="Embed URL" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <textarea v-if="pill.value_mode === 'graph_embed'" v-model="pill.graph_payload_json" rows="2" placeholder="Graph payload JSON" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-              <input v-model="pill.color" type="text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input v-model="pill.image_url" type="url" placeholder="Image URL (optional)" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-              <input type="file" accept="image/*" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200" @change="uploadPillImage($event, pill)" />
+              <input
+                v-if="pill.value_mode === 'agree_disagree'"
+                v-model.number="pill.value_secondary"
+                type="number"
+                placeholder="Secondary value"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                v-if="pill.value_mode === 'graph_embed'"
+                v-model="pill.graph_embed_url"
+                type="url"
+                placeholder="Embed URL"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <textarea
+                v-if="pill.value_mode === 'graph_embed'"
+                v-model="pill.graph_payload_json"
+                rows="2"
+                placeholder="Graph payload JSON"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+              />
+              <input
+                v-model="pill.color"
+                type="text"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                v-model="pill.image_url"
+                type="url"
+                placeholder="Image URL (optional)"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+              <input
+                type="file"
+                accept="image/*"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:text-gray-700 dark:file:bg-gray-800 dark:file:text-gray-200"
+                @change="uploadPillImage($event, pill)"
+              >
               <div class="flex gap-2">
-                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===0" @click="movePill(idx, -1)">↑</button>
-                <button class="px-2 py-1 rounded border text-xs" :disabled="idx===adminPills.length-1" @click="movePill(idx, 1)">↓</button>
-                <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs" @click="savePill(pill)">Save</button>
-                <button class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs" @click="deletePill(pill.id)">Delete</button>
+                <button
+                  class="px-2 py-1 rounded border text-xs"
+                  :disabled="idx===0"
+                  @click="movePill(idx, -1)"
+                >
+                  ↑
+                </button>
+                <button
+                  class="px-2 py-1 rounded border text-xs"
+                  :disabled="idx===adminPills.length-1"
+                  @click="movePill(idx, 1)"
+                >
+                  ↓
+                </button>
+                <button
+                  class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                  @click="savePill(pill)"
+                >
+                  Save
+                </button>
+                <button
+                  class="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs"
+                  @click="deletePill(pill.id)"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'notifications'" id="notifications-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3">
+        <div
+          v-if="activeAdminTab === 'notifications'"
+          id="notifications-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-3"
+        >
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Notifications</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Only published videos that have not been notified yet are listed below.</p>
-          <div v-for="video in pendingNotificationVideos" :key="`notify-${video.id}`" class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            Only published videos that have not been notified yet are listed below.
+          </p>
+          <div
+            v-for="video in pendingNotificationVideos"
+            :key="`notify-${video.id}`"
+            class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2"
+          >
             <p class="text-sm text-gray-800 dark:text-gray-200 truncate pr-4">{{ video.title }}</p>
-            <button class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white" :disabled="notifying[video.id]" @click="sendNotification(video)">Notify</button>
+            <button
+              class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white"
+              :disabled="notifying[video.id]"
+              @click="sendNotification(video)"
+            >
+              Notify
+            </button>
           </div>
-          <p v-if="!pendingNotificationVideos.length" class="text-xs text-gray-500 dark:text-gray-400">No pending notifications.</p>
-          <div v-if="pushCampaignFunnel" class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 space-y-2">
-            <h3 class="font-semibold text-gray-900 dark:text-white">Latest push campaign — {{ pushCampaignFunnel.videoTitle }}</h3>
-            <p class="text-xs text-gray-600 dark:text-gray-400">Campaign {{ pushCampaignFunnel.campaignId }}</p>
-            <p v-if="pushCampaignFunnelError" class="text-xs text-red-700 dark:text-red-300">{{ pushCampaignFunnelError }}</p>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-800 dark:text-gray-200">
+          <p
+            v-if="!pendingNotificationVideos.length"
+            class="text-xs text-gray-500 dark:text-gray-400"
+          >
+            No pending notifications.
+          </p>
+          <div
+            v-if="pushCampaignFunnel"
+            class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-4 space-y-2"
+          >
+            <h3 class="font-semibold text-gray-900 dark:text-white">
+              Latest push campaign — {{ pushCampaignFunnel.videoTitle }}
+            </h3>
+            <p class="text-xs text-gray-600 dark:text-gray-400">
+              Campaign {{ pushCampaignFunnel.campaignId }}
+            </p>
+            <p v-if="pushCampaignFunnelError" class="text-xs text-red-700 dark:text-red-300">
+              {{ pushCampaignFunnelError }}
+            </p>
+            <div
+              class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-800 dark:text-gray-200"
+            >
               <p>Sent: {{ pushCampaignFunnel.sent }}</p>
-              <p>Clicks: {{ pushCampaignFunnel.clicks }} ({{ pushCampaignFunnel.clickRatePercent }}%)</p>
+              <p>
+                Clicks: {{ pushCampaignFunnel.clicks }} ({{ pushCampaignFunnel.clickRatePercent }}%)
+              </p>
               <p>Watch sessions: {{ pushCampaignFunnel.watchSessions }}</p>
               <p>Completion: {{ pushCampaignFunnel.completionRatePercent }}%</p>
             </div>
-            <button type="button" class="text-xs text-blue-700 dark:text-blue-300 hover:underline" @click="loadPushCampaignFunnel(pushCampaignFunnel.campaignId, pushCampaignFunnel.videoTitle)">Refresh funnel</button>
+            <button
+              type="button"
+              class="text-xs text-blue-700 dark:text-blue-300 hover:underline"
+              @click="loadPushCampaignFunnel(pushCampaignFunnel.campaignId, pushCampaignFunnel.videoTitle)"
+            >
+              Refresh funnel
+            </button>
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'newsletter'" id="newsletter-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.
+        <div
+          v-if="activeAdminTab === 'newsletter'"
+          id="newsletter-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
+          <div
+            v-if="!isAdmin"
+            class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          >
+            Only site administrators can configure Brevo and send newsletter campaigns. Editors can
+            use other admin tabs.
           </div>
           <AdminNewsletterPanel v-else />
         </div>
 
-        <div v-if="activeAdminTab === 'pages'" id="pages-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+        <div
+          v-if="activeAdminTab === 'pages'"
+          id="pages-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
+          <div
+            v-if="!isAdmin"
+            class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          >
             Only site administrators can manage CMS pages.
           </div>
           <ClientOnly v-else>
@@ -790,23 +1320,36 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </ClientOnly>
         </div>
 
-        <div v-if="activeAdminTab === 'users'" id="users-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4">
+        <div
+          v-if="activeAdminTab === 'users'"
+          id="users-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-4"
+        >
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Users and roles</h2>
           <p class="text-sm text-gray-600 dark:text-gray-400">
-            Search and filters apply to all accounts. Sensitive changes require confirmation. Subscription edits update the user's latest Stripe-linked row only.
+            Search and filters apply to all accounts. Sensitive changes require confirmation.
+            Subscription edits update the user's latest Stripe-linked row only.
           </p>
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">Mass import users from CSV</h3>
             <p class="text-xs text-gray-500 dark:text-gray-400">
-              Imports emails as viewer accounts and marks subscriptions as relink-required. For legacy eshop migration, include a
-              <code class="font-mono">purchaseId</code> or <code class="font-mono">clientId</code> column so webhooks and checkout can link the account.
+              Imports emails as viewer accounts and marks subscriptions as relink-required. For
+              legacy eshop migration, include a
+              <code class="font-mono">purchaseId</code>
+              or <code class="font-mono">clientId</code> column so webhooks and checkout can link
+              the account.
             </p>
-            <div class="rounded border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+            <div
+              class="rounded border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 space-y-2"
+            >
               <p class="font-medium">Legacy eshop sandbox</p>
               <p v-if="legacyPaymentStatusLoading">Checking worker secrets…</p>
               <p v-else-if="legacyPaymentStatus">
                 API configured: {{ legacyPaymentStatus.configured ? 'yes' : 'no' }}
-                <span v-if="legacyPaymentStatus.merchantId"> · merchant {{ legacyPaymentStatus.merchantId }}</span>
+                <span v-if="legacyPaymentStatus.merchantId">
+                  · merchant {{ legacyPaymentStatus.merchantId }}</span
+                >
                 <span v-if="legacyPaymentStatus.hasApiKey"> · API key set</span>
                 <span v-if="legacyPaymentStatus.hasWebhookSecret"> · webhook secret set</span>
               </p>
@@ -824,9 +1367,15 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 type="text"
                 placeholder="Dedicated relink mailing list ID"
                 class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-              />
-              <label class="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
-                <input v-model="usersImportRequirePurchaseId" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+              >
+              <label
+                class="inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+              >
+                <input
+                  v-model="usersImportRequirePurchaseId"
+                  type="checkbox"
+                  class="rounded border-gray-300 dark:border-gray-600"
+                >
                 Require purchaseId / clientId on every row
               </label>
               <button
@@ -844,14 +1393,21 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               :placeholder="`email,purchaseId\nuser@example.com,legacy-client-123\nsecond@example.com,legacy-client-456`"
             />
             <p v-if="usersImportResult" class="text-xs text-emerald-700 dark:text-emerald-300">
-              Imported {{ usersImportResult.imported }}, existing {{ usersImportResult.existing }}, total parsed {{ usersImportResult.totalEmails }}
-              <span v-if="usersImportResult.withPurchaseId"> · {{ usersImportResult.withPurchaseId }} with legacy purchase ID</span>
+              Imported {{ usersImportResult.imported }}, existing {{ usersImportResult.existing }},
+              total parsed {{ usersImportResult.totalEmails }}
+              <span v-if="usersImportResult.withPurchaseId">
+                · {{ usersImportResult.withPurchaseId }} with legacy purchase ID</span
+              >
               · list {{ usersImportResult.mailingListId }}.
             </p>
           </div>
           <div class="flex flex-col lg:flex-row lg:flex-wrap gap-3 items-stretch lg:items-end">
             <div class="flex-1 min-w-[12rem]">
-              <label for="users-search" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Search email or id</label>
+              <label
+                for="users-search"
+                class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+                >Search email or id</label
+              >
               <input
                 id="users-search"
                 v-model="usersSearchInput"
@@ -859,10 +1415,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 autocomplete="off"
                 class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
                 placeholder="Filter…"
-              />
+              >
             </div>
             <div>
-              <label for="users-role-filter" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Role</label>
+              <label
+                for="users-role-filter"
+                class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+                >Role</label
+              >
               <select
                 id="users-role-filter"
                 v-model="usersRoleFilter"
@@ -879,7 +1439,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </select>
             </div>
             <div>
-              <label for="users-sub-filter" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Subscription</label>
+              <label
+                for="users-sub-filter"
+                class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+                >Subscription</label
+              >
               <select
                 id="users-sub-filter"
                 v-model="usersSubscriptionFilter"
@@ -898,7 +1462,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </select>
             </div>
             <div>
-              <span class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Page size</span>
+              <span class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+                >Page size</span
+              >
               <select
                 v-model.number="usersPageSize"
                 class="w-full lg:w-28 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
@@ -925,7 +1491,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </button>
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-500">
-            Showing {{ users.length ? (usersPage - 1) * usersPageSize + 1 : 0 }}–{{ Math.min(usersPage * usersPageSize, usersTotal) }} of {{ usersTotal }} users
+            Showing
+            {{ users.length ? (usersPage - 1) * usersPageSize + 1 : 0 }}–{{ Math.min(usersPage * usersPageSize, usersTotal) }}
+            of {{ usersTotal }} users
           </p>
           <div class="space-y-2">
             <div
@@ -960,7 +1528,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   <option value="analyst">analyst</option>
                   <option value="editor">editor</option>
                   <option value="admin">admin</option>
-                  <option value="super_admin" :disabled="user?.role !== 'super_admin'">super_admin</option>
+                  <option value="super_admin" :disabled="user?.role !== 'super_admin'">
+                    super_admin
+                  </option>
                 </select>
               </div>
               <div class="flex flex-col gap-1">
@@ -974,7 +1544,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   @change="(e) => onUserSubscriptionSelect(u, (e.target as HTMLSelectElement).value)"
                 >
                   <option value="none">none</option>
-                  <option v-if="u.subscription_status === 'needs_relink'" value="needs_relink">needs_relink</option>
+                  <option v-if="u.subscription_status === 'needs_relink'" value="needs_relink">
+                    needs_relink
+                  </option>
                   <option value="active">active</option>
                   <option value="trialing">trialing</option>
                   <option value="past_due">past_due</option>
@@ -988,14 +1560,33 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   class="w-full px-2 py-1 rounded border border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white text-xs"
                   @change="(e) => setAdminUserPendingPlanType(u.id, (e.target as HTMLSelectElement).value)"
                 >
-                  <option v-for="plan in enabledAdminPaymentPlans" :key="`user-plan-${u.id}-${plan.id}`" :value="plan.id">plan: {{ plan.label }}</option>
+                  <option
+                    v-for="plan in enabledAdminPaymentPlans"
+                    :key="`user-plan-${u.id}-${plan.id}`"
+                    :value="plan.id"
+                  >
+                    plan: {{ plan.label }}
+                  </option>
                 </select>
               </div>
             </div>
-            <p v-if="!users.length && !usersLoading && !usersError" class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">No users match these filters.</p>
-            <p v-if="usersLoading" class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Loading…</p>
+            <p
+              v-if="!users.length && !usersLoading && !usersError"
+              class="text-sm text-gray-500 dark:text-gray-400 py-6 text-center"
+            >
+              No users match these filters.
+            </p>
+            <p
+              v-if="usersLoading"
+              class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
+            >
+              Loading…
+            </p>
           </div>
-          <div v-if="usersTotalPages > 1" class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+          <div
+            v-if="usersTotalPages > 1"
+            class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700"
+          >
             <button
               type="button"
               class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
@@ -1004,7 +1595,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             >
               Previous
             </button>
-            <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ usersPage }} / {{ usersTotalPages }}</span>
+            <span class="text-sm text-gray-600 dark:text-gray-400"
+              >Page {{ usersPage }} / {{ usersTotalPages }}</span
+            >
             <button
               type="button"
               class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
@@ -1016,40 +1609,79 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'legacy_migration'" id="legacy-migration-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
+        <div
+          v-if="activeAdminTab === 'legacy_migration'"
+          id="legacy-migration-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6"
+        >
           <div>
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">Legacy migration</h2>
             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Health metrics and sandbox/production validation for legacy CardOnFile tokens imported as <code class="font-mono text-xs">purchase_id</code>.
+              Health metrics and sandbox/production validation for legacy CardOnFile tokens imported
+              as <code class="font-mono text-xs">purchase_id</code>.
             </p>
           </div>
 
-          <div v-if="legacyMigrationStatsLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading migration stats…</div>
-          <div v-else-if="legacyMigrationStats" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div v-if="legacyMigrationStatsLoading" class="text-sm text-gray-500 dark:text-gray-400">
+            Loading migration stats…
+          </div>
+          <div
+            v-else-if="legacyMigrationStats"
+            class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3"
+          >
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total imported</p>
-              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.total_imported }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">All users migrated from old platform</p>
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Total imported
+              </p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {{ legacyMigrationStats.total_imported }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                All users migrated from old platform
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Needs relink</p>
-              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.needs_relink }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Not yet validated or still pending relink</p>
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Needs relink
+              </p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {{ legacyMigrationStats.needs_relink }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Not yet validated or still pending relink
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
               <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Active</p>
-              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationStats.active }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Successfully billing on legacy provider</p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {{ legacyMigrationStats.active }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Successfully billing on legacy provider
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Failed validation</p>
-              <p class="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{{ legacyMigrationStats.failed }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Purchase ID not recognized by provider</p>
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Failed validation
+              </p>
+              <p class="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
+                {{ legacyMigrationStats.failed }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Purchase ID not recognized by provider
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Migration success</p>
-              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ legacyMigrationSuccessPct }}%</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Of validated users (active vs failed)</p>
+              <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Migration success
+              </p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                {{ legacyMigrationSuccessPct }}%
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Of validated users (active vs failed)
+              </p>
             </div>
           </div>
 
@@ -1057,14 +1689,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             <h3 class="font-semibold text-gray-900 dark:text-white">Sandbox validation</h3>
             <p v-if="legacyMigrationStats" class="text-xs text-gray-600 dark:text-gray-400">
               API in use for stats:
-              <span class="font-mono">{{ legacyMigrationStats.validationApiBase || 'not configured' }}</span>
+              <span class="font-mono"
+                >{{ legacyMigrationStats.validationApiBase || 'not configured' }}</span
+              >
               <span v-if="legacyMigrationStats.sandboxConfigured"> · sandbox URL configured</span>
-              <span v-else> · set <code class="font-mono">LEGACY_ESHOP_SANDBOX_API_URL</code> for safe integration testing</span>
+              <span v-else>
+                · set <code class="font-mono">LEGACY_ESHOP_SANDBOX_API_URL</code> for safe
+                integration testing</span
+              >
             </p>
             <div class="flex flex-wrap gap-3 items-end">
               <label class="text-xs text-gray-600 dark:text-gray-300 block">
                 Batch size
-                <select v-model.number="legacyValidationBatchSize" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
+                <select
+                  v-model.number="legacyValidationBatchSize"
+                  class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                >
                   <option :value="10">10</option>
                   <option :value="25">25</option>
                   <option :value="50">50</option>
@@ -1073,13 +1713,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </label>
               <label class="text-xs text-gray-600 dark:text-gray-300 block">
                 Target
-                <select v-model="legacyValidationTarget" class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white">
+                <select
+                  v-model="legacyValidationTarget"
+                  class="mt-1 block px-2 py-1.5 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white"
+                >
                   <option value="production">Production (real tokens)</option>
                   <option value="sandbox">Sandbox</option>
                 </select>
               </label>
-              <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input v-model="legacyValidationDryRun" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+              <label
+                class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+              >
+                <input
+                  v-model="legacyValidationDryRun"
+                  type="checkbox"
+                  class="rounded border-gray-300 dark:border-gray-600"
+                >
                 Dry run (preview without saving)
               </label>
               <button
@@ -1096,13 +1745,17 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </p>
             <div v-if="legacyValidationResult" class="space-y-2">
               <p class="text-sm text-gray-700 dark:text-gray-300">
-                {{ legacyValidationResult.valid }} valid, {{ legacyValidationResult.invalid }} invalid, {{ legacyValidationResult.errors }} errors.
-                Reload stats to update totals.
+                {{ legacyValidationResult.valid }}
+                valid, {{ legacyValidationResult.invalid }} invalid,
+                {{ legacyValidationResult.errors }}
+                errors. Reload stats to update totals.
               </p>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-xs">
                   <thead>
-                    <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                    <tr
+                      class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                    >
                       <th class="py-2 pr-3">purchase_id</th>
                       <th class="py-2 pr-3">Result</th>
                       <th class="py-2 pr-3">HTTP</th>
@@ -1110,15 +1763,31 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     </tr>
                   </thead>
                   <tbody class="text-gray-900 dark:text-white">
-                    <tr v-for="row in legacyValidationResult.details" :key="row.subscriptionId" class="border-b border-gray-100 dark:border-gray-800">
+                    <tr
+                      v-for="row in legacyValidationResult.details"
+                      :key="row.subscriptionId"
+                      class="border-b border-gray-100 dark:border-gray-800"
+                    >
                       <td class="py-2 pr-3 font-mono text-xs">{{ row.purchaseId }}</td>
                       <td class="py-2 pr-3">
-                        <span v-if="row.result === 'valid'" class="text-emerald-600 dark:text-emerald-400">✓ valid</span>
-                        <span v-else-if="row.result === 'invalid'" class="text-red-600 dark:text-red-400">✗ invalid</span>
+                        <span
+                          v-if="row.result === 'valid'"
+                          class="text-emerald-600 dark:text-emerald-400"
+                          >✓ valid</span
+                        >
+                        <span
+                          v-else-if="row.result === 'invalid'"
+                          class="text-red-600 dark:text-red-400"
+                          >✗ invalid</span
+                        >
                         <span v-else class="text-amber-600 dark:text-amber-400">⚠ error</span>
                       </td>
-                      <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.httpStatus ?? '—' }}</td>
-                      <td class="py-2 text-gray-600 dark:text-gray-400">{{ row.errorMessage || '—' }}</td>
+                      <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
+                        {{ row.httpStatus ?? '—' }}
+                      </td>
+                      <td class="py-2 text-gray-600 dark:text-gray-400">
+                        {{ row.errorMessage || '—' }}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1128,9 +1797,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
             <p class="text-xs text-gray-600 dark:text-gray-400">
-              Lists every subscription with <code class="font-mono">needs_relink</code> (any provider), plus legacy rows marked
-              <code class="font-mono">invalid</code> during validation. Pass <code class="font-mono">staleDays=30</code> to limit
-              to imports older than 30 days when sending reminder emails at scale.
+              Lists every subscription with <code class="font-mono">needs_relink</code> (any
+              provider), plus legacy rows marked
+              <code class="font-mono">invalid</code>
+              during validation. Pass <code class="font-mono">staleDays=30</code> to limit to
+              imports older than 30 days when sending reminder emails at scale.
             </p>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h3 class="font-semibold text-gray-900 dark:text-white">Relink candidates</h3>
@@ -1142,12 +1813,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 Export CSV
               </button>
             </div>
-            <div v-if="legacyRelinkLoading" class="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+            <div v-if="legacyRelinkLoading" class="text-sm text-gray-500 dark:text-gray-400">
+              Loading…
+            </div>
             <div v-else class="overflow-x-auto">
               <table class="min-w-full text-sm">
                 <thead>
-                  <tr class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    <th class="py-2 pr-3"><input type="checkbox" :checked="legacyRelinkAllOnPageSelected" @change="toggleLegacyRelinkSelectAll"></th>
+                  <tr
+                    class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                  >
+                    <th class="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        :checked="legacyRelinkAllOnPageSelected"
+                        @change="toggleLegacyRelinkSelectAll"
+                      >
+                    </th>
                     <th class="py-2 pr-3">Email</th>
                     <th class="py-2 pr-3">Provider</th>
                     <th class="py-2 pr-3">Customer ref</th>
@@ -1158,17 +1839,33 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   </tr>
                 </thead>
                 <tbody class="text-gray-900 dark:text-white">
-                  <tr v-for="row in legacyRelinkCandidates" :key="row.userId" class="border-b border-gray-100 dark:border-gray-800">
+                  <tr
+                    v-for="row in legacyRelinkCandidates"
+                    :key="row.userId"
+                    class="border-b border-gray-100 dark:border-gray-800"
+                  >
                     <td class="py-2 pr-3">
                       <input v-model="legacyRelinkSelected" type="checkbox" :value="row.userId">
                     </td>
                     <td class="py-2 pr-3 font-medium">{{ row.email }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">{{ row.provider || '—' }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs break-all text-gray-700 dark:text-gray-300">{{ row.providerCustomerId || '—' }}</td>
-                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">{{ row.purchaseId || '—' }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">
+                      {{ row.provider || '—' }}
+                    </td>
+                    <td
+                      class="py-2 pr-3 font-mono text-xs break-all text-gray-700 dark:text-gray-300"
+                    >
+                      {{ row.providerCustomerId || '—' }}
+                    </td>
+                    <td class="py-2 pr-3 font-mono text-xs text-gray-700 dark:text-gray-300">
+                      {{ row.purchaseId || '—' }}
+                    </td>
                     <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.importedAt }}</td>
-                    <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">{{ row.validationStatus || '—' }}</td>
-                    <td class="py-2 text-gray-700 dark:text-gray-300">{{ row.validatedAt || '—' }}</td>
+                    <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
+                      {{ row.validationStatus || '—' }}
+                    </td>
+                    <td class="py-2 text-gray-700 dark:text-gray-300">
+                      {{ row.validatedAt || '—' }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -1190,7 +1887,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               >
                 Previous
               </button>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Page {{ legacyRelinkPage }}</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400"
+                >Page {{ legacyRelinkPage }}</span
+              >
               <button
                 type="button"
                 class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
@@ -1203,20 +1902,46 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'analytics'" id="analytics-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5">
+        <div
+          v-if="activeAdminTab === 'analytics'"
+          id="analytics-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-5"
+        >
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">Analytics</h2>
-          <p class="text-sm text-gray-600 dark:text-gray-400">Playback starts, watch time, retention heatmaps, country breakdown, traffic sources, and subscription trends — modeled after industry stream analytics (views per session, cumulative watch time, engagement score).</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            Playback starts, watch time, retention heatmaps, country breakdown, traffic sources, and
+            subscription trends — modeled after industry stream analytics (views per session,
+            cumulative watch time, engagement score).
+          </p>
           <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <h3 class="font-semibold text-gray-900 dark:text-white">View counting strategy</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min segments per session view
-                <input v-model.number="analyticsViewCounting.minSegmentsPerSession" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                >Min segments per session view
+                <input
+                  v-model.number="analyticsViewCounting.minSegmentsPerSession"
+                  type="number"
+                  min="0"
+                  class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
               </label>
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">Min watch seconds per session view
-                <input v-model.number="analyticsViewCounting.minWatchSeconds" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+              <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                >Min watch seconds per session view
+                <input
+                  v-model.number="analyticsViewCounting.minWatchSeconds"
+                  type="number"
+                  min="0"
+                  class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                >
               </label>
             </div>
-            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white disabled:opacity-50" :disabled="analyticsSettingsSaving" @click="saveAnalyticsSettings">
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white disabled:opacity-50"
+              :disabled="analyticsSettingsSaving"
+              @click="saveAnalyticsSettings"
+            >
               {{ analyticsSettingsSaving ? 'Saving…' : 'Save analytics settings' }}
             </button>
           </div>
@@ -1297,9 +2022,15 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               {{ analyticsExporting === 'retention' ? 'Exporting…' : 'Export retention CSV' }}
             </button>
           </div>
-          <p v-if="analyticsError" class="text-sm text-red-600 dark:text-red-400">{{ analyticsError }}</p>
+          <p v-if="analyticsError" class="text-sm text-red-600 dark:text-red-400">
+            {{ analyticsError }}
+          </p>
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
-            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" v-for="item in analyticsKpiCards" :key="item.key">
+            <div
+              class="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+              v-for="item in analyticsKpiCards"
+              :key="item.key"
+            >
               <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.label }}</p>
               <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ item.value }}</p>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ item.help }}</p>
@@ -1308,44 +2039,68 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views over time</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Playback starts per UTC interval (one per viewer session per video).</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Playback starts per UTC interval (one per viewer session per video).
+              </p>
               <AdminLineChart
                 v-if="analyticsViewsLineChartPoints.length"
                 :points="analyticsViewsLineChartPoints"
                 aria-label="Views over time line chart"
               />
-              <p v-else class="text-sm text-gray-500 dark:text-gray-400">No data for selected range.</p>
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">
+                No data for selected range.
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Watch time over time</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Cumulative seconds watched per interval; rewatches add to the total.</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Cumulative seconds watched per interval; rewatches add to the total.
+              </p>
               <AdminLineChart
                 v-if="analyticsWatchTimeLineChartPoints.length"
                 :points="analyticsWatchTimeLineChartPoints"
                 stroke-class="stroke-emerald-500 text-emerald-500"
                 aria-label="Watch time over time line chart"
               />
-              <p v-else class="text-sm text-gray-500 dark:text-gray-400">No watch time for selected range.</p>
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">
+                No watch time for selected range.
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Traffic source split</h3>
               <div class="space-y-2">
-                <div v-for="row in analyticsTrafficChartRows" :key="`s-${row.source}`" class="space-y-1">
+                <div
+                  v-for="row in analyticsTrafficChartRows"
+                  :key="`s-${row.source}`"
+                  class="space-y-1"
+                >
                   <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>{{ row.source }}</span>
                     <span>{{ row.value }}</span>
                   </div>
                   <div class="h-2 rounded bg-gray-100 dark:bg-gray-800">
-                    <div class="h-2 rounded bg-emerald-500" :style="{ width: `${row.percent}%` }"></div>
+                    <div
+                      class="h-2 rounded bg-emerald-500"
+                      :style="{ width: `${row.percent}%` }"
+                    ></div>
                   </div>
                 </div>
-                <p v-if="!analyticsTrafficChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No source events for selected range.</p>
+                <p
+                  v-if="!analyticsTrafficChartRows.length"
+                  class="text-sm text-gray-500 dark:text-gray-400"
+                >
+                  No source events for selected range.
+                </p>
               </div>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Views by country</h3>
               <div class="space-y-2">
-                <div v-for="row in analyticsCountryViewsChartRows" :key="`cv-${row.country}`" class="space-y-1">
+                <div
+                  v-for="row in analyticsCountryViewsChartRows"
+                  :key="`cv-${row.country}`"
+                  class="space-y-1"
+                >
                   <div class="flex justify-between text-xs text-gray-600 dark:text-gray-300">
                     <span>{{ row.country }}</span>
                     <span>{{ row.value }}</span>
@@ -1354,7 +2109,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     <div class="h-2 rounded bg-sky-500" :style="{ width: `${row.percent}%` }"></div>
                   </div>
                 </div>
-                <p v-if="!analyticsCountryViewsChartRows.length" class="text-sm text-gray-500 dark:text-gray-400">No country data yet (requires CF-IPCountry on segment requests).</p>
+                <p
+                  v-if="!analyticsCountryViewsChartRows.length"
+                  class="text-sm text-gray-500 dark:text-gray-400"
+                >
+                  No country data yet (requires CF-IPCountry on segment requests).
+                </p>
               </div>
             </div>
           </div>
@@ -1362,7 +2122,10 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             <div class="flex flex-wrap items-end gap-3 justify-between">
               <div>
                 <h3 class="font-semibold text-gray-900 dark:text-white">Engagement heatmap</h3>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Timeline attention for one video — brighter segments were watched or rewatched more.</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Timeline attention for one video — brighter segments were watched or rewatched
+                  more.
+                </p>
               </div>
               <label class="text-xs text-gray-600 dark:text-gray-300 block min-w-[16rem]">
                 Video
@@ -1372,7 +2135,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                   @change="loadAnalytics"
                 >
                   <option value="">Select a published video…</option>
-                  <option v-for="row in analyticsVideoStatsRows" :key="`hm-opt-${row.videoId}`" :value="row.videoId">
+                  <option
+                    v-for="row in analyticsVideoStatsRows"
+                    :key="`hm-opt-${row.videoId}`"
+                    :value="row.videoId"
+                  >
                     {{ row.title || row.videoId }}
                   </option>
                 </select>
@@ -1383,16 +2150,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               :buckets="analyticsHeatmapBuckets"
               aria-label="Video engagement heatmap by timeline position"
             />
-            <p v-else class="text-sm text-gray-500 dark:text-gray-400">Select a video to load its heatmap for the current range.</p>
+            <p v-else class="text-sm text-gray-500 dark:text-gray-400">
+              Select a video to load its heatmap for the current range.
+            </p>
           </div>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 xl:col-span-2">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Published videos</h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Per-video playback starts, watch time, retention, and engagement score (0–100).</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Per-video playback starts, watch time, retention, and engagement score (0–100).
+              </p>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                   <thead>
-                    <tr class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                    <tr
+                      class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                    >
                       <th class="py-2 pr-4">Title</th>
                       <th class="py-2 pr-4">Views</th>
                       <th class="py-2 pr-4">Watch time</th>
@@ -1401,17 +2174,37 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="row in analyticsVideoStatsRows" :key="`vs-${row.videoId}`" class="border-b border-gray-100 dark:border-gray-800">
+                    <tr
+                      v-for="row in analyticsVideoStatsRows"
+                      :key="`vs-${row.videoId}`"
+                      class="border-b border-gray-100 dark:border-gray-800"
+                    >
                       <td class="py-2 pr-4">
-                        <a :href="videoWatchHref(row)" target="_blank" rel="noopener" class="text-blue-600 dark:text-blue-400 hover:underline">{{ row.title || row.videoId }}</a>
+                        <a
+                          :href="videoWatchHref(row)"
+                          target="_blank"
+                          rel="noopener"
+                          class="text-blue-600 dark:text-blue-400 hover:underline"
+                          >{{ row.title || row.videoId }}</a
+                        >
                       </td>
-                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ row.viewCount }}</td>
-                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatWatchSeconds(row.totalWatchSeconds) }}</td>
-                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatVideoRetention(row.averageRetentionPercent) }}</td>
-                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">{{ formatEngagementScore(row.engagementScore) }}</td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ row.viewCount }}
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ formatWatchSeconds(row.totalWatchSeconds) }}
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ formatVideoRetention(row.averageRetentionPercent) }}
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ formatEngagementScore(row.engagementScore) }}
+                      </td>
                     </tr>
                     <tr v-if="!analyticsVideoStatsRows.length">
-                      <td colspan="5" class="py-3 text-gray-500 dark:text-gray-400">No published videos.</td>
+                      <td colspan="5" class="py-3 text-gray-500 dark:text-gray-400">
+                        No published videos.
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1420,319 +2213,574 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Subscription trends</h3>
               <div class="space-y-2">
-                <div v-for="row in analyticsSubscriptionTrendRows" :key="`st-${row.bucket}`" class="rounded border border-gray-100 dark:border-gray-800 p-2">
+                <div
+                  v-for="row in analyticsSubscriptionTrendRows"
+                  :key="`st-${row.bucket}`"
+                  class="rounded border border-gray-100 dark:border-gray-800 p-2"
+                >
                   <p class="text-xs text-gray-500 dark:text-gray-400">{{ row.bucket }}</p>
-                  <p class="text-sm text-gray-700 dark:text-gray-200">New: {{ row.newSubscriptions }} · Churn: {{ row.churnedSubscriptions }} · Expiring: {{ row.expiringSubscriptions }}</p>
+                  <p class="text-sm text-gray-700 dark:text-gray-200">
+                    New: {{ row.newSubscriptions }} · Churn: {{ row.churnedSubscriptions }} ·
+                    Expiring: {{ row.expiringSubscriptions }}
+                  </p>
                 </div>
-                <p v-if="!analyticsSubscriptionTrendRows.length" class="text-sm text-gray-500 dark:text-gray-400">No subscription trend buckets in selected range.</p>
+                <p
+                  v-if="!analyticsSubscriptionTrendRows.length"
+                  class="text-sm text-gray-500 dark:text-gray-400"
+                >
+                  No subscription trend buckets in selected range.
+                </p>
               </div>
             </div>
           </div>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Subscription status breakdown</h3>
-              <p v-for="row in analyticsStatusRows" :key="`ss-${row.status}`" class="text-sm text-gray-700 dark:text-gray-200">{{ row.status }}: {{ row.count }}</p>
-              <p v-if="!analyticsStatusRows.length" class="text-sm text-gray-500 dark:text-gray-400">No active subscription rows found.</p>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">
+                Subscription status breakdown
+              </h3>
+              <p
+                v-for="row in analyticsStatusRows"
+                :key="`ss-${row.status}`"
+                class="text-sm text-gray-700 dark:text-gray-200"
+              >
+                {{ row.status }}: {{ row.count }}
+              </p>
+              <p
+                v-if="!analyticsStatusRows.length"
+                class="text-sm text-gray-500 dark:text-gray-400"
+              >
+                No active subscription rows found.
+              </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Cashflow trend (EUR est.)</h3>
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">
+                Cashflow trend (EUR est.)
+              </h3>
               <div class="space-y-1">
-                <p v-for="row in analyticsCashflowRows" :key="`cf-${row.bucket}`" class="text-sm text-gray-700 dark:text-gray-200">
-                  {{ row.bucket }} · New €{{ row.estimatedNewRevenueEur.toFixed(2) }} · Net €{{ row.estimatedNetNewEur.toFixed(2) }}
+                <p
+                  v-for="row in analyticsCashflowRows"
+                  :key="`cf-${row.bucket}`"
+                  class="text-sm text-gray-700 dark:text-gray-200"
+                >
+                  {{ row.bucket }}
+                  · New €{{ row.estimatedNewRevenueEur.toFixed(2) }}
+                  · Net €{{ row.estimatedNetNewEur.toFixed(2) }}
                 </p>
               </div>
-              <p v-if="!analyticsCashflowRows.length" class="text-sm text-gray-500 dark:text-gray-400">No cashflow buckets for selected range.</p>
+              <p
+                v-if="!analyticsCashflowRows.length"
+                class="text-sm text-gray-500 dark:text-gray-400"
+              >
+                No cashflow buckets for selected range.
+              </p>
             </div>
           </div>
         </div>
 
-        <div v-if="activeAdminTab === 'system'" id="system-panel" role="tabpanel" class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6">
+        <div
+          v-if="activeAdminTab === 'system'"
+          id="system-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 space-y-6"
+        >
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 class="text-xl font-bold text-gray-900 dark:text-white">System</h2>
-              <p class="text-sm text-gray-600 dark:text-gray-400">Operational controls, payments, and refresh actions.</p>
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                Operational controls, payments, and refresh actions.
+              </p>
             </div>
-            <button class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100" @click="reloadAll">Reload data</button>
+            <button
+              class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100"
+              @click="reloadAll"
+            >
+              Reload data
+            </button>
           </div>
 
-          <div v-if="!isAdmin" class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+          <div
+            v-if="!isAdmin"
+            class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          >
             Only site administrators can edit payment gateway settings.
           </div>
 
           <template v-else>
             <AdminAccordionSection section-key="feature-toggles" title="Feature toggles">
-            <div class="space-y-4">
-              <div v-if="systemFeaturesMessage" class="rounded-lg border px-4 py-3 text-sm" :class="systemFeaturesMessageClass">{{ systemFeaturesMessage }}</div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="systemFeatures.promotionsEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  Promo codes
-                </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="systemFeatures.isicEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  ISIC API
-                </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input v-model="systemFeatures.freePodcastPreviewEnabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                  Free podcast preview feed
-                </label>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="systemFeaturesSaving"
-                  @click="saveSystemFeatures"
+              <div class="space-y-4">
+                <div
+                  v-if="systemFeaturesMessage"
+                  class="rounded-lg border px-4 py-3 text-sm"
+                  :class="systemFeaturesMessageClass"
                 >
-                  {{ systemFeaturesSaving ? 'Saving…' : 'Save feature toggles' }}
-                </button>
+                  {{ systemFeaturesMessage }}
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label
+                    class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                  >
+                    <input
+                      v-model="systemFeatures.promotionsEnabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                    >
+                    Promo codes
+                  </label>
+                  <label
+                    class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                  >
+                    <input
+                      v-model="systemFeatures.isicEnabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                    >
+                    ISIC API
+                  </label>
+                  <label
+                    class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                  >
+                    <input
+                      v-model="systemFeatures.freePodcastPreviewEnabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                    >
+                    Free podcast preview feed
+                  </label>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                    :disabled="systemFeaturesSaving"
+                    @click="saveSystemFeatures"
+                  >
+                    {{ systemFeaturesSaving ? 'Saving…' : 'Save feature toggles' }}
+                  </button>
+                </div>
               </div>
-            </div>
             </AdminAccordionSection>
 
             <AdminAccordionSection section-key="deno-postgres" title="Deno Postgres failover">
-            <div class="space-y-4">
-              <div v-if="replicationMessage" class="rounded-lg border px-4 py-3 text-sm" :class="replicationMessageClass">{{ replicationMessage }}</div>
-              <p
-                v-if="replicationStatus?.targetWarning"
-                class="text-xs rounded-lg border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100"
-              >
-                {{ replicationStatus.targetWarning }}
-              </p>
-              <p
-                v-else-if="replicationStatus?.targetProbe && !replicationStatus.targetProbe.ok"
-                class="text-xs rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-2 dark:bg-red-950 dark:border-red-700 dark:text-red-200"
-              >
-                Ingest probe failed: {{ replicationStatus.targetProbe.error }}
-              </p>
-              <dl v-if="replicationStatus" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <div><dt class="inline text-gray-500 dark:text-gray-400">Mode:</dt> <dd class="inline font-mono">{{ replicationStatus.mode }}</dd></div>
-                <div>
-                  <dt class="inline text-gray-500 dark:text-gray-400">Ingest target:</dt>
-                  <dd class="inline">
-                    {{ replicationStatus.targetConfigured ? (replicationStatus.targetProbe?.ok ? 'Reachable' : 'Configured') : 'Not configured' }}
-                  </dd>
+              <div class="space-y-4">
+                <div
+                  v-if="replicationMessage"
+                  class="rounded-lg border px-4 py-3 text-sm"
+                  :class="replicationMessageClass"
+                >
+                  {{ replicationMessage }}
                 </div>
-                <div v-if="replicationStatus.targetResolvedPath" class="sm:col-span-2">
-                  <dt class="inline text-gray-500 dark:text-gray-400">Ingest path:</dt>
-                  <dd class="inline font-mono text-xs">{{ replicationStatus.targetResolvedPath }}</dd>
+                <p
+                  v-if="replicationStatus?.targetWarning"
+                  class="text-xs rounded-lg border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100"
+                >
+                  {{ replicationStatus.targetWarning }}
+                </p>
+                <p
+                  v-else-if="replicationStatus?.targetProbe && !replicationStatus.targetProbe.ok"
+                  class="text-xs rounded-lg border border-red-300 bg-red-50 text-red-800 px-3 py-2 dark:bg-red-950 dark:border-red-700 dark:text-red-200"
+                >
+                  Ingest probe failed: {{ replicationStatus.targetProbe.error }}
+                </p>
+                <dl
+                  v-if="replicationStatus"
+                  class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300"
+                >
+                  <div>
+                    <dt class="inline text-gray-500 dark:text-gray-400">Mode:</dt>
+                    <dd class="inline font-mono">{{ replicationStatus.mode }}</dd>
+                  </div>
+                  <div>
+                    <dt class="inline text-gray-500 dark:text-gray-400">Ingest target:</dt>
+                    <dd class="inline">
+                      {{ replicationStatus.targetConfigured ? (replicationStatus.targetProbe?.ok ? 'Reachable' : 'Configured') : 'Not configured' }}
+                    </dd>
+                  </div>
+                  <div v-if="replicationStatus.targetResolvedPath" class="sm:col-span-2">
+                    <dt class="inline text-gray-500 dark:text-gray-400">Ingest path:</dt>
+                    <dd class="inline font-mono text-xs">
+                      {{ replicationStatus.targetResolvedPath }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="inline text-gray-500 dark:text-gray-400">Batch size:</dt>
+                    <dd class="inline font-mono">{{ replicationStatus.batchSize }}</dd>
+                  </div>
+                </dl>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                    :disabled="replicationResetting || replicationPushing || !replicationCanPush"
+                    @click="pushReplicationToDeno"
+                  >
+                    {{ replicationPushing ? 'Pushing…' : 'Push DB to Deno Postgres' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                    :disabled="replicationResetting || replicationPushing"
+                    @click="() => loadReplicationStatus({ probe: true })"
+                  >
+                    Refresh status
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                    :disabled="replicationPushing || replicationResetting"
+                    @click="resetReplicationCursors"
+                  >
+                    {{ replicationResetting ? 'Resetting…' : 'Reset sync cursors' }}
+                  </button>
                 </div>
-                <div><dt class="inline text-gray-500 dark:text-gray-400">Batch size:</dt> <dd class="inline font-mono">{{ replicationStatus.batchSize }}</dd></div>
-              </dl>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="replicationResetting || replicationPushing || !replicationCanPush"
-                  @click="pushReplicationToDeno"
+                <p
+                  v-if="replicationStatus && !replicationStatus.targetConfigured"
+                  class="text-xs text-amber-700 dark:text-amber-300"
                 >
-                  {{ replicationPushing ? 'Pushing…' : 'Push DB to Deno Postgres' }}
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
-                  :disabled="replicationResetting || replicationPushing"
-                  @click="() => loadReplicationStatus({ probe: true })"
+                  Replication ingest URL is not configured on the Worker (<code class="font-mono"
+                    >REPLICATION_TARGET_URL</code
+                  >
+                  secret). Set it to your Deno api-node ingest endpoint.
+                </p>
+                <p
+                  v-else-if="replicationStatus?.targetConfigured && replicationStatus.targetTokenConfigured === false"
+                  class="text-xs text-amber-700 dark:text-amber-300"
                 >
-                  Refresh status
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 disabled:opacity-50"
-                  :disabled="replicationPushing || replicationResetting"
-                  @click="resetReplicationCursors"
-                >
-                  {{ replicationResetting ? 'Resetting…' : 'Reset sync cursors' }}
-                </button>
+                  Ingest URL is configured, but
+                  <code class="font-mono">REPLICATION_TARGET_TOKEN</code>
+                  is missing on the Worker. Add the shared bearer secret to match Deno
+                  <code class="font-mono">REPLICATION_INGEST_TOKEN</code>.
+                </p>
               </div>
-              <p v-if="replicationStatus && !replicationStatus.targetConfigured" class="text-xs text-amber-700 dark:text-amber-300">
-                Replication ingest URL is not configured on the Worker (<code class="font-mono">REPLICATION_TARGET_URL</code> secret). Set it to your Deno api-node ingest endpoint.
-              </p>
-              <p
-                v-else-if="replicationStatus?.targetConfigured && replicationStatus.targetTokenConfigured === false"
-                class="text-xs text-amber-700 dark:text-amber-300"
-              >
-                Ingest URL is configured, but <code class="font-mono">REPLICATION_TARGET_TOKEN</code> is missing on the Worker. Add the shared bearer secret to match Deno <code class="font-mono">REPLICATION_INGEST_TOKEN</code>.
-              </p>
-            </div>
             </AdminAccordionSection>
 
             <AdminAccordionSection section-key="site-branding" title="Site branding">
-            <div class="space-y-4">
-              <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">Site branding</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Configure site name, description, logo, and favicon. These propagate to the header, page title, podcast feed, and PWA manifest.
-                </p>
-              </div>
-              <div v-if="siteBrandingMessage" class="rounded-lg border px-4 py-3 text-sm" :class="siteBrandingMessageClass">{{ siteBrandingMessage }}</div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Site name
-                  <input v-model="siteBranding.site_name" type="text" placeholder="My Platform" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Short name (header mobile)
-                  <input v-model="siteBranding.site_name_short" type="text" placeholder="VMP" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  Site description
-                  <input v-model="siteBranding.site_description" type="text" placeholder="Premium video content platform" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Logo URL
-                  <input v-model="siteBranding.site_logo_url" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Favicon URL
-                  <input v-model="siteBranding.site_favicon_url" type="url" placeholder="https://..." class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Support email
-                  <input v-model="siteBranding.site_support_email" type="email" placeholder="vmp@tjm.sk" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Used for mailto links on the account and 2FA pages.</p>
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Podcast feed title
-                  <input v-model="siteBranding.podcast_title" type="text" placeholder="My Podcast" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300">
-                  Podcast feed description
-                  <input v-model="siteBranding.podcast_description" type="text" placeholder="Episodes from my show" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  <input
-                    v-model="gtmEnabled"
-                    type="checkbox"
-                    class="rounded border-gray-300 dark:border-gray-600"
-                    :disabled="!siteBranding.gtm_container_id.trim()"
-                  />
-                  Google Tag Manager enabled
-                  <span v-if="!siteBranding.gtm_container_id.trim()" class="text-xs text-gray-500 dark:text-gray-400">(enter container ID below first)</span>
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  Google Tag Manager container ID
-                  <input v-model="siteBranding.gtm_container_id" type="text" placeholder="GTM-XXXXXXX" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs" />
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Required to enable GTM. No build-time fallback — set the container ID here.</p>
-                </label>
-                <template v-if="gtmEnabled">
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  GTM first-party measurement path
-                  <input
-                    v-model="siteBranding.gtm_measurement_path"
-                    type="text"
-                    placeholder="/hb2v  (leave empty to load GTM directly)"
-                    class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                  />
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Optional. Set to the path configured in Cloudflare Google Tag Gateway
-                    (e.g. /hb2v). When set, GTM loads from your domain instead of googletagmanager.com.
-                    Leave Cloudflare “Set up tag” off — this app injects the script when enabled above.
+              <div class="space-y-4">
+                <div>
+                  <h3 class="font-semibold text-gray-900 dark:text-white">Site branding</h3>
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    Configure site name, description, logo, and favicon. These propagate to the
+                    header, page title, podcast feed, and PWA manifest.
                   </p>
-                </label>
-                </template>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="siteBrandingSaving"
-                  @click="saveSiteBranding"
+                </div>
+                <div
+                  v-if="siteBrandingMessage"
+                  class="rounded-lg border px-4 py-3 text-sm"
+                  :class="siteBrandingMessageClass"
                 >
-                  {{ siteBrandingSaving ? 'Saving…' : 'Save branding' }}
-                </button>
+                  {{ siteBrandingMessage }}
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Site name
+                    <input
+                      v-model="siteBranding.site_name"
+                      type="text"
+                      placeholder="My Platform"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Short name (header mobile)
+                    <input
+                      v-model="siteBranding.site_name_short"
+                      type="text"
+                      placeholder="VMP"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                    Site description
+                    <input
+                      v-model="siteBranding.site_description"
+                      type="text"
+                      placeholder="Premium video content platform"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Logo URL
+                    <input
+                      v-model="siteBranding.site_logo_url"
+                      type="url"
+                      placeholder="https://..."
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Favicon URL
+                    <input
+                      v-model="siteBranding.site_favicon_url"
+                      type="url"
+                      placeholder="https://..."
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Support email
+                    <input
+                      v-model="siteBranding.site_support_email"
+                      type="email"
+                      placeholder="vmp@tjm.sk"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Used for mailto links on the account and 2FA pages.
+                    </p>
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Podcast feed title
+                    <input
+                      v-model="siteBranding.podcast_title"
+                      type="text"
+                      placeholder="My Podcast"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300">
+                    Podcast feed description
+                    <input
+                      v-model="siteBranding.podcast_description"
+                      type="text"
+                      placeholder="Episodes from my show"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    >
+                  </label>
+                  <label
+                    class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2"
+                  >
+                    <input
+                      v-model="gtmEnabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                      :disabled="!siteBranding.gtm_container_id.trim()"
+                    >
+                    Google Tag Manager enabled
+                    <span
+                      v-if="!siteBranding.gtm_container_id.trim()"
+                      class="text-xs text-gray-500 dark:text-gray-400"
+                      >(enter container ID below first)</span
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                    Google Tag Manager container ID
+                    <input
+                      v-model="siteBranding.gtm_container_id"
+                      type="text"
+                      placeholder="GTM-XXXXXXX"
+                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Required to enable GTM. No build-time fallback — set the container ID here.
+                    </p>
+                  </label>
+                  <template v-if="gtmEnabled">
+                    <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                      GTM first-party measurement path
+                      <input
+                        v-model="siteBranding.gtm_measurement_path"
+                        type="text"
+                        placeholder="/hb2v  (leave empty to load GTM directly)"
+                        class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                      >
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Optional. Set to the path configured in Cloudflare Google Tag Gateway (e.g.
+                        /hb2v). When set, GTM loads from your domain instead of
+                        googletagmanager.com. Leave Cloudflare “Set up tag” off — this app injects
+                        the script when enabled above.
+                      </p>
+                    </label>
+                  </template>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                    :disabled="siteBrandingSaving"
+                    @click="saveSiteBranding"
+                  >
+                    {{ siteBrandingSaving ? 'Saving…' : 'Save branding' }}
+                  </button>
+                </div>
               </div>
-            </div>
             </AdminAccordionSection>
 
             <AdminAccordionSection section-key="payment-gateways" title="Payment gateways">
               <AdminPaymentPlans />
             </AdminAccordionSection>
 
-            <AdminAccordionSection v-if="systemFeatures.promotionsEnabled" section-key="promo-campaigns" title="Promo campaigns & codes">
-            <div class="space-y-4">
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <h3 class="font-semibold text-gray-900 dark:text-white">Promo campaigns & codes</h3>
-                  <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Manage single-use and multi-use promo codes for free month/year or provider-specific percentage discounts.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
-                  :disabled="promotionsLoading"
-                  @click="loadPromotions"
-                >
-                  {{ promotionsLoading ? 'Loading…' : 'Reload promotions' }}
-                </button>
-              </div>
-
-              <div v-if="promotionsMessage" class="rounded-lg border px-3 py-2 text-sm" :class="promotionsMessageClass">
-                {{ promotionsMessage }}
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Create campaign</h4>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Campaign name
-                    <input v-model="promoCampaignForm.name" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" placeholder="e.g. Acme Corp 2026">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Description
-                    <textarea v-model="promoCampaignForm.description" rows="2" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" placeholder="Optional notes" />
-                  </label>
-                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                    <input v-model="promoCampaignForm.isActive" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                    Active
-                  </label>
+            <AdminAccordionSection
+              v-if="systemFeatures.promotionsEnabled"
+              section-key="promo-campaigns"
+              title="Promo campaigns & codes"
+            >
+              <div class="space-y-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">
+                      Promo campaigns & codes
+                    </h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      Manage single-use and multi-use promo codes for free month/year or
+                      provider-specific percentage discounts.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="promotionsSaving || !promoCampaignForm.name.trim()"
-                    @click="createPromoCampaign"
+                    class="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
+                    :disabled="promotionsLoading"
+                    @click="loadPromotions"
                   >
-                    {{ promotionsSaving ? 'Saving…' : 'Create campaign' }}
+                    {{ promotionsLoading ? 'Loading…' : 'Reload promotions' }}
                   </button>
                 </div>
 
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Create promo code(s)</h4>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Campaign
-                    <select v-model="promoCodeForm.campaignId" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                      <option value="">Select campaign…</option>
-                      <option v-for="c in promoCampaigns" :key="c.id" :value="c.id">{{ c.name }}</option>
-                    </select>
-                  </label>
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Code prefix (optional)
-                      <input v-model="promoCodeForm.code" type="text" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono" placeholder="ACME">
+                <div
+                  v-if="promotionsMessage"
+                  class="rounded-lg border px-3 py-2 text-sm"
+                  :class="promotionsMessageClass"
+                >
+                  {{ promotionsMessage }}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      Create campaign
+                    </h4>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Campaign name
+                      <input
+                        v-model="promoCampaignForm.name"
+                        type="text"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        placeholder="e.g. Acme Corp 2026"
+                      >
                     </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">How many codes
-                      <input v-model.number="promoCodeForm.quantity" type="number" min="1" max="200" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Description
+                      <textarea
+                        v-model="promoCampaignForm.description"
+                        rows="2"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        placeholder="Optional notes"
+                      />
                     </label>
+                    <label
+                      class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                    >
+                      <input
+                        v-model="promoCampaignForm.isActive"
+                        type="checkbox"
+                        class="rounded border-gray-300 dark:border-gray-600"
+                      >
+                      Active
+                    </label>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                      :disabled="promotionsSaving || !promoCampaignForm.name.trim()"
+                      @click="createPromoCampaign"
+                    >
+                      {{ promotionsSaving ? 'Saving…' : 'Create campaign' }}
+                    </button>
                   </div>
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Reward type
-                      <select v-model="promoCodeForm.rewardType" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                        <option value="free_month">Free month</option>
-                        <option value="free_year">Free year</option>
-                        <option value="discount_percent">Discount % (Stripe coupon)</option>
+
+                  <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      Create promo code(s)
+                    </h4>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Campaign
+                      <select
+                        v-model="promoCodeForm.campaignId"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                        <option value="">Select campaign…</option>
+                        <option v-for="c in promoCampaigns" :key="c.id" :value="c.id">
+                          {{ c.name }}
+                        </option>
                       </select>
                     </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Max uses per code
-                      <input v-model.number="promoCodeForm.maxUses" type="number" min="1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                  </div>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Allowed plans
-                    <div class="mt-1 flex flex-wrap gap-3">
-                      <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="monthly" class="rounded border-gray-300 dark:border-gray-600">Monthly</label>
-                      <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="yearly" class="rounded border-gray-300 dark:border-gray-600">Yearly</label>
-                      <label class="inline-flex items-center gap-2 text-xs"><input v-model="promoCodeForm.allowedPlanTypes" type="checkbox" value="club" class="rounded border-gray-300 dark:border-gray-600">Club</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Code prefix (optional)
+                        <input
+                          v-model="promoCodeForm.code"
+                          type="text"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono"
+                          placeholder="ACME"
+                        >
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >How many codes
+                        <input
+                          v-model.number="promoCodeForm.quantity"
+                          type="number"
+                          min="1"
+                          max="200"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                      </label>
                     </div>
-                  </label>
-                  <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2">
-                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">Stripe promo mapping</h5>
-                      <label class="text-xs text-gray-600 dark:text-gray-300 block">Stripe coupon ID
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Reward type
+                        <select
+                          v-model="promoCodeForm.rewardType"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                          <option value="free_month">Free month</option>
+                          <option value="free_year">Free year</option>
+                          <option value="discount_percent">Discount % (Stripe coupon)</option>
+                        </select>
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Max uses per code
+                        <input
+                          v-model.number="promoCodeForm.maxUses"
+                          type="number"
+                          min="1"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                      </label>
+                    </div>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Allowed plans
+                      <div class="mt-1 flex flex-wrap gap-3">
+                        <label class="inline-flex items-center gap-2 text-xs"
+                          ><input
+                            v-model="promoCodeForm.allowedPlanTypes"
+                            type="checkbox"
+                            value="monthly"
+                            class="rounded border-gray-300 dark:border-gray-600"
+                          >Monthly</label
+                        >
+                        <label class="inline-flex items-center gap-2 text-xs"
+                          ><input
+                            v-model="promoCodeForm.allowedPlanTypes"
+                            type="checkbox"
+                            value="yearly"
+                            class="rounded border-gray-300 dark:border-gray-600"
+                          >Yearly</label
+                        >
+                        <label class="inline-flex items-center gap-2 text-xs"
+                          ><input
+                            v-model="promoCodeForm.allowedPlanTypes"
+                            type="checkbox"
+                            value="club"
+                            class="rounded border-gray-300 dark:border-gray-600"
+                          >Club</label
+                        >
+                      </div>
+                    </label>
+                    <div
+                      class="rounded-lg border border-gray-100 dark:border-gray-800 p-3 space-y-2"
+                    >
+                      <h5 class="text-xs font-semibold text-gray-800 dark:text-gray-100">
+                        Stripe promo mapping
+                      </h5>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Stripe coupon ID
                         <input
                           v-model="promoCodeForm.stripeCouponId"
                           type="text"
@@ -1741,235 +2789,386 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                         >
                       </label>
                     </div>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Expires at (optional)
-                    <input v-model="promoCodeForm.expiresAt" type="datetime-local" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                  <button
-                    type="button"
-                    class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="promotionsSaving || !promoCodeForm.campaignId"
-                    @click="createPromoCodes"
-                  >
-                    {{ promotionsSaving ? 'Saving…' : 'Create code(s)' }}
-                  </button>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Expires at (optional)
+                      <input
+                        v-model="promoCodeForm.expiresAt"
+                        type="datetime-local"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                    </label>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                      :disabled="promotionsSaving || !promoCodeForm.campaignId"
+                      @click="createPromoCodes"
+                    >
+                      {{ promotionsSaving ? 'Saving…' : 'Create code(s)' }}
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3">
-                <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">Existing promo codes</h4>
-                <p v-if="!promoCodes.length" class="text-sm text-gray-500 dark:text-gray-400">No promo codes yet.</p>
-                <div v-else class="overflow-x-auto">
-                  <table class="min-w-full text-sm">
-                    <thead class="text-left text-gray-500 dark:text-gray-400">
-                      <tr>
-                        <th class="py-1 pr-3">Code</th>
-                        <th class="py-1 pr-3">Campaign</th>
-                        <th class="py-1 pr-3">Reward</th>
-                        <th class="py-1 pr-3">Provider mappings</th>
-                        <th class="py-1 pr-3">Usage</th>
-                        <th class="py-1 pr-3">Plans</th>
-                        <th class="py-1 pr-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="code in promoCodes" :key="code.id" class="border-t border-gray-100 dark:border-gray-800">
-                        <td class="py-2 pr-3 font-mono text-xs text-gray-900 dark:text-gray-100">{{ code.code }}</td>
-                        <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.campaign_name || '—' }}</td>
-                        <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.reward_type }}</td>
-                        <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
-                          <div class="space-y-1 text-xs">
-                            <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
-                          </div>
-                        </td>
-                        <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.used_count }} / {{ code.max_uses }}</td>
-                        <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.allowed_plan_types }}</td>
-                        <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ code.is_active ? 'Active' : 'Inactive' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-3">
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                    Existing promo codes
+                  </h4>
+                  <p v-if="!promoCodes.length" class="text-sm text-gray-500 dark:text-gray-400">
+                    No promo codes yet.
+                  </p>
+                  <div v-else class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                      <thead class="text-left text-gray-500 dark:text-gray-400">
+                        <tr>
+                          <th class="py-1 pr-3">Code</th>
+                          <th class="py-1 pr-3">Campaign</th>
+                          <th class="py-1 pr-3">Reward</th>
+                          <th class="py-1 pr-3">Provider mappings</th>
+                          <th class="py-1 pr-3">Usage</th>
+                          <th class="py-1 pr-3">Plans</th>
+                          <th class="py-1 pr-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="code in promoCodes"
+                          :key="code.id"
+                          class="border-t border-gray-100 dark:border-gray-800"
+                        >
+                          <td class="py-2 pr-3 font-mono text-xs text-gray-900 dark:text-gray-100">
+                            {{ code.code }}
+                          </td>
+                          <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">
+                            {{ code.campaign_name || '—' }}
+                          </td>
+                          <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">
+                            {{ code.reward_type }}
+                          </td>
+                          <td class="py-2 pr-3 text-gray-700 dark:text-gray-300">
+                            <div class="space-y-1 text-xs">
+                              <p>Stripe: {{ code.stripe_coupon_id || '—' }}</p>
+                            </div>
+                          </td>
+                          <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">
+                            {{ code.used_count }}
+                            / {{ code.max_uses }}
+                          </td>
+                          <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">
+                            {{ code.allowed_plan_types }}
+                          </td>
+                          <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">
+                            {{ code.is_active ? 'Active' : 'Inactive' }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
             </AdminAccordionSection>
 
-            <AdminAccordionSection v-if="systemFeatures.isicEnabled" section-key="isic-campaigns" title="ISIC campaigns">
-            <div class="space-y-4">
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <h3 class="font-semibold text-gray-900 dark:text-white">ISIC campaigns</h3>
-                  <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Configure CZ/SK ISIC-based campaigns and API connection placeholders until production keys are available.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
-                  :disabled="isicLoading"
-                  @click="loadIsicCampaigns"
-                >
-                  {{ isicLoading ? 'Loading…' : 'Reload ISIC' }}
-                </button>
-              </div>
-
-              <div v-if="isicMessage" class="rounded-lg border px-3 py-2 text-sm" :class="isicMessageClass">
-                {{ isicMessage }}
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <label class="text-xs text-gray-600 dark:text-gray-300 block">Enable ISIC API
-                  <div class="mt-1">
-                    <input v-model="isicApiConfig.enabled" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
+            <AdminAccordionSection
+              v-if="systemFeatures.isicEnabled"
+              section-key="isic-campaigns"
+              title="ISIC campaigns"
+            >
+              <div class="space-y-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">ISIC campaigns</h3>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                      Configure CZ/SK ISIC-based campaigns and API connection placeholders until
+                      production keys are available.
+                    </p>
                   </div>
-                </label>
-                <label class="text-xs text-gray-600 dark:text-gray-300 block md:col-span-2">API base URL
-                  <input v-model="isicApiConfig.baseUrl" type="url" placeholder="https://alive.example.com/api" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
-                </label>
-              </div>
-              <label class="text-xs text-gray-600 dark:text-gray-300 block">API key (stored in admin_settings until secrets are available)
-                <input v-model="isicApiConfig.apiKey" type="password" placeholder="Paste key" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs">
-              </label>
-              <button
-                type="button"
-                class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                :disabled="isicSaving"
-                @click="saveIsicApiConfig"
-              >
-                {{ isicSaving ? 'Saving…' : 'Save ISIC API config' }}
-              </button>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Create ISIC campaign</h4>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Name
-                    <input v-model="isicCampaignForm.name" type="text" placeholder="Students 5000 free slots" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Description
-                    <textarea v-model="isicCampaignForm.description" rows="2" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
-                  </label>
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Free slots limit
-                      <input v-model.number="isicCampaignForm.freeSlotsLimit" type="number" min="0" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Discount percent
-                      <input v-model.number="isicCampaignForm.discountPercent" type="number" min="0" max="100" step="0.1" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                  </div>
-                  <div class="grid grid-cols-2 gap-2">
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Renewal months
-                      <input v-model.number="isicCampaignForm.renewalMonths" type="number" min="1" max="36" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                    </label>
-                    <label class="text-xs text-gray-600 dark:text-gray-300 block">Popup behavior
-                      <select v-model="isicCampaignForm.popupBehavior" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                        <option value="default">Default</option>
-                        <option value="highlight_campaign">Highlight campaign</option>
-                        <option value="hide_standard">Hide standard plans</option>
-                        <option value="isic_first">ISIC first</option>
-                      </select>
-                    </label>
-                  </div>
-                  <label class="text-xs text-gray-600 dark:text-gray-300 block">Country scope
-                    <input v-model="isicCampaignForm.countryScope" type="text" placeholder="CZ,SK" class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-                  </label>
-                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                    <input v-model="isicCampaignForm.isActive" type="checkbox" class="rounded border-gray-300 dark:border-gray-600">
-                    Active
-                  </label>
                   <button
                     type="button"
-                    class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-                    :disabled="isicSaving || !isicCampaignForm.name.trim()"
-                    @click="createIsicCampaign"
+                    class="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
+                    :disabled="isicLoading"
+                    @click="loadIsicCampaigns"
                   >
-                    {{ isicSaving ? 'Saving…' : 'Create ISIC campaign' }}
+                    {{ isicLoading ? 'Loading…' : 'Reload ISIC' }}
                   </button>
                 </div>
 
-                <div class="space-y-2">
-                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Active ISIC campaigns</h4>
-                  <p v-if="!isicCampaigns.length" class="text-sm text-gray-500 dark:text-gray-400">No ISIC campaigns yet.</p>
-                  <div v-else class="space-y-2">
-                    <div v-for="campaign in isicCampaigns" :key="campaign.id" class="rounded border border-gray-100 dark:border-gray-800 p-3">
-                      <p class="font-medium text-gray-900 dark:text-white">{{ campaign.name }}</p>
-                      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Slots: {{ campaign.free_slots_limit }} · Discount: {{ campaign.discount_percent }}% · Renewal: {{ campaign.renewal_months }} months
-                      </p>
-                      <p class="text-xs text-gray-500 dark:text-gray-400">Behavior: {{ campaign.popup_behavior }} · Scope: {{ campaign.country_scope }}</p>
+                <div
+                  v-if="isicMessage"
+                  class="rounded-lg border px-3 py-2 text-sm"
+                  :class="isicMessageClass"
+                >
+                  {{ isicMessage }}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                    >Enable ISIC API
+                    <div class="mt-1">
+                      <input
+                        v-model="isicApiConfig.enabled"
+                        type="checkbox"
+                        class="rounded border-gray-300 dark:border-gray-600"
+                      >
+                    </div>
+                  </label>
+                  <label class="text-xs text-gray-600 dark:text-gray-300 block md:col-span-2"
+                    >API base URL
+                    <input
+                      v-model="isicApiConfig.baseUrl"
+                      type="url"
+                      placeholder="https://alive.example.com/api"
+                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                  </label>
+                </div>
+                <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                  >API key (stored in admin_settings until secrets are available)
+                  <input
+                    v-model="isicApiConfig.apiKey"
+                    type="password"
+                    placeholder="Paste key"
+                    class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                  >
+                </label>
+                <button
+                  type="button"
+                  class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                  :disabled="isicSaving"
+                  @click="saveIsicApiConfig"
+                >
+                  {{ isicSaving ? 'Saving…' : 'Save ISIC API config' }}
+                </button>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      Create ISIC campaign
+                    </h4>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Name
+                      <input
+                        v-model="isicCampaignForm.name"
+                        type="text"
+                        placeholder="Students 5000 free slots"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                    </label>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Description
+                      <textarea
+                        v-model="isicCampaignForm.description"
+                        rows="2"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      />
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Free slots limit
+                        <input
+                          v-model.number="isicCampaignForm.freeSlotsLimit"
+                          type="number"
+                          min="0"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Discount percent
+                        <input
+                          v-model.number="isicCampaignForm.discountPercent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                      </label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Renewal months
+                        <input
+                          v-model.number="isicCampaignForm.renewalMonths"
+                          type="number"
+                          min="1"
+                          max="36"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                      </label>
+                      <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                        >Popup behavior
+                        <select
+                          v-model="isicCampaignForm.popupBehavior"
+                          class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                        >
+                          <option value="default">Default</option>
+                          <option value="highlight_campaign">Highlight campaign</option>
+                          <option value="hide_standard">Hide standard plans</option>
+                          <option value="isic_first">ISIC first</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label class="text-xs text-gray-600 dark:text-gray-300 block"
+                      >Country scope
+                      <input
+                        v-model="isicCampaignForm.countryScope"
+                        type="text"
+                        placeholder="CZ,SK"
+                        class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      >
+                    </label>
+                    <label
+                      class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                    >
+                      <input
+                        v-model="isicCampaignForm.isActive"
+                        type="checkbox"
+                        class="rounded border-gray-300 dark:border-gray-600"
+                      >
+                      Active
+                    </label>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                      :disabled="isicSaving || !isicCampaignForm.name.trim()"
+                      @click="createIsicCampaign"
+                    >
+                      {{ isicSaving ? 'Saving…' : 'Create ISIC campaign' }}
+                    </button>
+                  </div>
+
+                  <div class="space-y-2">
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                      Active ISIC campaigns
+                    </h4>
+                    <p
+                      v-if="!isicCampaigns.length"
+                      class="text-sm text-gray-500 dark:text-gray-400"
+                    >
+                      No ISIC campaigns yet.
+                    </p>
+                    <div v-else class="space-y-2">
+                      <div
+                        v-for="campaign in isicCampaigns"
+                        :key="campaign.id"
+                        class="rounded border border-gray-100 dark:border-gray-800 p-3"
+                      >
+                        <p class="font-medium text-gray-900 dark:text-white">{{ campaign.name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Slots: {{ campaign.free_slots_limit }} · Discount:
+                          {{ campaign.discount_percent }}% · Renewal:
+                          {{ campaign.renewal_months }}
+                          months
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                          Behavior: {{ campaign.popup_behavior }} · Scope:
+                          {{ campaign.country_scope }}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
             </AdminAccordionSection>
 
-            <AdminAccordionSection v-if="systemFeatures.freePodcastPreviewEnabled" section-key="podcast-rebuild" title="Podcast rebuild webhook">
-            <div class="space-y-4">
-              <div>
-                <h3 class="font-semibold text-gray-900 dark:text-white">Podcast preview (RSS)</h3>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  The public feed prefers HLS or a pre-cut
-                  <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">podcast_preview.mp3</code>
-                  so preview length tracks your preview duration without waiting on ffmpeg. After you change preview durations, notify your media host to re-encode preview MP3s if you use them.
+            <AdminAccordionSection
+              v-if="systemFeatures.freePodcastPreviewEnabled"
+              section-key="podcast-rebuild"
+              title="Podcast rebuild webhook"
+            >
+              <div class="space-y-4">
+                <div>
+                  <h3 class="font-semibold text-gray-900 dark:text-white">Podcast preview (RSS)</h3>
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    The public feed prefers HLS or a pre-cut
+                    <code class="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded"
+                      >podcast_preview.mp3</code
+                    >
+                    so preview length tracks your preview duration without waiting on ffmpeg. After
+                    you change preview durations, notify your media host to re-encode preview MP3s
+                    if you use them.
+                  </p>
+                </div>
+
+                <div
+                  v-if="rssPodcastMessage"
+                  class="rounded-lg border px-4 py-3 text-sm"
+                  :class="rssPodcastMessageClass"
+                >
+                  {{ rssPodcastMessage }}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                    Rebuild webhook URL (your host / tunnel)
+                    <input
+                      v-model="rssPodcastWebhookUrl"
+                      type="url"
+                      placeholder="https://media.example.internal:8788/vmp/api/podcast-preview-rebuild"
+                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                  </label>
+                  <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                    Shared secret (HMAC-SHA256 of JSON body; min 16 chars)
+                    <input
+                      v-model="rssPodcastWebhookSecretInput"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="Leave blank to keep current secret"
+                      class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                    >
+                  </label>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
+                    :disabled="rssPodcastWebhookSaving"
+                    @click="saveRssPodcastWebhookSettings"
+                  >
+                    {{ rssPodcastWebhookSaving ? 'Saving…' : 'Save webhook settings' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-50"
+                    :disabled="rssPodcastNotifySending"
+                    @click="notifyPodcastPreviewRebuild"
+                  >
+                    {{ rssPodcastNotifySending ? 'Notifying…' : 'Notify host to re-render preview podcasts' }}
+                  </button>
+                </div>
+                <p
+                  v-if="rssPodcastSecretConfigured"
+                  class="text-xs text-gray-500 dark:text-gray-400"
+                >
+                  A webhook secret is configured on the server.
                 </p>
               </div>
-
-              <div v-if="rssPodcastMessage" class="rounded-lg border px-4 py-3 text-sm" :class="rssPodcastMessageClass">{{ rssPodcastMessage }}</div>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  Rebuild webhook URL (your host / tunnel)
-                  <input
-                    v-model="rssPodcastWebhookUrl"
-                    type="url"
-                    placeholder="https://media.example.internal:8788/vmp/api/podcast-preview-rebuild"
-                    class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                  >
-                </label>
-                <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                  Shared secret (HMAC-SHA256 of JSON body; min 16 chars)
-                  <input
-                    v-model="rssPodcastWebhookSecretInput"
-                    type="password"
-                    autocomplete="new-password"
-                    placeholder="Leave blank to keep current secret"
-                    class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                  >
-                </label>
-              </div>
-
-              <div class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-semibold disabled:opacity-50"
-                  :disabled="rssPodcastWebhookSaving"
-                  @click="saveRssPodcastWebhookSettings"
-                >
-                  {{ rssPodcastWebhookSaving ? 'Saving…' : 'Save webhook settings' }}
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-50"
-                  :disabled="rssPodcastNotifySending"
-                  @click="notifyPodcastPreviewRebuild"
-                >
-                  {{ rssPodcastNotifySending ? 'Notifying…' : 'Notify host to re-render preview podcasts' }}
-                </button>
-              </div>
-              <p v-if="rssPodcastSecretConfigured" class="text-xs text-gray-500 dark:text-gray-400">A webhook secret is configured on the server.</p>
-            </div>
             </AdminAccordionSection>
           </template>
         </div>
       </section>
-
     </main>
 
     <AdminBuildFooter />
 
     <div class="fixed top-20 right-4 z-50 space-y-2">
-      <div v-for="toast in toasts" :key="toast.id" role="status" aria-live="polite" aria-atomic="true" class="rounded-lg border px-3 py-2 text-sm shadow" :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'">{{ toast.message }}</div>
+      <div
+        v-for="toast in toasts"
+        :key="toast.id"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        class="rounded-lg border px-3 py-2 text-sm shadow"
+        :class="toast.type === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'"
+      >
+        {{ toast.message }}
+      </div>
     </div>
 
-    <div v-if="confirmModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="onConfirmCancel">
+    <div
+      v-if="confirmModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="onConfirmCancel"
+    >
       <div
         ref="confirmDialogRef"
         role="dialog"
@@ -1979,10 +3178,21 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         tabindex="-1"
         class="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
       >
-        <h3 id="confirmModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ confirmModalTitle }}</h3>
-        <p id="confirmModalDesc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ confirmModal.impactText }}</p>
+        <h3 id="confirmModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+          {{ confirmModalTitle }}
+        </h3>
+        <p id="confirmModalDesc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          {{ confirmModal.impactText }}
+        </p>
         <div class="flex justify-end gap-2">
-          <button type="button" aria-label="Cancel" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="onConfirmCancel">Cancel</button>
+          <button
+            type="button"
+            aria-label="Cancel"
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm"
+            @click="onConfirmCancel"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             aria-label="Confirm"
@@ -1996,59 +3206,109 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       </div>
     </div>
 
-    <div v-if="livestreamModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeLivestreamModal">
-      <div class="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
+    <div
+      v-if="livestreamModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="closeLivestreamModal"
+    >
+      <div
+        class="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
+      >
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Create livestream video</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Creates a standard video row configured for MoQ playback (endpoint + broadcast name).</p>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+              Create livestream video
+            </h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              Creates a standard video row configured for MoQ playback (endpoint + broadcast name).
+            </p>
           </div>
-          <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closeLivestreamModal">Close</button>
+          <button
+            class="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+            @click="closeLivestreamModal"
+          >
+            Close
+          </button>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label class="text-sm text-gray-700 dark:text-gray-300">Title
-            <input v-model="livestreamModal.form.title" type="text" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >Title
+            <input
+              v-model="livestreamModal.form.title"
+              type="text"
+              class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Slug (optional)
-            <input v-model="livestreamModal.form.slug" type="text" placeholder="my-livestream" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white" />
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >Slug (optional)
+            <input
+              v-model="livestreamModal.form.slug"
+              type="text"
+              placeholder="my-livestream"
+              class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Initial stream status
-            <select v-model="livestreamModal.form.status" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >Initial stream status
+            <select
+              v-model="livestreamModal.form.status"
+              class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
               <option value="draft">draft</option>
               <option value="ready">ready</option>
               <option value="live">live</option>
             </select>
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">Publish status
-            <select v-model="livestreamModal.form.publishStatus" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >Publish status
+            <select
+              v-model="livestreamModal.form.publishStatus"
+              class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
               <option value="draft">draft</option>
               <option value="published">published</option>
             </select>
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300 md:col-span-2">Description
-            <textarea v-model="livestreamModal.form.description" rows="2" class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"></textarea>
+          <label class="text-sm text-gray-700 dark:text-gray-300 md:col-span-2"
+            >Description
+            <textarea
+              v-model="livestreamModal.form.description"
+              rows="2"
+              class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            ></textarea>
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">MoQ endpoint URL
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >MoQ endpoint URL
             <input
               v-model="livestreamModal.form.moqEndpoint"
               type="url"
               placeholder="https://cdn.moq.dev/anon"
               class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-            />
+            >
           </label>
-          <label class="text-sm text-gray-700 dark:text-gray-300">MoQ broadcast name
+          <label class="text-sm text-gray-700 dark:text-gray-300"
+            >MoQ broadcast name
             <input
               v-model="livestreamModal.form.moqBroadcast"
               type="text"
               placeholder="obstesting123"
               class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-            />
+            >
           </label>
         </div>
-        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">The watch page will use these MoQ fields directly for livestream playback.</p>
-        <p v-if="livestreamModal.error" class="mt-3 text-sm text-red-600 dark:text-red-300">{{ livestreamModal.error }}</p>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          The watch page will use these MoQ fields directly for livestream playback.
+        </p>
+        <p v-if="livestreamModal.error" class="mt-3 text-sm text-red-600 dark:text-red-300">
+          {{ livestreamModal.error }}
+        </p>
         <div class="mt-4 flex justify-end gap-2">
-          <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="closeLivestreamModal">Cancel</button>
+          <button
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm"
+            @click="closeLivestreamModal"
+          >
+            Cancel
+          </button>
           <button
             class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="livestreamModal.saving"
@@ -2061,7 +3321,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     </div>
 
     <!-- Schedule modal -->
-    <div v-if="scheduleModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeScheduleModal">
+    <div
+      v-if="scheduleModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="closeScheduleModal"
+    >
       <div
         ref="scheduleDialogRef"
         role="dialog"
@@ -2072,14 +3336,26 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       >
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 id="scheduleModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white">Schedule</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">{{ scheduleModalVideo?.title || 'Video' }}</p>
+            <h3 id="scheduleModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white">
+              Schedule
+            </h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">
+              {{ scheduleModalVideo?.title || 'Video' }}
+            </p>
           </div>
-          <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closeScheduleModal">Close</button>
+          <button
+            class="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+            @click="closeScheduleModal"
+          >
+            Close
+          </button>
         </div>
         <div v-if="scheduleModalVideo" class="space-y-4">
           <div class="space-y-1">
-            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Upload date</label>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+              >Upload date</label
+            >
             <input
               v-model="scheduleModal.uploadDate"
               type="text"
@@ -2088,16 +3364,21 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               :placeholder="scheduleInputPlaceholder"
               class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white font-mono"
               :disabled="statusUpdating[scheduleModalVideo.id]"
-            />
+            >
             <button
               type="button"
               class="px-2 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-white font-medium disabled:opacity-50"
               :disabled="statusUpdating[scheduleModalVideo.id]"
               @click="applyUploadDateFromScheduleModal(scheduleModalVideo)"
-            >Apply upload date</button>
+            >
+              Apply upload date
+            </button>
           </div>
           <div class="space-y-1">
-            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scheduled publish date</label>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+              >Scheduled publish date</label
+            >
             <input
               v-model="scheduleModal.scheduleDate"
               type="text"
@@ -2106,24 +3387,31 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               :placeholder="scheduleInputPlaceholder"
               class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white font-mono"
               :disabled="statusUpdating[scheduleModalVideo.id]"
-            />
+            >
             <div class="flex gap-2">
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-50"
                 :disabled="statusUpdating[scheduleModalVideo.id]"
                 @click="applyScheduleFromModal(scheduleModalVideo)"
-              >Apply schedule</button>
+              >
+                Apply schedule
+              </button>
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
                 :disabled="statusUpdating[scheduleModalVideo.id]"
                 @click="clearScheduleFromModal(scheduleModalVideo)"
-              >Clear schedule</button>
+              >
+                Clear schedule
+              </button>
             </div>
           </div>
           <div class="space-y-1">
-            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Published date</label>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+              >Published date</label
+            >
             <input
               v-model="scheduleModal.publishedDate"
               type="text"
@@ -2132,31 +3420,45 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               :placeholder="scheduleInputPlaceholder"
               class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white font-mono"
               :disabled="statusUpdating[scheduleModalVideo.id]"
-            />
+            >
             <div class="flex gap-2">
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-50"
                 :disabled="statusUpdating[scheduleModalVideo.id]"
                 @click="applyPublishedAtFromModal(scheduleModalVideo)"
-              >Apply date</button>
+              >
+                Apply date
+              </button>
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 disabled:opacity-50"
                 :disabled="statusUpdating[scheduleModalVideo.id]"
                 @click="clearPublishedDateFromModal(scheduleModalVideo)"
-              >Clear publish date</button>
+              >
+                Clear publish date
+              </button>
             </div>
           </div>
         </div>
         <div class="mt-4 flex justify-end">
-          <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeScheduleModal">Done</button>
+          <button
+            type="button"
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+            @click="closeScheduleModal"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>
 
     <!-- Description modal -->
-    <div v-if="descriptionModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeDescriptionModal">
+    <div
+      v-if="descriptionModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="closeDescriptionModal"
+    >
       <div
         ref="descriptionDialogRef"
         role="dialog"
@@ -2167,14 +3469,29 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       >
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 id="descriptionModalTitle" class="text-lg font-semibold text-gray-900 dark:text-white">Edit description</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">{{ descriptionModal.title }}</p>
+            <h3
+              id="descriptionModalTitle"
+              class="text-lg font-semibold text-gray-900 dark:text-white"
+            >
+              Edit description
+            </h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-1">
+              {{ descriptionModal.title }}
+            </p>
           </div>
-          <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closeDescriptionModal">Close</button>
+          <button
+            class="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+            @click="closeDescriptionModal"
+          >
+            Close
+          </button>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Markdown</label>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
+              >Markdown</label
+            >
             <textarea
               ref="descriptionInputEl"
               v-model="descriptionModal.value"
@@ -2184,7 +3501,10 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             ></textarea>
           </div>
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Preview</label>
+            <label
+              class="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2"
+              >Preview</label
+            >
             <div
               class="min-h-[22rem] max-h-[26rem] overflow-y-auto px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 text-sm text-gray-900 dark:text-gray-100 prose prose-sm dark:prose-invert max-w-none"
               v-html="descriptionModalPreviewHtml"
@@ -2192,8 +3512,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </div>
         </div>
         <div class="mt-4 flex justify-end gap-2">
-          <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm" @click="closeDescriptionModal">Cancel</button>
-          <button type="button" class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold" @click="saveDescriptionModal">Save description</button>
+          <button
+            type="button"
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-sm"
+            @click="closeDescriptionModal"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+            @click="saveDescriptionModal"
+          >
+            Save description
+          </button>
         </div>
       </div>
     </div>
@@ -2213,12 +3545,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         class="w-full max-w-md rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
       >
         <template v-if="transferSubModal.step === 0">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">Transfer subscription</h3>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+            Transfer subscription
+          </h3>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Move all subscription rows from <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.sourceUser?.email }}</span>
-            to another account. The destination must exist and must not already have an active or trialing subscription.
+            Move all subscription rows from
+            <span class="font-medium text-gray-900 dark:text-white"
+              >{{ transferSubModal.sourceUser?.email }}</span
+            >
+            to another account. The destination must exist and must not already have an active or
+            trialing subscription.
           </p>
-          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1" for="transfer-sub-target-email">Destination email</label>
+          <label
+            class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+            for="transfer-sub-target-email"
+            >Destination email</label
+          >
           <input
             id="transfer-sub-target-email"
             v-model="transferSubModal.targetEmail"
@@ -2226,10 +3568,18 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             autocomplete="off"
             class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
             placeholder="user@example.com"
-          />
-          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mt-2">{{ transferSubModal.error }}</p>
+          >
+          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mt-2">
+            {{ transferSubModal.error }}
+          </p>
           <div class="flex justify-end gap-2 mt-5">
-            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="closeTransferSubscriptionModal">Cancel</button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              @click="closeTransferSubscriptionModal"
+            >
+              Cancel
+            </button>
             <button
               type="button"
               class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
@@ -2244,14 +3594,25 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Confirm transfer</h3>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
             Transfer subscription from
-            <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.sourceUser?.email }}</span>
+            <span class="font-medium text-gray-900 dark:text-white"
+              >{{ transferSubModal.sourceUser?.email }}</span
+            >
             to
-            <span class="font-medium text-gray-900 dark:text-white">{{ transferSubModal.targetEmail.trim() }}</span>?
-            This reassigns every subscription row to the destination account.
+            <span class="font-medium text-gray-900 dark:text-white"
+              >{{ transferSubModal.targetEmail.trim() }}</span
+            >? This reassigns every subscription row to the destination account.
           </p>
-          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mb-3">{{ transferSubModal.error }}</p>
+          <p v-if="transferSubModal.error" class="text-sm text-red-600 dark:text-red-400 mb-3">
+            {{ transferSubModal.error }}
+          </p>
           <div class="flex justify-end gap-2">
-            <button type="button" class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="transferSubModal.step = 0">Back</button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              @click="transferSubModal.step = 0"
+            >
+              Back
+            </button>
             <button
               type="button"
               class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold disabled:opacity-50"
@@ -2266,7 +3627,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     </div>
 
     <!-- Swap modal -->
-    <div v-if="swapModal.open" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="swapModal.open = false">
+    <div
+      v-if="swapModal.open"
+      class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      @click.self="swapModal.open = false"
+    >
       <div
         ref="swapDialogRef"
         role="dialog"
@@ -2279,25 +3644,52 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         <template v-if="swapModal.step === 0">
           <div class="flex items-center justify-between mb-3 flex-shrink-0">
             <div>
-              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Swap out «{{ swapModal.sourceVideo?.title }}»</h3>
-              <p class="text-sm text-gray-600 dark:text-gray-400 mt-0.5">Select a draft video to replace it. The draft will be published and inherit all settings.</p>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                Swap out «{{ swapModal.sourceVideo?.title }}»
+              </h3>
+              <p class="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                Select a draft video to replace it. The draft will be published and inherit all
+                settings.
+              </p>
             </div>
-            <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline ml-4 flex-shrink-0" @click="swapModal.open = false">Close</button>
+            <button
+              class="text-sm text-gray-600 dark:text-gray-300 hover:underline ml-4 flex-shrink-0"
+              @click="swapModal.open = false"
+            >
+              Close
+            </button>
           </div>
           <div class="overflow-y-auto space-y-2 flex-1">
-            <div v-if="!draftVideos.length" class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">No draft videos available.</div>
+            <div
+              v-if="!draftVideos.length"
+              class="text-sm text-gray-500 dark:text-gray-400 py-4 text-center"
+            >
+              No draft videos available.
+            </div>
             <button
               v-for="draft in draftVideos"
               :key="draft.id"
               class="w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-purple-500 dark:hover:border-purple-500 transition-colors flex items-center gap-3"
               @click="selectSwapTarget(draft)"
             >
-              <div class="w-24 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 flex-shrink-0">
-                <img v-if="draft.thumbnail_url" :src="sizeUrl(draft.thumbnail_url, 'small')" :alt="draft.title" class="w-full h-full object-cover" />
+              <div
+                class="w-24 aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 flex-shrink-0"
+              >
+                <img
+                  v-if="draft.thumbnail_url"
+                  :src="sizeUrl(draft.thumbnail_url, 'small')"
+                  :alt="draft.title"
+                  class="w-full h-full object-cover"
+                >
               </div>
               <div class="min-w-0">
-                <p class="font-medium text-gray-900 dark:text-white line-clamp-1">{{ draft.title }}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ formatSeconds(getActualDuration(draft)) }} · uploaded {{ formatDate(draft.upload_date) }}</p>
+                <p class="font-medium text-gray-900 dark:text-white line-clamp-1">
+                  {{ draft.title }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {{ formatSeconds(getActualDuration(draft)) }}
+                  · uploaded {{ formatDate(draft.upload_date) }}
+                </p>
               </div>
             </button>
           </div>
@@ -2308,44 +3700,98 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">Confirm swap</h3>
           <div class="grid grid-cols-2 gap-4 mb-4">
             <div class="rounded-lg border border-red-200 dark:border-red-900 p-3">
-              <p class="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-2">Retiring</p>
+              <p
+                class="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-2"
+              >
+                Retiring
+              </p>
               <div class="aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
-                <img v-if="swapModal.sourceVideo?.thumbnail_url" :src="sizeUrl(swapModal.sourceVideo.thumbnail_url, 'medium')" class="w-full h-full object-cover" alt="" />
+                <img
+                  v-if="swapModal.sourceVideo?.thumbnail_url"
+                  :src="sizeUrl(swapModal.sourceVideo.thumbnail_url, 'medium')"
+                  class="w-full h-full object-cover"
+                  alt=""
+                >
               </div>
-              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">{{ swapModal.sourceVideo?.title }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Will become «OLD - {{ swapModal.sourceVideo?.title }}» (draft)</p>
+              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">
+                {{ swapModal.sourceVideo?.title }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Will become «OLD - {{ swapModal.sourceVideo?.title }}» (draft)
+              </p>
             </div>
             <div class="rounded-lg border border-green-200 dark:border-green-900 p-3">
-              <p class="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide mb-2">Publishing</p>
+              <p
+                class="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide mb-2"
+              >
+                Publishing
+              </p>
               <div class="aspect-video rounded overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
-                <img v-if="swapTargetVideo?.thumbnail_url" :src="sizeUrl(swapTargetVideo.thumbnail_url, 'medium')" class="w-full h-full object-cover" alt="" />
+                <img
+                  v-if="swapTargetVideo?.thumbnail_url"
+                  :src="sizeUrl(swapTargetVideo.thumbnail_url, 'medium')"
+                  class="w-full h-full object-cover"
+                  alt=""
+                >
               </div>
-              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">{{ swapTargetVideo?.title }}</p>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Will publish at /watch/{{ swapModal.sourceVideo?.slug ?? swapModal.sourceVideo?.id }}</p>
+              <p class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">
+                {{ swapTargetVideo?.title }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Will publish at /watch/{{ swapModal.sourceVideo?.slug ?? swapModal.sourceVideo?.id }}
+              </p>
             </div>
           </div>
-          <p class="text-sm text-amber-600 dark:text-amber-400 mb-4">⚠ This cannot be undone. Title, slug, thumbnail, dates, and preview lock transfer to the new video.</p>
+          <p class="text-sm text-amber-600 dark:text-amber-400 mb-4">
+            ⚠ This cannot be undone. Title, slug, thumbnail, dates, and preview lock transfer to the
+            new video.
+          </p>
           <div class="flex justify-end gap-2">
-            <button class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm" @click="swapModal.step = 0">Back</button>
-            <button class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold" @click="executeSwap">Confirm Swap</button>
+            <button
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              @click="swapModal.step = 0"
+            >
+              Back
+            </button>
+            <button
+              class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold"
+              @click="executeSwap"
+            >
+              Confirm Swap
+            </button>
           </div>
         </template>
 
         <!-- Step 2: in progress -->
         <template v-else>
           <div class="flex flex-col items-center justify-center py-12 gap-3">
-            <div class="w-8 h-8 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin"></div>
+            <div
+              class="w-8 h-8 border-2 border-gray-300 border-t-purple-600 rounded-full animate-spin"
+            ></div>
             <p class="text-sm text-gray-600 dark:text-gray-400">Swapping videos…</p>
           </div>
         </template>
       </div>
     </div>
 
-    <div v-if="pickerOpen" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4" @click.self="closePicker">
-      <div class="w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5">
+    <div
+      v-if="pickerOpen"
+      class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4"
+      @click.self="closePicker"
+    >
+      <div
+        class="w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5"
+      >
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-gray-900 dark:text-white">Choose video for featured slot {{ activeSlotIndex + 1 }}</h3>
-          <button class="text-sm text-gray-600 dark:text-gray-300 hover:underline" @click="closePicker">Close</button>
+          <h3 class="text-lg font-bold text-gray-900 dark:text-white">
+            Choose video for featured slot {{ activeSlotIndex + 1 }}
+          </h3>
+          <button
+            class="text-sm text-gray-600 dark:text-gray-300 hover:underline"
+            @click="closePicker"
+          >
+            Close
+          </button>
         </div>
         <div class="mb-4 flex flex-wrap items-center gap-3">
           <button
@@ -2355,7 +3801,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           >
             Unpin this slot
           </button>
-          <p class="text-xs text-gray-500 dark:text-gray-400">Unpinned slots fall back to automatic or category placement on the public homepage.</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Unpinned slots fall back to automatic or category placement on the public homepage.
+          </p>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
@@ -2365,10 +3813,17 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             @click="swapFeatured(video)"
           >
             <div class="aspect-video rounded-md overflow-hidden bg-gray-200 dark:bg-gray-800 mb-2">
-              <img v-if="video.thumbnail_url" :src="video.thumbnail_url" :alt="video.title" class="w-full h-full object-cover" />
+              <img
+                v-if="video.thumbnail_url"
+                :src="video.thumbnail_url"
+                :alt="video.title"
+                class="w-full h-full object-cover"
+              >
             </div>
             <p class="font-medium text-gray-900 dark:text-white line-clamp-2">{{ video.title }}</p>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">{{ formatDate(video.upload_date) }}</p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              {{ formatDate(video.upload_date) }}
+            </p>
           </button>
         </div>
       </div>
@@ -2377,1330 +3832,308 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 </template>
 
 <script setup lang="ts">
-import { sanitizeVideoSlug } from '@vmp/shared'
-import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail'
-import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling'
-import { buildHomepageRenderModel, assignGridPositions, layoutIncludesFeaturedRowBlock } from '~/composables/useHomepageLayout'
-import type { HomepageLayoutBlock, HomepagePlacementResponse, HomepageRenderLeafBlock, HomepageRenderSplitBlock } from '~/composables/useHomepageLayout'
-import { renderMarkdownToHtml } from '~/utils/markdown'
-// ── Route guard ───────────────────────────────────────────────────────────────
-// This single line is the only meaningful addition to this file.
-// The middleware checks auth + role before this component ever mounts.
-definePageMeta({ middleware: 'admin' })
-usePageSeo({ title: 'Admin' })
+  import { sanitizeVideoSlug } from '@vmp/shared';
+  import { useAdminNewsletterPolling } from '~/composables/useAdminNewsletterPolling';
+  import type {
+    HomepageLayoutBlock,
+    HomepagePlacementResponse,
+    HomepageRenderLeafBlock,
+    HomepageRenderSplitBlock,
+  } from '~/composables/useHomepageLayout';
+  import {
+    assignGridPositions,
+    buildHomepageRenderModel,
+    layoutIncludesFeaturedRowBlock,
+  } from '~/composables/useHomepageLayout';
+  import { adminTableThumbUrl, sizeUrl } from '~/composables/useThumbnail';
+  import { renderMarkdownToHtml } from '~/utils/markdown';
 
-// ── Everything below is unchanged from the previous version ──────────────────
+  // ── Route guard ───────────────────────────────────────────────────────────────
+  // This single line is the only meaningful addition to this file.
+  // The middleware checks auth + role before this component ever mounts.
+  definePageMeta({ middleware: 'admin' });
+  usePageSeo({ title: 'Admin' });
 
-interface Video {
-  id: string
-  title: string
-  description: string
-  thumbnail_url: string
-  upload_date: string
-  full_duration: number
-  preview_duration: number
-  publish_status: 'draft' | 'published' | 'archived' | null
-  published_at?: string | null
-  scheduled_publish_at?: string | null
-  notified_at?: string | null
-  r2_exists: boolean | null
-  slug?: string | null
-  legacy_slug?: string | null
-  category_id?: string | null
-  total_views?: number
-  livestream_provider?: string | null
-  livestream_status?: string | null
-  livestream_moq_endpoint?: string | null
-  livestream_moq_broadcast?: string | null
-  livestream_recording_video_id?: string | null
-}
+  // ── Everything below is unchanged from the previous version ──────────────────
 
-interface Category {
-  id: string
-  name: string
-  slug: string
-  sort_order: number
-  direction: 'asc' | 'desc'
-  homepage_layout_variant?: 'three_by_one' | 'side_mini'
-  recommendation_recency_bias?: number
-  recommendation_low_views_boost?: number
-  recommendation_category_lock?: number
-  video_count?: number
-}
-
-/** Row shape from GET /api/admin/users */
-interface AdminUserRow {
-  id: string
-  email: string
-  role: string
-  subscription_status?: string | null
-  created_at?: string
-  plan_type?: string | null
-  current_period_end?: string | null
-  /** Optimistic / pending select value; cleared after successful reload */
-  uiRole?: string
-  uiSubscription?: string
-}
-
-type BlockType = 'featured_row' | 'category' | 'top_video' | 'page_banner' | 'split_horizontal' | 'split_vertical'
-type LeafBlockType = 'featured_row' | 'category' | 'top_video'
-type LayoutBlock = HomepageLayoutBlock
-
-type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d'
-type AnalyticsGranularity = 'hour' | 'day' | 'week' | 'month'
-type AnalyticsDataset = 'all' | 'overview' | 'views' | 'watchtime' | 'retention' | 'sources' | 'countries' | 'subscriptions' | 'cashflow'
-
-interface AnalyticsSeriesPoint {
-  bucket: string
-  uniqueSessions?: number
-  totalWatchSeconds?: number
-  newSubscriptions?: number
-  churnedSubscriptions?: number
-  expiringSubscriptions?: number
-  estimatedNewRevenueEur?: number
-  estimatedNetNewEur?: number
-}
-
-interface AnalyticsResponse {
-  meta?: {
-    range?: AnalyticsRange
-    granularity?: AnalyticsGranularity
-    videoId?: string | null
-    generatedAt?: string
-    startAt?: string
-    endAt?: string
+  interface Video {
+    id: string;
+    title: string;
+    description: string;
+    thumbnail_url: string;
+    upload_date: string;
+    full_duration: number;
+    preview_duration: number;
+    publish_status: 'draft' | 'published' | 'archived' | null;
+    published_at?: string | null;
+    scheduled_publish_at?: string | null;
+    notified_at?: string | null;
+    r2_exists: boolean | null;
+    slug?: string | null;
+    legacy_slug?: string | null;
+    category_id?: string | null;
+    total_views?: number;
+    livestream_provider?: string | null;
+    livestream_status?: string | null;
+    livestream_moq_endpoint?: string | null;
+    livestream_moq_broadcast?: string | null;
+    livestream_recording_video_id?: string | null;
   }
-  kpis?: {
-    totalUniqueViews?: number
-    totalWatchSeconds?: number
-    totalWatchTimeLabel?: string
-    segmentRequests?: number
-    averageRetentionPercent?: number
-    activeSubscribers?: number
-    churnRatePercent?: number
-    estimatedActiveMrrEur?: number
+
+  interface Category {
+    id: string;
+    name: string;
+    slug: string;
+    sort_order: number;
+    direction: 'asc' | 'desc';
+    homepage_layout_variant?: 'three_by_one' | 'side_mini';
+    recommendation_recency_bias?: number;
+    recommendation_low_views_boost?: number;
+    recommendation_category_lock?: number;
+    video_count?: number;
   }
-  definitions?: Record<string, string>
-  views?: {
-    totalUniqueSessions?: number
-    series?: AnalyticsSeriesPoint[]
+
+  /** Row shape from GET /api/admin/users */
+  interface AdminUserRow {
+    id: string;
+    email: string;
+    role: string;
+    subscription_status?: string | null;
+    created_at?: string;
+    plan_type?: string | null;
+    current_period_end?: string | null;
+    /** Optimistic / pending select value; cleared after successful reload */
+    uiRole?: string;
+    uiSubscription?: string;
   }
-  watchTime?: {
-    totalSeconds?: number
-    totalLabel?: string
-    series?: AnalyticsSeriesPoint[]
+
+  type BlockType =
+    | 'featured_row'
+    | 'category'
+    | 'top_video'
+    | 'page_banner'
+    | 'split_horizontal'
+    | 'split_vertical';
+  type LeafBlockType = 'featured_row' | 'category' | 'top_video';
+  type LayoutBlock = HomepageLayoutBlock;
+
+  type AnalyticsRange = '7d' | '30d' | '90d' | '180d' | '365d';
+  type AnalyticsGranularity = 'hour' | 'day' | 'week' | 'month';
+  type AnalyticsDataset =
+    | 'all'
+    | 'overview'
+    | 'views'
+    | 'watchtime'
+    | 'retention'
+    | 'sources'
+    | 'countries'
+    | 'subscriptions'
+    | 'cashflow';
+
+  interface AnalyticsSeriesPoint {
+    bucket: string;
+    uniqueSessions?: number;
+    totalWatchSeconds?: number;
+    newSubscriptions?: number;
+    churnedSubscriptions?: number;
+    expiringSubscriptions?: number;
+    estimatedNewRevenueEur?: number;
+    estimatedNetNewEur?: number;
   }
-  countries?: {
-    views?: Array<{ country: string, uniqueSessions: number }>
-    watchTime?: Array<{ country: string, totalWatchSeconds: number }>
+
+  interface AnalyticsResponse {
+    meta?: {
+      range?: AnalyticsRange;
+      granularity?: AnalyticsGranularity;
+      videoId?: string | null;
+      generatedAt?: string;
+      startAt?: string;
+      endAt?: string;
+    };
+    kpis?: {
+      totalUniqueViews?: number;
+      totalWatchSeconds?: number;
+      totalWatchTimeLabel?: string;
+      segmentRequests?: number;
+      averageRetentionPercent?: number;
+      activeSubscribers?: number;
+      churnRatePercent?: number;
+      estimatedActiveMrrEur?: number;
+    };
+    definitions?: Record<string, string>;
+    views?: {
+      totalUniqueSessions?: number;
+      series?: AnalyticsSeriesPoint[];
+    };
+    watchTime?: {
+      totalSeconds?: number;
+      totalLabel?: string;
+      series?: AnalyticsSeriesPoint[];
+    };
+    countries?: {
+      views?: Array<{ country: string; uniqueSessions: number }>;
+      watchTime?: Array<{ country: string; totalWatchSeconds: number }>;
+    };
+    heatmap?: {
+      videoId: string;
+      bucketCount: number;
+      maxWatchSeconds: number;
+      buckets: Array<{ positionPercent: number; watchSeconds: number; segmentHits: number }>;
+    } | null;
+    trafficSources?: Array<{ source: string; unique_sessions?: number; hits?: number }>;
+    videoStats?: Array<{
+      videoId: string;
+      title: string;
+      slug: string | null;
+      publishedAt: string | null;
+      viewCount: number;
+      totalWatchSeconds?: number;
+      averageRetentionPercent: number | null;
+      engagementScore?: number | null;
+    }>;
+    subscriptions?: Array<{ status: string; count: number }>;
+    subscriptionOverview?: {
+      statusBreakdown?: Array<{ status: string; count: number }>;
+      trends?: AnalyticsSeriesPoint[];
+    };
+    cashflow?: {
+      currency?: string;
+      activeMrrEstimateEur?: number;
+      trend?: AnalyticsSeriesPoint[];
+    };
+    // Legacy fallbacks kept while API transitions.
+    totalViews?: number;
+    subscriptionsLegacy?: Array<{ status: string; count: number }>;
   }
-  heatmap?: {
-    videoId: string
-    bucketCount: number
-    maxWatchSeconds: number
-    buckets: Array<{ positionPercent: number, watchSeconds: number, segmentHits: number }>
-  } | null
-  trafficSources?: Array<{ source: string, unique_sessions?: number, hits?: number }>
-  videoStats?: Array<{
-    videoId: string
-    title: string
-    slug: string | null
-    publishedAt: string | null
-    viewCount: number
-    totalWatchSeconds?: number
-    averageRetentionPercent: number | null
-    engagementScore?: number | null
-  }>
-  subscriptions?: Array<{ status: string, count: number }>
-  subscriptionOverview?: {
-    statusBreakdown?: Array<{ status: string, count: number }>
-    trends?: AnalyticsSeriesPoint[]
-  }
-  cashflow?: {
-    currency?: string
-    activeMrrEstimateEur?: number
-    trend?: AnalyticsSeriesPoint[]
-  }
-  // Legacy fallbacks kept while API transitions.
-  totalViews?: number
-  subscriptionsLegacy?: Array<{ status: string, count: number }>
-}
 
-const config = useRuntimeConfig()
-const { authHeader, canEditContent, isAdmin, initialised, user } = useAuth()
-const router = useRouter()
-const route = useRoute()
-const loading = ref(true)
-const videosLoading = ref(false)
-const uploads = ref<Video[]>([])
-const pickerOpen = ref(false)
-const activeSlotIndex = ref(0)
-const featuredSlots = ref<(Video | null)[]>([])
-const draggingIndex = ref<number | null>(null)
-const saving = ref(false)
-const saveMessage = ref('')
-const saveMessageClass = ref('')
-const previewLockByVideoId = ref<Record<string, number>>({})
-const statusUpdating = ref<Record<string, boolean>>({})
-const scheduleTextDraft = ref<Record<string, string>>({})
-const publishedTextDraft = ref<Record<string, string>>({})
-const uploadDateEditDraft = ref<Record<string, string>>({})
-const notifying = ref<Record<string, boolean>>({})
-const trashing = ref<Record<string, boolean>>({})
-const uploadingFor = ref<string | null>(null)
-const thumbInputFocused = ref<string | null>(null)
-const activeAdminTab = ref<'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system'>('videos')
-const baseAdminTabs = [
-  { id: 'videos' as const, label: 'Videos' },
-  { id: 'categories' as const, label: 'Categories' },
-  { id: 'homepage' as const, label: 'Homepage' },
-  { id: 'pills' as const, label: 'Pills' },
-  { id: 'notifications' as const, label: 'Notifications' },
-  { id: 'newsletter' as const, label: 'Newsletter' },
-  { id: 'pages' as const, label: 'Pages' },
-  { id: 'users' as const, label: 'Users & roles' },
-  { id: 'legacy_migration' as const, label: 'Legacy migration' },
-  { id: 'analytics' as const, label: 'Analytics' },
-  { id: 'system' as const, label: 'System' },
-]
-const adminTabs = computed(() =>
-  baseAdminTabs.filter((tab) => {
-    if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'newsletter') return isAdmin.value
-    return true
-  })
-)
-type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>
-type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null
-
-function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
-  const refs = Array.isArray(inputRef) ? inputRef : [inputRef]
-  return refs.find((input): input is InlineEditInput =>
-    !!input && typeof input.focus === 'function' && typeof input.select === 'function'
-  ) ?? null
-}
-
-function focusInlineEditInput(inputRef: InlineEditInputRef) {
-  const input = findInlineEditInput(inputRef)
-  input?.focus()
-  input?.select()
-}
-
-const editingTitle = ref<{ id: string; value: string } | null>(null)
-const titleInputEl = ref<InlineEditInputRef>(null)
-const editingSlug  = ref<{ id: string; value: string } | null>(null)
-const slugInputEl  = ref<InlineEditInputRef>(null)
-const editingLegacySlug = ref<{ id: string; value: string } | null>(null)
-const legacySlugInputEl = ref<InlineEditInputRef>(null)
-const scheduleModal = ref<{
-  open: boolean
-  videoId: string | null
-  uploadDate: string
-  scheduleDate: string
-  publishedDate: string
-}>({
-  open: false,
-  videoId: null,
-  uploadDate: '',
-  scheduleDate: '',
-  publishedDate: '',
-})
-const descriptionModal = ref<{
-  open: boolean
-  videoId: string | null
-  title: string
-  value: string
-}>({
-  open: false,
-  videoId: null,
-  title: '',
-  value: '',
-})
-const descriptionInputEl = ref<HTMLTextAreaElement | null>(null)
-const swapModal = ref<{
-  open: boolean
-  step: number  // 0=pick, 1=confirm, 2=loading
-  sourceVideo: Video | null
-  targetId: string | null
-}>({ open: false, step: 0, sourceVideo: null, targetId: null })
-const transferSubModal = ref<{
-  open: boolean
-  step: number
-  sourceUser: AdminUserRow | null
-  targetEmail: string
-  error: string | null
-  submitting: boolean
-}>({
-  open: false,
-  step: 0,
-  sourceUser: null,
-  targetEmail: '',
-  error: null,
-  submitting: false,
-})
-const livestreamModal = ref({
-  open: false,
-  saving: false,
-  error: '',
-  form: {
-    title: '',
-    description: '',
-    slug: '',
-    status: 'draft',
-    publishStatus: 'draft',
-    moqEndpoint: '',
-    moqBroadcast: '',
-  },
-})
-const componentTypes: BlockType[] = ['top_video', 'featured_row', 'category', 'split_horizontal', 'split_vertical']
-const leafComponentTypes: LeafBlockType[] = ['top_video', 'featured_row', 'category']
-const blockTypeOptions = (currentType: unknown): string[] => {
-  if (typeof currentType !== 'string' || !currentType.trim()) return componentTypes
-  return componentTypes.includes(currentType as BlockType) ? componentTypes : [currentType, ...componentTypes]
-}
-const leafBlockTypeOptions = (currentType: unknown): string[] => {
-  if (typeof currentType !== 'string' || !currentType.trim()) return leafComponentTypes
-  return leafComponentTypes.includes(currentType as LeafBlockType) ? leafComponentTypes : [currentType, ...leafComponentTypes]
-}
-const layoutBlocks = ref<LayoutBlock[]>([])
-const homepageBaseline = ref<string>('')
-
-const newsletterListId = ref('')
-const newsletterSenderEmail = ref('')
-const newsletterSenderName = ref('')
-/** Poll interval for campaign list refresh (ms); from API, default 10 min */
-const newsletterPollIntervalMs = ref(600_000)
-const newsletterSubject = ref('')
-const newsletterHtml = ref('')
-const newsletterTemplateId = ref('')
-const newsletterSaving = ref(false)
-const newsletterSending = ref(false)
-const newsletterMessage = ref('')
-const newsletterMessageClass = ref('')
-const categories = ref<Category[]>([])
-const categoryForm = ref({
-  name: '',
-  slug: '',
-  sortOrder: 0,
-  direction: 'desc' as 'asc' | 'desc',
-  homepageLayoutVariant: 'three_by_one' as 'three_by_one' | 'side_mini',
-})
-const categoryCreateExpanded = ref(false)
-const categoryDrawerOpen = ref(false)
-const categoryDrawerCategory = ref<Category | null>(null)
-const categoryDraggingIndex = ref<number | null>(null)
-const newsletterSyncing = ref(false)
-const newsletterTemplates = ref<any[]>([])
-const newsletterCampaigns = ref<any[]>([])
-const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' })
-const newsletterEditingTemplateId = ref<string | null>(null)
-const newsletterTemplateSaving = ref(false)
-type PaymentProvider = 'stripe' | 'legacy'
-type PlanType = 'monthly' | 'yearly' | 'club'
-interface AdminPaymentPlanRow {
-  id: string
-  label: string
-  enabled: boolean
-}
-interface PaymentPriceRow { monthly: string; yearly: string; club: string }
-interface PromoCampaign {
-  id: string
-  name: string
-  description?: string | null
-  is_active: number
-  code_count?: number
-  total_redemptions?: number
-}
-interface PromoCodeRow {
-  id: string
-  campaign_id: string
-  campaign_name?: string | null
-  code: string
-  reward_type: string
-  max_uses: number
-  used_count: number
-  is_active: number
-  allowed_plan_types: string
-  stripe_coupon_id?: string | null
-}
-interface IsicCampaignRow {
-  id: string
-  name: string
-  description?: string | null
-  is_active: number
-  free_slots_limit: number
-  discount_percent: number
-  renewal_months: number
-  popup_behavior: string
-  country_scope: string
-}
-type PromoRewardType = 'free_month' | 'free_year' | 'discount_percent'
-type IsicPopupBehavior = 'default' | 'highlight_campaign' | 'hide_standard' | 'isic_first'
-
-const paymentSettings = ref<{
-  enabledProviders: PaymentProvider[]
-  providerOrder: PaymentProvider[]
-  allowedPlans: PlanType[]
-  basePrices: PaymentPriceRow
-  providerPrices: { stripe: PaymentPriceRow }
-  stripePriceIds: PaymentPriceRow
-}>({
-  enabledProviders: ['stripe'],
-  providerOrder: ['stripe', 'legacy'],
-  allowedPlans: ['monthly', 'yearly', 'club'],
-  basePrices: { monthly: '', yearly: '', club: '' },
-  providerPrices: {
-    stripe: { monthly: '', yearly: '', club: '' },
-  },
-  stripePriceIds: { monthly: '', yearly: '', club: '' },
-})
-const paymentSettingsSaving = ref(false)
-const paymentSettingsMessage = ref('')
-const paymentSettingsMessageClass = ref('')
-const adminPaymentPlans = ref<AdminPaymentPlanRow[]>([])
-const enabledAdminPaymentPlans = computed(() => adminPaymentPlans.value.filter((p) => p.enabled))
-const defaultAdminPlanId = computed(() => enabledAdminPaymentPlans.value[0]?.id ?? 'monthly')
-const systemFeatures = ref({
-  promotionsEnabled: true,
-  isicEnabled: false,
-  freePodcastPreviewEnabled: true,
-})
-const systemFeaturesSaving = ref(false)
-const systemFeaturesMessage = ref('')
-const systemFeaturesMessageClass = ref('')
-const replicationStatus = ref<{
-  mode: string
-  batchSize: number
-  targetConfigured: boolean
-  targetTokenConfigured?: boolean
-  targetIngestPathOk?: boolean
-  targetResolvedPath?: string
-  targetWarning?: string | null
-  targetProbe?: { ok: boolean; error?: string } | null
-  streams?: { stream_name: string; cursor_value: string; updated_at: string }[]
-} | null>(null)
-const replicationPushing = ref(false)
-const replicationResetting = ref(false)
-const replicationMessage = ref('')
-const replicationMessageClass = ref('')
-const replicationCanPush = computed(() => {
-  const status = replicationStatus.value
-  if (!status?.targetConfigured) return false
-  if (status.targetTokenConfigured === false) return false
-  if (status.targetWarning) return false
-  if (status.targetProbe && !status.targetProbe.ok) return false
-  return true
-})
-const promotionsLoading = ref(false)
-const promotionsSaving = ref(false)
-const promoCampaigns = ref<PromoCampaign[]>([])
-const promoCodes = ref<PromoCodeRow[]>([])
-const promoCampaignForm = ref({
-  name: '',
-  description: '',
-  isActive: true,
-})
-const promoCodeForm = ref({
-  campaignId: '',
-  code: '',
-  quantity: 1,
-  rewardType: 'free_month',
-  maxUses: 1,
-  allowedPlanTypes: ['monthly', 'yearly', 'club'] as string[],
-  stripeCouponId: '',
-  expiresAt: '',
-})
-const isicLoading = ref(false)
-const isicSaving = ref(false)
-const isicCampaigns = ref<IsicCampaignRow[]>([])
-const isicApiConfig = ref({
-  enabled: false,
-  baseUrl: '',
-  apiKey: '',
-  hasApiKey: false,
-})
-const isicCampaignForm = ref({
-  name: '',
-  description: '',
-  freeSlotsLimit: 5000,
-  discountPercent: 0,
-  renewalMonths: 12,
-  popupBehavior: 'highlight_campaign',
-  countryScope: 'CZ,SK',
-  isActive: true,
-})
-const promotionsMessage = ref('')
-const promotionsMessageClass = ref('')
-const isicMessage = ref('')
-const isicMessageClass = ref('')
-
-const siteBranding = ref({
-  site_name: '',
-  site_name_short: '',
-  site_description: '',
-  site_logo_url: '',
-  site_favicon_url: '',
-  site_support_email: '',
-  podcast_title: '',
-  podcast_description: '',
-  gtm_enabled: '0',
-  gtm_container_id: '',
-  gtm_measurement_path: '',
-})
-const gtmEnabled = computed({
-  get: () => siteBranding.value.gtm_enabled === '1',
-  set: (enabled: boolean) => {
-    if (enabled && !siteBranding.value.gtm_container_id.trim()) return
-    siteBranding.value.gtm_enabled = enabled ? '1' : '0'
-  },
-})
-watch(() => siteBranding.value.gtm_container_id, (id) => {
-  if (!id.trim() && siteBranding.value.gtm_enabled === '1') {
-    siteBranding.value.gtm_enabled = '0'
-  }
-})
-const siteBrandingSaving = ref(false)
-const siteBrandingMessage = ref('')
-const siteBrandingMessageClass = ref('')
-const rssPodcastWebhookUrl = ref('')
-const rssPodcastWebhookSecretInput = ref('')
-const rssPodcastSecretConfigured = ref(false)
-const rssPodcastWebhookSaving = ref(false)
-const rssPodcastNotifySending = ref(false)
-const rssPodcastMessage = ref('')
-const rssPodcastMessageClass = ref('')
-
-let usersLoadRequestId = 0
-const users = ref<AdminUserRow[]>([])
-const usersLoading = ref(false)
-const usersError = ref('')
-const usersPage = ref(1)
-const usersPageSize = ref(25)
-const usersTotal = ref(0)
-const usersTotalPages = ref(1)
-const usersSearchInput = ref('')
-const usersSearchDebounced = ref('')
-const usersRoleFilter = ref('all')
-const usersSubscriptionFilter = ref('all')
-let usersSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null
-const usersImportCsv = ref('')
-const usersImportMailingListId = ref('')
-const usersImportRequirePurchaseId = ref(false)
-const usersImporting = ref(false)
-const usersImportResult = ref<{
-  imported: number
-  existing: number
-  totalEmails: number
-  withPurchaseId: number
-  mailingListId: string
-} | null>(null)
-const legacyPaymentStatus = ref<{
-  configured: boolean
-  sandboxConfigured?: boolean
-  merchantId: string | null
-  hasApiKey: boolean
-  hasWebhookSecret: boolean
-} | null>(null)
-const legacyPaymentStatusLoading = ref(false)
-
-type LegacyMigrationStats = {
-  total_imported: number
-  needs_relink: number
-  active: number
-  failed: number
-  not_validated: number
-  churn_rate_pct: number
-  sandboxConfigured: boolean
-  productionConfigured: boolean
-  validationApiBase: string | null
-}
-const legacyMigrationStats = ref<LegacyMigrationStats | null>(null)
-const legacyMigrationStatsLoading = ref(false)
-const legacyValidationBatchSize = ref(25)
-const legacyValidationTarget = ref<'sandbox' | 'production'>('production')
-const legacyValidationDryRun = ref(false)
-const legacyValidationRunning = ref(false)
-const legacyValidationResult = ref<{
-  valid: number
-  invalid: number
-  errors: number
-  details: Array<{
-    subscriptionId: string
-    userId: string
-    purchaseId: string
-    result: 'valid' | 'invalid' | 'error'
-    httpStatus?: number
-    errorMessage?: string
-  }>
-} | null>(null)
-const legacyRelinkCandidates = ref<Array<{
-  userId: string
-  email: string
-  provider: string
-  purchaseId: string | null
-  providerCustomerId: string | null
-  validationStatus: string | null
-  validatedAt: string | null
-  importedAt: string
-}>>([])
-const legacyRelinkLoading = ref(false)
-const legacyRelinkPage = ref(1)
-const legacyRelinkPageSize = ref(25)
-const legacyRelinkSelected = ref<string[]>([])
-const legacyRelinkSending = ref(false)
-
-const legacyMigrationSuccessPct = computed(() => {
-  const stats = legacyMigrationStats.value
-  if (!stats) return 0
-  const denom = stats.active + stats.failed
-  if (!denom) return 0
-  return Math.round((stats.active / denom) * 1000) / 10
-})
-
-const legacyRelinkAllOnPageSelected = computed(() => {
-  const ids = legacyRelinkCandidates.value.map((row) => row.userId)
-  return ids.length > 0 && ids.every((id) => legacyRelinkSelected.value.includes(id))
-})
-
-const ROLE_ORDER = ['viewer', 'moderator', 'analyst', 'editor', 'admin', 'super_admin'] as const
-function roleRank(role: string): number {
-  const i = ROLE_ORDER.indexOf(role as (typeof ROLE_ORDER)[number])
-  return i === -1 ? 0 : i
-}
-function isRoleDemotion(from: string, to: string): boolean {
-  return roleRank(to) < roleRank(from)
-}
-function isSensitiveRoleChange(from: string, to: string): boolean {
-  if (from === to) return false
-  if (isRoleDemotion(from, to)) return true
-  if (to === 'admin' || to === 'super_admin') return true
-  if (from === 'admin' || from === 'super_admin') return true
-  return false
-}
-type PillValueMode = 'number' | 'percentage' | 'agree_disagree' | 'graph_embed'
-type AdminPillRow = {
-  id: string
-  label: string
-  value: number
-  value_secondary?: number | null
-  value_mode?: PillValueMode
-  graph_embed_url?: string | null
-  graph_payload_json?: string | null
-  color: string
-  image_url?: string | null
-  sort_order: number
-}
-const adminPills = ref<AdminPillRow[]>([])
-const newPill = ref({
-  label: '',
-  value: 0,
-  valueSecondary: '',
-  valueMode: 'number' as PillValueMode,
-  graphEmbedUrl: '',
-  graphPayloadJson: '',
-  color: '#2563eb',
-  imageUrl: '',
-})
-const pillsApiKey = ref('')
-const pillsApiKeyMeta = ref<{ hasKey: boolean; managedByEnv: boolean; maskedKey: string }>({ hasKey: false, managedByEnv: false, maskedKey: '' })
-const analyticsRange = ref<AnalyticsRange>('30d')
-const analyticsGranularity = ref<AnalyticsGranularity>('day')
-const analyticsLoading = ref(false)
-const analyticsError = ref('')
-const analytics = ref<AnalyticsResponse>({
-  views: { totalUniqueSessions: 0, series: [] },
-  trafficSources: [],
-  videoStats: [],
-  subscriptions: [],
-  subscriptionOverview: { statusBreakdown: [], trends: [] },
-  cashflow: { currency: 'EUR', activeMrrEstimateEur: 0, trend: [] },
-  subscriptionsLegacy: [],
-})
-
-const analyticsExporting = ref<AnalyticsDataset | null>(null)
-const analyticsSettingsSaving = ref(false)
-const analyticsSettingsInitialized = ref(false)
-const analyticsHeatmapVideoId = ref('')
-const analyticsViewCounting = ref({
-  minSegmentsPerSession: 1,
-  minWatchSeconds: 15,
-})
-
-interface PushCampaignFunnel {
-  campaignId: string
-  videoTitle: string
-  sent: number
-  clicks: number
-  clickRatePercent: number
-  medianClickLatencySeconds: number | null
-  watchSessions: number
-  watchRatePercent: number
-  completionRatePercent: number
-  avgSessionDepth: number
-}
-
-const pushCampaignFunnel = ref<PushCampaignFunnel | null>(null)
-const pushCampaignFunnelError = ref<string | null>(null)
-
-const analyticsStatusRows = computed(() => {
-  if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown)) return analytics.value.subscriptionOverview?.statusBreakdown ?? []
-  if (Array.isArray(analytics.value.subscriptionsLegacy)) return analytics.value.subscriptionsLegacy
-  if (Array.isArray(analytics.value.subscriptions)) return analytics.value.subscriptions
-  return []
-})
-
-function formatMetricValue(key: string, value: number | string | undefined) {
-  if (key === 'totalWatchTimeLabel' && typeof value === 'string') return value
-  const numeric = Number(value ?? 0)
-  if (key === 'estimatedActiveMrrEur') return `€${numeric.toFixed(2)}`
-  if (key.toLowerCase().includes('percent') || key === 'churnRatePercent') return `${numeric.toFixed(2)}%`
-  if (key === 'totalWatchSeconds') {
-    const seconds = Math.max(0, Math.round(numeric))
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-    const hours = Math.floor(seconds / 3600)
-    const minutes = Math.round((seconds % 3600) / 60)
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`
-  }
-  return String(Math.round(numeric))
-}
-
-const analyticsKpiCards = computed(() => {
-  const kpis = analytics.value.kpis ?? {}
-  const defs = analytics.value.definitions ?? {}
-  return [
-    { key: 'totalUniqueViews', label: 'Playback starts', value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews), help: defs.totalUniqueViews || 'One per viewer session per video.' },
-    { key: 'totalWatchTimeLabel', label: 'Total watch time', value: formatMetricValue('totalWatchTimeLabel', kpis.totalWatchTimeLabel || formatMetricValue('totalWatchSeconds', kpis.totalWatchSeconds)), help: defs.totalWatchSeconds || 'Cumulative seconds watched.' },
-    { key: 'segmentRequests', label: 'Segment requests', value: formatMetricValue('segmentRequests', kpis.segmentRequests), help: defs.segmentRequests || 'HLS segment requests served.' },
-    { key: 'averageRetentionPercent', label: 'Avg retention', value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent), help: defs.averageRetentionPercent || 'Average max watch-through across qualified sessions.' },
-    { key: 'activeSubscribers', label: 'Active subscribers', value: formatMetricValue('activeSubscribers', kpis.activeSubscribers), help: defs.activeSubscribers || 'Latest active/trialing subscription rows.' },
-    { key: 'churnRatePercent', label: 'Churn rate', value: formatMetricValue('churnRatePercent', kpis.churnRatePercent), help: defs.churnRatePercent || 'Churned divided by new subscriptions.' },
-    { key: 'estimatedActiveMrrEur', label: 'Estimated MRR', value: formatMetricValue('estimatedActiveMrrEur', kpis.estimatedActiveMrrEur), help: defs.estimatedActiveMrrEur || 'Estimated monthly recurring revenue.' },
-  ]
-})
-
-function normalizeChartRows(values: number[]) {
-  const max = values.length ? Math.max(...values) : 0
-  return { max: max > 0 ? max : 1 }
-}
-
-const analyticsViewsLineChartPoints = computed(() =>
-  (analytics.value.views?.series ?? []).map((row) => ({
-    label: String(row.bucket),
-    value: Number(row.uniqueSessions || 0),
-  })),
-)
-
-const analyticsWatchTimeLineChartPoints = computed(() =>
-  (analytics.value.watchTime?.series ?? []).map((row) => ({
-    label: String(row.bucket),
-    value: Number(row.totalWatchSeconds || 0),
-  })),
-)
-
-const analyticsCountryViewsChartRows = computed(() => {
-  const rows = (analytics.value.countries?.views ?? []).map((row) => ({
-    country: row.country,
-    value: Number(row.uniqueSessions || 0),
-  }))
-  const norm = normalizeChartRows(rows.map((row) => row.value))
-  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
-})
-
-const analyticsHeatmapBuckets = computed(() => analytics.value.heatmap?.buckets ?? [])
-
-const analyticsViewsSeriesChartRows = computed(() => {
-  const rows = (analytics.value.views?.series ?? []).map((row) => ({ bucket: String(row.bucket), value: Number(row.uniqueSessions || 0) }))
-  const norm = normalizeChartRows(rows.map((row) => row.value))
-  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
-})
-
-const analyticsTrafficChartRows = computed(() => {
-  const rows = (analytics.value.trafficSources ?? []).map((row) => ({
-    source: row.source,
-    value: Number(row.unique_sessions ?? row.hits ?? 0),
-  }))
-  const norm = normalizeChartRows(rows.map((row) => row.value))
-  return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }))
-})
-
-const analyticsVideoStatsRows = computed(() =>
-  (analytics.value.videoStats ?? []).map((row) => ({
-    videoId: row.videoId,
-    title: row.title,
-    slug: row.slug,
-    viewCount: Number(row.viewCount || 0),
-    totalWatchSeconds: Number(row.totalWatchSeconds || 0),
-    averageRetentionPercent: row.averageRetentionPercent,
-    engagementScore: row.engagementScore ?? null,
-  })),
-)
-
-function formatWatchSeconds(value: number | null | undefined) {
-  const seconds = Math.max(0, Math.round(Number(value || 0)))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  const remMinutes = minutes % 60
-  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`
-}
-
-function formatEngagementScore(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(Number(value))) return '—'
-  return String(Math.round(Number(value)))
-}
-
-function formatVideoRetention(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(Number(value))) return '—'
-  return `${Number(value).toFixed(1)}%`
-}
-
-function videoWatchHref(row: { videoId: string, slug: string | null }) {
-  const slugOrId = row.slug?.trim() || row.videoId
-  return `/watch/${encodeURIComponent(slugOrId)}`
-}
-
-const analyticsSubscriptionTrendRows = computed(() =>
-  (analytics.value.subscriptionOverview?.trends ?? []).map((row) => ({
-    bucket: String(row.bucket),
-    newSubscriptions: Number(row.newSubscriptions || 0),
-    churnedSubscriptions: Number(row.churnedSubscriptions || 0),
-    expiringSubscriptions: Number(row.expiringSubscriptions || 0),
-  })),
-)
-
-const analyticsCashflowRows = computed(() =>
-  (analytics.value.cashflow?.trend ?? []).map((row) => ({
-    bucket: String(row.bucket),
-    estimatedNewRevenueEur: Number(row.estimatedNewRevenueEur || 0),
-    estimatedNetNewEur: Number(row.estimatedNetNewEur || 0),
-  })),
-)
-
-watch([analyticsRange, analyticsGranularity], () => {
-  if (activeAdminTab.value === 'analytics') {
-    void loadAnalytics()
-  }
-})
-
-watch(activeAdminTab, (tab) => {
-  if (tab === 'users' && !legacyPaymentStatus.value && !legacyPaymentStatusLoading.value) {
-    void loadLegacyPaymentStatus()
-  }
-  if (tab === 'legacy_migration') {
-    if (!legacyMigrationStats.value && !legacyMigrationStatsLoading.value) {
-      void loadLegacyMigrationStats()
-    }
-    if (!legacyRelinkCandidates.value.length && !legacyRelinkLoading.value) {
-      void loadLegacyRelinkCandidates()
-    }
-  }
-})
-/** Stable per send attempt until success — retries reuse the same key for server idempotency. */
-const newsletterSendDedupeKey = ref<string | null>(null)
-
-/** Sandboxed document for preview — avoids v-html XSS in the admin app. */
-const newsletterPreviewSrcdoc = computed(() => {
-  const bodyHtml = newsletterHtml.value
-  if (!bodyHtml.trim()) return ''
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
-    body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#111;background:#fff}
-    @media (prefers-color-scheme: dark){ body{color:#e5e5e5;background:#0a0a0a} }
-  </style></head><body>${bodyHtml}</body></html>`
-})
-
-watch(
-  [newsletterTemplateId, newsletterTemplates],
-  () => {
-    const id = newsletterTemplateId.value
-    if (!id) return
-    const t = newsletterTemplates.value.find((x: { id: string }) => x.id === id)
-    if (t) {
-      newsletterSubject.value = String(t.subject || '')
-      newsletterHtml.value = String(t.html_body || '')
-    }
-  },
-  { deep: true },
-)
-
-const chronologicallySortedUploads = computed(() =>
-  [...uploads.value].sort((a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime())
-)
-
-const notifiedVideoIds = computed(() => {
-  const ids = new Set<string>()
-  for (const video of uploads.value) {
-    if (video.notified_at) ids.add(video.id)
-  }
-  return ids
-})
-
-const pendingNotificationVideos = computed(() =>
-  chronologicallySortedUploads.value.filter((video) => video.publish_status === 'published' && !notifiedVideoIds.value.has(video.id))
-)
-
-function isVideoNotified(video: Video) {
-  return notifiedVideoIds.value.has(video.id)
-}
-
-const draftVideos      = computed(() => chronologicallySortedUploads.value.filter(v =>
-  v.publish_status === 'draft' && v.r2_exists !== false && !v.livestream_provider
-))
-const swapTargetVideo  = computed(() => uploads.value.find(v => v.id === swapModal.value.targetId) ?? null)
-
-const featuredVideos = computed(() =>
-  featuredSlots.value.length ? featuredSlots.value : [...chronologicallySortedUploads.value.slice(0, 4)]
-)
-
-const previewLeafBlocks = computed(() =>
-  homepagePreviewModel.value.blockItems.filter((block): block is HomepageRenderLeafBlock =>
-    block.type === 'featured_row' || block.type === 'category' || block.type === 'top_video',
-  ),
-)
-
-const previewSplitBlocks = computed(() =>
-  homepagePreviewModel.value.blockItems.filter((block): block is HomepageRenderSplitBlock =>
-    block.type === 'split_horizontal' || block.type === 'split_vertical',
-  ),
-)
-
-const pinnedFeaturedVideoIds = computed(() =>
-  featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v)),
-)
-
-const hasFeaturedRowInLayout = computed(() => layoutIncludesFeaturedRowBlock(layoutBlocks.value))
-
-const orphanedFeaturedPinsWarning = computed(() => {
-  const pins = pinnedFeaturedVideoIds.value
-  if (!pins.length) return null
-  if (hasFeaturedRowInLayout.value) return null
-  const titles = pins
-    .map((id) => featuredSlots.value.find((v) => v?.id === id)?.title || id)
-    .join(', ')
-  return `${pins.length} featured video pin${pins.length === 1 ? '' : 's'} (${titles}) will not appear in a featured row — only in categories — because the homepage layout has no Featured row block.`
-})
-
-const homepagePlacement = ref<HomepagePlacementResponse | null>(null)
-const mergedHomepagePlacement = computed(() => {
-  const base = homepagePlacement.value || { featured: [], recentGrid: [], categoryBlocks: [] }
-  const manualFeaturedIds = featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v))
-  const featured = manualFeaturedIds.length > 0
-    ? manualFeaturedIds.map((id) => ({ id }))
-    : (layoutIncludesFeaturedRowBlock(layoutBlocks.value) ? (base.featured ?? []) : [])
-  return {
-    ...base,
-    featured,
-    categoryBlocks: categories.value.map((cat) => {
-      const existing = base.categoryBlocks?.find((b) => b.category.id === cat.id)
-      if (existing) {
-        return {
-          ...existing,
-          category: {
-            ...cat,
-            homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
-          },
-        }
-      }
-      return {
-        category: {
-          ...cat,
-          homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
-        },
-        visible: [],
-        overflow: [],
-      }
+  const config = useRuntimeConfig();
+  const { authHeader, canEditContent, isAdmin, initialised, user } = useAuth();
+  const router = useRouter();
+  const route = useRoute();
+  const loading = ref(true);
+  const videosLoading = ref(false);
+  const uploads = ref<Video[]>([]);
+  const pickerOpen = ref(false);
+  const activeSlotIndex = ref(0);
+  const featuredSlots = ref<(Video | null)[]>([]);
+  const draggingIndex = ref<number | null>(null);
+  const saving = ref(false);
+  const saveMessage = ref('');
+  const saveMessageClass = ref('');
+  const previewLockByVideoId = ref<Record<string, number>>({});
+  const statusUpdating = ref<Record<string, boolean>>({});
+  const scheduleTextDraft = ref<Record<string, string>>({});
+  const publishedTextDraft = ref<Record<string, string>>({});
+  const uploadDateEditDraft = ref<Record<string, string>>({});
+  const notifying = ref<Record<string, boolean>>({});
+  const trashing = ref<Record<string, boolean>>({});
+  const uploadingFor = ref<string | null>(null);
+  const thumbInputFocused = ref<string | null>(null);
+  const activeAdminTab = ref<
+    | 'videos'
+    | 'categories'
+    | 'homepage'
+    | 'pills'
+    | 'notifications'
+    | 'newsletter'
+    | 'pages'
+    | 'users'
+    | 'legacy_migration'
+    | 'analytics'
+    | 'system'
+  >('videos');
+  const baseAdminTabs = [
+    { id: 'videos' as const, label: 'Videos' },
+    { id: 'categories' as const, label: 'Categories' },
+    { id: 'homepage' as const, label: 'Homepage' },
+    { id: 'pills' as const, label: 'Pills' },
+    { id: 'notifications' as const, label: 'Notifications' },
+    { id: 'newsletter' as const, label: 'Newsletter' },
+    { id: 'pages' as const, label: 'Pages' },
+    { id: 'users' as const, label: 'Users & roles' },
+    { id: 'legacy_migration' as const, label: 'Legacy migration' },
+    { id: 'analytics' as const, label: 'Analytics' },
+    { id: 'system' as const, label: 'System' },
+  ];
+  const adminTabs = computed(() =>
+    baseAdminTabs.filter((tab) => {
+      if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'newsletter')
+        return isAdmin.value;
+      return true;
     }),
+  );
+  type InlineEditInput = Pick<HTMLInputElement, 'focus' | 'select'>;
+  type InlineEditInputRef = InlineEditInput | InlineEditInput[] | null;
+
+  function findInlineEditInput(inputRef: InlineEditInputRef): InlineEditInput | null {
+    const refs = Array.isArray(inputRef) ? inputRef : [inputRef];
+    return (
+      refs.find(
+        (input): input is InlineEditInput =>
+          !!input && typeof input.focus === 'function' && typeof input.select === 'function',
+      ) ?? null
+    );
   }
-})
-const homepagePreviewModel = computed(() =>
-  buildHomepageRenderModel({
-    videos: chronologicallySortedUploads.value,
-    layoutBlocks: layoutBlocks.value,
-    placement: mergedHomepagePlacement.value,
-  }),
-)
-const homepageDirty = computed(() => serializeHomepageState() !== homepageBaseline.value)
 
-const openPicker  = (slotIndex: number) => { activeSlotIndex.value = slotIndex; pickerOpen.value = true }
-const closePicker = () => { pickerOpen.value = false }
-
-const swapFeatured = (video: Video) => {
-  const next = [...featuredVideos.value]
-  next[activeSlotIndex.value] = video
-  while (next.length < 4) next.push(null)
-  featuredSlots.value = next
-  closePicker()
-}
-
-const clearFeaturedSlot = (slotIndex: number) => {
-  const next = [...featuredSlots.value]
-  while (next.length < 4) next.push(null)
-  next[slotIndex] = null
-  featuredSlots.value = next
-  closePicker()
-  showToast('success', `Featured slot ${slotIndex + 1} cleared. Save homepage to apply.`)
-}
-
-// SQLite CURRENT_TIMESTAMP returns "YYYY-MM-DD HH:MM:SS" which Safari cannot
-// parse reliably — normalize to ISO 8601 before constructing the Date.
-const formatDate = (raw: string) => {
-  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z'
-  return new Date(normalized).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
-/** European local wall time for admin schedule / publish inputs (24h). */
-const formatEuropeanDateTimeFromAny = (raw?: string | null) => {
-  if (!raw) return ''
-  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z'
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return ''
-  const dd = String(date.getDate()).padStart(2, '0')
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const yyyy = String(date.getFullYear())
-  const hh = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  return `${dd}.${mm}.${yyyy} ${hh}:${min}`
-}
-
-/** Parse `DD.MM.YYYY HH:mm` or `D.M.YYYY H:mm` in local timezone → ISO for API. */
-const parseEuropeanDateTimeToIso = (raw: string): string | null => {
-  const m = raw.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})$/)
-  if (!m) return null
-  const d = Number(m[1])
-  const mo = Number(m[2])
-  const y = Number(m[3])
-  const h = Number(m[4])
-  const mi = Number(m[5])
-  if (!Number.isFinite(d) || !Number.isFinite(mo) || !Number.isFinite(y) || !Number.isFinite(h) || !Number.isFinite(mi)) return null
-  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59) return null
-  const local = new Date(y, mo - 1, d, h, mi, 0, 0)
-  if (
-    local.getFullYear() !== y ||
-    local.getMonth() !== mo - 1 ||
-    local.getDate() !== d ||
-    local.getHours() !== h ||
-    local.getMinutes() !== mi
-  ) return null
-  return local.toISOString()
-}
-
-const scheduleInputPlaceholder = 'DD.MM.YYYY HH:mm'
-const categorySelectWidthCh = computed(() => {
-  const maxAllowedWidthCh = 30
-  const longestNameLength = categories.value.reduce((max, category) => Math.max(max, String(category.name || '').length), 0)
-  return Math.min(maxAllowedWidthCh, Math.max(12, longestNameLength + 2))
-})
-const getVideoById = (videoId: string | null) => {
-  if (!videoId) return null
-  return uploads.value.find((video) => video.id === videoId) ?? null
-}
-const scheduleModalVideo = computed(() => getVideoById(scheduleModal.value.videoId))
-const descriptionModalPreviewHtml = computed(() => {
-  const html = renderMarkdownToHtml(descriptionModal.value.value)
-  return html || '<p class="text-gray-500 dark:text-gray-400">No description preview.</p>'
-})
-
-const isScheduledDraft = (video: Video) =>
-  video.publish_status === 'draft' && Boolean(video.scheduled_publish_at)
-
-function statusBadgeLabel(video: Video) {
-  if (isScheduledDraft(video)) return 'scheduled'
-  return video.publish_status ?? 'draft'
-}
-
-const openScheduleModal = (video: Video) => {
-  scheduleModal.value = {
-    open: true,
-    videoId: video.id,
-    uploadDate: uploadDateEditDraft.value[video.id] ?? formatEuropeanDateTimeFromAny(video.upload_date),
-    scheduleDate: scheduleTextDraft.value[video.id] ?? formatEuropeanDateTimeFromAny(video.scheduled_publish_at || null),
-    publishedDate: publishedTextDraft.value[video.id] ?? formatEuropeanDateTimeFromAny(video.published_at || null),
+  function focusInlineEditInput(inputRef: InlineEditInputRef) {
+    const input = findInlineEditInput(inputRef);
+    input?.focus();
+    input?.select();
   }
-}
 
-const closeScheduleModal = () => {
-  scheduleModal.value.open = false
-}
-
-const setScheduleDraft = (videoId: string, value: string) => {
-  scheduleTextDraft.value = { ...scheduleTextDraft.value, [videoId]: value }
-}
-
-const setPublishedDraft = (videoId: string, value: string) => {
-  publishedTextDraft.value = { ...publishedTextDraft.value, [videoId]: value }
-}
-
-const setUploadDateDraft = (videoId: string, value: string) => {
-  uploadDateEditDraft.value = { ...uploadDateEditDraft.value, [videoId]: value }
-}
-
-const clearScheduleTextDraft = (videoId: string) => {
-  const next = { ...scheduleTextDraft.value }
-  delete next[videoId]
-  scheduleTextDraft.value = next
-}
-
-const clearPublishedTextDraft = (videoId: string) => {
-  const next = { ...publishedTextDraft.value }
-  delete next[videoId]
-  publishedTextDraft.value = next
-}
-
-/** Promo code expiry still uses native datetime-local input. */
-const parseOptionalLocalDateTimeToIso = (raw?: string | null) => {
-  if (!raw) return null
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return null
-  return date.toISOString()
-}
-
-const formatDateTime = (raw?: string | null) => {
-  if (!raw) return '—'
-  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z'
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-const getActualDuration = (video: Video) => video.full_duration
-
-const defaultSplitChildren = (): Array<{ type: LeafBlockType, title: string, body: string, categoryId: string | null }> => ([
-  { type: 'top_video', title: 'Top video', body: '', categoryId: null },
-  { type: 'category', title: 'Category', body: '', categoryId: '' },
-])
-const addBlock = (type: BlockType) => {
-  if (type === 'split_horizontal' || type === 'split_vertical') {
-    layoutBlocks.value.push({
-      id: crypto.randomUUID(),
-      type,
-      title: 'Split block',
-      body: '',
-      childBlocks: defaultSplitChildren().map((child) => ({ ...child })),
-    } as LayoutBlock)
-    return
-  }
-  layoutBlocks.value.push({
-    id: crypto.randomUUID(),
-    type,
-    title: type === 'category' ? 'Category block' : 'New block',
-    body: '',
-    categoryId: type === 'category' ? '' : null,
-  } as LayoutBlock)
-}
-const removeBlock = (id: string)      => { layoutBlocks.value = layoutBlocks.value.filter(b => b.id !== id) }
-
-const onDragStart = (index: number) => { draggingIndex.value = index }
-const onDrop = (targetIndex: number) => {
-  if (draggingIndex.value === null || draggingIndex.value === targetIndex) return
-  const reordered = [...layoutBlocks.value]
-  const [moved]   = reordered.splice(draggingIndex.value, 1)
-  if (!moved) return
-  reordered.splice(targetIndex, 0, moved)
-  layoutBlocks.value  = reordered
-  draggingIndex.value = null
-}
-
-const getDefaultBlocks = (): LayoutBlock[] => ([])
-
-const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
-  if (!raw || typeof raw !== 'object') return null
-  const id = typeof raw.id === 'string' ? raw.id : crypto.randomUUID()
-  const rawType = typeof raw.type === 'string' ? raw.type.trim() : ''
-  const type: BlockType = (rawType || 'top_video') as BlockType
-  const title = typeof raw.title === 'string' ? raw.title : ''
-  const body = typeof raw.body === 'string' ? raw.body : ''
-  const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : ''
-  const width = raw.width === 'half' || raw.width === 'full' ? raw.width : undefined
-  const gridRow = Number.isFinite(Number(raw.gridRow)) ? Number(raw.gridRow) : undefined
-  const gridCol = Number.isFinite(Number(raw.gridCol)) ? Number(raw.gridCol) : undefined
-  const mobileHidden = raw.mobileHidden === true
-  const mobileOrder = Number.isFinite(Number(raw.mobileOrder)) ? Number(raw.mobileOrder) : undefined
-  if (type === 'split_horizontal' || type === 'split_vertical') {
-    const children = Array.isArray(raw.childBlocks) ? raw.childBlocks : []
-    const normalizedChildren = children
-      .filter((child: any) => child && typeof child === 'object')
-      .map((child: any) => ({
-        type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
-        title: typeof child.title === 'string' ? child.title : '',
-        body: typeof child.body === 'string' ? child.body : '',
-        categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
-        width: child.width === 'half' || child.width === 'full' ? child.width : undefined,
-        mobileHidden: child.mobileHidden === true,
-        mobileOrder: Number.isFinite(Number(child.mobileOrder)) ? Number(child.mobileOrder) : undefined,
-      }))
-      .slice(0, 2)
-    while (normalizedChildren.length < 2) {
-      normalizedChildren.push({
-        type: 'top_video',
-        title: '',
-        body: '',
-        categoryId: '',
-        width: undefined,
-        mobileHidden: false,
-        mobileOrder: undefined,
-      })
-    }
-    return { id, type, title, body, childBlocks: normalizedChildren }
-  }
-  if (type === 'page_banner') {
-    return {
-      id,
-      type,
-      title,
-      body,
-      imageId: typeof raw.imageId === 'string' ? raw.imageId : '',
-      mobileImageId: typeof raw.mobileImageId === 'string' ? raw.mobileImageId : '',
-      pageSlug: typeof raw.pageSlug === 'string' ? raw.pageSlug : '',
-      alt: typeof raw.alt === 'string' ? raw.alt : '',
-      width: 'full' as const,
-      gridRow,
-      gridCol,
-      mobileHidden,
-      mobileOrder,
-    }
-  }
-  return {
-    id,
-    type,
-    title,
-    body,
-    categoryId: type === 'category' ? categoryId : null,
-    width: width ?? (type === 'featured_row' || type === 'top_video' ? 'full' : 'half'),
-    gridRow,
-    gridCol,
-    mobileHidden,
-    mobileOrder,
-  }
-}
-const sanitizeBlockForSave = (block: LayoutBlock) => {
-  const payload: any = {
-    id: block.id,
-    type: block.type,
-    title: block.title ?? '',
-    body: block.body ?? '',
-  }
-  if (block.type === 'category') {
-    payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null
-  }
-  if (block.type === 'page_banner') {
-    payload.imageId = typeof block.imageId === 'string' ? block.imageId : ''
-    payload.mobileImageId = typeof block.mobileImageId === 'string' ? block.mobileImageId : ''
-    payload.pageSlug = typeof block.pageSlug === 'string' ? block.pageSlug : ''
-    payload.alt = typeof block.alt === 'string' ? block.alt : ''
-    payload.width = 'full'
-  }
-  if (block.type !== 'page_banner' && (block.width === 'half' || block.width === 'full')) {
-    payload.width = block.width
-  }
-  if (Number.isFinite(Number(block.gridRow))) payload.gridRow = Number(block.gridRow)
-  if (Number.isFinite(Number(block.gridCol))) payload.gridCol = Number(block.gridCol)
-  if (block.mobileHidden === true) payload.mobileHidden = true
-  if (Number.isFinite(Number(block.mobileOrder))) payload.mobileOrder = Number(block.mobileOrder)
-  if ((block.type === 'split_horizontal' || block.type === 'split_vertical') && Array.isArray(block.childBlocks)) {
-    payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
-      type: ((typeof child?.type === 'string' && child.type.trim()) ? child.type : 'top_video') as LeafBlockType,
-      title: typeof child?.title === 'string' ? child.title : '',
-      body: typeof child?.body === 'string' ? child.body : '',
-      categoryId: typeof child?.categoryId === 'string' ? child.categoryId : null,
-    }))
-  }
-  return payload
-}
-
-const serializeHomepageState = () => JSON.stringify({
-  featuredVideoIds: featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v)),
-  layoutBlocks: layoutBlocks.value.map((block) => sanitizeBlockForSave(block)),
-  categoryOrder: categories.value.map((category) => ({ id: category.id, sortOrder: category.sort_order })),
-})
-
-const applyHomepageBaseline = () => {
-  homepageBaseline.value = serializeHomepageState()
-}
-
-const buildCategoryOrderPayload = (reordered: Category[]) => {
-  let nextStandardOrder = 1
-  return reordered.map((c) => ({
-    id: c.id,
-    sortOrder: c.sort_order <= 0 ? c.sort_order : nextStandardOrder++,
-  }))
-}
-
-const persistCategoryOrder = async (reordered: Category[]) => {
-  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: JSON.stringify({ categoryOrder: buildCategoryOrderPayload(reordered) }),
-  })
-  if (!res.ok) throw new Error('Reorder failed')
-  await loadCategories()
-  showToast('success', 'Category order updated.')
-}
-
-const onCategoryDragStart = (index: number) => { categoryDraggingIndex.value = index }
-const onCategoryDrop = async (targetIndex: number) => {
-  const from = categoryDraggingIndex.value
-  if (from === null || from === targetIndex) return
-  const reordered = [...categories.value]
-  const [moved] = reordered.splice(from, 1)
-  if (!moved) return
-  reordered.splice(targetIndex, 0, moved)
-  categories.value = reordered
-  categoryDraggingIndex.value = null
-  try {
-    await persistCategoryOrder(reordered)
-  } catch (e: unknown) {
-    showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
-    await loadCategories()
-  }
-}
-
-async function reorderCategoryByIndex(from: number, to: number) {
-  if (from === to || from < 0 || to < 0 || from >= categories.value.length || to >= categories.value.length) return
-  const reordered = [...categories.value]
-  const [moved] = reordered.splice(from, 1)
-  if (!moved) return
-  reordered.splice(to, 0, moved)
-  categories.value = reordered
-  try {
-    await persistCategoryOrder(reordered)
-  } catch (e: unknown) {
-    showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories')
-    await loadCategories()
-  }
-}
-
-function moveCategoryUp(index: number) {
-  if (index <= 0) return
-  void reorderCategoryByIndex(index, index - 1)
-}
-
-function moveCategoryDown(index: number) {
-  if (index >= categories.value.length - 1) return
-  void reorderCategoryByIndex(index, index + 1)
-}
-
-function openCategoryDrawer(category: Category) {
-  categoryDrawerCategory.value = category
-  categoryDrawerOpen.value = true
-}
-
-function closeCategoryDrawer() {
-  categoryDrawerOpen.value = false
-  categoryDrawerCategory.value = null
-}
-
-async function saveCategoryFromDrawer(category: Category) {
-  await updateCategory(category)
-  closeCategoryDrawer()
-}
-
-async function deleteCategoryFromDrawer(opts: { reassignToId?: string }) {
-  const cat = categoryDrawerCategory.value
-  if (!cat) return
-  await deleteCategory(cat, opts.reassignToId)
-  closeCategoryDrawer()
-}
-
-const resetLivestreamModal = () => {
-  livestreamModal.value = {
+  const editingTitle = ref<{ id: string; value: string } | null>(null);
+  const titleInputEl = ref<InlineEditInputRef>(null);
+  const editingSlug = ref<{ id: string; value: string } | null>(null);
+  const slugInputEl = ref<InlineEditInputRef>(null);
+  const editingLegacySlug = ref<{ id: string; value: string } | null>(null);
+  const legacySlugInputEl = ref<InlineEditInputRef>(null);
+  const scheduleModal = ref<{
+    open: boolean;
+    videoId: string | null;
+    uploadDate: string;
+    scheduleDate: string;
+    publishedDate: string;
+  }>({
+    open: false,
+    videoId: null,
+    uploadDate: '',
+    scheduleDate: '',
+    publishedDate: '',
+  });
+  const descriptionModal = ref<{
+    open: boolean;
+    videoId: string | null;
+    title: string;
+    value: string;
+  }>({
+    open: false,
+    videoId: null,
+    title: '',
+    value: '',
+  });
+  const descriptionInputEl = ref<HTMLTextAreaElement | null>(null);
+  const swapModal = ref<{
+    open: boolean;
+    step: number; // 0=pick, 1=confirm, 2=loading
+    sourceVideo: Video | null;
+    targetId: string | null;
+  }>({ open: false, step: 0, sourceVideo: null, targetId: null });
+  const transferSubModal = ref<{
+    open: boolean;
+    step: number;
+    sourceUser: AdminUserRow | null;
+    targetEmail: string;
+    error: string | null;
+    submitting: boolean;
+  }>({
+    open: false,
+    step: 0,
+    sourceUser: null,
+    targetEmail: '',
+    error: null,
+    submitting: false,
+  });
+  const livestreamModal = ref({
     open: false,
     saving: false,
     error: '',
@@ -3713,2981 +4146,4453 @@ const resetLivestreamModal = () => {
       moqEndpoint: '',
       moqBroadcast: '',
     },
-  }
-}
+  });
+  const componentTypes: BlockType[] = [
+    'top_video',
+    'featured_row',
+    'category',
+    'split_horizontal',
+    'split_vertical',
+  ];
+  const leafComponentTypes: LeafBlockType[] = ['top_video', 'featured_row', 'category'];
+  const blockTypeOptions = (currentType: unknown): string[] => {
+    if (typeof currentType !== 'string' || !currentType.trim()) return componentTypes;
+    return componentTypes.includes(currentType as BlockType)
+      ? componentTypes
+      : [currentType, ...componentTypes];
+  };
+  const leafBlockTypeOptions = (currentType: unknown): string[] => {
+    if (typeof currentType !== 'string' || !currentType.trim()) return leafComponentTypes;
+    return leafComponentTypes.includes(currentType as LeafBlockType)
+      ? leafComponentTypes
+      : [currentType, ...leafComponentTypes];
+  };
+  const layoutBlocks = ref<LayoutBlock[]>([]);
+  const homepageBaseline = ref<string>('');
 
-const openLivestreamModal = () => {
-  livestreamModal.value.open = true
-  livestreamModal.value.error = ''
-}
+  const newsletterListId = ref('');
+  const newsletterSenderEmail = ref('');
+  const newsletterSenderName = ref('');
+  /** Poll interval for campaign list refresh (ms); from API, default 10 min */
+  const newsletterPollIntervalMs = ref(600_000);
+  const newsletterSubject = ref('');
+  const newsletterHtml = ref('');
+  const newsletterTemplateId = ref('');
+  const newsletterSaving = ref(false);
+  const newsletterSending = ref(false);
+  const newsletterMessage = ref('');
+  const newsletterMessageClass = ref('');
+  const categories = ref<Category[]>([]);
+  const categoryForm = ref({
+    name: '',
+    slug: '',
+    sortOrder: 0,
+    direction: 'desc' as 'asc' | 'desc',
+    homepageLayoutVariant: 'three_by_one' as 'three_by_one' | 'side_mini',
+  });
+  const categoryCreateExpanded = ref(false);
+  const categoryDrawerOpen = ref(false);
+  const categoryDrawerCategory = ref<Category | null>(null);
+  const categoryDraggingIndex = ref<number | null>(null);
+  const newsletterSyncing = ref(false);
+  const newsletterTemplates = ref<any[]>([]);
+  const newsletterCampaigns = ref<any[]>([]);
+  const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' });
+  const newsletterEditingTemplateId = ref<string | null>(null);
+  const newsletterTemplateSaving = ref(false);
+  type PaymentProvider = 'stripe' | 'legacy';
+  type PlanType = 'monthly' | 'yearly' | 'club';
+  interface AdminPaymentPlanRow {
+    id: string;
+    label: string;
+    enabled: boolean;
+  }
+  interface PaymentPriceRow {
+    monthly: string;
+    yearly: string;
+    club: string;
+  }
+  interface PromoCampaign {
+    id: string;
+    name: string;
+    description?: string | null;
+    is_active: number;
+    code_count?: number;
+    total_redemptions?: number;
+  }
+  interface PromoCodeRow {
+    id: string;
+    campaign_id: string;
+    campaign_name?: string | null;
+    code: string;
+    reward_type: string;
+    max_uses: number;
+    used_count: number;
+    is_active: number;
+    allowed_plan_types: string;
+    stripe_coupon_id?: string | null;
+  }
+  interface IsicCampaignRow {
+    id: string;
+    name: string;
+    description?: string | null;
+    is_active: number;
+    free_slots_limit: number;
+    discount_percent: number;
+    renewal_months: number;
+    popup_behavior: string;
+    country_scope: string;
+  }
+  type PromoRewardType = 'free_month' | 'free_year' | 'discount_percent';
+  type IsicPopupBehavior = 'default' | 'highlight_campaign' | 'hide_standard' | 'isic_first';
 
-const closeLivestreamModal = () => {
-  resetLivestreamModal()
-}
+  const paymentSettings = ref<{
+    enabledProviders: PaymentProvider[];
+    providerOrder: PaymentProvider[];
+    allowedPlans: PlanType[];
+    basePrices: PaymentPriceRow;
+    providerPrices: { stripe: PaymentPriceRow };
+    stripePriceIds: PaymentPriceRow;
+  }>({
+    enabledProviders: ['stripe'],
+    providerOrder: ['stripe', 'legacy'],
+    allowedPlans: ['monthly', 'yearly', 'club'],
+    basePrices: { monthly: '', yearly: '', club: '' },
+    providerPrices: {
+      stripe: { monthly: '', yearly: '', club: '' },
+    },
+    stripePriceIds: { monthly: '', yearly: '', club: '' },
+  });
+  const paymentSettingsSaving = ref(false);
+  const paymentSettingsMessage = ref('');
+  const paymentSettingsMessageClass = ref('');
+  const adminPaymentPlans = ref<AdminPaymentPlanRow[]>([]);
+  const enabledAdminPaymentPlans = computed(() => adminPaymentPlans.value.filter((p) => p.enabled));
+  const defaultAdminPlanId = computed(() => enabledAdminPaymentPlans.value[0]?.id ?? 'monthly');
+  const systemFeatures = ref({
+    promotionsEnabled: true,
+    isicEnabled: false,
+    freePodcastPreviewEnabled: true,
+  });
+  const systemFeaturesSaving = ref(false);
+  const systemFeaturesMessage = ref('');
+  const systemFeaturesMessageClass = ref('');
+  const replicationStatus = ref<{
+    mode: string;
+    batchSize: number;
+    targetConfigured: boolean;
+    targetTokenConfigured?: boolean;
+    targetIngestPathOk?: boolean;
+    targetResolvedPath?: string;
+    targetWarning?: string | null;
+    targetProbe?: { ok: boolean; error?: string } | null;
+    streams?: { stream_name: string; cursor_value: string; updated_at: string }[];
+  } | null>(null);
+  const replicationPushing = ref(false);
+  const replicationResetting = ref(false);
+  const replicationMessage = ref('');
+  const replicationMessageClass = ref('');
+  const replicationCanPush = computed(() => {
+    const status = replicationStatus.value;
+    if (!status?.targetConfigured) return false;
+    if (status.targetTokenConfigured === false) return false;
+    if (status.targetWarning) return false;
+    if (status.targetProbe && !status.targetProbe.ok) return false;
+    return true;
+  });
+  const promotionsLoading = ref(false);
+  const promotionsSaving = ref(false);
+  const promoCampaigns = ref<PromoCampaign[]>([]);
+  const promoCodes = ref<PromoCodeRow[]>([]);
+  const promoCampaignForm = ref({
+    name: '',
+    description: '',
+    isActive: true,
+  });
+  const promoCodeForm = ref({
+    campaignId: '',
+    code: '',
+    quantity: 1,
+    rewardType: 'free_month',
+    maxUses: 1,
+    allowedPlanTypes: ['monthly', 'yearly', 'club'] as string[],
+    stripeCouponId: '',
+    expiresAt: '',
+  });
+  const isicLoading = ref(false);
+  const isicSaving = ref(false);
+  const isicCampaigns = ref<IsicCampaignRow[]>([]);
+  const isicApiConfig = ref({
+    enabled: false,
+    baseUrl: '',
+    apiKey: '',
+    hasApiKey: false,
+  });
+  const isicCampaignForm = ref({
+    name: '',
+    description: '',
+    freeSlotsLimit: 5000,
+    discountPercent: 0,
+    renewalMonths: 12,
+    popupBehavior: 'highlight_campaign',
+    countryScope: 'CZ,SK',
+    isActive: true,
+  });
+  const promotionsMessage = ref('');
+  const promotionsMessageClass = ref('');
+  const isicMessage = ref('');
+  const isicMessageClass = ref('');
 
-const createLivestream = async () => {
-  const title = livestreamModal.value.form.title.trim()
-  if (!title) {
-    livestreamModal.value.error = 'Title is required.'
-    return
+  const siteBranding = ref({
+    site_name: '',
+    site_name_short: '',
+    site_description: '',
+    site_logo_url: '',
+    site_favicon_url: '',
+    site_support_email: '',
+    podcast_title: '',
+    podcast_description: '',
+    gtm_enabled: '0',
+    gtm_container_id: '',
+    gtm_measurement_path: '',
+  });
+  const gtmEnabled = computed({
+    get: () => siteBranding.value.gtm_enabled === '1',
+    set: (enabled: boolean) => {
+      if (enabled && !siteBranding.value.gtm_container_id.trim()) return;
+      siteBranding.value.gtm_enabled = enabled ? '1' : '0';
+    },
+  });
+  watch(
+    () => siteBranding.value.gtm_container_id,
+    (id) => {
+      if (!id.trim() && siteBranding.value.gtm_enabled === '1') {
+        siteBranding.value.gtm_enabled = '0';
+      }
+    },
+  );
+  const siteBrandingSaving = ref(false);
+  const siteBrandingMessage = ref('');
+  const siteBrandingMessageClass = ref('');
+  const rssPodcastWebhookUrl = ref('');
+  const rssPodcastWebhookSecretInput = ref('');
+  const rssPodcastSecretConfigured = ref(false);
+  const rssPodcastWebhookSaving = ref(false);
+  const rssPodcastNotifySending = ref(false);
+  const rssPodcastMessage = ref('');
+  const rssPodcastMessageClass = ref('');
+
+  let usersLoadRequestId = 0;
+  const users = ref<AdminUserRow[]>([]);
+  const usersLoading = ref(false);
+  const usersError = ref('');
+  const usersPage = ref(1);
+  const usersPageSize = ref(25);
+  const usersTotal = ref(0);
+  const usersTotalPages = ref(1);
+  const usersSearchInput = ref('');
+  const usersSearchDebounced = ref('');
+  const usersRoleFilter = ref('all');
+  const usersSubscriptionFilter = ref('all');
+  let usersSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const usersImportCsv = ref('');
+  const usersImportMailingListId = ref('');
+  const usersImportRequirePurchaseId = ref(false);
+  const usersImporting = ref(false);
+  const usersImportResult = ref<{
+    imported: number;
+    existing: number;
+    totalEmails: number;
+    withPurchaseId: number;
+    mailingListId: string;
+  } | null>(null);
+  const legacyPaymentStatus = ref<{
+    configured: boolean;
+    sandboxConfigured?: boolean;
+    merchantId: string | null;
+    hasApiKey: boolean;
+    hasWebhookSecret: boolean;
+  } | null>(null);
+  const legacyPaymentStatusLoading = ref(false);
+
+  type LegacyMigrationStats = {
+    total_imported: number;
+    needs_relink: number;
+    active: number;
+    failed: number;
+    not_validated: number;
+    churn_rate_pct: number;
+    sandboxConfigured: boolean;
+    productionConfigured: boolean;
+    validationApiBase: string | null;
+  };
+  const legacyMigrationStats = ref<LegacyMigrationStats | null>(null);
+  const legacyMigrationStatsLoading = ref(false);
+  const legacyValidationBatchSize = ref(25);
+  const legacyValidationTarget = ref<'sandbox' | 'production'>('production');
+  const legacyValidationDryRun = ref(false);
+  const legacyValidationRunning = ref(false);
+  const legacyValidationResult = ref<{
+    valid: number;
+    invalid: number;
+    errors: number;
+    details: Array<{
+      subscriptionId: string;
+      userId: string;
+      purchaseId: string;
+      result: 'valid' | 'invalid' | 'error';
+      httpStatus?: number;
+      errorMessage?: string;
+    }>;
+  } | null>(null);
+  const legacyRelinkCandidates = ref<
+    Array<{
+      userId: string;
+      email: string;
+      provider: string;
+      purchaseId: string | null;
+      providerCustomerId: string | null;
+      validationStatus: string | null;
+      validatedAt: string | null;
+      importedAt: string;
+    }>
+  >([]);
+  const legacyRelinkLoading = ref(false);
+  const legacyRelinkPage = ref(1);
+  const legacyRelinkPageSize = ref(25);
+  const legacyRelinkSelected = ref<string[]>([]);
+  const legacyRelinkSending = ref(false);
+
+  const legacyMigrationSuccessPct = computed(() => {
+    const stats = legacyMigrationStats.value;
+    if (!stats) return 0;
+    const denom = stats.active + stats.failed;
+    if (!denom) return 0;
+    return Math.round((stats.active / denom) * 1000) / 10;
+  });
+
+  const legacyRelinkAllOnPageSelected = computed(() => {
+    const ids = legacyRelinkCandidates.value.map((row) => row.userId);
+    return ids.length > 0 && ids.every((id) => legacyRelinkSelected.value.includes(id));
+  });
+
+  const ROLE_ORDER = ['viewer', 'moderator', 'analyst', 'editor', 'admin', 'super_admin'] as const;
+  function roleRank(role: string): number {
+    const i = ROLE_ORDER.indexOf(role as (typeof ROLE_ORDER)[number]);
+    return i === -1 ? 0 : i;
   }
-  const moqEndpoint = livestreamModal.value.form.moqEndpoint.trim()
-  const moqBroadcast = livestreamModal.value.form.moqBroadcast.trim()
-  if (!moqEndpoint) {
-    livestreamModal.value.error = 'MoQ endpoint is required.'
-    return
+  function isRoleDemotion(from: string, to: string): boolean {
+    return roleRank(to) < roleRank(from);
   }
-  if (!moqBroadcast) {
-    livestreamModal.value.error = 'MoQ broadcast name is required.'
-    return
+  function isSensitiveRoleChange(from: string, to: string): boolean {
+    if (from === to) return false;
+    if (isRoleDemotion(from, to)) return true;
+    if (to === 'admin' || to === 'super_admin') return true;
+    if (from === 'admin' || from === 'super_admin') return true;
+    return false;
   }
-  livestreamModal.value.saving = true
-  livestreamModal.value.error = ''
-  try {
-    const payload = {
-      title,
-      description: livestreamModal.value.form.description.trim() || null,
-      slug: livestreamModal.value.form.slug.trim() || null,
-      status: livestreamModal.value.form.status,
-      publishStatus: livestreamModal.value.form.publishStatus,
-      moqEndpoint,
-      moqBroadcast,
+  type PillValueMode = 'number' | 'percentage' | 'agree_disagree' | 'graph_embed';
+  type AdminPillRow = {
+    id: string;
+    label: string;
+    value: number;
+    value_secondary?: number | null;
+    value_mode?: PillValueMode;
+    graph_embed_url?: string | null;
+    graph_payload_json?: string | null;
+    color: string;
+    image_url?: string | null;
+    sort_order: number;
+  };
+  const adminPills = ref<AdminPillRow[]>([]);
+  const newPill = ref({
+    label: '',
+    value: 0,
+    valueSecondary: '',
+    valueMode: 'number' as PillValueMode,
+    graphEmbedUrl: '',
+    graphPayloadJson: '',
+    color: '#2563eb',
+    imageUrl: '',
+  });
+  const pillsApiKey = ref('');
+  const pillsApiKeyMeta = ref<{ hasKey: boolean; managedByEnv: boolean; maskedKey: string }>({
+    hasKey: false,
+    managedByEnv: false,
+    maskedKey: '',
+  });
+  const analyticsRange = ref<AnalyticsRange>('30d');
+  const analyticsGranularity = ref<AnalyticsGranularity>('day');
+  const analyticsLoading = ref(false);
+  const analyticsError = ref('');
+  const analytics = ref<AnalyticsResponse>({
+    views: { totalUniqueSessions: 0, series: [] },
+    trafficSources: [],
+    videoStats: [],
+    subscriptions: [],
+    subscriptionOverview: { statusBreakdown: [], trends: [] },
+    cashflow: { currency: 'EUR', activeMrrEstimateEur: 0, trend: [] },
+    subscriptionsLegacy: [],
+  });
+
+  const analyticsExporting = ref<AnalyticsDataset | null>(null);
+  const analyticsSettingsSaving = ref(false);
+  const analyticsSettingsInitialized = ref(false);
+  const analyticsHeatmapVideoId = ref('');
+  const analyticsViewCounting = ref({
+    minSegmentsPerSession: 1,
+    minWatchSeconds: 15,
+  });
+
+  interface PushCampaignFunnel {
+    campaignId: string;
+    videoTitle: string;
+    sent: number;
+    clicks: number;
+    clickRatePercent: number;
+    medianClickLatencySeconds: number | null;
+    watchSessions: number;
+    watchRatePercent: number;
+    completionRatePercent: number;
+    avgSessionDepth: number;
+  }
+
+  const pushCampaignFunnel = ref<PushCampaignFunnel | null>(null);
+  const pushCampaignFunnelError = ref<string | null>(null);
+
+  const analyticsStatusRows = computed(() => {
+    if (Array.isArray(analytics.value.subscriptionOverview?.statusBreakdown))
+      return analytics.value.subscriptionOverview?.statusBreakdown ?? [];
+    if (Array.isArray(analytics.value.subscriptionsLegacy))
+      return analytics.value.subscriptionsLegacy;
+    if (Array.isArray(analytics.value.subscriptions)) return analytics.value.subscriptions;
+    return [];
+  });
+
+  function formatMetricValue(key: string, value: number | string | undefined) {
+    if (key === 'totalWatchTimeLabel' && typeof value === 'string') return value;
+    const numeric = Number(value ?? 0);
+    if (key === 'estimatedActiveMrrEur') return `€${numeric.toFixed(2)}`;
+    if (key.toLowerCase().includes('percent') || key === 'churnRatePercent')
+      return `${numeric.toFixed(2)}%`;
+    if (key === 'totalWatchSeconds') {
+      const seconds = Math.max(0, Math.round(numeric));
+      if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.round((seconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
     }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/livestreams`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    showToast('success', 'Livestream video created with MoQ playback settings.')
-    resetLivestreamModal()
-    await loadVideos()
-  } catch (e: any) {
-    livestreamModal.value.error = e.message || 'Failed to create livestream'
-  } finally {
-    livestreamModal.value.saving = false
+    return String(Math.round(numeric));
   }
-}
 
-const loadVideos = async () => {
-  videosLoading.value = true
-  try {
-    const res  = await fetch(`${config.public.apiUrl}/api/admin/videos`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      throw new Error(err.details || err.error || `HTTP ${res.status}`)
+  const analyticsKpiCards = computed(() => {
+    const kpis = analytics.value.kpis ?? {};
+    const defs = analytics.value.definitions ?? {};
+    return [
+      {
+        key: 'totalUniqueViews',
+        label: 'Playback starts',
+        value: formatMetricValue('totalUniqueViews', kpis.totalUniqueViews),
+        help: defs.totalUniqueViews || 'One per viewer session per video.',
+      },
+      {
+        key: 'totalWatchTimeLabel',
+        label: 'Total watch time',
+        value: formatMetricValue(
+          'totalWatchTimeLabel',
+          kpis.totalWatchTimeLabel ||
+            formatMetricValue('totalWatchSeconds', kpis.totalWatchSeconds),
+        ),
+        help: defs.totalWatchSeconds || 'Cumulative seconds watched.',
+      },
+      {
+        key: 'segmentRequests',
+        label: 'Segment requests',
+        value: formatMetricValue('segmentRequests', kpis.segmentRequests),
+        help: defs.segmentRequests || 'HLS segment requests served.',
+      },
+      {
+        key: 'averageRetentionPercent',
+        label: 'Avg retention',
+        value: formatMetricValue('averageRetentionPercent', kpis.averageRetentionPercent),
+        help:
+          defs.averageRetentionPercent || 'Average max watch-through across qualified sessions.',
+      },
+      {
+        key: 'activeSubscribers',
+        label: 'Active subscribers',
+        value: formatMetricValue('activeSubscribers', kpis.activeSubscribers),
+        help: defs.activeSubscribers || 'Latest active/trialing subscription rows.',
+      },
+      {
+        key: 'churnRatePercent',
+        label: 'Churn rate',
+        value: formatMetricValue('churnRatePercent', kpis.churnRatePercent),
+        help: defs.churnRatePercent || 'Churned divided by new subscriptions.',
+      },
+      {
+        key: 'estimatedActiveMrrEur',
+        label: 'Estimated MRR',
+        value: formatMetricValue('estimatedActiveMrrEur', kpis.estimatedActiveMrrEur),
+        help: defs.estimatedActiveMrrEur || 'Estimated monthly recurring revenue.',
+      },
+    ];
+  });
+
+  function normalizeChartRows(values: number[]) {
+    const max = values.length ? Math.max(...values) : 0;
+    return { max: max > 0 ? max : 1 };
+  }
+
+  const analyticsViewsLineChartPoints = computed(() =>
+    (analytics.value.views?.series ?? []).map((row) => ({
+      label: String(row.bucket),
+      value: Number(row.uniqueSessions || 0),
+    })),
+  );
+
+  const analyticsWatchTimeLineChartPoints = computed(() =>
+    (analytics.value.watchTime?.series ?? []).map((row) => ({
+      label: String(row.bucket),
+      value: Number(row.totalWatchSeconds || 0),
+    })),
+  );
+
+  const analyticsCountryViewsChartRows = computed(() => {
+    const rows = (analytics.value.countries?.views ?? []).map((row) => ({
+      country: row.country,
+      value: Number(row.uniqueSessions || 0),
+    }));
+    const norm = normalizeChartRows(rows.map((row) => row.value));
+    return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }));
+  });
+
+  const analyticsHeatmapBuckets = computed(() => analytics.value.heatmap?.buckets ?? []);
+
+  const analyticsViewsSeriesChartRows = computed(() => {
+    const rows = (analytics.value.views?.series ?? []).map((row) => ({
+      bucket: String(row.bucket),
+      value: Number(row.uniqueSessions || 0),
+    }));
+    const norm = normalizeChartRows(rows.map((row) => row.value));
+    return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }));
+  });
+
+  const analyticsTrafficChartRows = computed(() => {
+    const rows = (analytics.value.trafficSources ?? []).map((row) => ({
+      source: row.source,
+      value: Number(row.unique_sessions ?? row.hits ?? 0),
+    }));
+    const norm = normalizeChartRows(rows.map((row) => row.value));
+    return rows.map((row) => ({ ...row, percent: Math.round((row.value / norm.max) * 100) }));
+  });
+
+  const analyticsVideoStatsRows = computed(() =>
+    (analytics.value.videoStats ?? []).map((row) => ({
+      videoId: row.videoId,
+      title: row.title,
+      slug: row.slug,
+      viewCount: Number(row.viewCount || 0),
+      totalWatchSeconds: Number(row.totalWatchSeconds || 0),
+      averageRetentionPercent: row.averageRetentionPercent,
+      engagementScore: row.engagementScore ?? null,
+    })),
+  );
+
+  function formatWatchSeconds(value: number | null | undefined) {
+    const seconds = Math.max(0, Math.round(Number(value || 0)));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remMinutes = minutes % 60;
+    return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
+  }
+
+  function formatEngagementScore(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(Number(value))) return '—';
+    return String(Math.round(Number(value)));
+  }
+
+  function formatVideoRetention(value: number | null | undefined) {
+    if (value == null || !Number.isFinite(Number(value))) return '—';
+    return `${Number(value).toFixed(1)}%`;
+  }
+
+  function videoWatchHref(row: { videoId: string; slug: string | null }) {
+    const slugOrId = row.slug?.trim() || row.videoId;
+    return `/watch/${encodeURIComponent(slugOrId)}`;
+  }
+
+  const analyticsSubscriptionTrendRows = computed(() =>
+    (analytics.value.subscriptionOverview?.trends ?? []).map((row) => ({
+      bucket: String(row.bucket),
+      newSubscriptions: Number(row.newSubscriptions || 0),
+      churnedSubscriptions: Number(row.churnedSubscriptions || 0),
+      expiringSubscriptions: Number(row.expiringSubscriptions || 0),
+    })),
+  );
+
+  const analyticsCashflowRows = computed(() =>
+    (analytics.value.cashflow?.trend ?? []).map((row) => ({
+      bucket: String(row.bucket),
+      estimatedNewRevenueEur: Number(row.estimatedNewRevenueEur || 0),
+      estimatedNetNewEur: Number(row.estimatedNetNewEur || 0),
+    })),
+  );
+
+  watch([analyticsRange, analyticsGranularity], () => {
+    if (activeAdminTab.value === 'analytics') {
+      void loadAnalytics();
     }
-    const data = await res.json()
-    uploads.value = data.videos || []
+  });
+
+  watch(activeAdminTab, (tab) => {
+    if (tab === 'users' && !legacyPaymentStatus.value && !legacyPaymentStatusLoading.value) {
+      void loadLegacyPaymentStatus();
+    }
+    if (tab === 'legacy_migration') {
+      if (!legacyMigrationStats.value && !legacyMigrationStatsLoading.value) {
+        void loadLegacyMigrationStats();
+      }
+      if (!legacyRelinkCandidates.value.length && !legacyRelinkLoading.value) {
+        void loadLegacyRelinkCandidates();
+      }
+    }
+  });
+  /** Stable per send attempt until success — retries reuse the same key for server idempotency. */
+  const newsletterSendDedupeKey = ref<string | null>(null);
+
+  /** Sandboxed document for preview — avoids v-html XSS in the admin app. */
+  const newsletterPreviewSrcdoc = computed(() => {
+    const bodyHtml = newsletterHtml.value;
+    if (!bodyHtml.trim()) return '';
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
+    body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#111;background:#fff}
+    @media (prefers-color-scheme: dark){ body{color:#e5e5e5;background:#0a0a0a} }
+  </style></head><body>${bodyHtml}</body></html>`;
+  });
+
+  watch(
+    [newsletterTemplateId, newsletterTemplates],
+    () => {
+      const id = newsletterTemplateId.value;
+      if (!id) return;
+      const t = newsletterTemplates.value.find((x: { id: string }) => x.id === id);
+      if (t) {
+        newsletterSubject.value = String(t.subject || '');
+        newsletterHtml.value = String(t.html_body || '');
+      }
+    },
+    { deep: true },
+  );
+
+  const chronologicallySortedUploads = computed(() =>
+    [...uploads.value].sort(
+      (a, b) => new Date(b.upload_date).getTime() - new Date(a.upload_date).getTime(),
+    ),
+  );
+
+  const notifiedVideoIds = computed(() => {
+    const ids = new Set<string>();
     for (const video of uploads.value) {
-      previewLockByVideoId.value[video.id] = video.preview_duration
+      if (video.notified_at) ids.add(video.id);
     }
-  } catch (e: any) {
-    saveMessage.value = `Failed to load videos: ${e.message}`
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    videosLoading.value = false
-  }
-}
+    return ids;
+  });
 
-const loadCategories = async () => {
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    const loaded = Array.isArray(data.categories) ? data.categories : []
-    categories.value = loaded.map((cat: any) => ({
-      ...cat,
-      homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
-      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
-      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
-      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
-    }))
-  } catch (e: any) {
-    saveMessage.value = `Failed to load categories: ${e.message}`
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
+  const pendingNotificationVideos = computed(() =>
+    chronologicallySortedUploads.value.filter(
+      (video) => video.publish_status === 'published' && !notifiedVideoIds.value.has(video.id),
+    ),
+  );
 
-const updateVideoCategory = async (video: Video, nextCategoryId: string) => {
-  const previousCategoryId = video.category_id ?? null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ categoryId: nextCategoryId || null }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const { video: updated } = await res.json()
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, category_id: updated?.category_id ?? null }
-    }
-    showToast('success', `Category updated for ${video.title}.`)
-    await loadCategories()
-  } catch (e: any) {
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, category_id: previousCategoryId }
-    }
-    showToast('error', `Failed to update category: ${e.message}`)
+  function isVideoNotified(video: Video) {
+    return notifiedVideoIds.value.has(video.id);
   }
-}
 
-const createCategory = async () => {
-  try {
-    const payload = {
-      name: categoryForm.value.name.trim(),
-      slug: categoryForm.value.slug.trim(),
-      sortOrder: Number.parseInt(String(categoryForm.value.sortOrder), 10) || 0,
-      direction: categoryForm.value.direction,
-      homepageLayoutVariant: categoryForm.value.homepageLayoutVariant || 'three_by_one',
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    categoryForm.value = { name: '', slug: '', sortOrder: 0, direction: 'desc', homepageLayoutVariant: 'three_by_one' }
-    showToast('success', 'Category created.')
-    await loadCategories()
-  } catch (e: any) {
-    showToast('error', `Failed to create category: ${e.message}`)
-  }
-}
+  const draftVideos = computed(() =>
+    chronologicallySortedUploads.value.filter(
+      (v) => v.publish_status === 'draft' && v.r2_exists !== false && !v.livestream_provider,
+    ),
+  );
+  const swapTargetVideo = computed(
+    () => uploads.value.find((v) => v.id === swapModal.value.targetId) ?? null,
+  );
 
-const updateCategory = async (category: Category) => {
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        id: category.id,
-        name: category.name,
-        slug: category.slug,
-        sortOrder: category.sort_order,
-        direction: category.direction,
-        homepageLayoutVariant: category.homepage_layout_variant || 'three_by_one',
-        recommendationRecencyBias: Number(category.recommendation_recency_bias ?? 1),
-        recommendationLowViewsBoost: Number(category.recommendation_low_views_boost ?? 0),
-        recommendationCategoryLock: Number(category.recommendation_category_lock ?? 0) === 1,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    showToast('success', 'Category updated.')
-    await loadCategories()
-  } catch (e: any) {
-    await loadCategories()
-    showToast('error', `Failed to update category: ${e.message}`)
-  }
-}
+  const featuredVideos = computed(() =>
+    featuredSlots.value.length
+      ? featuredSlots.value
+      : [...chronologicallySortedUploads.value.slice(0, 4)],
+  );
 
-const deleteCategory = async (category: Category, reassignToId?: string) => {
-  try {
-    const body: Record<string, string> = { id: category.id }
-    if (reassignToId) body.reassignToId = reassignToId
-    const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    showToast('success', 'Category deleted.')
-    await Promise.all([loadCategories(), loadVideos()])
-  } catch (e: any) {
-    showToast('error', `Failed to delete category: ${e.message}`)
-  }
-}
+  const previewLeafBlocks = computed(() =>
+    homepagePreviewModel.value.blockItems.filter(
+      (block): block is HomepageRenderLeafBlock =>
+        block.type === 'featured_row' || block.type === 'category' || block.type === 'top_video',
+    ),
+  );
 
-const loadHomepagePlacement = async () => {
-  const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`)
-  if (!res.ok) return
-  homepagePlacement.value = await res.json()
-}
+  const previewSplitBlocks = computed(() =>
+    homepagePreviewModel.value.blockItems.filter(
+      (block): block is HomepageRenderSplitBlock =>
+        block.type === 'split_horizontal' || block.type === 'split_vertical',
+    ),
+  );
 
-const loadHomepageState = async () => {
-  const auth = authHeader()
-  const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
-    headers: Object.keys(auth).length ? auth : undefined,
-  })
-  if (!res.ok) {
-    return
-  }
-  const data = await res.json()
-  const homepageConfig = data?.homepageConfig ?? {}
-  const featuredIds: string[] = Array.isArray(homepageConfig.featuredVideoIds) ? homepageConfig.featuredVideoIds : []
-  layoutBlocks.value = Array.isArray(homepageConfig.layoutBlocks) && homepageConfig.layoutBlocks.length
-    ? assignGridPositions(
-      homepageConfig.layoutBlocks.map(normalizeLoadedBlock).filter((block: LayoutBlock | null): block is LayoutBlock => Boolean(block)),
-    )
-    : getDefaultBlocks()
-  if (!layoutBlocks.value.length) {
-    featuredSlots.value = [null, null, null, null]
-    applyHomepageBaseline()
-    return
-  }
-  if (Array.isArray(data?.categories) && data.categories.length) {
-    categories.value = data.categories.map((cat: any) => ({
-      ...cat,
-      homepage_layout_variant: cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
-      recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
-      recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
-      recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
-    }))
-  }
-  const nextSlots = featuredIds.length
-    ? featuredIds
-      .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
-      .slice(0, 4)
-    : []
-  while (nextSlots.length < 4) nextSlots.push(null)
-  featuredSlots.value = nextSlots
-  applyHomepageBaseline()
-}
+  const pinnedFeaturedVideoIds = computed(() =>
+    featuredSlots.value.map((v) => v?.id).filter((v): v is string => Boolean(v)),
+  );
 
-const loadNewsletterSettings = async () => {
-  if (!isAdmin.value) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    newsletterListId.value = data.brevoSubscriberListId != null ? String(data.brevoSubscriberListId) : ''
-    newsletterSenderEmail.value = data.brevoCampaignSenderEmail ?? ''
-    newsletterSenderName.value = data.brevoCampaignSenderName ?? ''
-    const poll = Number(data.brevoNewsletterPollIntervalMs)
-    newsletterPollIntervalMs.value = Number.isFinite(poll) && poll >= 60_000 ? poll : 600_000
-  } catch (e: any) {
-    newsletterMessage.value = `Could not load newsletter settings: ${e.message}`
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
+  const hasFeaturedRowInLayout = computed(() => layoutIncludesFeaturedRowBlock(layoutBlocks.value));
 
-const loadNewsletterTemplates = async () => {
-  if (!isAdmin.value) return
-  const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/templates`, { headers: authHeader() })
-  if (!res.ok) return
-  const data = await res.json()
-  newsletterTemplates.value = data.templates || []
-}
+  const orphanedFeaturedPinsWarning = computed(() => {
+    const pins = pinnedFeaturedVideoIds.value;
+    if (!pins.length) return null;
+    if (hasFeaturedRowInLayout.value) return null;
+    const titles = pins
+      .map((id) => featuredSlots.value.find((v) => v?.id === id)?.title || id)
+      .join(', ');
+    return `${pins.length} featured video pin${pins.length === 1 ? '' : 's'} (${titles}) will not appear in a featured row — only in categories — because the homepage layout has no Featured row block.`;
+  });
 
-const loadNewsletterCampaigns = async () => {
-  if (!isAdmin.value) return
-  const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/campaigns`, { headers: authHeader() })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const msg = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`
-    const code = typeof data.code === 'string' ? data.code : ''
-    const brevo = data.brevoStatus != null ? ` · Brevo HTTP ${data.brevoStatus}` : ''
-    throw new Error(code ? `${msg} (${code})${brevo}` : `${msg}${brevo}`)
-  }
-  newsletterCampaigns.value = data.campaigns || []
-}
-
-const isNewsletterTabActive = computed(() => activeAdminTab.value === 'newsletter')
-
-const { lastCampaignsOkAt, lastCampaignsError } = useAdminNewsletterPolling({
-  pollIntervalMs: newsletterPollIntervalMs,
-  isActive: isNewsletterTabActive,
-  isAdmin,
-  loadCampaigns: loadNewsletterCampaigns,
-})
-
-const syncNewsletterRecipients = async () => {
-  newsletterSyncing.value = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/sync`, {
-      method: 'POST',
-      headers: authHeader(),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    newsletterMessage.value = `Sync complete. Recipients synced: ${data.synced}`
-    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    newsletterMessage.value = e.message || 'Sync failed'
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    newsletterSyncing.value = false
-  }
-}
-
-const resetNewsletterTemplateForm = () => {
-  newsletterEditingTemplateId.value = null
-  newsletterTemplateForm.value = { name: '', subject: '', htmlBody: '' }
-}
-
-const startEditNewsletterTemplate = (tpl: { id: string; name: string; subject: string; html_body: string }) => {
-  newsletterEditingTemplateId.value = tpl.id
-  newsletterTemplateForm.value = {
-    name: tpl.name,
-    subject: tpl.subject,
-    htmlBody: tpl.html_body,
-  }
-}
-
-const saveNewsletterTemplate = async () => {
-  if (!isAdmin.value) return
-  const { name, subject, htmlBody } = newsletterTemplateForm.value
-  if (!name.trim() || !subject.trim() || !htmlBody.trim()) {
-    newsletterMessage.value = 'Template name, subject, and HTML body are required.'
-    newsletterMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
-    return
-  }
-  newsletterTemplateSaving.value = true
-  newsletterMessage.value = ''
-  try {
-    const editing = newsletterEditingTemplateId.value
-    const url = editing
-      ? `${config.public.apiUrl}/api/admin/newsletter/templates/${encodeURIComponent(editing)}`
-      : `${config.public.apiUrl}/api/admin/newsletter/templates`
-    const res = await fetch(url, {
-      method: editing ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(
-        editing
-          ? { name: name.trim(), subject: subject.trim(), htmlBody }
-          : { name: name.trim(), subject: subject.trim(), htmlBody },
-      ),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`)
-    await loadNewsletterTemplates()
-    resetNewsletterTemplateForm()
-    newsletterMessage.value = editing ? 'Template updated.' : 'Template created.'
-    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    newsletterMessage.value = e.message || 'Could not save template'
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    newsletterTemplateSaving.value = false
-  }
-}
-
-const deleteNewsletterTemplate = async (id: string, name: string) => {
-  if (!isAdmin.value) return
-  const ok = window.confirm(`Delete template "${name}"? This cannot be undone.`)
-  if (!ok) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/templates/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: authHeader(),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`)
-    if (newsletterTemplateId.value === id) newsletterTemplateId.value = ''
-    if (newsletterEditingTemplateId.value === id) resetNewsletterTemplateForm()
-    await loadNewsletterTemplates()
-    newsletterMessage.value = 'Template deleted.'
-    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    newsletterMessage.value = e.message || 'Delete failed'
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const loadHomepageContent = async () => {
-  if (!isAdmin.value) return
-  await loadHomepageState()
-}
-
-const loadSystemFeatures = async () => {
-  if (!isAdmin.value) return
-  systemFeaturesMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, { headers: authHeader() })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    systemFeatures.value = {
-      promotionsEnabled: Boolean(data.promotionsEnabled),
-      isicEnabled: Boolean(data.isicEnabled),
-      freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
-    }
-    // Keep ISIC API enable checkbox in sync with feature toggle.
-    isicApiConfig.value.enabled = systemFeatures.value.isicEnabled
-  } catch (e: any) {
-    systemFeaturesMessage.value = `Could not load system feature toggles: ${e.message}`
-    systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const saveSystemFeatures = async () => {
-  if (!isAdmin.value) return
-  systemFeaturesSaving.value = true
-  systemFeaturesMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(systemFeatures.value),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    systemFeaturesMessage.value = 'Feature toggles saved.'
-    systemFeaturesMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadSystemFeatures()
-  } catch (e: any) {
-    systemFeaturesMessage.value = e.message || 'Failed to save feature toggles'
-    systemFeaturesMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    systemFeaturesSaving.value = false
-  }
-}
-
-const loadReplicationStatus = async (options?: { preserveMessage?: boolean; probe?: boolean }) => {
-  if (!isAdmin.value) return
-  if (!options?.preserveMessage) {
-    replicationMessage.value = ''
-  }
-  try {
-    const probeQuery = options?.probe ? '?probe=1' : ''
-    const res = await fetch(`${config.public.apiUrl}/api/admin/replication${probeQuery}`, { headers: authHeader() })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    replicationStatus.value = {
-      mode: String(data.mode || 'd1_to_pg'),
-      batchSize: Number(data.batchSize) || 100,
-      targetConfigured: Boolean(data.targetConfigured),
-      targetTokenConfigured: data.targetTokenConfigured !== false,
-      targetIngestPathOk: data.targetIngestPathOk !== false,
-      targetResolvedPath: data.targetResolvedPath ? String(data.targetResolvedPath) : undefined,
-      targetWarning: data.targetWarning ? String(data.targetWarning) : null,
-      targetProbe: data.targetProbe && typeof data.targetProbe === 'object'
-        ? { ok: Boolean(data.targetProbe.ok), error: data.targetProbe.error ? String(data.targetProbe.error) : undefined }
-        : null,
-      streams: Array.isArray(data.streams) ? data.streams : [],
-    }
-  } catch (e: any) {
-    replicationStatus.value = null
-    replicationMessage.value = `Could not load replication status: ${e.message}`
-    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const resetReplicationCursors = async () => {
-  if (!isAdmin.value) return
-  if (!import.meta.client || !window.confirm('Reset replication sync cursors? The next push will re-send all rows from D1.')) return
-  replicationResetting.value = true
-  replicationMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ resetCursors: true }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    replicationMessage.value = 'Replication cursors reset. Run Push DB to Deno Postgres to re-sync.'
-    replicationMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadReplicationStatus({ preserveMessage: true, probe: true })
-  } catch (e: any) {
-    replicationMessage.value = e.message || 'Failed to reset cursors'
-    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    replicationResetting.value = false
-  }
-}
-
-const pushReplicationToDeno = async () => {
-  if (!isAdmin.value) return
-  if (replicationResetting.value) return
-  replicationPushing.value = true
-  replicationMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/replication/push`, {
-      method: 'POST',
-      headers: authHeader(),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    const t = data.totals || {}
-    const parts = [
-      t.users ? `${t.users} users` : '',
-      t.subscriptions ? `${t.subscriptions} subscriptions` : '',
-      t.videos ? `${t.videos} videos` : '',
-      t.adminSettings ? `${t.adminSettings} settings` : '',
-    ].filter(Boolean)
-    const detail = parts.length ? parts.join(', ') : 'no new rows'
-    const ingest = data.ingest
-    const ingestNote = ingest && (ingest.applied > 0 || ingest.skipped > 0)
-      ? ` Postgres applied ${ingest.applied ?? 0}, skipped ${ingest.skipped ?? 0}.`
-      : ''
-    replicationMessage.value = data.partial
-      ? `${data.message || 'Partial push.'} Read from D1: ${detail}.${ingestNote}`
-      : `Push complete (${data.rounds ?? 0} round(s)). Read from D1: ${detail}.${ingestNote}`
-    replicationMessageClass.value = data.partial
-      ? 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
-      : 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadReplicationStatus({ preserveMessage: true })
-  } catch (e: any) {
-    replicationMessage.value = e.message || 'DB push failed'
-    replicationMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    replicationPushing.value = false
-  }
-}
-
-const loadAdminPaymentPlans = async () => {
-  if (!isAdmin.value) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, { headers: authHeader() })
-    if (!res.ok) return
-    const data = await res.json()
-    adminPaymentPlans.value = Array.isArray(data.plans)
-      ? data.plans.map((p: { id?: string; label?: string; enabled?: boolean }) => ({
-        id: String(p.id ?? ''),
-        label: String(p.label ?? p.id ?? ''),
-        enabled: p.enabled !== false,
-      })).filter((p: AdminPaymentPlanRow) => p.id)
-      : []
-  } catch {
-    adminPaymentPlans.value = []
-  }
-}
-
-const loadPaymentSettings = async () => {
-  if (!isAdmin.value) return
-  paymentSettingsMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    const enabled = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
-      : ['stripe']
-    const order = Array.isArray(data.providerOrder)
-      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
-      : ['stripe', 'legacy']
-    const allowed = Array.isArray(data.allowedPlans) ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club') : ['monthly', 'yearly', 'club']
-    paymentSettings.value = {
-      enabledProviders: enabled.length ? enabled : ['stripe'],
-      providerOrder: order.length ? order : ['stripe', 'legacy'],
-      allowedPlans: allowed.length ? allowed : ['monthly', 'yearly', 'club'],
-      basePrices: {
-        monthly: data.basePrices?.monthly != null ? String(data.basePrices.monthly) : '',
-        yearly: data.basePrices?.yearly != null ? String(data.basePrices.yearly) : '',
-        club: data.basePrices?.club != null ? String(data.basePrices.club) : '',
-      },
-      providerPrices: {
-        stripe: {
-          monthly: data.providerPrices?.stripe?.monthly != null ? String(data.providerPrices.stripe.monthly) : '',
-          yearly: data.providerPrices?.stripe?.yearly != null ? String(data.providerPrices.stripe.yearly) : '',
-          club: data.providerPrices?.stripe?.club != null ? String(data.providerPrices.stripe.club) : '',
-        },
-      },
-      stripePriceIds: {
-        monthly: data.stripePriceIds?.monthly != null ? String(data.stripePriceIds.monthly) : '',
-        yearly: data.stripePriceIds?.yearly != null ? String(data.stripePriceIds.yearly) : '',
-        club: data.stripePriceIds?.club != null ? String(data.stripePriceIds.club) : '',
-      },
-    }
-  } catch (e: any) {
-    paymentSettingsMessage.value = `Could not load payment settings: ${e.message}`
-    paymentSettingsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const loadPromotions = async () => {
-  if (!isAdmin.value) return
-  promotionsLoading.value = true
-  promotionsMessage.value = ''
-  try {
-    const [campaignRes, codeRes] = await Promise.all([
-      fetch(`${config.public.apiUrl}/api/admin/promotions/campaigns`, { headers: authHeader() }),
-      fetch(`${config.public.apiUrl}/api/admin/promotions/codes`, { headers: authHeader() }),
-    ])
-    const campaignData = await campaignRes.json().catch(() => ({}))
-    const codeData = await codeRes.json().catch(() => ({}))
-    if (!campaignRes.ok) throw new Error(campaignData.error || `HTTP ${campaignRes.status}`)
-    if (!codeRes.ok) throw new Error(codeData.error || `HTTP ${codeRes.status}`)
-    promoCampaigns.value = Array.isArray(campaignData.campaigns) ? campaignData.campaigns : []
-    promoCodes.value = Array.isArray(codeData.codes) ? codeData.codes : []
-    if (!promoCodeForm.value.campaignId && promoCampaigns.value.length) {
-      promoCodeForm.value.campaignId = String(promoCampaigns.value[0]?.id || '')
-    }
-  } catch (e: any) {
-    promotionsMessage.value = e.message || 'Failed to load promotions'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    promotionsLoading.value = false
-  }
-}
-
-const createPromoCampaign = async () => {
-  if (!isAdmin.value) return
-  const name = promoCampaignForm.value.name.trim()
-  if (!name) {
-    promotionsMessage.value = 'Campaign name is required.'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  promotionsSaving.value = true
-  promotionsMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/promotions/campaigns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        name,
-        description: promoCampaignForm.value.description,
-        isActive: promoCampaignForm.value.isActive,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    promoCampaignForm.value = { name: '', description: '', isActive: true }
-    promotionsMessage.value = 'Promo campaign created.'
-    promotionsMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadPromotions()
-  } catch (e: any) {
-    promotionsMessage.value = e.message || 'Failed to create campaign'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    promotionsSaving.value = false
-  }
-}
-
-const createPromoCodes = async () => {
-  if (!isAdmin.value) return
-  if (!promoCodeForm.value.campaignId) {
-    promotionsMessage.value = 'Choose a campaign first.'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  const stripeCouponId = promoCodeForm.value.stripeCouponId.trim()
-  if (promoCodeForm.value.rewardType === 'discount_percent' && !stripeCouponId) {
-    promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID.'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  promotionsSaving.value = true
-  promotionsMessage.value = ''
-  try {
-    const expiresIso = parseOptionalLocalDateTimeToIso(promoCodeForm.value.expiresAt)
-    const res = await fetch(`${config.public.apiUrl}/api/admin/promotions/codes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        campaignId: promoCodeForm.value.campaignId,
-        code: promoCodeForm.value.code,
-        quantity: promoCodeForm.value.quantity,
-        rewardType: promoCodeForm.value.rewardType,
-        maxUses: promoCodeForm.value.maxUses,
-        allowedPlanTypes: promoCodeForm.value.allowedPlanTypes,
-        stripeCouponId,
-        expiresAt: expiresIso,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    const created = Number(data.created || 0)
-    const codes = Array.isArray(data.codes) ? data.codes : []
-    promotionsMessage.value = created > 0
-      ? `Created ${created} promo code(s): ${codes.join(', ')}`
-      : 'Promo code request completed.'
-    promotionsMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    promoCodeForm.value = {
-      campaignId: promoCodeForm.value.campaignId,
-      code: '',
-      quantity: 1,
-      rewardType: 'free_month',
-      maxUses: 1,
-      allowedPlanTypes: ['monthly', 'yearly', 'club'],
-      stripeCouponId: '',
-      expiresAt: '',
-    }
-    await loadPromotions()
-  } catch (e: any) {
-    promotionsMessage.value = e.message || 'Failed to create promo code(s)'
-    promotionsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    promotionsSaving.value = false
-  }
-}
-
-const loadIsicCampaigns = async () => {
-  if (!isAdmin.value) return
-  isicLoading.value = true
-  isicMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, { headers: authHeader() })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    isicCampaigns.value = Array.isArray(data.campaigns) ? data.campaigns : []
-    const apiConfig = data.apiConfig || {}
-    isicApiConfig.value = {
-      enabled: Boolean(apiConfig.enabled),
-      baseUrl: String(apiConfig.baseUrl || ''),
-      apiKey: '',
-      hasApiKey: Boolean(apiConfig.hasApiKey),
-    }
-  } catch (e: any) {
-    isicMessage.value = e.message || 'Failed to load ISIC settings'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    isicLoading.value = false
-  }
-}
-
-const saveIsicApiConfig = async () => {
-  if (!isAdmin.value) return
-  if (!isicApiConfig.value.enabled) {
-    isicMessage.value = 'ISIC feature is disabled.'
-    isicMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
-    return
-  }
-  if (!isicApiConfig.value.baseUrl.trim()) {
-    isicMessage.value = 'ISIC API base URL is required when ISIC is enabled.'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  if (!isicApiConfig.value.hasApiKey && !isicApiConfig.value.apiKey.trim()) {
-    isicMessage.value = 'Provide an ISIC API key when enabling ISIC.'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  isicSaving.value = true
-  isicMessage.value = ''
-  try {
-    const apiConfigPayload: any = {
-      enabled: isicApiConfig.value.enabled,
-      baseUrl: isicApiConfig.value.baseUrl.trim(),
-    }
-    const trimmedApiKey = isicApiConfig.value.apiKey.trim()
-    if (trimmedApiKey) {
-      apiConfigPayload.apiKey = trimmedApiKey
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        apiConfig: apiConfigPayload,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    isicMessage.value = 'ISIC API configuration saved.'
-    isicMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    isicApiConfig.value.apiKey = ''
-    await loadIsicCampaigns()
-  } catch (e: any) {
-    isicMessage.value = e.message || 'Failed to save ISIC API configuration'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    isicSaving.value = false
-  }
-}
-
-const createIsicCampaign = async () => {
-  if (!isAdmin.value) return
-  const name = isicCampaignForm.value.name.trim()
-  if (!name) {
-    isicMessage.value = 'ISIC campaign name is required.'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-    return
-  }
-  isicSaving.value = true
-  isicMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        name,
-        description: isicCampaignForm.value.description,
-        isActive: isicCampaignForm.value.isActive,
-        freeSlotsLimit: isicCampaignForm.value.freeSlotsLimit,
-        discountPercent: isicCampaignForm.value.discountPercent,
-        renewalMonths: isicCampaignForm.value.renewalMonths,
-        popupBehavior: isicCampaignForm.value.popupBehavior,
-        countryScope: isicCampaignForm.value.countryScope,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    isicCampaignForm.value = {
-      name: '',
-      description: '',
-      isActive: true,
-      freeSlotsLimit: 5000,
-      discountPercent: 0,
-      renewalMonths: 12,
-      popupBehavior: 'highlight_campaign',
-      countryScope: 'CZ,SK',
-    }
-    isicMessage.value = 'ISIC campaign created.'
-    isicMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadIsicCampaigns()
-  } catch (e: any) {
-    isicMessage.value = e.message || 'Failed to create ISIC campaign'
-    isicMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    isicSaving.value = false
-  }
-}
-
-const loadSiteBranding = async () => {
-  if (!isAdmin.value) return
-  siteBrandingMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    siteBranding.value = {
-      site_name: data.site_name || '',
-      site_name_short: data.site_name_short || '',
-      site_description: data.site_description || '',
-      site_logo_url: data.site_logo_url || '',
-      site_favicon_url: data.site_favicon_url || '',
-      site_support_email: data.site_support_email || 'vmp@tjm.sk',
-      podcast_title: data.podcast_title || '',
-      podcast_description: data.podcast_description || '',
-      gtm_enabled: data.gtm_enabled === '1' && String(data.gtm_container_id || '').trim() ? '1' : '0',
-      gtm_container_id: data.gtm_container_id || '',
-      gtm_measurement_path: data.gtm_measurement_path || '',
-    }
-  } catch (e: any) {
-    siteBrandingMessage.value = `Could not load site branding: ${e.message}`
-    siteBrandingMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const saveSiteBranding = async () => {
-  if (!isAdmin.value) return
-  siteBrandingSaving.value = true
-  siteBrandingMessage.value = ''
-  try {
-    const containerId = siteBranding.value.gtm_container_id.trim()
-    if (siteBranding.value.gtm_enabled === '1' && !containerId) {
-      siteBranding.value.gtm_enabled = '0'
-      throw new Error('Google Tag Manager container ID is required when GTM is enabled.')
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(siteBranding.value),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    siteBrandingMessage.value = 'Site branding saved.'
-    siteBrandingMessageClass.value = 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-200'
-  } catch (e: any) {
-    siteBrandingMessage.value = e.message || 'Failed to save site branding'
-    siteBrandingMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    siteBrandingSaving.value = false
-  }
-}
-
-const loadRssPodcastWebhookSettings = async () => {
-  if (!isAdmin.value) return
-  rssPodcastMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-rebuild-webhook`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    rssPodcastWebhookUrl.value = typeof data.webhookUrl === 'string' ? data.webhookUrl : ''
-    rssPodcastSecretConfigured.value = Boolean(data.secretConfigured)
-    rssPodcastWebhookSecretInput.value = ''
-  } catch (e: any) {
-    rssPodcastMessage.value = `Could not load podcast webhook settings: ${e.message}`
-    rssPodcastMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
-
-const saveRssPodcastWebhookSettings = async () => {
-  if (!isAdmin.value) return
-  if (!systemFeatures.value.freePodcastPreviewEnabled) {
-    rssPodcastMessage.value = 'Free podcast preview feed is disabled.'
-    rssPodcastMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
-    return
-  }
-  rssPodcastWebhookSaving.value = true
-  rssPodcastMessage.value = ''
-  try {
-    const webhookUrlTrimmed = rssPodcastWebhookUrl.value.trim()
-    if (webhookUrlTrimmed) {
-      const parsed = new URL(webhookUrlTrimmed)
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        throw new Error('Webhook URL must use http:// or https://')
-      }
-    }
-    const body: Record<string, string> = { webhookUrl: webhookUrlTrimmed }
-    const sec = rssPodcastWebhookSecretInput.value.trim()
-    if (sec) {
-      if (sec.length < 16) throw new Error('Webhook secret must be at least 16 characters')
-      body.webhookSecret = sec
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-rebuild-webhook`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`)
-    rssPodcastMessage.value = 'Podcast webhook settings saved.'
-    rssPodcastMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    rssPodcastWebhookSecretInput.value = ''
-    rssPodcastSecretConfigured.value = Boolean(data.secretConfigured)
-  } catch (e: any) {
-    rssPodcastMessage.value = e.message || 'Failed to save podcast webhook settings'
-    rssPodcastMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    rssPodcastWebhookSaving.value = false
-  }
-}
-
-const notifyPodcastPreviewRebuild = async () => {
-  if (!isAdmin.value) return
-  if (!systemFeatures.value.freePodcastPreviewEnabled) {
-    rssPodcastMessage.value = 'Free podcast preview feed is disabled.'
-    rssPodcastMessageClass.value = 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
-    return
-  }
-  rssPodcastNotifySending.value = true
-  rssPodcastMessage.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-preview-rebuild`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({}),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const base = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`
-      const detail = typeof data.detail === 'string' && data.detail.trim() ? ` — ${data.detail.trim()}` : ''
-      const status = data.status ? ` (upstream ${data.status})` : ''
-      throw new Error(`${base}${status}${detail}`)
-    }
-    const accepted = Number(data?.acceptedCount ?? data?.videoCount ?? 0)
-    const rejected = Number(data?.rejectedCount ?? 0)
-    const rejectedItems = Array.isArray(data?.rejected) ? data.rejected : []
-    const rejectedText = rejectedItems.length
-      ? ` Rejected: ${rejectedItems.slice(0, 3).filter((item: any) => item && typeof item === 'object').map((item: any) => `${item.id || 'unknown'} (${item.reason || 'invalid'})`).join(', ')}`
-      : ''
-    rssPodcastMessage.value = `Host notified (${accepted} accepted, ${rejected} rejected).${rejectedText}`
-    rssPodcastMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    rssPodcastMessage.value = e.message || 'Notify failed'
-    rssPodcastMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    rssPodcastNotifySending.value = false
-  }
-}
-
-const savePaymentSettings = async () => {
-  if (!isAdmin.value) return
-  paymentSettingsSaving.value = true
-  paymentSettingsMessage.value = ''
-  try {
-    const ps = paymentSettings.value
-    const enabledProviders = [...ps.enabledProviders]
-    const order = [...ps.providerOrder]
-    const hasAnyPlan = Array.isArray(ps.allowedPlans) && ps.allowedPlans.length > 0
-    if (!hasAnyPlan) {
-      throw new Error('Select at least one offered plan.')
-    }
-    const missingStripePriceIds = ps.allowedPlans.filter((plan) => !String(ps.stripePriceIds?.[plan] || '').trim())
-    if (missingStripePriceIds.length) {
-      throw new Error(`Stripe price IDs are required for enabled plans: ${missingStripePriceIds.join(', ')}`)
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        enabledProviders,
-        providerOrder: order,
-        allowedPlans: ps.allowedPlans,
-        basePrices: ps.basePrices,
-        providerPrices: ps.providerPrices,
-        stripePriceIds: ps.stripePriceIds,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    paymentSettingsMessage.value = 'Payment settings saved.'
-    paymentSettingsMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadPaymentSettings()
-    await loadAdminPaymentPlans()
-  } catch (e: any) {
-    paymentSettingsMessage.value = e.message || 'Failed to save payment settings'
-    paymentSettingsMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    paymentSettingsSaving.value = false
-  }
-}
-
-const loadUsers = async () => {
-  if (!isAdmin.value) return
-  const reqId = ++usersLoadRequestId
-  usersLoading.value = true
-  usersError.value = ''
-  try {
-    const params = new URLSearchParams({
-      page: String(usersPage.value),
-      pageSize: String(usersPageSize.value),
-      search: usersSearchDebounced.value.trim(),
-      role: usersRoleFilter.value,
-      subscription: usersSubscriptionFilter.value,
-    })
-    const res = await fetch(`${config.public.apiUrl}/api/admin/users?${params.toString()}`, { headers: authHeader() })
-    if (reqId !== usersLoadRequestId) return
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      const detail = typeof err?.error === 'string' ? err.error : `HTTP ${res.status}`
-      usersError.value = `Failed to load users: ${detail}`
-      return
-    }
-    const data = await res.json()
-    if (reqId !== usersLoadRequestId) return
-    users.value = ((data.users || []) as AdminUserRow[]).map((row) => ({
-      ...row,
-      uiRole: undefined,
-      uiSubscription: undefined,
-    }))
-    usersTotal.value = Number(data.total) || 0
-    usersTotalPages.value = Math.max(1, Number(data.totalPages) || 1)
-  } catch (e: unknown) {
-    if (reqId !== usersLoadRequestId) return
-    usersError.value = e instanceof Error
-      ? `Failed to load users: ${e.message}`
-      : 'Failed to load users: network error'
-  }
-  finally {
-    if (reqId === usersLoadRequestId) usersLoading.value = false
-  }
-}
-
-watch(usersSearchInput, () => {
-  if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer)
-  usersSearchDebounceTimer = setTimeout(() => {
-    usersSearchDebounceTimer = null
-    usersSearchDebounced.value = usersSearchInput.value
-    usersPage.value = 1
-    loadUsers()
-  }, 350)
-})
-
-function adminUserRoleSelectValue(u: AdminUserRow): string {
-  return u.uiRole ?? u.role
-}
-
-function adminUserSubscriptionSelectValue(u: AdminUserRow): string {
-  return u.uiSubscription ?? (u.subscription_status || 'none')
-}
-
-function hasAdminUserSubscriptionRow(u: AdminUserRow): boolean {
-  return u.subscription_status != null && u.subscription_status !== ''
-}
-
-function userHasTransferableSubscription(u: AdminUserRow): boolean {
-  const s = u.subscription_status
-  return s === 'active' || s === 'trialing'
-}
-
-function openTransferSubscriptionModal(u: AdminUserRow) {
-  transferSubModal.value = {
-    open: true,
-    step: 0,
-    sourceUser: u,
-    targetEmail: '',
-    error: null,
-    submitting: false,
-  }
-}
-
-function closeTransferSubscriptionModal() {
-  transferSubModal.value = {
-    open: false,
-    step: 0,
-    sourceUser: null,
-    targetEmail: '',
-    error: null,
-    submitting: false,
-  }
-}
-
-function goTransferSubscriptionConfirm() {
-  const email = transferSubModal.value.targetEmail.trim()
-  if (!email || !email.includes('@')) {
-    transferSubModal.value.error = 'Enter a valid destination email.'
-    return
-  }
-  if (email.toLowerCase() === transferSubModal.value.sourceUser?.email?.toLowerCase()) {
-    transferSubModal.value.error = 'Destination must be a different account.'
-    return
-  }
-  transferSubModal.value.error = null
-  transferSubModal.value.step = 1
-}
-
-async function executeTransferSubscription() {
-  const modal = transferSubModal.value
-  const source = modal.sourceUser
-  const targetEmail = modal.targetEmail.trim()
-  if (!source?.id || !targetEmail) return
-  transferSubModal.value.submitting = true
-  transferSubModal.value.error = null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/users/transfer-subscription`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ sourceUserId: source.id, targetEmail }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const code = typeof data.code === 'string' ? data.code : ''
-      const messages: Record<string, string> = {
-        source_not_found: 'Source user not found.',
-        target_not_found: 'No account found with that email.',
-        target_has_subscription: 'That account already has an active or trialing subscription.',
-        same_user: 'Destination must be a different account.',
-        no_active_subscription: 'This account no longer has an active or trialing subscription to transfer.',
-        transfer_failed: 'Transfer failed due to an internal error.',
-        invalid_email: 'Enter a valid destination email.',
-      }
-      transferSubModal.value.error = messages[code] || data.error || `Transfer failed (HTTP ${res.status})`
-      return
-    }
-    closeTransferSubscriptionModal()
-    await loadUsers()
-    showToast('success', `Subscription transferred to ${data.targetEmail || targetEmail}.`)
-  } catch (e: unknown) {
-    transferSubModal.value.error = e instanceof Error ? e.message : 'Network error during transfer.'
-  } finally {
-    transferSubModal.value.submitting = false
-  }
-}
-
-function adminUserSubscriptionSelectDisabled(u: AdminUserRow): boolean {
-  if (user.value?.role !== 'super_admin' && u.role === 'super_admin') return true
-  return false
-}
-
-function adminUserSubscriptionSelectTitle(u: AdminUserRow): string {
-  if (user.value?.role !== 'super_admin' && u.role === 'super_admin') {
-    return 'Only a super admin may change this account'
-  }
-  if (!hasAdminUserSubscriptionRow(u)) {
-    return 'No subscription row — selecting a status will create a manual subscription'
-  }
-  return ''
-}
-
-const adminUserPendingPlanType = ref<Record<string, string>>({})
-
-function setAdminUserPendingPlanType(userId: string, planType: string) {
-  adminUserPendingPlanType.value = { ...adminUserPendingPlanType.value, [userId]: planType }
-}
-
-function patchUserRowById(userId: string, patch: Partial<AdminUserRow>) {
-  const i = users.value.findIndex((x) => x.id === userId)
-  if (i === -1) return
-  const cur = users.value[i]!
-  users.value[i] = { ...cur, ...patch }
-}
-
-const updateUser = async (
-  userId: string,
-  patch: Record<string, string>,
-  options?: { createSubscription?: { status: string; planType: string } },
-) => {
-  try {
-    const body: Record<string, unknown> = { userId, ...patch }
-    if (options?.createSubscription) {
-      body.createSubscription = options.createSubscription
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/users`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    if (typeof patch.role === 'string') {
-      patchUserRowById(userId, { role: patch.role, uiRole: undefined })
-    }
-    if (typeof patch.subscriptionStatus === 'string') {
-      const s = patch.subscriptionStatus
-      const nextSub = s === 'none' ? 'cancelled' : s
-      patchUserRowById(userId, { subscription_status: nextSub, uiSubscription: undefined })
-    }
-    try {
-      await loadUsers()
-    } catch (e) {
-      console.error('loadUsers after user patch:', e)
-    }
-    showToast('success', 'User updated.')
-    return true
-  } catch (error: any) {
-    console.error('Failed to update user', error)
-    showToast('error', `Failed to update user: ${error.message || 'unknown error'}`)
-    return false
-  }
-}
-
-function onUserRoleSelect(u: AdminUserRow, newRole: string) {
-  const serverRole = u.role
-  if (newRole === serverRole) return
-  if (isSensitiveRoleChange(serverRole, newRole)) {
-    patchUserRowById(u.id, { uiRole: newRole })
-    openConfirmModal({
-      mode: 'user_role',
-      userId: u.id,
-      email: u.email,
-      prevRole: serverRole,
-      nextRole: newRole,
-      prevSubscription: u.subscription_status || 'none',
-      nextSubscription: u.subscription_status || 'none',
-      impactText: `Change role for ${u.email} from ${serverRole} to ${newRole}? This affects API access immediately.`,
-    })
-    return
-  }
-  patchUserRowById(u.id, { uiRole: newRole })
-  void (async () => {
-    const ok = await updateUser(u.id, { role: newRole })
-    if (!ok) patchUserRowById(u.id, { uiRole: undefined })
-  })()
-}
-
-function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
-  const prev = u.subscription_status || 'none'
-  if (next === prev) return
-  if (!hasAdminUserSubscriptionRow(u) && next === 'none') return
-  patchUserRowById(u.id, { uiSubscription: next })
-  openConfirmModal({
-    mode: 'user_subscription',
-    userId: u.id,
-    email: u.email,
-    prevRole: u.role,
-    nextRole: u.role,
-    prevSubscription: prev,
-    nextSubscription: next,
-    impactText: hasAdminUserSubscriptionRow(u)
-      ? `Change subscription status for ${u.email} from ${prev} to ${next}? This updates their latest subscription row in the database (not Stripe).`
-      : `Create a manual ${adminUserPendingPlanType.value[u.id] || defaultAdminPlanId.value} subscription for ${u.email} with status ${next}?`,
-  })
-}
-
-const loadAnalytics = async () => {
-  if (!isAdmin.value) return
-  analyticsLoading.value = true
-  analyticsError.value = ''
-  try {
-    const params = new URLSearchParams({
-      range: analyticsRange.value,
-      granularity: analyticsGranularity.value,
-      dataset: 'all',
-      format: 'json',
-    })
-    if (analyticsHeatmapVideoId.value) {
-      params.set('videoId', analyticsHeatmapVideoId.value)
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, { headers: authHeader() })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    analytics.value = data
-    if (!analyticsSettingsInitialized.value) {
-      analyticsViewCounting.value.minSegmentsPerSession = Number(data?.viewCounting?.minSegmentsPerSession ?? 1)
-      analyticsViewCounting.value.minWatchSeconds = Number(data?.viewCounting?.minWatchSeconds ?? 15)
-      analyticsSettingsInitialized.value = true
-    }
-    analyticsRange.value = data?.meta?.range || analyticsRange.value
-    analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value
-  } catch (error: any) {
-    analyticsError.value = error?.message || 'Failed to load analytics'
-  } finally {
-    analyticsLoading.value = false
-  }
-}
-
-const saveAnalyticsSettings = async () => {
-  if (!isAdmin.value) return
-  analyticsSettingsSaving.value = true
-  analyticsError.value = ''
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        viewCounting: analyticsViewCounting.value,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    await loadAnalytics()
-  } catch (error: any) {
-    analyticsError.value = error?.message || 'Failed to save analytics settings'
-  } finally {
-    analyticsSettingsSaving.value = false
-  }
-}
-
-const exportAnalytics = async (dataset: AnalyticsDataset) => {
-  if (!isAdmin.value || analyticsExporting.value) return
-  analyticsExporting.value = dataset
-  analyticsError.value = ''
-  try {
-    const params = new URLSearchParams({
-      range: analyticsRange.value,
-      granularity: analyticsGranularity.value,
-      dataset,
-      format: 'csv',
-    })
-    const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, { headers: authHeader() })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const content = await res.text()
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' })
-    const href = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = href
-    link.download = `analytics_${dataset}_${analyticsRange.value}_${analyticsGranularity.value}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(href)
-  } catch (error: any) {
-    analyticsError.value = error?.message || 'Export failed'
-  } finally {
-    analyticsExporting.value = null
-  }
-}
-
-const loadAdminPills = async () => {
-  if (!isAdmin.value) return
-  const [pillsRes, keyRes] = await Promise.all([
-    fetch(`${config.public.apiUrl}/api/admin/pills`, { headers: authHeader() }),
-    fetch(`${config.public.apiUrl}/api/admin/pills/settings`, { headers: authHeader() }),
-  ])
-  if (pillsRes.ok) {
-    const data = await pillsRes.json()
-    adminPills.value = Array.isArray(data?.pills) ? data.pills : []
-  }
-  if (keyRes.ok) {
-    pillsApiKeyMeta.value = await keyRes.json()
-  }
-}
-
-function buildModeAwarePillPayload(input: {
-  valueMode?: PillValueMode
-  value: number
-  valueSecondary?: any
-  graphEmbedUrl?: any
-  graphPayloadJson?: any
-}) {
-  const mode: PillValueMode = input.valueMode === 'percentage'
-    || input.valueMode === 'agree_disagree'
-    || input.valueMode === 'graph_embed'
-    ? input.valueMode
-    : 'number'
-  const base = {
-    valueMode: mode,
-    value: Number(input.value),
-    valueSecondary: null as number | null,
-    graphEmbedUrl: null as string | null,
-    graphPayloadJson: null as string | null,
-  }
-  if (mode === 'agree_disagree') {
-    const secondary = input.valueSecondary === '' || input.valueSecondary == null ? null : Number(input.valueSecondary)
-    return { ...base, valueSecondary: Number.isFinite(secondary as number) ? secondary : null }
-  }
-  if (mode === 'graph_embed') {
+  const homepagePlacement = ref<HomepagePlacementResponse | null>(null);
+  const mergedHomepagePlacement = computed(() => {
+    const base = homepagePlacement.value || { featured: [], recentGrid: [], categoryBlocks: [] };
+    const manualFeaturedIds = featuredSlots.value
+      .map((v) => v?.id)
+      .filter((v): v is string => Boolean(v));
+    const featured =
+      manualFeaturedIds.length > 0
+        ? manualFeaturedIds.map((id) => ({ id }))
+        : layoutIncludesFeaturedRowBlock(layoutBlocks.value)
+          ? (base.featured ?? [])
+          : [];
     return {
       ...base,
-      graphEmbedUrl: typeof input.graphEmbedUrl === 'string' ? input.graphEmbedUrl.trim() || null : null,
-      graphPayloadJson: typeof input.graphPayloadJson === 'string' ? input.graphPayloadJson.trim() || null : null,
-    }
-  }
-  return base
-}
-
-const createPill = async () => {
-  const modePayload = buildModeAwarePillPayload({
-    valueMode: newPill.value.valueMode,
-    value: Number(newPill.value.value),
-    valueSecondary: newPill.value.valueSecondary,
-    graphEmbedUrl: newPill.value.graphEmbedUrl,
-    graphPayloadJson: newPill.value.graphPayloadJson,
-  })
-  const payload = {
-    label: newPill.value.label.trim(),
-    value: modePayload.value,
-    valueMode: modePayload.valueMode,
-    valueSecondary: modePayload.valueSecondary,
-    graphEmbedUrl: modePayload.graphEmbedUrl,
-    graphPayloadJson: modePayload.graphPayloadJson,
-    color: newPill.value.color || '#2563eb',
-    imageUrl: newPill.value.imageUrl?.trim() || null,
-    sortOrder: adminPills.value.length,
-  }
-  if (!payload.label) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    if (!res.ok) {
-      await loadAdminPills()
-      throw new Error(`Failed to create pill: HTTP ${res.status}`)
-    }
-    newPill.value = {
-      label: '',
-      value: 0,
-      valueSecondary: '',
-      valueMode: 'number',
-      graphEmbedUrl: '',
-      graphPayloadJson: '',
-      color: '#2563eb',
-      imageUrl: '',
-    }
-    await loadAdminPills()
-  } catch (error) {
-    console.error('createPill failed', error)
-  }
-}
-
-const uploadPillImage = async (event: Event, pill: AdminPillRow | null) => {
-  const target = event.target as HTMLInputElement | null
-  const file = target?.files?.[0]
-  if (!file) return
-  try {
-    const form = new FormData()
-    form.set('image', file)
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills/image-upload`, {
-      method: 'POST',
-      headers: authHeader(),
-      body: form,
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    const imageUrl = String(data.imageUrl || '')
-    if (!imageUrl) return
-    if (pill) pill.image_url = imageUrl
-    else newPill.value.imageUrl = imageUrl
-  } catch (error) {
-    console.error('uploadPillImage failed', error)
-  } finally {
-    if (target) target.value = ''
-  }
-}
-
-const savePill = async (pill: any) => {
-  try {
-    const modePayload = buildModeAwarePillPayload({
-      valueMode: pill.value_mode || 'number',
-      value: Number(pill.value),
-      valueSecondary: pill.value_secondary,
-      graphEmbedUrl: pill.graph_embed_url,
-      graphPayloadJson: pill.graph_payload_json,
-    })
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        id: pill.id,
-        label: pill.label,
-        value: modePayload.value,
-        valueMode: modePayload.valueMode,
-        valueSecondary: modePayload.valueSecondary,
-        graphEmbedUrl: modePayload.graphEmbedUrl,
-        graphPayloadJson: modePayload.graphPayloadJson,
-        color: pill.color,
-        imageUrl: typeof pill.image_url === 'string' ? pill.image_url : null,
-        sortOrder: Number(pill.sort_order),
+      featured,
+      categoryBlocks: categories.value.map((cat) => {
+        const existing = base.categoryBlocks?.find((b) => b.category.id === cat.id);
+        if (existing) {
+          return {
+            ...existing,
+            category: {
+              ...cat,
+              homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
+            },
+          };
+        }
+        return {
+          category: {
+            ...cat,
+            homepage_layout_variant: cat.homepage_layout_variant || 'three_by_one',
+          },
+          visible: [],
+          overflow: [],
+        };
       }),
-    })
-    if (!res.ok) {
-      await loadAdminPills()
-      throw new Error(`Failed to save pill: HTTP ${res.status}`)
-    }
-  } catch (error) {
-    console.error('savePill failed', error)
-  }
-}
+    };
+  });
+  const homepagePreviewModel = computed(() =>
+    buildHomepageRenderModel({
+      videos: chronologicallySortedUploads.value,
+      layoutBlocks: layoutBlocks.value,
+      placement: mergedHomepagePlacement.value,
+    }),
+  );
+  const homepageDirty = computed(() => serializeHomepageState() !== homepageBaseline.value);
 
-const deletePill = async (id: string) => {
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ id }),
-    })
-    if (!res.ok) {
-      await loadAdminPills()
-      throw new Error(`Failed to delete pill: HTTP ${res.status}`)
-    }
-    await loadAdminPills()
-  } catch (error) {
-    console.error('deletePill failed', error)
-  }
-}
+  const openPicker = (slotIndex: number) => {
+    activeSlotIndex.value = slotIndex;
+    pickerOpen.value = true;
+  };
+  const closePicker = () => {
+    pickerOpen.value = false;
+  };
 
-const movePill = async (idx: number, direction: -1 | 1) => {
-  const prev = [...adminPills.value]
-  const next = [...adminPills.value]
-  const swapIdx = idx + direction
-  if (swapIdx < 0 || swapIdx >= next.length) return
-  const moved = next.splice(idx, 1)[0]
-  if (!moved) return
-  next.splice(swapIdx, 0, moved)
-  adminPills.value = next.map((pill, i) => ({ ...pill, sort_order: i }))
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        items: adminPills.value.map((pill) => ({ id: pill.id })),
-      }),
-    })
-    if (!res.ok) {
-      adminPills.value = prev
-      await loadAdminPills()
-      throw new Error(`Failed to reorder pills: HTTP ${res.status}`)
-    }
-  } catch (error) {
-    adminPills.value = prev
-    await loadAdminPills()
-    console.error('movePill failed', error)
-  }
-}
+  const swapFeatured = (video: Video) => {
+    const next = [...featuredVideos.value];
+    next[activeSlotIndex.value] = video;
+    while (next.length < 4) next.push(null);
+    featuredSlots.value = next;
+    closePicker();
+  };
 
-const savePillsApiKey = async () => {
-  const key = pillsApiKey.value.trim()
-  if (!key) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/pills/settings`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ apiKey: key }),
-    })
-    if (!res.ok) {
-      await loadAdminPills()
-      throw new Error(`Failed to save pills API key: HTTP ${res.status}`)
-    }
-    pillsApiKey.value = ''
-    await loadAdminPills()
-  } catch (error) {
-    console.error('savePillsApiKey failed', error)
-  }
-}
+  const clearFeaturedSlot = (slotIndex: number) => {
+    const next = [...featuredSlots.value];
+    while (next.length < 4) next.push(null);
+    next[slotIndex] = null;
+    featuredSlots.value = next;
+    closePicker();
+    showToast('success', `Featured slot ${slotIndex + 1} cleared. Save homepage to apply.`);
+  };
 
-const saveNewsletterSettings = async () => {
-  if (!isAdmin.value) return
-  newsletterSaving.value = true
-  newsletterMessage.value = ''
-  try {
-    const raw = newsletterListId.value.trim()
-    let brevoSubscriberListId: number | '' = ''
-    if (raw) {
-      if (!/^\d+$/.test(raw)) {
-        throw new Error('Subscriber list ID must be a positive integer or empty')
+  // SQLite CURRENT_TIMESTAMP returns "YYYY-MM-DD HH:MM:SS" which Safari cannot
+  // parse reliably — normalize to ISO 8601 before constructing the Date.
+  const formatDate = (raw: string) => {
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z';
+    return new Date(normalized).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  /** European local wall time for admin schedule / publish inputs (24h). */
+  const formatEuropeanDateTimeFromAny = (raw?: string | null) => {
+    if (!raw) return '';
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z';
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return '';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(date.getFullYear());
+    const hh = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+  };
+
+  /** Parse `DD.MM.YYYY HH:mm` or `D.M.YYYY H:mm` in local timezone → ISO for API. */
+  const parseEuropeanDateTimeToIso = (raw: string): string | null => {
+    const m = raw.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const d = Number(m[1]);
+    const mo = Number(m[2]);
+    const y = Number(m[3]);
+    const h = Number(m[4]);
+    const mi = Number(m[5]);
+    if (
+      !Number.isFinite(d) ||
+      !Number.isFinite(mo) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(h) ||
+      !Number.isFinite(mi)
+    )
+      return null;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+    const local = new Date(y, mo - 1, d, h, mi, 0, 0);
+    if (
+      local.getFullYear() !== y ||
+      local.getMonth() !== mo - 1 ||
+      local.getDate() !== d ||
+      local.getHours() !== h ||
+      local.getMinutes() !== mi
+    )
+      return null;
+    return local.toISOString();
+  };
+
+  const scheduleInputPlaceholder = 'DD.MM.YYYY HH:mm';
+  const categorySelectWidthCh = computed(() => {
+    const maxAllowedWidthCh = 30;
+    const longestNameLength = categories.value.reduce(
+      (max, category) => Math.max(max, String(category.name || '').length),
+      0,
+    );
+    return Math.min(maxAllowedWidthCh, Math.max(12, longestNameLength + 2));
+  });
+  const getVideoById = (videoId: string | null) => {
+    if (!videoId) return null;
+    return uploads.value.find((video) => video.id === videoId) ?? null;
+  };
+  const scheduleModalVideo = computed(() => getVideoById(scheduleModal.value.videoId));
+  const descriptionModalPreviewHtml = computed(() => {
+    const html = renderMarkdownToHtml(descriptionModal.value.value);
+    return html || '<p class="text-gray-500 dark:text-gray-400">No description preview.</p>';
+  });
+
+  const isScheduledDraft = (video: Video) =>
+    video.publish_status === 'draft' && Boolean(video.scheduled_publish_at);
+
+  function statusBadgeLabel(video: Video) {
+    if (isScheduledDraft(video)) return 'scheduled';
+    return video.publish_status ?? 'draft';
+  }
+
+  const openScheduleModal = (video: Video) => {
+    scheduleModal.value = {
+      open: true,
+      videoId: video.id,
+      uploadDate:
+        uploadDateEditDraft.value[video.id] ?? formatEuropeanDateTimeFromAny(video.upload_date),
+      scheduleDate:
+        scheduleTextDraft.value[video.id] ??
+        formatEuropeanDateTimeFromAny(video.scheduled_publish_at || null),
+      publishedDate:
+        publishedTextDraft.value[video.id] ??
+        formatEuropeanDateTimeFromAny(video.published_at || null),
+    };
+  };
+
+  const closeScheduleModal = () => {
+    scheduleModal.value.open = false;
+  };
+
+  const setScheduleDraft = (videoId: string, value: string) => {
+    scheduleTextDraft.value = { ...scheduleTextDraft.value, [videoId]: value };
+  };
+
+  const setPublishedDraft = (videoId: string, value: string) => {
+    publishedTextDraft.value = { ...publishedTextDraft.value, [videoId]: value };
+  };
+
+  const setUploadDateDraft = (videoId: string, value: string) => {
+    uploadDateEditDraft.value = { ...uploadDateEditDraft.value, [videoId]: value };
+  };
+
+  const clearScheduleTextDraft = (videoId: string) => {
+    const next = { ...scheduleTextDraft.value };
+    delete next[videoId];
+    scheduleTextDraft.value = next;
+  };
+
+  const clearPublishedTextDraft = (videoId: string) => {
+    const next = { ...publishedTextDraft.value };
+    delete next[videoId];
+    publishedTextDraft.value = next;
+  };
+
+  /** Promo code expiry still uses native datetime-local input. */
+  const parseOptionalLocalDateTimeToIso = (raw?: string | null) => {
+    if (!raw) return null;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+  };
+
+  const formatDateTime = (raw?: string | null) => {
+    if (!raw) return '—';
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z';
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+  const getActualDuration = (video: Video) => video.full_duration;
+
+  const defaultSplitChildren = (): Array<{
+    type: LeafBlockType;
+    title: string;
+    body: string;
+    categoryId: string | null;
+  }> => [
+    { type: 'top_video', title: 'Top video', body: '', categoryId: null },
+    { type: 'category', title: 'Category', body: '', categoryId: '' },
+  ];
+  const addBlock = (type: BlockType) => {
+    if (type === 'split_horizontal' || type === 'split_vertical') {
+      layoutBlocks.value.push({
+        id: crypto.randomUUID(),
+        type,
+        title: 'Split block',
+        body: '',
+        childBlocks: defaultSplitChildren().map((child) => ({ ...child })),
+      } as LayoutBlock);
+      return;
+    }
+    layoutBlocks.value.push({
+      id: crypto.randomUUID(),
+      type,
+      title: type === 'category' ? 'Category block' : 'New block',
+      body: '',
+      categoryId: type === 'category' ? '' : null,
+    } as LayoutBlock);
+  };
+  const removeBlock = (id: string) => {
+    layoutBlocks.value = layoutBlocks.value.filter((b) => b.id !== id);
+  };
+
+  const onDragStart = (index: number) => {
+    draggingIndex.value = index;
+  };
+  const onDrop = (targetIndex: number) => {
+    if (draggingIndex.value === null || draggingIndex.value === targetIndex) return;
+    const reordered = [...layoutBlocks.value];
+    const [moved] = reordered.splice(draggingIndex.value, 1);
+    if (!moved) return;
+    reordered.splice(targetIndex, 0, moved);
+    layoutBlocks.value = reordered;
+    draggingIndex.value = null;
+  };
+
+  const getDefaultBlocks = (): LayoutBlock[] => [];
+
+  const normalizeLoadedBlock = (raw: any): LayoutBlock | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = typeof raw.id === 'string' ? raw.id : crypto.randomUUID();
+    const rawType = typeof raw.type === 'string' ? raw.type.trim() : '';
+    const type: BlockType = (rawType || 'top_video') as BlockType;
+    const title = typeof raw.title === 'string' ? raw.title : '';
+    const body = typeof raw.body === 'string' ? raw.body : '';
+    const categoryId = typeof raw.categoryId === 'string' ? raw.categoryId : '';
+    const width = raw.width === 'half' || raw.width === 'full' ? raw.width : undefined;
+    const gridRow = Number.isFinite(Number(raw.gridRow)) ? Number(raw.gridRow) : undefined;
+    const gridCol = Number.isFinite(Number(raw.gridCol)) ? Number(raw.gridCol) : undefined;
+    const mobileHidden = raw.mobileHidden === true;
+    const mobileOrder = Number.isFinite(Number(raw.mobileOrder))
+      ? Number(raw.mobileOrder)
+      : undefined;
+    if (type === 'split_horizontal' || type === 'split_vertical') {
+      const children = Array.isArray(raw.childBlocks) ? raw.childBlocks : [];
+      const normalizedChildren = children
+        .filter((child: any) => child && typeof child === 'object')
+        .map((child: any) => ({
+          type: (typeof child?.type === 'string' && child.type.trim()
+            ? child.type
+            : 'top_video') as LeafBlockType,
+          title: typeof child.title === 'string' ? child.title : '',
+          body: typeof child.body === 'string' ? child.body : '',
+          categoryId: typeof child.categoryId === 'string' ? child.categoryId : '',
+          width: child.width === 'half' || child.width === 'full' ? child.width : undefined,
+          mobileHidden: child.mobileHidden === true,
+          mobileOrder: Number.isFinite(Number(child.mobileOrder))
+            ? Number(child.mobileOrder)
+            : undefined,
+        }))
+        .slice(0, 2);
+      while (normalizedChildren.length < 2) {
+        normalizedChildren.push({
+          type: 'top_video',
+          title: '',
+          body: '',
+          categoryId: '',
+          width: undefined,
+          mobileHidden: false,
+          mobileOrder: undefined,
+        });
       }
-      const n = Number.parseInt(raw, 10)
-      if (!Number.isInteger(n) || n <= 0) {
-        throw new Error('Subscriber list ID must be a positive integer or empty')
-      }
-      brevoSubscriberListId = n
+      return { id, type, title, body, childBlocks: normalizedChildren };
     }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, {
+    if (type === 'page_banner') {
+      return {
+        id,
+        type,
+        title,
+        body,
+        imageId: typeof raw.imageId === 'string' ? raw.imageId : '',
+        mobileImageId: typeof raw.mobileImageId === 'string' ? raw.mobileImageId : '',
+        pageSlug: typeof raw.pageSlug === 'string' ? raw.pageSlug : '',
+        alt: typeof raw.alt === 'string' ? raw.alt : '',
+        width: 'full' as const,
+        gridRow,
+        gridCol,
+        mobileHidden,
+        mobileOrder,
+      };
+    }
+    return {
+      id,
+      type,
+      title,
+      body,
+      categoryId: type === 'category' ? categoryId : null,
+      width: width ?? (type === 'featured_row' || type === 'top_video' ? 'full' : 'half'),
+      gridRow,
+      gridCol,
+      mobileHidden,
+      mobileOrder,
+    };
+  };
+  const sanitizeBlockForSave = (block: LayoutBlock) => {
+    const payload: any = {
+      id: block.id,
+      type: block.type,
+      title: block.title ?? '',
+      body: block.body ?? '',
+    };
+    if (block.type === 'category') {
+      payload.categoryId = typeof block.categoryId === 'string' ? block.categoryId : null;
+    }
+    if (block.type === 'page_banner') {
+      payload.imageId = typeof block.imageId === 'string' ? block.imageId : '';
+      payload.mobileImageId = typeof block.mobileImageId === 'string' ? block.mobileImageId : '';
+      payload.pageSlug = typeof block.pageSlug === 'string' ? block.pageSlug : '';
+      payload.alt = typeof block.alt === 'string' ? block.alt : '';
+      payload.width = 'full';
+    }
+    if (block.type !== 'page_banner' && (block.width === 'half' || block.width === 'full')) {
+      payload.width = block.width;
+    }
+    if (Number.isFinite(Number(block.gridRow))) payload.gridRow = Number(block.gridRow);
+    if (Number.isFinite(Number(block.gridCol))) payload.gridCol = Number(block.gridCol);
+    if (block.mobileHidden === true) payload.mobileHidden = true;
+    if (Number.isFinite(Number(block.mobileOrder))) payload.mobileOrder = Number(block.mobileOrder);
+    if (
+      (block.type === 'split_horizontal' || block.type === 'split_vertical') &&
+      Array.isArray(block.childBlocks)
+    ) {
+      payload.childBlocks = block.childBlocks.slice(0, 2).map((child) => ({
+        type: (typeof child?.type === 'string' && child.type.trim()
+          ? child.type
+          : 'top_video') as LeafBlockType,
+        title: typeof child?.title === 'string' ? child.title : '',
+        body: typeof child?.body === 'string' ? child.body : '',
+        categoryId: typeof child?.categoryId === 'string' ? child.categoryId : null,
+      }));
+    }
+    return payload;
+  };
+
+  const serializeHomepageState = () =>
+    JSON.stringify({
+      featuredVideoIds: featuredSlots.value
+        .map((v) => v?.id)
+        .filter((v): v is string => Boolean(v)),
+      layoutBlocks: layoutBlocks.value.map((block) => sanitizeBlockForSave(block)),
+      categoryOrder: categories.value.map((category) => ({
+        id: category.id,
+        sortOrder: category.sort_order,
+      })),
+    });
+
+  const applyHomepageBaseline = () => {
+    homepageBaseline.value = serializeHomepageState();
+  };
+
+  const buildCategoryOrderPayload = (reordered: Category[]) => {
+    let nextStandardOrder = 1;
+    return reordered.map((c) => ({
+      id: c.id,
+      sortOrder: c.sort_order <= 0 ? c.sort_order : nextStandardOrder++,
+    }));
+  };
+
+  const persistCategoryOrder = async (reordered: Category[]) => {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        brevoSubscriberListId,
-        brevoCampaignSenderEmail: newsletterSenderEmail.value.trim(),
-        brevoCampaignSenderName: newsletterSenderName.value.trim(),
-        brevoNewsletterPollIntervalMs: newsletterPollIntervalMs.value,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    newsletterMessage.value = 'Newsletter settings saved.'
-    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await loadNewsletterSettings()
-  } catch (e: any) {
-    newsletterMessage.value = e.message || 'Failed to save settings'
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    newsletterSaving.value = false
-  }
-}
+      body: JSON.stringify({ categoryOrder: buildCategoryOrderPayload(reordered) }),
+    });
+    if (!res.ok) throw new Error('Reorder failed');
+    await loadCategories();
+    showToast('success', 'Category order updated.');
+  };
 
-const sendNewsletterCampaign = async () => {
-  if (!isAdmin.value) return
-  newsletterSending.value = true
-  newsletterMessage.value = ''
-  try {
-    if (!newsletterSendDedupeKey.value) {
-      newsletterSendDedupeKey.value = crypto.randomUUID()
+  const onCategoryDragStart = (index: number) => {
+    categoryDraggingIndex.value = index;
+  };
+  const onCategoryDrop = async (targetIndex: number) => {
+    const from = categoryDraggingIndex.value;
+    if (from === null || from === targetIndex) return;
+    const reordered = [...categories.value];
+    const [moved] = reordered.splice(from, 1);
+    if (!moved) return;
+    reordered.splice(targetIndex, 0, moved);
+    categories.value = reordered;
+    categoryDraggingIndex.value = null;
+    try {
+      await persistCategoryOrder(reordered);
+    } catch (e: unknown) {
+      showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories');
+      await loadCategories();
     }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        subject: newsletterSubject.value.trim(),
-        htmlBody: newsletterHtml.value,
-        templateId: newsletterTemplateId.value || undefined,
-        dedupeKey: newsletterSendDedupeKey.value,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const base = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`
-      const code = typeof data.code === 'string' ? ` (${data.code})` : ''
-      const brevo = data.brevoStatus != null ? ` · Brevo ${data.brevoStatus}` : ''
-      throw new Error(`${base}${code}${brevo}`)
-    }
-    newsletterSendDedupeKey.value = null
-    newsletterMessage.value = data.idempotent
-      ? `Already sent (Brevo campaign id ${data.campaignId}).`
-      : (data.campaignId != null
-        ? `Campaign scheduled (Brevo campaign id ${data.campaignId}).`
-        : 'Campaign sent.')
-    newsletterMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    newsletterMessage.value = e.message || 'Send failed'
-    newsletterMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    newsletterSending.value = false
-  }
-}
+  };
 
-const saveAll = async () => {
-  saving.value      = true
-  saveMessage.value = ''
-  try {
-    layoutBlocks.value = assignGridPositions([...layoutBlocks.value])
-    const featuredVideoIds = featuredSlots.value.map(v => v?.id).filter(Boolean)
-    const [homepageRes, locksRes] = await Promise.all([
-      fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
+  async function reorderCategoryByIndex(from: number, to: number) {
+    if (
+      from === to ||
+      from < 0 ||
+      to < 0 ||
+      from >= categories.value.length ||
+      to >= categories.value.length
+    )
+      return;
+    const reordered = [...categories.value];
+    const [moved] = reordered.splice(from, 1);
+    if (!moved) return;
+    reordered.splice(to, 0, moved);
+    categories.value = reordered;
+    try {
+      await persistCategoryOrder(reordered);
+    } catch (e: unknown) {
+      showToast('error', e instanceof Error ? e.message : 'Failed to reorder categories');
+      await loadCategories();
+    }
+  }
+
+  function moveCategoryUp(index: number) {
+    if (index <= 0) return;
+    void reorderCategoryByIndex(index, index - 1);
+  }
+
+  function moveCategoryDown(index: number) {
+    if (index >= categories.value.length - 1) return;
+    void reorderCategoryByIndex(index, index + 1);
+  }
+
+  function openCategoryDrawer(category: Category) {
+    categoryDrawerCategory.value = category;
+    categoryDrawerOpen.value = true;
+  }
+
+  function closeCategoryDrawer() {
+    categoryDrawerOpen.value = false;
+    categoryDrawerCategory.value = null;
+  }
+
+  async function saveCategoryFromDrawer(category: Category) {
+    await updateCategory(category);
+    closeCategoryDrawer();
+  }
+
+  async function deleteCategoryFromDrawer(opts: { reassignToId?: string }) {
+    const cat = categoryDrawerCategory.value;
+    if (!cat) return;
+    await deleteCategory(cat, opts.reassignToId);
+    closeCategoryDrawer();
+  }
+
+  const resetLivestreamModal = () => {
+    livestreamModal.value = {
+      open: false,
+      saving: false,
+      error: '',
+      form: {
+        title: '',
+        description: '',
+        slug: '',
+        status: 'draft',
+        publishStatus: 'draft',
+        moqEndpoint: '',
+        moqBroadcast: '',
+      },
+    };
+  };
+
+  const openLivestreamModal = () => {
+    livestreamModal.value.open = true;
+    livestreamModal.value.error = '';
+  };
+
+  const closeLivestreamModal = () => {
+    resetLivestreamModal();
+  };
+
+  const createLivestream = async () => {
+    const title = livestreamModal.value.form.title.trim();
+    if (!title) {
+      livestreamModal.value.error = 'Title is required.';
+      return;
+    }
+    const moqEndpoint = livestreamModal.value.form.moqEndpoint.trim();
+    const moqBroadcast = livestreamModal.value.form.moqBroadcast.trim();
+    if (!moqEndpoint) {
+      livestreamModal.value.error = 'MoQ endpoint is required.';
+      return;
+    }
+    if (!moqBroadcast) {
+      livestreamModal.value.error = 'MoQ broadcast name is required.';
+      return;
+    }
+    livestreamModal.value.saving = true;
+    livestreamModal.value.error = '';
+    try {
+      const payload = {
+        title,
+        description: livestreamModal.value.form.description.trim() || null,
+        slug: livestreamModal.value.form.slug.trim() || null,
+        status: livestreamModal.value.form.status,
+        publishStatus: livestreamModal.value.form.publishStatus,
+        moqEndpoint,
+        moqBroadcast,
+      };
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/livestreams`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showToast('success', 'Livestream video created with MoQ playback settings.');
+      resetLivestreamModal();
+      await loadVideos();
+    } catch (e: any) {
+      livestreamModal.value.error = e.message || 'Failed to create livestream';
+    } finally {
+      livestreamModal.value.saving = false;
+    }
+  };
+
+  const loadVideos = async () => {
+    videosLoading.value = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.details || err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      uploads.value = data.videos || [];
+      for (const video of uploads.value) {
+        previewLockByVideoId.value[video.id] = video.preview_duration;
+      }
+    } catch (e: any) {
+      saveMessage.value = `Failed to load videos: ${e.message}`;
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      videosLoading.value = false;
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const loaded = Array.isArray(data.categories) ? data.categories : [];
+      categories.value = loaded.map((cat: any) => ({
+        ...cat,
+        homepage_layout_variant:
+          cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+        recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+        recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+        recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
+      }));
+    } catch (e: any) {
+      saveMessage.value = `Failed to load categories: ${e.message}`;
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const updateVideoCategory = async (video: Video, nextCategoryId: string) => {
+    const previousCategoryId = video.category_id ?? null;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ categoryId: nextCategoryId || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const { video: updated } = await res.json();
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, category_id: updated?.category_id ?? null };
+      }
+      showToast('success', `Category updated for ${video.title}.`);
+      await loadCategories();
+    } catch (e: any) {
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, category_id: previousCategoryId };
+      }
+      showToast('error', `Failed to update category: ${e.message}`);
+    }
+  };
+
+  const createCategory = async () => {
+    try {
+      const payload = {
+        name: categoryForm.value.name.trim(),
+        slug: categoryForm.value.slug.trim(),
+        sortOrder: Number.parseInt(String(categoryForm.value.sortOrder), 10) || 0,
+        direction: categoryForm.value.direction,
+        homepageLayoutVariant: categoryForm.value.homepageLayoutVariant || 'three_by_one',
+      };
+      const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      categoryForm.value = {
+        name: '',
+        slug: '',
+        sortOrder: 0,
+        direction: 'desc',
+        homepageLayoutVariant: 'three_by_one',
+      };
+      showToast('success', 'Category created.');
+      await loadCategories();
+    } catch (e: any) {
+      showToast('error', `Failed to create category: ${e.message}`);
+    }
+  };
+
+  const updateCategory = async (category: Category) => {
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          homepageConfig: {
-            featuredVideoIds,
-            layoutBlocks: layoutBlocks.value.map((block) => sanitizeBlockForSave(block)),
-          },
-          categoryOrder: categories.value.map((category) => ({
-            id: category.id,
-            sortOrder: category.sort_order,
-          })),
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+          sortOrder: category.sort_order,
+          direction: category.direction,
+          homepageLayoutVariant: category.homepage_layout_variant || 'three_by_one',
+          recommendationRecencyBias: Number(category.recommendation_recency_bias ?? 1),
+          recommendationLowViewsBoost: Number(category.recommendation_low_views_boost ?? 0),
+          recommendationCategoryLock: Number(category.recommendation_category_lock ?? 0) === 1,
         }),
-      }),
-      fetch(`${config.public.apiUrl}/api/admin/preview-locks`, {
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      showToast('success', 'Category updated.');
+      await loadCategories();
+    } catch (e: any) {
+      await loadCategories();
+      showToast('error', `Failed to update category: ${e.message}`);
+    }
+  };
+
+  const deleteCategory = async (category: Category, reassignToId?: string) => {
+    try {
+      const body: Record<string, string> = { id: category.id };
+      if (reassignToId) body.reassignToId = reassignToId;
+      const res = await fetch(`${config.public.apiUrl}/api/admin/categories`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      showToast('success', 'Category deleted.');
+      await Promise.all([loadCategories(), loadVideos()]);
+    } catch (e: any) {
+      showToast('error', `Failed to delete category: ${e.message}`);
+    }
+  };
+
+  const loadHomepagePlacement = async () => {
+    const res = await fetch(`${config.public.apiUrl}/api/homepage/placement`);
+    if (!res.ok) return;
+    homepagePlacement.value = await res.json();
+  };
+
+  const loadHomepageState = async () => {
+    const auth = authHeader();
+    const res = await fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
+      headers: Object.keys(auth).length ? auth : undefined,
+    });
+    if (!res.ok) {
+      return;
+    }
+    const data = await res.json();
+    const homepageConfig = data?.homepageConfig ?? {};
+    const featuredIds: string[] = Array.isArray(homepageConfig.featuredVideoIds)
+      ? homepageConfig.featuredVideoIds
+      : [];
+    layoutBlocks.value =
+      Array.isArray(homepageConfig.layoutBlocks) && homepageConfig.layoutBlocks.length
+        ? assignGridPositions(
+            homepageConfig.layoutBlocks
+              .map(normalizeLoadedBlock)
+              .filter((block: LayoutBlock | null): block is LayoutBlock => Boolean(block)),
+          )
+        : getDefaultBlocks();
+    if (!layoutBlocks.value.length) {
+      featuredSlots.value = [null, null, null, null];
+      applyHomepageBaseline();
+      return;
+    }
+    if (Array.isArray(data?.categories) && data.categories.length) {
+      categories.value = data.categories.map((cat: any) => ({
+        ...cat,
+        homepage_layout_variant:
+          cat?.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+        recommendation_recency_bias: Number(cat?.recommendation_recency_bias ?? 1),
+        recommendation_low_views_boost: Number(cat?.recommendation_low_views_boost ?? 0),
+        recommendation_category_lock: Number(cat?.recommendation_category_lock ?? 0),
+      }));
+    }
+    const nextSlots = featuredIds.length
+      ? featuredIds
+          .map((id) => chronologicallySortedUploads.value.find((v) => v.id === id) || null)
+          .slice(0, 4)
+      : [];
+    while (nextSlots.length < 4) nextSlots.push(null);
+    featuredSlots.value = nextSlots;
+    applyHomepageBaseline();
+  };
+
+  const loadNewsletterSettings = async () => {
+    if (!isAdmin.value) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      newsletterListId.value =
+        data.brevoSubscriberListId != null ? String(data.brevoSubscriberListId) : '';
+      newsletterSenderEmail.value = data.brevoCampaignSenderEmail ?? '';
+      newsletterSenderName.value = data.brevoCampaignSenderName ?? '';
+      const poll = Number(data.brevoNewsletterPollIntervalMs);
+      newsletterPollIntervalMs.value = Number.isFinite(poll) && poll >= 60_000 ? poll : 600_000;
+    } catch (e: any) {
+      newsletterMessage.value = `Could not load newsletter settings: ${e.message}`;
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const loadNewsletterTemplates = async () => {
+    if (!isAdmin.value) return;
+    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/templates`, {
+      headers: authHeader(),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    newsletterTemplates.value = data.templates || [];
+  };
+
+  const loadNewsletterCampaigns = async () => {
+    if (!isAdmin.value) return;
+    const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/campaigns`, {
+      headers: authHeader(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`;
+      const code = typeof data.code === 'string' ? data.code : '';
+      const brevo = data.brevoStatus != null ? ` · Brevo HTTP ${data.brevoStatus}` : '';
+      throw new Error(code ? `${msg} (${code})${brevo}` : `${msg}${brevo}`);
+    }
+    newsletterCampaigns.value = data.campaigns || [];
+  };
+
+  const isNewsletterTabActive = computed(() => activeAdminTab.value === 'newsletter');
+
+  const { lastCampaignsOkAt, lastCampaignsError } = useAdminNewsletterPolling({
+    pollIntervalMs: newsletterPollIntervalMs,
+    isActive: isNewsletterTabActive,
+    isAdmin,
+    loadCampaigns: loadNewsletterCampaigns,
+  });
+
+  const syncNewsletterRecipients = async () => {
+    newsletterSyncing.value = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/sync`, {
+        method: 'POST',
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      newsletterMessage.value = `Sync complete. Recipients synced: ${data.synced}`;
+      newsletterMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      newsletterMessage.value = e.message || 'Sync failed';
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      newsletterSyncing.value = false;
+    }
+  };
+
+  const resetNewsletterTemplateForm = () => {
+    newsletterEditingTemplateId.value = null;
+    newsletterTemplateForm.value = { name: '', subject: '', htmlBody: '' };
+  };
+
+  const startEditNewsletterTemplate = (tpl: {
+    id: string;
+    name: string;
+    subject: string;
+    html_body: string;
+  }) => {
+    newsletterEditingTemplateId.value = tpl.id;
+    newsletterTemplateForm.value = {
+      name: tpl.name,
+      subject: tpl.subject,
+      htmlBody: tpl.html_body,
+    };
+  };
+
+  const saveNewsletterTemplate = async () => {
+    if (!isAdmin.value) return;
+    const { name, subject, htmlBody } = newsletterTemplateForm.value;
+    if (!name.trim() || !subject.trim() || !htmlBody.trim()) {
+      newsletterMessage.value = 'Template name, subject, and HTML body are required.';
+      newsletterMessageClass.value =
+        'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
+      return;
+    }
+    newsletterTemplateSaving.value = true;
+    newsletterMessage.value = '';
+    try {
+      const editing = newsletterEditingTemplateId.value;
+      const url = editing
+        ? `${config.public.apiUrl}/api/admin/newsletter/templates/${encodeURIComponent(editing)}`
+        : `${config.public.apiUrl}/api/admin/newsletter/templates`;
+      const res = await fetch(url, {
+        method: editing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(
+          editing
+            ? { name: name.trim(), subject: subject.trim(), htmlBody }
+            : { name: name.trim(), subject: subject.trim(), htmlBody },
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`);
+      await loadNewsletterTemplates();
+      resetNewsletterTemplateForm();
+      newsletterMessage.value = editing ? 'Template updated.' : 'Template created.';
+      newsletterMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      newsletterMessage.value = e.message || 'Could not save template';
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      newsletterTemplateSaving.value = false;
+    }
+  };
+
+  const deleteNewsletterTemplate = async (id: string, name: string) => {
+    if (!isAdmin.value) return;
+    const ok = window.confirm(`Delete template "${name}"? This cannot be undone.`);
+    if (!ok) return;
+    try {
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/newsletter/templates/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+          headers: authHeader(),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`);
+      if (newsletterTemplateId.value === id) newsletterTemplateId.value = '';
+      if (newsletterEditingTemplateId.value === id) resetNewsletterTemplateForm();
+      await loadNewsletterTemplates();
+      newsletterMessage.value = 'Template deleted.';
+      newsletterMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      newsletterMessage.value = e.message || 'Delete failed';
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const loadHomepageContent = async () => {
+    if (!isAdmin.value) return;
+    await loadHomepageState();
+  };
+
+  const loadSystemFeatures = async () => {
+    if (!isAdmin.value) return;
+    systemFeaturesMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, {
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      systemFeatures.value = {
+        promotionsEnabled: Boolean(data.promotionsEnabled),
+        isicEnabled: Boolean(data.isicEnabled),
+        freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
+      };
+      // Keep ISIC API enable checkbox in sync with feature toggle.
+      isicApiConfig.value.enabled = systemFeatures.value.isicEnabled;
+    } catch (e: any) {
+      systemFeaturesMessage.value = `Could not load system feature toggles: ${e.message}`;
+      systemFeaturesMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const saveSystemFeatures = async () => {
+    if (!isAdmin.value) return;
+    systemFeaturesSaving.value = true;
+    systemFeaturesMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/system/features`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(systemFeatures.value),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      systemFeaturesMessage.value = 'Feature toggles saved.';
+      systemFeaturesMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadSystemFeatures();
+    } catch (e: any) {
+      systemFeaturesMessage.value = e.message || 'Failed to save feature toggles';
+      systemFeaturesMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      systemFeaturesSaving.value = false;
+    }
+  };
+
+  const loadReplicationStatus = async (options?: {
+    preserveMessage?: boolean;
+    probe?: boolean;
+  }) => {
+    if (!isAdmin.value) return;
+    if (!options?.preserveMessage) {
+      replicationMessage.value = '';
+    }
+    try {
+      const probeQuery = options?.probe ? '?probe=1' : '';
+      const res = await fetch(`${config.public.apiUrl}/api/admin/replication${probeQuery}`, {
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      replicationStatus.value = {
+        mode: String(data.mode || 'd1_to_pg'),
+        batchSize: Number(data.batchSize) || 100,
+        targetConfigured: Boolean(data.targetConfigured),
+        targetTokenConfigured: data.targetTokenConfigured !== false,
+        targetIngestPathOk: data.targetIngestPathOk !== false,
+        targetResolvedPath: data.targetResolvedPath ? String(data.targetResolvedPath) : undefined,
+        targetWarning: data.targetWarning ? String(data.targetWarning) : null,
+        targetProbe:
+          data.targetProbe && typeof data.targetProbe === 'object'
+            ? {
+                ok: Boolean(data.targetProbe.ok),
+                error: data.targetProbe.error ? String(data.targetProbe.error) : undefined,
+              }
+            : null,
+        streams: Array.isArray(data.streams) ? data.streams : [],
+      };
+    } catch (e: any) {
+      replicationStatus.value = null;
+      replicationMessage.value = `Could not load replication status: ${e.message}`;
+      replicationMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const resetReplicationCursors = async () => {
+    if (!isAdmin.value) return;
+    if (
+      !import.meta.client ||
+      !window.confirm(
+        'Reset replication sync cursors? The next push will re-send all rows from D1.',
+      )
+    )
+      return;
+    replicationResetting.value = true;
+    replicationMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/replication`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ resetCursors: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      replicationMessage.value =
+        'Replication cursors reset. Run Push DB to Deno Postgres to re-sync.';
+      replicationMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadReplicationStatus({ preserveMessage: true, probe: true });
+    } catch (e: any) {
+      replicationMessage.value = e.message || 'Failed to reset cursors';
+      replicationMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      replicationResetting.value = false;
+    }
+  };
+
+  const pushReplicationToDeno = async () => {
+    if (!isAdmin.value) return;
+    if (replicationResetting.value) return;
+    replicationPushing.value = true;
+    replicationMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/replication/push`, {
+        method: 'POST',
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const t = data.totals || {};
+      const parts = [
+        t.users ? `${t.users} users` : '',
+        t.subscriptions ? `${t.subscriptions} subscriptions` : '',
+        t.videos ? `${t.videos} videos` : '',
+        t.adminSettings ? `${t.adminSettings} settings` : '',
+      ].filter(Boolean);
+      const detail = parts.length ? parts.join(', ') : 'no new rows';
+      const ingest = data.ingest;
+      const ingestNote =
+        ingest && (ingest.applied > 0 || ingest.skipped > 0)
+          ? ` Postgres applied ${ingest.applied ?? 0}, skipped ${ingest.skipped ?? 0}.`
+          : '';
+      replicationMessage.value = data.partial
+        ? `${data.message || 'Partial push.'} Read from D1: ${detail}.${ingestNote}`
+        : `Push complete (${data.rounds ?? 0} round(s)). Read from D1: ${detail}.${ingestNote}`;
+      replicationMessageClass.value = data.partial
+        ? 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100'
+        : 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadReplicationStatus({ preserveMessage: true });
+    } catch (e: any) {
+      replicationMessage.value = e.message || 'DB push failed';
+      replicationMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      replicationPushing.value = false;
+    }
+  };
+
+  const loadAdminPaymentPlans = async () => {
+    if (!isAdmin.value) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      adminPaymentPlans.value = Array.isArray(data.plans)
+        ? data.plans
+            .map((p: { id?: string; label?: string; enabled?: boolean }) => ({
+              id: String(p.id ?? ''),
+              label: String(p.label ?? p.id ?? ''),
+              enabled: p.enabled !== false,
+            }))
+            .filter((p: AdminPaymentPlanRow) => p.id)
+        : [];
+    } catch {
+      adminPaymentPlans.value = [];
+    }
+  };
+
+  const loadPaymentSettings = async () => {
+    if (!isAdmin.value) return;
+    paymentSettingsMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const enabled = Array.isArray(data.enabledProviders)
+        ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+        : ['stripe'];
+      const order = Array.isArray(data.providerOrder)
+        ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
+        : ['stripe', 'legacy'];
+      const allowed = Array.isArray(data.allowedPlans)
+        ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club')
+        : ['monthly', 'yearly', 'club'];
+      paymentSettings.value = {
+        enabledProviders: enabled.length ? enabled : ['stripe'],
+        providerOrder: order.length ? order : ['stripe', 'legacy'],
+        allowedPlans: allowed.length ? allowed : ['monthly', 'yearly', 'club'],
+        basePrices: {
+          monthly: data.basePrices?.monthly != null ? String(data.basePrices.monthly) : '',
+          yearly: data.basePrices?.yearly != null ? String(data.basePrices.yearly) : '',
+          club: data.basePrices?.club != null ? String(data.basePrices.club) : '',
+        },
+        providerPrices: {
+          stripe: {
+            monthly:
+              data.providerPrices?.stripe?.monthly != null
+                ? String(data.providerPrices.stripe.monthly)
+                : '',
+            yearly:
+              data.providerPrices?.stripe?.yearly != null
+                ? String(data.providerPrices.stripe.yearly)
+                : '',
+            club:
+              data.providerPrices?.stripe?.club != null
+                ? String(data.providerPrices.stripe.club)
+                : '',
+          },
+        },
+        stripePriceIds: {
+          monthly: data.stripePriceIds?.monthly != null ? String(data.stripePriceIds.monthly) : '',
+          yearly: data.stripePriceIds?.yearly != null ? String(data.stripePriceIds.yearly) : '',
+          club: data.stripePriceIds?.club != null ? String(data.stripePriceIds.club) : '',
+        },
+      };
+    } catch (e: any) {
+      paymentSettingsMessage.value = `Could not load payment settings: ${e.message}`;
+      paymentSettingsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const loadPromotions = async () => {
+    if (!isAdmin.value) return;
+    promotionsLoading.value = true;
+    promotionsMessage.value = '';
+    try {
+      const [campaignRes, codeRes] = await Promise.all([
+        fetch(`${config.public.apiUrl}/api/admin/promotions/campaigns`, { headers: authHeader() }),
+        fetch(`${config.public.apiUrl}/api/admin/promotions/codes`, { headers: authHeader() }),
+      ]);
+      const campaignData = await campaignRes.json().catch(() => ({}));
+      const codeData = await codeRes.json().catch(() => ({}));
+      if (!campaignRes.ok) throw new Error(campaignData.error || `HTTP ${campaignRes.status}`);
+      if (!codeRes.ok) throw new Error(codeData.error || `HTTP ${codeRes.status}`);
+      promoCampaigns.value = Array.isArray(campaignData.campaigns) ? campaignData.campaigns : [];
+      promoCodes.value = Array.isArray(codeData.codes) ? codeData.codes : [];
+      if (!promoCodeForm.value.campaignId && promoCampaigns.value.length) {
+        promoCodeForm.value.campaignId = String(promoCampaigns.value[0]?.id || '');
+      }
+    } catch (e: any) {
+      promotionsMessage.value = e.message || 'Failed to load promotions';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      promotionsLoading.value = false;
+    }
+  };
+
+  const createPromoCampaign = async () => {
+    if (!isAdmin.value) return;
+    const name = promoCampaignForm.value.name.trim();
+    if (!name) {
+      promotionsMessage.value = 'Campaign name is required.';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    promotionsSaving.value = true;
+    promotionsMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/promotions/campaigns`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          locks: Object.entries(previewLockByVideoId.value).map(([videoId, previewDuration]) => ({ videoId, previewDuration })),
+          name,
+          description: promoCampaignForm.value.description,
+          isActive: promoCampaignForm.value.isActive,
         }),
-      }),
-    ])
-    if (!homepageRes.ok) {
-      const err = await homepageRes.json().catch(() => ({ error: `HTTP ${homepageRes.status}` }))
-      throw new Error(err.error || `Homepage save failed (HTTP ${homepageRes.status})`)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      promoCampaignForm.value = { name: '', description: '', isActive: true };
+      promotionsMessage.value = 'Promo campaign created.';
+      promotionsMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadPromotions();
+    } catch (e: any) {
+      promotionsMessage.value = e.message || 'Failed to create campaign';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      promotionsSaving.value = false;
     }
-    if (!locksRes.ok) {
-      const err = await locksRes.json().catch(() => ({ error: `HTTP ${locksRes.status}` }))
-      throw new Error(err.error || `Preview locks save failed (HTTP ${locksRes.status})`)
-    }
-    const locksData = await locksRes.json().catch(() => ({}))
-    const notify = locksData?.podcastPreviewNotify
-    let notifyNote = ''
-    if (notify?.delivered) {
-      notifyNote = ` Media host notified to re-render ${notify.eligibleCount ?? notify.acceptedCount ?? 0} preview MP3(s).`
-    } else if (notify?.code === 'nothing_to_rebuild') {
-      notifyNote = ' No trimmed preview MP3s needed (premium-only or unlock full).'
-    } else if (notify?.code === 'webhook_not_configured' || notify?.code === 'secret_not_configured') {
-      notifyNote = ' Configure the podcast rebuild webhook in System to auto-refresh preview MP3s after save.'
-    } else if (notify?.code === 'free_preview_disabled') {
-      notifyNote = ''
-    } else if (notify && !notify.delivered && notify.code) {
-      notifyNote = ` Preview MP3 host notify did not complete (${notify.code}).`
-    }
-    saveMessage.value      = `Changes saved to API database settings and preview lock durations.${notifyNote}`
-    saveMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-    await reloadAll()
-  } catch (e: any) {
-    saveMessage.value      = e.message || 'Failed to save changes'
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    saving.value = false
-  }
-}
+  };
 
-watch(
-  layoutBlocks,
-  (blocks) => {
-    for (const block of blocks) {
-      if (block.type !== 'category' && typeof block.categoryId === 'string' && block.categoryId) {
-        block.categoryId = null
+  const createPromoCodes = async () => {
+    if (!isAdmin.value) return;
+    if (!promoCodeForm.value.campaignId) {
+      promotionsMessage.value = 'Choose a campaign first.';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    const stripeCouponId = promoCodeForm.value.stripeCouponId.trim();
+    if (promoCodeForm.value.rewardType === 'discount_percent' && !stripeCouponId) {
+      promotionsMessage.value = 'For discount_percent rewards, set a Stripe coupon ID.';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    promotionsSaving.value = true;
+    promotionsMessage.value = '';
+    try {
+      const expiresIso = parseOptionalLocalDateTimeToIso(promoCodeForm.value.expiresAt);
+      const res = await fetch(`${config.public.apiUrl}/api/admin/promotions/codes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          campaignId: promoCodeForm.value.campaignId,
+          code: promoCodeForm.value.code,
+          quantity: promoCodeForm.value.quantity,
+          rewardType: promoCodeForm.value.rewardType,
+          maxUses: promoCodeForm.value.maxUses,
+          allowedPlanTypes: promoCodeForm.value.allowedPlanTypes,
+          stripeCouponId,
+          expiresAt: expiresIso,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const created = Number(data.created || 0);
+      const codes = Array.isArray(data.codes) ? data.codes : [];
+      promotionsMessage.value =
+        created > 0
+          ? `Created ${created} promo code(s): ${codes.join(', ')}`
+          : 'Promo code request completed.';
+      promotionsMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      promoCodeForm.value = {
+        campaignId: promoCodeForm.value.campaignId,
+        code: '',
+        quantity: 1,
+        rewardType: 'free_month',
+        maxUses: 1,
+        allowedPlanTypes: ['monthly', 'yearly', 'club'],
+        stripeCouponId: '',
+        expiresAt: '',
+      };
+      await loadPromotions();
+    } catch (e: any) {
+      promotionsMessage.value = e.message || 'Failed to create promo code(s)';
+      promotionsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      promotionsSaving.value = false;
+    }
+  };
+
+  const loadIsicCampaigns = async () => {
+    if (!isAdmin.value) return;
+    isicLoading.value = true;
+    isicMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      isicCampaigns.value = Array.isArray(data.campaigns) ? data.campaigns : [];
+      const apiConfig = data.apiConfig || {};
+      isicApiConfig.value = {
+        enabled: Boolean(apiConfig.enabled),
+        baseUrl: String(apiConfig.baseUrl || ''),
+        apiKey: '',
+        hasApiKey: Boolean(apiConfig.hasApiKey),
+      };
+    } catch (e: any) {
+      isicMessage.value = e.message || 'Failed to load ISIC settings';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      isicLoading.value = false;
+    }
+  };
+
+  const saveIsicApiConfig = async () => {
+    if (!isAdmin.value) return;
+    if (!isicApiConfig.value.enabled) {
+      isicMessage.value = 'ISIC feature is disabled.';
+      isicMessageClass.value =
+        'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
+      return;
+    }
+    if (!isicApiConfig.value.baseUrl.trim()) {
+      isicMessage.value = 'ISIC API base URL is required when ISIC is enabled.';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    if (!isicApiConfig.value.hasApiKey && !isicApiConfig.value.apiKey.trim()) {
+      isicMessage.value = 'Provide an ISIC API key when enabling ISIC.';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    isicSaving.value = true;
+    isicMessage.value = '';
+    try {
+      const apiConfigPayload: any = {
+        enabled: isicApiConfig.value.enabled,
+        baseUrl: isicApiConfig.value.baseUrl.trim(),
+      };
+      const trimmedApiKey = isicApiConfig.value.apiKey.trim();
+      if (trimmedApiKey) {
+        apiConfigPayload.apiKey = trimmedApiKey;
       }
-      if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
-        const children = Array.isArray(block.childBlocks) ? block.childBlocks : []
-        for (const child of children) {
-          if (child.type !== 'category' && typeof child.categoryId === 'string' && child.categoryId) {
-            child.categoryId = null
+      const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          apiConfig: apiConfigPayload,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      isicMessage.value = 'ISIC API configuration saved.';
+      isicMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      isicApiConfig.value.apiKey = '';
+      await loadIsicCampaigns();
+    } catch (e: any) {
+      isicMessage.value = e.message || 'Failed to save ISIC API configuration';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      isicSaving.value = false;
+    }
+  };
+
+  const createIsicCampaign = async () => {
+    if (!isAdmin.value) return;
+    const name = isicCampaignForm.value.name.trim();
+    if (!name) {
+      isicMessage.value = 'ISIC campaign name is required.';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return;
+    }
+    isicSaving.value = true;
+    isicMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/isic/campaigns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          name,
+          description: isicCampaignForm.value.description,
+          isActive: isicCampaignForm.value.isActive,
+          freeSlotsLimit: isicCampaignForm.value.freeSlotsLimit,
+          discountPercent: isicCampaignForm.value.discountPercent,
+          renewalMonths: isicCampaignForm.value.renewalMonths,
+          popupBehavior: isicCampaignForm.value.popupBehavior,
+          countryScope: isicCampaignForm.value.countryScope,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      isicCampaignForm.value = {
+        name: '',
+        description: '',
+        isActive: true,
+        freeSlotsLimit: 5000,
+        discountPercent: 0,
+        renewalMonths: 12,
+        popupBehavior: 'highlight_campaign',
+        countryScope: 'CZ,SK',
+      };
+      isicMessage.value = 'ISIC campaign created.';
+      isicMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadIsicCampaigns();
+    } catch (e: any) {
+      isicMessage.value = e.message || 'Failed to create ISIC campaign';
+      isicMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      isicSaving.value = false;
+    }
+  };
+
+  const loadSiteBranding = async () => {
+    if (!isAdmin.value) return;
+    siteBrandingMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      siteBranding.value = {
+        site_name: data.site_name || '',
+        site_name_short: data.site_name_short || '',
+        site_description: data.site_description || '',
+        site_logo_url: data.site_logo_url || '',
+        site_favicon_url: data.site_favicon_url || '',
+        site_support_email: data.site_support_email || 'vmp@tjm.sk',
+        podcast_title: data.podcast_title || '',
+        podcast_description: data.podcast_description || '',
+        gtm_enabled:
+          data.gtm_enabled === '1' && String(data.gtm_container_id || '').trim() ? '1' : '0',
+        gtm_container_id: data.gtm_container_id || '',
+        gtm_measurement_path: data.gtm_measurement_path || '',
+      };
+    } catch (e: any) {
+      siteBrandingMessage.value = `Could not load site branding: ${e.message}`;
+      siteBrandingMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const saveSiteBranding = async () => {
+    if (!isAdmin.value) return;
+    siteBrandingSaving.value = true;
+    siteBrandingMessage.value = '';
+    try {
+      const containerId = siteBranding.value.gtm_container_id.trim();
+      if (siteBranding.value.gtm_enabled === '1' && !containerId) {
+        siteBranding.value.gtm_enabled = '0';
+        throw new Error('Google Tag Manager container ID is required when GTM is enabled.');
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/site-settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(siteBranding.value),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      siteBrandingMessage.value = 'Site branding saved.';
+      siteBrandingMessageClass.value =
+        'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-200';
+    } catch (e: any) {
+      siteBrandingMessage.value = e.message || 'Failed to save site branding';
+      siteBrandingMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      siteBrandingSaving.value = false;
+    }
+  };
+
+  const loadRssPodcastWebhookSettings = async () => {
+    if (!isAdmin.value) return;
+    rssPodcastMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-rebuild-webhook`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      rssPodcastWebhookUrl.value = typeof data.webhookUrl === 'string' ? data.webhookUrl : '';
+      rssPodcastSecretConfigured.value = Boolean(data.secretConfigured);
+      rssPodcastWebhookSecretInput.value = '';
+    } catch (e: any) {
+      rssPodcastMessage.value = `Could not load podcast webhook settings: ${e.message}`;
+      rssPodcastMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    }
+  };
+
+  const saveRssPodcastWebhookSettings = async () => {
+    if (!isAdmin.value) return;
+    if (!systemFeatures.value.freePodcastPreviewEnabled) {
+      rssPodcastMessage.value = 'Free podcast preview feed is disabled.';
+      rssPodcastMessageClass.value =
+        'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
+      return;
+    }
+    rssPodcastWebhookSaving.value = true;
+    rssPodcastMessage.value = '';
+    try {
+      const webhookUrlTrimmed = rssPodcastWebhookUrl.value.trim();
+      if (webhookUrlTrimmed) {
+        const parsed = new URL(webhookUrlTrimmed);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          throw new Error('Webhook URL must use http:// or https://');
+        }
+      }
+      const body: Record<string, string> = { webhookUrl: webhookUrlTrimmed };
+      const sec = rssPodcastWebhookSecretInput.value.trim();
+      if (sec) {
+        if (sec.length < 16) throw new Error('Webhook secret must be at least 16 characters');
+        body.webhookSecret = sec;
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-rebuild-webhook`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${res.status}`);
+      rssPodcastMessage.value = 'Podcast webhook settings saved.';
+      rssPodcastMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      rssPodcastWebhookSecretInput.value = '';
+      rssPodcastSecretConfigured.value = Boolean(data.secretConfigured);
+    } catch (e: any) {
+      rssPodcastMessage.value = e.message || 'Failed to save podcast webhook settings';
+      rssPodcastMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      rssPodcastWebhookSaving.value = false;
+    }
+  };
+
+  const notifyPodcastPreviewRebuild = async () => {
+    if (!isAdmin.value) return;
+    if (!systemFeatures.value.freePodcastPreviewEnabled) {
+      rssPodcastMessage.value = 'Free podcast preview feed is disabled.';
+      rssPodcastMessageClass.value =
+        'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
+      return;
+    }
+    rssPodcastNotifySending.value = true;
+    rssPodcastMessage.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/rss/podcast-preview-rebuild`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const base = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`;
+        const detail =
+          typeof data.detail === 'string' && data.detail.trim() ? ` — ${data.detail.trim()}` : '';
+        const status = data.status ? ` (upstream ${data.status})` : '';
+        throw new Error(`${base}${status}${detail}`);
+      }
+      const accepted = Number(data?.acceptedCount ?? data?.videoCount ?? 0);
+      const rejected = Number(data?.rejectedCount ?? 0);
+      const rejectedItems = Array.isArray(data?.rejected) ? data.rejected : [];
+      const rejectedText = rejectedItems.length
+        ? ` Rejected: ${rejectedItems
+            .slice(0, 3)
+            .filter((item: any) => item && typeof item === 'object')
+            .map((item: any) => `${item.id || 'unknown'} (${item.reason || 'invalid'})`)
+            .join(', ')}`
+        : '';
+      rssPodcastMessage.value = `Host notified (${accepted} accepted, ${rejected} rejected).${rejectedText}`;
+      rssPodcastMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      rssPodcastMessage.value = e.message || 'Notify failed';
+      rssPodcastMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      rssPodcastNotifySending.value = false;
+    }
+  };
+
+  const savePaymentSettings = async () => {
+    if (!isAdmin.value) return;
+    paymentSettingsSaving.value = true;
+    paymentSettingsMessage.value = '';
+    try {
+      const ps = paymentSettings.value;
+      const enabledProviders = [...ps.enabledProviders];
+      const order = [...ps.providerOrder];
+      const hasAnyPlan = Array.isArray(ps.allowedPlans) && ps.allowedPlans.length > 0;
+      if (!hasAnyPlan) {
+        throw new Error('Select at least one offered plan.');
+      }
+      const missingStripePriceIds = ps.allowedPlans.filter(
+        (plan) => !String(ps.stripePriceIds?.[plan] || '').trim(),
+      );
+      if (missingStripePriceIds.length) {
+        throw new Error(
+          `Stripe price IDs are required for enabled plans: ${missingStripePriceIds.join(', ')}`,
+        );
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          enabledProviders,
+          providerOrder: order,
+          allowedPlans: ps.allowedPlans,
+          basePrices: ps.basePrices,
+          providerPrices: ps.providerPrices,
+          stripePriceIds: ps.stripePriceIds,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      paymentSettingsMessage.value = 'Payment settings saved.';
+      paymentSettingsMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadPaymentSettings();
+      await loadAdminPaymentPlans();
+    } catch (e: any) {
+      paymentSettingsMessage.value = e.message || 'Failed to save payment settings';
+      paymentSettingsMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      paymentSettingsSaving.value = false;
+    }
+  };
+
+  const loadUsers = async () => {
+    if (!isAdmin.value) return;
+    const reqId = ++usersLoadRequestId;
+    usersLoading.value = true;
+    usersError.value = '';
+    try {
+      const params = new URLSearchParams({
+        page: String(usersPage.value),
+        pageSize: String(usersPageSize.value),
+        search: usersSearchDebounced.value.trim(),
+        role: usersRoleFilter.value,
+        subscription: usersSubscriptionFilter.value,
+      });
+      const res = await fetch(`${config.public.apiUrl}/api/admin/users?${params.toString()}`, {
+        headers: authHeader(),
+      });
+      if (reqId !== usersLoadRequestId) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = typeof err?.error === 'string' ? err.error : `HTTP ${res.status}`;
+        usersError.value = `Failed to load users: ${detail}`;
+        return;
+      }
+      const data = await res.json();
+      if (reqId !== usersLoadRequestId) return;
+      users.value = ((data.users || []) as AdminUserRow[]).map((row) => ({
+        ...row,
+        uiRole: undefined,
+        uiSubscription: undefined,
+      }));
+      usersTotal.value = Number(data.total) || 0;
+      usersTotalPages.value = Math.max(1, Number(data.totalPages) || 1);
+    } catch (e: unknown) {
+      if (reqId !== usersLoadRequestId) return;
+      usersError.value =
+        e instanceof Error
+          ? `Failed to load users: ${e.message}`
+          : 'Failed to load users: network error';
+    } finally {
+      if (reqId === usersLoadRequestId) usersLoading.value = false;
+    }
+  };
+
+  watch(usersSearchInput, () => {
+    if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer);
+    usersSearchDebounceTimer = setTimeout(() => {
+      usersSearchDebounceTimer = null;
+      usersSearchDebounced.value = usersSearchInput.value;
+      usersPage.value = 1;
+      loadUsers();
+    }, 350);
+  });
+
+  function adminUserRoleSelectValue(u: AdminUserRow): string {
+    return u.uiRole ?? u.role;
+  }
+
+  function adminUserSubscriptionSelectValue(u: AdminUserRow): string {
+    return u.uiSubscription ?? (u.subscription_status || 'none');
+  }
+
+  function hasAdminUserSubscriptionRow(u: AdminUserRow): boolean {
+    return u.subscription_status != null && u.subscription_status !== '';
+  }
+
+  function userHasTransferableSubscription(u: AdminUserRow): boolean {
+    const s = u.subscription_status;
+    return s === 'active' || s === 'trialing';
+  }
+
+  function openTransferSubscriptionModal(u: AdminUserRow) {
+    transferSubModal.value = {
+      open: true,
+      step: 0,
+      sourceUser: u,
+      targetEmail: '',
+      error: null,
+      submitting: false,
+    };
+  }
+
+  function closeTransferSubscriptionModal() {
+    transferSubModal.value = {
+      open: false,
+      step: 0,
+      sourceUser: null,
+      targetEmail: '',
+      error: null,
+      submitting: false,
+    };
+  }
+
+  function goTransferSubscriptionConfirm() {
+    const email = transferSubModal.value.targetEmail.trim();
+    if (!email || !email.includes('@')) {
+      transferSubModal.value.error = 'Enter a valid destination email.';
+      return;
+    }
+    if (email.toLowerCase() === transferSubModal.value.sourceUser?.email?.toLowerCase()) {
+      transferSubModal.value.error = 'Destination must be a different account.';
+      return;
+    }
+    transferSubModal.value.error = null;
+    transferSubModal.value.step = 1;
+  }
+
+  async function executeTransferSubscription() {
+    const modal = transferSubModal.value;
+    const source = modal.sourceUser;
+    const targetEmail = modal.targetEmail.trim();
+    if (!source?.id || !targetEmail) return;
+    transferSubModal.value.submitting = true;
+    transferSubModal.value.error = null;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/users/transfer-subscription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ sourceUserId: source.id, targetEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const code = typeof data.code === 'string' ? data.code : '';
+        const messages: Record<string, string> = {
+          source_not_found: 'Source user not found.',
+          target_not_found: 'No account found with that email.',
+          target_has_subscription: 'That account already has an active or trialing subscription.',
+          same_user: 'Destination must be a different account.',
+          no_active_subscription:
+            'This account no longer has an active or trialing subscription to transfer.',
+          transfer_failed: 'Transfer failed due to an internal error.',
+          invalid_email: 'Enter a valid destination email.',
+        };
+        transferSubModal.value.error =
+          messages[code] || data.error || `Transfer failed (HTTP ${res.status})`;
+        return;
+      }
+      closeTransferSubscriptionModal();
+      await loadUsers();
+      showToast('success', `Subscription transferred to ${data.targetEmail || targetEmail}.`);
+    } catch (e: unknown) {
+      transferSubModal.value.error =
+        e instanceof Error ? e.message : 'Network error during transfer.';
+    } finally {
+      transferSubModal.value.submitting = false;
+    }
+  }
+
+  function adminUserSubscriptionSelectDisabled(u: AdminUserRow): boolean {
+    if (user.value?.role !== 'super_admin' && u.role === 'super_admin') return true;
+    return false;
+  }
+
+  function adminUserSubscriptionSelectTitle(u: AdminUserRow): string {
+    if (user.value?.role !== 'super_admin' && u.role === 'super_admin') {
+      return 'Only a super admin may change this account';
+    }
+    if (!hasAdminUserSubscriptionRow(u)) {
+      return 'No subscription row — selecting a status will create a manual subscription';
+    }
+    return '';
+  }
+
+  const adminUserPendingPlanType = ref<Record<string, string>>({});
+
+  function setAdminUserPendingPlanType(userId: string, planType: string) {
+    adminUserPendingPlanType.value = { ...adminUserPendingPlanType.value, [userId]: planType };
+  }
+
+  function patchUserRowById(userId: string, patch: Partial<AdminUserRow>) {
+    const i = users.value.findIndex((x) => x.id === userId);
+    if (i === -1) return;
+    const cur = users.value[i]!;
+    users.value[i] = { ...cur, ...patch };
+  }
+
+  const updateUser = async (
+    userId: string,
+    patch: Record<string, string>,
+    options?: { createSubscription?: { status: string; planType: string } },
+  ) => {
+    try {
+      const body: Record<string, unknown> = { userId, ...patch };
+      if (options?.createSubscription) {
+        body.createSubscription = options.createSubscription;
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/users`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      if (typeof patch.role === 'string') {
+        patchUserRowById(userId, { role: patch.role, uiRole: undefined });
+      }
+      if (typeof patch.subscriptionStatus === 'string') {
+        const s = patch.subscriptionStatus;
+        const nextSub = s === 'none' ? 'cancelled' : s;
+        patchUserRowById(userId, { subscription_status: nextSub, uiSubscription: undefined });
+      }
+      try {
+        await loadUsers();
+      } catch (e) {
+        console.error('loadUsers after user patch:', e);
+      }
+      showToast('success', 'User updated.');
+      return true;
+    } catch (error: any) {
+      console.error('Failed to update user', error);
+      showToast('error', `Failed to update user: ${error.message || 'unknown error'}`);
+      return false;
+    }
+  };
+
+  function onUserRoleSelect(u: AdminUserRow, newRole: string) {
+    const serverRole = u.role;
+    if (newRole === serverRole) return;
+    if (isSensitiveRoleChange(serverRole, newRole)) {
+      patchUserRowById(u.id, { uiRole: newRole });
+      openConfirmModal({
+        mode: 'user_role',
+        userId: u.id,
+        email: u.email,
+        prevRole: serverRole,
+        nextRole: newRole,
+        prevSubscription: u.subscription_status || 'none',
+        nextSubscription: u.subscription_status || 'none',
+        impactText: `Change role for ${u.email} from ${serverRole} to ${newRole}? This affects API access immediately.`,
+      });
+      return;
+    }
+    patchUserRowById(u.id, { uiRole: newRole });
+    void (async () => {
+      const ok = await updateUser(u.id, { role: newRole });
+      if (!ok) patchUserRowById(u.id, { uiRole: undefined });
+    })();
+  }
+
+  function onUserSubscriptionSelect(u: AdminUserRow, next: string) {
+    const prev = u.subscription_status || 'none';
+    if (next === prev) return;
+    if (!hasAdminUserSubscriptionRow(u) && next === 'none') return;
+    patchUserRowById(u.id, { uiSubscription: next });
+    openConfirmModal({
+      mode: 'user_subscription',
+      userId: u.id,
+      email: u.email,
+      prevRole: u.role,
+      nextRole: u.role,
+      prevSubscription: prev,
+      nextSubscription: next,
+      impactText: hasAdminUserSubscriptionRow(u)
+        ? `Change subscription status for ${u.email} from ${prev} to ${next}? This updates their latest subscription row in the database (not Stripe).`
+        : `Create a manual ${adminUserPendingPlanType.value[u.id] || defaultAdminPlanId.value} subscription for ${u.email} with status ${next}?`,
+    });
+  }
+
+  const loadAnalytics = async () => {
+    if (!isAdmin.value) return;
+    analyticsLoading.value = true;
+    analyticsError.value = '';
+    try {
+      const params = new URLSearchParams({
+        range: analyticsRange.value,
+        granularity: analyticsGranularity.value,
+        dataset: 'all',
+        format: 'json',
+      });
+      if (analyticsHeatmapVideoId.value) {
+        params.set('videoId', analyticsHeatmapVideoId.value);
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, {
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      analytics.value = data;
+      if (!analyticsSettingsInitialized.value) {
+        analyticsViewCounting.value.minSegmentsPerSession = Number(
+          data?.viewCounting?.minSegmentsPerSession ?? 1,
+        );
+        analyticsViewCounting.value.minWatchSeconds = Number(
+          data?.viewCounting?.minWatchSeconds ?? 15,
+        );
+        analyticsSettingsInitialized.value = true;
+      }
+      analyticsRange.value = data?.meta?.range || analyticsRange.value;
+      analyticsGranularity.value = data?.meta?.granularity || analyticsGranularity.value;
+    } catch (error: any) {
+      analyticsError.value = error?.message || 'Failed to load analytics';
+    } finally {
+      analyticsLoading.value = false;
+    }
+  };
+
+  const saveAnalyticsSettings = async () => {
+    if (!isAdmin.value) return;
+    analyticsSettingsSaving.value = true;
+    analyticsError.value = '';
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/analytics`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          viewCounting: analyticsViewCounting.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadAnalytics();
+    } catch (error: any) {
+      analyticsError.value = error?.message || 'Failed to save analytics settings';
+    } finally {
+      analyticsSettingsSaving.value = false;
+    }
+  };
+
+  const exportAnalytics = async (dataset: AnalyticsDataset) => {
+    if (!isAdmin.value || analyticsExporting.value) return;
+    analyticsExporting.value = dataset;
+    analyticsError.value = '';
+    try {
+      const params = new URLSearchParams({
+        range: analyticsRange.value,
+        granularity: analyticsGranularity.value,
+        dataset,
+        format: 'csv',
+      });
+      const res = await fetch(`${config.public.apiUrl}/api/admin/analytics?${params.toString()}`, {
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const content = await res.text();
+      const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = `analytics_${dataset}_${analyticsRange.value}_${analyticsGranularity.value}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(href);
+    } catch (error: any) {
+      analyticsError.value = error?.message || 'Export failed';
+    } finally {
+      analyticsExporting.value = null;
+    }
+  };
+
+  const loadAdminPills = async () => {
+    if (!isAdmin.value) return;
+    const [pillsRes, keyRes] = await Promise.all([
+      fetch(`${config.public.apiUrl}/api/admin/pills`, { headers: authHeader() }),
+      fetch(`${config.public.apiUrl}/api/admin/pills/settings`, { headers: authHeader() }),
+    ]);
+    if (pillsRes.ok) {
+      const data = await pillsRes.json();
+      adminPills.value = Array.isArray(data?.pills) ? data.pills : [];
+    }
+    if (keyRes.ok) {
+      pillsApiKeyMeta.value = await keyRes.json();
+    }
+  };
+
+  function buildModeAwarePillPayload(input: {
+    valueMode?: PillValueMode;
+    value: number;
+    valueSecondary?: any;
+    graphEmbedUrl?: any;
+    graphPayloadJson?: any;
+  }) {
+    const mode: PillValueMode =
+      input.valueMode === 'percentage' ||
+      input.valueMode === 'agree_disagree' ||
+      input.valueMode === 'graph_embed'
+        ? input.valueMode
+        : 'number';
+    const base = {
+      valueMode: mode,
+      value: Number(input.value),
+      valueSecondary: null as number | null,
+      graphEmbedUrl: null as string | null,
+      graphPayloadJson: null as string | null,
+    };
+    if (mode === 'agree_disagree') {
+      const secondary =
+        input.valueSecondary === '' || input.valueSecondary == null
+          ? null
+          : Number(input.valueSecondary);
+      return { ...base, valueSecondary: Number.isFinite(secondary as number) ? secondary : null };
+    }
+    if (mode === 'graph_embed') {
+      return {
+        ...base,
+        graphEmbedUrl:
+          typeof input.graphEmbedUrl === 'string' ? input.graphEmbedUrl.trim() || null : null,
+        graphPayloadJson:
+          typeof input.graphPayloadJson === 'string' ? input.graphPayloadJson.trim() || null : null,
+      };
+    }
+    return base;
+  }
+
+  const createPill = async () => {
+    const modePayload = buildModeAwarePillPayload({
+      valueMode: newPill.value.valueMode,
+      value: Number(newPill.value.value),
+      valueSecondary: newPill.value.valueSecondary,
+      graphEmbedUrl: newPill.value.graphEmbedUrl,
+      graphPayloadJson: newPill.value.graphPayloadJson,
+    });
+    const payload = {
+      label: newPill.value.label.trim(),
+      value: modePayload.value,
+      valueMode: modePayload.valueMode,
+      valueSecondary: modePayload.valueSecondary,
+      graphEmbedUrl: modePayload.graphEmbedUrl,
+      graphPayloadJson: modePayload.graphPayloadJson,
+      color: newPill.value.color || '#2563eb',
+      imageUrl: newPill.value.imageUrl?.trim() || null,
+      sortOrder: adminPills.value.length,
+    };
+    if (!payload.label) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        await loadAdminPills();
+        throw new Error(`Failed to create pill: HTTP ${res.status}`);
+      }
+      newPill.value = {
+        label: '',
+        value: 0,
+        valueSecondary: '',
+        valueMode: 'number',
+        graphEmbedUrl: '',
+        graphPayloadJson: '',
+        color: '#2563eb',
+        imageUrl: '',
+      };
+      await loadAdminPills();
+    } catch (error) {
+      console.error('createPill failed', error);
+    }
+  };
+
+  const uploadPillImage = async (event: Event, pill: AdminPillRow | null) => {
+    const target = event.target as HTMLInputElement | null;
+    const file = target?.files?.[0];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.set('image', file);
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills/image-upload`, {
+        method: 'POST',
+        headers: authHeader(),
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const imageUrl = String(data.imageUrl || '');
+      if (!imageUrl) return;
+      if (pill) pill.image_url = imageUrl;
+      else newPill.value.imageUrl = imageUrl;
+    } catch (error) {
+      console.error('uploadPillImage failed', error);
+    } finally {
+      if (target) target.value = '';
+    }
+  };
+
+  const savePill = async (pill: any) => {
+    try {
+      const modePayload = buildModeAwarePillPayload({
+        valueMode: pill.value_mode || 'number',
+        value: Number(pill.value),
+        valueSecondary: pill.value_secondary,
+        graphEmbedUrl: pill.graph_embed_url,
+        graphPayloadJson: pill.graph_payload_json,
+      });
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          id: pill.id,
+          label: pill.label,
+          value: modePayload.value,
+          valueMode: modePayload.valueMode,
+          valueSecondary: modePayload.valueSecondary,
+          graphEmbedUrl: modePayload.graphEmbedUrl,
+          graphPayloadJson: modePayload.graphPayloadJson,
+          color: pill.color,
+          imageUrl: typeof pill.image_url === 'string' ? pill.image_url : null,
+          sortOrder: Number(pill.sort_order),
+        }),
+      });
+      if (!res.ok) {
+        await loadAdminPills();
+        throw new Error(`Failed to save pill: HTTP ${res.status}`);
+      }
+    } catch (error) {
+      console.error('savePill failed', error);
+    }
+  };
+
+  const deletePill = async (id: string) => {
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        await loadAdminPills();
+        throw new Error(`Failed to delete pill: HTTP ${res.status}`);
+      }
+      await loadAdminPills();
+    } catch (error) {
+      console.error('deletePill failed', error);
+    }
+  };
+
+  const movePill = async (idx: number, direction: -1 | 1) => {
+    const prev = [...adminPills.value];
+    const next = [...adminPills.value];
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= next.length) return;
+    const moved = next.splice(idx, 1)[0];
+    if (!moved) return;
+    next.splice(swapIdx, 0, moved);
+    adminPills.value = next.map((pill, i) => ({ ...pill, sort_order: i }));
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          items: adminPills.value.map((pill) => ({ id: pill.id })),
+        }),
+      });
+      if (!res.ok) {
+        adminPills.value = prev;
+        await loadAdminPills();
+        throw new Error(`Failed to reorder pills: HTTP ${res.status}`);
+      }
+    } catch (error) {
+      adminPills.value = prev;
+      await loadAdminPills();
+      console.error('movePill failed', error);
+    }
+  };
+
+  const savePillsApiKey = async () => {
+    const key = pillsApiKey.value.trim();
+    if (!key) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/pills/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ apiKey: key }),
+      });
+      if (!res.ok) {
+        await loadAdminPills();
+        throw new Error(`Failed to save pills API key: HTTP ${res.status}`);
+      }
+      pillsApiKey.value = '';
+      await loadAdminPills();
+    } catch (error) {
+      console.error('savePillsApiKey failed', error);
+    }
+  };
+
+  const saveNewsletterSettings = async () => {
+    if (!isAdmin.value) return;
+    newsletterSaving.value = true;
+    newsletterMessage.value = '';
+    try {
+      const raw = newsletterListId.value.trim();
+      let brevoSubscriberListId: number | '' = '';
+      if (raw) {
+        if (!/^\d+$/.test(raw)) {
+          throw new Error('Subscriber list ID must be a positive integer or empty');
+        }
+        const n = Number.parseInt(raw, 10);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error('Subscriber list ID must be a positive integer or empty');
+        }
+        brevoSubscriberListId = n;
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          brevoSubscriberListId,
+          brevoCampaignSenderEmail: newsletterSenderEmail.value.trim(),
+          brevoCampaignSenderName: newsletterSenderName.value.trim(),
+          brevoNewsletterPollIntervalMs: newsletterPollIntervalMs.value,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      newsletterMessage.value = 'Newsletter settings saved.';
+      newsletterMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadNewsletterSettings();
+    } catch (e: any) {
+      newsletterMessage.value = e.message || 'Failed to save settings';
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      newsletterSaving.value = false;
+    }
+  };
+
+  const sendNewsletterCampaign = async () => {
+    if (!isAdmin.value) return;
+    newsletterSending.value = true;
+    newsletterMessage.value = '';
+    try {
+      if (!newsletterSendDedupeKey.value) {
+        newsletterSendDedupeKey.value = crypto.randomUUID();
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/newsletter/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          subject: newsletterSubject.value.trim(),
+          htmlBody: newsletterHtml.value,
+          templateId: newsletterTemplateId.value || undefined,
+          dedupeKey: newsletterSendDedupeKey.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const base = typeof data.error === 'string' ? data.error : `HTTP ${res.status}`;
+        const code = typeof data.code === 'string' ? ` (${data.code})` : '';
+        const brevo = data.brevoStatus != null ? ` · Brevo ${data.brevoStatus}` : '';
+        throw new Error(`${base}${code}${brevo}`);
+      }
+      newsletterSendDedupeKey.value = null;
+      newsletterMessage.value = data.idempotent
+        ? `Already sent (Brevo campaign id ${data.campaignId}).`
+        : data.campaignId != null
+          ? `Campaign scheduled (Brevo campaign id ${data.campaignId}).`
+          : 'Campaign sent.';
+      newsletterMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      newsletterMessage.value = e.message || 'Send failed';
+      newsletterMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      newsletterSending.value = false;
+    }
+  };
+
+  const saveAll = async () => {
+    saving.value = true;
+    saveMessage.value = '';
+    try {
+      layoutBlocks.value = assignGridPositions([...layoutBlocks.value]);
+      const featuredVideoIds = featuredSlots.value.map((v) => v?.id).filter(Boolean);
+      const [homepageRes, locksRes] = await Promise.all([
+        fetch(`${config.public.apiUrl}/api/admin/homepage/content`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({
+            homepageConfig: {
+              featuredVideoIds,
+              layoutBlocks: layoutBlocks.value.map((block) => sanitizeBlockForSave(block)),
+            },
+            categoryOrder: categories.value.map((category) => ({
+              id: category.id,
+              sortOrder: category.sort_order,
+            })),
+          }),
+        }),
+        fetch(`${config.public.apiUrl}/api/admin/preview-locks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({
+            locks: Object.entries(previewLockByVideoId.value).map(([videoId, previewDuration]) => ({
+              videoId,
+              previewDuration,
+            })),
+          }),
+        }),
+      ]);
+      if (!homepageRes.ok) {
+        const err = await homepageRes.json().catch(() => ({ error: `HTTP ${homepageRes.status}` }));
+        throw new Error(err.error || `Homepage save failed (HTTP ${homepageRes.status})`);
+      }
+      if (!locksRes.ok) {
+        const err = await locksRes.json().catch(() => ({ error: `HTTP ${locksRes.status}` }));
+        throw new Error(err.error || `Preview locks save failed (HTTP ${locksRes.status})`);
+      }
+      const locksData = await locksRes.json().catch(() => ({}));
+      const notify = locksData?.podcastPreviewNotify;
+      let notifyNote = '';
+      if (notify?.delivered) {
+        notifyNote = ` Media host notified to re-render ${notify.eligibleCount ?? notify.acceptedCount ?? 0} preview MP3(s).`;
+      } else if (notify?.code === 'nothing_to_rebuild') {
+        notifyNote = ' No trimmed preview MP3s needed (premium-only or unlock full).';
+      } else if (
+        notify?.code === 'webhook_not_configured' ||
+        notify?.code === 'secret_not_configured'
+      ) {
+        notifyNote =
+          ' Configure the podcast rebuild webhook in System to auto-refresh preview MP3s after save.';
+      } else if (notify?.code === 'free_preview_disabled') {
+        notifyNote = '';
+      } else if (notify && !notify.delivered && notify.code) {
+        notifyNote = ` Preview MP3 host notify did not complete (${notify.code}).`;
+      }
+      saveMessage.value = `Changes saved to API database settings and preview lock durations.${notifyNote}`;
+      saveMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await reloadAll();
+    } catch (e: any) {
+      saveMessage.value = e.message || 'Failed to save changes';
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      saving.value = false;
+    }
+  };
+
+  watch(
+    layoutBlocks,
+    (blocks) => {
+      for (const block of blocks) {
+        if (block.type !== 'category' && typeof block.categoryId === 'string' && block.categoryId) {
+          block.categoryId = null;
+        }
+        if (block.type === 'split_horizontal' || block.type === 'split_vertical') {
+          const children = Array.isArray(block.childBlocks) ? block.childBlocks : [];
+          for (const child of children) {
+            if (
+              child.type !== 'category' &&
+              typeof child.categoryId === 'string' &&
+              child.categoryId
+            ) {
+              child.categoryId = null;
+            }
           }
         }
       }
+    },
+    { deep: true },
+  );
+
+  type AdminLoaderResult = { ok: true } | { ok: false; label: string; message: string };
+
+  const adminLoaderFailureMessage = (error: unknown) =>
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string' && error.trim()
+        ? error
+        : 'network error';
+
+  const reportAdminReloadFailures = (failures: Array<{ label: string; message: string }>) => {
+    if (!failures.length) return;
+    const labels = failures.map((failure) => failure.label).join(', ');
+    saveMessage.value = `Could not load: ${labels}`;
+    saveMessageClass.value =
+      'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+  };
+
+  const runAdminLoader = async (
+    label: string,
+    loader: () => Promise<unknown>,
+  ): Promise<AdminLoaderResult> => {
+    try {
+      await loader();
+      return { ok: true };
+    } catch (error: unknown) {
+      console.warn(`[admin] Failed to load ${label}`, error);
+      return { ok: false, label, message: adminLoaderFailureMessage(error) };
     }
-  },
-  { deep: true },
-)
+  };
 
-type AdminLoaderResult =
-  | { ok: true }
-  | { ok: false; label: string; message: string }
-
-const adminLoaderFailureMessage = (error: unknown) =>
-  error instanceof Error
-    ? error.message
-    : (typeof error === 'string' && error.trim() ? error : 'network error')
-
-const reportAdminReloadFailures = (failures: Array<{ label: string; message: string }>) => {
-  if (!failures.length) return
-  const labels = failures.map((failure) => failure.label).join(', ')
-  saveMessage.value = `Could not load: ${labels}`
-  saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-}
-
-const runAdminLoader = async (label: string, loader: () => Promise<unknown>): Promise<AdminLoaderResult> => {
-  try {
-    await loader()
-    return { ok: true }
-  } catch (error: unknown) {
-    console.warn(`[admin] Failed to load ${label}`, error)
-    return { ok: false, label, message: adminLoaderFailureMessage(error) }
-  }
-}
-
-const reloadAll = async () => {
-  if (!user.value || !canEditContent.value) {
-    loading.value = false
-    return
-  }
-  loading.value = true
-  const failures: Array<{ label: string; message: string }> = []
-  const trackLoader = async (label: string, loader: () => Promise<unknown>) => {
-    const result = await runAdminLoader(label, loader)
-    if (!result.ok) failures.push({ label: result.label, message: result.message })
-  }
-  try {
-    await trackLoader('videos', loadVideos)
-    await trackLoader('categories', loadCategories)
-    await trackLoader('homepage state', loadHomepageState)
-    await trackLoader('homepage placement', loadHomepagePlacement)
-    await trackLoader('newsletter settings', loadNewsletterSettings)
-    await trackLoader('newsletter templates', loadNewsletterTemplates)
-    await trackLoader('system features', loadSystemFeatures)
-    await trackLoader('replication status', () => loadReplicationStatus({ probe: true }))
-    await trackLoader('payment settings', loadPaymentSettings)
-    await trackLoader('payment plans', loadAdminPaymentPlans)
-    if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions)
-    if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns)
-    await trackLoader('site branding', loadSiteBranding)
-    if (systemFeatures.value.freePodcastPreviewEnabled) await trackLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings)
-    await trackLoader('users', loadUsers)
-    await trackLoader('analytics', loadAnalytics)
-    await trackLoader('pills', loadAdminPills)
-  } catch (error: unknown) {
-    console.warn('[admin] Failed to load admin data', error)
-    failures.push({ label: 'admin data', message: adminLoaderFailureMessage(error) })
-  } finally {
-    reportAdminReloadFailures(failures)
-    loading.value = false
-  }
-}
-
-function statusBadgeClass(status: string | null) {
-  if (status === 'published') return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-  if (status === 'archived')  return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-  return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' // draft
-}
-
-function formatSeconds(total: number): string {
-  if (!total || !Number.isFinite(total)) return '--'
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = Math.floor(total % 60)
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${m}:${String(s).padStart(2, '0')}`
-}
-
-async function startTitleEdit(video: Video) {
-  editingTitle.value = { id: video.id, value: video.title }
-  await nextTick()
-  focusInlineEditInput(titleInputEl.value)
-}
-
-async function saveTitleEdit(video: Video) {
-  const editing = editingTitle.value
-  if (!editing || editing.id !== video.id) return
-  const newTitle = editing.value.trim()
-  editingTitle.value = null
-  if (!newTitle || newTitle === video.title) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ title: newTitle }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+  const reloadAll = async () => {
+    if (!user.value || !canEditContent.value) {
+      loading.value = false;
+      return;
     }
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, title: newTitle }
+    loading.value = true;
+    const failures: Array<{ label: string; message: string }> = [];
+    const trackLoader = async (label: string, loader: () => Promise<unknown>) => {
+      const result = await runAdminLoader(label, loader);
+      if (!result.ok) failures.push({ label: result.label, message: result.message });
+    };
+    try {
+      await trackLoader('videos', loadVideos);
+      await trackLoader('categories', loadCategories);
+      await trackLoader('homepage state', loadHomepageState);
+      await trackLoader('homepage placement', loadHomepagePlacement);
+      await trackLoader('newsletter settings', loadNewsletterSettings);
+      await trackLoader('newsletter templates', loadNewsletterTemplates);
+      await trackLoader('system features', loadSystemFeatures);
+      await trackLoader('replication status', () => loadReplicationStatus({ probe: true }));
+      await trackLoader('payment settings', loadPaymentSettings);
+      await trackLoader('payment plans', loadAdminPaymentPlans);
+      if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions);
+      if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns);
+      await trackLoader('site branding', loadSiteBranding);
+      if (systemFeatures.value.freePodcastPreviewEnabled)
+        await trackLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings);
+      await trackLoader('users', loadUsers);
+      await trackLoader('analytics', loadAnalytics);
+      await trackLoader('pills', loadAdminPills);
+    } catch (error: unknown) {
+      console.warn('[admin] Failed to load admin data', error);
+      failures.push({ label: 'admin data', message: adminLoaderFailureMessage(error) });
+    } finally {
+      reportAdminReloadFailures(failures);
+      loading.value = false;
     }
-    // Keep the featured grid in sync so header cards show the new title immediately
-    featuredSlots.value = featuredSlots.value.map(slot =>
-      slot?.id === video.id ? { ...slot, title: newTitle } : slot
-    )
-  } catch (e: any) {
-    saveMessage.value = `Failed to rename: ${e.message}`
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  }
-}
+  };
 
-async function updateVideoStatus(
-  video: Video,
-  newStatus: 'draft' | 'published' | 'archived',
-  scheduledPublishAt: string | null = null,
-  publishedAt: string | null = null,
-) {
-  statusUpdating.value[video.id] = true
-  try {
-    const payload: Record<string, unknown> = { status: newStatus }
-    if (scheduledPublishAt !== null) payload.scheduledPublishAt = scheduledPublishAt
-    if (publishedAt !== null) payload.publishedAt = publishedAt
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const { video: updated } = await res.json()
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, ...updated }
-    }
-    const publishedAtChanged = publishedAt !== null
-    let statusToast = `Status updated: ${video.title} → ${newStatus}.`
-    if (publishedAtChanged) {
-      statusToast = `Published timestamp updated for ${video.title}.`
-    } else if (scheduledPublishAt !== null && scheduledPublishAt !== '') {
-      statusToast = updated.scheduled_publish_at
-        ? `Publish scheduled for ${video.title}.`
-        : `Display date (upload) updated for ${video.title}.`
-    }
-    showToast('success', statusToast)
-  } catch (e: any) {
-    saveMessage.value = `Failed to update "${video.title}": ${e.message}`
-    showToast('error', `Failed to update ${video.title}: ${e.message}`)
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    statusUpdating.value[video.id] = false
-  }
-}
-
-function parseAdminDateTimeToIso(raw: string): string | null {
-  if (!raw?.trim()) return null
-  const trimmed = raw.trim()
-  const euro = parseEuropeanDateTimeToIso(trimmed)
-  if (euro) return euro
-  const strictIso = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|[+-]\d{2}:\d{2})$/
-  const match = trimmed.match(strictIso)
-  if (!match) return null
-  const [, yText, moText, dText, hText, miText, sText = '0', msText = '0'] = match
-  const y = Number(yText)
-  const mo = Number(moText)
-  const d = Number(dText)
-  const h = Number(hText)
-  const mi = Number(miText)
-  const s = Number(sText)
-  const ms = Number(msText.padEnd(3, '0'))
-  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d) || !Number.isFinite(h) || !Number.isFinite(mi) || !Number.isFinite(s) || !Number.isFinite(ms)) return null
-  if (mo < 1 || mo > 12) return null
-  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate()
-  if (d < 1 || d > daysInMonth) return null
-  if (h < 0 || h > 23 || mi < 0 || mi > 59 || s < 0 || s > 59 || ms < 0 || ms > 999) return null
-  const date = new Date(trimmed)
-  if (Number.isNaN(date.getTime())) return null
-  return date.toISOString()
-}
-
-async function patchVideoUploadDate(video: Video, iso: string) {
-  statusUpdating.value[video.id] = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ uploadDate: iso }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const { video: updated } = await res.json()
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, ...updated }
-    }
-    uploadDateEditDraft.value = {
-      ...uploadDateEditDraft.value,
-      [video.id]: formatEuropeanDateTimeFromAny(updated.upload_date),
-    }
-    showToast('success', `Upload date updated for ${video.title}.`)
-  } catch (e: any) {
-    showToast('error', `Failed to update upload date: ${e.message}`)
-  } finally {
-    statusUpdating.value[video.id] = false
-  }
-}
-
-async function applyUploadDateFromScheduleModal(video: Video) {
-  const raw = scheduleModal.value.uploadDate.trim()
-  const iso = parseAdminDateTimeToIso(raw)
-  if (!iso) {
-    showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`)
-    return
-  }
-  setUploadDateDraft(video.id, raw)
-  await patchVideoUploadDate(video, iso)
-}
-
-async function applyScheduleFromModal(video: Video) {
-  const raw = scheduleModal.value.scheduleDate
-  const trimmed = raw.trim()
-  if (!trimmed) {
-    await updateVideoStatus(video, 'draft', '')
-    scheduleModal.value.scheduleDate = ''
-    clearScheduleTextDraft(video.id)
-    return
-  }
-  const iso = parseAdminDateTimeToIso(trimmed)
-  if (!iso) {
-    showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`)
-    return
-  }
-  setScheduleDraft(video.id, trimmed)
-  await updateVideoStatus(video, 'draft', iso)
-  scheduleModal.value.scheduleDate = formatEuropeanDateTimeFromAny(iso)
-  clearScheduleTextDraft(video.id)
-}
-
-async function clearScheduleFromModal(video: Video) {
-  await updateVideoStatus(video, 'draft', '')
-  const latest = uploads.value.find(v => v.id === video.id)
-  if (!latest?.scheduled_publish_at) {
-    scheduleModal.value.scheduleDate = ''
-    clearScheduleTextDraft(video.id)
-  }
-}
-
-async function applyPublishedAtFromModal(video: Video) {
-  const raw = scheduleModal.value.publishedDate
-  const trimmed = raw.trim()
-  if (!trimmed) {
-    await updateVideoPublishedAt(video, '')
-    scheduleModal.value.publishedDate = ''
-    clearPublishedTextDraft(video.id)
-    return
-  }
-  const iso = parseAdminDateTimeToIso(trimmed)
-  if (!iso) {
-    showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`)
-    return
-  }
-  setPublishedDraft(video.id, trimmed)
-  await updateVideoPublishedAt(video, iso)
-  scheduleModal.value.publishedDate = formatEuropeanDateTimeFromAny(iso)
-  clearPublishedTextDraft(video.id)
-}
-
-async function clearPublishedDateFromModal(video: Video) {
-  await updateVideoPublishedAt(video, '')
-  const latest = uploads.value.find(v => v.id === video.id)
-  if (!latest?.published_at) {
-    scheduleModal.value.publishedDate = ''
-    clearPublishedTextDraft(video.id)
-  }
-}
-
-async function updateVideoPublishedAt(video: Video, rawValue: string) {
-  statusUpdating.value[video.id] = true
-  try {
-    const nextIso = rawValue ? parseAdminDateTimeToIso(rawValue) : null
-    if (rawValue && !nextIso) {
-      throw new Error(`Invalid date — use ${scheduleInputPlaceholder} (24-hour).`)
-    }
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ publishedAt: nextIso }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    const { video: updated } = await res.json()
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, ...updated }
-    }
-    showToast('success', `Published date updated for ${video.title}.`)
-  } catch (e: any) {
-    showToast('error', `Failed to update published date: ${e.message}`)
-  } finally {
-    statusUpdating.value[video.id] = false
-  }
-}
-
-async function sendNotification(video: Video) {
-  notifying.value[video.id] = true
-  pushCampaignFunnel.value = null
-  pushCampaignFunnelError.value = null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/notify`, {
-      method: 'POST',
-      headers: authHeader(),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`)
-    }
-    const idx = uploads.value.findIndex((v) => v.id === video.id)
-    if (idx !== -1) {
-      uploads.value[idx] = { ...uploads.value[idx]!, notified_at: new Date().toISOString() }
-    }
-    showToast('success', `Notification queued for ${video.title}.`)
-    if (typeof data.campaignId === 'string') {
-      await loadPushCampaignFunnel(data.campaignId, video.title)
-    }
-  } catch (e: any) {
-    saveMessage.value = `Failed to send notification for "${video.title}": ${e.message}`
-    showToast('error', `Failed to notify ${video.title}: ${e.message}`)
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    notifying.value[video.id] = false
-  }
-}
-
-async function loadPushCampaignFunnel(campaignId: string, videoTitle: string) {
-  pushCampaignFunnelError.value = null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/push-analytics?campaignId=${encodeURIComponent(campaignId)}`, {
-      headers: authHeader(),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const detail = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`
-      pushCampaignFunnelError.value = `Failed to load campaign funnel: ${detail}`
-      showToast('error', pushCampaignFunnelError.value)
-      return
-    }
-    pushCampaignFunnel.value = {
-      campaignId,
-      videoTitle,
-      sent: Number(data?.funnel?.sent || 0),
-      clicks: Number(data?.funnel?.clicks || 0),
-      clickRatePercent: Number(data?.funnel?.clickRatePercent || 0),
-      medianClickLatencySeconds: data?.funnel?.medianClickLatencySeconds ?? null,
-      watchSessions: Number(data?.funnel?.watchSessions || 0),
-      watchRatePercent: Number(data?.funnel?.watchRatePercent || 0),
-      completionRatePercent: Number(data?.funnel?.completionRatePercent || 0),
-      avgSessionDepth: Number(data?.funnel?.avgSessionDepth || 0),
-    }
-  } catch (e: any) {
-    pushCampaignFunnelError.value = `Failed to load campaign funnel: ${e?.message || 'Unknown error'}`
-    showToast('error', pushCampaignFunnelError.value)
-  }
-}
-
-const importUsersFromCsv = async () => {
-  const csv = usersImportCsv.value.trim()
-  const mailingListId = usersImportMailingListId.value.trim()
-  if (!csv) {
-    showToast('error', 'CSV payload is required.')
-    return
-  }
-  if (!mailingListId) {
-    showToast('error', 'Relink mailing list ID is required.')
-    return
-  }
-  usersImporting.value = true
-  usersImportResult.value = null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/users/import-csv`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        csv,
-        mailingListId,
-        requirePurchaseId: usersImportRequirePurchaseId.value,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    usersImportResult.value = {
-      imported: Number(data.imported || 0),
-      existing: Number(data.existing || 0),
-      totalEmails: Number(data.totalEmails || 0),
-      withPurchaseId: Number(data.withPurchaseId || 0),
-      mailingListId: String(data.mailingListId || mailingListId),
-    }
-    showToast('success', 'CSV users imported successfully.')
-    await loadUsers()
-  } catch (e: any) {
-    showToast('error', `CSV import failed: ${e.message}`)
-  } finally {
-    usersImporting.value = false
-  }
-}
-
-const loadLegacyPaymentStatus = async () => {
-  if (!isAdmin.value) return
-  legacyPaymentStatusLoading.value = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/legacy`, {
-      headers: { ...authHeader() },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    legacyPaymentStatus.value = {
-      configured: Boolean(data.configured),
-      sandboxConfigured: Boolean(data.sandboxConfigured),
-      merchantId: typeof data.merchantId === 'string' ? data.merchantId : null,
-      hasApiKey: Boolean(data.hasApiKey),
-      hasWebhookSecret: Boolean(data.hasWebhookSecret),
-    }
-  } catch (e: any) {
-    legacyPaymentStatus.value = null
-    showToast('error', `Legacy payment status: ${e.message}`)
-  } finally {
-    legacyPaymentStatusLoading.value = false
-  }
-}
-
-const loadLegacyMigrationStats = async () => {
-  if (!isAdmin.value) return
-  legacyMigrationStatsLoading.value = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/stats`, {
-      headers: { ...authHeader() },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    legacyMigrationStats.value = data as LegacyMigrationStats
-  } catch (e: any) {
-    legacyMigrationStats.value = null
-    showToast('error', `Legacy migration stats: ${e.message}`)
-  } finally {
-    legacyMigrationStatsLoading.value = false
-  }
-}
-
-const runLegacyValidationBatch = async () => {
-  legacyValidationRunning.value = true
-  legacyValidationResult.value = null
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/validate-batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({
-        batchSize: legacyValidationBatchSize.value,
-        dryRun: legacyValidationDryRun.value,
-        validationTarget: legacyValidationTarget.value,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    legacyValidationResult.value = data
-    showToast('success', `Validated ${data.processed ?? 0} subscription(s).`)
-    if (!legacyValidationDryRun.value) {
-      await loadLegacyMigrationStats()
-      await loadLegacyRelinkCandidates()
-    }
-  } catch (e: any) {
-    showToast('error', `Validation batch failed: ${e.message}`)
-  } finally {
-    legacyValidationRunning.value = false
-  }
-}
-
-const loadLegacyRelinkCandidates = async () => {
-  if (!isAdmin.value) return
-  legacyRelinkLoading.value = true
-  try {
-    const params = new URLSearchParams({
-      page: String(legacyRelinkPage.value),
-      pageSize: String(legacyRelinkPageSize.value),
-    })
-    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?${params}`, {
-      headers: { ...authHeader() },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    legacyRelinkCandidates.value = Array.isArray(data.users) ? data.users : []
-  } catch (e: any) {
-    legacyRelinkCandidates.value = []
-    showToast('error', `Relink candidates: ${e.message}`)
-  } finally {
-    legacyRelinkLoading.value = false
-  }
-}
-
-const exportLegacyRelinkCandidatesCsv = async () => {
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?export=csv`, {
-      headers: { ...authHeader() },
-    })
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || `HTTP ${res.status}`)
-    }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'legacy-relink-candidates.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
-  } catch (e: any) {
-    showToast('error', `CSV export failed: ${e.message}`)
-  }
-}
-
-function toggleLegacyRelinkSelectAll(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  const pageIds = legacyRelinkCandidates.value.map((row) => row.userId)
-  if (checked) {
-    legacyRelinkSelected.value = [...new Set([...legacyRelinkSelected.value, ...pageIds])]
-  } else {
-    legacyRelinkSelected.value = legacyRelinkSelected.value.filter((id) => !pageIds.includes(id))
-  }
-}
-
-function openLegacyRelinkEmailConfirm() {
-  const count = legacyRelinkSelected.value.length
-  if (!count) return
-  confirmModal.value = {
-    open: true,
-    mode: 'legacy_relink_email',
-    userIds: [...legacyRelinkSelected.value],
-    impactText: `This will send a relink email to ${count} user(s). They will receive a link to /account?relink=1. Continue?`,
-  }
-}
-
-async function sendLegacyRelinkEmails(userIds: string[]) {
-  legacyRelinkSending.value = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/send-relink-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ userIds }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-    showToast('success', `Sent ${data.sent ?? 0} relink email(s).`)
-    legacyRelinkSelected.value = []
-  } catch (e: any) {
-    showToast('error', `Relink email failed: ${e.message}`)
-  } finally {
-    legacyRelinkSending.value = false
-  }
-}
-
-async function trashVideo(video: Video) {
-  trashing.value[video.id] = true
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'DELETE',
-      headers: authHeader(),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    uploads.value = uploads.value.filter(v => v.id !== video.id)
-    featuredSlots.value = featuredSlots.value.map(slot =>
-      slot?.id === video.id ? null : slot
-    )
-    saveMessage.value = `"${video.title}" has been permanently deleted.`
-    showToast('success', `${video.title} deleted.`)
-    saveMessageClass.value = 'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200'
-  } catch (e: any) {
-    saveMessage.value = `Failed to delete "${video.title}": ${e.message}`
-    saveMessageClass.value = 'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200'
-  } finally {
-    trashing.value[video.id] = false
-  }
-}
-
-
-
-async function handleThumbnailSelect(event: Event, video: Video) {
-  const input = event.target as HTMLInputElement
-  const file  = input.files?.[0]
-  if (!file) return
-
-  // 10 MB client-side guard (the API also enforces this).
-  if (file.size > 10 * 1024 * 1024) {
-    alert('Image must be under 10 MB')
-    input.value = ''
-    return
+  function statusBadgeClass(status: string | null) {
+    if (status === 'published')
+      return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+    if (status === 'archived')
+      return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+    return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'; // draft
   }
 
-  uploadingFor.value = video.id
-  try {
-    const formData = new FormData()
-    formData.append('thumbnail', file)
+  function formatSeconds(total: number): string {
+    if (!total || !Number.isFinite(total)) return '--';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = Math.floor(total % 60);
+    return h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+      : `${m}:${String(s).padStart(2, '0')}`;
+  }
 
-    // Do NOT set Content-Type manually — the browser sets it with the correct
-    // multipart boundary when FormData is the body.
-    const res = await fetch(
-      `${config.public.apiUrl}/api/admin/videos/${video.id}/thumbnail`,
-      { method: 'POST', headers: { ...authHeader() }, body: formData },
-    )
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }))
-      throw new Error(err.error || 'Upload failed')
-    }
-    const data = await res.json()
-    // Update the local record so the UI reflects the new thumbnail without a full reload.
-    // The API returns a versioned URL (?v=...) to force cache eviction across devices.
-    if (data?.thumbnails?.large) {
-      const cacheBustedUrl = String(data.thumbnails.large)
-      const idx = uploads.value.findIndex(v => v.id === video.id)
+  async function startTitleEdit(video: Video) {
+    editingTitle.value = { id: video.id, value: video.title };
+    await nextTick();
+    focusInlineEditInput(titleInputEl.value);
+  }
+
+  async function saveTitleEdit(video: Video) {
+    const editing = editingTitle.value;
+    if (!editing || editing.id !== video.id) return;
+    const newTitle = editing.value.trim();
+    editingTitle.value = null;
+    if (!newTitle || newTitle === video.title) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
       if (idx !== -1) {
-        const cur = uploads.value[idx]!
-        uploads.value[idx] = { ...cur, thumbnail_url: cacheBustedUrl }
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, title: newTitle };
       }
-      featuredSlots.value = featuredSlots.value.map(slot =>
-        slot?.id === video.id ? { ...slot, thumbnail_url: cacheBustedUrl } : slot
-      )
-      showToast('success', `Thumbnail updated for ${video.title}. Cache refreshed.`)
-    } else {
-      // If the API response is missing a thumbnail URL, keep the existing thumbnail as-is.
-      showToast('error', 'Thumbnail upload succeeded but API did not return a thumbnail URL.')
+      // Keep the featured grid in sync so header cards show the new title immediately
+      featuredSlots.value = featuredSlots.value.map((slot) =>
+        slot?.id === video.id ? { ...slot, title: newTitle } : slot,
+      );
+    } catch (e: any) {
+      saveMessage.value = `Failed to rename: ${e.message}`;
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
     }
-  } catch (err: any) {
-    showToast('error', `Thumbnail upload failed: ${err.message}`)
-  } finally {
-    uploadingFor.value = null
-    input.value = '' // reset so the same file can be re-selected
   }
-}
 
-type Toast = { id: number; type: 'success' | 'error'; message: string }
-const toasts = ref<Toast[]>([])
-let toastId = 0
-const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
-function showToast(type: Toast['type'], message: string) {
-  const id = ++toastId
-  toasts.value.push({ id, type, message })
-  const timer = setTimeout(() => {
-    toasts.value = toasts.value.filter(t => t.id !== id)
-    toastTimers.delete(id)
-  }, 3200)
-  toastTimers.set(id, timer)
-}
-
-type ConfirmModalState =
-  | { open: false }
-  | {
-      open: true
-      mode: 'video'
-      action: 'trash' | 'revert_to_draft'
-      video: Video
-      impactText: string
-    }
-  | {
-      open: true
-      mode: 'user_role' | 'user_subscription'
-      userId: string
-      email: string
-      prevRole: string
-      nextRole: string
-      prevSubscription: string
-      nextSubscription: string
-      impactText: string
-    }
-
-  | {
-      open: true
-      mode: 'legacy_relink_email'
-      userIds: string[]
-      impactText: string
-    }
-
-const confirmModal = ref<ConfirmModalState>({ open: false })
-
-const confirmModalTitle = computed(() => {
-  const m = confirmModal.value
-  if (!m.open) return ''
-  if (m.mode === 'video') return m.action === 'trash' ? 'Permanently delete video?' : 'Revert video to draft?'
-  if (m.mode === 'user_role') return 'Confirm role change'
-  if (m.mode === 'legacy_relink_email') return 'Send relink emails?'
-  return 'Confirm subscription change'
-})
-
-const confirmModalConfirmClass = computed(() => {
-  const m = confirmModal.value
-  if (!m.open || m.mode === 'video') {
-    return m.open && m.mode === 'video' && m.action === 'trash'
-      ? 'bg-red-600 hover:bg-red-700'
-      : 'bg-amber-600 hover:bg-amber-700'
-  }
-  return 'bg-purple-600 hover:bg-purple-700'
-})
-
-function closeConfirmModal() {
-  confirmModal.value = { open: false }
-}
-
-/** Cancel user confirm: revert optimistic select; resync list from server. */
-function onConfirmCancel() {
-  const was = confirmModal.value
-  if (was.open && (was.mode === 'user_role' || was.mode === 'user_subscription')) {
-    patchUserRowById(was.userId, { uiRole: undefined, uiSubscription: undefined })
-  }
-  closeConfirmModal()
-  if (was.open && (was.mode === 'user_role' || was.mode === 'user_subscription') && activeAdminTab.value === 'users') {
-    void loadUsers()
-  }
-}
-
-function openConfirmModal(video: Video, action: 'trash' | 'revert_to_draft'): void
-function openConfirmModal(payload: {
-  mode: 'user_role' | 'user_subscription'
-  userId: string
-  email: string
-  prevRole: string
-  nextRole: string
-  prevSubscription: string
-  nextSubscription: string
-  impactText: string
-}): void
-function openConfirmModal(
-  videoOrPayload: Video | {
-    mode: 'user_role' | 'user_subscription'
-    userId: string
-    email: string
-    prevRole: string
-    nextRole: string
-    prevSubscription: string
-    nextSubscription: string
-    impactText: string
-  },
-  action?: 'trash' | 'revert_to_draft',
-) {
-  if (videoOrPayload && typeof videoOrPayload === 'object' && 'mode' in videoOrPayload) {
-    const p = videoOrPayload
-    confirmModal.value = {
-      open: true,
-      mode: p.mode,
-      userId: p.userId,
-      email: p.email,
-      prevRole: p.prevRole,
-      nextRole: p.nextRole,
-      prevSubscription: p.prevSubscription,
-      nextSubscription: p.nextSubscription,
-      impactText: p.impactText,
-    }
-    return
-  }
-  const video = videoOrPayload as Video
-  const act = action!
-  confirmModal.value = {
-    open: true,
-    mode: 'video',
-    action: act,
-    video,
-    impactText: act === 'trash'
-      ? `This permanently removes ${video.title} from the database and deletes all files in R2 (videos/${video.id}/). This cannot be undone.`
-      : `This will move ${video.title} back to draft status and remove it from published surfaces.`,
-  }
-}
-
-async function runConfirmedAction() {
-  const current = confirmModal.value
-  if (!current.open) return
-  if (current.mode === 'legacy_relink_email') {
-    const userIds = [...current.userIds]
-    closeConfirmModal()
-    await sendLegacyRelinkEmails(userIds)
-    return
-  }
-  if (current.mode === 'video') {
-    closeConfirmModal()
-    if (current.action === 'trash') {
-      await trashVideo(current.video)
-    } else {
-      await updateVideoStatus(current.video, 'draft', null)
-    }
-    return
-  }
-  const snap = { ...current }
-  closeConfirmModal()
-  const patch: Record<string, string> =
-    snap.mode === 'user_role'
-      ? { role: snap.nextRole }
-      : { subscriptionStatus: snap.nextSubscription }
-  if (snap.mode === 'user_subscription' && snap.nextSubscription !== 'none') {
-    const row = users.value.find((x) => x.id === snap.userId)
-    if (row && !hasAdminUserSubscriptionRow(row)) {
-      const planType = adminUserPendingPlanType.value[snap.userId] || defaultAdminPlanId.value
-      const ok = await updateUser(snap.userId, patch, { createSubscription: { status: snap.nextSubscription, planType } })
-      if (!ok) {
-        patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })
-        if (activeAdminTab.value === 'users') void loadUsers()
+  async function updateVideoStatus(
+    video: Video,
+    newStatus: 'draft' | 'published' | 'archived',
+    scheduledPublishAt: string | null = null,
+    publishedAt: string | null = null,
+  ) {
+    statusUpdating.value[video.id] = true;
+    try {
+      const payload: Record<string, unknown> = { status: newStatus };
+      if (scheduledPublishAt !== null) payload.scheduledPublishAt = scheduledPublishAt;
+      if (publishedAt !== null) payload.publishedAt = publishedAt;
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
       }
-      return
+      const { video: updated } = await res.json();
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, ...updated };
+      }
+      const publishedAtChanged = publishedAt !== null;
+      let statusToast = `Status updated: ${video.title} → ${newStatus}.`;
+      if (publishedAtChanged) {
+        statusToast = `Published timestamp updated for ${video.title}.`;
+      } else if (scheduledPublishAt !== null && scheduledPublishAt !== '') {
+        statusToast = updated.scheduled_publish_at
+          ? `Publish scheduled for ${video.title}.`
+          : `Display date (upload) updated for ${video.title}.`;
+      }
+      showToast('success', statusToast);
+    } catch (e: any) {
+      saveMessage.value = `Failed to update "${video.title}": ${e.message}`;
+      showToast('error', `Failed to update ${video.title}: ${e.message}`);
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      statusUpdating.value[video.id] = false;
     }
   }
-  const ok = await updateUser(snap.userId, patch)
-  if (!ok) {
-    patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined })
-    if (activeAdminTab.value === 'users') void loadUsers()
+
+  function parseAdminDateTimeToIso(raw: string): string | null {
+    if (!raw?.trim()) return null;
+    const trimmed = raw.trim();
+    const euro = parseEuropeanDateTimeToIso(trimmed);
+    if (euro) return euro;
+    const strictIso =
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|[+-]\d{2}:\d{2})$/;
+    const match = trimmed.match(strictIso);
+    if (!match) return null;
+    const [, yText, moText, dText, hText, miText, sText = '0', msText = '0'] = match;
+    const y = Number(yText);
+    const mo = Number(moText);
+    const d = Number(dText);
+    const h = Number(hText);
+    const mi = Number(miText);
+    const s = Number(sText);
+    const ms = Number(msText.padEnd(3, '0'));
+    if (
+      !Number.isFinite(y) ||
+      !Number.isFinite(mo) ||
+      !Number.isFinite(d) ||
+      !Number.isFinite(h) ||
+      !Number.isFinite(mi) ||
+      !Number.isFinite(s) ||
+      !Number.isFinite(ms)
+    )
+      return null;
+    if (mo < 1 || mo > 12) return null;
+    const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    if (d < 1 || d > daysInMonth) return null;
+    if (h < 0 || h > 23 || mi < 0 || mi > 59 || s < 0 || s > 59 || ms < 0 || ms > 999) return null;
+    const date = new Date(trimmed);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
   }
-}
 
-async function startSlugEdit(video: Video) {
-  editingSlug.value = { id: video.id, value: video.slug ?? '' }
-  await nextTick()
-  focusInlineEditInput(slugInputEl.value)
-}
-
-async function saveSlugEdit(video: Video) {
-  const editing = editingSlug.value
-  if (!editing || editing.id !== video.id) return
-  const slugInput = editing.value.trim()
-  const requestedSlug = slugInput ? (sanitizeVideoSlug(slugInput) || null) : null
-  editingSlug.value = null
-  if (requestedSlug === (video.slug ?? null)) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ slug: requestedSlug }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+  async function patchVideoUploadDate(video: Video, iso: string) {
+    statusUpdating.value[video.id] = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ uploadDate: iso }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const { video: updated } = await res.json();
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, ...updated };
+      }
+      uploadDateEditDraft.value = {
+        ...uploadDateEditDraft.value,
+        [video.id]: formatEuropeanDateTimeFromAny(updated.upload_date),
+      };
+      showToast('success', `Upload date updated for ${video.title}.`);
+    } catch (e: any) {
+      showToast('error', `Failed to update upload date: ${e.message}`);
+    } finally {
+      statusUpdating.value[video.id] = false;
     }
-    const data = await res.json().catch(() => ({}))
-    const normalizedSlug = data?.video?.slug ?? requestedSlug
-    const normalizedLegacySlug = data?.video?.legacy_slug ?? video.legacy_slug ?? null
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, slug: normalizedSlug, legacy_slug: normalizedLegacySlug }
+  }
+
+  async function applyUploadDateFromScheduleModal(video: Video) {
+    const raw = scheduleModal.value.uploadDate.trim();
+    const iso = parseAdminDateTimeToIso(raw);
+    if (!iso) {
+      showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`);
+      return;
     }
-    showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.')
-  } catch (e: any) {
-    showToast('error', `Failed to update slug: ${e.message}`)
+    setUploadDateDraft(video.id, raw);
+    await patchVideoUploadDate(video, iso);
   }
-}
 
-async function startLegacySlugEdit(video: Video) {
-  editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' }
-  await nextTick()
-  focusInlineEditInput(legacySlugInputEl.value)
-}
-
-async function saveLegacySlugEdit(video: Video) {
-  const editing = editingLegacySlug.value
-  if (!editing || editing.id !== video.id) return
-  const legacyInput = editing.value.trim()
-  const requestedLegacySlug = legacyInput ? sanitizeVideoSlug(legacyInput) : null
-  editingLegacySlug.value = null
-  if (requestedLegacySlug === (video.legacy_slug ?? null)) return
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ legacySlug: requestedLegacySlug }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+  async function applyScheduleFromModal(video: Video) {
+    const raw = scheduleModal.value.scheduleDate;
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      await updateVideoStatus(video, 'draft', '');
+      scheduleModal.value.scheduleDate = '';
+      clearScheduleTextDraft(video.id);
+      return;
     }
-    const data = await res.json().catch(() => ({}))
-    const normalizedLegacySlug = data?.video?.legacy_slug ?? requestedLegacySlug
-    const idx = uploads.value.findIndex(v => v.id === video.id)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, legacy_slug: normalizedLegacySlug }
+    const iso = parseAdminDateTimeToIso(trimmed);
+    if (!iso) {
+      showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`);
+      return;
     }
-    showToast('success', normalizedLegacySlug ? `Legacy redirect set: /videos/${normalizedLegacySlug} -> /watch` : 'Legacy redirect cleared.')
-  } catch (e: any) {
-    showToast('error', `Failed to update legacy slug: ${e.message}`)
+    setScheduleDraft(video.id, trimmed);
+    await updateVideoStatus(video, 'draft', iso);
+    scheduleModal.value.scheduleDate = formatEuropeanDateTimeFromAny(iso);
+    clearScheduleTextDraft(video.id);
   }
-}
 
-function openDescriptionModal(video: Video) {
-  descriptionModal.value = {
-    open: true,
-    videoId: video.id,
-    title: video.title,
-    value: video.description || '',
-  }
-}
-
-function closeDescriptionModal() {
-  descriptionModal.value = {
-    open: false,
-    videoId: null,
-    title: '',
-    value: '',
-  }
-}
-
-async function saveDescriptionModal() {
-  const videoId = descriptionModal.value.videoId
-  if (!videoId) return
-  const video = uploads.value.find((v) => v.id === videoId)
-  if (!video) return
-  const newDesc = descriptionModal.value.value.trim()
-  if (newDesc === (video.description || '')) {
-    closeDescriptionModal()
-    return
-  }
-  try {
-    const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${videoId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ description: newDesc }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+  async function clearScheduleFromModal(video: Video) {
+    await updateVideoStatus(video, 'draft', '');
+    const latest = uploads.value.find((v) => v.id === video.id);
+    if (!latest?.scheduled_publish_at) {
+      scheduleModal.value.scheduleDate = '';
+      clearScheduleTextDraft(video.id);
     }
-    const idx = uploads.value.findIndex(v => v.id === videoId)
-    if (idx !== -1) {
-      const cur = uploads.value[idx]!
-      uploads.value[idx] = { ...cur, description: newDesc }
-    }
-    closeDescriptionModal()
-    showToast('success', 'Description updated.')
-  } catch (e: any) {
-    showToast('error', `Failed to update description: ${e.message}`)
   }
-}
 
-function openSwapModal(video: Video) {
-  swapModal.value = { open: true, step: 0, sourceVideo: video, targetId: null }
-}
+  async function applyPublishedAtFromModal(video: Video) {
+    const raw = scheduleModal.value.publishedDate;
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      await updateVideoPublishedAt(video, '');
+      scheduleModal.value.publishedDate = '';
+      clearPublishedTextDraft(video.id);
+      return;
+    }
+    const iso = parseAdminDateTimeToIso(trimmed);
+    if (!iso) {
+      showToast('error', `Use ${scheduleInputPlaceholder} (24-hour).`);
+      return;
+    }
+    setPublishedDraft(video.id, trimmed);
+    await updateVideoPublishedAt(video, iso);
+    scheduleModal.value.publishedDate = formatEuropeanDateTimeFromAny(iso);
+    clearPublishedTextDraft(video.id);
+  }
 
-function selectSwapTarget(draft: Video) {
-  swapModal.value.targetId = draft.id
-  swapModal.value.step = 1
-}
+  async function clearPublishedDateFromModal(video: Video) {
+    await updateVideoPublishedAt(video, '');
+    const latest = uploads.value.find((v) => v.id === video.id);
+    if (!latest?.published_at) {
+      scheduleModal.value.publishedDate = '';
+      clearPublishedTextDraft(video.id);
+    }
+  }
 
-async function executeSwap() {
-  if (!swapModal.value.sourceVideo || !swapModal.value.targetId) return
-  swapModal.value.step = 2
-  try {
-    const res = await fetch(
-      `${config.public.apiUrl}/api/admin/videos/${swapModal.value.sourceVideo.id}/swap`,
-      {
+  async function updateVideoPublishedAt(video: Video, rawValue: string) {
+    statusUpdating.value[video.id] = true;
+    try {
+      const nextIso = rawValue ? parseAdminDateTimeToIso(rawValue) : null;
+      if (rawValue && !nextIso) {
+        throw new Error(`Invalid date — use ${scheduleInputPlaceholder} (24-hour).`);
+      }
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ publishedAt: nextIso }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const { video: updated } = await res.json();
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, ...updated };
+      }
+      showToast('success', `Published date updated for ${video.title}.`);
+    } catch (e: any) {
+      showToast('error', `Failed to update published date: ${e.message}`);
+    } finally {
+      statusUpdating.value[video.id] = false;
+    }
+  }
+
+  async function sendNotification(video: Video) {
+    notifying.value[video.id] = true;
+    pushCampaignFunnel.value = null;
+    pushCampaignFunnelError.value = null;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/notify`, {
+        method: 'POST',
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        uploads.value[idx] = { ...uploads.value[idx]!, notified_at: new Date().toISOString() };
+      }
+      showToast('success', `Notification queued for ${video.title}.`);
+      if (typeof data.campaignId === 'string') {
+        await loadPushCampaignFunnel(data.campaignId, video.title);
+      }
+    } catch (e: any) {
+      saveMessage.value = `Failed to send notification for "${video.title}": ${e.message}`;
+      showToast('error', `Failed to notify ${video.title}: ${e.message}`);
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      notifying.value[video.id] = false;
+    }
+  }
+
+  async function loadPushCampaignFunnel(campaignId: string, videoTitle: string) {
+    pushCampaignFunnelError.value = null;
+    try {
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/push-analytics?campaignId=${encodeURIComponent(campaignId)}`,
+        {
+          headers: authHeader(),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`;
+        pushCampaignFunnelError.value = `Failed to load campaign funnel: ${detail}`;
+        showToast('error', pushCampaignFunnelError.value);
+        return;
+      }
+      pushCampaignFunnel.value = {
+        campaignId,
+        videoTitle,
+        sent: Number(data?.funnel?.sent || 0),
+        clicks: Number(data?.funnel?.clicks || 0),
+        clickRatePercent: Number(data?.funnel?.clickRatePercent || 0),
+        medianClickLatencySeconds: data?.funnel?.medianClickLatencySeconds ?? null,
+        watchSessions: Number(data?.funnel?.watchSessions || 0),
+        watchRatePercent: Number(data?.funnel?.watchRatePercent || 0),
+        completionRatePercent: Number(data?.funnel?.completionRatePercent || 0),
+        avgSessionDepth: Number(data?.funnel?.avgSessionDepth || 0),
+      };
+    } catch (e: any) {
+      pushCampaignFunnelError.value = `Failed to load campaign funnel: ${e?.message || 'Unknown error'}`;
+      showToast('error', pushCampaignFunnelError.value);
+    }
+  }
+
+  const importUsersFromCsv = async () => {
+    const csv = usersImportCsv.value.trim();
+    const mailingListId = usersImportMailingListId.value.trim();
+    if (!csv) {
+      showToast('error', 'CSV payload is required.');
+      return;
+    }
+    if (!mailingListId) {
+      showToast('error', 'Relink mailing list ID is required.');
+      return;
+    }
+    usersImporting.value = true;
+    usersImportResult.value = null;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/users/import-csv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
-        body: JSON.stringify({ swapWithId: swapModal.value.targetId }),
+        body: JSON.stringify({
+          csv,
+          mailingListId,
+          requirePurchaseId: usersImportRequirePurchaseId.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      usersImportResult.value = {
+        imported: Number(data.imported || 0),
+        existing: Number(data.existing || 0),
+        totalEmails: Number(data.totalEmails || 0),
+        withPurchaseId: Number(data.withPurchaseId || 0),
+        mailingListId: String(data.mailingListId || mailingListId),
+      };
+      showToast('success', 'CSV users imported successfully.');
+      await loadUsers();
+    } catch (e: any) {
+      showToast('error', `CSV import failed: ${e.message}`);
+    } finally {
+      usersImporting.value = false;
+    }
+  };
+
+  const loadLegacyPaymentStatus = async () => {
+    if (!isAdmin.value) return;
+    legacyPaymentStatusLoading.value = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/legacy`, {
+        headers: { ...authHeader() },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      legacyPaymentStatus.value = {
+        configured: Boolean(data.configured),
+        sandboxConfigured: Boolean(data.sandboxConfigured),
+        merchantId: typeof data.merchantId === 'string' ? data.merchantId : null,
+        hasApiKey: Boolean(data.hasApiKey),
+        hasWebhookSecret: Boolean(data.hasWebhookSecret),
+      };
+    } catch (e: any) {
+      legacyPaymentStatus.value = null;
+      showToast('error', `Legacy payment status: ${e.message}`);
+    } finally {
+      legacyPaymentStatusLoading.value = false;
+    }
+  };
+
+  const loadLegacyMigrationStats = async () => {
+    if (!isAdmin.value) return;
+    legacyMigrationStatsLoading.value = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/stats`, {
+        headers: { ...authHeader() },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      legacyMigrationStats.value = data as LegacyMigrationStats;
+    } catch (e: any) {
+      legacyMigrationStats.value = null;
+      showToast('error', `Legacy migration stats: ${e.message}`);
+    } finally {
+      legacyMigrationStatsLoading.value = false;
+    }
+  };
+
+  const runLegacyValidationBatch = async () => {
+    legacyValidationRunning.value = true;
+    legacyValidationResult.value = null;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/legacy-migration/validate-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          batchSize: legacyValidationBatchSize.value,
+          dryRun: legacyValidationDryRun.value,
+          validationTarget: legacyValidationTarget.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      legacyValidationResult.value = data;
+      showToast('success', `Validated ${data.processed ?? 0} subscription(s).`);
+      if (!legacyValidationDryRun.value) {
+        await loadLegacyMigrationStats();
+        await loadLegacyRelinkCandidates();
       }
-    )
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(err.error || `HTTP ${res.status}`)
+    } catch (e: any) {
+      showToast('error', `Validation batch failed: ${e.message}`);
+    } finally {
+      legacyValidationRunning.value = false;
     }
-    swapModal.value.open = false
-    showToast('success', 'Swap complete — video list updated.')
-    await reloadAll()
-  } catch (e: any) {
-    showToast('error', `Swap failed: ${e.message}`)
-    swapModal.value.step = 1
-  }
-}
+  };
 
-const confirmDialogRef = ref<HTMLElement | null>(null)
-const swapDialogRef    = ref<HTMLElement | null>(null)
-const scheduleDialogRef = ref<HTMLElement | null>(null)
-const descriptionDialogRef = ref<HTMLElement | null>(null)
-const transferSubDialogRef = ref<HTMLElement | null>(null)
-const lastFocusedEl    = ref<HTMLElement | null>(null)
+  const loadLegacyRelinkCandidates = async () => {
+    if (!isAdmin.value) return;
+    legacyRelinkLoading.value = true;
+    try {
+      const params = new URLSearchParams({
+        page: String(legacyRelinkPage.value),
+        pageSize: String(legacyRelinkPageSize.value),
+      });
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?${params}`,
+        {
+          headers: { ...authHeader() },
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      legacyRelinkCandidates.value = Array.isArray(data.users) ? data.users : [];
+    } catch (e: any) {
+      legacyRelinkCandidates.value = [];
+      showToast('error', `Relink candidates: ${e.message}`);
+    } finally {
+      legacyRelinkLoading.value = false;
+    }
+  };
 
-function setAdminTab(tab: 'videos' | 'categories' | 'homepage' | 'pills' | 'notifications' | 'newsletter' | 'pages' | 'users' | 'legacy_migration' | 'analytics' | 'system') {
-  router.replace({ query: { ...route.query, tab } })
-}
+  const exportLegacyRelinkCandidatesCsv = async () => {
+    try {
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/legacy-migration/relink-candidates?export=csv`,
+        {
+          headers: { ...authHeader() },
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'legacy-relink-candidates.csv';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      showToast('error', `CSV export failed: ${e.message}`);
+    }
+  };
 
-function onConfirmModalKeydown(e: KeyboardEvent) {
-  if (!confirmModal.value.open) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    const m = confirmModal.value
-    if (m.open && (m.mode === 'user_role' || m.mode === 'user_subscription')) onConfirmCancel()
-    else closeConfirmModal()
-    return
-  }
-  if (e.key !== 'Tab' || !confirmDialogRef.value) return
-  const focusable = confirmDialogRef.value.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  const active = document.activeElement as HTMLElement | null
-  if (e.shiftKey && active === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
-watch([() => route.query.tab, adminTabs, initialised], () => {
-  if (!initialised.value) return
-  const rawTab = route.query.tab
-  const requested = Array.isArray(rawTab) ? rawTab[0] || '' : (typeof rawTab === 'string' ? rawTab : '')
-  const allowed = new Set(adminTabs.value.map((t) => t.id))
-  const resolved = requested && allowed.has(requested as typeof activeAdminTab.value)
-    ? (requested as typeof activeAdminTab.value)
-    : 'videos'
-  activeAdminTab.value = resolved
-  if (rawTab !== resolved) {
-    router.replace({ query: { ...route.query, tab: resolved } })
-  }
-}, { immediate: true })
-
-watch(() => confirmModal.value.open, async (open) => {
-  if (open) {
-    lastFocusedEl.value = document.activeElement as HTMLElement | null
-    await nextTick()
-    confirmDialogRef.value?.focus()
-    window.addEventListener('keydown', onConfirmModalKeydown)
-  } else {
-    window.removeEventListener('keydown', onConfirmModalKeydown)
-    lastFocusedEl.value?.focus()
-  }
-})
-
-function onSwapModalKeydown(e: KeyboardEvent) {
-  if (!swapModal.value.open) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    swapModal.value.open = false
-    return
-  }
-  if (e.key !== 'Tab' || !swapDialogRef.value) return
-  const focusable = swapDialogRef.value.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  const active = document.activeElement as HTMLElement | null
-  if (e.shiftKey && active === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
-function onScheduleModalKeydown(e: KeyboardEvent) {
-  if (!scheduleModal.value.open) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    closeScheduleModal()
-    return
-  }
-  if (e.key !== 'Tab' || !scheduleDialogRef.value) return
-  const focusable = scheduleDialogRef.value.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  const active = document.activeElement as HTMLElement | null
-  if (e.shiftKey && active === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
-function onDescriptionModalKeydown(e: KeyboardEvent) {
-  if (!descriptionModal.value.open) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    closeDescriptionModal()
-    return
-  }
-  if (e.key !== 'Tab' || !descriptionDialogRef.value) return
-  const focusable = descriptionDialogRef.value.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  const active = document.activeElement as HTMLElement | null
-  if (e.shiftKey && active === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
-function onTransferSubModalKeydown(e: KeyboardEvent) {
-  if (!transferSubModal.value.open) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    closeTransferSubscriptionModal()
-    return
-  }
-  if (e.key !== 'Tab' || !transferSubDialogRef.value) return
-  const focusable = transferSubDialogRef.value.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  const active = document.activeElement as HTMLElement | null
-  const activeIsOutside = !active || !transferSubDialogRef.value.contains(active)
-  if (activeIsOutside) {
-    e.preventDefault()
-    if (e.shiftKey) {
-      last.focus()
+  function toggleLegacyRelinkSelectAll(event: Event) {
+    const checked = (event.target as HTMLInputElement).checked;
+    const pageIds = legacyRelinkCandidates.value.map((row) => row.userId);
+    if (checked) {
+      legacyRelinkSelected.value = [...new Set([...legacyRelinkSelected.value, ...pageIds])];
     } else {
-      first.focus()
+      legacyRelinkSelected.value = legacyRelinkSelected.value.filter((id) => !pageIds.includes(id));
     }
-  } else if (e.shiftKey && active === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && active === last) {
-    e.preventDefault()
-    first.focus()
   }
-}
 
-watch(() => swapModal.value.open, async (open) => {
-  if (open) {
-    lastFocusedEl.value = document.activeElement as HTMLElement | null
-    await nextTick()
-    swapDialogRef.value?.focus()
-    window.addEventListener('keydown', onSwapModalKeydown)
-  } else {
-    window.removeEventListener('keydown', onSwapModalKeydown)
-    lastFocusedEl.value?.focus()
+  function openLegacyRelinkEmailConfirm() {
+    const count = legacyRelinkSelected.value.length;
+    if (!count) return;
+    confirmModal.value = {
+      open: true,
+      mode: 'legacy_relink_email',
+      userIds: [...legacyRelinkSelected.value],
+      impactText: `This will send a relink email to ${count} user(s). They will receive a link to /account?relink=1. Continue?`,
+    };
   }
-})
 
-watch(() => scheduleModal.value.open, async (open) => {
-  if (open) {
-    lastFocusedEl.value = document.activeElement as HTMLElement | null
-    await nextTick()
-    scheduleDialogRef.value?.focus()
-    window.addEventListener('keydown', onScheduleModalKeydown)
-  } else {
-    window.removeEventListener('keydown', onScheduleModalKeydown)
-    lastFocusedEl.value?.focus()
+  async function sendLegacyRelinkEmails(userIds: string[]) {
+    legacyRelinkSending.value = true;
+    try {
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/legacy-migration/send-relink-email`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({ userIds }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showToast('success', `Sent ${data.sent ?? 0} relink email(s).`);
+      legacyRelinkSelected.value = [];
+    } catch (e: any) {
+      showToast('error', `Relink email failed: ${e.message}`);
+    } finally {
+      legacyRelinkSending.value = false;
+    }
   }
-})
 
-watch(() => descriptionModal.value.open, async (open) => {
-  if (open) {
-    lastFocusedEl.value = document.activeElement as HTMLElement | null
-    await nextTick()
-    descriptionDialogRef.value?.focus()
-    descriptionInputEl.value?.focus()
-    window.addEventListener('keydown', onDescriptionModalKeydown)
-  } else {
-    window.removeEventListener('keydown', onDescriptionModalKeydown)
-    lastFocusedEl.value?.focus()
+  async function trashVideo(video: Video) {
+    trashing.value[video.id] = true;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'DELETE',
+        headers: authHeader(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      uploads.value = uploads.value.filter((v) => v.id !== video.id);
+      featuredSlots.value = featuredSlots.value.map((slot) =>
+        slot?.id === video.id ? null : slot,
+      );
+      saveMessage.value = `"${video.title}" has been permanently deleted.`;
+      showToast('success', `${video.title} deleted.`);
+      saveMessageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: any) {
+      saveMessage.value = `Failed to delete "${video.title}": ${e.message}`;
+      saveMessageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      trashing.value[video.id] = false;
+    }
   }
-})
 
-watch(() => transferSubModal.value.open, async (open) => {
-  if (open) {
-    lastFocusedEl.value = document.activeElement as HTMLElement | null
-    await nextTick()
-    const emailInput = document.getElementById('transfer-sub-target-email') as HTMLInputElement | null
-    emailInput?.focus()
-    window.addEventListener('keydown', onTransferSubModalKeydown)
-  } else {
-    window.removeEventListener('keydown', onTransferSubModalKeydown)
-    lastFocusedEl.value?.focus()
+  async function handleThumbnailSelect(event: Event, video: Video) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // 10 MB client-side guard (the API also enforces this).
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image must be under 10 MB');
+      input.value = '';
+      return;
+    }
+
+    uploadingFor.value = video.id;
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+
+      // Do NOT set Content-Type manually — the browser sets it with the correct
+      // multipart boundary when FormData is the body.
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}/thumbnail`, {
+        method: 'POST',
+        headers: { ...authHeader() },
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(err.error || 'Upload failed');
+      }
+      const data = await res.json();
+      // Update the local record so the UI reflects the new thumbnail without a full reload.
+      // The API returns a versioned URL (?v=...) to force cache eviction across devices.
+      if (data?.thumbnails?.large) {
+        const cacheBustedUrl = String(data.thumbnails.large);
+        const idx = uploads.value.findIndex((v) => v.id === video.id);
+        if (idx !== -1) {
+          const cur = uploads.value[idx]!;
+          uploads.value[idx] = { ...cur, thumbnail_url: cacheBustedUrl };
+        }
+        featuredSlots.value = featuredSlots.value.map((slot) =>
+          slot?.id === video.id ? { ...slot, thumbnail_url: cacheBustedUrl } : slot,
+        );
+        showToast('success', `Thumbnail updated for ${video.title}. Cache refreshed.`);
+      } else {
+        // If the API response is missing a thumbnail URL, keep the existing thumbnail as-is.
+        showToast('error', 'Thumbnail upload succeeded but API did not return a thumbnail URL.');
+      }
+    } catch (err: any) {
+      showToast('error', `Thumbnail upload failed: ${err.message}`);
+    } finally {
+      uploadingFor.value = null;
+      input.value = ''; // reset so the same file can be re-selected
+    }
   }
-})
 
-onMounted(async () => {
-  await reloadAll()
-})
+  type Toast = { id: number; type: 'success' | 'error'; message: string };
+  const toasts = ref<Toast[]>([]);
+  let toastId = 0;
+  const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  function showToast(type: Toast['type'], message: string) {
+    const id = ++toastId;
+    toasts.value.push({ id, type, message });
+    const timer = setTimeout(() => {
+      toasts.value = toasts.value.filter((t) => t.id !== id);
+      toastTimers.delete(id);
+    }, 3200);
+    toastTimers.set(id, timer);
+  }
 
-onUnmounted(() => {
-  window.removeEventListener('keydown', onConfirmModalKeydown)
-  window.removeEventListener('keydown', onSwapModalKeydown)
-  window.removeEventListener('keydown', onScheduleModalKeydown)
-  window.removeEventListener('keydown', onDescriptionModalKeydown)
-  window.removeEventListener('keydown', onTransferSubModalKeydown)
-  if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer)
-  for (const timer of toastTimers.values()) clearTimeout(timer)
-  toastTimers.clear()
-})
+  type ConfirmModalState =
+    | { open: false }
+    | {
+        open: true;
+        mode: 'video';
+        action: 'trash' | 'revert_to_draft';
+        video: Video;
+        impactText: string;
+      }
+    | {
+        open: true;
+        mode: 'user_role' | 'user_subscription';
+        userId: string;
+        email: string;
+        prevRole: string;
+        nextRole: string;
+        prevSubscription: string;
+        nextSubscription: string;
+        impactText: string;
+      }
+    | {
+        open: true;
+        mode: 'legacy_relink_email';
+        userIds: string[];
+        impactText: string;
+      };
+
+  const confirmModal = ref<ConfirmModalState>({ open: false });
+
+  const confirmModalTitle = computed(() => {
+    const m = confirmModal.value;
+    if (!m.open) return '';
+    if (m.mode === 'video')
+      return m.action === 'trash' ? 'Permanently delete video?' : 'Revert video to draft?';
+    if (m.mode === 'user_role') return 'Confirm role change';
+    if (m.mode === 'legacy_relink_email') return 'Send relink emails?';
+    return 'Confirm subscription change';
+  });
+
+  const confirmModalConfirmClass = computed(() => {
+    const m = confirmModal.value;
+    if (!m.open || m.mode === 'video') {
+      return m.open && m.mode === 'video' && m.action === 'trash'
+        ? 'bg-red-600 hover:bg-red-700'
+        : 'bg-amber-600 hover:bg-amber-700';
+    }
+    return 'bg-purple-600 hover:bg-purple-700';
+  });
+
+  function closeConfirmModal() {
+    confirmModal.value = { open: false };
+  }
+
+  /** Cancel user confirm: revert optimistic select; resync list from server. */
+  function onConfirmCancel() {
+    const was = confirmModal.value;
+    if (was.open && (was.mode === 'user_role' || was.mode === 'user_subscription')) {
+      patchUserRowById(was.userId, { uiRole: undefined, uiSubscription: undefined });
+    }
+    closeConfirmModal();
+    if (
+      was.open &&
+      (was.mode === 'user_role' || was.mode === 'user_subscription') &&
+      activeAdminTab.value === 'users'
+    ) {
+      void loadUsers();
+    }
+  }
+
+  function openConfirmModal(video: Video, action: 'trash' | 'revert_to_draft'): void;
+  function openConfirmModal(payload: {
+    mode: 'user_role' | 'user_subscription';
+    userId: string;
+    email: string;
+    prevRole: string;
+    nextRole: string;
+    prevSubscription: string;
+    nextSubscription: string;
+    impactText: string;
+  }): void;
+  function openConfirmModal(
+    videoOrPayload:
+      | Video
+      | {
+          mode: 'user_role' | 'user_subscription';
+          userId: string;
+          email: string;
+          prevRole: string;
+          nextRole: string;
+          prevSubscription: string;
+          nextSubscription: string;
+          impactText: string;
+        },
+    action?: 'trash' | 'revert_to_draft',
+  ) {
+    if (videoOrPayload && typeof videoOrPayload === 'object' && 'mode' in videoOrPayload) {
+      const p = videoOrPayload;
+      confirmModal.value = {
+        open: true,
+        mode: p.mode,
+        userId: p.userId,
+        email: p.email,
+        prevRole: p.prevRole,
+        nextRole: p.nextRole,
+        prevSubscription: p.prevSubscription,
+        nextSubscription: p.nextSubscription,
+        impactText: p.impactText,
+      };
+      return;
+    }
+    const video = videoOrPayload as Video;
+    const act = action!;
+    confirmModal.value = {
+      open: true,
+      mode: 'video',
+      action: act,
+      video,
+      impactText:
+        act === 'trash'
+          ? `This permanently removes ${video.title} from the database and deletes all files in R2 (videos/${video.id}/). This cannot be undone.`
+          : `This will move ${video.title} back to draft status and remove it from published surfaces.`,
+    };
+  }
+
+  async function runConfirmedAction() {
+    const current = confirmModal.value;
+    if (!current.open) return;
+    if (current.mode === 'legacy_relink_email') {
+      const userIds = [...current.userIds];
+      closeConfirmModal();
+      await sendLegacyRelinkEmails(userIds);
+      return;
+    }
+    if (current.mode === 'video') {
+      closeConfirmModal();
+      if (current.action === 'trash') {
+        await trashVideo(current.video);
+      } else {
+        await updateVideoStatus(current.video, 'draft', null);
+      }
+      return;
+    }
+    const snap = { ...current };
+    closeConfirmModal();
+    const patch: Record<string, string> =
+      snap.mode === 'user_role'
+        ? { role: snap.nextRole }
+        : { subscriptionStatus: snap.nextSubscription };
+    if (snap.mode === 'user_subscription' && snap.nextSubscription !== 'none') {
+      const row = users.value.find((x) => x.id === snap.userId);
+      if (row && !hasAdminUserSubscriptionRow(row)) {
+        const planType = adminUserPendingPlanType.value[snap.userId] || defaultAdminPlanId.value;
+        const ok = await updateUser(snap.userId, patch, {
+          createSubscription: { status: snap.nextSubscription, planType },
+        });
+        if (!ok) {
+          patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined });
+          if (activeAdminTab.value === 'users') void loadUsers();
+        }
+        return;
+      }
+    }
+    const ok = await updateUser(snap.userId, patch);
+    if (!ok) {
+      patchUserRowById(snap.userId, { uiRole: undefined, uiSubscription: undefined });
+      if (activeAdminTab.value === 'users') void loadUsers();
+    }
+  }
+
+  async function startSlugEdit(video: Video) {
+    editingSlug.value = { id: video.id, value: video.slug ?? '' };
+    await nextTick();
+    focusInlineEditInput(slugInputEl.value);
+  }
+
+  async function saveSlugEdit(video: Video) {
+    const editing = editingSlug.value;
+    if (!editing || editing.id !== video.id) return;
+    const slugInput = editing.value.trim();
+    const requestedSlug = slugInput ? sanitizeVideoSlug(slugInput) || null : null;
+    editingSlug.value = null;
+    if (requestedSlug === (video.slug ?? null)) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ slug: requestedSlug }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json().catch(() => ({}));
+      const normalizedSlug = data?.video?.slug ?? requestedSlug;
+      const normalizedLegacySlug = data?.video?.legacy_slug ?? video.legacy_slug ?? null;
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, slug: normalizedSlug, legacy_slug: normalizedLegacySlug };
+      }
+      showToast('success', normalizedSlug ? `Slug set: /watch/${normalizedSlug}` : 'Slug cleared.');
+    } catch (e: any) {
+      showToast('error', `Failed to update slug: ${e.message}`);
+    }
+  }
+
+  async function startLegacySlugEdit(video: Video) {
+    editingLegacySlug.value = { id: video.id, value: video.legacy_slug ?? '' };
+    await nextTick();
+    focusInlineEditInput(legacySlugInputEl.value);
+  }
+
+  async function saveLegacySlugEdit(video: Video) {
+    const editing = editingLegacySlug.value;
+    if (!editing || editing.id !== video.id) return;
+    const legacyInput = editing.value.trim();
+    const requestedLegacySlug = legacyInput ? sanitizeVideoSlug(legacyInput) : null;
+    editingLegacySlug.value = null;
+    if (requestedLegacySlug === (video.legacy_slug ?? null)) return;
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ legacySlug: requestedLegacySlug }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json().catch(() => ({}));
+      const normalizedLegacySlug = data?.video?.legacy_slug ?? requestedLegacySlug;
+      const idx = uploads.value.findIndex((v) => v.id === video.id);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, legacy_slug: normalizedLegacySlug };
+      }
+      showToast(
+        'success',
+        normalizedLegacySlug
+          ? `Legacy redirect set: /videos/${normalizedLegacySlug} -> /watch`
+          : 'Legacy redirect cleared.',
+      );
+    } catch (e: any) {
+      showToast('error', `Failed to update legacy slug: ${e.message}`);
+    }
+  }
+
+  function openDescriptionModal(video: Video) {
+    descriptionModal.value = {
+      open: true,
+      videoId: video.id,
+      title: video.title,
+      value: video.description || '',
+    };
+  }
+
+  function closeDescriptionModal() {
+    descriptionModal.value = {
+      open: false,
+      videoId: null,
+      title: '',
+      value: '',
+    };
+  }
+
+  async function saveDescriptionModal() {
+    const videoId = descriptionModal.value.videoId;
+    if (!videoId) return;
+    const video = uploads.value.find((v) => v.id === videoId);
+    if (!video) return;
+    const newDesc = descriptionModal.value.value.trim();
+    if (newDesc === (video.description || '')) {
+      closeDescriptionModal();
+      return;
+    }
+    try {
+      const res = await fetch(`${config.public.apiUrl}/api/admin/videos/${videoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ description: newDesc }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const idx = uploads.value.findIndex((v) => v.id === videoId);
+      if (idx !== -1) {
+        const cur = uploads.value[idx]!;
+        uploads.value[idx] = { ...cur, description: newDesc };
+      }
+      closeDescriptionModal();
+      showToast('success', 'Description updated.');
+    } catch (e: any) {
+      showToast('error', `Failed to update description: ${e.message}`);
+    }
+  }
+
+  function openSwapModal(video: Video) {
+    swapModal.value = { open: true, step: 0, sourceVideo: video, targetId: null };
+  }
+
+  function selectSwapTarget(draft: Video) {
+    swapModal.value.targetId = draft.id;
+    swapModal.value.step = 1;
+  }
+
+  async function executeSwap() {
+    if (!swapModal.value.sourceVideo || !swapModal.value.targetId) return;
+    swapModal.value.step = 2;
+    try {
+      const res = await fetch(
+        `${config.public.apiUrl}/api/admin/videos/${swapModal.value.sourceVideo.id}/swap`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({ swapWithId: swapModal.value.targetId }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      swapModal.value.open = false;
+      showToast('success', 'Swap complete — video list updated.');
+      await reloadAll();
+    } catch (e: any) {
+      showToast('error', `Swap failed: ${e.message}`);
+      swapModal.value.step = 1;
+    }
+  }
+
+  const confirmDialogRef = ref<HTMLElement | null>(null);
+  const swapDialogRef = ref<HTMLElement | null>(null);
+  const scheduleDialogRef = ref<HTMLElement | null>(null);
+  const descriptionDialogRef = ref<HTMLElement | null>(null);
+  const transferSubDialogRef = ref<HTMLElement | null>(null);
+  const lastFocusedEl = ref<HTMLElement | null>(null);
+
+  function setAdminTab(
+    tab:
+      | 'videos'
+      | 'categories'
+      | 'homepage'
+      | 'pills'
+      | 'notifications'
+      | 'newsletter'
+      | 'pages'
+      | 'users'
+      | 'legacy_migration'
+      | 'analytics'
+      | 'system',
+  ) {
+    router.replace({ query: { ...route.query, tab } });
+  }
+
+  function onConfirmModalKeydown(e: KeyboardEvent) {
+    if (!confirmModal.value.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      const m = confirmModal.value;
+      if (m.open && (m.mode === 'user_role' || m.mode === 'user_subscription')) onConfirmCancel();
+      else closeConfirmModal();
+      return;
+    }
+    if (e.key !== 'Tab' || !confirmDialogRef.value) return;
+    const focusable = confirmDialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  watch(
+    [() => route.query.tab, adminTabs, initialised],
+    () => {
+      if (!initialised.value) return;
+      const rawTab = route.query.tab;
+      const requested = Array.isArray(rawTab)
+        ? rawTab[0] || ''
+        : typeof rawTab === 'string'
+          ? rawTab
+          : '';
+      const allowed = new Set(adminTabs.value.map((t) => t.id));
+      const resolved =
+        requested && allowed.has(requested as typeof activeAdminTab.value)
+          ? (requested as typeof activeAdminTab.value)
+          : 'videos';
+      activeAdminTab.value = resolved;
+      if (rawTab !== resolved) {
+        router.replace({ query: { ...route.query, tab: resolved } });
+      }
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => confirmModal.value.open,
+    async (open) => {
+      if (open) {
+        lastFocusedEl.value = document.activeElement as HTMLElement | null;
+        await nextTick();
+        confirmDialogRef.value?.focus();
+        window.addEventListener('keydown', onConfirmModalKeydown);
+      } else {
+        window.removeEventListener('keydown', onConfirmModalKeydown);
+        lastFocusedEl.value?.focus();
+      }
+    },
+  );
+
+  function onSwapModalKeydown(e: KeyboardEvent) {
+    if (!swapModal.value.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      swapModal.value.open = false;
+      return;
+    }
+    if (e.key !== 'Tab' || !swapDialogRef.value) return;
+    const focusable = swapDialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function onScheduleModalKeydown(e: KeyboardEvent) {
+    if (!scheduleModal.value.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeScheduleModal();
+      return;
+    }
+    if (e.key !== 'Tab' || !scheduleDialogRef.value) return;
+    const focusable = scheduleDialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function onDescriptionModalKeydown(e: KeyboardEvent) {
+    if (!descriptionModal.value.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeDescriptionModal();
+      return;
+    }
+    if (e.key !== 'Tab' || !descriptionDialogRef.value) return;
+    const focusable = descriptionDialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function onTransferSubModalKeydown(e: KeyboardEvent) {
+    if (!transferSubModal.value.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeTransferSubscriptionModal();
+      return;
+    }
+    if (e.key !== 'Tab' || !transferSubDialogRef.value) return;
+    const focusable = transferSubDialogRef.value.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement as HTMLElement | null;
+    const activeIsOutside = !active || !transferSubDialogRef.value.contains(active);
+    if (activeIsOutside) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        last.focus();
+      } else {
+        first.focus();
+      }
+    } else if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  watch(
+    () => swapModal.value.open,
+    async (open) => {
+      if (open) {
+        lastFocusedEl.value = document.activeElement as HTMLElement | null;
+        await nextTick();
+        swapDialogRef.value?.focus();
+        window.addEventListener('keydown', onSwapModalKeydown);
+      } else {
+        window.removeEventListener('keydown', onSwapModalKeydown);
+        lastFocusedEl.value?.focus();
+      }
+    },
+  );
+
+  watch(
+    () => scheduleModal.value.open,
+    async (open) => {
+      if (open) {
+        lastFocusedEl.value = document.activeElement as HTMLElement | null;
+        await nextTick();
+        scheduleDialogRef.value?.focus();
+        window.addEventListener('keydown', onScheduleModalKeydown);
+      } else {
+        window.removeEventListener('keydown', onScheduleModalKeydown);
+        lastFocusedEl.value?.focus();
+      }
+    },
+  );
+
+  watch(
+    () => descriptionModal.value.open,
+    async (open) => {
+      if (open) {
+        lastFocusedEl.value = document.activeElement as HTMLElement | null;
+        await nextTick();
+        descriptionDialogRef.value?.focus();
+        descriptionInputEl.value?.focus();
+        window.addEventListener('keydown', onDescriptionModalKeydown);
+      } else {
+        window.removeEventListener('keydown', onDescriptionModalKeydown);
+        lastFocusedEl.value?.focus();
+      }
+    },
+  );
+
+  watch(
+    () => transferSubModal.value.open,
+    async (open) => {
+      if (open) {
+        lastFocusedEl.value = document.activeElement as HTMLElement | null;
+        await nextTick();
+        const emailInput = document.getElementById(
+          'transfer-sub-target-email',
+        ) as HTMLInputElement | null;
+        emailInput?.focus();
+        window.addEventListener('keydown', onTransferSubModalKeydown);
+      } else {
+        window.removeEventListener('keydown', onTransferSubModalKeydown);
+        lastFocusedEl.value?.focus();
+      }
+    },
+  );
+
+  onMounted(async () => {
+    await reloadAll();
+  });
+
+  onUnmounted(() => {
+    window.removeEventListener('keydown', onConfirmModalKeydown);
+    window.removeEventListener('keydown', onSwapModalKeydown);
+    window.removeEventListener('keydown', onScheduleModalKeydown);
+    window.removeEventListener('keydown', onDescriptionModalKeydown);
+    window.removeEventListener('keydown', onTransferSubModalKeydown);
+    if (usersSearchDebounceTimer) clearTimeout(usersSearchDebounceTimer);
+    for (const timer of toastTimers.values()) clearTimeout(timer);
+    toastTimers.clear();
+  });
 </script>

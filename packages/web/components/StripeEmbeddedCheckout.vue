@@ -10,11 +10,7 @@
       </div>
 
       <div v-show="!loading && !initError" class="space-y-4">
-        <div
-          v-show="showWalletSurface"
-          ref="expressMountRef"
-          class="min-h-[44px]"
-        />
+        <div v-show="showWalletSurface" ref="expressMountRef" class="min-h-[44px]" />
 
         <slot />
 
@@ -27,7 +23,7 @@
             :disabled="confirming"
             @click="confirmCardPayment"
           >
-            {{ confirming ? strings.checkoutStripeProcessing : cardConfirmLabel }}
+            {{ confirming ? strings.checkoutStripeProcessing : resolvedCardConfirmLabel }}
           </button>
         </div>
       </div>
@@ -38,383 +34,394 @@
 </template>
 
 <script setup lang="ts">
-import { loadStripe, type Stripe } from '@stripe/stripe-js'
+  import { loadStripe, type Stripe } from '@stripe/stripe-js';
 
-import strings from '~/utils/strings'
+  import strings from '~/utils/strings';
 
-type PlanType = 'monthly' | 'yearly' | 'club'
+  type PlanType = 'monthly' | 'yearly' | 'club';
 
-/** Minimal Checkout Elements SDK surface (runtime API from js.stripe.com). */
-interface StripeCheckoutSdk {
-  createExpressCheckoutElement: (options?: Record<string, unknown>) => StripeExpressCheckoutElement
-  createPaymentElement: (options?: Record<string, unknown>) => StripePaymentElement
-  loadActions: () => Promise<{ type: string; actions?: { confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }> } }>
-  destroy?: () => void
-}
-
-type StripeExpressCheckoutEvent =
-  | 'ready'
-  | 'focus'
-  | 'blur'
-  | 'escape'
-  | 'loaderror'
-  | 'confirm'
-  | 'cancel'
-
-interface StripeExpressCheckoutElement {
-  mount: (selector: string | HTMLElement) => void
-  unmount: () => void
-  on: (event: StripeExpressCheckoutEvent, handler: (payload: unknown) => void) => void
-}
-
-const EXPRESS_WALLET_KEYS = ['applePay', 'googlePay'] as const
-
-function expressMethodAvailable(
-  methods: Record<string, { available?: boolean } | boolean>,
-  key: string,
-): boolean {
-  const entry = methods[key]
-  if (entry === undefined) return false
-  if (typeof entry === 'boolean') return entry
-  if (entry && typeof entry === 'object' && 'available' in entry) return Boolean(entry.available)
-  return false
-}
-
-/** True when Apple Pay or Google Pay can render in Express Checkout (not card/PayPal/SEPA). */
-function expressWalletMethodsAvailable(payload: unknown): boolean {
-  const event = payload as {
-    availablePaymentMethods?: Record<string, { available?: boolean } | boolean>
-    paymentMethods?: Record<string, { available?: boolean } | boolean>
-  }
-  const methods = event.paymentMethods ?? event.availablePaymentMethods
-  if (!methods || typeof methods !== 'object') return false
-  return EXPRESS_WALLET_KEYS.some((key) => expressMethodAvailable(methods, key))
-}
-
-interface StripePaymentElement {
-  mount: (selector: string | HTMLElement) => void
-  unmount: () => void
-}
-
-const props = defineProps<{
-  planType: PlanType
-  promoCode: string
-  returnPath: string
-  embedded?: boolean
-  /** Mount Apple Pay / Google Pay express buttons. */
-  showWalletSurface: boolean
-  /** Show card / PayPal / SEPA payment element. */
-  showCardSurface: boolean
-  /** Hide Apple/Google Pay inside Payment Element when Express Checkout shows them. */
-  hidePaymentWallets?: boolean
-  cardConfirmLabel?: string
-}>()
-
-const emit = defineEmits<{
-  walletAvailable: [available: boolean]
-}>()
-
-const config = useRuntimeConfig()
-const apiUrl = config.public.apiUrl as string
-const { authHeader } = useAuth()
-
-const loading = ref(true)
-const initError = ref<string | null>(null)
-const confirmError = ref<string | null>(null)
-const confirming = ref(false)
-const cardReady = ref(false)
-const walletAvailable = ref(false)
-
-const expressMountRef = ref<HTMLElement | null>(null)
-const paymentMountRef = ref<HTMLElement | null>(null)
-
-const cardConfirmLabel = computed(
-  () => props.cardConfirmLabel ?? strings.checkoutSubscribeWithCard,
-)
-
-const mutedClass = computed(() =>
-  props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
-)
-
-let stripePromise: Promise<Stripe | null> | null = null
-let checkoutInstance: StripeCheckoutSdk | null = null
-let expressElement: StripeExpressCheckoutElement | null = null
-let paymentElement: StripePaymentElement | null = null
-let confirmActions: { confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }> } | null = null
-let sessionKey = ''
-let teardownGeneration = 0
-let expressReadyWithWallets = false
-let walletDetectionEmitted = false
-let walletDetectionTimer: ReturnType<typeof setTimeout> | null = null
-
-const WALLET_DETECTION_TIMEOUT_MS = 8000
-
-function clearWalletDetectionTimer() {
-  if (walletDetectionTimer) {
-    clearTimeout(walletDetectionTimer)
-    walletDetectionTimer = null
-  }
-}
-
-function finishWalletDetection(available: boolean) {
-  clearWalletDetectionTimer()
-  if (walletDetectionEmitted) {
-    if (available && !walletAvailable.value) {
-      walletAvailable.value = true
-      emit('walletAvailable', true)
-    }
-    return
-  }
-  walletDetectionEmitted = true
-  walletAvailable.value = available
-  emit('walletAvailable', available)
-}
-
-function startWalletDetectionTimer() {
-  clearWalletDetectionTimer()
-  walletDetectionTimer = setTimeout(() => {
-    if (!walletDetectionEmitted) finishWalletDetection(false)
-  }, WALLET_DETECTION_TIMEOUT_MS)
-}
-
-function getStripe() {
-  if (!stripePromise) {
-    stripePromise = fetch(`${apiUrl}/api/payments/stripe-config`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured)
-        return loadStripe(data.publishableKey)
-      })
-      .catch((err) => {
-        stripePromise = null
-        throw err
-      })
-  }
-  return stripePromise
-}
-
-async function createCheckoutSession(): Promise<string> {
-  const res = await fetch(`${apiUrl}/api/payments/checkout`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: JSON.stringify({
-      planType: props.planType,
-      provider: 'stripe',
-      promoCode: props.promoCode || undefined,
-      returnPath: props.returnPath,
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok || !data.clientSecret) {
-    throw new Error(data.error ?? strings.checkoutStartFailed)
-  }
-  return String(data.clientSecret)
-}
-
-function destroyElements() {
-  clearWalletDetectionTimer()
-  expressElement?.unmount()
-  paymentElement?.unmount()
-  expressElement = null
-  paymentElement = null
-  confirmActions = null
-  checkoutInstance?.destroy?.()
-  checkoutInstance = null
-  cardReady.value = false
-}
-
-function mountExpressElement() {
-  if (!checkoutInstance || !expressMountRef.value || expressElement) return
-
-  expressElement = checkoutInstance.createExpressCheckoutElement({
-    buttonType: {
-      applePay: 'subscribe',
-      googlePay: 'subscribe',
-    },
-    layout: {
-      maxColumns: 2,
-      maxRows: 2,
-    },
-    paymentMethods: {
-      applePay: 'always',
-      googlePay: 'always',
-      link: 'never',
-      paypal: 'never',
-      amazonPay: 'never',
-      klarna: 'never',
-    },
-  })
-
-  const syncWalletAvailability = (payload: unknown) => {
-    const available = expressWalletMethodsAvailable(payload)
-    if (available) expressReadyWithWallets = true
-    finishWalletDetection(available)
+  /** Minimal Checkout Elements SDK surface (runtime API from js.stripe.com). */
+  interface StripeCheckoutSdk {
+    createExpressCheckoutElement: (
+      options?: Record<string, unknown>,
+    ) => StripeExpressCheckoutElement;
+    createPaymentElement: (options?: Record<string, unknown>) => StripePaymentElement;
+    loadActions: () => Promise<{
+      type: string;
+      actions?: {
+        confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }>;
+      };
+    }>;
+    destroy?: () => void;
   }
 
-  expressElement.on('ready', syncWalletAvailability)
-  expressElement.on('loaderror', () => {
-    if (!expressReadyWithWallets) finishWalletDetection(false)
-  })
-  expressElement.on('confirm', (event: unknown) => {
-    void confirmExpress(event)
-  })
-  expressElement.mount(expressMountRef.value)
-  startWalletDetectionTimer()
-}
+  type StripeExpressCheckoutEvent =
+    | 'ready'
+    | 'focus'
+    | 'blur'
+    | 'escape'
+    | 'loaderror'
+    | 'confirm'
+    | 'cancel';
 
-function unmountExpressElement() {
-  expressElement?.unmount()
-  expressElement = null
-  expressReadyWithWallets = false
-  clearWalletDetectionTimer()
-  walletAvailable.value = false
-}
-
-function mountPaymentElement() {
-  if (!checkoutInstance || !paymentMountRef.value || paymentElement) return
-  const paymentOptions: Record<string, unknown> = {
-    layout: {
-      type: 'accordion',
-      spacedAccordionItems: true,
-      defaultCollapsed: true,
-    },
-  }
-  if (props.hidePaymentWallets) {
-    paymentOptions.wallets = { applePay: 'never', googlePay: 'never' }
-  }
-  paymentElement = checkoutInstance.createPaymentElement(paymentOptions)
-  paymentElement.mount(paymentMountRef.value)
-  cardReady.value = true
-}
-
-function unmountPaymentElement() {
-  paymentElement?.unmount()
-  paymentElement = null
-  cardReady.value = false
-}
-
-async function syncMountedSurfaces() {
-  if (!checkoutInstance || loading.value) return
-  await nextTick()
-
-  if (props.showWalletSurface) {
-    mountExpressElement()
-  } else {
-    unmountExpressElement()
+  interface StripeExpressCheckoutElement {
+    mount: (selector: string | HTMLElement) => void;
+    unmount: () => void;
+    on: (event: StripeExpressCheckoutEvent, handler: (payload: unknown) => void) => void;
   }
 
-  if (props.showCardSurface) {
-    mountPaymentElement()
+  const EXPRESS_WALLET_KEYS = ['applePay', 'googlePay'] as const;
+
+  function expressMethodAvailable(
+    methods: Record<string, { available?: boolean } | boolean>,
+    key: string,
+  ): boolean {
+    const entry = methods[key];
+    if (entry === undefined) return false;
+    if (typeof entry === 'boolean') return entry;
+    if (entry && typeof entry === 'object' && 'available' in entry) return Boolean(entry.available);
+    return false;
   }
-  // Keep the Payment Element mounted while hidden; recreating it on the same
-  // Checkout instance can leave Stripe with an empty mount after method toggles.
-}
 
-async function setupCheckout() {
-  const generation = ++teardownGeneration
-  destroyElements()
-  loading.value = true
-  initError.value = null
-  confirmError.value = null
-  walletAvailable.value = false
-  expressReadyWithWallets = false
-  walletDetectionEmitted = false
-  clearWalletDetectionTimer()
+  /** True when Apple Pay or Google Pay can render in Express Checkout (not card/PayPal/SEPA). */
+  function expressWalletMethodsAvailable(payload: unknown): boolean {
+    const event = payload as {
+      availablePaymentMethods?: Record<string, { available?: boolean } | boolean>;
+      paymentMethods?: Record<string, { available?: boolean } | boolean>;
+    };
+    const methods = event.paymentMethods ?? event.availablePaymentMethods;
+    if (!methods || typeof methods !== 'object') return false;
+    return EXPRESS_WALLET_KEYS.some((key) => expressMethodAvailable(methods, key));
+  }
 
-  const nextKey = `${props.planType}:${props.promoCode}:${props.returnPath}`
-  sessionKey = nextKey
+  interface StripePaymentElement {
+    mount: (selector: string | HTMLElement) => void;
+    unmount: () => void;
+  }
 
-  try {
-    const stripe = await getStripe()
-    if (!stripe || generation !== teardownGeneration) return
+  const props = defineProps<{
+    planType: PlanType;
+    promoCode: string;
+    returnPath: string;
+    embedded?: boolean;
+    /** Mount Apple Pay / Google Pay express buttons. */
+    showWalletSurface: boolean;
+    /** Show card / PayPal / SEPA payment element. */
+    showCardSurface: boolean;
+    /** Hide Apple/Google Pay inside Payment Element when Express Checkout shows them. */
+    hidePaymentWallets?: boolean;
+    cardConfirmLabel?: string;
+  }>();
 
-    const initCheckout = (stripe as Stripe & {
-      initCheckoutElementsSdk?: (opts: { clientSecret: string }) => StripeCheckoutSdk
-    }).initCheckoutElementsSdk
-    if (typeof initCheckout !== 'function') {
-      throw new Error(strings.checkoutStripeSdkUnavailable)
-    }
+  const emit = defineEmits<{
+    walletAvailable: [available: boolean];
+  }>();
 
-    const clientSecret = await createCheckoutSession()
-    if (generation !== teardownGeneration || sessionKey !== nextKey) return
+  const config = useRuntimeConfig();
+  const apiUrl = config.public.apiUrl as string;
+  const { authHeader } = useAuth();
 
-    checkoutInstance = initCheckout.call(stripe, { clientSecret })
-    const loadActionsResult = await checkoutInstance.loadActions()
-    if (generation !== teardownGeneration) return
+  const loading = ref(true);
+  const initError = ref<string | null>(null);
+  const confirmError = ref<string | null>(null);
+  const confirming = ref(false);
+  const cardReady = ref(false);
+  const walletAvailable = ref(false);
 
-    if (loadActionsResult.type !== 'success' || !loadActionsResult.actions) {
-      throw new Error(strings.checkoutStartFailed)
-    }
-    confirmActions = loadActionsResult.actions
+  const expressMountRef = ref<HTMLElement | null>(null);
+  const paymentMountRef = ref<HTMLElement | null>(null);
 
-    loading.value = false
-    await syncMountedSurfaces()
-    if (generation !== teardownGeneration) return
-  } catch (err: unknown) {
-    if (generation !== teardownGeneration) return
-    initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed
-  } finally {
-    if (generation === teardownGeneration && loading.value) {
-      loading.value = false
+  const resolvedCardConfirmLabel = computed(
+    () => props.cardConfirmLabel ?? strings.checkoutSubscribeWithCard,
+  );
+
+  const mutedClass = computed(() =>
+    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
+  );
+
+  let stripePromise: Promise<Stripe | null> | null = null;
+  let checkoutInstance: StripeCheckoutSdk | null = null;
+  let expressElement: StripeExpressCheckoutElement | null = null;
+  let paymentElement: StripePaymentElement | null = null;
+  let confirmActions: {
+    confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }>;
+  } | null = null;
+  let sessionKey = '';
+  let teardownGeneration = 0;
+  let expressReadyWithWallets = false;
+  let walletDetectionEmitted = false;
+  let walletDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const WALLET_DETECTION_TIMEOUT_MS = 8000;
+
+  function clearWalletDetectionTimer() {
+    if (walletDetectionTimer) {
+      clearTimeout(walletDetectionTimer);
+      walletDetectionTimer = null;
     }
   }
-}
 
-async function confirmExpress(event: unknown) {
-  if (!confirmActions) return
-  confirmError.value = null
-  confirming.value = true
-  try {
-    const { error } = await confirmActions.confirm({ expressCheckoutConfirmEvent: event })
-    if (error?.message) confirmError.value = error.message
-  } catch {
-    confirmError.value = strings.networkError
-  } finally {
-    confirming.value = false
+  function finishWalletDetection(available: boolean) {
+    clearWalletDetectionTimer();
+    if (walletDetectionEmitted) {
+      if (available && !walletAvailable.value) {
+        walletAvailable.value = true;
+        emit('walletAvailable', true);
+      }
+      return;
+    }
+    walletDetectionEmitted = true;
+    walletAvailable.value = available;
+    emit('walletAvailable', available);
   }
-}
 
-async function confirmCardPayment() {
-  if (!confirmActions) return
-  confirmError.value = null
-  confirming.value = true
-  try {
-    const { error } = await confirmActions.confirm()
-    if (error?.message) confirmError.value = error.message
-  } catch {
-    confirmError.value = strings.networkError
-  } finally {
-    confirming.value = false
+  function startWalletDetectionTimer() {
+    clearWalletDetectionTimer();
+    walletDetectionTimer = setTimeout(() => {
+      if (!walletDetectionEmitted) finishWalletDetection(false);
+    }, WALLET_DETECTION_TIMEOUT_MS);
   }
-}
 
-watch(
-  () => [props.planType, props.promoCode, props.returnPath] as const,
-  () => {
-    void setupCheckout()
-  },
-  { immediate: true },
-)
+  function getStripe() {
+    if (!stripePromise) {
+      stripePromise = fetch(`${apiUrl}/api/payments/stripe-config`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured);
+          return loadStripe(data.publishableKey);
+        })
+        .catch((err) => {
+          stripePromise = null;
+          throw err;
+        });
+    }
+    return stripePromise;
+  }
 
-watch(
-  () => [props.showWalletSurface, props.showCardSurface] as const,
-  () => {
-    void syncMountedSurfaces()
-  },
-)
+  async function createCheckoutSession(): Promise<string> {
+    const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        planType: props.planType,
+        provider: 'stripe',
+        promoCode: props.promoCode || undefined,
+        returnPath: props.returnPath,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.clientSecret) {
+      throw new Error(data.error ?? strings.checkoutStartFailed);
+    }
+    return String(data.clientSecret);
+  }
 
-watch(
-  () => props.hidePaymentWallets,
-  () => {
-    if (!paymentElement) return
-    unmountPaymentElement()
-    if (props.showCardSurface) void syncMountedSurfaces()
-  },
-)
+  function destroyElements() {
+    clearWalletDetectionTimer();
+    expressElement?.unmount();
+    paymentElement?.unmount();
+    expressElement = null;
+    paymentElement = null;
+    confirmActions = null;
+    checkoutInstance?.destroy?.();
+    checkoutInstance = null;
+    cardReady.value = false;
+  }
 
-onBeforeUnmount(() => {
-  teardownGeneration++
-  destroyElements()
-})
+  function mountExpressElement() {
+    if (!checkoutInstance || !expressMountRef.value || expressElement) return;
+
+    expressElement = checkoutInstance.createExpressCheckoutElement({
+      buttonType: {
+        applePay: 'subscribe',
+        googlePay: 'subscribe',
+      },
+      layout: {
+        maxColumns: 2,
+        maxRows: 2,
+      },
+      paymentMethods: {
+        applePay: 'always',
+        googlePay: 'always',
+        link: 'never',
+        paypal: 'never',
+        amazonPay: 'never',
+        klarna: 'never',
+      },
+    });
+
+    const syncWalletAvailability = (payload: unknown) => {
+      const available = expressWalletMethodsAvailable(payload);
+      if (available) expressReadyWithWallets = true;
+      finishWalletDetection(available);
+    };
+
+    expressElement.on('ready', syncWalletAvailability);
+    expressElement.on('loaderror', () => {
+      if (!expressReadyWithWallets) finishWalletDetection(false);
+    });
+    expressElement.on('confirm', (event: unknown) => {
+      void confirmExpress(event);
+    });
+    expressElement.mount(expressMountRef.value);
+    startWalletDetectionTimer();
+  }
+
+  function unmountExpressElement() {
+    expressElement?.unmount();
+    expressElement = null;
+    expressReadyWithWallets = false;
+    clearWalletDetectionTimer();
+    walletAvailable.value = false;
+  }
+
+  function mountPaymentElement() {
+    if (!checkoutInstance || !paymentMountRef.value || paymentElement) return;
+    const paymentOptions: Record<string, unknown> = {
+      layout: {
+        type: 'accordion',
+        spacedAccordionItems: true,
+        defaultCollapsed: true,
+      },
+    };
+    if (props.hidePaymentWallets) {
+      paymentOptions.wallets = { applePay: 'never', googlePay: 'never' };
+    }
+    paymentElement = checkoutInstance.createPaymentElement(paymentOptions);
+    paymentElement.mount(paymentMountRef.value);
+    cardReady.value = true;
+  }
+
+  function unmountPaymentElement() {
+    paymentElement?.unmount();
+    paymentElement = null;
+    cardReady.value = false;
+  }
+
+  async function syncMountedSurfaces() {
+    if (!checkoutInstance || loading.value) return;
+    await nextTick();
+
+    if (props.showWalletSurface) {
+      mountExpressElement();
+    } else {
+      unmountExpressElement();
+    }
+
+    if (props.showCardSurface) {
+      mountPaymentElement();
+    }
+    // Keep the Payment Element mounted while hidden; recreating it on the same
+    // Checkout instance can leave Stripe with an empty mount after method toggles.
+  }
+
+  async function setupCheckout() {
+    const generation = ++teardownGeneration;
+    destroyElements();
+    loading.value = true;
+    initError.value = null;
+    confirmError.value = null;
+    walletAvailable.value = false;
+    expressReadyWithWallets = false;
+    walletDetectionEmitted = false;
+    clearWalletDetectionTimer();
+
+    const nextKey = `${props.planType}:${props.promoCode}:${props.returnPath}`;
+    sessionKey = nextKey;
+
+    try {
+      const stripe = await getStripe();
+      if (!stripe || generation !== teardownGeneration) return;
+
+      const initCheckout = (
+        stripe as Stripe & {
+          initCheckoutElementsSdk?: (opts: { clientSecret: string }) => StripeCheckoutSdk;
+        }
+      ).initCheckoutElementsSdk;
+      if (typeof initCheckout !== 'function') {
+        throw new Error(strings.checkoutStripeSdkUnavailable);
+      }
+
+      const clientSecret = await createCheckoutSession();
+      if (generation !== teardownGeneration || sessionKey !== nextKey) return;
+
+      checkoutInstance = initCheckout.call(stripe, { clientSecret });
+      const loadActionsResult = await checkoutInstance.loadActions();
+      if (generation !== teardownGeneration) return;
+
+      if (loadActionsResult.type !== 'success' || !loadActionsResult.actions) {
+        throw new Error(strings.checkoutStartFailed);
+      }
+      confirmActions = loadActionsResult.actions;
+
+      loading.value = false;
+      await syncMountedSurfaces();
+      if (generation !== teardownGeneration) return;
+    } catch (err: unknown) {
+      if (generation !== teardownGeneration) return;
+      initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed;
+    } finally {
+      if (generation === teardownGeneration && loading.value) {
+        loading.value = false;
+      }
+    }
+  }
+
+  async function confirmExpress(event: unknown) {
+    if (!confirmActions) return;
+    confirmError.value = null;
+    confirming.value = true;
+    try {
+      const { error } = await confirmActions.confirm({ expressCheckoutConfirmEvent: event });
+      if (error?.message) confirmError.value = error.message;
+    } catch {
+      confirmError.value = strings.networkError;
+    } finally {
+      confirming.value = false;
+    }
+  }
+
+  async function confirmCardPayment() {
+    if (!confirmActions) return;
+    confirmError.value = null;
+    confirming.value = true;
+    try {
+      const { error } = await confirmActions.confirm();
+      if (error?.message) confirmError.value = error.message;
+    } catch {
+      confirmError.value = strings.networkError;
+    } finally {
+      confirming.value = false;
+    }
+  }
+
+  watch(
+    () => [props.planType, props.promoCode, props.returnPath] as const,
+    () => {
+      void setupCheckout();
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => [props.showWalletSurface, props.showCardSurface] as const,
+    () => {
+      void syncMountedSurfaces();
+    },
+  );
+
+  watch(
+    () => props.hidePaymentWallets,
+    () => {
+      if (!paymentElement) return;
+      unmountPaymentElement();
+      if (props.showCardSurface) void syncMountedSurfaces();
+    },
+  );
+
+  onBeforeUnmount(() => {
+    teardownGeneration++;
+    destroyElements();
+  });
 </script>

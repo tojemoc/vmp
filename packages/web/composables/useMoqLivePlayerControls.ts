@@ -1,110 +1,126 @@
-import { ref, shallowRef, type ShallowRef } from 'vue'
-import type { Broadcast, MultiBackend } from '@moq/watch'
+import type { Signal } from '@moq/signals';
+import { ref, type ShallowRef, shallowRef } from 'vue';
 
-type Dispose = () => void
+type Dispose = () => void;
 
 /**
- * UI state + actions for @moq/watch MultiBackend live playback (canvas + WebAudio).
+ * Control surface for the composed @moq/watch 0.4 pipeline
+ * (Broadcast + Video/Audio + Sync), replacing the removed MultiBackend.
+ */
+export type MoqLivePlayerHandle = {
+  paused: Signal<boolean>;
+  volume: Signal<number>;
+  muted: Signal<boolean>;
+  /** Pulse false→true to wait for re-announcement / catch the live edge. */
+  reload: Signal<boolean>;
+  /** Optional sync reset used when catching up to live in buffered mode. */
+  resetSync?: () => void;
+};
+
+/**
+ * UI state + actions for MoQ live playback (canvas + WebAudio).
  */
 export function useMoqLivePlayerControls() {
-  const shellRef = ref<HTMLElement | null>(null)
-  const backend = shallowRef<MultiBackend | null>(null)
-  const broadcast = shallowRef<Broadcast | null>(null)
+  const shellRef = ref<HTMLElement | null>(null);
+  const player = shallowRef<MoqLivePlayerHandle | null>(null);
 
-  const isPaused = ref(false)
-  const volume01 = ref(0.85)
-  const isMuted = ref(false)
+  const isPaused = ref(false);
+  const volume01 = ref(0.85);
+  const isMuted = ref(false);
 
-  const disposers: Dispose[] = []
+  const disposers: Dispose[] = [];
 
   const clearSubscriptions = () => {
     while (disposers.length) {
-      disposers.pop()?.()
+      disposers.pop()?.();
     }
-  }
+  };
 
-  const attach = (b: MultiBackend, br: Broadcast) => {
-    clearSubscriptions()
-    backend.value = b
-    broadcast.value = br
+  const attach = (handle: MoqLivePlayerHandle) => {
+    clearSubscriptions();
+    player.value = handle;
     disposers.push(
-      b.paused.subscribe((v) => {
-        isPaused.value = v
-      })
-    )
+      handle.paused.subscribe((v) => {
+        isPaused.value = v;
+      }),
+    );
     disposers.push(
-      b.audio.volume.subscribe((v) => {
-        volume01.value = v
-      })
-    )
+      handle.volume.subscribe((v) => {
+        volume01.value = v;
+      }),
+    );
     disposers.push(
-      b.audio.muted.subscribe((v) => {
-        isMuted.value = v
-      })
-    )
-  }
+      handle.muted.subscribe((v) => {
+        isMuted.value = v;
+      }),
+    );
+    // Seed Vue refs from current signal values (subscribe alone is change-only).
+    isPaused.value = handle.paused.peek();
+    volume01.value = handle.volume.peek();
+    isMuted.value = handle.muted.peek();
+  };
 
   const detach = () => {
-    clearSubscriptions()
-    backend.value = null
-    broadcast.value = null
-  }
+    clearSubscriptions();
+    player.value = null;
+  };
 
   const togglePause = () => {
-    const b = backend.value
-    if (!b) return
-    b.paused.update((p) => !p)
-  }
+    const p = player.value;
+    if (!p) return;
+    p.paused.update((paused) => !paused);
+  };
 
-  /** Resume A/V and pulse catalog reload to catch up to the live edge. */
+  /** Resume A/V and re-anchor to the live edge (sync reset + reload pulse). */
   const goLive = () => {
-    const b = backend.value
-    const br = broadcast.value
-    if (!b || !br) return
-    b.paused.set(false)
-    br.reload.set(true)
+    const p = player.value;
+    if (!p) return;
+    p.paused.set(false);
+    p.resetSync?.();
+    // Brief false→true pulse forces re-subscribe; steady state stays reload=true
+    // (wait for announcements), matching <moq-watch>'s default.
+    p.reload.set(false);
     queueMicrotask(() => {
-      br.reload.set(false)
-    })
-  }
+      p.reload.set(true);
+    });
+  };
 
   const toggleMute = () => {
-    const b = backend.value
-    if (!b) return
-    b.audio.muted.update((m) => !m)
-  }
+    const p = player.value;
+    if (!p) return;
+    p.muted.update((m) => !m);
+  };
 
   const setVolume = (v: number) => {
-    const b = backend.value
-    if (!b) return
-    const clamped = Math.min(1, Math.max(0, v))
-    b.audio.volume.set(clamped)
-    if (clamped > 0 && b.audio.muted.peek()) b.audio.muted.set(false)
-  }
+    const p = player.value;
+    if (!p) return;
+    const clamped = Math.min(1, Math.max(0, v));
+    p.volume.set(clamped);
+    if (clamped > 0 && p.muted.peek()) p.muted.set(false);
+  };
 
   const toggleFullscreen = async () => {
-    const el = shellRef.value
-    if (!el) return
+    const el = shellRef.value;
+    if (!el) return;
     try {
       if (document.fullscreenElement === el) {
-        await document.exitFullscreen()
+        await document.exitFullscreen();
       } else {
-        await el.requestFullscreen()
+        await el.requestFullscreen();
       }
     } catch (err) {
       if (import.meta.env.DEV) {
         console.warn('toggleFullscreen failed in useMoqLivePlayerControls', {
           shellRef: shellRef.value,
-          err
-        })
+          err,
+        });
       }
     }
-  }
+  };
 
   return {
     shellRef,
-    backend: backend as ShallowRef<MultiBackend | null>,
-    broadcast: broadcast as ShallowRef<Broadcast | null>,
+    player: player as ShallowRef<MoqLivePlayerHandle | null>,
     isPaused,
     volume01,
     isMuted,
@@ -114,10 +130,10 @@ export function useMoqLivePlayerControls() {
     goLive,
     toggleMute,
     setVolume,
-    toggleFullscreen
-  }
+    toggleFullscreen,
+  };
 }
 
 export function isLiveRecommendation(rec: { livestream_provider?: string | null }): boolean {
-  return Boolean(rec?.livestream_provider)
+  return Boolean(rec?.livestream_provider);
 }

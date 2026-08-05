@@ -13,34 +13,34 @@
  *   So by the time this middleware runs, useAuth() already reflects the real session state.
  */
 function safeRedirect(value: string): string | undefined {
-  const t = value.trim()
-  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return undefined
-  return t
+  const t = value.trim();
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return undefined;
+  return t;
 }
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  const { user, canEditContent } = useAuth()
-  const { startLoginFlow } = useLoginFlow()
+  const { user, canEditContent } = useAuth();
+  const { startLoginFlow } = useLoginFlow();
   if (!user.value) {
     // navigateTo must run in this middleware frame (not after await in startLoginFlow).
     if (import.meta.server) {
-      const redirect = safeRedirect(to.fullPath)
+      const redirect = safeRedirect(to.fullPath);
       return navigateTo({
         path: '/login',
         query: redirect ? { redirect } : undefined,
-      })
+      });
     }
-    return startLoginFlow(to.fullPath)
+    return startLoginFlow(to.fullPath);
   }
 
   if (!canEditContent.value) {
     // Logged in but insufficient role (e.g. a regular viewer somehow hit /admin)
-    return navigateTo('/')
+    return navigateTo('/');
   }
 
   // Editor+ users who haven't set up 2FA yet must complete setup before accessing admin.
   // Forward the original path so setup can redirect back here after completion.
   if (user.value.totpRequired && !user.value.totpEnabled) {
-    return navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(to.fullPath)}`)
+    return navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(to.fullPath)}`);
   }
-})
+});

@@ -1,6 +1,6 @@
-import { defineCatalog } from '../defineCatalog'
-import { personalData } from './personalData'
-import { strings } from './strings'
+import { defineCatalog } from '../defineCatalog';
+import { personalData } from './personalData';
+import { strings } from './strings';
 
 export const cs = defineCatalog(
   'cs',
@@ -22,4 +22,4 @@ export const cs = defineCatalog(
     },
   },
   personalData,
-)
+);
