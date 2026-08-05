@@ -26,7 +26,10 @@ defaultTags.service = (process.env.DD_SERVICE || 'vmp-transcoder').trim() || 'vm
 let socket: dgram.Socket | null = null;
 
 function getSocket(): dgram.Socket {
-  if (!socket) socket = dgram.createSocket('udp4');
+  if (!socket) {
+    socket = dgram.createSocket('udp4');
+    socket.unref();
+  }
   return socket;
 }
 

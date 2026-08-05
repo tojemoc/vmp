@@ -17,7 +17,28 @@ export type PackagingJobRecord = {
   updatedAt: string;
 };
 
+/** Match supervisor MAX_PIPELINE_SUCCESS_JOBS retention. */
+const MAX_PACKAGING_SUCCESS_JOBS = 400;
+/** Match supervisor MAX_PIPELINE_FAILED_JOBS retention. */
+const MAX_PACKAGING_FAILED_JOBS = 200;
+
 const jobs = new Map<string, PackagingJobRecord>();
+
+function evictOldestTerminal(status: 'success' | 'failed', max: number): void {
+  const terminal = [...jobs.entries()]
+    .filter(([, job]) => job.status === status)
+    .sort((a, b) => a[1].updatedAt.localeCompare(b[1].updatedAt));
+  while (terminal.length > max) {
+    const oldest = terminal.shift();
+    if (!oldest) break;
+    jobs.delete(oldest[0]);
+  }
+}
+
+function enforceRegistryRetention(): void {
+  evictOldestTerminal('success', MAX_PACKAGING_SUCCESS_JOBS);
+  evictOldestTerminal('failed', MAX_PACKAGING_FAILED_JOBS);
+}
 
 export function registerPackagingJob(
   record: Omit<PackagingJobRecord, 'status' | 'updatedAt'>,
@@ -28,6 +49,7 @@ export function registerPackagingJob(
     updatedAt: new Date().toISOString(),
   };
   jobs.set(record.jobId, full);
+  enforceRegistryRetention();
   return full;
 }
 
@@ -44,6 +66,7 @@ export function markPackagingSuccess(
   existing.status = 'success';
   existing.outputPath = outputPath;
   existing.updatedAt = new Date().toISOString();
+  enforceRegistryRetention();
   return existing;
 }
 
@@ -53,6 +76,7 @@ export function markPackagingFailed(jobId: string, error: string): PackagingJobR
   existing.status = 'failed';
   existing.error = error;
   existing.updatedAt = new Date().toISOString();
+  enforceRegistryRetention();
   return existing;
 }
 

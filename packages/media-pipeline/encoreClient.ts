@@ -220,21 +220,19 @@ const PROFILE_GPU_VARIANTS: Record<string, string[]> = {
 /** Pick best registered Encore profile for this host (GPU when available). */
 export async function resolveEncoreProfileName(profileBase: string): Promise<string> {
   const gpu = await detectGpuEncodeConfig();
-  const candidates = PROFILE_GPU_VARIANTS[profileBase] || [
-    resolveEncoreProfileBase(profileBase, gpu.profileSuffix),
-  ];
-  if (!PROFILE_GPU_VARIANTS[profileBase]) {
+  const variants = PROFILE_GPU_VARIANTS[profileBase];
+  if (!variants) {
     return resolveEncoreProfileBase(profileBase, gpu.profileSuffix);
   }
   if (gpu.backend === 'nvenc') {
-    const nvenc = candidates.find((c) => c.includes('nvenc'));
+    const nvenc = variants.find((c) => c.includes('nvenc'));
     if (nvenc) return nvenc;
   }
   if (gpu.backend === 'vaapi') {
-    const vaapi = candidates.find((c) => c.includes('vaapi'));
+    const vaapi = variants.find((c) => c.includes('vaapi'));
     if (vaapi) return vaapi;
   }
-  return candidates[candidates.length - 1];
+  return variants[variants.length - 1];
 }
 
 export const ENCORE_PROFILES = {

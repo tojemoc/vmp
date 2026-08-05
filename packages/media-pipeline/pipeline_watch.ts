@@ -50,7 +50,6 @@ type ResolveInputTargetPathResult = {
   reason?: 'legacy_filename' | 'random_uuid' | 'already_uuid';
 };
 type RenditionKey = '1080p' | '720p' | '480p';
-type Phase1Result = { audioTmpPath: string | null; hasAudio: boolean };
 type JobPhase = 'phase1' | 'phase2' | 'podcast' | 'preview' | 'upload';
 type JobHandle = {
   videoId: string;
@@ -121,11 +120,6 @@ function ensureJobHandle(videoId: string, phase: JobPhase = 'phase1'): JobHandle
   const handle: JobHandle = { videoId, children: new Set(), status: 'running', phase };
   jobHandles.set(videoId, handle);
   return handle;
-}
-
-function setJobPhase(videoId: string, phase: JobPhase): void {
-  const handle = jobHandles.get(videoId);
-  if (handle) handle.phase = phase;
 }
 
 function trackChild<T extends ChildProcess>(child: T, videoId?: string): T {
@@ -290,16 +284,6 @@ function emitPipelineEvent(
 /** Cumulative overall progress checkpoints (0–1) for non-encode stages. */
 const PROGRESS = {
   PROBE: 0.02,
-  P1_ENCODE: { base: 0.02, span: 0.25 },
-  P1_DONE: 0.3,
-  P2_720: { base: 0.3, span: 0.1 },
-  P2_1080: { base: 0.4, span: 0.1 },
-  P2_480: { base: 0.5, span: 0.15 },
-  P2_PACKAGE: { base: 0.65, span: 0.07 },
-  P2_UPLOAD: { base: 0.72, span: 0.08 },
-  P2_DONE: 0.8,
-  PODCAST: { base: 0.8, span: 0.08 },
-  PREVIEW: { base: 0.88, span: 0.08 },
   DONE: 1.0,
 } as const;
 
@@ -351,107 +335,6 @@ function emitProgressCheckpoint(
     detail,
   });
   progressEmitState.set(videoId, { lastAt: Date.now(), lastOverall: overallProgress });
-}
-
-function maybeEmitEncodeProgress(
-  videoId: string,
-  stage: PipelineStage,
-  rendition: string,
-  timeSec: number,
-  durationSec: number,
-  overallBase: number,
-  overallSpan: number,
-  speed: number | null,
-  phase: ProgressPhase,
-): void {
-  const stageProgress = Math.min(1, Math.max(0, timeSec / durationSec));
-  const overallProgress = Math.min(0.99, overallBase + overallSpan * stageProgress);
-  const state = progressEmitState.get(videoId) ?? { lastAt: 0, lastOverall: -1 };
-  const now = Date.now();
-  if (now - state.lastAt < 2000 && overallProgress - state.lastOverall < 0.005) return;
-  progressEmitState.set(videoId, { lastAt: now, lastOverall: overallProgress });
-  const etaSec =
-    speed != null && speed > 0 ? Math.max(0, Math.round((durationSec - timeSec) / speed)) : null;
-  emitPipelineProgress({
-    videoId,
-    stage,
-    phase,
-    rendition,
-    stageProgress,
-    overallProgress,
-    speed,
-    etaSec,
-    timeSec,
-  });
-}
-
-function parseFfmpegTime(text: string): number | null {
-  const m = text.match(/\btime=(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)\b/);
-  if (!m) return null;
-  const sec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
-  return Number.isFinite(sec) ? sec : null;
-}
-
-function parseFfmpegSpeed(text: string): number | null {
-  const m = text.match(/\bspeed=\s*([\d.]+)x\b/);
-  if (!m) return null;
-  const v = Number.parseFloat(m[1]);
-  return Number.isFinite(v) && v > 0 ? v : null;
-}
-
-type FfmpegProgressOptions = {
-  videoId: string;
-  stage: PipelineStage;
-  rendition: string;
-  durationSec: number | null;
-  overallBase: number;
-  overallSpan: number;
-  phase: ProgressPhase;
-};
-
-function runFfmpeg(args: string[], label: string, progress: FfmpegProgressOptions): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = trackChild(
-      spawn('ffmpeg', args, { env: process.env, stdio: ['ignore', 'ignore', 'pipe'] }),
-      progress.videoId,
-    );
-    let stderrBuf = '';
-
-    const onProgressText = (text: string) => {
-      process.stderr.write(text);
-      const durationSec = progress.durationSec;
-      if (durationSec == null || durationSec <= 0) return;
-      const timeSec = parseFfmpegTime(text);
-      if (timeSec == null) return;
-      maybeEmitEncodeProgress(
-        progress.videoId,
-        progress.stage,
-        progress.rendition,
-        timeSec,
-        durationSec,
-        progress.overallBase,
-        progress.overallSpan,
-        parseFfmpegSpeed(text),
-        progress.phase,
-      );
-    };
-
-    child.stderr.on('data', (d) => {
-      stderrBuf += d.toString();
-      const parts = stderrBuf.split(/\r|\n/);
-      stderrBuf = parts.pop() ?? '';
-      for (const part of parts) {
-        if (part.trim()) onProgressText(`${part}\n`);
-      }
-    });
-
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (stderrBuf.trim()) onProgressText(`${stderrBuf}\n`);
-      if (code === 0) return resolve();
-      reject(new Error(`${label} failed exit=${code}`));
-    });
-  });
 }
 
 function run(
@@ -831,6 +714,8 @@ async function processVideo(
     await rm(lockFile, { force: true });
     videoDurations.delete(videoId);
     progressEmitState.delete(videoId);
+    jobHandles.delete(videoId);
+    stoppedVideos.delete(videoId);
     // Allow the same inbox UUID to be picked up again (restart or later rescan/retry).
     enqueuedVideoIds.delete(videoId);
     throw err;
@@ -1236,9 +1121,6 @@ async function main() {
   for (const watch of INBOX_WATCHES) {
     log(`📥 Inbox [${watch.label}] pipelineMode=${watch.pipelineMode}: ${watch.dir}`);
   }
-  log(
-    `☁️  Using storage bucket: ${process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || 'vmp-videos'}`,
-  );
   log('🔍 Resuming existing jobs...');
   await startupScan();
   log('🎬 Watching for new uploads...');

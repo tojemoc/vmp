@@ -686,7 +686,7 @@ function drainJobQueue(): void {
   while (jobQueue.length > 0) {
     const next = jobQueue.find((j) => j.type === 'preview_mp3' && j.status === 'queued');
     if (!next || next.previewSeconds == null) break;
-    if (previewGpuRunning + gpuSlots.current - previewGpuRunning >= gpuSlots.max) break;
+    if (gpuSlots.current >= gpuSlots.max) break;
     const idx = jobQueue.indexOf(next);
     if (idx >= 0) jobQueue.splice(idx, 1);
     next.status = 'running';
@@ -805,7 +805,7 @@ function timingSafeEqualString(provided: string, expected: string): boolean {
 
 function verifyPackagingSecret(req: http.IncomingMessage): boolean {
   if (!packagingSecret) {
-    return uiHost === '127.0.0.1' || uiHost === '::1' || uiHost === 'localhost';
+    return isLoopbackHost(uiHost);
   }
   const header = req.headers['x-vmp-packaging-secret'];
   const provided = (Array.isArray(header) ? header[0] : header) || '';
@@ -1174,12 +1174,10 @@ const server = http.createServer(async (req, res) => {
       ...job,
       stageLabel: stageLabel(job.stage),
     }));
+    sortJobQueue();
     const queuedJobs = jobQueue
       .filter((j) => j.status === 'queued')
-      .map((j, _i, arr) => {
-        sortJobQueue();
-        return { ...j, queuePosition: getQueuePosition(j.videoId) };
-      });
+      .map((j) => ({ ...j, queuePosition: getQueuePosition(j.videoId) }));
     json(res, {
       pipeline: {
         script: resolvedPipelineScript,
