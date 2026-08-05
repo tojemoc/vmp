@@ -95,13 +95,21 @@ export function isLegacyProviderConfigured(
   env: LegacyEnv,
   target: 'sandbox' | 'production' = 'production',
 ): boolean {
+  // Checkout / API credentials only. Webhook delivery still requires
+  // LEGACY_ESHOP_WEBHOOK_SECRET via verifyLegacyWebhookSignature (fails closed).
+  // Do not gate isConfigured on the webhook secret — that silently hides Qerko
+  // at checkout when the secret lives in a separate binding or is unset.
   const base = target === 'sandbox' ? getLegacySandboxApiBase(env) : getLegacyApiBase(env);
   return Boolean(
     base &&
       String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim() &&
-      String(env.LEGACY_ESHOP_API_KEY ?? '').trim() &&
-      String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim(),
+      String(env.LEGACY_ESHOP_API_KEY ?? '').trim(),
   );
+}
+
+/** True when legacy webhook HMAC verification can run. */
+export function isLegacyWebhookConfigured(env: LegacyEnv): boolean {
+  return Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim());
 }
 
 function legacyHeaders(env: LegacyEnv): Record<string, string> {

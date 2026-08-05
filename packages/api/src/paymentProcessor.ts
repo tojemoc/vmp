@@ -100,7 +100,9 @@ async function getRunnableProviderIds(env: any): Promise<PaymentProviderId[]> {
 
 async function getConfiguredProvidersForApi(env: any): Promise<Array<'stripe' | 'legacy'>> {
   const enabled = await getConfiguredProviderIds(env);
-  return enabled.map(toApiProviderId);
+  return enabled
+    .map(toApiProviderId)
+    .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy');
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
@@ -259,8 +261,16 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       getEffectivePricingSettings(env, 'legacy'),
       getAllowedPlans(env),
       getConfiguredProvidersForApi(env),
-      getPaymentProviderOrder(env).then((ids) => ids.map(toApiProviderId)),
-      getRunnableProviderIds(env).then((ids) => ids.map(toApiProviderId)),
+      getPaymentProviderOrder(env).then((ids) =>
+        ids
+          .map(toApiProviderId)
+          .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy'),
+      ),
+      getRunnableProviderIds(env).then((ids) =>
+        ids
+          .map(toApiProviderId)
+          .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy'),
+      ),
     ]);
     const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p));
     const pricingNotConfigured =
@@ -701,6 +711,16 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         : (orderedRunnable[0] ?? 'stripe');
     const provider = providers.get(providerId);
     const apiProvider = toApiProviderId(providerId);
+    if (!apiProvider) {
+      return jsonResponse(
+        {
+          error: 'Requested payment provider is not supported.',
+          code: 'provider_not_supported',
+        },
+        400,
+        corsHeaders,
+      );
+    }
 
     const promoResolution =
       providerId === 'stripe'

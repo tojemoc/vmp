@@ -111,10 +111,11 @@ export async function getPaymentProviders(env: any) {
   return { providers, enabled, runnable };
 }
 
-export function toApiProviderId(id: PaymentProviderId): 'stripe' | 'legacy' {
+export function toApiProviderId(id: PaymentProviderId): 'stripe' | 'legacy' | null {
   if (id === 'qerko') return 'legacy';
   if (id === 'stripe') return 'stripe';
-  throw new Error(`Unsupported payment provider for API mapping: ${id}`);
+  // Stub / unknown IDs (gopay, comgate, …) are not exposed on the public API.
+  return null;
 }
 
 export function fromApiProviderId(raw: string): PaymentProviderId | null {
