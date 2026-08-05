@@ -1,94 +1,92 @@
 {
-	"name": "vmp-api",
-	"main": "src/index.ts",
-	"compatibility_date": "2024-09-23",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	"version_metadata": {
-		"binding": "CF_VERSION_METADATA"
-	},
-	"d1_databases": [
-		{
-			"binding": "video_subscription_db",
-			"database_name": "video-subscription-db",
-			"database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
-		}
-	],
-	"r2_buckets": [
-		{
-			"binding": "BUCKET",
-			"bucket_name": "vmp-videos"
-		}
-	],
-	"kv_namespaces": [
-		{
-			"binding": "RATE_LIMIT_KV",
-			"id": "96fab13ef30e42afaecedeee8e6875b9"
-		}
-	],
-	"durable_objects": {
-	    "bindings": [
-	      {
-	        "name": "SEGMENT_RATE_LIMITER",
-	        "class_name": "SegmentRateLimiterDO"
-	      },
-	      {
-	        "name": "B2_PRIMARY_HEALTH",
-	        "class_name": "B2PrimaryHealthDO"
-	      }
-	    ]
-	  },
-	"queues": {
-		"producers": [
-			{
-				"binding": "vmp_replication_events",
-				"queue": "vmp-replication-events"
-			},
-			{
-				"binding": "vmp_push_delivery",
-				"queue": "vmp-push-delivery"
-			}
-		],
-		"consumers": [
-			{
-				"queue": "vmp-replication-events",
-				"max_batch_size": 100,
-				"max_batch_timeout": 10
-			},
-			{
-				"queue": "vmp-push-delivery",
-				"max_batch_size": 50,
-				"max_batch_timeout": 10
-			}
-		]
-	},
-	  "migrations": [
-	    {
-	      "tag": "v1",
-	      "new_sqlite_classes": ["SegmentRateLimiterDO"]
-	    },
-	    {
-	      "tag": "v2",
-	      "new_sqlite_classes": ["B2PrimaryHealthDO"]
-	    }
-	  ],
-	"vars": {
-		"R2_BASE_URL": "https://vmp-videos.tjm.sk",
-		"FRONTEND_URL": "https://vmp.tjm.sk",
-		"SENDER_EMAIL": "vmp@tjm.sk",
-		"SENDER_NAME": "VMP",
-		"ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
-		"STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds",
-		"VAPID_PUBLIC_KEY": "BNb3xGO1WgZozFD9h4Px9qBYICqXD_3x9GXzmVCnqmcdwpJF8vBdlC2mM5taUyonUrP2YpUNdw0Wf282zx4Pirw"
-	},
-	"observability": {
-		"logs": {
-			"enabled": true,
-			"invocation_logs": true
-		}
-	},
-	"triggers": {
-		"crons": ["*/5 * * * *", "*/15 * * * *"]
-	}
+  "name": "vmp-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "d1_databases": [
+    {
+      "binding": "video_subscription_db",
+      "database_name": "video-subscription-db",
+      "database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "vmp-videos"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT_KV",
+      "id": "96fab13ef30e42afaecedeee8e6875b9"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SEGMENT_RATE_LIMITER",
+        "class_name": "SegmentRateLimiterDO"
+      },
+      {
+        "name": "B2_PRIMARY_HEALTH",
+        "class_name": "B2PrimaryHealthDO"
+      }
+    ]
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "vmp_replication_events",
+        "queue": "vmp-replication-events"
+      },
+      {
+        "binding": "vmp_push_delivery",
+        "queue": "vmp-push-delivery"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "vmp-replication-events",
+        "max_batch_size": 100,
+        "max_batch_timeout": 10
+      },
+      {
+        "queue": "vmp-push-delivery",
+        "max_batch_size": 50,
+        "max_batch_timeout": 10
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SegmentRateLimiterDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["B2PrimaryHealthDO"]
+    }
+  ],
+  "vars": {
+    "R2_BASE_URL": "https://vmp-videos.tjm.sk",
+    "FRONTEND_URL": "https://vmp.tjm.sk",
+    "SENDER_EMAIL": "vmp@tjm.sk",
+    "SENDER_NAME": "VMP",
+    "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+    "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds",
+    "VAPID_PUBLIC_KEY": "BNb3xGO1WgZozFD9h4Px9qBYICqXD_3x9GXzmVCnqmcdwpJF8vBdlC2mM5taUyonUrP2YpUNdw0Wf282zx4Pirw"
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *", "*/15 * * * *"]
+  }
 }

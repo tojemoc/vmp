@@ -33,7 +33,7 @@
  * - 200 with gateway links → token accepted (not proof of successful charge).
  */
 
-import { requireRole } from './auth.js'
+import { requireRole } from './auth.js';
 import {
   getLegacyApiBase,
   getLegacySandboxApiBase,
@@ -41,96 +41,102 @@ import {
   isLegacyProviderConfigured,
   isLegacySandboxConfigured,
   probeLegacyCardOnFile,
-} from './legacyProvider.js'
+} from './legacyProvider.js';
 
 type LegacyMigrationEnv = {
-  DB?: D1Database
-  video_subscription_db?: D1Database
-  BREVO_API_KEY?: string
-  FRONTEND_URL?: string
-  SENDER_EMAIL?: string
-  SENDER_NAME?: string
-  LEGACY_ESHOP_API_URL?: string
-  LEGACY_ESHOP_SANDBOX_API_URL?: string
-  LEGACY_ESHOP_MERCHANT_ID?: string
-  LEGACY_ESHOP_API_KEY?: string
-}
+  DB?: D1Database;
+  video_subscription_db?: D1Database;
+  BREVO_API_KEY?: string;
+  FRONTEND_URL?: string;
+  SENDER_EMAIL?: string;
+  SENDER_NAME?: string;
+  LEGACY_ESHOP_API_URL?: string;
+  LEGACY_ESHOP_SANDBOX_API_URL?: string;
+  LEGACY_ESHOP_MERCHANT_ID?: string;
+  LEGACY_ESHOP_API_KEY?: string;
+};
 
-type DbBinding = D1Database
+type DbBinding = D1Database;
 
-const DEFAULT_RELINK_STALE_DAYS = 0
-const MAX_RELINK_EMAILS_PER_CALL = 50
-const VALIDATION_DELAY_MS = 100
-const BREVO_EMAIL_TIMEOUT_MS = 15_000
-const CSV_EXPORT_MAX_PAGES = 200
+const DEFAULT_RELINK_STALE_DAYS = 0;
+const MAX_RELINK_EMAILS_PER_CALL = 50;
+const VALIDATION_DELAY_MS = 100;
+const BREVO_EMAIL_TIMEOUT_MS = 15_000;
+const CSV_EXPORT_MAX_PAGES = 200;
 
 function getDb(env: LegacyMigrationEnv): DbBinding {
-  const db = env.DB ?? env.video_subscription_db
-  if (!db) throw new Error('D1 binding not found')
-  return db
+  const db = env.DB ?? env.video_subscription_db;
+  if (!db) throw new Error('D1 binding not found');
+  return db;
 }
 
 function jsonResponse(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  })
+  });
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function maskEmail(email: string): string {
-  const at = email.indexOf('@')
-  if (at <= 0) return '***'
-  const local = email.slice(0, at)
-  const domain = email.slice(at)
-  const visible = local.slice(0, Math.min(3, local.length))
-  return `${visible}***${domain}`
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at);
+  const visible = local.slice(0, Math.min(3, local.length));
+  return `${visible}***${domain}`;
 }
 
 function truncatePurchaseId(purchaseId: string): string {
-  const value = String(purchaseId ?? '').trim()
-  if (value.length <= 8) return value
-  return `…${value.slice(-8)}`
+  const value = String(purchaseId ?? '').trim();
+  if (value.length <= 8) return value;
+  return `…${value.slice(-8)}`;
 }
 
 function buildAdminAuditLogStatement(
   db: DbBinding,
   input: {
-    actorUserId: string
-    actionType: string
-    targetUserId: string | null
-    detail: Record<string, unknown>
+    actorUserId: string;
+    actionType: string;
+    targetUserId: string | null;
+    detail: Record<string, unknown>;
   },
 ) {
-  return db.prepare(`
+  return db
+    .prepare(`
     INSERT INTO admin_audit_logs (id, actor_user_id, action_type, target_user_id, detail_json, created_at)
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-  `).bind(
-    crypto.randomUUID(),
-    input.actorUserId,
-    input.actionType,
-    input.targetUserId,
-    JSON.stringify(input.detail ?? {}),
-  )
+  `)
+    .bind(
+      crypto.randomUUID(),
+      input.actorUserId,
+      input.actionType,
+      input.targetUserId,
+      JSON.stringify(input.detail ?? {}),
+    );
 }
 
 export type MigrationStats = {
-  total_imported: number
-  needs_relink: number
-  active: number
-  failed: number
-  not_validated: number
-  churn_rate_pct: number
-  sandboxConfigured: boolean
-  productionConfigured: boolean
-  validationApiBase: string | null
-}
+  total_imported: number;
+  needs_relink: number;
+  active: number;
+  failed: number;
+  not_validated: number;
+  churn_rate_pct: number;
+  sandboxConfigured: boolean;
+  productionConfigured: boolean;
+  validationApiBase: string | null;
+};
 
-export async function getMigrationStats(db: DbBinding, env: LegacyMigrationEnv): Promise<MigrationStats> {
-  const row = await db.prepare(`
+export async function getMigrationStats(
+  db: DbBinding,
+  env: LegacyMigrationEnv,
+): Promise<MigrationStats> {
+  const row = await db
+    .prepare(`
     SELECT
       SUM(CASE WHEN provider = 'legacy' THEN 1 ELSE 0 END) AS total_imported,
       SUM(CASE WHEN status = 'needs_relink' THEN 1 ELSE 0 END) AS needs_relink,
@@ -138,18 +144,19 @@ export async function getMigrationStats(db: DbBinding, env: LegacyMigrationEnv):
       SUM(CASE WHEN provider = 'legacy' AND legacy_validation_status = 'invalid' THEN 1 ELSE 0 END) AS failed,
       SUM(CASE WHEN provider = 'legacy' AND status = 'needs_relink' AND legacy_validation_status IS NULL THEN 1 ELSE 0 END) AS not_validated
     FROM subscriptions
-  `).first()
+  `)
+    .first();
 
-  const totalImported = Number(row?.total_imported ?? 0)
-  const needsRelink = Number(row?.needs_relink ?? 0)
-  const active = Number(row?.active ?? 0)
-  const failed = Number(row?.failed ?? 0)
-  const notValidated = Number(row?.not_validated ?? 0)
-  const denominator = active + failed
-  const churnRatePct = denominator > 0 ? Math.round((failed / denominator) * 1000) / 10 : 0
+  const totalImported = Number(row?.total_imported ?? 0);
+  const needsRelink = Number(row?.needs_relink ?? 0);
+  const active = Number(row?.active ?? 0);
+  const failed = Number(row?.failed ?? 0);
+  const notValidated = Number(row?.not_validated ?? 0);
+  const denominator = active + failed;
+  const churnRatePct = denominator > 0 ? Math.round((failed / denominator) * 1000) / 10 : 0;
 
-  const productionConfigured = Boolean(getLegacyApiBase(env))
-  const sandboxConfigured = isLegacySandboxConfigured(env)
+  const productionConfigured = Boolean(getLegacyApiBase(env));
+  const sandboxConfigured = isLegacySandboxConfigured(env);
 
   return {
     total_imported: totalImported,
@@ -160,25 +167,29 @@ export async function getMigrationStats(db: DbBinding, env: LegacyMigrationEnv):
     churn_rate_pct: churnRatePct,
     sandboxConfigured,
     productionConfigured,
-    validationApiBase: productionConfigured ? getLegacyApiBase(env) : (sandboxConfigured ? getLegacySandboxApiBase(env) : null),
-  }
+    validationApiBase: productionConfigured
+      ? getLegacyApiBase(env)
+      : sandboxConfigured
+        ? getLegacySandboxApiBase(env)
+        : null,
+  };
 }
 
 export type ValidateLegacyBatchResult = {
-  processed: number
-  valid: number
-  invalid: number
-  errors: number
-  validationTarget: 'sandbox' | 'production'
+  processed: number;
+  valid: number;
+  invalid: number;
+  errors: number;
+  validationTarget: 'sandbox' | 'production';
   details: Array<{
-    subscriptionId: string
-    userId: string
-    purchaseId: string
-    result: 'valid' | 'invalid' | 'error'
-    httpStatus?: number
-    errorMessage?: string
-  }>
-}
+    subscriptionId: string;
+    userId: string;
+    purchaseId: string;
+    result: 'valid' | 'invalid' | 'error';
+    httpStatus?: number;
+    errorMessage?: string;
+  }>;
+};
 
 export async function validateLegacyBatch(
   db: DbBinding,
@@ -188,16 +199,19 @@ export async function validateLegacyBatch(
   validationTarget: 'sandbox' | 'production' = 'production',
 ): Promise<ValidateLegacyBatchResult> {
   if (!isLegacyProviderConfigured(env, validationTarget)) {
-    throw new Error(`Legacy billing is not configured for ${validationTarget}`)
+    throw new Error(`Legacy billing is not configured for ${validationTarget}`);
   }
 
-  const apiBase = getLegacyValidationApiBase(env, validationTarget)
+  const apiBase = getLegacyValidationApiBase(env, validationTarget);
   if (validationTarget === 'production') {
-    console.warn('[legacy-migration] Validating against production legacy billing API — probe orders may be created.')
+    console.warn(
+      '[legacy-migration] Validating against production legacy billing API — probe orders may be created.',
+    );
   }
 
-  const limit = Math.min(Math.max(batchSize, 1), 100)
-  const rows = await db.prepare(`
+  const limit = Math.min(Math.max(batchSize, 1), 100);
+  const rows = await db
+    .prepare(`
     SELECT id, user_id, purchase_id, plan_type
     FROM subscriptions
     WHERE provider = 'legacy'
@@ -207,24 +221,26 @@ export async function validateLegacyBatch(
       AND trim(purchase_id) <> ''
     ORDER BY datetime(created_at) ASC
     LIMIT ?
-  `).bind(limit).all()
+  `)
+    .bind(limit)
+    .all();
 
-  const details: ValidateLegacyBatchResult['details'] = []
-  let valid = 0
-  let invalid = 0
-  let errors = 0
+  const details: ValidateLegacyBatchResult['details'] = [];
+  let valid = 0;
+  let invalid = 0;
+  let errors = 0;
 
   for (const row of rows.results ?? []) {
-    const subscriptionId = String(row.id)
-    const userId = String(row.user_id)
-    const purchaseId = String(row.purchase_id)
-    const idOrder = crypto.randomUUID()
+    const subscriptionId = String(row.id);
+    const userId = String(row.user_id);
+    const purchaseId = String(row.purchase_id);
+    const idOrder = crypto.randomUUID();
 
     const probe = await probeLegacyCardOnFile(env, apiBase, {
       purchaseId,
       idOrder,
       planType: String(row.plan_type ?? 'monthly'),
-    })
+    });
 
     details.push({
       subscriptionId,
@@ -233,31 +249,28 @@ export async function validateLegacyBatch(
       result: probe.result,
       ...(probe.httpStatus != null ? { httpStatus: probe.httpStatus } : {}),
       ...(probe.errorMessage ? { errorMessage: probe.errorMessage } : {}),
-    })
+    });
 
-    if (probe.result === 'valid') valid += 1
-    else if (probe.result === 'invalid') invalid += 1
-    else errors += 1
+    if (probe.result === 'valid') valid += 1;
+    else if (probe.result === 'invalid') invalid += 1;
+    else errors += 1;
 
     if (!dryRun) {
-      const now = new Date().toISOString()
-      await db.prepare(`
+      const now = new Date().toISOString();
+      await db
+        .prepare(`
         UPDATE subscriptions
         SET legacy_validation_status = ?,
             legacy_validated_at = ?,
             legacy_validation_error = ?,
             updated_at = ?
         WHERE id = ?
-      `).bind(
-        probe.result,
-        now,
-        probe.errorMessage ?? null,
-        now,
-        subscriptionId,
-      ).run()
+      `)
+        .bind(probe.result, now, probe.errorMessage ?? null, now, subscriptionId)
+        .run();
     }
 
-    await sleep(VALIDATION_DELAY_MS)
+    await sleep(VALIDATION_DELAY_MS);
   }
 
   return {
@@ -267,19 +280,19 @@ export async function validateLegacyBatch(
     errors,
     validationTarget,
     details,
-  }
+  };
 }
 
 export type RelinkCandidate = {
-  userId: string
-  email: string
-  provider: string
-  purchaseId: string | null
-  providerCustomerId: string | null
-  validationStatus: string | null
-  validatedAt: string | null
-  importedAt: string
-}
+  userId: string;
+  email: string;
+  provider: string;
+  purchaseId: string | null;
+  providerCustomerId: string | null;
+  validationStatus: string | null;
+  validatedAt: string | null;
+  importedAt: string;
+};
 
 export async function getRelinkCandidates(
   db: DbBinding,
@@ -287,17 +300,18 @@ export async function getRelinkCandidates(
   pageSize: number,
   staleDays = DEFAULT_RELINK_STALE_DAYS,
 ): Promise<{ users: RelinkCandidate[]; total: number }> {
-  const safePage = Math.max(1, page)
-  const safePageSize = Math.min(Math.max(pageSize, 1), 100)
-  const offset = (safePage - 1) * safePageSize
-  const safeStaleDays = Math.max(0, staleDays)
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(pageSize, 1), 100);
+  const offset = (safePage - 1) * safePageSize;
+  const safeStaleDays = Math.max(0, staleDays);
 
-  const staleClause = safeStaleDays > 0
-    ? `OR (
+  const staleClause =
+    safeStaleDays > 0
+      ? `OR (
           s.status = 'needs_relink'
           AND datetime(s.created_at) <= datetime('now', ?)
         )`
-    : `OR s.status = 'needs_relink'`
+      : `OR s.status = 'needs_relink'`;
 
   const whereSql = `
     FROM subscriptions s
@@ -306,16 +320,19 @@ export async function getRelinkCandidates(
       (s.provider = 'legacy' AND s.legacy_validation_status = 'invalid')
       ${staleClause}
     )
-  `
+  `;
 
-  const countStmt = safeStaleDays > 0
-    ? db.prepare(`SELECT COUNT(*) AS n ${whereSql}`).bind(`-${safeStaleDays} days`)
-    : db.prepare(`SELECT COUNT(*) AS n ${whereSql}`)
-  const countRow = await countStmt.first()
-  const total = Number(countRow?.n ?? 0)
+  const countStmt =
+    safeStaleDays > 0
+      ? db.prepare(`SELECT COUNT(*) AS n ${whereSql}`).bind(`-${safeStaleDays} days`)
+      : db.prepare(`SELECT COUNT(*) AS n ${whereSql}`);
+  const countRow = await countStmt.first();
+  const total = Number(countRow?.n ?? 0);
 
-  const listStmt = safeStaleDays > 0
-    ? db.prepare(`
+  const listStmt =
+    safeStaleDays > 0
+      ? db
+          .prepare(`
     SELECT
       s.user_id,
       u.email,
@@ -328,8 +345,10 @@ export async function getRelinkCandidates(
     ${whereSql}
     ORDER BY datetime(s.created_at) ASC
     LIMIT ? OFFSET ?
-  `).bind(`-${safeStaleDays} days`, safePageSize, offset)
-    : db.prepare(`
+  `)
+          .bind(`-${safeStaleDays} days`, safePageSize, offset)
+      : db
+          .prepare(`
     SELECT
       s.user_id,
       u.email,
@@ -342,8 +361,9 @@ export async function getRelinkCandidates(
     ${whereSql}
     ORDER BY datetime(s.created_at) ASC
     LIMIT ? OFFSET ?
-  `).bind(safePageSize, offset)
-  const listRows = await listStmt.all()
+  `)
+          .bind(safePageSize, offset);
+  const listRows = await listStmt.all();
 
   const users = (listRows.results ?? []).map((row) => ({
     userId: String(row.user_id),
@@ -354,24 +374,29 @@ export async function getRelinkCandidates(
     validationStatus: row.legacy_validation_status ? String(row.legacy_validation_status) : null,
     validatedAt: row.legacy_validated_at ? String(row.legacy_validated_at) : null,
     importedAt: String(row.created_at ?? ''),
-  }))
+  }));
 
-  return { users, total }
+  return { users, total };
 }
 
 export function relinkCandidatesToCsv(users: RelinkCandidate[]): string {
-  const header = 'user_id,email_masked,provider,purchase_id,provider_customer_id,validation_status,validated_at,imported_at'
-  const lines = users.map((u) => [
-    u.userId,
-    u.email,
-    u.provider,
-    u.purchaseId ?? '',
-    u.providerCustomerId ?? '',
-    u.validationStatus ?? '',
-    u.validatedAt ?? '',
-    u.importedAt,
-  ].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-  return [header, ...lines].join('\n')
+  const header =
+    'user_id,email_masked,provider,purchase_id,provider_customer_id,validation_status,validated_at,imported_at';
+  const lines = users.map((u) =>
+    [
+      u.userId,
+      u.email,
+      u.provider,
+      u.purchaseId ?? '',
+      u.providerCustomerId ?? '',
+      u.validationStatus ?? '',
+      u.validatedAt ?? '',
+      u.importedAt,
+    ]
+      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+      .join(','),
+  );
+  return [header, ...lines].join('\n');
 }
 
 async function sendRelinkEmail(to: string, link: string, env: LegacyMigrationEnv) {
@@ -404,10 +429,10 @@ async function sendRelinkEmail(to: string, link: string, env: LegacyMigrationEnv
         </div>
       `,
     }),
-  })
+  });
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(text || `Brevo email failed (${response.status})`)
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `Brevo email failed (${response.status})`);
   }
 }
 
@@ -418,86 +443,99 @@ export async function sendRelinkEmails(
   actorUserId: string,
 ): Promise<{ sent: number; skipped: number }> {
   if (!env.BREVO_API_KEY) {
-    throw new Error('BREVO_API_KEY is not configured')
+    throw new Error('BREVO_API_KEY is not configured');
   }
-  const uniqueIds = [...new Set(userIds.map((id) => String(id).trim()).filter(Boolean))]
-  if (!uniqueIds.length) return { sent: 0, skipped: 0 }
+  const uniqueIds = [...new Set(userIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (!uniqueIds.length) return { sent: 0, skipped: 0 };
   if (uniqueIds.length > MAX_RELINK_EMAILS_PER_CALL) {
-    throw new Error(`Maximum ${MAX_RELINK_EMAILS_PER_CALL} emails per request`)
+    throw new Error(`Maximum ${MAX_RELINK_EMAILS_PER_CALL} emails per request`);
   }
 
-  const frontendUrl = String(env.FRONTEND_URL ?? '').trim().replace(/\/$/, '')
+  const frontendUrl = String(env.FRONTEND_URL ?? '')
+    .trim()
+    .replace(/\/$/, '');
   if (!frontendUrl) {
-    throw new Error('FRONTEND_URL is not configured')
+    throw new Error('FRONTEND_URL is not configured');
   }
-  const relinkUrl = `${frontendUrl}/account?relink=1`
+  const relinkUrl = `${frontendUrl}/account?relink=1`;
 
-  let sent = 0
-  let skipped = 0
+  let sent = 0;
+  let skipped = 0;
 
   for (const userId of uniqueIds) {
-    const row = await db.prepare(`
+    const row = await db
+      .prepare(`
       SELECT u.email
       FROM users u
       INNER JOIN subscriptions s ON s.user_id = u.id AND s.status = 'needs_relink'
       WHERE u.id = ?
       LIMIT 1
-    `).bind(userId).first()
+    `)
+      .bind(userId)
+      .first();
 
     if (!row?.email) {
-      skipped += 1
-      continue
+      skipped += 1;
+      continue;
     }
 
-    await sendRelinkEmail(String(row.email), relinkUrl, env)
+    await sendRelinkEmail(String(row.email), relinkUrl, env);
     await buildAdminAuditLogStatement(db, {
       actorUserId,
       actionType: 'legacy_relink_email_sent',
       targetUserId: userId,
       detail: { relinkUrl },
-    }).run()
-    sent += 1
+    }).run();
+    sent += 1;
   }
 
-  return { sent, skipped }
+  return { sent, skipped };
 }
 
-export async function handleAdminLegacyMigrationStats(request: Request, env: LegacyMigrationEnv, corsHeaders: Record<string, string>) {
+export async function handleAdminLegacyMigrationStats(
+  request: Request,
+  env: LegacyMigrationEnv,
+  corsHeaders: Record<string, string>,
+) {
   try {
-    await requireRole(request, env, 'admin', 'super_admin')
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
   if (request.method !== 'GET') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
   try {
-    const stats = await getMigrationStats(getDb(env), env)
-    return jsonResponse(stats, 200, corsHeaders)
+    const stats = await getMigrationStats(getDb(env), env);
+    return jsonResponse(stats, 200, corsHeaders);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to load migration stats'
-    return jsonResponse({ error: message }, 500, corsHeaders)
+    const message = err instanceof Error ? err.message : 'Failed to load migration stats';
+    return jsonResponse({ error: message }, 500, corsHeaders);
   }
 }
 
-export async function handleAdminLegacyMigrationValidateBatch(request: Request, env: LegacyMigrationEnv, corsHeaders: Record<string, string>) {
+export async function handleAdminLegacyMigrationValidateBatch(
+  request: Request,
+  env: LegacyMigrationEnv,
+  corsHeaders: Record<string, string>,
+) {
   try {
-    await requireRole(request, env, 'admin', 'super_admin')
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
   if (request.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  const body = await request.json().catch(() => ({})) as {
-    batchSize?: unknown
-    dryRun?: unknown
-    validationTarget?: unknown
-  }
-  const batchSize = Number.parseInt(String(body.batchSize ?? 25), 10)
-  const dryRun = body.dryRun === true
-  const validationTarget = body.validationTarget === 'sandbox' ? 'sandbox' : 'production'
+  const body = (await request.json().catch(() => ({}))) as {
+    batchSize?: unknown;
+    dryRun?: unknown;
+    validationTarget?: unknown;
+  };
+  const batchSize = Number.parseInt(String(body.batchSize ?? 25), 10);
+  const dryRun = body.dryRun === true;
+  const validationTarget = body.validationTarget === 'sandbox' ? 'sandbox' : 'production';
 
   try {
     const result = await validateLegacyBatch(
@@ -506,55 +544,62 @@ export async function handleAdminLegacyMigrationValidateBatch(request: Request, 
       Number.isFinite(batchSize) ? batchSize : 25,
       dryRun,
       validationTarget,
-    )
-    return jsonResponse(result, 200, corsHeaders)
+    );
+    return jsonResponse(result, 200, corsHeaders);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Validation batch failed'
-    return jsonResponse({ error: message, code: 'legacy_validation_failed' }, 502, corsHeaders)
+    const message = err instanceof Error ? err.message : 'Validation batch failed';
+    return jsonResponse({ error: message, code: 'legacy_validation_failed' }, 502, corsHeaders);
   }
 }
 
-export async function handleAdminLegacyMigrationRelinkCandidates(request: Request, env: LegacyMigrationEnv, corsHeaders: Record<string, string>) {
+export async function handleAdminLegacyMigrationRelinkCandidates(
+  request: Request,
+  env: LegacyMigrationEnv,
+  corsHeaders: Record<string, string>,
+) {
   try {
-    await requireRole(request, env, 'admin', 'super_admin')
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
   if (request.method !== 'GET') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  const url = new URL(request.url)
-  const page = Number.parseInt(url.searchParams.get('page') || '1', 10)
-  const pageSize = Number.parseInt(url.searchParams.get('pageSize') || '25', 10)
-  const staleDays = Number.parseInt(url.searchParams.get('staleDays') || String(DEFAULT_RELINK_STALE_DAYS), 10)
-  const exportCsv = url.searchParams.get('export') === 'csv'
+  const url = new URL(request.url);
+  const page = Number.parseInt(url.searchParams.get('page') || '1', 10);
+  const pageSize = Number.parseInt(url.searchParams.get('pageSize') || '25', 10);
+  const staleDays = Number.parseInt(
+    url.searchParams.get('staleDays') || String(DEFAULT_RELINK_STALE_DAYS),
+    10,
+  );
+  const exportCsv = url.searchParams.get('export') === 'csv';
 
   try {
     if (exportCsv) {
-      const allUsers: RelinkCandidate[] = []
-      let pageCursor = 1
-      const exportPageSize = 100
-      let total = 0
+      const allUsers: RelinkCandidate[] = [];
+      let pageCursor = 1;
+      const exportPageSize = 100;
+      let total = 0;
       do {
         const pageResult = await getRelinkCandidates(
           getDb(env),
           pageCursor,
           exportPageSize,
           Number.isFinite(staleDays) ? staleDays : DEFAULT_RELINK_STALE_DAYS,
-        )
-        total = pageResult.total
-        allUsers.push(...pageResult.users)
-        pageCursor += 1
-      } while (allUsers.length < total && pageCursor < CSV_EXPORT_MAX_PAGES)
+        );
+        total = pageResult.total;
+        allUsers.push(...pageResult.users);
+        pageCursor += 1;
+      } while (allUsers.length < total && pageCursor < CSV_EXPORT_MAX_PAGES);
 
       if (allUsers.length < total) {
         throw new Error(
           `CSV export truncated: fetched ${allUsers.length} of ${total} candidates (max ${CSV_EXPORT_MAX_PAGES} pages)`,
-        )
+        );
       }
 
-      const csv = relinkCandidatesToCsv(allUsers)
+      const csv = relinkCandidatesToCsv(allUsers);
       return new Response(csv, {
         status: 200,
         headers: {
@@ -562,7 +607,7 @@ export async function handleAdminLegacyMigrationRelinkCandidates(request: Reques
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': 'attachment; filename="legacy-relink-candidates.csv"',
         },
-      })
+      });
     }
 
     const result = await getRelinkCandidates(
@@ -570,41 +615,48 @@ export async function handleAdminLegacyMigrationRelinkCandidates(request: Reques
       Number.isFinite(page) ? page : 1,
       Number.isFinite(pageSize) ? pageSize : 25,
       Number.isFinite(staleDays) ? staleDays : DEFAULT_RELINK_STALE_DAYS,
-    )
+    );
 
-    return jsonResponse(result, 200, corsHeaders)
+    return jsonResponse(result, 200, corsHeaders);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to load relink candidates'
-    return jsonResponse({ error: message }, 500, corsHeaders)
+    const message = err instanceof Error ? err.message : 'Failed to load relink candidates';
+    return jsonResponse({ error: message }, 500, corsHeaders);
   }
 }
 
-export async function handleAdminLegacyMigrationSendRelinkEmail(request: Request, env: LegacyMigrationEnv, corsHeaders: Record<string, string>) {
-  let actor
+export async function handleAdminLegacyMigrationSendRelinkEmail(
+  request: Request,
+  env: LegacyMigrationEnv,
+  corsHeaders: Record<string, string>,
+) {
+  let actor;
   try {
-    actor = await requireRole(request, env, 'admin', 'super_admin')
+    actor = await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
   if (request.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  const body = await request.json().catch(() => ({})) as { userIds?: unknown }
+  const body = (await request.json().catch(() => ({}))) as { userIds?: unknown };
   const userIds = Array.isArray(body.userIds)
     ? body.userIds.map((id) => String(id)).filter(Boolean)
-    : []
+    : [];
 
   if (!userIds.length) {
-    return jsonResponse({ error: 'userIds is required' }, 400, corsHeaders)
+    return jsonResponse({ error: 'userIds is required' }, 400, corsHeaders);
   }
 
   try {
-    const actorUserId = typeof (actor as { sub?: string })?.sub === 'string' ? (actor as { sub: string }).sub : 'system'
-    const result = await sendRelinkEmails(getDb(env), env, userIds, actorUserId)
-    return jsonResponse({ ok: true, ...result }, 200, corsHeaders)
+    const actorUserId =
+      typeof (actor as { sub?: string })?.sub === 'string'
+        ? (actor as { sub: string }).sub
+        : 'system';
+    const result = await sendRelinkEmails(getDb(env), env, userIds, actorUserId);
+    return jsonResponse({ ok: true, ...result }, 200, corsHeaders);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to send relink emails'
-    return jsonResponse({ error: message, code: 'legacy_relink_email_failed' }, 502, corsHeaders)
+    const message = err instanceof Error ? err.message : 'Failed to send relink emails';
+    return jsonResponse({ error: message, code: 'legacy_relink_email_failed' }, 502, corsHeaders);
   }
 }
