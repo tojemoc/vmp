@@ -20,120 +20,128 @@
  */
 
 /// <reference types="node" />
-import { AsyncLocalStorage } from 'node:async_hooks'
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-type LogLevel = 'info' | 'warn' | 'error'
+type LogLevel = 'info' | 'warn' | 'error';
 
 export interface LogFields {
-  service: string
-  event: string
-  level?: LogLevel
-  duration_ms?: number
-  http_method?: string
-  http_path?: string
-  http_status?: number
-  video_id?: string
-  user_id_hash?: string
-  error_code?: string
-  error_message?: string
-  [key: string]: unknown
+  service: string;
+  event: string;
+  level?: LogLevel;
+  duration_ms?: number;
+  http_method?: string;
+  http_path?: string;
+  http_status?: number;
+  video_id?: string;
+  user_id_hash?: string;
+  error_code?: string;
+  error_message?: string;
+  [key: string]: unknown;
 }
 
 type LogEntry = LogFields & {
-  level: LogLevel
-  ts: string
-}
+  level: LogLevel;
+  ts: string;
+};
 
 type DatadogLogContext = {
-  env: Record<string, unknown>
-  ctx: ExecutionContext
-  buffer: LogEntry[]
-}
+  env: Record<string, unknown>;
+  ctx: ExecutionContext;
+  buffer: LogEntry[];
+};
 
-const datadogLogContextStorage = new AsyncLocalStorage<DatadogLogContext>()
+const datadogLogContextStorage = new AsyncLocalStorage<DatadogLogContext>();
 
-type DatadogFlushHandler = (env: Record<string, unknown>, entries: LogEntry[]) => Promise<void>
+type DatadogFlushHandler = (env: Record<string, unknown>, entries: LogEntry[]) => Promise<void>;
 
-let datadogFlushHandler: DatadogFlushHandler = flushDatadogLogs
+let datadogFlushHandler: DatadogFlushHandler = flushDatadogLogs;
 
 export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
-  const flag = String(env.DD_LOGS_ENABLED ?? '').trim().toLowerCase()
-  if (flag !== '1' && flag !== 'true' && flag !== 'yes') return false
-  return Boolean(String(env.DD_API_KEY ?? '').trim())
+  const flag = String(env.DD_LOGS_ENABLED ?? '')
+    .trim()
+    .toLowerCase();
+  if (flag !== '1' && flag !== 'true' && flag !== 'yes') return false;
+  return Boolean(String(env.DD_API_KEY ?? '').trim());
 }
 
 export function normalizeDatadogSite(site: string): string {
-  const trimmed = site.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
-  if (!trimmed) return 'datadoghq.eu'
-  if (trimmed.includes('.')) return trimmed
-  return `${trimmed}.datadoghq.eu`
+  const trimmed = site
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
+  if (!trimmed) return 'datadoghq.eu';
+  if (trimmed.includes('.')) return trimmed;
+  return `${trimmed}.datadoghq.eu`;
 }
 
 export function buildDatadogIntakeUrl(env: Record<string, unknown>): string {
-  const configured = String(env.DD_SITE ?? 'datadoghq.eu').trim() || 'datadoghq.eu'
-  if (configured.startsWith('http')) {
-    const base = configured.replace(/\/$/, '')
-    return base.includes('/api/v2/logs') ? base : `${base}/api/v2/logs`
+  const configured = String(env.DD_SITE ?? 'datadoghq.eu').trim() || 'datadoghq.eu';
+  if (/^http:\/\//i.test(configured)) {
+    throw new Error('DD_SITE must use https://; insecure http intake URLs are rejected');
   }
-  const site = normalizeDatadogSite(configured)
-  return `https://http-intake.logs.${site}/api/v2/logs`
+  if (/^https:\/\//i.test(configured)) {
+    const base = configured.replace(/\/$/, '');
+    return base.includes('/api/v2/logs') ? base : `${base}/api/v2/logs`;
+  }
+  const site = normalizeDatadogSite(configured);
+  return `https://http-intake.logs.${site}/api/v2/logs`;
 }
 
 /** Human-readable summary for Datadog list view (message column). */
 export function formatLogMessage(entry: LogEntry): string {
-  const parts: string[] = []
+  const parts: string[] = [];
   if (entry.http_method && entry.http_path) {
-    parts.push(`${entry.http_method} ${entry.http_path}`)
-    if (entry.http_status != null) parts.push(`→ ${entry.http_status}`)
+    parts.push(`${entry.http_method} ${entry.http_path}`);
+    if (entry.http_status != null) parts.push(`→ ${entry.http_status}`);
   }
-  parts.push(entry.event)
+  parts.push(entry.event);
   if (entry.error_message) {
-    parts.push(String(entry.error_message))
+    parts.push(String(entry.error_message));
   } else if (entry.duration_ms != null) {
-    parts.push(`${entry.duration_ms}ms`)
+    parts.push(`${entry.duration_ms}ms`);
   }
-  const summary = parts.join(' ')
-  const component = String(entry.service ?? '').trim()
-  return component ? `${component}: ${summary}` : summary
+  const summary = parts.join(' ');
+  const component = String(entry.service ?? '').trim();
+  return component ? `${component}: ${summary}` : summary;
 }
 
 export function resolveDatadogVersion(env: Record<string, unknown>): string {
-  const explicit = String(env.DD_VERSION ?? '').trim()
-  if (explicit) return explicit
-  const meta = env.CF_VERSION_METADATA as { id?: string } | undefined
-  return String(meta?.id ?? '').trim()
+  const explicit = String(env.DD_VERSION ?? '').trim();
+  if (explicit) return explicit;
+  const meta = env.CF_VERSION_METADATA as { id?: string } | undefined;
+  return String(meta?.id ?? '').trim();
 }
 
 export function buildDatadogTags(env: Record<string, unknown>): string | undefined {
-  const tags: string[] = []
-  const ddEnv = String(env.DD_ENV ?? '').trim()
-  if (ddEnv) tags.push(`env:${ddEnv}`)
-  const version = resolveDatadogVersion(env)
-  if (version) tags.push(`version:${version}`)
-  return tags.length > 0 ? tags.join(',') : undefined
+  const tags: string[] = [];
+  const ddEnv = String(env.DD_ENV ?? '').trim();
+  if (ddEnv) tags.push(`env:${ddEnv}`);
+  const version = resolveDatadogVersion(env);
+  if (version) tags.push(`version:${version}`);
+  return tags.length > 0 ? tags.join(',') : undefined;
 }
 
 /** Structured fields as Datadog attributes (entry.service → component to avoid clashing with DD service). */
 export function buildDatadogAttributes(entry: LogEntry): Record<string, unknown> {
-  const attrs: Record<string, unknown> = {}
+  const attrs: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(entry)) {
-    if (value === undefined) continue
+    if (value === undefined) continue;
     if (key === 'service') {
-      attrs.component = value
-      continue
+      attrs.component = value;
+      continue;
     }
-    attrs[key] = value
+    attrs[key] = value;
   }
-  return attrs
+  return attrs;
 }
 
 export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, unknown>) {
-  const service = String(env.DD_SERVICE ?? 'vmp-api').trim() || 'vmp-api'
-  const ddtags = buildDatadogTags(env)
+  const service = String(env.DD_SERVICE ?? 'vmp-api').trim() || 'vmp-api';
+  const ddtags = buildDatadogTags(env);
 
   return entries.map((entry) => {
-    const level = entry.level ?? 'info'
-    const status = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info'
+    const level = entry.level ?? 'info';
+    const status = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
     return {
       message: formatLogMessage(entry),
       ddsource: 'cloudflare-worker',
@@ -142,13 +150,16 @@ export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, un
       status,
       ...(ddtags ? { ddtags } : {}),
       ...buildDatadogAttributes(entry),
-    }
-  })
+    };
+  });
 }
 
-export async function flushDatadogLogs(env: Record<string, unknown>, entries: LogEntry[]): Promise<void> {
-  const apiKey = String(env.DD_API_KEY ?? '').trim()
-  if (!apiKey || entries.length === 0) return
+export async function flushDatadogLogs(
+  env: Record<string, unknown>,
+  entries: LogEntry[],
+): Promise<void> {
+  const apiKey = String(env.DD_API_KEY ?? '').trim();
+  if (!apiKey || entries.length === 0) return;
 
   const response = await fetch(buildDatadogIntakeUrl(env), {
     method: 'POST',
@@ -157,16 +168,16 @@ export async function flushDatadogLogs(env: Record<string, unknown>, entries: Lo
       'DD-API-KEY': apiKey,
     },
     body: JSON.stringify(buildDatadogLogBatch(entries, env)),
-  })
+  });
 
   if (response.status !== 202 && !response.ok) {
-    console.error(`[datadog] log upload failed: HTTP ${response.status}`)
+    console.error(`[datadog] log upload failed: HTTP ${response.status}`);
   }
 }
 
 /** @internal Test hook — pass null to restore the default HTTP flush handler. */
 export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | null): void {
-  datadogFlushHandler = handler ?? flushDatadogLogs
+  datadogFlushHandler = handler ?? flushDatadogLogs;
 }
 
 /**
@@ -181,14 +192,14 @@ export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | nu
  * main handler returns.
  */
 function scheduleDatadogFlush(context: DatadogLogContext): void {
-  if (context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return
+  if (context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return;
 
-  const batch = context.buffer.splice(0, context.buffer.length)
+  const batch = context.buffer.splice(0, context.buffer.length);
   context.ctx.waitUntil(
     datadogFlushHandler(context.env, batch).catch((err) => {
-      console.error('[datadog] log upload error:', err)
+      console.error('[datadog] log upload error:', err);
     }),
-  )
+  );
 }
 
 /** Run a Worker handler with isolated Datadog log buffering for this invocation. */
@@ -197,11 +208,11 @@ export async function runWithDatadogLogContext<T>(
   ctx: ExecutionContext,
   fn: () => T | Promise<T>,
 ): Promise<T> {
-  const ddContext: DatadogLogContext = { env, ctx, buffer: [] }
+  const ddContext: DatadogLogContext = { env, ctx, buffer: [] };
   try {
-    return await datadogLogContextStorage.run(ddContext, fn)
+    return await datadogLogContextStorage.run(ddContext, fn);
   } finally {
-    scheduleDatadogFlush(ddContext)
+    scheduleDatadogFlush(ddContext);
   }
 }
 
@@ -210,19 +221,21 @@ export function log(fields: LogFields): void {
     level: 'info',
     ...fields,
     ts: new Date().toISOString(),
-  }
-  if (entry.level === undefined) entry.level = 'info'
+  };
+  if (entry.level === undefined) entry.level = 'info';
 
-  console.log(JSON.stringify(entry))
+  console.log(JSON.stringify(entry));
 
-  const ddContext = datadogLogContextStorage.getStore()
+  const ddContext = datadogLogContextStorage.getStore();
   if (ddContext && isDatadogLogsEnabled(ddContext.env)) {
-    ddContext.buffer.push(entry)
+    ddContext.buffer.push(entry);
   }
 }
 
 /** Convenience: hash any string to a short hex prefix safe for logs */
 export async function hashForLog(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
 }

@@ -7,18 +7,18 @@
  * cap applies, else full `podcast.mp3`, all proxied through /api/video-proxy. We rely on
  * `vt` tokens (HMAC, short-lived) for access control and preview truncation.
  */
- 
-import { isAdministrativeRole } from './roles.js'
-import { signVideoToken } from './videoTokens.js'
-import { resolveMediaEntrypointUrl, buildProxyPlaylistUrl } from './mediaEntrypoints.js'
-import { getRequestPublicOrigin } from './requestPublicOrigin.js'
-import { computeRssTokenHex } from './rssToken.js'
-import { getSetting } from './settingsStore.js'
-import { getReadSession, applySessionBookmark, getDb } from './d1Session.js'
-import { needsPodcastPreviewMp3 } from './podcastPreview.js'
- 
+
+import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
+import { buildProxyPlaylistUrl, resolveMediaEntrypointUrl } from './mediaEntrypoints.js';
+import { needsPodcastPreviewMp3 } from './podcastPreview.js';
+import { getRequestPublicOrigin } from './requestPublicOrigin.js';
+import { isAdministrativeRole } from './roles.js';
+import { computeRssTokenHex } from './rssToken.js';
+import { getSetting } from './settingsStore.js';
+import { signVideoToken } from './videoTokens.js';
+
 function xmlEscape(text: any) {
-  if (text == null) return ''
+  if (text == null) return '';
   return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -26,78 +26,75 @@ function xmlEscape(text: any) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 }
- 
+
 function toRfc2822Date(isoLike: any) {
   try {
-    const d = isoLike ? new Date(isoLike) : new Date()
+    const d = isoLike ? new Date(isoLike) : new Date();
     // RSS pubDate should be RFC-822/2822. JS Date toUTCString is close enough.
-    return d.toUTCString()
+    return d.toUTCString();
   } catch {
-    return new Date().toUTCString()
+    return new Date().toUTCString();
   }
 }
- 
+
 function secondsToItunesDuration(seconds: any) {
-  const s = Number.parseInt(String(seconds ?? 0), 10)
-  if (!Number.isFinite(s) || s <= 0) return '0:00'
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-  return `${m}:${String(sec).padStart(2, '0')}`
+  const s = Number.parseInt(String(seconds ?? 0), 10);
+  if (!Number.isFinite(s) || s <= 0) return '0:00';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
 function getErrorMessage(err: unknown) {
-  return err instanceof Error ? err.message : String(err)
+  return err instanceof Error ? err.message : String(err);
 }
 
 function cdataSafe(text: unknown): string {
-  return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>')
+  return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>');
 }
 
 function inferEnclosureContentType(enclosureUrl: unknown) {
   const pathname = (() => {
-    const normalizedUrl = String(enclosureUrl ?? '')
+    const normalizedUrl = String(enclosureUrl ?? '');
     try {
-      return new URL(normalizedUrl).pathname.toLowerCase()
+      return new URL(normalizedUrl).pathname.toLowerCase();
     } catch {
-      return normalizedUrl.toLowerCase()
+      return normalizedUrl.toLowerCase();
     }
-  })()
-  if (pathname.endsWith('.mp3')) return 'audio/mpeg'
-  if (pathname.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl'
-  return 'application/octet-stream'
+  })();
+  if (pathname.endsWith('.mp3')) return 'audio/mpeg';
+  if (pathname.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
+  return 'application/octet-stream';
 }
 
 function buildSquareCoverImageUrl(imageUrl: unknown) {
-  const normalized = String(imageUrl ?? '').trim()
-  if (!normalized) return null
+  const normalized = String(imageUrl ?? '').trim();
+  if (!normalized) return null;
   try {
-    const source = new URL(normalized)
+    const source = new URL(normalized);
     // Use Cloudflare Image Resizing syntax to force a square podcast-art result.
     // Podcast apps often require 1:1 cover images on both channel and item level.
-    return `${source.origin}/cdn-cgi/image/fit=cover,width=1400,height=1400/${source.pathname.replace(/^\/+/, '')}`
+    return `${source.origin}/cdn-cgi/image/fit=cover,width=1400,height=1400/${source.pathname.replace(/^\/+/, '')}`;
   } catch {
-    return normalized
+    return normalized;
   }
 }
 
 function buildFeedFaviconUrl(request: any, env: any) {
-  const requestOrigin = getRequestPublicOrigin(request, env)
-  const rawOrigin = String(env.FRONTEND_URL || requestOrigin)
-  let frontendOrigin = rawOrigin
+  const requestOrigin = getRequestPublicOrigin(request, env);
+  const rawOrigin = String(env.FRONTEND_URL || requestOrigin);
+  let frontendOrigin = rawOrigin;
   while (frontendOrigin.length > 0 && frontendOrigin.endsWith('/')) {
-    frontendOrigin = frontendOrigin.slice(0, -1)
+    frontendOrigin = frontendOrigin.slice(0, -1);
   }
-  if (!frontendOrigin) frontendOrigin = requestOrigin
-  return `${frontendOrigin}/favicon.ico`
+  if (!frontendOrigin) frontendOrigin = requestOrigin;
+  return `${frontendOrigin}/favicon.ico`;
 }
- 
-function buildRssXml({
-  channel,
-  items
-}: any) {
-  const itunesNs = 'http://www.itunes.com/dtds/podcast-1.0.dtd'
+
+function buildRssXml({ channel, items }: any) {
+  const itunesNs = 'http://www.itunes.com/dtds/podcast-1.0.dtd';
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<rss version="2.0" xmlns:itunes="${itunesNs}">`,
@@ -107,86 +104,96 @@ function buildRssXml({
     `<link>${xmlEscape(channel.link)}</link>`,
     `<language>${xmlEscape(channel.language || 'en')}</language>`,
     channel.imageUrl ? `<itunes:image href="${xmlEscape(channel.imageUrl)}" />` : '',
-    ...items.map((item: any) => [
-      '<item>',
-      `<title>${xmlEscape(item.title)}</title>`,
-      `<description><![CDATA[${cdataSafe(item.description)}]]></description>`,
-      `<guid isPermaLink="false">${xmlEscape(item.guid)}</guid>`,
-      `<pubDate>${xmlEscape(item.pubDate)}</pubDate>`,
-      `<enclosure url="${xmlEscape(item.enclosureUrl)}" type="${xmlEscape(item.enclosureType)}" length="${xmlEscape(item.enclosureLength)}" />`,
-      item.imageUrl ? `<itunes:image href="${xmlEscape(item.imageUrl)}" />` : '',
-      `<itunes:duration>${xmlEscape(item.itunesDuration)}</itunes:duration>`,
-      '<itunes:explicit>false</itunes:explicit>',
-      '</item>',
-    ].filter(Boolean).join('\n')),
+    ...items.map((item: any) =>
+      [
+        '<item>',
+        `<title>${xmlEscape(item.title)}</title>`,
+        `<description><![CDATA[${cdataSafe(item.description)}]]></description>`,
+        `<guid isPermaLink="false">${xmlEscape(item.guid)}</guid>`,
+        `<pubDate>${xmlEscape(item.pubDate)}</pubDate>`,
+        `<enclosure url="${xmlEscape(item.enclosureUrl)}" type="${xmlEscape(item.enclosureType)}" length="${xmlEscape(item.enclosureLength)}" />`,
+        item.imageUrl ? `<itunes:image href="${xmlEscape(item.imageUrl)}" />` : '',
+        `<itunes:duration>${xmlEscape(item.itunesDuration)}</itunes:duration>`,
+        '<itunes:explicit>false</itunes:explicit>',
+        '</item>',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    ),
     '</channel>',
     '</rss>',
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
- 
+
 async function listPublishedVideos(db: any) {
   // Support both old (visibility-based) and new (publish_status-based) schemas.
   // Some local dev D1 states may not have the newer publish_status column yet.
   try {
-    const byPublishStatus = await db.prepare(`
+    const byPublishStatus = await db
+      .prepare(`
       SELECT id, title, description, thumbnail_url, full_duration, preview_duration, published_at, updated_at
       FROM videos
       WHERE publish_status = 'published'
       ORDER BY datetime(published_at) DESC, datetime(upload_date) DESC
-    `).all()
-    return byPublishStatus.results || []
+    `)
+      .all();
+    return byPublishStatus.results || [];
   } catch {
     // Fall back to the legacy visibility column.
   }
-  const rows = await db.prepare(`
+  const rows = await db
+    .prepare(`
     SELECT id, title, description, thumbnail_url, full_duration, preview_duration, published_at, updated_at
     FROM videos
     WHERE visibility = 'public'
     ORDER BY datetime(published_at) DESC, datetime(upload_date) DESC
-  `).all()
-  return rows.results || []
+  `)
+    .all();
+  return rows.results || [];
 }
 
 async function sha256HexOfString(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
-  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('')
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Bust RSS edge cache when preview windows or metadata change (per-video). */
 async function rssFeedVersionFingerprint(rows: any[]): Promise<string> {
   const parts = (rows || []).map((v: any) => {
-    const id = v.id ?? ''
-    const p = Number(v.preview_duration ?? 0) || 0
-    const u = v.updated_at != null ? String(v.updated_at) : ''
-    return `${id}:${p}:${u}`
-  })
-  parts.sort()
-  return sha256HexOfString(parts.join('|'))
+    const id = v.id ?? '';
+    const p = Number(v.preview_duration ?? 0) || 0;
+    const u = v.updated_at != null ? String(v.updated_at) : '';
+    return `${id}:${p}:${u}`;
+  });
+  parts.sort();
+  return sha256HexOfString(parts.join('|'));
 }
 
 function entrypointPathnameLower(entrypointUrl: unknown): string {
   try {
-    return new URL(String(entrypointUrl ?? '')).pathname.toLowerCase()
+    return new URL(String(entrypointUrl ?? '')).pathname.toLowerCase();
   } catch {
-    return ''
+    return '';
   }
 }
 
 async function fetchPreviewMetaDurationSeconds(metaUrl: string): Promise<number | null> {
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 1200)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
     try {
-      const res = await fetch(metaUrl, { signal: controller.signal })
-      if (!res.ok) return null
-      const data: any = await res.json().catch(() => null)
-      const value = Number(data?.measuredDurationSeconds)
-      return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+      const res = await fetch(metaUrl, { signal: controller.signal });
+      if (!res.ok) return null;
+      const data: any = await res.json().catch(() => null);
+      const value = Number(data?.measuredDurationSeconds);
+      return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
     } finally {
-      clearTimeout(timeoutId)
+      clearTimeout(timeoutId);
     }
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -198,33 +205,35 @@ async function buildRssEnclosureForVideo({
   previewUntilSeconds,
   v,
 }: {
-  request: any
-  env: any
-  videoId: string
-  vtUserId: string
-  previewUntilSeconds: number | null
-  v: any
+  request: any;
+  env: any;
+  videoId: string;
+  vtUserId: string;
+  previewUntilSeconds: number | null;
+  v: any;
 }) {
-  const hasPreviewCap = previewUntilSeconds !== null
-    && typeof previewUntilSeconds === 'number'
-    && previewUntilSeconds > 0
-  const fullDuration = Number(v?.full_duration ?? 0) || 0
-  const usePreviewMp3 = hasPreviewCap && needsPodcastPreviewMp3(previewUntilSeconds, fullDuration)
+  const hasPreviewCap =
+    previewUntilSeconds !== null &&
+    typeof previewUntilSeconds === 'number' &&
+    previewUntilSeconds > 0;
+  const fullDuration = Number(v?.full_duration ?? 0) || 0;
+  const usePreviewMp3 = hasPreviewCap && needsPodcastPreviewMp3(previewUntilSeconds, fullDuration);
 
   const entrypointUrl = await resolveMediaEntrypointUrl({
     env,
     videoId,
     preferPodcast: true,
     rssPreview: usePreviewMp3,
-  })
+  });
 
-  const pathLower = entrypointPathnameLower(entrypointUrl)
-  const isMp3 = pathLower.endsWith('.mp3')
-  const proxyPreviewSeconds = isMp3 && hasPreviewCap ? null : (hasPreviewCap ? previewUntilSeconds : null)
+  const pathLower = entrypointPathnameLower(entrypointUrl);
+  const isMp3 = pathLower.endsWith('.mp3');
+  const proxyPreviewSeconds =
+    isMp3 && hasPreviewCap ? null : hasPreviewCap ? previewUntilSeconds : null;
 
-  const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, proxyPreviewSeconds, env)
+  const basePlaylistUrl = buildProxyPlaylistUrl(request, entrypointUrl, proxyPreviewSeconds, env);
 
-  let enclosureUrl = basePlaylistUrl
+  let enclosureUrl = basePlaylistUrl;
   if (env.JWT_SECRET) {
     const vt = await signVideoToken(
       vtUserId,
@@ -232,48 +241,57 @@ async function buildRssEnclosureForVideo({
       env.JWT_SECRET,
       hasPreviewCap ? previewUntilSeconds : null,
       { ttlSeconds: 60 * 60 * 24 * 30 },
-    )
-    enclosureUrl = basePlaylistUrl.includes('?') ? `${basePlaylistUrl}&vt=${vt}` : `${basePlaylistUrl}?vt=${vt}`
+    );
+    enclosureUrl = basePlaylistUrl.includes('?')
+      ? `${basePlaylistUrl}&vt=${vt}`
+      : `${basePlaylistUrl}?vt=${vt}`;
   }
 
-  let itunesDurationStr: string
-  const previewDuration = Number(v.preview_duration ?? 0) || 0
-  const mediaDuration = fullDuration > 0 ? fullDuration : previewDuration
+  let itunesDurationStr: string;
+  const previewDuration = Number(v.preview_duration ?? 0) || 0;
+  const mediaDuration = fullDuration > 0 ? fullDuration : previewDuration;
   const previewMetaDuration = isMp3
     ? await fetchPreviewMetaDurationSeconds(
-      String(entrypointUrl).replace(/\.mp3(\?.*)?$/i, '.meta.json'),
-    )
-    : null
-  const effectivePreviewCap = previewMetaDuration && hasPreviewCap
-    ? Math.min(previewUntilSeconds, previewMetaDuration)
-    : previewUntilSeconds
-  const isTruncatedPreview = hasPreviewCap
-    && typeof effectivePreviewCap === 'number'
-    && effectivePreviewCap > 0
-    && effectivePreviewCap < mediaDuration
+        String(entrypointUrl).replace(/\.mp3(\?.*)?$/i, '.meta.json'),
+      )
+    : null;
+  const effectivePreviewCap =
+    previewMetaDuration && hasPreviewCap
+      ? Math.min(previewUntilSeconds, previewMetaDuration)
+      : previewUntilSeconds;
+  const isTruncatedPreview =
+    hasPreviewCap &&
+    typeof effectivePreviewCap === 'number' &&
+    effectivePreviewCap > 0 &&
+    effectivePreviewCap < mediaDuration;
   const effectiveDurationSeconds = isTruncatedPreview
     ? effectivePreviewCap
-    : (mediaDuration > 0 ? mediaDuration : (hasPreviewCap ? (effectivePreviewCap ?? 0) : 0))
+    : mediaDuration > 0
+      ? mediaDuration
+      : hasPreviewCap
+        ? (effectivePreviewCap ?? 0)
+        : 0;
   if (isTruncatedPreview) {
-    itunesDurationStr = secondsToItunesDuration(effectivePreviewCap)
+    itunesDurationStr = secondsToItunesDuration(effectivePreviewCap);
   } else {
-    itunesDurationStr = secondsToItunesDuration(mediaDuration)
+    itunesDurationStr = secondsToItunesDuration(mediaDuration);
   }
-  const enclosureType = inferEnclosureContentType(entrypointUrl)
-  let enclosureLength = 0
+  const enclosureType = inferEnclosureContentType(entrypointUrl);
+  let enclosureLength = 0;
   try {
-    const headUrl = enclosureType === 'application/vnd.apple.mpegurl' ? enclosureUrl : entrypointUrl
+    const headUrl =
+      enclosureType === 'application/vnd.apple.mpegurl' ? enclosureUrl : entrypointUrl;
     if (typeof headUrl === 'string' && headUrl) {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 1200)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
       try {
-        const head = await fetch(headUrl, { method: 'HEAD', signal: controller.signal })
+        const head = await fetch(headUrl, { method: 'HEAD', signal: controller.signal });
         if (head.ok) {
-          const contentLength = Number(head.headers.get('content-length') || 0)
-          if (Number.isFinite(contentLength) && contentLength > 0) enclosureLength = contentLength
+          const contentLength = Number(head.headers.get('content-length') || 0);
+          if (Number.isFinite(contentLength) && contentLength > 0) enclosureLength = contentLength;
         }
       } finally {
-        clearTimeout(timeoutId)
+        clearTimeout(timeoutId);
       }
     }
   } catch {
@@ -282,12 +300,12 @@ async function buildRssEnclosureForVideo({
   if (!enclosureLength) {
     if (enclosureType === 'application/vnd.apple.mpegurl') {
       // HLS manifests are tiny text files; keep non-zero for strict clients.
-      enclosureLength = 1024
+      enclosureLength = 1024;
     } else if (enclosureType === 'audio/mpeg') {
       // Last-resort CBR-ish estimate when no byte metadata is available.
-      enclosureLength = Math.max(1, Math.round(effectiveDurationSeconds * 24000))
+      enclosureLength = Math.max(1, Math.round(effectiveDurationSeconds * 24000));
     } else {
-      enclosureLength = 1
+      enclosureLength = 1;
     }
   }
 
@@ -301,9 +319,9 @@ async function buildRssEnclosureForVideo({
     enclosureLength,
     imageUrl: buildSquareCoverImageUrl(v.thumbnail_url),
     itunesDuration: itunesDurationStr,
-  }
+  };
 }
- 
+
 function feedResponse(xml: any, corsHeaders: any, cacheControl: any) {
   return new Response(xml, {
     status: 200,
@@ -312,246 +330,262 @@ function feedResponse(xml: any, corsHeaders: any, cacheControl: any) {
       'Cache-Control': cacheControl,
       ...corsHeaders,
     },
-  })
+  });
 }
- 
+
 function feedCacheKey(request: any, extraParams = {}) {
-  const u = new URL(request.url)
+  const u = new URL(request.url);
   // Never include raw tokens in cache keys.
-  const base = `${u.origin}${u.pathname}`
-  const params = new URLSearchParams()
+  const base = `${u.origin}${u.pathname}`;
+  const params = new URLSearchParams();
   for (const [k, v] of Object.entries(extraParams)) {
-    if (v == null) continue
-    params.set(k, String(v))
+    if (v == null) continue;
+    params.set(k, String(v));
   }
-  const suffix = params.toString()
-  return new Request(suffix ? `${base}?${suffix}` : base, { method: 'GET' })
+  const suffix = params.toString();
+  return new Request(suffix ? `${base}?${suffix}` : base, { method: 'GET' });
 }
 
 function getDefaultCache(): Cache | null {
-  const maybeDefault = (caches as unknown as { default?: Cache }).default
-  return maybeDefault ?? null
+  const maybeDefault = (caches as unknown as { default?: Cache }).default;
+  return maybeDefault ?? null;
 }
 
-async function recordFeedPoll(db: any, {
-  endpoint,
-  userId
-}: any) {
+async function recordFeedPoll(db: any, { endpoint, userId }: any) {
   try {
-    await db.prepare(`
+    await db
+      .prepare(`
       INSERT INTO rss_feed_polls (endpoint, user_id, poll_count, last_polled_at)
       VALUES (?, ?, 1, CURRENT_TIMESTAMP)
       ON CONFLICT(endpoint, user_id) DO UPDATE SET
         poll_count = poll_count + 1,
         last_polled_at = CURRENT_TIMESTAMP
-    `).bind(endpoint, userId ?? 'public').run()
+    `)
+      .bind(endpoint, userId ?? 'public')
+      .run();
   } catch (e) {
     // Best-effort: analytics must never break feed delivery.
-    console.warn('[rss] recordFeedPoll failed', getErrorMessage(e))
+    console.warn('[rss] recordFeedPoll failed', getErrorMessage(e));
   }
 }
 
 function constantTimeEqual(a: any, b: any) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 async function getUserById(db: any, userId: any) {
-  return db.prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1').bind(userId).first()
+  return db.prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1').bind(userId).first();
 }
 
 async function getActiveSubscriptionRow(db: any, userId: any) {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT *
     FROM subscriptions
     WHERE user_id = ? AND status IN ('active', 'trialing')
       AND (current_period_end IS NULL OR datetime(current_period_end) > CURRENT_TIMESTAMP)
     ORDER BY created_at DESC
     LIMIT 1
-  `).bind(userId).first()
+  `)
+    .bind(userId)
+    .first();
 }
 
 export async function handlePublicFeed(request: any, env: any, corsHeaders: any) {
   try {
-    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+    const freePreviewEnabled =
+      String((await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' })) ?? '1') ===
+      '1';
     if (!freePreviewEnabled) {
       return new Response(JSON.stringify({ error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
     if (request.method !== 'GET') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const { session } = getReadSession(env, request)
-    const db = getDb(env)
-    const cache = getDefaultCache()
-    const publicPollMeta = { endpoint: 'feed_public', userId: 'public' }
+    const { session } = getReadSession(env, request);
+    const db = getDb(env);
+    const cache = getDefaultCache();
+    const publicPollMeta = { endpoint: 'feed_public', userId: 'public' };
 
-    const videos = await listPublishedVideos(session)
-    const feedV = await rssFeedVersionFingerprint(videos)
+    const videos = await listPublishedVideos(session);
+    const feedV = await rssFeedVersionFingerprint(videos);
 
     if (cache) {
-      const cached = await cache.match(feedCacheKey(request, { v: 2, fp: feedV }))
+      const cached = await cache.match(feedCacheKey(request, { v: 2, fp: feedV }));
       if (cached) {
-        await recordFeedPoll(db, publicPollMeta)
-        return cached
+        await recordFeedPoll(db, publicPollMeta);
+        return cached;
       }
     }
-    const origin = getRequestPublicOrigin(request, env)
+    const origin = getRequestPublicOrigin(request, env);
 
     const [titleSetting, descSetting] = await Promise.all([
       getSetting(env, 'podcast_title', { defaultValue: null }),
       getSetting(env, 'podcast_description', { defaultValue: null }),
-    ])
+    ]);
 
-    const siteLogoUrl = await getSetting(env, 'site_logo_url', { defaultValue: null })
+    const siteLogoUrl = await getSetting(env, 'site_logo_url', { defaultValue: null });
     const channelImageUrl = siteLogoUrl
-      ? buildSquareCoverImageUrl(siteLogoUrl) ?? buildFeedFaviconUrl(request, env)
-      : buildFeedFaviconUrl(request, env)
+      ? (buildSquareCoverImageUrl(siteLogoUrl) ?? buildFeedFaviconUrl(request, env))
+      : buildFeedFaviconUrl(request, env);
 
     const channel = {
       title: titleSetting || 'VMP Podcast',
-      description: descSetting || 'Preview episodes from VMP. Subscribe to unlock full access in your personal feed.',
+      description:
+        descSetting ||
+        'Preview episodes from VMP. Subscribe to unlock full access in your personal feed.',
       link: env.FRONTEND_URL || origin,
       language: 'en',
       imageUrl: channelImageUrl,
-    }
+    };
 
     const previewCandidates = videos.filter((v: any) => {
-      const videoId = v?.id
-      const previewDuration = v?.preview_duration ?? 0
-      return Boolean(videoId) && Number(previewDuration) > 0
-    })
-    const items = await Promise.all(previewCandidates.map(async (v: any) => {
-      const videoId = String(v.id)
-      const previewUntil = Number(v.preview_duration) || 0
-      return buildRssEnclosureForVideo({
-        request,
-        env,
-        videoId,
-        vtUserId: 'anonymous',
-        previewUntilSeconds: previewUntil,
-        v,
-      })
-    }))
+      const videoId = v?.id;
+      const previewDuration = v?.preview_duration ?? 0;
+      return Boolean(videoId) && Number(previewDuration) > 0;
+    });
+    const items = await Promise.all(
+      previewCandidates.map(async (v: any) => {
+        const videoId = String(v.id);
+        const previewUntil = Number(v.preview_duration) || 0;
+        return buildRssEnclosureForVideo({
+          request,
+          env,
+          videoId,
+          vtUserId: 'anonymous',
+          previewUntilSeconds: previewUntil,
+          v,
+        });
+      }),
+    );
 
-    const xml = buildRssXml({ channel, items })
-    await recordFeedPoll(db, publicPollMeta)
-    const response = feedResponse(xml, corsHeaders, 'public, max-age=300, s-maxage=300')
-    applySessionBookmark(response.headers, session)
-    if (cache) await cache.put(feedCacheKey(request, { v: 2, fp: feedV }), response.clone())
-    return response
+    const xml = buildRssXml({ channel, items });
+    await recordFeedPoll(db, publicPollMeta);
+    const response = feedResponse(xml, corsHeaders, 'public, max-age=300, s-maxage=300');
+    applySessionBookmark(response.headers, session);
+    if (cache) await cache.put(feedCacheKey(request, { v: 2, fp: feedV }), response.clone());
+    return response;
   } catch (err: unknown) {
-    const message = getErrorMessage(err)
-    console.error('[feed] handlePublicFeed failed:', message)
-    return new Response(
-      JSON.stringify({ error: 'Internal error', code: 'internal_error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+    const message = getErrorMessage(err);
+    console.error('[feed] handlePublicFeed failed:', message);
+    return new Response(JSON.stringify({ error: 'Internal error', code: 'internal_error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    });
   }
 }
- 
+
 export async function handlePersonalFeed(request: any, env: any, corsHeaders: any) {
   try {
     if (request.method !== 'GET') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const rssSecret = env.RSS_SECRET?.trim()
-    const freePreviewEnabled = String(await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }) ?? '1') === '1'
+    const rssSecret = env.RSS_SECRET?.trim();
+    const freePreviewEnabled =
+      String((await getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' })) ?? '1') ===
+      '1';
     if (!rssSecret) {
       return new Response(JSON.stringify({ error: 'RSS not configured' }), {
         status: 503,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const url = new URL(request.url)
-    const parts = url.pathname.split('/').filter(Boolean) // api, feed, :userId, :token
+    const url = new URL(request.url);
+    const parts = url.pathname.split('/').filter(Boolean); // api, feed, :userId, :token
     if (parts.length !== 4) {
       return new Response(JSON.stringify({ error: 'Invalid path format' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const userId = parts[2]
-    const token = parts[3]
+    const userId = parts[2];
+    const token = parts[3];
     if (!userId || !token) {
       return new Response(JSON.stringify({ error: 'Invalid path format' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const cache = getDefaultCache()
-    const expectedToken = await computeRssTokenHex(rssSecret, userId)
+    const cache = getDefaultCache();
+    const expectedToken = await computeRssTokenHex(rssSecret, userId);
     if (!constantTimeEqual(expectedToken, token)) {
       // 404 to avoid leaking valid user IDs.
       return new Response(JSON.stringify({ error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const { session } = getReadSession(env, request)
-    const db = getDb(env)
-    const user = await getUserById(session, userId)
+    const { session } = getReadSession(env, request);
+    const db = getDb(env);
+    const user = await getUserById(session, userId);
     if (!user) {
       return new Response(JSON.stringify({ error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      });
     }
 
-    const subscription = await getActiveSubscriptionRow(session, userId)
-    const hasPremiumAccess = isAdministrativeRole(user.role) || Boolean(subscription)
+    const subscription = await getActiveSubscriptionRow(session, userId);
+    const hasPremiumAccess = isAdministrativeRole(user.role) || Boolean(subscription);
     if (!hasPremiumAccess && !freePreviewEnabled) {
-      return new Response(JSON.stringify({ error: 'Premium subscription required', code: 'premium_required' }), {
-        status: 402,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      return new Response(
+        JSON.stringify({ error: 'Premium subscription required', code: 'premium_required' }),
+        {
+          status: 402,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        },
+      );
     }
-    const userPollMeta = { endpoint: 'feed_user', userId }
+    const userPollMeta = { endpoint: 'feed_user', userId };
 
-    const videos = await listPublishedVideos(session)
-    const feedV = await rssFeedVersionFingerprint(videos)
+    const videos = await listPublishedVideos(session);
+    const feedV = await rssFeedVersionFingerprint(videos);
 
     if (cache) {
-      const cached = await cache.match(feedCacheKey(request, {
-        v: 2,
-        fp: feedV,
-        uid: userId,
-        premium: hasPremiumAccess ? 1 : 0,
-      }))
+      const cached = await cache.match(
+        feedCacheKey(request, {
+          v: 2,
+          fp: feedV,
+          uid: userId,
+          premium: hasPremiumAccess ? 1 : 0,
+        }),
+      );
       if (cached) {
-        await recordFeedPoll(db, userPollMeta)
-        return cached
+        await recordFeedPoll(db, userPollMeta);
+        return cached;
       }
     }
 
-    const origin = getRequestPublicOrigin(request, env)
+    const origin = getRequestPublicOrigin(request, env);
     const [titleSetting, descSetting] = await Promise.all([
       getSetting(env, 'podcast_title', { defaultValue: null }),
       getSetting(env, 'podcast_description', { defaultValue: null }),
-    ])
+    ]);
 
-    const siteLogoUrlPersonal = await getSetting(env, 'site_logo_url', { defaultValue: null })
+    const siteLogoUrlPersonal = await getSetting(env, 'site_logo_url', { defaultValue: null });
     const personalChannelImage = siteLogoUrlPersonal
-      ? buildSquareCoverImageUrl(siteLogoUrlPersonal) ?? buildFeedFaviconUrl(request, env)
-      : buildFeedFaviconUrl(request, env)
+      ? (buildSquareCoverImageUrl(siteLogoUrlPersonal) ?? buildFeedFaviconUrl(request, env))
+      : buildFeedFaviconUrl(request, env);
 
     const channel = {
       title: titleSetting || 'VMP Podcast',
@@ -559,44 +593,50 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
       link: env.FRONTEND_URL || origin,
       language: 'en',
       imageUrl: personalChannelImage,
-    }
+    };
 
     const personalCandidates = videos.filter((v: any) => {
-      const videoId = v?.id
-      if (!videoId) return false
-      if (hasPremiumAccess) return true
-      return Number(v?.preview_duration ?? 0) > 0
-    })
-    const items = await Promise.all(personalCandidates.map(async (v: any) => {
-      const videoId = String(v.id)
-      const previewUntilSeconds = hasPremiumAccess ? null : (Number(v.preview_duration) || 0)
-      return buildRssEnclosureForVideo({
-        request,
-        env,
-        videoId,
-        vtUserId: userId,
-        previewUntilSeconds,
-        v,
-      })
-    }))
+      const videoId = v?.id;
+      if (!videoId) return false;
+      if (hasPremiumAccess) return true;
+      return Number(v?.preview_duration ?? 0) > 0;
+    });
+    const items = await Promise.all(
+      personalCandidates.map(async (v: any) => {
+        const videoId = String(v.id);
+        const previewUntilSeconds = hasPremiumAccess ? null : Number(v.preview_duration) || 0;
+        return buildRssEnclosureForVideo({
+          request,
+          env,
+          videoId,
+          vtUserId: userId,
+          previewUntilSeconds,
+          v,
+        });
+      }),
+    );
 
-    const xml = buildRssXml({ channel, items })
-    await recordFeedPoll(db, userPollMeta)
-    const response = feedResponse(xml, corsHeaders, 'private, max-age=300, stale-while-revalidate=60')
-    applySessionBookmark(response.headers, session)
+    const xml = buildRssXml({ channel, items });
+    await recordFeedPoll(db, userPollMeta);
+    const response = feedResponse(
+      xml,
+      corsHeaders,
+      'private, max-age=300, stale-while-revalidate=60',
+    );
+    applySessionBookmark(response.headers, session);
     if (cache) {
       await cache.put(
         feedCacheKey(request, { v: 2, fp: feedV, uid: userId, premium: hasPremiumAccess ? 1 : 0 }),
         response.clone(),
-      )
+      );
     }
-    return response
+    return response;
   } catch (err: unknown) {
-    const message = getErrorMessage(err)
-    console.error('[feed] handlePersonalFeed failed:', message)
-    return new Response(
-      JSON.stringify({ error: 'Internal error', code: 'internal_error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
+    const message = getErrorMessage(err);
+    console.error('[feed] handlePersonalFeed failed:', message);
+    return new Response(JSON.stringify({ error: 'Internal error', code: 'internal_error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    });
   }
 }

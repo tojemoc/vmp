@@ -7,37 +7,39 @@
  */
 
 function firstHeaderValue(value: string | null | undefined): string | null {
-  if (!value) return null
-  const trimmed = value.split(',')[0]?.trim()
-  return trimmed || null
+  if (!value) return null;
+  const trimmed = value.split(',')[0]?.trim();
+  return trimmed || null;
 }
 
 function originFromApiPublicUrl(env?: { API_PUBLIC_URL?: string }): string | null {
-  const raw = typeof env?.API_PUBLIC_URL === 'string' ? env.API_PUBLIC_URL.trim() : ''
-  if (!raw) return null
+  const raw = typeof env?.API_PUBLIC_URL === 'string' ? env.API_PUBLIC_URL.trim() : '';
+  if (!raw) return null;
   try {
-    const u = new URL(raw.includes('://') ? raw : `https://${raw}`)
-    return u.origin
+    const u = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    return u.origin;
   } catch {
-    return null
+    return null;
   }
 }
 
 /** Headers from a Fetch API Request or Node IncomingMessage. */
 type HeaderSource = {
-  get(name: string): string | null
-}
+  get(name: string): string | null;
+};
 
-function headerSourceFromNodeHeaders(headers: Record<string, string | string[] | undefined>): HeaderSource {
+function headerSourceFromNodeHeaders(
+  headers: Record<string, string | string[] | undefined>,
+): HeaderSource {
   return {
     get(name: string) {
-      const key = name.toLowerCase()
-      const raw = headers[key] ?? headers[name]
-      if (raw === undefined) return null
-      if (Array.isArray(raw)) return raw[0] ?? null
-      return raw
+      const key = name.toLowerCase();
+      const raw = headers[key] ?? headers[name];
+      if (raw === undefined) return null;
+      if (Array.isArray(raw)) return raw[0] ?? null;
+      return raw;
     },
-  }
+  };
 }
 
 export function getRequestPublicOriginFromHeaders(
@@ -45,23 +47,26 @@ export function getRequestPublicOriginFromHeaders(
   fallbackOrigin: string,
   env?: { API_PUBLIC_URL?: string },
 ): string {
-  const explicit = originFromApiPublicUrl(env)
-  if (explicit) return explicit
+  const explicit = originFromApiPublicUrl(env);
+  if (explicit) return explicit;
 
-  const forwardedProto = firstHeaderValue(headers.get('x-forwarded-proto'))
-  const forwardedHost = firstHeaderValue(headers.get('x-forwarded-host'))
-  const host = forwardedHost || firstHeaderValue(headers.get('host'))
+  const forwardedProto = firstHeaderValue(headers.get('x-forwarded-proto'));
+  const forwardedHost = firstHeaderValue(headers.get('x-forwarded-host'));
+  const host = forwardedHost || firstHeaderValue(headers.get('host'));
 
   if (forwardedProto && host) {
-    return `${forwardedProto}://${host}`
+    return `${forwardedProto}://${host}`;
   }
 
-  return fallbackOrigin
+  return fallbackOrigin;
 }
 
-export function getRequestPublicOrigin(request: Request, env?: { API_PUBLIC_URL?: string }): string {
-  const fallback = new URL(request.url).origin
-  return getRequestPublicOriginFromHeaders(request.headers, fallback, env)
+export function getRequestPublicOrigin(
+  request: Request,
+  env?: { API_PUBLIC_URL?: string },
+): string {
+  const fallback = new URL(request.url).origin;
+  return getRequestPublicOriginFromHeaders(request.headers, fallback, env);
 }
 
 /**
@@ -71,46 +76,50 @@ export function buildNodeIncomingRequestUrl(
   req: { headers: Record<string, string | string[] | undefined>; url?: string | null },
   options?: { defaultPort?: number; env?: { API_PUBLIC_URL?: string } },
 ): string {
-  const port = options?.defaultPort ?? 8787
-  const headers = headerSourceFromNodeHeaders(req.headers)
+  const port = options?.defaultPort ?? 8787;
+  const headers = headerSourceFromNodeHeaders(req.headers);
   const host =
     firstHeaderValue(headers.get('x-forwarded-host')) ||
     firstHeaderValue(headers.get('host')) ||
-    `localhost:${port}`
+    `localhost:${port}`;
 
-  let proto = firstHeaderValue(headers.get('x-forwarded-proto'))
+  let proto = firstHeaderValue(headers.get('x-forwarded-proto'));
   if (!proto && options?.env?.API_PUBLIC_URL) {
     try {
       proto = new URL(
         options.env.API_PUBLIC_URL.includes('://')
           ? options.env.API_PUBLIC_URL
           : `https://${options.env.API_PUBLIC_URL}`,
-      ).protocol.replace(':', '')
+      ).protocol.replace(':', '');
     } catch {
       /* ignore */
     }
   }
-  if (!proto) proto = 'http'
+  if (!proto) proto = 'http';
 
-  const path = req.url ?? '/'
-  return `${proto}://${host}${path}`
+  const path = req.url ?? '/';
+  return `${proto}://${host}${path}`;
 }
 
 /** True when url points at this host's /api/video-proxy (any resolved public/internal origin). */
-export function isLocalVideoProxyUrl(request: Request, urlString: string, env?: { API_PUBLIC_URL?: string }): boolean {
-  if (typeof urlString !== 'string' || !urlString) return false
-  let pathname: string
-  let origin: string
+export function isLocalVideoProxyUrl(
+  request: Request,
+  urlString: string,
+  env?: { API_PUBLIC_URL?: string },
+): boolean {
+  if (typeof urlString !== 'string' || !urlString) return false;
+  let pathname: string;
+  let origin: string;
   try {
-    const u = new URL(urlString)
-    pathname = u.pathname
-    origin = u.origin
+    const u = new URL(urlString);
+    pathname = u.pathname;
+    origin = u.origin;
   } catch {
-    return false
+    return false;
   }
-  if (!pathname.startsWith('/api/video-proxy')) return false
+  if (!pathname.startsWith('/api/video-proxy')) return false;
 
-  const publicOrigin = getRequestPublicOrigin(request, env)
-  const requestOrigin = new URL(request.url).origin
-  return origin === publicOrigin || origin === requestOrigin
+  const publicOrigin = getRequestPublicOrigin(request, env);
+  const requestOrigin = new URL(request.url).origin;
+  return origin === publicOrigin || origin === requestOrigin;
 }

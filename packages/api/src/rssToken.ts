@@ -5,7 +5,7 @@
  */
 
 function hexFromBytes(bytes: ArrayLike<number>): string {
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function importRssHmacKey(secret: string): Promise<CryptoKey> {
@@ -15,13 +15,12 @@ async function importRssHmacKey(secret: string): Promise<CryptoKey> {
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
-  )
+  );
 }
 
 export async function computeRssTokenHex(rssSecret: string, userId: string): Promise<string> {
-  const key = await importRssHmacKey(rssSecret)
-  const msg = new TextEncoder().encode(`rss:${userId}`)
-  const sig = await crypto.subtle.sign('HMAC', key, msg)
-  return hexFromBytes(new Uint8Array(sig))
+  const key = await importRssHmacKey(rssSecret);
+  const msg = new TextEncoder().encode(`rss:${userId}`);
+  const sig = await crypto.subtle.sign('HMAC', key, msg);
+  return hexFromBytes(new Uint8Array(sig));
 }
-

@@ -6,14 +6,14 @@
  * PATCH requires admin or super_admin.
  */
 
-import { requireRole } from './auth.js'
-import { getSetting, setSettings } from './settingsStore.js'
+import { requireRole } from './auth.js';
+import { getSetting, setSettings } from './settingsStore.js';
 
 function jsonResponse(body: any, status = 200, corsHeaders: any = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  })
+  });
 }
 
 const SITE_KEYS = [
@@ -28,16 +28,16 @@ const SITE_KEYS = [
   'gtm_enabled',
   'gtm_container_id',
   'gtm_measurement_path',
-] as const
+] as const;
 
-const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk'
+const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk';
 
 /** Web contract: persisted as '1' or '0' in admin_settings. */
 function normalizeGtmEnabled(raw: unknown): '1' | '0' | null {
-  if (raw === '1' || raw === '0') return raw
-  if (raw === true || raw === 'true') return '1'
-  if (raw === false || raw === 'false') return '0'
-  return null
+  if (raw === '1' || raw === '0') return raw;
+  if (raw === true || raw === 'true') return '1';
+  if (raw === false || raw === 'false') return '0';
+  return null;
 }
 
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {
@@ -45,62 +45,62 @@ export async function handleSiteSettings(request: any, env: any, corsHeaders: an
     const entries = await Promise.all(
       SITE_KEYS.map(async (key) => {
         const defaultValue =
-          key === 'site_support_email'
-            ? DEFAULT_SUPPORT_EMAIL
-            : key === 'gtm_enabled'
-              ? '0'
-              : ''
-        return [key, await getSetting(env, key, { defaultValue })]
-      })
-    )
-    return jsonResponse(Object.fromEntries(entries), 200, corsHeaders)
+          key === 'site_support_email' ? DEFAULT_SUPPORT_EMAIL : key === 'gtm_enabled' ? '0' : '';
+        return [key, await getSetting(env, key, { defaultValue })];
+      }),
+    );
+    return jsonResponse(Object.fromEntries(entries), 200, corsHeaders);
   }
 
   if (request.method === 'PATCH') {
     try {
-      await requireRole(request, env, 'admin', 'super_admin')
+      await requireRole(request, env, 'admin', 'super_admin');
     } catch {
-      return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+      return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
     }
 
-    let body: any
+    let body: any;
     try {
-      body = await request.json()
+      body = await request.json();
     } catch {
-      return jsonResponse({ error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400, corsHeaders)
+      return jsonResponse({ error: 'Invalid JSON body', code: 'INVALID_JSON' }, 400, corsHeaders);
     }
 
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-      return jsonResponse({ error: 'Request body must be a JSON object', code: 'INVALID_BODY' }, 400, corsHeaders)
+      return jsonResponse(
+        { error: 'Request body must be a JSON object', code: 'INVALID_BODY' },
+        400,
+        corsHeaders,
+      );
     }
 
-    const updates: [string, string][] = []
+    const updates: [string, string][] = [];
     for (const key of SITE_KEYS) {
-      if (!(key in body)) continue
+      if (!(key in body)) continue;
       if (key === 'gtm_enabled') {
-        const normalized = normalizeGtmEnabled(body[key])
+        const normalized = normalizeGtmEnabled(body[key]);
         if (normalized === null) {
           return jsonResponse(
             { error: 'gtm_enabled must be "0" or "1"', code: 'INVALID_GTM_ENABLED' },
             400,
             corsHeaders,
-          )
+          );
         }
-        updates.push([key, normalized])
-        continue
+        updates.push([key, normalized]);
+        continue;
       }
       if (typeof body[key] === 'string') {
-        updates.push([key, body[key]])
+        updates.push([key, body[key]]);
       }
     }
 
     if (updates.length === 0) {
-      return jsonResponse({ error: 'No valid fields to update' }, 400, corsHeaders)
+      return jsonResponse({ error: 'No valid fields to update' }, 400, corsHeaders);
     }
 
-    await setSettings(env, updates)
-    return jsonResponse({ ok: true, updated: updates.map(([k]) => k) }, 200, corsHeaders)
+    await setSettings(env, updates);
+    return jsonResponse({ ok: true, updated: updates.map(([k]) => k) }, 200, corsHeaders);
   }
 
-  return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+  return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
 }

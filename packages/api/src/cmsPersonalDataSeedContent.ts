@@ -1,16 +1,16 @@
-import type { CmsBlock } from '@vmp/shared'
+import type { CmsBlock } from '@vmp/shared';
 
 /** Build a minimal TipTap JSON document from plain text nodes. */
 export function tiptapDoc(...nodes: Record<string, unknown>[]) {
-  return { type: 'doc', content: nodes }
+  return { type: 'doc', content: nodes };
 }
 
 export function tiptapParagraph(text: string) {
-  return { type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }
+  return { type: 'paragraph', content: text ? [{ type: 'text', text }] : [] };
 }
 
 export function tiptapHeading(level: number, text: string) {
-  return { type: 'heading', attrs: { level }, content: [{ type: 'text', text }] }
+  return { type: 'heading', attrs: { level }, content: [{ type: 'text', text }] };
 }
 
 export function tiptapBulletList(items: string[]) {
@@ -20,11 +20,11 @@ export function tiptapBulletList(items: string[]) {
       type: 'listItem',
       content: [tiptapParagraph(item)],
     })),
-  }
+  };
 }
 
 export function tiptapRichTextBlock(...nodes: Record<string, unknown>[]): CmsBlock {
-  return { type: 'rich_text', content: tiptapDoc(...nodes) }
+  return { type: 'rich_text', content: tiptapDoc(...nodes) };
 }
 
 /** English personal-data page content for CMS seed (matches locales/en/personalData.ts). */
@@ -70,15 +70,69 @@ export function buildPersonalDataCmsBlocks(): CmsBlock[] {
       columns: ['Name / key', 'Mechanism', 'Purpose', 'Lifetime', 'Strictly necessary?'],
       columnKeys: ['name', 'mechanism', 'purpose', 'lifetime', 'necessary'],
       rows: [
-        { name: 'refresh_token', mechanism: 'HttpOnly cookie (first-party API)', purpose: 'Keeps you signed in between visits; rotated on refresh', lifetime: 'Up to 30 days, or until logout', necessary: 'Yes — authentication' },
-        { name: 'playbackRate', mechanism: 'localStorage', purpose: 'Remembers your chosen video playback speed', lifetime: 'Until you clear site data', necessary: 'Functional — only after you change speed' },
-        { name: 'nuxt-color-mode', mechanism: 'localStorage', purpose: 'Applies light/dark display matching your system preference', lifetime: 'Until you clear site data', necessary: 'Functional — display preference' },
-        { name: 'vmp_pwa_device_token', mechanism: 'localStorage', purpose: 'Links push-login handoff to your browser on installed iOS PWA', lifetime: 'Persistent until cleared', necessary: 'Yes — only when you use PWA push sign-in' },
-        { name: 'vmp_pwa_login_email', mechanism: 'localStorage', purpose: 'Prefills email during PWA sign-in wizard', lifetime: 'Until cleared or push disabled', necessary: 'Functional — PWA login UX' },
-        { name: 'vmp-pwa-auth (IndexedDB)', mechanism: 'IndexedDB', purpose: 'Temporary handoff code between Safari and installed PWA', lifetime: 'Short-lived; cleared after redeem', necessary: 'Yes — iOS PWA authentication' },
-        { name: 'Service worker caches', mechanism: 'Cache API (PWA)', purpose: 'Offline shell and faster repeat loads for installed app', lifetime: 'While PWA installed / until cache purge', necessary: 'Yes — PWA functionality' },
-        { name: 'Session handoff keys', mechanism: 'sessionStorage', purpose: 'Short-lived auth and UI state during a single tab session', lifetime: 'Until tab closes', necessary: 'Yes — security during login flows' },
-        { name: 'vmp_personal_data_notice_ack', mechanism: 'localStorage', purpose: 'Remembers that you dismissed the personal data notice banner', lifetime: 'Until you clear site data', necessary: 'Functional — only after you acknowledge the notice' },
+        {
+          name: 'refresh_token',
+          mechanism: 'HttpOnly cookie (first-party API)',
+          purpose: 'Keeps you signed in between visits; rotated on refresh',
+          lifetime: 'Up to 30 days, or until logout',
+          necessary: 'Yes — authentication',
+        },
+        {
+          name: 'playbackRate',
+          mechanism: 'localStorage',
+          purpose: 'Remembers your chosen video playback speed',
+          lifetime: 'Until you clear site data',
+          necessary: 'Functional — only after you change speed',
+        },
+        {
+          name: 'nuxt-color-mode',
+          mechanism: 'localStorage',
+          purpose: 'Applies light/dark display matching your system preference',
+          lifetime: 'Until you clear site data',
+          necessary: 'Functional — display preference',
+        },
+        {
+          name: 'vmp_pwa_device_token',
+          mechanism: 'localStorage',
+          purpose: 'Links push-login handoff to your browser on installed iOS PWA',
+          lifetime: 'Persistent until cleared',
+          necessary: 'Yes — only when you use PWA push sign-in',
+        },
+        {
+          name: 'vmp_pwa_login_email',
+          mechanism: 'localStorage',
+          purpose: 'Prefills email during PWA sign-in wizard',
+          lifetime: 'Until cleared or push disabled',
+          necessary: 'Functional — PWA login UX',
+        },
+        {
+          name: 'vmp-pwa-auth (IndexedDB)',
+          mechanism: 'IndexedDB',
+          purpose: 'Temporary handoff code between Safari and installed PWA',
+          lifetime: 'Short-lived; cleared after redeem',
+          necessary: 'Yes — iOS PWA authentication',
+        },
+        {
+          name: 'Service worker caches',
+          mechanism: 'Cache API (PWA)',
+          purpose: 'Offline shell and faster repeat loads for installed app',
+          lifetime: 'While PWA installed / until cache purge',
+          necessary: 'Yes — PWA functionality',
+        },
+        {
+          name: 'Session handoff keys',
+          mechanism: 'sessionStorage',
+          purpose: 'Short-lived auth and UI state during a single tab session',
+          lifetime: 'Until tab closes',
+          necessary: 'Yes — security during login flows',
+        },
+        {
+          name: 'vmp_personal_data_notice_ack',
+          mechanism: 'localStorage',
+          purpose: 'Remembers that you dismissed the personal data notice banner',
+          lifetime: 'Until you clear site data',
+          necessary: 'Functional — only after you acknowledge the notice',
+        },
       ],
     },
     tiptapRichTextBlock(
@@ -86,9 +140,7 @@ export function buildPersonalDataCmsBlocks(): CmsBlock[] {
       tiptapParagraph(
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
       ),
-      tiptapParagraph(
-        'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
-      ),
+      tiptapParagraph('Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).'),
       tiptapParagraph(
         'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
       ),
@@ -126,7 +178,7 @@ export function buildPersonalDataCmsBlocks(): CmsBlock[] {
         'We may update this notice when the service or law changes. The latest version is always published at this URL. Material changes will be reflected in the on-site notice banner when appropriate.',
       ),
     ),
-  ]
+  ];
 }
 
 export const PERSONAL_DATA_CMS_PAGE = {
@@ -135,4 +187,4 @@ export const PERSONAL_DATA_CMS_PAGE = {
   slug: 'personal-data',
   description:
     'How VMP uses cookies, browser storage, and processors when you browse, sign in, and watch videos — written for visitors in the EU.',
-}
+};

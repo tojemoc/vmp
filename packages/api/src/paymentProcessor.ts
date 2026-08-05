@@ -2,91 +2,85 @@
  * Provider-agnostic payments orchestration (Stripe + optional legacy).
  */
 
-import { requireAuth, requireRole } from './auth.js'
-import { isAdministrativeRole } from './roles.js'
-import { getSetting, setSettings } from './settingsStore.js'
-import {
-  removeSubscriberFromNewsletter,
-  syncNewsletterForStripeSubscription,
-} from './brevo.js'
-import {
-  applyPromoRedemption,
-  resolvePromoCodeForCheckout,
-} from './promotions.js'
+import { requireAuth, requireRole } from './auth.js';
+import { removeSubscriberFromNewsletter, syncNewsletterForStripeSubscription } from './brevo.js';
+import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
+import { isAdministrativeRole } from './roles.js';
+import { getSetting, setSettings } from './settingsStore.js';
 import {
   normalizeStripeStatus,
   stripeGet,
   stripePost,
   stripeSubscriptionPeriodEndIso,
-} from './stripeClient.js'
-export { normalizeStripeStatus } from './stripeClient.js'
-import { isLegacyProviderConfigured } from './legacyProvider.js'
-import { revokeOfflineLicensesForUser } from './offlineDownloads.js'
-import { handleStripeInvoicePaid } from './eInvoicing.js'
+} from './stripeClient.js';
+
+export { normalizeStripeStatus } from './stripeClient.js';
+
+import type { PaymentProviderId } from '@vmp/payments';
+import { handleStripeInvoicePaid } from './eInvoicing.js';
+import { isLegacyProviderConfigured } from './legacyProvider.js';
+import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import {
   fromApiProviderId,
   getConfiguredProviderIds,
   getPaymentProviderOrder,
   getPaymentProviders,
   toApiProviderId,
-} from './paymentProviders.js'
-import type { PaymentProviderId } from '@vmp/payments'
+} from './paymentProviders.js';
 
-type PlanType = 'monthly' | 'yearly' | 'club'
-type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled'
+type PlanType = 'monthly' | 'yearly' | 'club';
+type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
-  const raw = String(await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' }) ?? 'monthly,yearly,club')
+  const raw = String(
+    (await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' })) ??
+      'monthly,yearly,club',
+  );
   const plans = raw
     .split(',')
     .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string): v is PlanType => v === 'monthly' || v === 'yearly' || v === 'club')
-  const base: PlanType[] = plans.length > 0 ? plans : ['monthly', 'yearly', 'club']
-  const enabled: PlanType[] = []
+    .filter((v: string): v is PlanType => v === 'monthly' || v === 'yearly' || v === 'club');
+  const base: PlanType[] = plans.length > 0 ? plans : ['monthly', 'yearly', 'club'];
+  const enabled: PlanType[] = [];
   for (const plan of base) {
-    const flag = await getSetting(env, `${plan}_enabled`, { defaultValue: '1', ttlSeconds: 300 })
-    if (String(flag ?? '1') !== '0') enabled.push(plan)
+    const flag = await getSetting(env, `${plan}_enabled`, { defaultValue: '1', ttlSeconds: 300 });
+    if (String(flag ?? '1') !== '0') enabled.push(plan);
   }
-  return enabled.length > 0 ? enabled : base
+  return enabled.length > 0 ? enabled : base;
 }
 
-const CORE_PLAN_SLUGS = ['monthly', 'yearly', 'club'] as const
+const CORE_PLAN_SLUGS = ['monthly', 'yearly', 'club'] as const;
 
 /** Plan slugs for admin UI — driven by `allowed_plans`, not broad admin_settings key scans. */
 export function parseAllowedPlanSlugs(raw: unknown): string[] {
-  const slugs = new Set<string>(CORE_PLAN_SLUGS)
+  const slugs = new Set<string>(CORE_PLAN_SLUGS);
   for (const part of String(raw ?? 'monthly,yearly,club').split(',')) {
-    const slug = part.trim().toLowerCase()
-    if (slug && /^[a-z][a-z0-9_]*$/.test(slug)) slugs.add(slug)
+    const slug = part.trim().toLowerCase();
+    if (slug && /^[a-z][a-z0-9_]*$/.test(slug)) slugs.add(slug);
   }
-  return Array.from(slugs)
+  return Array.from(slugs);
 }
 
 async function discoverPlanSlugs(env: any): Promise<string[]> {
-  const raw = await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' })
-  return parseAllowedPlanSlugs(raw)
+  const raw = await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' });
+  return parseAllowedPlanSlugs(raw);
 }
 
 async function buildAdminPlanList(env: any) {
-  const slugs = await discoverPlanSlugs(env)
-  const plans = []
+  const slugs = await discoverPlanSlugs(env);
+  const plans = [];
   for (const id of slugs) {
-    const [
-      stripePriceId,
-      amountRaw,
-      label,
-      interval,
-      enabledRaw,
-    ] = await Promise.all([
+    const [stripePriceId, amountRaw, label, interval, enabledRaw] = await Promise.all([
       getSetting(env, `stripe_price_${id}`, { ttlSeconds: 300 }),
       getSetting(env, `${id}_price_eur`, { ttlSeconds: 300 }),
       getSetting(env, `${id}_label`, { ttlSeconds: 300 }),
       getSetting(env, `${id}_interval`, { ttlSeconds: 300 }),
       getSetting(env, `${id}_enabled`, { defaultValue: '1', ttlSeconds: 300 }),
-    ])
-    const defaultLabel = id === 'monthly' ? 'Monthly' : id === 'yearly' ? 'Yearly' : id === 'club' ? 'Club' : id
-    const defaultInterval = id === 'monthly' ? 'month' : 'year'
-    const amountEur = parseConfiguredPrice(amountRaw)
+    ]);
+    const defaultLabel =
+      id === 'monthly' ? 'Monthly' : id === 'yearly' ? 'Yearly' : id === 'club' ? 'Club' : id;
+    const defaultInterval = id === 'monthly' ? 'month' : 'year';
+    const amountEur = parseConfiguredPrice(amountRaw);
     plans.push({
       id,
       label: String(label ?? defaultLabel),
@@ -94,61 +88,61 @@ async function buildAdminPlanList(env: any) {
       amountEur,
       interval: String(interval ?? defaultInterval),
       enabled: String(enabledRaw ?? '1') !== '0',
-    })
+    });
   }
-  return plans
+  return plans;
 }
 
 async function getRunnableProviderIds(env: any): Promise<PaymentProviderId[]> {
-  const { runnable } = await getPaymentProviders(env)
-  return runnable
+  const { runnable } = await getPaymentProviders(env);
+  return runnable;
 }
 
 async function getConfiguredProvidersForApi(env: any): Promise<Array<'stripe' | 'legacy'>> {
-  const enabled = await getConfiguredProviderIds(env)
-  return enabled.map(toApiProviderId)
+  const enabled = await getConfiguredProviderIds(env);
+  return enabled.map(toApiProviderId);
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function parseConfiguredPrice(value: unknown): number | null {
-  if (value === '' || value == null) return null
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : null
+  if (value === '' || value == null) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
-  const prefix = provider ? `${provider}_` : ''
+  const prefix = provider ? `${provider}_` : '';
   const [monthly, yearly, club] = await Promise.all([
     getSetting(env, `${prefix}monthly_price_eur`, { ttlSeconds: 300 }),
     getSetting(env, `${prefix}yearly_price_eur`, { ttlSeconds: 300 }),
     getSetting(env, `${prefix}club_price_eur`, { ttlSeconds: 300 }),
-  ])
+  ]);
   return {
     monthly: parseConfiguredPrice(monthly),
     yearly: parseConfiguredPrice(yearly),
     club: parseConfiguredPrice(club),
-  }
+  };
 }
 
 async function getEffectivePricingSettings(env: any, provider: 'stripe' | 'legacy') {
   const [providerPricing, fallbackPricing] = await Promise.all([
     getPricingSettings(env, provider),
     getPricingSettings(env),
-  ])
+  ]);
   return {
     monthly: providerPricing.monthly ?? fallbackPricing.monthly,
     yearly: providerPricing.yearly ?? fallbackPricing.yearly,
     club: providerPricing.club ?? fallbackPricing.club,
-  }
+  };
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function getDb(env: any) {
-  const db = env.DB || env.video_subscription_db
-  if (!db) throw new Error('D1 binding not found')
-  return db
+  const db = env.DB || env.video_subscription_db;
+  if (!db) throw new Error('D1 binding not found');
+  return db;
 }
 
 /**
@@ -156,35 +150,36 @@ function getDb(env: any) {
  * by comparing against the price IDs stored in admin_settings.
  */
 async function resolvePlanType(db: any, stripePriceId: any, env: any): Promise<PlanType> {
-  const keys = ['stripe_price_monthly', 'stripe_price_yearly', 'stripe_price_club'] as const
-  const planNames: PlanType[] = ['monthly', 'yearly', 'club']
+  const keys = ['stripe_price_monthly', 'stripe_price_yearly', 'stripe_price_club'] as const;
+  const planNames: PlanType[] = ['monthly', 'yearly', 'club'];
   for (let i = 0; i < keys.length; i++) {
-    const stored = await getSetting(env, keys[i], { ttlSeconds: 300 })
-    if (stored && stored === stripePriceId) return planNames[i] ?? 'monthly'
+    const stored = await getSetting(env, keys[i], { ttlSeconds: 300 });
+    if (stored && stored === stripePriceId) return planNames[i] ?? 'monthly';
   }
-  return 'monthly' // fallback
+  return 'monthly'; // fallback
 }
 
 function normalizePlanType(planType: string): PlanType {
-  if (planType === 'yearly' || planType === 'club') return planType
-  return 'monthly'
+  if (planType === 'yearly' || planType === 'club') return planType;
+  return 'monthly';
 }
 
 async function upsertSubscriptionRow(
   db: any,
   params: {
-    userId: string
-    planType: PlanType
-    status: SubscriptionStatus
-    provider: 'stripe' | 'legacy'
-    providerSubscriptionId: string | null
-    providerCustomerId: string | null
-    stripeSubscriptionId?: string | null
-    stripeCustomerId?: string | null
-    currentPeriodEnd?: string | null
+    userId: string;
+    planType: PlanType;
+    status: SubscriptionStatus;
+    provider: 'stripe' | 'legacy';
+    providerSubscriptionId: string | null;
+    providerCustomerId: string | null;
+    stripeSubscriptionId?: string | null;
+    stripeCustomerId?: string | null;
+    currentPeriodEnd?: string | null;
   },
 ) {
-  await db.prepare(`
+  await db
+    .prepare(`
     INSERT INTO subscriptions
       (
         id,
@@ -209,25 +204,27 @@ async function upsertSubscriptionRow(
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
       updated_at               = CURRENT_TIMESTAMP
-  `).bind(
-    crypto.randomUUID(),
-    params.userId,
-    params.planType,
-    params.status,
-    params.provider,
-    params.providerSubscriptionId,
-    params.providerCustomerId,
-    params.stripeSubscriptionId ?? null,
-    params.stripeCustomerId ?? null,
-    params.currentPeriodEnd ?? null,
-  ).run()
+  `)
+    .bind(
+      crypto.randomUUID(),
+      params.userId,
+      params.planType,
+      params.status,
+      params.provider,
+      params.providerSubscriptionId,
+      params.providerCustomerId,
+      params.stripeSubscriptionId ?? null,
+      params.stripeCustomerId ?? null,
+      params.currentPeriodEnd ?? null,
+    )
+    .run();
 }
 
 async function upsertStripeSubscription(db: any, userId: string, stripeSub: any, env: any) {
-  const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null
-  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly'
-  const status = normalizeStripeStatus(stripeSub.status)
-  const currentPeriodEnd = stripeSubscriptionPeriodEndIso(stripeSub)
+  const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null;
+  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly';
+  const status = normalizeStripeStatus(stripeSub.status);
+  const currentPeriodEnd = stripeSubscriptionPeriodEndIso(stripeSub);
 
   await upsertSubscriptionRow(db, {
     userId,
@@ -239,7 +236,7 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
     stripeSubscriptionId: stripeSub.id ?? null,
     stripeCustomerId: stripeSub.customer ?? null,
     currentPeriodEnd,
-  })
+  });
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
@@ -264,13 +261,12 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       getConfiguredProvidersForApi(env),
       getPaymentProviderOrder(env).then((ids) => ids.map(toApiProviderId)),
       getRunnableProviderIds(env).then((ids) => ids.map(toApiProviderId)),
-    ])
-    const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p))
-    const pricingNotConfigured = (
-      (allowedPlans.includes('monthly') && stripePricing.monthly == null)
-      || (allowedPlans.includes('yearly') && stripePricing.yearly == null)
-      || (allowedPlans.includes('club') && stripePricing.club == null)
-    )
+    ]);
+    const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p));
+    const pricingNotConfigured =
+      (allowedPlans.includes('monthly') && stripePricing.monthly == null) ||
+      (allowedPlans.includes('yearly') && stripePricing.yearly == null) ||
+      (allowedPlans.includes('club') && stripePricing.club == null);
     const payload = {
       monthly: allowedPlans.includes('monthly') ? stripePricing.monthly : null,
       yearly: allowedPlans.includes('yearly') ? stripePricing.yearly : null,
@@ -284,38 +280,38 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       providerOrder,
       legacyConfigured: isLegacyProviderConfigured(env),
       ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
-    }
-    return jsonResponse(payload, 200, corsHeaders)
+    };
+    return jsonResponse(payload, 200, corsHeaders);
   } catch (err) {
-    console.error('handleGetPricing error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    console.error('handleGetPricing error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
 function parseCsvList(input: unknown, allowValues: string[]) {
   if (Array.isArray(input)) {
-    return input.map((v) => String(v).trim().toLowerCase()).filter((v) => allowValues.includes(v))
+    return input.map((v) => String(v).trim().toLowerCase()).filter((v) => allowValues.includes(v));
   }
   return String(input ?? '')
     .split(',')
     .map((v) => v.trim().toLowerCase())
-    .filter((v) => allowValues.includes(v))
+    .filter((v) => allowValues.includes(v));
 }
 
 function parseOptionalPositiveNumber(input: unknown) {
-  if (input === '' || input == null) return ''
-  const numeric = Number(input)
+  if (input === '' || input == null) return '';
+  const numeric = Number(input);
   if (!Number.isFinite(numeric) || numeric <= 0) {
-    throw new Error('Prices must be positive numbers')
+    throw new Error('Prices must be positive numbers');
   }
-  return String(numeric)
+  return String(numeric);
 }
 
 export async function handleAdminPaymentSettings(request: any, env: any, corsHeaders: any) {
   try {
-    await requireRole(request, env, 'admin', 'super_admin')
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
   if (request.method === 'GET') {
@@ -335,62 +331,90 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'stripe_price_monthly',
       'stripe_price_yearly',
       'stripe_price_club',
-    ] as const
-    const values = await Promise.all(keys.map((key) => getSetting(env, key)))
-    const valueByKey = Object.fromEntries(keys.map((key, index) => [key, values[index]]))
-    return jsonResponse({
-      enabledProviders: parseCsvList(valueByKey.payments_enabled_providers ?? 'stripe', ['stripe', 'legacy']),
-      providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,legacy', ['stripe', 'legacy']),
-      allowedPlans: parseCsvList(valueByKey.allowed_plans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club']),
-      basePrices: {
-        monthly: valueByKey.monthly_price_eur ?? '',
-        yearly: valueByKey.yearly_price_eur ?? '',
-        club: valueByKey.club_price_eur ?? '',
-      },
-      providerPrices: {
-        stripe: {
-          monthly: valueByKey.stripe_monthly_price_eur ?? '',
-          yearly: valueByKey.stripe_yearly_price_eur ?? '',
-          club: valueByKey.stripe_club_price_eur ?? '',
+    ] as const;
+    const values = await Promise.all(keys.map((key) => getSetting(env, key)));
+    const valueByKey = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
+    return jsonResponse(
+      {
+        enabledProviders: parseCsvList(valueByKey.payments_enabled_providers ?? 'stripe', [
+          'stripe',
+          'legacy',
+        ]),
+        providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,legacy', [
+          'stripe',
+          'legacy',
+        ]),
+        allowedPlans: parseCsvList(valueByKey.allowed_plans ?? 'monthly,yearly,club', [
+          'monthly',
+          'yearly',
+          'club',
+        ]),
+        basePrices: {
+          monthly: valueByKey.monthly_price_eur ?? '',
+          yearly: valueByKey.yearly_price_eur ?? '',
+          club: valueByKey.club_price_eur ?? '',
         },
-        legacy: {
-          monthly: valueByKey.legacy_monthly_price_eur ?? '',
-          yearly: valueByKey.legacy_yearly_price_eur ?? '',
-          club: valueByKey.legacy_club_price_eur ?? '',
+        providerPrices: {
+          stripe: {
+            monthly: valueByKey.stripe_monthly_price_eur ?? '',
+            yearly: valueByKey.stripe_yearly_price_eur ?? '',
+            club: valueByKey.stripe_club_price_eur ?? '',
+          },
+          legacy: {
+            monthly: valueByKey.legacy_monthly_price_eur ?? '',
+            yearly: valueByKey.legacy_yearly_price_eur ?? '',
+            club: valueByKey.legacy_club_price_eur ?? '',
+          },
+        },
+        stripePriceIds: {
+          monthly: valueByKey.stripe_price_monthly ?? '',
+          yearly: valueByKey.stripe_price_yearly ?? '',
+          club: valueByKey.stripe_price_club ?? '',
         },
       },
-      stripePriceIds: {
-        monthly: valueByKey.stripe_price_monthly ?? '',
-        yearly: valueByKey.stripe_price_yearly ?? '',
-        club: valueByKey.stripe_price_club ?? '',
-      },
-    }, 200, corsHeaders)
+      200,
+      corsHeaders,
+    );
   }
 
   if (request.method !== 'PATCH') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-    const body = await request.json().catch(() => null)
+  const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') {
-    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders);
   }
 
   try {
-    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'legacy'])
+    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'legacy']);
     if (!enabledProviders.length) {
-      return jsonResponse({ error: 'At least one payment provider must be enabled' }, 400, corsHeaders)
+      return jsonResponse(
+        { error: 'At least one payment provider must be enabled' },
+        400,
+        corsHeaders,
+      );
     }
-    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, ['stripe', 'legacy'])
-    const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
-    const basePrices = body.basePrices ?? {}
-    const providerPrices = body.providerPrices ?? {}
-    const stripePriceIds = body.stripePriceIds ?? {}
+    const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, [
+      'stripe',
+      'legacy',
+    ]);
+    const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', [
+      'monthly',
+      'yearly',
+      'club',
+    ]);
+    const basePrices = body.basePrices ?? {};
+    const providerPrices = body.providerPrices ?? {};
+    const stripePriceIds = body.stripePriceIds ?? {};
 
     const updates: [string, string][] = [
       ['payments_enabled_providers', enabledProviders.join(',')],
       ['payment_provider_order', providerOrder.join(',')],
-      ['allowed_plans', (allowedPlans.length ? allowedPlans : ['monthly', 'yearly', 'club']).join(',')],
+      [
+        'allowed_plans',
+        (allowedPlans.length ? allowedPlans : ['monthly', 'yearly', 'club']).join(','),
+      ],
       ['monthly_price_eur', parseOptionalPositiveNumber(basePrices.monthly)],
       ['yearly_price_eur', parseOptionalPositiveNumber(basePrices.yearly)],
       ['club_price_eur', parseOptionalPositiveNumber(basePrices.club)],
@@ -403,18 +427,24 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       ['stripe_price_monthly', String(stripePriceIds.monthly ?? '').trim()],
       ['stripe_price_yearly', String(stripePriceIds.yearly ?? '').trim()],
       ['stripe_price_club', String(stripePriceIds.club ?? '').trim()],
-    ]
+    ];
 
-    await setSettings(env, updates)
-    return jsonResponse({ ok: true }, 200, corsHeaders)
+    await setSettings(env, updates);
+    return jsonResponse({ ok: true }, 200, corsHeaders);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid settings'
-    return jsonResponse({ error: message }, 400, corsHeaders)
+    const message = error instanceof Error ? error.message : 'Invalid settings';
+    return jsonResponse({ error: message }, 400, corsHeaders);
   }
 }
 
 function slugifyPlanLabel(label: string): string {
-  return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'plan'
+  return (
+    label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '') || 'plan'
+  );
 }
 
 /**
@@ -423,114 +453,127 @@ function slugifyPlanLabel(label: string): string {
  */
 export async function handleAdminPaymentPlans(request: any, env: any, corsHeaders: any) {
   try {
-    await requireRole(request, env, 'admin', 'super_admin')
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
   if (request.method === 'GET') {
-    const plans = await buildAdminPlanList(env)
-    const [
-      legacyManageUrl,
-      legacyProviderName,
-      legacyShowManageButton,
-      legacyConfigured,
-    ] = await Promise.all([
-      getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
-      getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
-      getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
-      Promise.resolve(isLegacyProviderConfigured(env)),
-    ])
-    return jsonResponse({
-      plans,
-      legacy: {
-        configured: legacyConfigured,
-        manageSubscriptionUrl: String(legacyManageUrl ?? ''),
-        providerName: String(legacyProviderName ?? ''),
-        showManageButton: String(legacyShowManageButton ?? '0') === '1',
+    const plans = await buildAdminPlanList(env);
+    const [legacyManageUrl, legacyProviderName, legacyShowManageButton, legacyConfigured] =
+      await Promise.all([
+        getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
+        getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
+        getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
+        Promise.resolve(isLegacyProviderConfigured(env)),
+      ]);
+    return jsonResponse(
+      {
+        plans,
+        legacy: {
+          configured: legacyConfigured,
+          manageSubscriptionUrl: String(legacyManageUrl ?? ''),
+          providerName: String(legacyProviderName ?? ''),
+          showManageButton: String(legacyShowManageButton ?? '0') === '1',
+        },
       },
-    }, 200, corsHeaders)
+      200,
+      corsHeaders,
+    );
   }
 
   if (request.method !== 'PATCH') {
-    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders)
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   }
 
-  const body = await request.json().catch(() => null)
+  const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') {
-    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Request body is required' }, 400, corsHeaders);
   }
 
   try {
     if (body.legacy && typeof body.legacy === 'object') {
-      const legacy = body.legacy
-      const updates: [string, string][] = []
+      const legacy = body.legacy;
+      const updates: [string, string][] = [];
       if (typeof legacy.manageSubscriptionUrl === 'string') {
-        updates.push(['legacy_manage_subscription_url', legacy.manageSubscriptionUrl.trim()])
+        updates.push(['legacy_manage_subscription_url', legacy.manageSubscriptionUrl.trim()]);
       }
       if (typeof legacy.providerName === 'string') {
-        updates.push(['legacy_provider_name', legacy.providerName.trim()])
+        updates.push(['legacy_provider_name', legacy.providerName.trim()]);
       }
       if (typeof legacy.showManageButton === 'boolean') {
-        updates.push(['legacy_show_manage_button', legacy.showManageButton ? '1' : '0'])
+        updates.push(['legacy_show_manage_button', legacy.showManageButton ? '1' : '0']);
       }
-      if (updates.length) await setSettings(env, updates)
+      if (updates.length) await setSettings(env, updates);
     }
 
-    const plan = body.plan
+    const plan = body.plan;
     if (plan && typeof plan === 'object') {
-      let id = typeof plan.id === 'string' ? plan.id.trim().toLowerCase() : ''
-      if (!id && typeof plan.label === 'string') id = slugifyPlanLabel(plan.label)
-      if (!id) return jsonResponse({ error: 'plan.id or plan.label is required' }, 400, corsHeaders)
+      let id = typeof plan.id === 'string' ? plan.id.trim().toLowerCase() : '';
+      if (!id && typeof plan.label === 'string') id = slugifyPlanLabel(plan.label);
+      if (!id)
+        return jsonResponse({ error: 'plan.id or plan.label is required' }, 400, corsHeaders);
 
-      const updates: [string, string][] = []
+      const updates: [string, string][] = [];
       if (typeof plan.label === 'string' && plan.label.trim()) {
-        updates.push([`${id}_label`, plan.label.trim()])
+        updates.push([`${id}_label`, plan.label.trim()]);
       }
       if (typeof plan.stripePriceId === 'string') {
-        updates.push([`stripe_price_${id}`, plan.stripePriceId.trim()])
+        updates.push([`stripe_price_${id}`, plan.stripePriceId.trim()]);
       }
       if (plan.amountEur != null && plan.amountEur !== '') {
-        updates.push([`${id}_price_eur`, parseOptionalPositiveNumber(plan.amountEur)])
+        updates.push([`${id}_price_eur`, parseOptionalPositiveNumber(plan.amountEur)]);
       }
       if (typeof plan.interval === 'string' && plan.interval.trim()) {
-        updates.push([`${id}_interval`, plan.interval.trim()])
+        updates.push([`${id}_interval`, plan.interval.trim()]);
       }
       if (typeof plan.enabled === 'boolean') {
-        updates.push([`${id}_enabled`, plan.enabled ? '1' : '0'])
+        updates.push([`${id}_enabled`, plan.enabled ? '1' : '0']);
       }
 
       if (!updates.length) {
-        return jsonResponse({ error: 'No plan fields to update' }, 400, corsHeaders)
+        return jsonResponse({ error: 'No plan fields to update' }, 400, corsHeaders);
       }
 
-      const allowedRaw = await getSetting(env, 'allowed_plans', { defaultValue: 'monthly,yearly,club' })
-      const allowed = parseCsvList(allowedRaw ?? 'monthly,yearly,club', ['monthly', 'yearly', 'club'])
-      if (!allowed.includes(id) && CORE_PLAN_SLUGS.includes(id as typeof CORE_PLAN_SLUGS[number])) {
+      const allowedRaw = await getSetting(env, 'allowed_plans', {
+        defaultValue: 'monthly,yearly,club',
+      });
+      const allowed = parseCsvList(allowedRaw ?? 'monthly,yearly,club', [
+        'monthly',
+        'yearly',
+        'club',
+      ]);
+      if (
+        !allowed.includes(id) &&
+        CORE_PLAN_SLUGS.includes(id as (typeof CORE_PLAN_SLUGS)[number])
+      ) {
         // core plan — ok
-      } else if (!allowed.includes(id) && !CORE_PLAN_SLUGS.includes(id as typeof CORE_PLAN_SLUGS[number])) {
-        const nextAllowed = [...allowed, id]
-        updates.push(['allowed_plans', nextAllowed.join(',')])
+      } else if (
+        !allowed.includes(id) &&
+        !CORE_PLAN_SLUGS.includes(id as (typeof CORE_PLAN_SLUGS)[number])
+      ) {
+        const nextAllowed = [...allowed, id];
+        updates.push(['allowed_plans', nextAllowed.join(',')]);
       }
 
-      await setSettings(env, updates)
+      await setSettings(env, updates);
     }
 
-    const plans = await buildAdminPlanList(env)
-    return jsonResponse({ ok: true, plans }, 200, corsHeaders)
+    const plans = await buildAdminPlanList(env);
+    return jsonResponse({ ok: true, plans }, 200, corsHeaders);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid plan'
-    return jsonResponse({ error: message }, 400, corsHeaders)
+    const message = error instanceof Error ? error.message : 'Invalid plan';
+    return jsonResponse({ error: message }, 400, corsHeaders);
   }
 }
 
 function normalizeReturnPath(input: unknown, fallback = '/account'): string {
-  const raw = String(input ?? fallback).trim()
-  if (!raw.startsWith('/')) return fallback
-  if (raw.startsWith('//')) return fallback
-  const [beforeHash = ''] = raw.split('#')
-  const [pathOnly = ''] = beforeHash.split('?')
-  return pathOnly || fallback
+  const raw = String(input ?? fallback).trim();
+  if (!raw.startsWith('/')) return fallback;
+  if (raw.startsWith('//')) return fallback;
+  const [beforeHash = ''] = raw.split('#');
+  const [pathOnly = ''] = beforeHash.split('?');
+  return pathOnly || fallback;
 }
 
 /**
@@ -538,14 +581,18 @@ function normalizeReturnPath(input: unknown, fallback = '/account'): string {
  * Returns the Stripe publishable key for client-side Elements.
  */
 export async function handleGetStripeConfig(_request: any, env: any, corsHeaders: any) {
-  const publishableKey = String(env.STRIPE_PUBLISHABLE_KEY ?? '').trim()
+  const publishableKey = String(env.STRIPE_PUBLISHABLE_KEY ?? '').trim();
   if (!publishableKey) {
-    return jsonResponse({
-      error: 'Stripe is not configured on the server.',
-      code: 'stripe_not_configured',
-    }, 503, corsHeaders)
+    return jsonResponse(
+      {
+        error: 'Stripe is not configured on the server.',
+        code: 'stripe_not_configured',
+      },
+      503,
+      corsHeaders,
+    );
   }
-  return jsonResponse({ publishableKey }, 200, corsHeaders)
+  return jsonResponse({ publishableKey }, 200, corsHeaders);
 }
 
 /**
@@ -553,52 +600,60 @@ export async function handleGetStripeConfig(_request: any, env: any, corsHeaders
  * Returns Checkout Session status after embedded checkout return.
  */
 export async function handleSessionStatus(request: any, env: any, corsHeaders: any) {
-  let user
+  let user;
   try {
-    user = await requireAuth(request, env)
+    user = await requireAuth(request, env);
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
-  const url = new URL(request.url)
-  const sessionId = String(url.searchParams.get('session_id') ?? '').trim()
+  const url = new URL(request.url);
+  const sessionId = String(url.searchParams.get('session_id') ?? '').trim();
   if (!sessionId.startsWith('cs_')) {
-    return jsonResponse({ error: 'session_id is required' }, 400, corsHeaders)
+    return jsonResponse({ error: 'session_id is required' }, 400, corsHeaders);
   }
 
   try {
     const session = await stripeGet(
       `/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=payment_intent&expand[]=subscription`,
       env,
-    )
+    );
     if (session.error) {
-      console.error('Stripe session retrieve error:', session.error)
-      return jsonResponse({ error: 'Failed to retrieve checkout session' }, 502, corsHeaders)
+      console.error('Stripe session retrieve error:', session.error);
+      return jsonResponse({ error: 'Failed to retrieve checkout session' }, 502, corsHeaders);
     }
 
-    const sessionUserId = String(session.metadata?.userId ?? '').trim()
+    const sessionUserId = String(session.metadata?.userId ?? '').trim();
     if (!sessionUserId || sessionUserId !== user.sub) {
-      return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
+      return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders);
     }
 
-    const paymentIntent = session.payment_intent && typeof session.payment_intent === 'object'
-      ? session.payment_intent
-      : null
-    const subscription = session.subscription && typeof session.subscription === 'object'
-      ? session.subscription
-      : null
+    const paymentIntent =
+      session.payment_intent && typeof session.payment_intent === 'object'
+        ? session.payment_intent
+        : null;
+    const subscription =
+      session.subscription && typeof session.subscription === 'object'
+        ? session.subscription
+        : null;
 
-    return jsonResponse({
-      status: session.status ?? null,
-      paymentStatus: session.payment_status ?? null,
-      paymentIntentId: paymentIntent?.id ?? null,
-      paymentIntentStatus: paymentIntent?.status ?? null,
-      subscriptionId: subscription?.id ?? (typeof session.subscription === 'string' ? session.subscription : null),
-      subscriptionStatus: subscription?.status ?? null,
-    }, 200, corsHeaders)
+    return jsonResponse(
+      {
+        status: session.status ?? null,
+        paymentStatus: session.payment_status ?? null,
+        paymentIntentId: paymentIntent?.id ?? null,
+        paymentIntentStatus: paymentIntent?.status ?? null,
+        subscriptionId:
+          subscription?.id ??
+          (typeof session.subscription === 'string' ? session.subscription : null),
+        subscriptionStatus: subscription?.status ?? null,
+      },
+      200,
+      corsHeaders,
+    );
   } catch (err) {
-    console.error('handleSessionStatus error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    console.error('handleSessionStatus error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
@@ -608,132 +663,190 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
-  let user
+  let user;
   try {
-    user = await requireAuth(request, env)
+    user = await requireAuth(request, env);
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
-  const body = await request.json().catch(() => null)
-  const allowedPlans = await getAllowedPlans(env)
+  const body = await request.json().catch(() => null);
+  const allowedPlans = await getAllowedPlans(env);
   if (!body?.planType || !allowedPlans.includes(body.planType)) {
-    return jsonResponse({ error: `planType must be one of: ${allowedPlans.join(', ')}` }, 400, corsHeaders)
+    return jsonResponse(
+      { error: `planType must be one of: ${allowedPlans.join(', ')}` },
+      400,
+      corsHeaders,
+    );
   }
-  const planType = normalizePlanType(body.planType)
+  const planType = normalizePlanType(body.planType);
 
   try {
-    const db = getDb(env)
-    const { providers, enabled, runnable } = await getPaymentProviders(env)
-    const providerOrder = await getPaymentProviderOrder(env)
+    const db = getDb(env);
+    const { providers, enabled, runnable } = await getPaymentProviders(env);
+    const providerOrder = await getPaymentProviderOrder(env);
     const orderedRunnable = [
       ...providerOrder.filter((p) => runnable.includes(p)),
       ...runnable.filter((p) => !providerOrder.includes(p)),
-    ]
-    const selectedRaw = String(body?.provider ?? '').trim().toLowerCase()
-    const selectedId = fromApiProviderId(selectedRaw) ?? fromApiProviderId(selectedRaw === 'legacy' ? 'qerko' : selectedRaw)
-    const providerId: PaymentProviderId = selectedId && providerOrder.includes(selectedId)
-      ? selectedId
-      : (orderedRunnable[0] ?? 'stripe')
-    const provider = providers.get(providerId)
-    const apiProvider = toApiProviderId(providerId)
+    ];
+    const selectedRaw = String(body?.provider ?? '')
+      .trim()
+      .toLowerCase();
+    const selectedId =
+      fromApiProviderId(selectedRaw) ??
+      fromApiProviderId(selectedRaw === 'legacy' ? 'qerko' : selectedRaw);
+    const providerId: PaymentProviderId =
+      selectedId && providerOrder.includes(selectedId)
+        ? selectedId
+        : (orderedRunnable[0] ?? 'stripe');
+    const provider = providers.get(providerId);
+    const apiProvider = toApiProviderId(providerId);
 
-    const promoResolution = providerId === 'stripe'
-      ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType, 'stripe')
-      : { ok: false, reason: 'empty' }
-    const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null
+    const promoResolution =
+      providerId === 'stripe'
+        ? await resolvePromoCodeForCheckout(env, body?.promoCode, planType, 'stripe')
+        : { ok: false, reason: 'empty' };
+    const promoMeta = promoResolution.ok ? promoResolution.checkoutMeta : null;
     if (!promoResolution.ok && promoResolution.reason !== 'empty') {
-      return jsonResponse({
-        error: promoResolution.error ?? 'Promo code is not valid',
-        code: promoResolution.reason ?? 'invalid_promo',
-      }, promoResolution.status ?? 400, corsHeaders)
+      return jsonResponse(
+        {
+          error: promoResolution.error ?? 'Promo code is not valid',
+          code: promoResolution.reason ?? 'invalid_promo',
+        },
+        promoResolution.status ?? 400,
+        corsHeaders,
+      );
     }
 
     if (!enabled.includes(providerId)) {
-      return jsonResponse({
-        error: 'Requested payment provider is not enabled.',
-        code: 'provider_not_enabled',
-      }, 400, corsHeaders)
+      return jsonResponse(
+        {
+          error: 'Requested payment provider is not enabled.',
+          code: 'provider_not_enabled',
+        },
+        400,
+        corsHeaders,
+      );
     }
     if (!provider || !runnable.includes(providerId)) {
-      return jsonResponse({
-        error: 'This payment provider is enabled in settings but is not configured on the server (missing API credentials).',
-        code: 'provider_not_configured',
-      }, 503, corsHeaders)
+      return jsonResponse(
+        {
+          error:
+            'This payment provider is enabled in settings but is not configured on the server (missing API credentials).',
+          code: 'provider_not_configured',
+        },
+        503,
+        corsHeaders,
+      );
     }
 
     if (!provider.capabilities.newSubscriptions) {
-      const legacyRelink = await db.prepare(`
+      const legacyRelink = await db
+        .prepare(`
         SELECT purchase_id FROM subscriptions
         WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
           AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
         ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
         LIMIT 1
-      `).bind(user.sub).first()
-      const bodyPurchaseId = String(body?.purchaseId ?? '').trim()
+      `)
+        .bind(user.sub)
+        .first();
+      const bodyPurchaseId = String(body?.purchaseId ?? '').trim();
       if (!legacyRelink && !bodyPurchaseId) {
-        return jsonResponse({
-          error: 'This payment provider is only available for migrated subscriptions.',
-          code: 'provider_migration_only',
-        }, 400, corsHeaders)
+        return jsonResponse(
+          {
+            error: 'This payment provider is only available for migrated subscriptions.',
+            code: 'provider_migration_only',
+          },
+          400,
+          corsHeaders,
+        );
       }
     }
 
     // Guard: don't create a new checkout session if the user already has an
     // active or trialing subscription. Return a 409 pointing them to the portal.
-    const existingSub = await db.prepare(`
+    const existingSub = await db
+      .prepare(`
       SELECT id FROM subscriptions
       WHERE user_id = ? AND status IN ('active', 'trialing', 'past_due')
       LIMIT 1
-    `).bind(user.sub).first()
+    `)
+      .bind(user.sub)
+      .first();
     if (existingSub) {
-      return jsonResponse({
-        error: 'You already have an active subscription. Use the customer portal to manage it.',
-        code: 'subscription_exists',
-      }, 409, corsHeaders)
+      return jsonResponse(
+        {
+          error: 'You already have an active subscription. Use the customer portal to manage it.',
+          code: 'subscription_exists',
+        },
+        409,
+        corsHeaders,
+      );
     }
 
-    const returnPath = normalizeReturnPath(body?.returnPath)
+    const returnPath = normalizeReturnPath(body?.returnPath);
     const session = await provider.createCheckoutSession({
       userId: user.sub,
       email: user.email,
       planType,
       returnPath,
       ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
-      ...(promoMeta ? {
-        promo: {
-          stripeCouponId: promoMeta.stripeCouponId,
-          metadata: {
-            promoCodeId: promoMeta.promoCodeId ?? '',
-            promoCode: promoMeta.promoCode ?? '',
-            promoRewardType: promoMeta.rewardType ?? '',
-          },
-        },
-      } : {}),
-    })
+      ...(promoMeta
+        ? {
+            promo: {
+              stripeCouponId: promoMeta.stripeCouponId,
+              metadata: {
+                promoCodeId: promoMeta.promoCodeId ?? '',
+                promoCode: promoMeta.promoCode ?? '',
+                promoRewardType: promoMeta.rewardType ?? '',
+              },
+            },
+          }
+        : {}),
+    });
 
     if (session.clientSecret) {
-      return jsonResponse({ clientSecret: session.clientSecret, provider: apiProvider }, 200, corsHeaders)
+      return jsonResponse(
+        { clientSecret: session.clientSecret, provider: apiProvider },
+        200,
+        corsHeaders,
+      );
     }
     if (session.checkoutUrl) {
-      return jsonResponse({
-        checkoutUrl: session.checkoutUrl,
-        provider: apiProvider,
-        orderId: session.orderId,
-      }, 200, corsHeaders)
+      return jsonResponse(
+        {
+          checkoutUrl: session.checkoutUrl,
+          provider: apiProvider,
+          orderId: session.orderId,
+        },
+        200,
+        corsHeaders,
+      );
     }
 
-    return jsonResponse({
-      error: 'Failed to create checkout session',
-      code: 'checkout_failed',
-    }, 502, corsHeaders)
+    return jsonResponse(
+      {
+        error: 'Failed to create checkout session',
+        code: 'checkout_failed',
+      },
+      502,
+      corsHeaders,
+    );
   } catch (err: unknown) {
-    console.error('handleCheckout error:', err)
-    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : ''
+    console.error('handleCheckout error:', err);
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: string }).code)
+        : '';
     if (code === 'stripe_timeout') {
-      return jsonResponse({ error: 'Payment provider timed out. Please try again.', code }, 504, corsHeaders)
+      return jsonResponse(
+        { error: 'Payment provider timed out. Please try again.', code },
+        504,
+        corsHeaders,
+      );
     }
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
@@ -742,39 +855,42 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
  * Verifies Stripe signature and handles subscription lifecycle events.
  */
 export async function handleWebhook(request: any, env: any, corsHeaders: any) {
-  const rawBody = await request.text()
-  const sigHeader = request.headers.get('Stripe-Signature') ?? ''
-  const { providers } = await getPaymentProviders(env)
-  const stripeProvider = providers.get('stripe')
+  const rawBody = await request.text();
+  const sigHeader = request.headers.get('Stripe-Signature') ?? '';
+  const { providers } = await getPaymentProviders(env);
+  const stripeProvider = providers.get('stripe');
   if (!stripeProvider) {
-    return jsonResponse({ error: 'Stripe provider not configured' }, 503, corsHeaders)
+    return jsonResponse({ error: 'Stripe provider not configured' }, 503, corsHeaders);
   }
-  const valid = await stripeProvider.verifyWebhookSignature(rawBody, sigHeader)
+  const valid = await stripeProvider.verifyWebhookSignature(rawBody, sigHeader);
   if (!valid) {
-    return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders);
   }
 
-  let event
+  let event;
   try {
-    event = JSON.parse(rawBody)
+    event = JSON.parse(rawBody);
   } catch {
-    return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders)
+    return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders);
   }
 
   try {
-    const db = getDb(env)
+    const db = getDb(env);
 
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object
-        const userId = session.metadata?.userId
-        if (!userId || !session.subscription) break
+        const session = event.data.object;
+        const userId = session.metadata?.userId;
+        if (!userId || !session.subscription) break;
 
         // Fetch the full subscription object to get current_period_end and plan
-        const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env)
+        const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env);
         if (stripeSub.id) {
-          await upsertStripeSubscription(db, userId, stripeSub, env)
-          const promoCodeId = typeof session?.metadata?.promoCodeId === 'string' ? session.metadata.promoCodeId.trim() : ''
+          await upsertStripeSubscription(db, userId, stripeSub, env);
+          const promoCodeId =
+            typeof session?.metadata?.promoCodeId === 'string'
+              ? session.metadata.promoCodeId.trim()
+              : '';
           if (promoCodeId) {
             await applyPromoRedemption(env, {
               promoCodeId,
@@ -783,139 +899,159 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               planType: String(session?.metadata?.planType || 'monthly'),
               providerSubscriptionId: stripeSub.id ?? null,
               grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
-            })
+            });
           }
           try {
-            await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env)
+            await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env);
           } catch (brevoErr) {
-            console.error(
-              '[stripe webhook] syncNewsletterForStripeSubscription failed',
-              { fn: 'syncNewsletterForStripeSubscription', userId, stripeStatus: stripeSub.status, err: brevoErr },
-            )
+            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
+              fn: 'syncNewsletterForStripeSubscription',
+              userId,
+              stripeStatus: stripeSub.status,
+              err: brevoErr,
+            });
           }
         }
-        break
+        break;
       }
 
       case 'customer.subscription.updated': {
-        const stripeSub = event.data.object
+        const stripeSub = event.data.object;
         // Find our user_id via stripe_subscription_id
-        const existing = await db.prepare(
-          'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
-        ).bind(stripeSub.id).first()
+        const existing = await db
+          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
+          .bind(stripeSub.id)
+          .first();
         if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env)
+          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
           try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
           } catch (brevoErr) {
-            console.error(
-              '[stripe webhook] syncNewsletterForStripeSubscription failed',
-              { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
-            )
+            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
+              fn: 'syncNewsletterForStripeSubscription',
+              userId: existing.user_id,
+              stripeStatus: stripeSub.status,
+              err: brevoErr,
+            });
           }
         }
-        break
+        break;
       }
 
       case 'invoice.paid': {
-        const invoice = event.data.object
-        if (!invoice.subscription) break
-        const stripeSub = await stripeGet(`/subscriptions/${invoice.subscription}`, env)
-        if (!stripeSub.id) break
-        const existing = await db.prepare(
-          'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
-        ).bind(stripeSub.id).first()
+        const invoice = event.data.object;
+        if (!invoice.subscription) break;
+        const stripeSub = await stripeGet(`/subscriptions/${invoice.subscription}`, env);
+        if (!stripeSub.id) break;
+        const existing = await db
+          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
+          .bind(stripeSub.id)
+          .first();
         if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env)
+          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
           try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env)
+            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
           } catch (brevoErr) {
-            console.error(
-              '[stripe webhook] syncNewsletterForStripeSubscription failed',
-              { fn: 'syncNewsletterForStripeSubscription', userId: existing.user_id, stripeStatus: stripeSub.status, err: brevoErr },
-            )
+            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
+              fn: 'syncNewsletterForStripeSubscription',
+              userId: existing.user_id,
+              stripeStatus: stripeSub.status,
+              err: brevoErr,
+            });
           }
-          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id))
+          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id));
         }
-        break
+        break;
       }
 
       case 'customer.subscription.deleted': {
-        const stripeSub = event.data.object
-        const row = await db.prepare(
-          'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
-        ).bind(stripeSub.id).first()
-        await db.prepare(`
+        const stripeSub = event.data.object;
+        const row = await db
+          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
+          .bind(stripeSub.id)
+          .first();
+        await db
+          .prepare(`
           UPDATE subscriptions
           SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
           WHERE stripe_subscription_id = ?
-        `).bind(stripeSub.id).run()
+        `)
+          .bind(stripeSub.id)
+          .run();
         if (row?.user_id) {
           try {
-            await removeSubscriberFromNewsletter(db, row.user_id, env)
+            await removeSubscriberFromNewsletter(db, row.user_id, env);
           } catch (brevoErr) {
-            console.error(
-              '[stripe webhook] removeSubscriberFromNewsletter failed',
-              { fn: 'removeSubscriberFromNewsletter', userId: row.user_id, err: brevoErr },
-            )
+            console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
+              fn: 'removeSubscriberFromNewsletter',
+              userId: row.user_id,
+              err: brevoErr,
+            });
           }
           try {
-            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled')
+            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
           } catch (offlineErr) {
-            console.error(
-              '[stripe webhook] revokeOfflineLicensesForUser failed',
-              { fn: 'revokeOfflineLicensesForUser', userId: row.user_id, err: offlineErr },
-            )
-            throw offlineErr
+            console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
+              fn: 'revokeOfflineLicensesForUser',
+              userId: row.user_id,
+              err: offlineErr,
+            });
+            throw offlineErr;
           }
         }
-        break
+        break;
       }
 
       case 'invoice.payment_failed': {
-        const invoice = event.data.object
+        const invoice = event.data.object;
         if (invoice.subscription) {
-          const existing = await db.prepare(
-            'SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1'
-          ).bind(invoice.subscription).first()
-          await db.prepare(`
+          const existing = await db
+            .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
+            .bind(invoice.subscription)
+            .first();
+          await db
+            .prepare(`
             UPDATE subscriptions
             SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
             WHERE stripe_subscription_id = ?
-          `).bind(invoice.subscription).run()
+          `)
+            .bind(invoice.subscription)
+            .run();
           if (existing?.user_id) {
             try {
-              await removeSubscriberFromNewsletter(db, existing.user_id, env)
+              await removeSubscriberFromNewsletter(db, existing.user_id, env);
             } catch (brevoErr) {
-              console.error(
-                '[stripe webhook] removeSubscriberFromNewsletter failed',
-                { fn: 'removeSubscriberFromNewsletter', userId: existing.user_id, err: brevoErr },
-              )
+              console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
+                fn: 'removeSubscriberFromNewsletter',
+                userId: existing.user_id,
+                err: brevoErr,
+              });
             }
             try {
-              await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due')
+              await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
             } catch (offlineErr) {
-              console.error(
-                '[stripe webhook] revokeOfflineLicensesForUser failed',
-                { fn: 'revokeOfflineLicensesForUser', userId: existing.user_id, err: offlineErr },
-              )
-              throw offlineErr
+              console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
+                fn: 'revokeOfflineLicensesForUser',
+                userId: existing.user_id,
+                err: offlineErr,
+              });
+              throw offlineErr;
             }
           }
         }
-        break
+        break;
       }
 
       default:
         // Unhandled event type — acknowledge receipt so Stripe doesn't retry
-        break
+        break;
     }
 
-    return jsonResponse({ ok: true }, 200, corsHeaders)
+    return jsonResponse({ ok: true }, 200, corsHeaders);
   } catch (err) {
-    console.error('handleWebhook error:', err)
+    console.error('handleWebhook error:', err);
     // Return 500 so Stripe retries the event on transient failures
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
@@ -924,81 +1060,92 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
  * Returns the most recent subscription row for the authenticated user.
  */
 export async function handleGetSubscription(request: any, env: any, corsHeaders: any) {
-  let user
+  let user;
   try {
-    user = await requireAuth(request, env)
+    user = await requireAuth(request, env);
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
   try {
-    const db = getDb(env)
+    const db = getDb(env);
     if (isAdministrativeRole(user.role)) {
-      const now = new Date().toISOString()
-      return jsonResponse({
-        subscription: {
-          id:                  `role:${user.role}`,
-          planType:            'staff',
-          status:              'active',
-          provider:            'staff',
-          providerCustomerId:  null,
-          stripeCustomerId:    null,
-          currentPeriodEnd:    null,
-          createdAt:           now,
-          updatedAt:           now,
+      const now = new Date().toISOString();
+      return jsonResponse(
+        {
+          subscription: {
+            id: `role:${user.role}`,
+            planType: 'staff',
+            status: 'active',
+            provider: 'staff',
+            providerCustomerId: null,
+            stripeCustomerId: null,
+            currentPeriodEnd: null,
+            createdAt: now,
+            updatedAt: now,
+          },
         },
-      }, 200, corsHeaders)
+        200,
+        corsHeaders,
+      );
     }
 
-    const sub = await db.prepare(`
+    const sub = await db
+      .prepare(`
       SELECT id, user_id, plan_type, status, provider, provider_customer_id, stripe_customer_id,
              current_period_end, created_at, updated_at
       FROM subscriptions
       WHERE user_id = ?
       ORDER BY created_at DESC
       LIMIT 1
-    `).bind(user.sub).first()
+    `)
+      .bind(user.sub)
+      .first();
 
     if (!sub) {
-      return jsonResponse({ subscription: null }, 200, corsHeaders)
+      return jsonResponse({ subscription: null }, 200, corsHeaders);
     }
 
-    const provider = sub.provider ?? 'stripe'
-    let legacyManageUrl: string | null = null
-    let showLegacyManageButton = false
-    let legacyProviderName: string | null = null
+    const provider = sub.provider ?? 'stripe';
+    let legacyManageUrl: string | null = null;
+    let showLegacyManageButton = false;
+    let legacyProviderName: string | null = null;
     if (provider === 'legacy') {
       const [urlRaw, showRaw, nameRaw] = await Promise.all([
         getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
-      ])
-      const url = String(urlRaw ?? '').trim()
-      legacyManageUrl = url || null
-      showLegacyManageButton = String(showRaw ?? '0') === '1' && Boolean(url)
-      const name = String(nameRaw ?? '').trim()
-      legacyProviderName = name || null
+      ]);
+      const url = String(urlRaw ?? '').trim();
+      legacyManageUrl = url || null;
+      showLegacyManageButton = String(showRaw ?? '0') === '1' && Boolean(url);
+      const name = String(nameRaw ?? '').trim();
+      legacyProviderName = name || null;
     }
 
-    return jsonResponse({
-      subscription: {
-        id:                  sub.id,
-        planType:            sub.plan_type,
-        status:              sub.status,
-        provider,
-        providerCustomerId:  sub.provider_customer_id ?? null,
-        stripeCustomerId:    sub.stripe_customer_id,
-        currentPeriodEnd:    sub.current_period_end,
-        createdAt:           sub.created_at,
-        updatedAt:           sub.updated_at,
-        legacyManageUrl,
-        showLegacyManageButton,
-        legacyProviderName,
+    return jsonResponse(
+      {
+        subscription: {
+          id: sub.id,
+          planType: sub.plan_type,
+          status: sub.status,
+          provider,
+          providerCustomerId: sub.provider_customer_id ?? null,
+          stripeCustomerId: sub.stripe_customer_id,
+          currentPeriodEnd: sub.current_period_end,
+          createdAt: sub.created_at,
+          updatedAt: sub.updated_at,
+          legacyManageUrl,
+          showLegacyManageButton,
+          legacyProviderName,
+        },
       },
-    }, 200, corsHeaders)
+      200,
+      corsHeaders,
+    );
   } catch (err) {
-    console.error('handleGetSubscription error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    console.error('handleGetSubscription error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
@@ -1008,51 +1155,64 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
  * Returns { portalUrl }.
  */
 export async function handlePortal(request: any, env: any, corsHeaders: any) {
-  let user
+  let user;
   try {
-    user = await requireAuth(request, env)
+    user = await requireAuth(request, env);
   } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders)
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
 
   try {
-    const db = getDb(env)
-    const sub = await db.prepare(`
+    const db = getDb(env);
+    const sub = await db
+      .prepare(`
       SELECT provider, stripe_customer_id FROM subscriptions
       WHERE user_id = ?
       ORDER BY created_at DESC LIMIT 1
-    `).bind(user.sub).first()
+    `)
+      .bind(user.sub)
+      .first();
 
     if (!sub) {
-      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders)
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
     if ((sub.provider ?? 'stripe') !== 'stripe') {
-      const manageUrl = String(await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' }) ?? '').trim()
-      if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders)
-      return jsonResponse({
-        error: 'Customer portal is not available for this payment provider.',
-        code: 'portal_not_supported',
-      }, 409, corsHeaders)
+      const manageUrl = String(
+        (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
+      ).trim();
+      if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders);
+      return jsonResponse(
+        {
+          error: 'Customer portal is not available for this payment provider.',
+          code: 'portal_not_supported',
+        },
+        409,
+        corsHeaders,
+      );
     }
     if (!sub?.stripe_customer_id) {
-      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders)
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
 
-    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000'
-    const portalSession = await stripePost('/billing_portal/sessions', {
-      customer:   sub.stripe_customer_id,
-      return_url: `${frontendUrl}/account`,
-    }, env)
+    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000';
+    const portalSession = await stripePost(
+      '/billing_portal/sessions',
+      {
+        customer: sub.stripe_customer_id,
+        return_url: `${frontendUrl}/account`,
+      },
+      env,
+    );
 
     if (portalSession.error || !portalSession.url) {
-      console.error('Stripe portal session error:', portalSession.error)
-      return jsonResponse({ error: 'Failed to create portal session' }, 502, corsHeaders)
+      console.error('Stripe portal session error:', portalSession.error);
+      return jsonResponse({ error: 'Failed to create portal session' }, 502, corsHeaders);
     }
 
-    return jsonResponse({ portalUrl: portalSession.url }, 200, corsHeaders)
+    return jsonResponse({ portalUrl: portalSession.url }, 200, corsHeaders);
   } catch (err) {
-    console.error('handlePortal error:', err)
-    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders)
+    console.error('handlePortal error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }
 
@@ -1062,5 +1222,5 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  })
+  });
 }

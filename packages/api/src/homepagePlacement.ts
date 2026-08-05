@@ -1,6 +1,6 @@
-import { placementTimestampMs, compareVideosNewestFirst } from '@vmp/shared'
+import { compareVideosNewestFirst, placementTimestampMs } from '@vmp/shared';
 
-export { placementTimestampMs }
+export { placementTimestampMs };
 
 /**
  * Homepage video placement (PR B — deterministic rules engine)
@@ -33,91 +33,96 @@ export { placementTimestampMs }
  *   is configured).
  */
 
-type VideoRef = { id: string }
+type VideoRef = { id: string };
 type LayoutBlockInput = {
-  type?: string
-  childBlocks?: Array<{ type?: string } | null> | null
-}
+  type?: string;
+  childBlocks?: Array<{ type?: string } | null> | null;
+};
 export type PublishedVideoInput = {
-  id: string
-  published_at?: string | null
-  upload_date?: string | null
-  category_id?: string | null
-}
+  id: string;
+  published_at?: string | null;
+  upload_date?: string | null;
+  category_id?: string | null;
+};
 
 /** Collapse duplicate join rows; prefer a row that carries a category assignment. */
 export function normalizePlacementVideoRows(rows: PublishedVideoInput[]) {
-  const byId = new Map<string, PublishedVideoInput>()
+  const byId = new Map<string, PublishedVideoInput>();
   for (const row of rows) {
-    if (!row || typeof row.id !== 'string') continue
+    if (!row || typeof row.id !== 'string') continue;
     if (!byId.has(row.id)) {
-      byId.set(row.id, row)
-      continue
+      byId.set(row.id, row);
+      continue;
     }
-    const prev = byId.get(row.id)!
-    const prevHasCat = prev.category_id != null && String(prev.category_id).trim() !== ''
-    const rowHasCat = row.category_id != null && String(row.category_id).trim() !== ''
-    if (!prevHasCat && rowHasCat) byId.set(row.id, row)
+    const prev = byId.get(row.id)!;
+    const prevHasCat = prev.category_id != null && String(prev.category_id).trim() !== '';
+    const rowHasCat = row.category_id != null && String(row.category_id).trim() !== '';
+    if (!prevHasCat && rowHasCat) byId.set(row.id, row);
   }
-  return [...byId.values()]
+  return [...byId.values()];
 }
 
 /** Collect every video id referenced by a placement payload. */
-export function collectPlacementVideoIds(placement: {
-  featured?: Array<{ id?: string } | null> | null
-  recentGrid?: Array<{ id?: string } | null> | null
-  categoryBlocks?: Array<{
-    visible?: Array<{ id?: string } | null> | null
-    overflow?: Array<{ id?: string } | null> | null
-  } | null> | null
-} | null) {
-  const ids = new Set<string>()
-  if (!placement) return []
+export function collectPlacementVideoIds(
+  placement: {
+    featured?: Array<{ id?: string } | null> | null;
+    recentGrid?: Array<{ id?: string } | null> | null;
+    categoryBlocks?: Array<{
+      visible?: Array<{ id?: string } | null> | null;
+      overflow?: Array<{ id?: string } | null> | null;
+    } | null> | null;
+  } | null,
+) {
+  const ids = new Set<string>();
+  if (!placement) return [];
   for (const ref of placement.featured ?? []) {
-    if (ref && typeof ref.id === 'string') ids.add(ref.id)
+    if (ref && typeof ref.id === 'string') ids.add(ref.id);
   }
   for (const ref of placement.recentGrid ?? []) {
-    if (ref && typeof ref.id === 'string') ids.add(ref.id)
+    if (ref && typeof ref.id === 'string') ids.add(ref.id);
   }
   for (const block of placement.categoryBlocks ?? []) {
-    if (!block) continue
+    if (!block) continue;
     for (const ref of block.visible ?? []) {
-      if (ref && typeof ref.id === 'string') ids.add(ref.id)
+      if (ref && typeof ref.id === 'string') ids.add(ref.id);
     }
     for (const ref of block.overflow ?? []) {
-      if (ref && typeof ref.id === 'string') ids.add(ref.id)
+      if (ref && typeof ref.id === 'string') ids.add(ref.id);
     }
   }
-  return [...ids]
+  return [...ids];
 }
 type CategoryInput = {
-  id: string
-  slug: string
-  name: string
-  sort_order: number
-  direction: 'asc' | 'desc'
-  homepage_layout_variant?: 'three_by_one' | 'side_mini'
-}
+  id: string;
+  slug: string;
+  name: string;
+  sort_order: number;
+  direction: 'asc' | 'desc';
+  homepage_layout_variant?: 'three_by_one' | 'side_mini';
+};
 type NormalizedCategory = CategoryInput & {
-  priority_bucket: 'p0' | 'standard'
-}
+  priority_bucket: 'p0' | 'standard';
+};
 interface HomepageConfigInput {
-  featuredMode?: unknown
-  featuredVideoId?: unknown
-  featuredVideoIds?: unknown
+  featuredMode?: unknown;
+  featuredVideoId?: unknown;
+  featuredVideoIds?: unknown;
 }
 interface NormalizedHomepagePlacementConfig {
-  featuredMode: 'latest' | 'specific'
-  featuredVideoId: string | null
-  featuredVideoIds: string[]
+  featuredMode: 'latest' | 'specific';
+  featuredVideoId: string | null;
+  featuredVideoIds: string[];
 }
 
 /**
  * Subset of persisted `admin_settings.homepage` JSON used by placement only.
  * @param {unknown} config
  */
-export function normalizeHomepagePlacementConfig(config: unknown): NormalizedHomepagePlacementConfig {
-  const c: HomepageConfigInput = config && typeof config === 'object' ? config as HomepageConfigInput : {}
+export function normalizeHomepagePlacementConfig(
+  config: unknown,
+): NormalizedHomepagePlacementConfig {
+  const c: HomepageConfigInput =
+    config && typeof config === 'object' ? (config as HomepageConfigInput) : {};
   return {
     featuredMode: c.featuredMode === 'specific' ? 'specific' : 'latest',
     featuredVideoId: typeof c.featuredVideoId === 'string' ? c.featuredVideoId : null,
@@ -133,16 +138,16 @@ export function normalizeHomepagePlacementConfig(config: unknown): NormalizedHom
  * @param {'asc' | 'desc'} direction
  */
 function compareByDirection(a: any, b: any, direction: any) {
-  const ta = placementTimestampMs(a)
-  const tb = placementTimestampMs(b)
+  const ta = placementTimestampMs(a);
+  const tb = placementTimestampMs(b);
   if (direction === 'asc') {
-    if (ta !== tb) return ta - tb
+    if (ta !== tb) return ta - tb;
   } else {
-    if (ta !== tb) return tb - ta
+    if (ta !== tb) return tb - ta;
   }
-  if (a.id < b.id) return direction === 'asc' ? -1 : 1
-  if (a.id > b.id) return direction === 'asc' ? 1 : -1
-  return 0
+  if (a.id < b.id) return direction === 'asc' ? -1 : 1;
+  if (a.id > b.id) return direction === 'asc' ? 1 : -1;
+  return 0;
 }
 
 /**
@@ -151,20 +156,23 @@ function compareByDirection(a: any, b: any, direction: any) {
  * @returns {VideoRef | null}
  */
 function refFor(id: any, byId: any) {
-  const row = byId.get(id)
-  return row ? { id: row.id } : null
+  const row = byId.get(id);
+  return row ? { id: row.id } : null;
 }
 
 /** True when homepage layout config includes a renderable `featured_row` leaf block. */
 export function layoutIncludesFeaturedRowBlock(blocks: LayoutBlockInput[] | null | undefined) {
-  if (!Array.isArray(blocks)) return false
+  if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
-    if (block?.type === 'featured_row') return true
-    if (Array.isArray(block?.childBlocks) && block.childBlocks.some((child) => child?.type === 'featured_row')) {
-      return true
+    if (block?.type === 'featured_row') return true;
+    if (
+      Array.isArray(block?.childBlocks) &&
+      block.childBlocks.some((child) => child?.type === 'featured_row')
+    ) {
+      return true;
     }
   }
-  return false
+  return false;
 }
 
 function pickFeaturedVideos({
@@ -173,84 +181,87 @@ function pickFeaturedVideos({
   categorized,
   featuredRowActive,
 }: {
-  homepage: NormalizedHomepagePlacementConfig
-  byId: Map<string, PublishedVideoInput>
-  categorized: PublishedVideoInput[]
-  featuredRowActive: boolean
+  homepage: NormalizedHomepagePlacementConfig;
+  byId: Map<string, PublishedVideoInput>;
+  categorized: PublishedVideoInput[];
+  featuredRowActive: boolean;
 }) {
-  if (!featuredRowActive) return []
+  if (!featuredRowActive) return [];
 
   const pinnedIds = (Array.isArray(homepage.featuredVideoIds) ? homepage.featuredVideoIds : [])
     .filter((id): id is string => typeof id === 'string')
-    .slice(0, 4)
+    .slice(0, 4);
   const explicitPins = pinnedIds
     .map((id) => refFor(id, byId))
-    .filter((ref): ref is VideoRef => Boolean(ref))
+    .filter((ref): ref is VideoRef => Boolean(ref));
 
-  if (explicitPins.length > 0) return explicitPins
+  if (explicitPins.length > 0) return explicitPins;
 
-  const mode = homepage.featuredMode === 'specific' ? 'specific' : 'latest'
-  const featuredVideoId = typeof homepage.featuredVideoId === 'string' ? homepage.featuredVideoId : null
+  const mode = homepage.featuredMode === 'specific' ? 'specific' : 'latest';
+  const featuredVideoId =
+    typeof homepage.featuredVideoId === 'string' ? homepage.featuredVideoId : null;
   if (mode === 'specific' && featuredVideoId) {
-    const pin = refFor(featuredVideoId, byId)
-    return pin ? [pin] : pickAutomaticFeatured(categorized)
+    const pin = refFor(featuredVideoId, byId);
+    return pin ? [pin] : pickAutomaticFeatured(categorized);
   }
 
-  return pickAutomaticFeatured(categorized)
+  return pickAutomaticFeatured(categorized);
 }
 
 /**
  * @param {{ videos: PublishedVideoInput[], categories: CategoryInput[], homepage: HomepageConfigInput, layoutBlocks?: LayoutBlockInput[] }} input
  */
 export function placeHomepageVideos(input: any) {
-  const rawVideos = normalizePlacementVideoRows(Array.isArray(input.videos) ? input.videos : [])
-  const categories = Array.isArray(input.categories) ? [...input.categories] : []
-  const homepage = normalizeHomepagePlacementConfig(input?.homepage)
+  const rawVideos = normalizePlacementVideoRows(Array.isArray(input.videos) ? input.videos : []);
+  const categories = Array.isArray(input.categories) ? [...input.categories] : [];
+  const homepage = normalizeHomepagePlacementConfig(input?.homepage);
 
-  const byId = new Map(rawVideos.map((v) => [v.id, v]))
+  const byId = new Map(rawVideos.map((v) => [v.id, v]));
 
-  const sortedAll = [...byId.values()].sort(compareVideosNewestFirst)
+  const sortedAll = [...byId.values()].sort(compareVideosNewestFirst);
 
-  const categorized = sortedAll.filter(v => v.category_id != null && v.category_id !== '')
-  const featuredRowActive = layoutIncludesFeaturedRowBlock(input.layoutBlocks)
-  const featured = pickFeaturedVideos({ homepage, byId, categorized, featuredRowActive })
+  const categorized = sortedAll.filter((v) => v.category_id != null && v.category_id !== '');
+  const featuredRowActive = layoutIncludesFeaturedRowBlock(input.layoutBlocks);
+  const featured = pickFeaturedVideos({ homepage, byId, categorized, featuredRowActive });
 
-  const assigned = new Set<string>()
-  for (const ref of featured) assigned.add(ref.id)
+  const assigned = new Set<string>();
+  for (const ref of featured) assigned.add(ref.id);
 
-  const uncategorizedPool = sortedAll.filter(v => (!v.category_id || v.category_id === '') && !assigned.has(v.id))
+  const uncategorizedPool = sortedAll.filter(
+    (v) => (!v.category_id || v.category_id === '') && !assigned.has(v.id),
+  );
   /** @type {(VideoRef | null)[]} */
-  const recentGrid = []
+  const recentGrid = [];
   for (let i = 0; i < 4; i += 1) {
-    const v = uncategorizedPool[i]
+    const v = uncategorizedPool[i];
     if (v) {
-      recentGrid.push({ id: v.id })
-      assigned.add(v.id)
+      recentGrid.push({ id: v.id });
+      assigned.add(v.id);
     } else {
-      recentGrid.push(null)
+      recentGrid.push(null);
     }
   }
 
-  const orderedCategories = sortCategoriesForHomepage(categories)
+  const orderedCategories = sortCategoriesForHomepage(categories);
 
   /** @type {Array<{ category: { id: string, slug: string, name: string, direction: 'asc' | 'desc' }, visible: VideoRef[], overflow: VideoRef[] }>} */
-  const categoryBlocks = []
+  const categoryBlocks = [];
 
   for (const cat of orderedCategories) {
-    if (!cat || typeof cat.id !== 'string') continue
-    const direction = cat.direction === 'asc' ? 'asc' : 'desc'
+    if (!cat || typeof cat.id !== 'string') continue;
+    const direction = cat.direction === 'asc' ? 'asc' : 'desc';
     const inCat = sortedAll
-      .filter(v => v.category_id === cat.id && !assigned.has(v.id))
-      .sort((a, b) => compareByDirection(a, b, direction))
+      .filter((v) => v.category_id === cat.id && !assigned.has(v.id))
+      .sort((a, b) => compareByDirection(a, b, direction));
 
-    const visibleRaw = inCat.slice(0, 3)
-    const overflowRaw = inCat.slice(3)
+    const visibleRaw = inCat.slice(0, 3);
+    const overflowRaw = inCat.slice(3);
 
-    const visible = visibleRaw.map(v => ({ id: v.id }))
-    const overflow = overflowRaw.map(v => ({ id: v.id }))
+    const visible = visibleRaw.map((v) => ({ id: v.id }));
+    const overflow = overflowRaw.map((v) => ({ id: v.id }));
 
-    for (const v of visibleRaw) assigned.add(v.id)
-    for (const v of overflowRaw) assigned.add(v.id)
+    for (const v of visibleRaw) assigned.add(v.id);
+    for (const v of overflowRaw) assigned.add(v.id);
 
     categoryBlocks.push({
       category: {
@@ -260,14 +271,15 @@ export function placeHomepageVideos(input: any) {
         direction,
         sort_order: Number.isInteger(cat.sort_order) ? cat.sort_order : 0,
         priority_bucket: cat.priority_bucket,
-        homepage_layout_variant: cat.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
+        homepage_layout_variant:
+          cat.homepage_layout_variant === 'side_mini' ? 'side_mini' : 'three_by_one',
       },
       visible,
       overflow,
-    })
+    });
   }
 
-  return { featured, recentGrid, categoryBlocks }
+  return { featured, recentGrid, categoryBlocks };
 }
 
 /**
@@ -280,30 +292,30 @@ export function sortCategoriesForHomepage(categories: any[]) {
   const normalized = categories
     .filter((cat) => cat && typeof cat.id === 'string')
     .map((cat) => {
-      const sortOrder = Number.isInteger(cat.sort_order) ? cat.sort_order : 0
+      const sortOrder = Number.isInteger(cat.sort_order) ? cat.sort_order : 0;
       return {
         ...cat,
         sort_order: sortOrder,
         priority_bucket: sortOrder <= 0 ? 'p0' : 'standard',
-      } as NormalizedCategory
-    })
+      } as NormalizedCategory;
+    });
 
   normalized.sort((a, b) => {
-    const aTier = a.priority_bucket === 'p0' ? 0 : 1
-    const bTier = b.priority_bucket === 'p0' ? 0 : 1
-    if (aTier !== bTier) return aTier - bTier
-    const so = a.sort_order - b.sort_order
-    if (so !== 0) return so
-    const an = typeof a.name === 'string' ? a.name : ''
-    const bn = typeof b.name === 'string' ? b.name : ''
-    if (an < bn) return -1
-    if (an > bn) return 1
-    if (a.id < b.id) return -1
-    if (a.id > b.id) return 1
-    return 0
-  })
+    const aTier = a.priority_bucket === 'p0' ? 0 : 1;
+    const bTier = b.priority_bucket === 'p0' ? 0 : 1;
+    if (aTier !== bTier) return aTier - bTier;
+    const so = a.sort_order - b.sort_order;
+    if (so !== 0) return so;
+    const an = typeof a.name === 'string' ? a.name : '';
+    const bn = typeof b.name === 'string' ? b.name : '';
+    if (an < bn) return -1;
+    if (an > bn) return 1;
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return 0;
+  });
 
-  return normalized
+  return normalized;
 }
 
 /**
@@ -312,8 +324,8 @@ export function sortCategoriesForHomepage(categories: any[]) {
  */
 function pickAutomaticFeatured(categorizedSorted: any) {
   if (categorizedSorted.length) {
-    const top = categorizedSorted[0]
-    return top ? [{ id: top.id }] : []
+    const top = categorizedSorted[0];
+    return top ? [{ id: top.id }] : [];
   }
-  return []
+  return [];
 }
