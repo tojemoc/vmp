@@ -309,13 +309,13 @@
   let promoValidationGeneration = 0;
 
   const planLabelClass = computed(() =>
-    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
+    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400',
   );
   const planPriceClass = computed(() =>
-    props.embedded ? 'text-gray-900 dark:text-white' : 'text-white',
+    props.embedded ? 'text-gray-900 dark:text-white' : 'text-white dark:text-white',
   );
   const planSubtextClass = computed(() =>
-    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500',
+    props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400',
   );
 
   /** Three columns by default; stack only on very narrow viewports where columns would crowd. */

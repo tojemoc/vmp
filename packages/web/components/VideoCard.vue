@@ -23,7 +23,7 @@
 
       <!-- Duration Badge -->
       <div
-        class="absolute bottom-2 right-2 bg-black bg-opacity-80 text-white text-xs px-2 py-1 rounded"
+        class="absolute bottom-2 right-2 bg-black bg-opacity-80 text-white dark:text-white text-xs px-2 py-1 rounded"
       >
         {{ displayDurationSeconds ? formatDuration(displayDurationSeconds) : '--' }}
       </div>

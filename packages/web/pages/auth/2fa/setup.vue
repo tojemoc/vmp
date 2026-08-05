@@ -10,14 +10,14 @@
   4. POST /api/auth/2fa/confirm — if valid, 2FA is enabled and user is redirected
 -->
 <template>
-  <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4 py-12">
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-4 py-12">
     <div class="w-full max-w-md">
       <!-- Header -->
       <div class="text-center mb-8">
         <div
-          class="w-14 h-14 mx-auto rounded-full bg-blue-950 border border-blue-800 flex items-center justify-center mb-4"
+          class="w-14 h-14 mx-auto rounded-full bg-blue-100 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-4"
         >
-          <svg class="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-7 h-7 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -26,8 +26,8 @@
             />
           </svg>
         </div>
-        <h1 class="text-xl font-semibold text-white">{{ strings.totpSetupTitle }}</h1>
-        <p class="text-gray-400 text-sm mt-2 leading-relaxed">
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ strings.totpSetupTitle }}</h1>
+        <p class="text-gray-600 dark:text-gray-400 text-sm mt-2 leading-relaxed">
           {{ setupIntro }}
         </p>
       </div>
@@ -35,20 +35,20 @@
       <!-- Loading -->
       <div v-if="state === 'loading'" class="text-center py-12 space-y-3">
         <div
-          class="inline-block w-8 h-8 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"
+          class="inline-block w-8 h-8 border-4 border-gray-300 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin"
         ></div>
-        <p class="text-gray-500 text-sm">{{ strings.totpSetupGenerating }}</p>
+        <p class="text-gray-500 dark:text-gray-500 text-sm">{{ strings.totpSetupGenerating }}</p>
       </div>
 
       <!-- Error loading setup -->
       <div v-else-if="state === 'loadError'" class="text-center space-y-4">
-        <div class="px-4 py-3 rounded-lg bg-red-950 border border-red-800 text-red-400 text-sm">
+        <div class="px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm">
           {{ loadError }}
         </div>
         <button
           v-if="loadErrorCode !== 'totp_already_enabled'"
           type="button"
-          class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+          class="px-5 py-2.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm rounded-lg transition-colors"
           @click="loadSetup"
         >
           {{ strings.totpSetupTryAgain }}
@@ -56,7 +56,7 @@
         <NuxtLink
           v-else
           to="/account"
-          class="inline-block px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+          class="inline-block px-5 py-2.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm rounded-lg transition-colors"
         >
           {{ strings.totpSetupBackToAccount }}
         </NuxtLink>
@@ -66,14 +66,14 @@
       <div v-else-if="state === 'setup'" class="space-y-6">
         <!-- QR code -->
         <div
-          class="bg-gray-900 rounded-xl border border-gray-800 p-6 flex flex-col items-center gap-4"
+          class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 flex flex-col items-center gap-4"
         >
           <canvas ref="qrCanvas" class="rounded-lg"></canvas>
-          <p class="text-xs text-gray-500 text-center">
+          <p class="text-xs text-gray-500 dark:text-gray-500 text-center">
             {{ strings.totpSetupManualEntry }}
           </p>
           <div
-            class="bg-gray-800 rounded-lg px-4 py-2 font-mono text-sm text-gray-300 tracking-widest select-all text-center break-all"
+            class="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-2 font-mono text-sm text-gray-700 dark:text-gray-300 tracking-widest select-all text-center break-all"
           >
             {{ formattedSecret }}
           </div>
@@ -83,13 +83,13 @@
         <form @submit.prevent="confirm" class="space-y-4">
           <div
             v-if="confirmError"
-            class="px-4 py-3 rounded-lg bg-red-950 border border-red-800 text-red-400 text-sm"
+            class="px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm"
           >
             {{ confirmError }}
           </div>
 
           <div>
-            <label for="confirmCode" class="block text-sm font-medium text-gray-300 mb-1.5">
+            <label for="confirmCode" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
               {{ strings.totpSetupConfirmLabel }}
             </label>
             <input
@@ -101,14 +101,14 @@
               maxlength="6"
               :placeholder="strings.totpCodePlaceholder"
               :disabled="confirming"
-              class="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+              class="w-full px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
             >
           </div>
 
           <button
             type="submit"
             :disabled="confirming || confirmCode.length !== 6"
-            class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+            class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:text-white font-medium rounded-lg transition-colors text-sm"
           >
             <span v-if="confirming" class="inline-flex items-center gap-2">
               <span
@@ -124,9 +124,9 @@
       <!-- Success -->
       <div v-else-if="state === 'done'" class="text-center space-y-6">
         <div
-          class="w-14 h-14 mx-auto rounded-full bg-green-950 border border-green-800 flex items-center justify-center"
+          class="w-14 h-14 mx-auto rounded-full bg-green-100 dark:bg-green-950 border border-green-200 dark:border-green-800 flex items-center justify-center"
         >
-          <svg class="w-7 h-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-7 h-7 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -136,8 +136,8 @@
           </svg>
         </div>
         <div>
-          <h2 class="text-lg font-semibold text-white mb-1">{{ strings.totpSetupEnabledTitle }}</h2>
-          <p class="text-gray-400 text-sm">{{ strings.totpSetupEnabledBody }}</p>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">{{ strings.totpSetupEnabledTitle }}</h2>
+          <p class="text-gray-600 dark:text-gray-400 text-sm">{{ strings.totpSetupEnabledBody }}</p>
         </div>
       </div>
     </div>

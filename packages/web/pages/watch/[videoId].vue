@@ -1578,10 +1578,10 @@
   let nativeVideoWithListeners: HTMLVideoElement | null = null;
   type Closable = { close?: () => void };
   type LivestreamRuntime = {
-    connection: Closable | null;
-    broadcast: Closable | null;
-    /** Closes the composed Video/Audio/Sync pipeline (replaces MultiBackend). */
-    pipeline: Closable | null;
+    /** Resources registered in construction order; closed in reverse on teardown. */
+    closables: Closable[];
+    /** True once attachLiveMoqControls ran for this runtime. */
+    controlsAttached: boolean;
   };
 
   let livestreamRuntime: LivestreamRuntime | null = null;
@@ -1855,7 +1855,7 @@
         ensureCurrent();
       }
     } catch (e: any) {
-      if (e.name === 'AbortError' || options.signal?.aborted || !guard()) return;
+      if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) return;
       if (isPlaybackUnavailableError(e)) {
         error.value = null;
         playbackUnavailable.value = true;
@@ -1886,21 +1886,25 @@
 
     teardownVideoListeners();
     teardownLivestreamRuntime();
-    let partialRuntime: LivestreamRuntime = {
-      connection: null,
-      broadcast: null,
-      pipeline: null,
+    const partialRuntime: LivestreamRuntime = {
+      closables: [],
+      controlsAttached: false,
+    };
+    const track = <T extends Closable>(resource: T): T => {
+      partialRuntime.closables.push(resource);
+      return resource;
     };
 
     try {
       const { moq, watch, signals } = await ensureMoqModules();
       const { Signal } = signals;
 
-      const connection = new moq.Connection.Reload({
-        url: new URL(moqEndpoint),
-        enabled: true,
-      });
-      partialRuntime.connection = connection;
+      const connection = track(
+        new moq.Connection.Reload({
+          url: new URL(moqEndpoint),
+          enabled: true,
+        }),
+      );
 
       const paused = new Signal(false);
       const volume = new Signal(0.85);
@@ -1910,57 +1914,58 @@
       const videoEnabled = new Signal(true);
       const audioEnabled = new Signal(true);
 
-      const broadcast = new watch.Broadcast({
-        connection: connection.established,
-        enabled: true,
-        name: moq.Path.from(moqBroadcast),
-        reload,
-      });
-      partialRuntime.broadcast = broadcast;
+      const broadcast = track(
+        new watch.Broadcast({
+          connection: connection.established,
+          enabled: true,
+          name: moq.Path.from(moqBroadcast),
+          reload,
+        }),
+      );
 
-      const videoSource = new watch.Video.Source({
-        broadcast,
-        supported: watch.Video.Decoder.supported,
-      });
-      const audioSource = new watch.Audio.Source({
-        broadcast,
-        supported: watch.Audio.Decoder.supported,
-      });
-      const sync = new watch.Sync({
-        latency: 'real-time',
-        connection: connection.established,
-        video: videoSource.out.jitter,
-        audio: audioSource.out.jitter,
-      });
-      const videoDecoder = new watch.Video.Decoder(videoSource, sync, { enabled: videoEnabled });
-      const audioDecoder = new watch.Audio.Decoder(audioSource, sync, { enabled: audioEnabled });
-      const emitter = new watch.Audio.Emitter(audioDecoder, { volume, muted, paused });
-      const renderer = new watch.Video.Renderer(videoDecoder, {
-        canvas,
-        visible: 'always',
-      });
+      const videoSource = track(
+        new watch.Video.Source({
+          broadcast,
+          supported: watch.Video.Decoder.supported,
+        }),
+      );
+      const audioSource = track(
+        new watch.Audio.Source({
+          broadcast,
+          supported: watch.Audio.Decoder.supported,
+        }),
+      );
+      const sync = track(
+        new watch.Sync({
+          latency: 'real-time',
+          connection: connection.established,
+          video: videoSource.out.jitter,
+          audio: audioSource.out.jitter,
+        }),
+      );
+      const videoDecoder = track(
+        new watch.Video.Decoder(videoSource, sync, { enabled: videoEnabled }),
+      );
+      const audioDecoder = track(
+        new watch.Audio.Decoder(audioSource, sync, { enabled: audioEnabled }),
+      );
+      const emitter = track(new watch.Audio.Emitter(audioDecoder, { volume, muted, paused }));
+      const renderer = track(
+        new watch.Video.Renderer(videoDecoder, {
+          canvas,
+          visible: 'always',
+        }),
+      );
 
       // Mirror <moq-watch>: audio Decoder.enabled follows Emitter.out.enabled
       // (false while paused/muted path); keep video downloading so the canvas
       // retains the last frame while paused.
-      const controlGate = new signals.Effect((effect) => {
-        audioEnabled.set(effect.get(emitter.out.enabled));
-        videoEnabled.set(true);
-      });
-
-      const pipeline: Closable = {
-        close: () => {
-          controlGate.close();
-          renderer.close();
-          emitter.close();
-          videoDecoder.close();
-          audioDecoder.close();
-          sync.close();
-          videoSource.close();
-          audioSource.close();
-        },
-      };
-      partialRuntime.pipeline = pipeline;
+      track(
+        new signals.Effect((effect) => {
+          audioEnabled.set(effect.get(emitter.out.enabled));
+          videoEnabled.set(true);
+        }),
+      );
 
       attachLiveMoqControls({
         paused,
@@ -1972,6 +1977,7 @@
           audioDecoder.reset();
         },
       });
+      partialRuntime.controlsAttached = true;
 
       ensureActive();
       livestreamRuntime = partialRuntime;
@@ -2031,7 +2037,9 @@
     ensureActive();
 
     handleLoadedMetadata = () => {
-      console.log('Video metadata loaded');
+      if (import.meta.env.DEV) {
+        console.log('Video metadata loaded');
+      }
     };
     handleMediaError = () => {
       if (!isCurrentInvocation()) return;
@@ -2289,15 +2297,23 @@
   function teardownLivestreamRuntime(runtimeToDispose?: LivestreamRuntime | null) {
     const source = runtimeToDispose ?? livestreamRuntime;
     // Detach controls when tearing down the active runtime, or any runtime
-    // that has a pipeline (which is where attachLiveMoqControls is wired).
+    // that already attached MoQ controls.
     const shouldDetach =
-      !runtimeToDispose || runtimeToDispose === livestreamRuntime || Boolean(source?.pipeline);
+      !runtimeToDispose ||
+      runtimeToDispose === livestreamRuntime ||
+      Boolean(source?.controlsAttached);
     if (shouldDetach) {
       detachLiveMoqControls();
     }
-    source?.pipeline?.close?.();
-    source?.broadcast?.close?.();
-    source?.connection?.close?.();
+    const closables = source?.closables ?? [];
+    for (let i = closables.length - 1; i >= 0; i -= 1) {
+      try {
+        closables[i]?.close?.();
+      } catch {
+        // Best-effort cleanup of partially constructed pipelines.
+      }
+    }
+    if (source) source.closables = [];
     if (!runtimeToDispose || runtimeToDispose === livestreamRuntime) {
       livestreamRuntime = null;
     }
@@ -2520,7 +2536,8 @@
     transition: background 0.15s ease;
   }
 
-  .watch-live-moq-icon-btn:hover {
+  .watch-live-moq-icon-btn:hover,
+  .watch-live-moq-icon-btn:focus-visible {
     background: rgba(255, 255, 255, 0.12);
   }
 
@@ -2537,7 +2554,8 @@
     transition: background 0.15s ease;
   }
 
-  .watch-live-moq-live-edge-btn:hover {
+  .watch-live-moq-live-edge-btn:hover,
+  .watch-live-moq-live-edge-btn:focus-visible {
     background: rgba(244, 63, 94, 0.25);
   }
 

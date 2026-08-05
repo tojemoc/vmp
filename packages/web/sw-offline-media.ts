@@ -43,8 +43,14 @@ async function serveOfflineMedia(request: Request): Promise<Response> {
   const slash = rest.indexOf('/');
   if (slash < 1) return new Response('Not found', { status: 404 });
 
-  const videoId = decodeURIComponent(rest.slice(0, slash));
-  const assetPath = decodeURIComponent(rest.slice(slash + 1));
+  let videoId: string;
+  let assetPath: string;
+  try {
+    videoId = decodeURIComponent(rest.slice(0, slash));
+    assetPath = decodeURIComponent(rest.slice(slash + 1));
+  } catch {
+    return new Response('Invalid path', { status: 400 });
+  }
   if (!videoId || !assetPath || assetPath.includes('..')) {
     return new Response('Invalid path', { status: 400 });
   }

@@ -115,7 +115,7 @@
               <div class="flex flex-wrap gap-2 pt-2">
                 <button
                   type="submit"
-                  class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+                  class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white dark:text-white text-sm font-semibold"
                 >
                   Save
                 </button>

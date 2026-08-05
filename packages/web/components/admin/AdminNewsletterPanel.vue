@@ -17,7 +17,7 @@
         :key="tab.id"
         type="button"
         class="px-3 py-1.5 rounded-lg text-sm font-medium"
-        :class="activeSubTab === tab.id ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
+        :class="activeSubTab === tab.id ? 'bg-blue-600 text-white dark:text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
         @click="activeSubTab = tab.id"
       >
         {{ tab.label }}
@@ -72,7 +72,7 @@
             <div class="flex flex-wrap gap-2">
               <button
                 type="button"
-                class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+                class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
                 :disabled="settingsSaving"
                 @click="saveSettings"
               >
@@ -80,7 +80,7 @@
               </button>
               <button
                 type="button"
-                class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
+                class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
                 :disabled="syncing"
                 @click="syncRecipients"
               >
@@ -104,7 +104,7 @@
           <button
             type="button"
             class="px-2 py-1 rounded"
-            :class="bodyMode === 'html' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'"
+            :class="bodyMode === 'html' ? 'bg-blue-600 text-white dark:text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'"
             @click="setBodyMode('html')"
           >
             HTML
@@ -112,7 +112,7 @@
           <button
             type="button"
             class="px-2 py-1 rounded"
-            :class="bodyMode === 'markdown' ? 'bg-blue-600 text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'"
+            :class="bodyMode === 'markdown' ? 'bg-blue-600 text-white dark:text-white' : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'"
             @click="setBodyMode('markdown')"
           >
             Markdown
@@ -152,7 +152,7 @@
           <div class="relative">
             <button
               type="button"
-              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-50"
+              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
               :disabled="scheduling"
               @click="showSchedulePicker = !showSchedulePicker"
             >
@@ -169,7 +169,7 @@
               >
               <button
                 type="button"
-                class="w-full px-3 py-1.5 rounded bg-amber-600 text-white text-sm font-semibold disabled:opacity-50"
+                class="w-full px-3 py-1.5 rounded bg-amber-600 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
                 :disabled="scheduling || !scheduleAtLocal"
                 @click="scheduleCampaign"
               >
@@ -179,7 +179,7 @@
           </div>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
+            class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
             :disabled="sending"
             @click="sendNow"
           >

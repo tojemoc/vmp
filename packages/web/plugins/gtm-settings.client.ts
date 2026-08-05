@@ -24,9 +24,12 @@ export default defineNuxtPlugin(async () => {
   function pushContentView(to: { fullPath: string; name?: string | symbol | null }) {
     const w = window as Window & { dataLayer?: Array<Record<string, unknown>> };
     w.dataLayer = w.dataLayer ?? [];
-    const base = router.options.history?.base ?? '';
-    const suffix = to.fullPath.startsWith('/') ? to.fullPath : `/${to.fullPath}`;
-    const path = `${base}${suffix}`.replace(/\/{2,}/g, '/');
+    const base = String(router.options.history?.base ?? '').replace(/\/+$/, '');
+    const fullPath = to.fullPath.startsWith('/') ? to.fullPath : `/${to.fullPath}`;
+    const queryHashIdx = fullPath.search(/[?#]/);
+    const pathOnly = queryHashIdx >= 0 ? fullPath.slice(0, queryHashIdx) : fullPath;
+    const queryAndHash = queryHashIdx >= 0 ? fullPath.slice(queryHashIdx) : '';
+    const path = `${base}${pathOnly}`.replace(/\/{2,}/g, '/') + queryAndHash;
     const viewName = typeof to.name === 'string' && to.name ? to.name : path;
     w.dataLayer.push({
       event: 'content-view',

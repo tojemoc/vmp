@@ -7,14 +7,14 @@
   6-digit code from their authenticator app to complete the sign-in.
 -->
 <template>
-  <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center px-4">
     <div class="w-full max-w-sm">
       <!-- Header -->
       <div class="text-center mb-8">
         <div
-          class="w-14 h-14 mx-auto rounded-full bg-blue-950 border border-blue-800 flex items-center justify-center mb-4"
+          class="w-14 h-14 mx-auto rounded-full bg-blue-100 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-4"
         >
-          <svg class="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-7 h-7 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -23,25 +23,25 @@
             />
           </svg>
         </div>
-        <h1 class="text-xl font-semibold text-white">{{ strings.totpVerifyTitle }}</h1>
-        <p class="text-gray-400 text-sm mt-2">{{ strings.totpVerifyIntro }}</p>
+        <h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ strings.totpVerifyTitle }}</h1>
+        <p class="text-gray-600 dark:text-gray-400 text-sm mt-2">{{ strings.totpVerifyIntro }}</p>
       </div>
 
       <!-- Error -->
       <div
         v-if="errorMessage"
-        class="mb-4 px-4 py-3 rounded-lg bg-red-950 border border-red-800 text-red-400 text-sm"
+        class="mb-4 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm"
       >
         {{ errorMessage }}
       </div>
 
       <!-- Session expired -->
       <div v-if="sessionExpired" class="text-center space-y-4">
-        <p class="text-gray-400 text-sm">{{ strings.totpSessionExpired }}</p>
+        <p class="text-gray-600 dark:text-gray-400 text-sm">{{ strings.totpSessionExpired }}</p>
         <button
           type="button"
           @click="backToSignIn"
-          class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          class="inline-block px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
         >
           {{ strings.totpBackToSignIn }}
         </button>
@@ -50,7 +50,7 @@
       <!-- TOTP form -->
       <form v-else @submit.prevent="submit" class="space-y-5">
         <div>
-          <label for="code" class="block text-sm font-medium text-gray-300 mb-1.5">
+          <label for="code" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
             {{ strings.totpVerifyCodeLabel }}
           </label>
           <input
@@ -62,14 +62,14 @@
             maxlength="6"
             :placeholder="strings.totpCodePlaceholder"
             :disabled="loading"
-            class="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            class="w-full px-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white text-center text-2xl tracking-[0.5em] font-mono placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
           >
         </div>
 
         <button
           type="submit"
           :disabled="loading || code.length !== 6"
-          class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+          class="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white dark:text-white font-medium rounded-lg transition-colors text-sm"
         >
           <span v-if="loading" class="inline-flex items-center gap-2">
             <span
@@ -80,7 +80,7 @@
           <span v-else>{{ strings.totpVerifyButton }}</span>
         </button>
 
-        <p class="text-center text-xs text-gray-500">
+        <p class="text-center text-xs text-gray-500 dark:text-gray-500">
           {{ strings.totpLostAuthenticator }}
           <a :href="supportMailto" class="text-blue-600 dark:text-blue-400 hover:underline"
             >{{ strings.totpContactSupport }}</a

@@ -16,7 +16,7 @@
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg"
+        class="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold rounded-lg"
         @click="addBlock('top_video')"
       >
         <span class="text-lg leading-none">+</span>

@@ -11,7 +11,7 @@ export type MoqLivePlayerHandle = {
   paused: Signal<boolean>;
   volume: Signal<number>;
   muted: Signal<boolean>;
-  /** Pulse true→false to wait for re-announcement / catch the live edge. */
+  /** Pulse false→true to wait for re-announcement / catch the live edge. */
   reload: Signal<boolean>;
   /** Optional sync reset used when catching up to live in buffered mode. */
   resetSync?: () => void;

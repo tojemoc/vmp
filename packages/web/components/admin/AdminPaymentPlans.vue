@@ -171,7 +171,7 @@
           <div class="md:col-span-3">
             <button
               type="button"
-              class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+              class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
               :disabled="saving"
               @click="savePlan(plan.id)"
             >
