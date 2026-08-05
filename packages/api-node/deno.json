@@ -2,20 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "name": "@vmp/api-node",
   "version": "1.0.0",
-
   "nodeModulesDir": "manual",
-
   "imports": {
     "@vmp/storage": "../storage/src/index.ts",
     "@vmp/storage/node": "../storage/src/node.ts",
-    "@vmp/storage/worker": "../storage/src/worker.ts"
+    "@vmp/storage/worker": "../storage/src/worker.ts",
+    "@aws-sdk/client-s3": "npm:@aws-sdk/client-s3",
+    "@aws-sdk/s3-request-presigner": "npm:@aws-sdk/s3-request-presigner",
+    "@smithy/core": "npm:@smithy/core",
+    "@smithy/core/protocols": "npm:@smithy/core/protocols",
+    "@smithy/fetch-http-handler": "npm:@smithy/fetch-http-handler"
   },
-
   "deploy": {
     "org": "tjm",
     "app": "vmp"
   },
-
   "exports": {
     ".": "./dist/server.js"
   }

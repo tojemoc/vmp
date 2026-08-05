@@ -261,20 +261,25 @@ function connectionProps(options: ProbeOptions): Moq.Connection.ConnectProps {
 }
 
 async function readCatalogFrame(
-  broadcast: Moq.Broadcast,
+  broadcast: Moq.Broadcast.Consumer,
   trackName: string,
   timeoutMs: number,
 ): Promise<Uint8Array | undefined> {
-  const track = broadcast.subscribe(trackName, MOQ_PRIORITY.catalog);
+  const track = broadcast.subscribe(trackName, { priority: MOQ_PRIORITY.catalog });
   try {
-    return await withTimeout(track.readFrame(), timeoutMs, `catalog track ${trackName}`);
+    const frame: Moq.Group.Frame | undefined = await withTimeout(
+      track.readFrame(),
+      timeoutMs,
+      `catalog track ${trackName}`,
+    );
+    return frame?.payload;
   } finally {
     track.close();
   }
 }
 
 async function discoverCatalog(
-  broadcast: Moq.Broadcast,
+  broadcast: Moq.Broadcast.Consumer,
   options: ProbeOptions,
 ): Promise<CatalogReport> {
   const errors: string[] = [];
@@ -396,14 +401,13 @@ function parseMediaKind(value: unknown): MediaKind {
 }
 
 async function inspectTrack(
-  broadcast: Moq.Broadcast,
+  broadcast: Moq.Broadcast.Consumer,
   track: TrackDescriptor,
   options: ProbeOptions,
 ): Promise<TrackProbeReport> {
-  const subscribed = broadcast.subscribe(
-    track.name,
-    track.mediaKind === 'audio' ? MOQ_PRIORITY.audio : MOQ_PRIORITY.video,
-  );
+  const subscribed = broadcast.subscribe(track.name, {
+    priority: track.mediaKind === 'audio' ? MOQ_PRIORITY.audio : MOQ_PRIORITY.video,
+  });
   const inspections: PayloadInspection[] = [];
   const groupFrameCounts: number[] = [];
   let groupsObserved = 0;
@@ -411,7 +415,7 @@ async function inspectTrack(
 
   try {
     for (let groupIndex = 0; groupIndex < options.groups; groupIndex += 1) {
-      const group = await withTimeout(
+      const group: Moq.Group.Consumer | undefined = await withTimeout(
         subscribed.recvGroup(),
         options.timeoutMs,
         `track ${track.name} group ${groupIndex}`,
@@ -422,7 +426,7 @@ async function inspectTrack(
 
       try {
         for (let frameIndex = 0; frameIndex < options.framesPerGroup; frameIndex += 1) {
-          const frame = await withTimeout(
+          const frame: ({ sequence: number } & Moq.Group.Frame) | undefined = await withTimeout(
             group.readFrameSequence(),
             options.timeoutMs,
             `track ${track.name} group ${group.sequence} frame ${frameIndex}`,
@@ -430,7 +434,7 @@ async function inspectTrack(
           if (!frame) break;
           framesInGroup += 1;
           framesObserved += 1;
-          inspections.push(inspectPayload(track, group.sequence, frame.sequence, frame.data));
+          inspections.push(inspectPayload(track, group.sequence, frame.sequence, frame.payload));
         }
       } finally {
         group.close();
