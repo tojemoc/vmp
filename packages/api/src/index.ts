@@ -104,6 +104,7 @@ import { log, runWithDatadogLogContext } from './logger.js';
 import {
   buildEntrypointCandidates,
   buildProxyPlaylistUrl,
+  getVideoProxyCacheControl,
   resolveMediaEntrypointUrl,
 } from './mediaEntrypoints.js';
 import {
@@ -3824,20 +3825,7 @@ function getManifestType(objectPath: any, upstreamResponse: any) {
   return null;
 }
 
-export function getVideoProxyCacheControl(objectPath: any, manifestType: any) {
-  if (manifestType === 'hls') {
-    // Playlists are frequently rewritten (preview boundaries, tokenized URLs), so
-    // keep them short-lived while still allowing CDN edge caching.
-    return 'public, max-age=60, s-maxage=60';
-  }
-
-  // HLS media segments and init files are immutable once published in VOD flows.
-  if (objectPath.endsWith('.m4s') || /(^|\/)init[^/]*\.mp4$/i.test(objectPath)) {
-    return 'public, max-age=31536000, immutable';
-  }
-
-  return null;
-}
+export { getVideoProxyCacheControl } from './mediaEntrypoints.js';
 
 export function rewriteManifestForProxyWithPreview(
   manifest: any,

@@ -6,11 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import {
-  checkEncoreHealth,
-  type EncoreRenditionKey,
-  transcodeRenditionWithEncore,
-} from './encoreClient.js';
+import { checkEncoreHealth } from './encoreClient.js';
 import { gauge, histogram, increment } from './metrics.js';
 import {
   ingestLabelForMode,
@@ -90,8 +86,6 @@ const INBOX_WATCHES: InboxWatchConfig[] = [
   { dir: INBOX_FULL_LADDER_DIR, pipelineMode: 'full_ladder', label: 'full-ladder' },
 ];
 const MAX_JOBS = Math.max(1, Number.parseInt(process.env.MAX_JOBS || '2', 10) || 2);
-const MP3_BITRATE = (process.env.MP3_BITRATE || '128k').trim();
-const PREVIEW_MP3_ENABLED = process.env.PREVIEW_MP3_ENABLED !== '0';
 const PREVIEW_MP3_SECONDS = Math.max(
   1,
   Number.parseInt(process.env.PREVIEW_MP3_SECONDS || '180', 10) || 180,

@@ -32,7 +32,6 @@ for (const name of siblingNames) {
     console.error('[deno-deploy-install] packageRoot=', packageRoot);
     console.error('[deno-deploy-install] parent listing:');
     try {
-      const { readdirSync } = await import('node:fs');
       console.error(readdirSync(path.join(packageRoot, '..')).join('\n'));
     } catch (err) {
       console.error(String(err));
