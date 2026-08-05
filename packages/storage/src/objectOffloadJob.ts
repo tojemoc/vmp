@@ -77,7 +77,10 @@ export class ObjectOffloadJob {
           continue;
         }
 
-        const putOpts = object.contentType ? { contentType: object.contentType } : undefined;
+        const putOpts = {
+          contentLength: meta.size,
+          ...(object.contentType ? { contentType: object.contentType } : {}),
+        };
         await cold.putObject(entry.key, object.body, putOpts);
 
         const coldHead = await cold.headObject(entry.key);
