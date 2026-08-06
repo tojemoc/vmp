@@ -1352,6 +1352,15 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 >
                 <span v-if="legacyPaymentStatus.hasApiKey"> · API key set</span>
                 <span v-if="legacyPaymentStatus.hasWebhookSecret"> · webhook secret set</span>
+                <span
+                  v-else-if="legacyPaymentStatus.configured"
+                  class="block mt-1 font-medium text-amber-950 dark:text-amber-100"
+                >
+                  Warning: Qerko/legacy API credentials are set but
+                  <code class="font-mono">LEGACY_ESHOP_WEBHOOK_SECRET</code> is missing. Checkout
+                  can collect payment without activating subscriptions until the webhook secret is
+                  configured on the worker.
+                </span>
               </p>
               <button
                 type="button"

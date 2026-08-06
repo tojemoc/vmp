@@ -469,8 +469,9 @@
 
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
-        : ['stripe'];
-      enabledProviders.value = providers.length ? providers : ['stripe'];
+        : [];
+      // Match API: do not invent Stripe when only unsupported providers remain.
+      enabledProviders.value = providers as PaymentProvider[];
 
       const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some(
         (plan) => planPrice(plan) != null,

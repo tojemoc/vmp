@@ -51,6 +51,15 @@
           >
         </label>
       </div>
+      <p
+        v-if="legacy.configured && !legacy.hasWebhookSecret"
+        class="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded px-3 py-2"
+      >
+        Warning: Legacy API credentials are set but
+        <code class="font-mono">LEGACY_ESHOP_WEBHOOK_SECRET</code> is missing. Enabling Qerko at
+        checkout can collect payment without activating subscriptions until the webhook secret is
+        configured.
+      </p>
       <label class="block text-sm text-gray-700 dark:text-gray-300">
         Provider order (comma-separated)
         <input
@@ -365,6 +374,7 @@
 
   interface LegacySettings {
     configured: boolean;
+    hasWebhookSecret: boolean;
     manageSubscriptionUrl: string;
     providerName: string;
     showManageButton: boolean;
@@ -388,6 +398,7 @@
   const plans = ref<PaymentPlan[]>([]);
   const legacy = ref<LegacySettings>({
     configured: false,
+    hasWebhookSecret: false,
     manageSubscriptionUrl: '',
     providerName: '',
     showManageButton: false,
@@ -508,6 +519,7 @@
       if (data.legacy) {
         legacy.value = {
           configured: Boolean(data.legacy.configured),
+          hasWebhookSecret: Boolean(data.legacy.hasWebhookSecret),
           manageSubscriptionUrl: data.legacy.manageSubscriptionUrl ?? '',
           providerName: data.legacy.providerName ?? '',
           showManageButton: Boolean(data.legacy.showManageButton),

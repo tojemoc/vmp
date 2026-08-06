@@ -18,14 +18,15 @@ export { normalizeStripeStatus } from './stripeClient.js';
 
 import type { PaymentProviderId } from '@vmp/payments';
 import { handleStripeInvoicePaid } from './eInvoicing.js';
-import { isLegacyProviderConfigured } from './legacyProvider.js';
+import { isLegacyProviderConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import {
   fromApiProviderId,
-  getConfiguredProviderIds,
   getPaymentProviderOrder,
   getPaymentProviders,
+  resolvePublicEnabledProviders,
   toApiProviderId,
+  toSupportedApiProviderIds,
 } from './paymentProviders.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -91,18 +92,6 @@ async function buildAdminPlanList(env: any) {
     });
   }
   return plans;
-}
-
-async function getRunnableProviderIds(env: any): Promise<PaymentProviderId[]> {
-  const { runnable } = await getPaymentProviders(env);
-  return runnable;
-}
-
-async function getConfiguredProvidersForApi(env: any): Promise<Array<'stripe' | 'legacy'>> {
-  const enabled = await getConfiguredProviderIds(env);
-  return enabled
-    .map(toApiProviderId)
-    .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy');
 }
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
@@ -249,30 +238,15 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const [
-      stripePricing,
-      legacyPricing,
-      allowedPlans,
-      configuredProviders,
-      providerOrder,
-      runnableProviders,
-    ] = await Promise.all([
-      getEffectivePricingSettings(env, 'stripe'),
-      getEffectivePricingSettings(env, 'legacy'),
-      getAllowedPlans(env),
-      getConfiguredProvidersForApi(env),
-      getPaymentProviderOrder(env).then((ids) =>
-        ids
-          .map(toApiProviderId)
-          .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy'),
-      ),
-      getRunnableProviderIds(env).then((ids) =>
-        ids
-          .map(toApiProviderId)
-          .filter((id): id is 'stripe' | 'legacy' => id === 'stripe' || id === 'legacy'),
-      ),
-    ]);
-    const enabledProviders = configuredProviders.filter((p) => runnableProviders.includes(p));
+    const [stripePricing, legacyPricing, allowedPlans, { enabled, runnable }, providerOrder] =
+      await Promise.all([
+        getEffectivePricingSettings(env, 'stripe'),
+        getEffectivePricingSettings(env, 'legacy'),
+        getAllowedPlans(env),
+        getPaymentProviders(env),
+        getPaymentProviderOrder(env).then((ids) => toSupportedApiProviderIds(ids)),
+      ]);
+    const enabledProviders = resolvePublicEnabledProviders(enabled, runnable);
     const pricingNotConfigured =
       (allowedPlans.includes('monthly') && stripePricing.monthly == null) ||
       (allowedPlans.includes('yearly') && stripePricing.yearly == null) ||
@@ -286,10 +260,13 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
         stripe: stripePricing,
         legacy: legacyPricing,
       },
-      enabledProviders: enabledProviders.length > 0 ? enabledProviders : ['stripe'],
+      // Empty when only stubs/unsupported providers remain — never invent Stripe.
+      enabledProviders,
       providerOrder,
       legacyConfigured: isLegacyProviderConfigured(env),
-      ...(pricingNotConfigured ? { pricing_not_configured: true } : {}),
+      ...(pricingNotConfigured || enabledProviders.length === 0
+        ? { pricing_not_configured: true }
+        : {}),
     };
     return jsonResponse(payload, 200, corsHeaders);
   } catch (err) {
@@ -482,6 +459,7 @@ export async function handleAdminPaymentPlans(request: any, env: any, corsHeader
         plans,
         legacy: {
           configured: legacyConfigured,
+          hasWebhookSecret: isLegacyWebhookConfigured(env),
           manageSubscriptionUrl: String(legacyManageUrl ?? ''),
           providerName: String(legacyProviderName ?? ''),
           showManageButton: String(legacyShowManageButton ?? '0') === '1',
@@ -705,22 +683,25 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const selectedId =
       fromApiProviderId(selectedRaw) ??
       fromApiProviderId(selectedRaw === 'legacy' ? 'qerko' : selectedRaw);
-    const providerId: PaymentProviderId =
+    const providerId: PaymentProviderId | null =
       selectedId && providerOrder.includes(selectedId)
         ? selectedId
-        : (orderedRunnable[0] ?? 'stripe');
-    const provider = providers.get(providerId);
-    const apiProvider = toApiProviderId(providerId);
-    if (!apiProvider) {
+        : (orderedRunnable[0] ?? null);
+    const apiProvider = providerId ? toApiProviderId(providerId) : null;
+    if (!providerId || !apiProvider) {
+      const noneAvailable = orderedRunnable.length === 0;
       return jsonResponse(
         {
-          error: 'Requested payment provider is not supported.',
-          code: 'provider_not_supported',
+          error: noneAvailable
+            ? 'No payment provider is available. Check admin payment settings.'
+            : 'Requested payment provider is not supported.',
+          code: noneAvailable ? 'provider_not_configured' : 'provider_not_supported',
         },
-        400,
+        noneAvailable ? 503 : 400,
         corsHeaders,
       );
     }
+    const provider = providers.get(providerId);
 
     const promoResolution =
       providerId === 'stripe'
