@@ -1,10 +1,10 @@
-import type { Extension } from '@tiptap/core'
-import type { CmsRichTextDocument } from '@vmp/shared'
-import { sanitizeCmsRichTextHtml } from '~/utils/cmsRichText'
+import type { Extension } from '@tiptap/core';
+import type { CmsRichTextDocument } from '@vmp/shared';
+import { sanitizeCmsRichTextHtml } from '~/utils/cmsRichText';
 
-type RichTextRenderer = (content: CmsRichTextDocument) => string
+type RichTextRenderer = (content: CmsRichTextDocument) => string;
 
-let rendererPromise: Promise<RichTextRenderer> | null = null
+let rendererPromise: Promise<RichTextRenderer> | null = null;
 
 async function loadRenderer(): Promise<RichTextRenderer> {
   if (!rendererPromise) {
@@ -13,7 +13,7 @@ async function loadRenderer(): Promise<RichTextRenderer> {
         import('@tiptap/html'),
         import('@tiptap/starter-kit'),
         import('@tiptap/extension-link'),
-      ])
+      ]);
 
       const richTextExtensions = [
         StarterKit.configure({
@@ -25,27 +25,30 @@ async function loadRenderer(): Promise<RichTextRenderer> {
             class: 'text-blue-600 dark:text-blue-400 hover:underline',
           },
         }) as Extension,
-      ]
+      ];
 
       return (content: CmsRichTextDocument) => {
-        if (!content || typeof content !== 'object') return ''
+        if (!content || typeof content !== 'object') return '';
         try {
-          const html = generateHTML(content as Parameters<typeof generateHTML>[0], richTextExtensions)
-          return sanitizeCmsRichTextHtml(html)
+          const html = generateHTML(
+            content as Parameters<typeof generateHTML>[0],
+            richTextExtensions,
+          );
+          return sanitizeCmsRichTextHtml(html);
         } catch {
-          return ''
+          return '';
         }
-      }
+      };
     })().catch((err) => {
-      rendererPromise = null
-      throw err
-    })
+      rendererPromise = null;
+      throw err;
+    });
   }
-  return rendererPromise
+  return rendererPromise;
 }
 
 /** Renders TipTap JSON to sanitized HTML. Loads TipTap in a separate chunk on first use. */
 export async function renderCmsRichTextHtml(content: CmsRichTextDocument): Promise<string> {
-  const render = await loadRenderer()
-  return render(content)
+  const render = await loadRenderer();
+  return render(content);
 }

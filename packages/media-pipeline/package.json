@@ -5,7 +5,7 @@
   "description": "VMP media VM: SVT Encore transcoding orchestration, Shaka HLS packaging, R2 upload, podcast MP3",
   "type": "module",
   "scripts": {
-    "lint": "eslint . --ext .ts,.vue,.tsx --max-warnings 0",
+    "lint": "biome check .",
     "build": "npm run build --workspace=@vmp/storage && tsc -p tsconfig.json",
     "start": "npm run build && node ./dist/supervisor.js",
     "supervisor": "npm run build && node ./dist/supervisor.js",
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
-    "typescript": "^6.0.3"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "engines": {
     "node": ">=20.0.0"

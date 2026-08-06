@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * VMP media host supervisor: runs pipeline_watch.js, serves local dashboard + webhook API.
  *
@@ -15,22 +16,22 @@
  * Systemd: one unit runs this process; it spawns the Node pipeline watcher as a child.
  */
 
-import http from 'node:http'
-import crypto from 'node:crypto'
-import net from 'node:net'
-import { spawn, execFile, execFileSync } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
-import fs from 'node:fs'
-import { gauge, increment } from './metrics.js'
+import type { ChildProcess } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gauge, increment } from './metrics.js';
+import { enqueuePackagerJob } from './packagingQueue.js';
 import {
   getPackagingJob,
   markPackagingFailed,
   markPackagingSuccess,
   registerPackagingJob,
-} from './packagingRegistry.js'
-import { enqueuePackagerJob } from './packagingQueue.js'
+} from './packagingRegistry.js';
 import {
   isLoopbackHost,
   REBUILD_WEBHOOK_PATHS,
@@ -38,156 +39,178 @@ import {
   resolvePackagerCallbackJobId,
   verifyDashboardSecret,
   verifyPackagerCallbackSecret,
-} from './supervisorAuth.js'
+} from './supervisorAuth.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const pkgRoot = __dirname
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkgRoot = __dirname;
 
-const pipelineScript = process.env.VMP_PIPELINE_SCRIPT || path.join(pkgRoot, 'pipeline_watch.js')
-const renderScript = process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render_podcast_preview_mp3.js')
+const pipelineScript = process.env.VMP_PIPELINE_SCRIPT || path.join(pkgRoot, 'pipeline_watch.js');
+const renderScript =
+  process.env.VMP_RENDER_SCRIPT || path.join(pkgRoot, 'render_podcast_preview_mp3.js');
 
-const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0'
-const secret = process.env.VMP_WEBHOOK_SECRET?.trim()
-const packagingSecret = (process.env.VMP_PACKAGING_SECRET || secret || '').trim()
+const requireWebhookSecret = process.env.VMP_REQUIRE_WEBHOOK_SECRET !== '0';
+const secret = process.env.VMP_WEBHOOK_SECRET?.trim();
+const packagingSecret = (process.env.VMP_PACKAGING_SECRET || secret || '').trim();
 if (requireWebhookSecret && !secret) {
-  console.error('[media-pipeline] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0')
-  process.exit(1)
+  console.error('[media-pipeline] Set VMP_WEBHOOK_SECRET or VMP_REQUIRE_WEBHOOK_SECRET=0');
+  process.exit(1);
 }
 
-const packagerSecret = process.env.VMP_PACKAGER_SECRET?.trim()
+const packagerSecret = process.env.VMP_PACKAGER_SECRET?.trim();
 if (!packagerSecret) {
-  console.error('[media-pipeline] Set VMP_PACKAGER_SECRET for packager callback security')
-  process.exit(1)
+  console.error('[media-pipeline] Set VMP_PACKAGER_SECRET for packager callback security');
+  process.exit(1);
 }
 
-const uiHost = process.env.VMP_UI_HOST || '127.0.0.1'
-const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10)
-const dashboardSecret = (process.env.VMP_SUPERVISOR_DASHBOARD_SECRET || '').trim()
+const uiHost = process.env.VMP_UI_HOST || '127.0.0.1';
+const uiPort = Number.parseInt(process.env.VMP_UI_PORT || '8788', 10);
+const dashboardSecret = (process.env.VMP_SUPERVISOR_DASHBOARD_SECRET || '').trim();
 if (!isLoopbackHost(uiHost) && !dashboardSecret) {
   console.error(
     '[media-pipeline] VMP_SUPERVISOR_DASHBOARD_SECRET is required when VMP_UI_HOST is not loopback (current: ' +
-    `${uiHost}). Webhooks stay public with HMAC; set a dashboard secret for /api/status and job control.`,
-  )
-  process.exit(1)
+      `${uiHost}). Webhooks stay public with HMAC; set a dashboard secret for /api/status and job control.`,
+  );
+  process.exit(1);
 }
-const runPipeline = process.env.VMP_RUN_PIPELINE !== '0'
-const MAX_GPU_JOBS = Math.max(1, Number.parseInt(process.env.VMP_GPU_CONCURRENCY || '1', 10) || 1)
-const MAX_UPLOAD_JOBS = Math.max(1, Number.parseInt(process.env.VMP_UPLOAD_CONCURRENCY || '2', 10) || 2)
-const STUCK_JOB_MINUTES = Math.max(1, Number.parseInt(process.env.VMP_STUCK_JOB_MINUTES || '60', 10) || 60)
-const gpuSlots = { max: MAX_GPU_JOBS, current: 0 }
-const uploadSlots = { max: MAX_UPLOAD_JOBS, current: 0 }
-let previewGpuRunning = 0
-const MAX_BODY_SIZE = 10 * 1024 * 1024 // 10 MB
-const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1'
-const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main'
-const autoUpgradeRepoDir = process.env.VMP_AUTO_UPGRADE_REPO_DIR || '/workspace'
-const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/media-pipeline'
-const autoUpgradeCheckMs = Math.max(60_000, Number.parseInt(process.env.VMP_AUTO_UPGRADE_CHECK_MS || '300000', 10) || 300000)
+const runPipeline = process.env.VMP_RUN_PIPELINE !== '0';
+const MAX_GPU_JOBS = Math.max(1, Number.parseInt(process.env.VMP_GPU_CONCURRENCY || '1', 10) || 1);
+const MAX_UPLOAD_JOBS = Math.max(
+  1,
+  Number.parseInt(process.env.VMP_UPLOAD_CONCURRENCY || '2', 10) || 2,
+);
+const STUCK_JOB_MINUTES = Math.max(
+  1,
+  Number.parseInt(process.env.VMP_STUCK_JOB_MINUTES || '60', 10) || 60,
+);
+const gpuSlots = { max: MAX_GPU_JOBS, current: 0 };
+const uploadSlots = { max: MAX_UPLOAD_JOBS, current: 0 };
+let previewGpuRunning = 0;
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+const autoUpgradeEnabled = process.env.VMP_AUTO_UPGRADE === '1';
+const autoUpgradeBranch = process.env.VMP_AUTO_UPGRADE_BRANCH || 'main';
+const autoUpgradeRepoDir = process.env.VMP_AUTO_UPGRADE_REPO_DIR || '/workspace';
+const autoUpgradePath = process.env.VMP_AUTO_UPGRADE_PATH || 'packages/media-pipeline';
+const autoUpgradeCheckMs = Math.max(
+  60_000,
+  Number.parseInt(process.env.VMP_AUTO_UPGRADE_CHECK_MS || '300000', 10) || 300000,
+);
 
 function validateScriptPath(rawPath, label, envVarName, defaultScriptName) {
-  const resolved = path.resolve(rawPath)
-  const basename = path.basename(resolved)
+  const resolved = path.resolve(rawPath);
+  const basename = path.basename(resolved);
   if (!fs.existsSync(resolved)) {
     throw new Error(
       `${label} script not found at ${resolved}. ` +
-      `Update ${envVarName} to a valid .js script path.`
-    )
+        `Update ${envVarName} to a valid .js script path.`,
+    );
   }
   if (basename.endsWith('.sh')) {
     throw new Error(
       `${label} script points to deprecated shell script ${resolved}. ` +
-      `Use the Node script (${defaultScriptName}) instead.`
-    )
+        `Use the Node script (${defaultScriptName}) instead.`,
+    );
   }
   if (basename.endsWith('.ts')) {
-    const distDir = path.join(path.dirname(resolved), 'dist')
+    const distDir = path.join(path.dirname(resolved), 'dist');
     throw new Error(
       `${label} script points to TypeScript source ${resolved}. ` +
-      `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
-      `Run \`npm run build --workspace=@vmp/media-pipeline\`, then set ${envVarName} to ` +
-      `${path.join(distDir, defaultScriptName)} or remove the override.`
-    )
+        `Node imports use .js paths (e.g. ttpLog.js) that exist only in dist/ after build. ` +
+        `Run \`npm run build --workspace=@vmp/media-pipeline\`, then set ${envVarName} to ` +
+        `${path.join(distDir, defaultScriptName)} or remove the override.`,
+    );
   }
-  return resolved
+  return resolved;
 }
 
 /** Ensure compiled pipeline_watch.js sibling imports (e.g. ttpLog.js) exist after git pull. */
 function validatePipelineBundle(resolvedPipelineScript) {
-  const dir = path.dirname(resolvedPipelineScript)
-  const content = fs.readFileSync(resolvedPipelineScript, 'utf8')
-  const importRe = /from\s+['"]\.\/([^'"]+\.js)['"]/g
-  const missing = []
+  const dir = path.dirname(resolvedPipelineScript);
+  const content = fs.readFileSync(resolvedPipelineScript, 'utf8');
+  const importRe = /from\s+['"]\.\/([^'"]+\.js)['"]/g;
+  const missing = [];
   for (const match of content.matchAll(importRe)) {
-    const depPath = path.join(dir, match[1])
-    if (!fs.existsSync(depPath)) missing.push(match[1])
+    const depPath = path.join(dir, match[1]);
+    if (!fs.existsSync(depPath)) missing.push(match[1]);
   }
-  if (missing.length === 0) return
+  if (missing.length === 0) return;
   throw new Error(
     `Pipeline script ${resolvedPipelineScript} imports missing module(s): ${missing.join(', ')}. ` +
-    'dist/ is not committed — run `npm run build --workspace=@vmp/media-pipeline` after pulling changes.',
-  )
+      'dist/ is not committed — run `npm run build --workspace=@vmp/media-pipeline` after pulling changes.',
+  );
 }
 
-let resolvedPipelineScript = pipelineScript
-let resolvedRenderScript = renderScript
+let resolvedPipelineScript = pipelineScript;
+let resolvedRenderScript = renderScript;
 try {
-  resolvedPipelineScript = validateScriptPath(pipelineScript, 'Pipeline', 'VMP_PIPELINE_SCRIPT', 'pipeline_watch.js')
-  validatePipelineBundle(resolvedPipelineScript)
-  resolvedRenderScript = validateScriptPath(renderScript, 'Render', 'VMP_RENDER_SCRIPT', 'render_podcast_preview_mp3.js')
+  resolvedPipelineScript = validateScriptPath(
+    pipelineScript,
+    'Pipeline',
+    'VMP_PIPELINE_SCRIPT',
+    'pipeline_watch.js',
+  );
+  validatePipelineBundle(resolvedPipelineScript);
+  resolvedRenderScript = validateScriptPath(
+    renderScript,
+    'Render',
+    'VMP_RENDER_SCRIPT',
+    'render_podcast_preview_mp3.js',
+  );
 } catch (err) {
-  const message = err instanceof Error ? err.message : String(err)
-  console.error(`[media-pipeline] ${message}`)
-  console.error('[media-pipeline] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.')
-  process.exit(1)
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[media-pipeline] ${message}`);
+  console.error(
+    '[media-pipeline] Migration note: legacy .sh scripts were removed; update env overrides to the new .js entrypoints.',
+  );
+  process.exit(1);
 }
 
 type QueuedJob = {
-  id: string
-  type: 'pipeline' | 'preview_mp3'
-  videoId: string
-  priority: number
-  enqueuedAt: string
-  status: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'stopped'
-  detail?: string
-  source?: string
-  previewSeconds?: number
-}
+  id: string;
+  type: 'pipeline' | 'preview_mp3';
+  videoId: string;
+  priority: number;
+  enqueuedAt: string;
+  status: 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'stopped';
+  detail?: string;
+  source?: string;
+  previewSeconds?: number;
+};
 
 /** @type {QueuedJob[]} */
-const jobQueue: QueuedJob[] = []
+const jobQueue: QueuedJob[] = [];
 /** @type {Map<string, QueuedJob>} */
-const jobsById = new Map<string, QueuedJob>()
+const jobsById = new Map<string, QueuedJob>();
 /** @type {Map<string, QueuedJob>} */
-const jobsByVideoId = new Map<string, QueuedJob>()
+const jobsByVideoId = new Map<string, QueuedJob>();
 
 function jobRegistryKey(type: QueuedJob['type'], videoId: string): string {
-  return `${type}:${videoId}`
+  return `${type}:${videoId}`;
 }
 
 function getQueuedJob(type: QueuedJob['type'], videoId: string): QueuedJob | undefined {
-  return jobsByVideoId.get(jobRegistryKey(type, videoId))
+  return jobsByVideoId.get(jobRegistryKey(type, videoId));
 }
 /** @type {Map<string, { id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt?: string }>} */
-const pipelineActiveJobs = new Map()
+const pipelineActiveJobs = new Map();
 /** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
-const pipelineSuccessfulJobs = []
-const MAX_PIPELINE_SUCCESS_JOBS = 400
+const pipelineSuccessfulJobs = [];
+const MAX_PIPELINE_SUCCESS_JOBS = 400;
 /** @type {{ id: string, type: string, videoId: string, source: string, stage: string, status: string, detail?: string, startedAt: string, updatedAt: string, finishedAt: string }[]} */
-const failedPipelineJobs = []
-const MAX_PIPELINE_FAILED_JOBS = 200
+const failedPipelineJobs = [];
+const MAX_PIPELINE_FAILED_JOBS = 200;
 /** @type {string[]} */
-const logLines = []
-const MAX_LOG = 400
+const logLines = [];
+const MAX_LOG = 400;
 /** @type {{ videoId: string, minimalMs: number|null, fullMs: number|null, totalMs: number, minimalRatio: number|null, fullRatio: number|null, at: string }[]} */
-const ttpSummaries = []
-const MAX_TTP_SUMMARIES = 50
+const ttpSummaries = [];
+const MAX_TTP_SUMMARIES = 50;
 
 function pushLog(line) {
-  const ts = new Date().toISOString()
-  const s = `[${ts}] ${line}`
-  console.log(s)
-  logLines.push(s)
-  while (logLines.length > MAX_LOG) logLines.shift()
+  const ts = new Date().toISOString();
+  const s = `[${ts}] ${line}`;
+  console.log(s);
+  logLines.push(s);
+  while (logLines.length > MAX_LOG) logLines.shift();
 }
 
 function stageLabel(stage) {
@@ -217,83 +240,85 @@ function stageLabel(stage) {
     paused: 'Paused',
     resumed: 'Resumed',
     stopped: 'Stopped',
-  }
-  return labels[stage] || stage
+  };
+  return labels[stage] || stage;
 }
 
 function sortJobQueue(): void {
   jobQueue.sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority
-    return a.enqueuedAt < b.enqueuedAt ? -1 : a.enqueuedAt > b.enqueuedAt ? 1 : 0
-  })
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return a.enqueuedAt < b.enqueuedAt ? -1 : a.enqueuedAt > b.enqueuedAt ? 1 : 0;
+  });
 }
 
 function registerQueuedJob(job: QueuedJob): void {
-  jobsById.set(job.id, job)
-  jobsByVideoId.set(jobRegistryKey(job.type, job.videoId), job)
-  const existingIdx = jobQueue.findIndex((q) => q.id === job.id)
-  if (existingIdx >= 0) jobQueue[existingIdx] = job
-  else jobQueue.push(job)
-  sortJobQueue()
+  jobsById.set(job.id, job);
+  jobsByVideoId.set(jobRegistryKey(job.type, job.videoId), job);
+  const existingIdx = jobQueue.findIndex((q) => q.id === job.id);
+  if (existingIdx >= 0) jobQueue[existingIdx] = job;
+  else jobQueue.push(job);
+  sortJobQueue();
   while (jobQueue.length > 200) {
-    const removed = jobQueue.pop()
+    const removed = jobQueue.pop();
     if (removed) {
-      jobsById.delete(removed.id)
-      jobsByVideoId.delete(jobRegistryKey(removed.type, removed.videoId))
+      jobsById.delete(removed.id);
+      jobsByVideoId.delete(jobRegistryKey(removed.type, removed.videoId));
     }
   }
 }
 
 function getQueuePosition(videoId: string): number | null {
-  const idx = jobQueue.findIndex((j) => j.videoId === videoId && j.status === 'queued')
-  return idx >= 0 ? idx + 1 : null
+  const idx = jobQueue.findIndex((j) => j.videoId === videoId && j.status === 'queued');
+  return idx >= 0 ? idx + 1 : null;
 }
 
 function isEncodeStage(stage: string): boolean {
-  return /encode|podcast_mp3|preview_render|probe/.test(stage)
+  return /encode|podcast_mp3|preview_render|probe/.test(stage);
 }
 
 function isUploadStage(stage: string): boolean {
-  return /upload/.test(stage)
+  return /upload/.test(stage);
 }
 
 function syncResourceSlots(): void {
-  let gpu = previewGpuRunning
-  let upload = 0
+  let gpu = previewGpuRunning;
+  let upload = 0;
   for (const job of pipelineActiveJobs.values()) {
-    if (job.status === 'paused') continue
-    const stage = String(job.stage || '')
-    if (isEncodeStage(stage)) gpu += 1
-    if (isUploadStage(stage)) upload += 1
+    if (job.status === 'paused') continue;
+    const stage = String(job.stage || '');
+    if (isEncodeStage(stage)) gpu += 1;
+    if (isUploadStage(stage)) upload += 1;
   }
-  gpuSlots.current = gpu
-  uploadSlots.current = upload
-  reportSupervisorMetrics()
+  gpuSlots.current = gpu;
+  uploadSlots.current = upload;
+  reportSupervisorMetrics();
 }
 
 function reportSupervisorMetrics(): void {
-  const previewQueued = jobQueue.filter((j) => j.type === 'preview_mp3' && j.status === 'queued').length
-  gauge('vmp.supervisor.preview_queue.depth', previewQueued)
-  gauge('vmp.supervisor.gpu_slots.used', gpuSlots.current)
-  gauge('vmp.supervisor.upload_slots.used', uploadSlots.current)
-  gauge('vmp.supervisor.pipeline_child.alive', pipelineChild && !pipelineState.exited ? 1 : 0)
+  const previewQueued = jobQueue.filter(
+    (j) => j.type === 'preview_mp3' && j.status === 'queued',
+  ).length;
+  gauge('vmp.supervisor.preview_queue.depth', previewQueued);
+  gauge('vmp.supervisor.gpu_slots.used', gpuSlots.current);
+  gauge('vmp.supervisor.upload_slots.used', uploadSlots.current);
+  gauge('vmp.supervisor.pipeline_child.alive', pipelineChild && !pipelineState.exited ? 1 : 0);
 }
 
 function phaseProgressFromOverall(overall: number | null) {
   if (overall == null || !Number.isFinite(overall)) {
-    return { phase1Pct: null, phase2Pct: null, phase2Started: false }
+    return { phase1Pct: null, phase2Pct: null, phase2Started: false };
   }
-  const clamped = Math.max(0, Math.min(1, overall))
-  const phase1Pct = Math.min(1, clamped / 0.30)
-  const phase2Started = clamped > 0.30
-  const phase2Pct = phase2Started ? Math.min(1, (clamped - 0.30) / 0.50) : 0
-  return { phase1Pct, phase2Pct, phase2Started }
+  const clamped = Math.max(0, Math.min(1, overall));
+  const phase1Pct = Math.min(1, clamped / 0.3);
+  const phase2Started = clamped > 0.3;
+  const phase2Pct = phase2Started ? Math.min(1, (clamped - 0.3) / 0.5) : 0;
+  return { phase1Pct, phase2Pct, phase2Started };
 }
 
 function upsertPipelineJob(event) {
-  const now = new Date().toISOString()
-  const existing = pipelineActiveJobs.get(event.videoId)
-  const startedAt = existing?.startedAt || now
+  const now = new Date().toISOString();
+  const existing = pipelineActiveJobs.get(event.videoId);
+  const startedAt = existing?.startedAt || now;
   const row = {
     id: existing?.id || crypto.randomUUID(),
     type: 'pipeline',
@@ -317,8 +342,8 @@ function upsertPipelineJob(event) {
     progressPhase2Started: existing?.progressPhase2Started ?? false,
     priority: existing?.priority ?? 100,
     queuePosition: null,
-  }
-  let queued = getQueuedJob('pipeline', event.videoId)
+  };
+  let queued = getQueuedJob('pipeline', event.videoId);
   if (!queued && event.stage === 'detected') {
     queued = {
       id: row.id,
@@ -329,45 +354,46 @@ function upsertPipelineJob(event) {
       status: 'running',
       detail: event.detail,
       source: row.source,
-    }
-    registerQueuedJob(queued)
+    };
+    registerQueuedJob(queued);
   }
   if (queued) {
-    row.priority = queued.priority
-    if (event.stage === 'paused' || event.status === 'paused') queued.status = 'paused'
-    else if (event.stage === 'resumed') queued.status = 'running'
-    else if (event.stage === 'stopped' || event.detail === 'stopped_by_user') queued.status = 'stopped'
-    else if (event.stage === 'done' && event.status === 'success') queued.status = 'done'
-    else if (event.stage === 'failed' || event.status === 'failed') queued.status = 'failed'
-    else if (!['done', 'failed', 'stopped'].includes(queued.status)) queued.status = 'running'
-    registerQueuedJob(queued)
+    row.priority = queued.priority;
+    if (event.stage === 'paused' || event.status === 'paused') queued.status = 'paused';
+    else if (event.stage === 'resumed') queued.status = 'running';
+    else if (event.stage === 'stopped' || event.detail === 'stopped_by_user')
+      queued.status = 'stopped';
+    else if (event.stage === 'done' && event.status === 'success') queued.status = 'done';
+    else if (event.stage === 'failed' || event.status === 'failed') queued.status = 'failed';
+    else if (!['done', 'failed', 'stopped'].includes(queued.status)) queued.status = 'running';
+    registerQueuedJob(queued);
   }
   if (event.stage === 'done' && event.status === 'success') {
-    pipelineActiveJobs.delete(event.videoId)
-    const doneRow = { ...row, finishedAt: now }
-    pipelineSuccessfulJobs.unshift(doneRow)
-    while (pipelineSuccessfulJobs.length > MAX_PIPELINE_SUCCESS_JOBS) pipelineSuccessfulJobs.pop()
-    syncResourceSlots()
-    return
+    pipelineActiveJobs.delete(event.videoId);
+    const doneRow = { ...row, finishedAt: now };
+    pipelineSuccessfulJobs.unshift(doneRow);
+    while (pipelineSuccessfulJobs.length > MAX_PIPELINE_SUCCESS_JOBS) pipelineSuccessfulJobs.pop();
+    syncResourceSlots();
+    return;
   }
   if (event.stage === 'failed' || event.status === 'failed' || event.stage === 'stopped') {
-    row.finishedAt = now
-    pipelineActiveJobs.delete(event.videoId)
-    failedPipelineJobs.unshift(row)
-    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
-    syncResourceSlots()
-    return
+    row.finishedAt = now;
+    pipelineActiveJobs.delete(event.videoId);
+    failedPipelineJobs.unshift(row);
+    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop();
+    syncResourceSlots();
+    return;
   }
-  row.queuePosition = getQueuePosition(event.videoId)
-  pipelineActiveJobs.set(event.videoId, row)
-  syncResourceSlots()
+  row.queuePosition = getQueuePosition(event.videoId);
+  pipelineActiveJobs.set(event.videoId, row);
+  syncResourceSlots();
 }
 
 function consumeTtpLine(line) {
-  if (!line.startsWith('VMP_TTP\t')) return false
+  if (!line.startsWith('VMP_TTP\t')) return false;
   try {
-    const row = JSON.parse(line.slice('VMP_TTP\t'.length))
-    if (row.type !== 'ttp_summary') return true
+    const row = JSON.parse(line.slice('VMP_TTP\t'.length));
+    if (row.type !== 'ttp_summary') return true;
     ttpSummaries.unshift({
       videoId: String(row.videoId || ''),
       minimalMs: row.minimalPublishReadyElapsedMs ?? null,
@@ -376,22 +402,22 @@ function consumeTtpLine(line) {
       minimalRatio: row.minimalPublishReadyRatioOfSourceDuration ?? null,
       fullRatio: row.fullRenditionsReadyRatioOfSourceDuration ?? null,
       at: String(row.at || new Date().toISOString()),
-    })
-    while (ttpSummaries.length > MAX_TTP_SUMMARIES) ttpSummaries.pop()
+    });
+    while (ttpSummaries.length > MAX_TTP_SUMMARIES) ttpSummaries.pop();
   } catch {
     // ignore malformed TTP JSON
   }
-  return true
+  return true;
 }
 
 function consumePipelineProgressLine(line) {
-  if (!line.startsWith('VMP_PIPELINE_PROGRESS\t')) return false
+  if (!line.startsWith('VMP_PIPELINE_PROGRESS\t')) return false;
   try {
-    const row = JSON.parse(line.slice('VMP_PIPELINE_PROGRESS\t'.length))
-    const videoId = String(row.videoId || '')
-    if (!videoId) return true
-    const existing = pipelineActiveJobs.get(videoId)
-    const now = new Date().toISOString()
+    const row = JSON.parse(line.slice('VMP_PIPELINE_PROGRESS\t'.length));
+    const videoId = String(row.videoId || '');
+    if (!videoId) return true;
+    const existing = pipelineActiveJobs.get(videoId);
+    const now = new Date().toISOString();
     const base = existing || {
       id: crypto.randomUUID(),
       type: 'pipeline',
@@ -402,17 +428,19 @@ function consumePipelineProgressLine(line) {
       detail: '',
       startedAt: now,
       updatedAt: now,
-    }
+    };
     const phaseProgress = phaseProgressFromOverall(
       typeof row.overallProgress === 'number' ? row.overallProgress : base.progressOverall,
-    )
+    );
     pipelineActiveJobs.set(videoId, {
       ...base,
       stage: String(row.stage || base.stage),
-      progressOverall: typeof row.overallProgress === 'number' ? row.overallProgress : base.progressOverall,
+      progressOverall:
+        typeof row.overallProgress === 'number' ? row.overallProgress : base.progressOverall,
       progressStage: String(row.stage || base.progressStage || ''),
       progressRendition: String(row.rendition || base.progressRendition || ''),
-      progressStagePct: typeof row.stageProgress === 'number' ? row.stageProgress : base.progressStagePct,
+      progressStagePct:
+        typeof row.stageProgress === 'number' ? row.stageProgress : base.progressStagePct,
       progressSpeed: typeof row.speed === 'number' ? row.speed : base.progressSpeed,
       progressEtaSec: typeof row.etaSec === 'number' ? row.etaSec : base.progressEtaSec,
       progressPhase: String(row.phase || base.progressPhase || ''),
@@ -423,30 +451,30 @@ function consumePipelineProgressLine(line) {
       updatedAt: now,
       priority: getQueuedJob('pipeline', videoId)?.priority ?? 100,
       queuePosition: getQueuePosition(videoId),
-    })
-    syncResourceSlots()
+    });
+    syncResourceSlots();
   } catch {
     // ignore malformed progress JSON
   }
-  return true
+  return true;
 }
 
 function consumePipelineLine(line) {
-  if (!line.startsWith('VMP_PIPELINE_EVENT\t')) return false
-  const parts = line.split('\t', 5)
-  if (parts.length < 4) return false
-  const [, videoId, stage, status, detailRaw] = parts
-  if (!videoId || !stage || !status) return false
-  const detail = detailRaw || ''
-  const sourceMatch = detail.match(/(?:^|\s)source=([a-zA-Z0-9_.-]+)/)
+  if (!line.startsWith('VMP_PIPELINE_EVENT\t')) return false;
+  const parts = line.split('\t', 5);
+  if (parts.length < 4) return false;
+  const [, videoId, stage, status, detailRaw] = parts;
+  if (!videoId || !stage || !status) return false;
+  const detail = detailRaw || '';
+  const sourceMatch = detail.match(/(?:^|\s)source=([a-zA-Z0-9_.-]+)/);
   upsertPipelineJob({
     videoId,
     stage,
     status,
     detail,
     source: sourceMatch ? sourceMatch[1] : undefined,
-  })
-  return true
+  });
+  return true;
 }
 
 /** @type {{ pid: number|null, startedAt: string|null, exited: boolean, code: number|null, signal: string|null }} */
@@ -456,57 +484,61 @@ const pipelineState = {
   exited: false,
   code: null,
   signal: null,
-}
+};
 
-let pipelineChild = null
-let pipelineIpcPath: string | null = null
-let pipelineRestartTimer: ReturnType<typeof setTimeout> | null = null
+let pipelineChild = null;
+let pipelineIpcPath: string | null = null;
+let pipelineRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
 function sendPipelineCommand(
   cmd: 'pause' | 'resume' | 'stop' | 'reorder',
   videoId?: string,
   payload?: { order?: string[] },
-): Promise<{ ok: boolean, error?: string }> {
+): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolve) => {
     if (!pipelineIpcPath) {
-      resolve({ ok: false, error: 'ipc_not_ready' })
-      return
+      resolve({ ok: false, error: 'ipc_not_ready' });
+      return;
     }
-    const client = net.createConnection(pipelineIpcPath)
-    const message = JSON.stringify({ cmd, videoId, payload })
-    let response = ''
-    const finish = (result: { ok: boolean, error?: string }) => {
-      try { client.destroy() } catch {}
-      resolve(result)
-    }
-    client.setTimeout(10_000, () => finish({ ok: false, error: 'timeout' }))
-    client.on('connect', () => client.end(message))
-    client.on('data', (d) => { response += d.toString() })
+    const client = net.createConnection(pipelineIpcPath);
+    const message = JSON.stringify({ cmd, videoId, payload });
+    let response = '';
+    const finish = (result: { ok: boolean; error?: string }) => {
+      try {
+        client.destroy();
+      } catch {}
+      resolve(result);
+    };
+    client.setTimeout(10_000, () => finish({ ok: false, error: 'timeout' }));
+    client.on('connect', () => client.end(message));
+    client.on('data', (d) => {
+      response += d.toString();
+    });
     client.on('end', () => {
       try {
-        finish(JSON.parse(response) as { ok: boolean, error?: string })
+        finish(JSON.parse(response) as { ok: boolean; error?: string });
       } catch {
-        finish({ ok: false, error: 'invalid_response' })
+        finish({ ok: false, error: 'invalid_response' });
       }
-    })
-    client.on('error', (err) => finish({ ok: false, error: err.message }))
-  })
+    });
+    client.on('error', (err) => finish({ ok: false, error: err.message }));
+  });
 }
 
 function consumeIpcSocketLine(line: string): boolean {
-  if (!line.startsWith('VMP_IPC_SOCKET\t')) return false
-  pipelineIpcPath = line.slice('VMP_IPC_SOCKET\t'.length).trim() || null
-  pushLog(`Pipeline IPC socket: ${pipelineIpcPath ?? '—'}`)
-  return true
+  if (!line.startsWith('VMP_IPC_SOCKET\t')) return false;
+  pipelineIpcPath = line.slice('VMP_IPC_SOCKET\t'.length).trim() || null;
+  pushLog(`Pipeline IPC socket: ${pipelineIpcPath ?? '—'}`);
+  return true;
 }
 
 function markRunningJobsFailedOnPipelineCrash(): void {
-  const now = new Date().toISOString()
+  const now = new Date().toISOString();
   for (const job of jobsById.values()) {
     if (job.status === 'running' && job.type === 'pipeline') {
-      job.status = 'failed'
-      job.detail = 'pipeline_restarted'
-      registerQueuedJob(job)
+      job.status = 'failed';
+      job.detail = 'pipeline_restarted';
+      registerQueuedJob(job);
     }
   }
   for (const [videoId, row] of pipelineActiveJobs.entries()) {
@@ -516,114 +548,123 @@ function markRunningJobsFailedOnPipelineCrash(): void {
       status: 'failed',
       detail: 'pipeline_restarted',
       finishedAt: now,
-    }
-    pipelineActiveJobs.delete(videoId)
-    failedPipelineJobs.unshift(failedRow)
-    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop()
+    };
+    pipelineActiveJobs.delete(videoId);
+    failedPipelineJobs.unshift(failedRow);
+    while (failedPipelineJobs.length > MAX_PIPELINE_FAILED_JOBS) failedPipelineJobs.pop();
   }
-  syncResourceSlots()
+  syncResourceSlots();
 }
 
 function startPipeline() {
   if (!runPipeline) {
-    pushLog('Pipeline disabled (VMP_RUN_PIPELINE=0)')
-    return
+    pushLog('Pipeline disabled (VMP_RUN_PIPELINE=0)');
+    return;
   }
   pipelineChild = spawn(process.execPath, [resolvedPipelineScript], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  pipelineState.pid = pipelineChild.pid ?? null
-  pipelineState.startedAt = new Date().toISOString()
-  pipelineState.exited = false
-  pipelineState.code = null
-  pipelineState.signal = null
-  pushLog(`Started pipeline pid=${pipelineState.pid} (${resolvedPipelineScript})`)
+  });
+  pipelineState.pid = pipelineChild.pid ?? null;
+  pipelineState.startedAt = new Date().toISOString();
+  pipelineState.exited = false;
+  pipelineState.code = null;
+  pipelineState.signal = null;
+  pushLog(`Started pipeline pid=${pipelineState.pid} (${resolvedPipelineScript})`);
 
-  let stdoutBuffer = ''
-  let stderrBuffer = ''
+  let stdoutBuffer = '';
+  let stderrBuffer = '';
 
   const processBuffer = (buffer, isStdout) => {
-    const lines = buffer.split(/\r?\n/)
-    const completeLines = lines.slice(0, -1)
-    const partialLine = lines[lines.length - 1]
+    const lines = buffer.split(/\r?\n/);
+    const completeLines = lines.slice(0, -1);
+    const partialLine = lines[lines.length - 1];
 
     for (const line of completeLines) {
-      if (!line.trim()) continue
-      if (consumeTtpLine(line)) continue
-      if (consumeIpcSocketLine(line)) continue
-      if (consumePipelineProgressLine(line)) continue
-      if (consumePipelineLine(line)) continue
-      pushLog(`[pipeline] ${line}`)
+      if (!line.trim()) continue;
+      if (consumeTtpLine(line)) continue;
+      if (consumeIpcSocketLine(line)) continue;
+      if (consumePipelineProgressLine(line)) continue;
+      if (consumePipelineLine(line)) continue;
+      pushLog(`[pipeline] ${line}`);
     }
 
-    return partialLine
-  }
+    return partialLine;
+  };
 
   pipelineChild.stdout?.on('data', (d) => {
-    stdoutBuffer += d.toString()
-    stdoutBuffer = processBuffer(stdoutBuffer, true)
-  })
+    stdoutBuffer += d.toString();
+    stdoutBuffer = processBuffer(stdoutBuffer, true);
+  });
 
   pipelineChild.stderr?.on('data', (d) => {
-    stderrBuffer += d.toString()
-    stderrBuffer = processBuffer(stderrBuffer, false)
-  })
+    stderrBuffer += d.toString();
+    stderrBuffer = processBuffer(stderrBuffer, false);
+  });
 
   const flushBuffers = () => {
     if (stdoutBuffer.trim()) {
-      if (consumeTtpLine(stdoutBuffer) || consumeIpcSocketLine(stdoutBuffer) || consumePipelineProgressLine(stdoutBuffer) || consumePipelineLine(stdoutBuffer)) {
-        stdoutBuffer = ''
+      if (
+        consumeTtpLine(stdoutBuffer) ||
+        consumeIpcSocketLine(stdoutBuffer) ||
+        consumePipelineProgressLine(stdoutBuffer) ||
+        consumePipelineLine(stdoutBuffer)
+      ) {
+        stdoutBuffer = '';
       } else {
-        pushLog(`[pipeline] ${stdoutBuffer}`)
-        stdoutBuffer = ''
+        pushLog(`[pipeline] ${stdoutBuffer}`);
+        stdoutBuffer = '';
       }
     }
     if (stderrBuffer.trim()) {
-      if (consumeTtpLine(stderrBuffer) || consumePipelineProgressLine(stderrBuffer) || consumePipelineLine(stderrBuffer)) {
-        stderrBuffer = ''
+      if (
+        consumeTtpLine(stderrBuffer) ||
+        consumePipelineProgressLine(stderrBuffer) ||
+        consumePipelineLine(stderrBuffer)
+      ) {
+        stderrBuffer = '';
       } else {
-        pushLog(`[pipeline] ${stderrBuffer}`)
-        stderrBuffer = ''
+        pushLog(`[pipeline] ${stderrBuffer}`);
+        stderrBuffer = '';
       }
     }
-  }
+  };
 
-  pipelineChild.stdout?.on('end', flushBuffers)
-  pipelineChild.stderr?.on('end', flushBuffers)
+  pipelineChild.stdout?.on('end', flushBuffers);
+  pipelineChild.stderr?.on('end', flushBuffers);
 
   pipelineChild.on('error', (err) => {
-    pushLog(`Pipeline spawn error: ${err.message}`)
-  })
+    pushLog(`Pipeline spawn error: ${err.message}`);
+  });
   pipelineChild.on('close', (code, signal) => {
-    flushBuffers()
-    pipelineState.exited = true
-    pipelineState.code = code
-    pipelineState.signal = signal ?? null
-    pushLog(`Pipeline exited code=${code} signal=${signal ?? ''}`)
-    pipelineChild = null
-    pipelineState.pid = null
-    pipelineIpcPath = null
+    flushBuffers();
+    pipelineState.exited = true;
+    pipelineState.code = code;
+    pipelineState.signal = signal ?? null;
+    pushLog(`Pipeline exited code=${code} signal=${signal ?? ''}`);
+    pipelineChild = null;
+    pipelineState.pid = null;
+    pipelineIpcPath = null;
     if (runPipeline) {
-      markRunningJobsFailedOnPipelineCrash()
-      increment('vmp.supervisor.pipeline.restart', 1)
-      pushLog('Pipeline process exited; restarting pipeline_watch in 3s')
-      if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
+      markRunningJobsFailedOnPipelineCrash();
+      increment('vmp.supervisor.pipeline.restart', 1);
+      pushLog('Pipeline process exited; restarting pipeline_watch in 3s');
+      if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer);
       pipelineRestartTimer = setTimeout(() => {
-        pipelineRestartTimer = null
-        pipelineState.exited = false
-        pipelineState.code = null
-        pipelineState.signal = null
-        startPipeline()
-      }, 3000)
+        pipelineRestartTimer = null;
+        pipelineState.exited = false;
+        pipelineState.code = null;
+        pipelineState.signal = null;
+        startPipeline();
+      }, 3000);
     }
-  })
+  });
 }
 
-const previewChildren = new Set<ChildProcess>()
+const previewChildren = new Set<ChildProcess>();
 
 function enqueuePreview(videoId: string, previewSeconds: number, source = 'webhook'): string {
-  const id = crypto.randomUUID()
+  const id = crypto.randomUUID();
   const job: QueuedJob = {
     id,
     type: 'preview_mp3',
@@ -634,198 +675,223 @@ function enqueuePreview(videoId: string, previewSeconds: number, source = 'webho
     detail: `${previewSeconds}s`,
     source,
     previewSeconds,
-  }
-  registerQueuedJob(job)
-  drainJobQueue()
-  return id
+  };
+  registerQueuedJob(job);
+  drainJobQueue();
+  return id;
 }
 
 function drainJobQueue(): void {
-  syncResourceSlots()
+  syncResourceSlots();
   while (jobQueue.length > 0) {
-    const next = jobQueue.find((j) => j.type === 'preview_mp3' && j.status === 'queued')
-    if (!next || next.previewSeconds == null) break
-    if (previewGpuRunning + gpuSlots.current - previewGpuRunning >= gpuSlots.max) break
-    const idx = jobQueue.indexOf(next)
-    if (idx >= 0) jobQueue.splice(idx, 1)
-    next.status = 'running'
-    registerQueuedJob(next)
-    previewGpuRunning += 1
-    syncResourceSlots()
-    const child = spawn(process.execPath, [resolvedRenderScript, next.videoId, String(next.previewSeconds)], {
-      env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    previewChildren.add(child)
-    let err = ''
-    child.stderr.on('data', (d) => { err += d.toString() })
+    const next = jobQueue.find((j) => j.type === 'preview_mp3' && j.status === 'queued');
+    if (!next || next.previewSeconds == null) break;
+    if (gpuSlots.current >= gpuSlots.max) break;
+    const idx = jobQueue.indexOf(next);
+    if (idx >= 0) jobQueue.splice(idx, 1);
+    next.status = 'running';
+    registerQueuedJob(next);
+    previewGpuRunning += 1;
+    syncResourceSlots();
+    const child = spawn(
+      process.execPath,
+      [resolvedRenderScript, next.videoId, String(next.previewSeconds)],
+      {
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    previewChildren.add(child);
+    let err = '';
+    child.stderr.on('data', (d) => {
+      err += d.toString();
+    });
     child.on('close', (code) => {
-      previewChildren.delete(child)
-      previewGpuRunning = Math.max(0, previewGpuRunning - 1)
-      next.status = code === 0 ? 'done' : 'failed'
-      if (code !== 0) next.detail = `${next.previewSeconds}s — ${err.slice(-400) || `exit ${code}`}`
-      registerQueuedJob(next)
-      syncResourceSlots()
+      previewChildren.delete(child);
+      previewGpuRunning = Math.max(0, previewGpuRunning - 1);
+      next.status = code === 0 ? 'done' : 'failed';
+      if (code !== 0)
+        next.detail = `${next.previewSeconds}s — ${err.slice(-400) || `exit ${code}`}`;
+      registerQueuedJob(next);
+      syncResourceSlots();
       pushLog(
         code === 0
           ? `Preview MP3 ok: ${next.videoId} (${next.previewSeconds}s)`
           : `Preview MP3 FAILED: ${next.videoId} (${next.previewSeconds}s) ${err.slice(-200)}`,
-      )
-      drainJobQueue()
-    })
+      );
+      drainJobQueue();
+    });
     child.on('error', () => {
-      previewChildren.delete(child)
-      previewGpuRunning = Math.max(0, previewGpuRunning - 1)
-      syncResourceSlots()
-    })
+      previewChildren.delete(child);
+      previewGpuRunning = Math.max(0, previewGpuRunning - 1);
+      syncResourceSlots();
+    });
   }
 }
 
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown | null> {
-  const chunks: Buffer[] = []
-  let byteCount = 0
+  const chunks: Buffer[] = [];
+  let byteCount = 0;
   for await (const c of req) {
-    byteCount += c.length
-    if (byteCount > MAX_BODY_SIZE) return null
-    chunks.push(c)
+    byteCount += c.length;
+    if (byteCount > MAX_BODY_SIZE) return null;
+    chunks.push(c);
   }
-  if (chunks.length === 0) return {}
+  if (chunks.length === 0) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    return null
+    return null;
   }
 }
 
-const SYSTEMD_NOTIFY_BIN = '/usr/bin/systemd-notify'
+const SYSTEMD_NOTIFY_BIN = '/usr/bin/systemd-notify';
 
 /** sd_notify(3) via systemd-notify (AF_UNIX SOCK_DGRAM; node:dgram has no unix_dgram). */
 function sdNotify(state: string, sync = false): boolean {
-  if (!process.env.NOTIFY_SOCKET) return true
-  const opts = { env: process.env, timeout: 2000 }
+  if (!process.env.NOTIFY_SOCKET) return true;
+  const opts = { env: process.env, timeout: 2000 };
   const logFailure = (err: unknown): false => {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[media-pipeline] sd_notify ${state}: ${msg}`)
-    return false
-  }
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[media-pipeline] sd_notify ${state}: ${msg}`);
+    return false;
+  };
   if (sync) {
     try {
-      execFileSync(SYSTEMD_NOTIFY_BIN, [state], opts)
-      return true
+      execFileSync(SYSTEMD_NOTIFY_BIN, [state], opts);
+      return true;
     } catch (err) {
-      return logFailure(err)
+      return logFailure(err);
     }
   }
   execFile(SYSTEMD_NOTIFY_BIN, [state], opts, (err) => {
-    if (err) logFailure(err)
-  })
-  return true
+    if (err) logFailure(err);
+  });
+  return true;
 }
 
 function hasStuckRunningJobs(): boolean {
-  const thresholdMs = STUCK_JOB_MINUTES * 60 * 1000
-  const now = Date.now()
+  const thresholdMs = STUCK_JOB_MINUTES * 60 * 1000;
+  const now = Date.now();
   for (const job of jobsById.values()) {
-    if (job.status !== 'running') continue
-    const active = pipelineActiveJobs.get(job.videoId)
-    if (!active?.updatedAt) continue
-    const updated = Date.parse(active.updatedAt)
-    if (Number.isFinite(updated) && now - updated > thresholdMs) return true
+    if (job.status !== 'running') continue;
+    const active = pipelineActiveJobs.get(job.videoId);
+    if (!active?.updatedAt) continue;
+    const updated = Date.parse(active.updatedAt);
+    if (Number.isFinite(updated) && now - updated > thresholdMs) return true;
   }
-  return false
+  return false;
 }
 
 function verifySignature(rawBody, sigHeader, ts) {
-  if (!secret) return false
-  if (!sigHeader || typeof sigHeader !== 'string') return false
-  if (!ts || typeof ts !== 'string') return false
-  const m = sigHeader.match(/^sha256=([0-9a-f]{64})$/i)
-  if (!m) return false
-  const signedPayload = `${ts}.${rawBody}`
-  const expected = crypto.createHmac('sha256', secret).update(signedPayload, 'utf8').digest('hex')
-  const a = Buffer.from(m[1], 'hex')
-  const b = Buffer.from(expected, 'hex')
-  return a.length === b.length && crypto.timingSafeEqual(a, b)
+  if (!secret) return false;
+  if (!sigHeader || typeof sigHeader !== 'string') return false;
+  if (!ts || typeof ts !== 'string') return false;
+  const m = sigHeader.match(/^sha256=([0-9a-f]{64})$/i);
+  if (!m) return false;
+  const signedPayload = `${ts}.${rawBody}`;
+  const expected = crypto.createHmac('sha256', secret).update(signedPayload, 'utf8').digest('hex');
+  const a = Buffer.from(m[1], 'hex');
+  const b = Buffer.from(expected, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function timingSafeEqualString(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided, 'utf8')
-  const b = Buffer.from(expected, 'utf8')
-  if (a.length !== b.length) return false
-  return crypto.timingSafeEqual(a, b)
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 function verifyPackagingSecret(req: http.IncomingMessage): boolean {
   if (!packagingSecret) {
-    return uiHost === '127.0.0.1' || uiHost === '::1' || uiHost === 'localhost'
+    return isLoopbackHost(uiHost);
   }
-  const header = req.headers['x-vmp-packaging-secret']
-  const provided = (Array.isArray(header) ? header[0] : header) || ''
-  return timingSafeEqualString(provided, packagingSecret)
+  const header = req.headers['x-vmp-packaging-secret'];
+  const provided = (Array.isArray(header) ? header[0] : header) || '';
+  return timingSafeEqualString(provided, packagingSecret);
 }
 
 function json(res, obj, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(obj, null, 2))
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj, null, 2));
 }
 
-function runCommandCapture(command: string, args: string[], cwd: string): Promise<{ stdout: string, stderr: string }> {
+function runCommandCapture(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (d) => { stdout += d.toString() })
-    child.stderr.on('data', (d) => { stderr += d.toString() })
-    child.on('error', reject)
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) {
-        resolve({ stdout, stderr })
+        resolve({ stdout, stderr });
       } else {
-        reject(new Error(`${command} ${args.join(' ')} failed: ${stderr || stdout}`))
+        reject(new Error(`${command} ${args.join(' ')} failed: ${stderr || stdout}`));
       }
-    })
-  })
+    });
+  });
 }
 
 async function checkAndApplyPodcastHostUpgrade() {
-  if (!autoUpgradeEnabled) return
-  let pulled = false
+  if (!autoUpgradeEnabled) return;
+  let pulled = false;
   try {
-    await runCommandCapture('git', ['fetch', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
-    const local = await runCommandCapture('git', ['rev-parse', 'HEAD'], autoUpgradeRepoDir)
-    const remote = await runCommandCapture('git', ['rev-parse', `origin/${autoUpgradeBranch}`], autoUpgradeRepoDir)
-    const localSha = local.stdout.trim()
-    const remoteSha = remote.stdout.trim()
-    if (!localSha || !remoteSha || localSha === remoteSha) return
+    await runCommandCapture('git', ['fetch', 'origin', autoUpgradeBranch], autoUpgradeRepoDir);
+    const local = await runCommandCapture('git', ['rev-parse', 'HEAD'], autoUpgradeRepoDir);
+    const remote = await runCommandCapture(
+      'git',
+      ['rev-parse', `origin/${autoUpgradeBranch}`],
+      autoUpgradeRepoDir,
+    );
+    const localSha = local.stdout.trim();
+    const remoteSha = remote.stdout.trim();
+    if (!localSha || !remoteSha || localSha === remoteSha) return;
     const changed = await runCommandCapture(
       'git',
       ['diff', '--name-only', `${localSha}..${remoteSha}`, '--', autoUpgradePath],
       autoUpgradeRepoDir,
-    )
-    if (!changed.stdout.trim()) return
-    pushLog(`[upgrade] media-pipeline delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`)
-    await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir)
-    pulled = true
-    pushLog('[upgrade] pull successful; rebuilding @vmp/media-pipeline')
-    await runCommandCapture('npm', ['run', 'build', '--workspace=@vmp/media-pipeline'], autoUpgradeRepoDir)
-    pushLog('[upgrade] build successful; exiting for container/service restart')
-    process.exit(0)
+    );
+    if (!changed.stdout.trim()) return;
+    pushLog(
+      `[upgrade] media-pipeline delta detected (${localSha.slice(0, 7)} -> ${remoteSha.slice(0, 7)}), pulling latest changes`,
+    );
+    await runCommandCapture('git', ['pull', 'origin', autoUpgradeBranch], autoUpgradeRepoDir);
+    pulled = true;
+    pushLog('[upgrade] pull successful; rebuilding @vmp/media-pipeline');
+    await runCommandCapture(
+      'npm',
+      ['run', 'build', '--workspace=@vmp/media-pipeline'],
+      autoUpgradeRepoDir,
+    );
+    pushLog('[upgrade] build successful; exiting for container/service restart');
+    process.exit(0);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = err instanceof Error ? err.message : String(err);
     if (pulled) {
-      pushLog(`[upgrade] build failed after pull; exiting for systemd restart: ${msg}`)
-      process.exit(1)
+      pushLog(`[upgrade] build failed after pull; exiting for systemd restart: ${msg}`);
+      process.exit(1);
     }
-    pushLog(`[upgrade] check failed: ${msg}`)
+    pushLog(`[upgrade] check failed: ${msg}`);
   }
 }
 
 function dashboardHtml() {
-  const dashboardAuthRequired = Boolean(dashboardSecret)
+  const dashboardAuthRequired = Boolean(dashboardSecret);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1063,7 +1129,7 @@ function dashboardHtml() {
     }
   </script>
 </body>
-</html>`
+</html>`;
 }
 
 function rejectUnauthorizedDashboard(
@@ -1072,24 +1138,24 @@ function rejectUnauthorizedDashboard(
   pathname: string,
   method: string,
 ): boolean {
-  if (!requiresDashboardAuth(pathname, method)) return false
-  if (verifyDashboardSecret(req, dashboardSecret)) return false
-  res.writeHead(401, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ error: 'Unauthorized', code: 'dashboard_auth_required' }))
-  return true
+  if (!requiresDashboardAuth(pathname, method)) return false;
+  if (verifyDashboardSecret(req, dashboardSecret)) return false;
+  res.writeHead(401, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Unauthorized', code: 'dashboard_auth_required' }));
+  return true;
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${uiHost}:${uiPort}`)
-  const pathname = url.pathname
-  const method = req.method || 'GET'
+  const url = new URL(req.url || '/', `http://${uiHost}:${uiPort}`);
+  const pathname = url.pathname;
+  const method = req.method || 'GET';
 
-  if (rejectUnauthorizedDashboard(req, res, pathname, method)) return
+  if (rejectUnauthorizedDashboard(req, res, pathname, method)) return;
 
   if (method === 'GET' && pathname === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(dashboardHtml())
-    return
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(dashboardHtml());
+    return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/status') {
@@ -1099,21 +1165,19 @@ const server = http.createServer(async (req, res) => {
         ...job,
         stageLabel: stageLabel(job.stage),
         queuePosition: getQueuePosition(job.videoId),
-      }))
+      }));
     const successRows = pipelineSuccessfulJobs.map((job) => ({
       ...job,
       stageLabel: stageLabel(job.stage),
-    }))
+    }));
     const failedRows = failedPipelineJobs.map((job) => ({
       ...job,
       stageLabel: stageLabel(job.stage),
-    }))
+    }));
+    sortJobQueue();
     const queuedJobs = jobQueue
       .filter((j) => j.status === 'queued')
-      .map((j, _i, arr) => {
-        sortJobQueue()
-        return { ...j, queuePosition: getQueuePosition(j.videoId) }
-      })
+      .map((j) => ({ ...j, queuePosition: getQueuePosition(j.videoId) }));
     json(res, {
       pipeline: {
         script: resolvedPipelineScript,
@@ -1136,232 +1200,254 @@ const server = http.createServer(async (req, res) => {
       failedPipelineJobs: failedRows,
       ttpSummaries,
       logLines,
-    })
-    return
+    });
+    return;
   }
 
   if (REBUILD_WEBHOOK_PATHS.has(url.pathname) && req.method !== 'POST') {
-    json(res, {
-      error: 'Method not allowed',
-      expectedMethod: 'POST',
-      endpoint: '/api/podcast-preview-rebuild',
-    }, 405)
-    return
+    json(
+      res,
+      {
+        error: 'Method not allowed',
+        expectedMethod: 'POST',
+        endpoint: '/api/podcast-preview-rebuild',
+      },
+      405,
+    );
+    return;
   }
 
   if (req.method === 'POST' && REBUILD_WEBHOOK_PATHS.has(url.pathname)) {
-    const chunks = []
-    let byteCount = 0
+    const chunks = [];
+    let byteCount = 0;
     for await (const c of req) {
-      byteCount += c.length
+      byteCount += c.length;
       if (byteCount > MAX_BODY_SIZE) {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-        req.destroy()
-        return
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request body too large' }));
+        req.destroy();
+        return;
       }
-      chunks.push(c)
+      chunks.push(c);
     }
-    const rawBody = Buffer.concat(chunks)
+    const rawBody = Buffer.concat(chunks);
 
     if (secret) {
       // Validate timestamp freshness
-      const tsHeader = req.headers['x-vmp-timestamp']
-      const ts = Array.isArray(tsHeader) ? tsHeader[0] : tsHeader
+      const tsHeader = req.headers['x-vmp-timestamp'];
+      const ts = Array.isArray(tsHeader) ? tsHeader[0] : tsHeader;
       if (!ts) {
-        json(res, { error: 'Invalid or stale timestamp' }, 401)
-        return
+        json(res, { error: 'Invalid or stale timestamp' }, 401);
+        return;
       }
-      const tsNum = Number(ts)
+      const tsNum = Number(ts);
       if (!Number.isFinite(tsNum) || tsNum <= 0) {
-        json(res, { error: 'Invalid or stale timestamp' }, 401)
-        return
+        json(res, { error: 'Invalid or stale timestamp' }, 401);
+        return;
       }
-      const nowSec = Math.floor(Date.now() / 1000)
-      const skewWindow = 5 * 60 // 5 minutes in seconds
+      const nowSec = Math.floor(Date.now() / 1000);
+      const skewWindow = 5 * 60; // 5 minutes in seconds
       if (Math.abs(nowSec - tsNum) > skewWindow) {
-        json(res, { error: 'Invalid or stale timestamp' }, 401)
-        return
+        json(res, { error: 'Invalid or stale timestamp' }, 401);
+        return;
       }
 
       // Verify signature
-      const sig = req.headers['x-vmp-signature']
+      const sig = req.headers['x-vmp-signature'];
       if (!verifySignature(rawBody, Array.isArray(sig) ? sig[0] : sig, ts)) {
-        json(res, { error: 'Invalid signature' }, 401)
-        return
+        json(res, { error: 'Invalid signature' }, 401);
+        return;
       }
     }
 
-    let payload
+    let payload;
     try {
-      payload = JSON.parse(rawBody.toString('utf8'))
+      payload = JSON.parse(rawBody.toString('utf8'));
     } catch {
-      json(res, { error: 'Invalid JSON' }, 400)
-      return
+      json(res, { error: 'Invalid JSON' }, 400);
+      return;
     }
 
     if (payload?.event !== 'podcast_preview_rebuild') {
-      json(res, { error: 'Unexpected event', code: 'invalid_event', expectedEvent: 'podcast_preview_rebuild' }, 400)
-      return
+      json(
+        res,
+        {
+          error: 'Unexpected event',
+          code: 'invalid_event',
+          expectedEvent: 'podcast_preview_rebuild',
+        },
+        400,
+      );
+      return;
     }
 
-    const videos = Array.isArray(payload.videos) ? payload.videos : []
-    const accepted = []
-    const rejected = []
+    const videos = Array.isArray(payload.videos) ? payload.videos : [];
+    const accepted = [];
+    const rejected = [];
     for (const v of videos) {
-      const id = v?.id
-      const sec = Number(v?.previewDurationSeconds)
-      const fullSec = Number(v?.fullDurationSeconds)
+      const id = v?.id;
+      const sec = Number(v?.previewDurationSeconds);
+      const fullSec = Number(v?.fullDurationSeconds);
       if (!id || !Number.isFinite(sec) || sec <= 0) {
-        rejected.push({ id: String(id || ''), reason: 'invalid_preview_duration' })
-        continue
+        rejected.push({ id: String(id || ''), reason: 'invalid_preview_duration' });
+        continue;
       }
       if (Number.isFinite(fullSec) && fullSec > 0 && sec >= fullSec - 0.5) {
-        rejected.push({ id: String(id), reason: 'full_unlock' })
-        continue
+        rejected.push({ id: String(id), reason: 'full_unlock' });
+        continue;
       }
       // Reject path-like IDs to prevent directory traversal
       if (typeof id !== 'string' || id.includes('/') || id.includes('\\') || id.includes('..')) {
-        pushLog(`Rejected invalid video ID: ${id}`)
-        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' })
-        continue
+        pushLog(`Rejected invalid video ID: ${id}`);
+        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' });
+        continue;
       }
       // Stricter validation: allow only alphanumerics, dash, dot, underscore
       if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
-        pushLog(`Rejected invalid video ID: ${id}`)
-        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' })
-        continue
+        pushLog(`Rejected invalid video ID: ${id}`);
+        rejected.push({ id: String(id || ''), reason: 'invalid_video_id' });
+        continue;
       }
-      accepted.push({ jobId: enqueuePreview(id, Math.floor(sec), 'webhook'), videoId: id, previewSeconds: Math.floor(sec) })
+      accepted.push({
+        jobId: enqueuePreview(id, Math.floor(sec), 'webhook'),
+        videoId: id,
+        previewSeconds: Math.floor(sec),
+      });
     }
 
-    json(res, {
-      ok: true,
-      code: 'accepted',
-      acceptedCount: accepted.length,
-      rejectedCount: rejected.length,
-      jobs: accepted,
-      rejected,
-    }, accepted.length > 0 ? 202 : 200)
-    return
+    json(
+      res,
+      {
+        ok: true,
+        code: 'accepted',
+        acceptedCount: accepted.length,
+        rejectedCount: rejected.length,
+        jobs: accepted,
+        rejected,
+      },
+      accepted.length > 0 ? 202 : 200,
+    );
+    return;
   }
 
   if (req.method === 'GET' && url.pathname === '/health') {
-    json(res, { ok: true })
-    return
+    json(res, { ok: true });
+    return;
   }
 
-  const jobControlMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/(pause|resume|stop|priority)$/)
+  const jobControlMatch = url.pathname.match(
+    /^\/api\/jobs\/([^/]+)\/(pause|resume|stop|priority)$/,
+  );
   if (req.method === 'POST' && jobControlMatch) {
-    const videoId = decodeURIComponent(jobControlMatch[1])
-    const action = jobControlMatch[2]
+    const videoId = decodeURIComponent(jobControlMatch[1]);
+    const action = jobControlMatch[2];
     if (action === 'priority') {
-      const body = await readJsonBody(req)
+      const body = await readJsonBody(req);
       if (body === null) {
-        json(res, { error: 'Invalid JSON' }, 400)
-        return
+        json(res, { error: 'Invalid JSON' }, 400);
+        return;
       }
-      const priority = Number((body as { priority?: number }).priority)
+      const priority = Number((body as { priority?: number }).priority);
       if (!Number.isFinite(priority)) {
-        json(res, { error: 'Invalid priority' }, 400)
-        return
+        json(res, { error: 'Invalid priority' }, 400);
+        return;
       }
-      const job = getQueuedJob('pipeline', videoId)
+      const job = getQueuedJob('pipeline', videoId);
       if (job) {
-        job.priority = priority
-        registerQueuedJob(job)
+        job.priority = priority;
+        registerQueuedJob(job);
       }
-      const active = pipelineActiveJobs.get(videoId)
-      if (active) active.priority = priority
-      sortJobQueue()
-      json(res, { ok: true, newPosition: getQueuePosition(videoId) })
-      return
+      const active = pipelineActiveJobs.get(videoId);
+      if (active) active.priority = priority;
+      sortJobQueue();
+      json(res, { ok: true, newPosition: getQueuePosition(videoId) });
+      return;
     }
-    const ipcResult = await sendPipelineCommand(action as 'pause' | 'resume' | 'stop', videoId)
+    const ipcResult = await sendPipelineCommand(action as 'pause' | 'resume' | 'stop', videoId);
     if (!ipcResult.ok) {
-      json(res, ipcResult, 502)
-      return
+      json(res, ipcResult, 502);
+      return;
     }
-    const job = getQueuedJob('pipeline', videoId)
+    const job = getQueuedJob('pipeline', videoId);
     if (job) {
-      if (action === 'pause') job.status = 'paused'
-      else if (action === 'resume') job.status = 'running'
-      else if (action === 'stop') job.status = 'stopped'
-      registerQueuedJob(job)
+      if (action === 'pause') job.status = 'paused';
+      else if (action === 'resume') job.status = 'running';
+      else if (action === 'stop') job.status = 'stopped';
+      registerQueuedJob(job);
     }
-    const active = pipelineActiveJobs.get(videoId)
+    const active = pipelineActiveJobs.get(videoId);
     if (active) {
-      if (action === 'pause') active.status = 'paused'
-      else if (action === 'resume') active.status = 'active'
+      if (action === 'pause') active.status = 'paused';
+      else if (action === 'resume') active.status = 'active';
       else if (action === 'stop') {
-        active.status = 'failed'
-        active.detail = 'stopped_by_user'
+        active.status = 'failed';
+        active.detail = 'stopped_by_user';
       }
     }
-    json(res, { ok: true })
-    return
+    json(res, { ok: true });
+    return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/jobs/reorder') {
-    const body = await readJsonBody(req)
+    const body = await readJsonBody(req);
     if (body === null) {
-      json(res, { error: 'Invalid JSON' }, 400)
-      return
+      json(res, { error: 'Invalid JSON' }, 400);
+      return;
     }
-    const order = (body as { order?: string[] }).order
+    const order = (body as { order?: string[] }).order;
     if (!Array.isArray(order)) {
-      json(res, { error: 'Missing order array' }, 400)
-      return
+      json(res, { error: 'Missing order array' }, 400);
+      return;
     }
-    const ipcResult = await sendPipelineCommand('reorder', undefined, { order: order.map(String) })
+    const ipcResult = await sendPipelineCommand('reorder', undefined, { order: order.map(String) });
     if (!ipcResult.ok) {
-      json(res, ipcResult, 502)
-      return
+      json(res, ipcResult, 502);
+      return;
     }
     order.forEach((videoId, index) => {
-      const job = getQueuedJob('pipeline', String(videoId))
+      const job = getQueuedJob('pipeline', String(videoId));
       if (job) {
-        job.priority = index
-        registerQueuedJob(job)
+        job.priority = index;
+        registerQueuedJob(job);
       }
-      const active = pipelineActiveJobs.get(String(videoId))
-      if (active) active.priority = index
-    })
-    sortJobQueue()
-    json(res, { ok: true })
-    return
+      const active = pipelineActiveJobs.get(String(videoId));
+      if (active) active.priority = index;
+    });
+    sortJobQueue();
+    json(res, { ok: true });
+    return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/packaging/enqueue') {
     if (!verifyPackagingSecret(req)) {
-      json(res, { error: 'Unauthorized' }, 401)
-      return
+      json(res, { error: 'Unauthorized' }, 401);
+      return;
     }
-    const body = await readJsonBody(req)
+    const body = await readJsonBody(req);
     if (body === null) {
-      json(res, { error: 'Invalid JSON' }, 400)
-      return
+      json(res, { error: 'Invalid JSON' }, 400);
+      return;
     }
     const reg = body as {
-      jobId?: string
-      encoreJobUrl?: string
-      videoId?: string
-      stage?: string
-      pipelineMode?: string
-    }
+      jobId?: string;
+      encoreJobUrl?: string;
+      videoId?: string;
+      stage?: string;
+      pipelineMode?: string;
+    };
     if (!reg.jobId || !reg.encoreJobUrl || !reg.videoId || !reg.stage || !reg.pipelineMode) {
-      json(res, { error: 'Missing required fields' }, 400)
-      return
+      json(res, { error: 'Missing required fields' }, 400);
+      return;
     }
-    const validStages: string[] = ['fast_lane_preview', 'full_ladder']
-    const validPipelineModes: string[] = ['fast_lane', 'full_ladder']
+    const validStages: string[] = ['fast_lane_preview', 'full_ladder'];
+    const validPipelineModes: string[] = ['fast_lane', 'full_ladder'];
     if (!validStages.includes(reg.stage)) {
-      json(res, { error: `Invalid stage: ${reg.stage}` }, 400)
-      return
+      json(res, { error: `Invalid stage: ${reg.stage}` }, 400);
+      return;
     }
     if (!validPipelineModes.includes(reg.pipelineMode)) {
-      json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400)
-      return
+      json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400);
+      return;
     }
     registerPackagingJob({
       jobId: String(reg.jobId),
@@ -1369,31 +1455,31 @@ const server = http.createServer(async (req, res) => {
       videoId: String(reg.videoId),
       stage: reg.stage as 'fast_lane_preview' | 'full_ladder',
       pipelineMode: reg.pipelineMode as 'fast_lane' | 'full_ladder',
-    })
+    });
     try {
-      await enqueuePackagerJob(String(reg.jobId), String(reg.encoreJobUrl))
+      await enqueuePackagerJob(String(reg.jobId), String(reg.encoreJobUrl));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      markPackagingFailed(String(reg.jobId), msg)
-      console.error('[supervisor] Failed to enqueue packaging job:', msg)
-      json(res, { error: 'Failed to enqueue packaging job' }, 502)
-      return
+      const msg = err instanceof Error ? err.message : String(err);
+      markPackagingFailed(String(reg.jobId), msg);
+      console.error('[supervisor] Failed to enqueue packaging job:', msg);
+      json(res, { error: 'Failed to enqueue packaging job' }, 502);
+      return;
     }
-    json(res, { ok: true, jobId: reg.jobId }, 202)
-    return
+    json(res, { ok: true, jobId: reg.jobId }, 202);
+    return;
   }
 
-  const packagingStatusMatch = url.pathname.match(/^\/api\/packaging\/status\/([^/]+)$/)
+  const packagingStatusMatch = url.pathname.match(/^\/api\/packaging\/status\/([^/]+)$/);
   if (req.method === 'GET' && packagingStatusMatch) {
     if (!verifyPackagingSecret(req)) {
-      json(res, { error: 'Unauthorized' }, 401)
-      return
+      json(res, { error: 'Unauthorized' }, 401);
+      return;
     }
-    const jobId = decodeURIComponent(packagingStatusMatch[1])
-    const job = getPackagingJob(jobId)
+    const jobId = decodeURIComponent(packagingStatusMatch[1]);
+    const job = getPackagingJob(jobId);
     if (!job) {
-      json(res, { error: 'Not found' }, 404)
-      return
+      json(res, { error: 'Not found' }, 404);
+      return;
     }
     json(res, {
       status: job.status,
@@ -1402,92 +1488,109 @@ const server = http.createServer(async (req, res) => {
       stage: job.stage,
       pipelineMode: job.pipelineMode,
       videoId: job.videoId,
-    })
-    return
+    });
+    return;
   }
 
-  const packagerCallbackMatch = url.pathname.match(/^\/vmp\/api\/packagerCallback\/(success|failure)$/)
+  const packagerCallbackMatch = url.pathname.match(
+    /^\/vmp\/api\/packagerCallback\/(success|failure)$/,
+  );
   if (req.method === 'POST' && packagerCallbackMatch) {
     // Eyevinn encore-packager authenticates via Basic auth in CALLBACK_URL (not a custom header).
     if (!verifyPackagerCallbackSecret(req, packagerSecret || '')) {
-      json(res, { error: 'Unauthorized' }, 401)
-      return
+      json(res, { error: 'Unauthorized' }, 401);
+      return;
     }
 
-    const outcome = packagerCallbackMatch[1]
-    const body = await readJsonBody(req)
+    const outcome = packagerCallbackMatch[1];
+    const body = await readJsonBody(req);
     if (body === null) {
-      json(res, { error: 'Invalid JSON' }, 400)
-      return
+      json(res, { error: 'Invalid JSON' }, 400);
+      return;
     }
-    const payload = body as { jobId?: string, outputPath?: string, error?: string, message?: string }
-    const jobId = resolvePackagerCallbackJobId(payload)
+    const payload = body as {
+      jobId?: string;
+      outputPath?: string;
+      error?: string;
+      message?: string;
+    };
+    const jobId = resolvePackagerCallbackJobId(payload);
     if (!jobId) {
-      json(res, { error: 'Missing jobId' }, 400)
-      return
+      json(res, { error: 'Missing jobId' }, 400);
+      return;
     }
     if (outcome === 'success') {
-      markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined)
-      pushLog(`packager success jobId=${jobId}`)
+      markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined);
+      pushLog(`packager success jobId=${jobId}`);
     } else {
-      const errMsg = String(payload.error || payload.message || 'packager failure')
-      markPackagingFailed(jobId, errMsg)
-      pushLog(`packager failure jobId=${jobId}: ${errMsg}`)
+      const errMsg = String(payload.error || payload.message || 'packager failure');
+      markPackagingFailed(jobId, errMsg);
+      pushLog(`packager failure jobId=${jobId}: ${errMsg}`);
     }
-    json(res, { ok: true })
-    return
+    json(res, { ok: true });
+    return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ error: 'Not found' }))
-})
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
 
 server.listen(uiPort, uiHost, () => {
   pushLog(
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
-  )
-  pushLog(`Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`)
+  );
+  pushLog(
+    `Config: runPipeline=${runPipeline} gpuConcurrency=${MAX_GPU_JOBS} uploadConcurrency=${MAX_UPLOAD_JOBS} pipelineScript=${resolvedPipelineScript} renderScript=${resolvedRenderScript}`,
+  );
   if (!sdNotify('READY=1', true)) {
-    console.error('[media-pipeline] failed to notify systemd READY=1; exiting')
-    process.exit(1)
+    console.error('[media-pipeline] failed to notify systemd READY=1; exiting');
+    process.exit(1);
   }
-  startPipeline()
+  startPipeline();
   setInterval(() => {
-    reportSupervisorMetrics()
+    reportSupervisorMetrics();
     if (pipelineChild && !pipelineState.exited && !hasStuckRunningJobs()) {
-      void sdNotify('WATCHDOG=1')
+      void sdNotify('WATCHDOG=1');
     }
-  }, 20_000)
+  }, 20_000);
   if (autoUpgradeEnabled) {
-    pushLog(`[upgrade] enabled, watching ${autoUpgradePath} on ${autoUpgradeBranch} every ${Math.round(autoUpgradeCheckMs / 1000)}s`)
-    void checkAndApplyPodcastHostUpgrade()
-    setInterval(() => { void checkAndApplyPodcastHostUpgrade() }, autoUpgradeCheckMs)
+    pushLog(
+      `[upgrade] enabled, watching ${autoUpgradePath} on ${autoUpgradeBranch} every ${Math.round(autoUpgradeCheckMs / 1000)}s`,
+    );
+    void checkAndApplyPodcastHostUpgrade();
+    setInterval(() => {
+      void checkAndApplyPodcastHostUpgrade();
+    }, autoUpgradeCheckMs);
   }
-})
+});
 
 const gracefulShutdown = async (signal) => {
-  pushLog(`${signal} — stopping`)
-  sdNotify('STOPPING=1', true)
-  if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer)
+  pushLog(`${signal} — stopping`);
+  sdNotify('STOPPING=1', true);
+  if (pipelineRestartTimer) clearTimeout(pipelineRestartTimer);
   if (pipelineChild && !pipelineState.exited) {
     try {
-      pipelineChild.kill('SIGTERM')
+      pipelineChild.kill('SIGTERM');
     } catch {}
   }
   for (const child of previewChildren) {
     try {
-      child.kill('SIGTERM')
+      child.kill('SIGTERM');
     } catch {}
   }
   // Give children a moment to exit gracefully
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   for (const child of previewChildren) {
     try {
-      child.kill('SIGKILL')
+      child.kill('SIGKILL');
     } catch {}
   }
-  server.close(() => process.exit(0))
-}
+  server.close(() => process.exit(0));
+};
 
-process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM') })
-process.on('SIGINT', () => { void gracefulShutdown('SIGINT') })
+process.on('SIGTERM', () => {
+  void gracefulShutdown('SIGTERM');
+});
+process.on('SIGINT', () => {
+  void gracefulShutdown('SIGINT');
+});
