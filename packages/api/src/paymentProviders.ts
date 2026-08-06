@@ -16,9 +16,11 @@ import { startLegacyCheckout } from './legacyPayments.js';
 import { isLegacyProviderConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
 import { getSetting } from './settingsStore.js';
 
-/** Runnable / exposable providers only — stub IDs (gopay, comgate) are not API-mapped. */
-const ALL_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko'];
+/** All registry IDs (including stubs) that may appear in admin settings. */
+const KNOWN_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'comgate'];
 const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
+
+export type ApiPaymentProviderId = 'stripe' | 'legacy';
 
 async function priceIdForPlan(env: any, planType: PlanType): Promise<string | null> {
   const stored = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 });
@@ -91,16 +93,23 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
   };
 }
 
+/**
+ * Providers listed in admin settings. Empty / missing → default Stripe.
+ * Explicit stub-only lists (gopay, comgate) are preserved — do not invent Stripe.
+ */
 export async function getConfiguredProviderIds(env: any): Promise<PaymentProviderId[]> {
   const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' });
-  const parsed = parseProviderIdList(stored ?? 'stripe', ALL_PROVIDER_IDS);
-  return parsed.length > 0 ? parsed : DEFAULT_ENABLED;
+  const raw = String(stored ?? '').trim();
+  if (!raw) return [...DEFAULT_ENABLED];
+  return parseProviderIdList(raw, KNOWN_PROVIDER_IDS);
 }
 
 export async function getPaymentProviderOrder(env: any): Promise<PaymentProviderId[]> {
   const stored = await getSetting(env, 'payment_provider_order', { defaultValue: 'stripe,legacy' });
-  const parsed = parseProviderIdList(stored ?? 'stripe,legacy', ALL_PROVIDER_IDS);
-  return parsed.length > 0 ? parsed : DEFAULT_ENABLED;
+  const raw = String(stored ?? '').trim();
+  if (!raw) return [...DEFAULT_ENABLED];
+  const parsed = parseProviderIdList(raw, KNOWN_PROVIDER_IDS);
+  return parsed.length > 0 ? parsed : [...DEFAULT_ENABLED];
 }
 
 export async function getPaymentProviders(env: any) {
@@ -111,10 +120,32 @@ export async function getPaymentProviders(env: any) {
   return { providers, enabled, runnable };
 }
 
-export function toApiProviderId(id: PaymentProviderId): 'stripe' | 'legacy' {
+export function toApiProviderId(id: PaymentProviderId): ApiPaymentProviderId | null {
   if (id === 'qerko') return 'legacy';
   if (id === 'stripe') return 'stripe';
-  throw new Error(`Unsupported payment provider for API mapping: ${id}`);
+  // Stub / unknown IDs (gopay, comgate, …) are not exposed on the public API.
+  return null;
+}
+
+/** Map registry IDs to public API provider ids, dropping stubs. */
+export function toSupportedApiProviderIds(
+  ids: readonly PaymentProviderId[],
+): ApiPaymentProviderId[] {
+  return ids
+    .map(toApiProviderId)
+    .filter((id): id is ApiPaymentProviderId => id === 'stripe' || id === 'legacy');
+}
+
+/**
+ * Public checkout/pricing providers = configured ∩ runnable, after stub filtering.
+ * Never invents Stripe when only unsupported providers remain.
+ */
+export function resolvePublicEnabledProviders(
+  configuredIds: readonly PaymentProviderId[],
+  runnableIds: readonly PaymentProviderId[],
+): ApiPaymentProviderId[] {
+  const runnableApi = new Set(toSupportedApiProviderIds(runnableIds));
+  return toSupportedApiProviderIds(configuredIds).filter((id) => runnableApi.has(id));
 }
 
 export function fromApiProviderId(raw: string): PaymentProviderId | null {

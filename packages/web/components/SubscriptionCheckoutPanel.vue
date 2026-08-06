@@ -444,6 +444,7 @@
       const res = await fetch(`${apiUrl}/api/account/pricing`);
       if (!res.ok) {
         priceError.value = true;
+        pendingLegacyCheckoutIntent.value = false;
         return;
       }
 
@@ -469,20 +470,34 @@
 
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
-        : ['stripe'];
-      enabledProviders.value = providers.length ? providers : ['stripe'];
+        : [];
+      // Match API: do not invent Stripe when only unsupported providers remain.
+      enabledProviders.value = providers as PaymentProvider[];
 
       const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some(
         (plan) => planPrice(plan) != null,
       );
-      if (!hasVisiblePrice) {
+      // Backend sets pricing_not_configured when prices are missing OR no supported
+      // providers remain (e.g. stub-only gopay/comgate). Surface that as priceError
+      // so we do not show plan buttons with no checkout path.
+      if (
+        !hasVisiblePrice ||
+        providers.length === 0 ||
+        data.pricing_not_configured === true
+      ) {
         priceError.value = true;
+        pendingLegacyCheckoutIntent.value = false;
       }
     } catch {
       priceError.value = true;
+      pendingLegacyCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
-      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
+      if (
+        pendingLegacyCheckoutIntent.value &&
+        showLegacyCheckout.value &&
+        !priceError.value
+      ) {
         pendingLegacyCheckoutIntent.value = false;
         void startLegacyCheckout();
       }
