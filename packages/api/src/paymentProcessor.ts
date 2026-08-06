@@ -683,6 +683,19 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     const selectedId =
       fromApiProviderId(selectedRaw) ??
       fromApiProviderId(selectedRaw === 'legacy' ? 'qerko' : selectedRaw);
+    // Recognized stub aliases (gopay/comgate) must not silently fall back to another provider.
+    if (selectedId && toApiProviderId(selectedId) === null) {
+      return jsonResponse(
+        {
+          error: 'Requested payment provider is not supported.',
+          code: 'provider_not_supported',
+        },
+        400,
+        corsHeaders,
+      );
+    }
+    // Explicit supported selection wins when present in order; otherwise fall back only when
+    // the client omitted the provider or sent an unrecognized value.
     const providerId: PaymentProviderId | null =
       selectedId && providerOrder.includes(selectedId)
         ? selectedId

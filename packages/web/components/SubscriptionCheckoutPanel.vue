@@ -444,6 +444,7 @@
       const res = await fetch(`${apiUrl}/api/account/pricing`);
       if (!res.ok) {
         priceError.value = true;
+        pendingLegacyCheckoutIntent.value = false;
         return;
       }
 
@@ -485,12 +486,18 @@
         data.pricing_not_configured === true
       ) {
         priceError.value = true;
+        pendingLegacyCheckoutIntent.value = false;
       }
     } catch {
       priceError.value = true;
+      pendingLegacyCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
-      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value) {
+      if (
+        pendingLegacyCheckoutIntent.value &&
+        showLegacyCheckout.value &&
+        !priceError.value
+      ) {
         pendingLegacyCheckoutIntent.value = false;
         void startLegacyCheckout();
       }
