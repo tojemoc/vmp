@@ -21,23 +21,29 @@ export type PackagingJobRecord = {
 const MAX_PACKAGING_SUCCESS_JOBS = 400;
 /** Match supervisor MAX_PIPELINE_FAILED_JOBS retention. */
 const MAX_PACKAGING_FAILED_JOBS = 200;
+/** Bound in-flight packaging records so orphaned pending jobs cannot grow without limit. */
+const MAX_PACKAGING_PENDING_JOBS = 400;
 
 const jobs = new Map<string, PackagingJobRecord>();
 
-function evictOldestTerminal(status: 'success' | 'failed', max: number): void {
-  const terminal = [...jobs.entries()]
+function evictOldestByStatus(
+  status: PackagingJobRecord['status'],
+  max: number,
+): void {
+  const matching = [...jobs.entries()]
     .filter(([, job]) => job.status === status)
     .sort((a, b) => a[1].updatedAt.localeCompare(b[1].updatedAt));
-  while (terminal.length > max) {
-    const oldest = terminal.shift();
+  while (matching.length > max) {
+    const oldest = matching.shift();
     if (!oldest) break;
     jobs.delete(oldest[0]);
   }
 }
 
 function enforceRegistryRetention(): void {
-  evictOldestTerminal('success', MAX_PACKAGING_SUCCESS_JOBS);
-  evictOldestTerminal('failed', MAX_PACKAGING_FAILED_JOBS);
+  evictOldestByStatus('pending', MAX_PACKAGING_PENDING_JOBS);
+  evictOldestByStatus('success', MAX_PACKAGING_SUCCESS_JOBS);
+  evictOldestByStatus('failed', MAX_PACKAGING_FAILED_JOBS);
 }
 
 export function registerPackagingJob(

@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { getPipelineStorage, objectKey, uploadFileToStorage } from './storage.js';
+import { writeObjectBodyToFile } from './writeObjectBodyToFile.js';
 
 let activeChild: ChildProcessWithoutNullStreams | null = null;
 
@@ -25,21 +23,6 @@ function parseArgs(): { videoId: string; previewSeconds: number } {
   if (!Number.isFinite(seconds) || seconds <= 0)
     throw new Error('preview_seconds must be a positive integer');
   return { videoId: rawVideoId, previewSeconds: Math.floor(seconds) };
-}
-
-async function writeObjectBodyToFile(
-  body: ReadableStream | Uint8Array | ArrayBuffer,
-  localIn: string,
-): Promise<void> {
-  if (body instanceof ReadableStream) {
-    await pipeline(
-      Readable.fromWeb(body as import('node:stream/web').ReadableStream),
-      createWriteStream(localIn),
-    );
-    return;
-  }
-  const bytes = body instanceof Uint8Array ? body : new Uint8Array(body);
-  await writeFile(localIn, bytes);
 }
 
 async function downloadSourcePodcast(videoId: string, localIn: string): Promise<string> {
