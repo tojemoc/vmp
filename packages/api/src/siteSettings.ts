@@ -7,7 +7,7 @@
  */
 
 import { requireRole } from './auth.js';
-import { getSetting, setSettings } from './settingsStore.js';
+import { getSettings, setSettings } from './settingsStore.js';
 
 function jsonResponse(body: any, status = 200, corsHeaders: any = {}) {
   return new Response(JSON.stringify(body), {
@@ -40,15 +40,16 @@ function normalizeGtmEnabled(raw: unknown): '1' | '0' | null {
   return null;
 }
 
+function defaultValueForSiteKey(key: (typeof SITE_KEYS)[number]): string {
+  if (key === 'site_support_email') return DEFAULT_SUPPORT_EMAIL;
+  if (key === 'gtm_enabled') return '0';
+  return '';
+}
+
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {
   if (request.method === 'GET') {
-    const entries = await Promise.all(
-      SITE_KEYS.map(async (key) => {
-        const defaultValue =
-          key === 'site_support_email' ? DEFAULT_SUPPORT_EMAIL : key === 'gtm_enabled' ? '0' : '';
-        return [key, await getSetting(env, key, { defaultValue })];
-      }),
-    );
+    const stored = await getSettings(env, [...SITE_KEYS], { defaultValue: null });
+    const entries = SITE_KEYS.map((key) => [key, stored[key] ?? defaultValueForSiteKey(key)]);
     return jsonResponse(Object.fromEntries(entries), 200, corsHeaders);
   }
 
