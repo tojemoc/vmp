@@ -4,5 +4,8 @@
     "neverPushBranches": ["main"],
     "requirePullRequest": true,
     "notes": "Pushes to main autodeploy staging. Always branch + PR; CodeRabbit reviews PRs. See AGENTS.md and .cursor/rules/git-workflow.mdc."
+  },
+  "agent": {
+    "notes": "When touching anything related to MoQ livestreams, follow the instructions at https://doc.moq.dev/setup/agent/prompt.md (see AGENTS.md and .cursor/rules/moq-livestreams.mdc)."
   }
 }

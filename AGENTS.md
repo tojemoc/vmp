@@ -192,6 +192,14 @@ Steps 1–7 are complete. Work continues from step 8.
 
 ## Cursor Cloud-specific instructions
 
+### MoQ livestreams
+
+When touching **anything related to MoQ livestreams** (MoQ packages, livestream APIs/migrations, `@moq/*` dependencies, player/relay wiring, or related composables), follow the official MoQ agent prompt before making changes:
+
+**https://doc.moq.dev/setup/agent/prompt.md**
+
+That prompt installs the MoQ skill and covers architecture, packages, relay setup, and pitfalls. Also see `.cursor/rules/moq-livestreams.mdc` and the `agent.notes` entry in `.cursor/environment.json`.
+
 ### Running services locally
 
 **API** (`packages/api`):
