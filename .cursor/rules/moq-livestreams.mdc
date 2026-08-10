@@ -7,7 +7,6 @@ globs:
   - "packages/moq-probe/**"
   - "packages/web/composables/useMoq*"
   - "packages/web/package.json"
-  - "packages/api/src/index.ts"
   - "packages/web/pages/watch/**"
   - "packages/web/pages/admin/index.vue"
 alwaysApply: false
