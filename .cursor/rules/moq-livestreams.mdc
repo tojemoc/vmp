@@ -1,0 +1,19 @@
+---
+description: MoQ livestream work — follow the official MoQ agent setup prompt
+globs:
+  - "**/moq*/**"
+  - "**/*moq*"
+  - "**/*livestream*"
+  - "packages/moq-probe/**"
+  - "packages/web/composables/useMoq*"
+  - "packages/web/pages/watch/**"
+alwaysApply: false
+---
+
+# MoQ livestreams
+
+When touching anything related to **MoQ livestreams** (packages, composables, migrations, player/relay config, `@moq/*` deps, or livestream APIs), follow the official MoQ agent instructions:
+
+**https://doc.moq.dev/setup/agent/prompt.md**
+
+That prompt installs the MoQ skill (`npx -y skills add moq-dev/moq --yes`) and documents architecture, `@moq/*` packages, relay setup, and common pitfalls. Do not improvise MoQ integration without following those instructions first.
