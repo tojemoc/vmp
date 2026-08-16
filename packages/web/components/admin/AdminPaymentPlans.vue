@@ -549,6 +549,9 @@
       ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
       : ['stripe'];
     enabledProviders.value = enabled.length ? enabled : ['stripe'];
+    if (!legacy.value.configured) {
+      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+    }
     const order = Array.isArray(data.providerOrder)
       ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
       : ['stripe', 'legacy'];
@@ -607,6 +610,10 @@
 
   async function reloadAll() {
     await Promise.all([loadPlans(), loadPaymentSettings(), loadLegacyOrders()]);
+    if (!legacy.value.configured) {
+      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+      syncProviderOrderFromEnabled();
+    }
   }
 
   async function loadPlans() {
@@ -627,6 +634,10 @@
           providerName: data.legacy.providerName || 'Qerko',
           showManageButton: Boolean(data.legacy.showManageButton),
         };
+      }
+      if (!legacy.value.configured) {
+        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+        syncProviderOrderFromEnabled();
       }
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Failed to load plans';
@@ -766,6 +777,13 @@
     saving.value = true;
     message.value = '';
     try {
+      if (!legacy.value.configured) {
+        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+        syncProviderOrderFromEnabled();
+      }
+      if (!enabledProviders.value.length) {
+        throw new Error('Enable at least one gateway before saving.');
+      }
       await persistPricingSettings();
       const legacyRes = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, {
         method: 'PATCH',
