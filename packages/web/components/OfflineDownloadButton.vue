@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { OfflineRendition } from '@vmp/shared';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
+  import { canAddToHomeScreenWithoutPrompt, isInstalledPwa } from '~/utils/pwa';
 
   const props = defineProps<{
     videoId: string;
@@ -9,6 +10,7 @@
 
   const { strings } = useStrings();
   const { isPremium } = useAuth();
+  const { $pwa } = useNuxtApp();
   const {
     offlineDownloadsEnabled,
     startDownload,
@@ -25,6 +27,7 @@
   const error = ref<string | null>(null);
   const menuOpen = ref(false);
   const pwaModalOpen = ref(false);
+  const installingPwa = ref(false);
   const menuRef = ref<HTMLElement | null>(null);
   const record = ref<Awaited<ReturnType<typeof getDownloadRecord>>>(null);
   const progress = ref({
@@ -39,6 +42,26 @@
   let mounted = false;
 
   const renditionOptions: OfflineRendition[] = ['480p', '720p', '1080p'];
+
+  type PwaClient = {
+    showInstallPrompt?: boolean;
+    install?: () => Promise<void> | void;
+  };
+
+  const pwaClient = computed(() => ($pwa ?? null) as PwaClient | null);
+  const pwaInstallPromptAvailable = computed(() => Boolean(pwaClient.value?.showInstallPrompt));
+
+  /** Same “supports PWA” signal as the homepage install banner, plus iOS Add to Home Screen. */
+  const pwaSupportedSurface = computed(
+    () =>
+      import.meta.dev ||
+      isInstalledPwa() ||
+      offlineDownloadsEnabled.value ||
+      pwaInstallPromptAvailable.value ||
+      canAddToHomeScreenWithoutPrompt(),
+  );
+
+  const showControl = computed(() => isPremium.value && pwaSupportedSurface.value);
 
   async function loadState() {
     if (!offlineDownloadsEnabled.value) return;
@@ -110,6 +133,18 @@
     pwaModalOpen.value = false;
   }
 
+  async function handleInstallPwa() {
+    const install = pwaClient.value?.install;
+    if (!install) return;
+    installingPwa.value = true;
+    try {
+      await install();
+      closePwaModal();
+    } finally {
+      installingPwa.value = false;
+    }
+  }
+
   function toggleMenu() {
     if (!downloadsAvailable.value) {
       openPwaModal();
@@ -162,18 +197,27 @@
 </script>
 
 <template>
-  <template v-if="isPremium">
+  <template v-if="showControl">
     <div ref="menuRef" class="watch-offline-download">
       <button
         type="button"
-        class="watch-icon-button watch-offline-download-button"
+        class="watch-offline-download-button"
         :aria-label="strings.offlineDownloadMenuLabel"
         :aria-expanded="menuOpen"
         aria-haspopup="menu"
         @click.stop="toggleMenu"
       >
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M7 10l5 5 5-5H7z" />
+        <!-- Explicit size: parent page scoped `.watch-icon-button svg` does not pierce into this component. -->
+        <svg
+          class="watch-offline-download-icon"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 3a1 1 0 011 1v8.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L11 12.586V4a1 1 0 011-1z"
+          />
+          <path d="M5 18a1 1 0 011-1h12a1 1 0 110 2H6a1 1 0 01-1-1z" />
         </svg>
         <span
           v-if="downloadsAvailable && (status === 'completed' || status === 'update_available')"
@@ -317,13 +361,29 @@
           <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
             {{ strings.offlineDownloadPwaRequiredMessage }}
           </p>
-          <button
-            type="button"
-            class="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            @click="closePwaModal"
-          >
-            {{ strings.offlineDownloadPwaRequiredDismiss }}
-          </button>
+          <div class="flex flex-col gap-2">
+            <button
+              v-if="pwaInstallPromptAvailable"
+              type="button"
+              class="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60"
+              :disabled="installingPwa"
+              @click="handleInstallPwa"
+            >
+              {{ strings.pwaInstall }}
+            </button>
+            <button
+              type="button"
+              class="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
+              :class="
+                pwaInstallPromptAvailable
+                  ? 'text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  : 'text-white bg-blue-600 hover:bg-blue-700'
+              "
+              @click="closePwaModal"
+            >
+              {{ strings.offlineDownloadPwaRequiredDismiss }}
+            </button>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -336,8 +396,34 @@
     display: inline-flex;
   }
 
+  /* Mirror `.watch-icon-button` from the watch page — scoped parent CSS does not apply here. */
   .watch-offline-download-button {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--media-control-height, 2.25rem);
+    min-height: var(--media-control-height, 2.25rem);
+    padding: 0.25rem;
+    color: #fff;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .watch-offline-download-button:hover,
+  .watch-offline-download-button:focus-visible,
+  .watch-offline-download-button[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .watch-offline-download-icon {
+    width: 1.625rem;
+    height: 1.5rem;
+    display: block;
+    flex-shrink: 0;
   }
 
   .watch-offline-download-badge {

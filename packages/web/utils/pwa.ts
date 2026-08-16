@@ -23,6 +23,14 @@ export function isInstalledPwa(): boolean {
   return iosStandalone || displayModeStandalone || displayModeFullscreen;
 }
 
+/**
+ * Platforms where offline-download UI is worth showing outside the installed app:
+ * iOS can Add to Home Screen; Chromium installability is checked separately via `$pwa.showInstallPrompt`.
+ */
+export function canAddToHomeScreenWithoutPrompt(): boolean {
+  return isIosLike() && !isInstalledPwa();
+}
+
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token';
 export const PWA_LOGIN_EMAIL_KEY = 'vmp_pwa_login_email';
 let fallbackDeviceToken: string | null = null;
