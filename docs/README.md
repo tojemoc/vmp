@@ -6,6 +6,7 @@ Start with the [repository README](../README.md) and [AGENTS.md](../AGENTS.md). 
 
 | Document | Description |
 | --- | --- |
+| [native-clients-plan.md](native-clients-plan.md) | Multi-tier native/TV client plan (Expo → tvOS/Android TV → Tizen/webOS) + Phase 0 API contracts |
 | [pills-external-update-api.md](pills-external-update-api.md) | `POST /api/pills/update` external API contract |
 | [console-errors.md](console-errors.md) | Common browser console messages and how to interpret them |
 | [i18n-prep.md](i18n-prep.md) | Per-instance UI locale (`NUXT_PUBLIC_UI_LOCALE`) and translation workflow |
