@@ -261,6 +261,7 @@ export const strings: StringsDefinition = {
   subscribedWelcomeDetail: 'Vítejte ve VMP Premium. Užijte si neomezený přístup ke všemu obsahu.',
   renewsOn: 'Obnoví se',
   accessUntil: 'Přístup do',
+  subscriptionCanceling: 'Ruší se',
   planMonthly: 'Měsíční',
   planYearly: 'Roční',
   planClub: 'Klubové předplatné',

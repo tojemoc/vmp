@@ -44,6 +44,8 @@ export interface SubscriptionData {
   providerCustomerId?: string | null;
   stripeCustomerId: string | null;
   currentPeriodEnd: string | null;
+  /** True when Stripe cancel-at-period-end is set; status may still be active. */
+  cancelAtPeriodEnd?: boolean;
   createdAt: string;
   updatedAt: string;
   legacyManageUrl?: string | null;

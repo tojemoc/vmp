@@ -77,9 +77,10 @@ async function upsertSubscription(db: PostgresD1Adapter, row: Record<string, unk
     .prepare(`
     INSERT INTO subscriptions (
       id, user_id, plan_type, status, provider, provider_subscription_id, provider_customer_id,
-      stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
+      stripe_subscription_id, stripe_customer_id, current_period_end, cancel_at_period_end,
+      created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id,
       plan_type = excluded.plan_type,
@@ -90,6 +91,7 @@ async function upsertSubscription(db: PostgresD1Adapter, row: Record<string, unk
       stripe_subscription_id = excluded.stripe_subscription_id,
       stripe_customer_id = excluded.stripe_customer_id,
       current_period_end = excluded.current_period_end,
+      cancel_at_period_end = excluded.cancel_at_period_end,
       created_at = excluded.created_at,
       updated_at = excluded.updated_at
   `)
@@ -104,6 +106,7 @@ async function upsertSubscription(db: PostgresD1Adapter, row: Record<string, unk
       row.stripe_subscription_id ?? null,
       row.stripe_customer_id ?? null,
       row.current_period_end ?? null,
+      asBoolInt(row.cancel_at_period_end),
       row.created_at ?? new Date().toISOString(),
       row.updated_at ?? new Date().toISOString(),
     )

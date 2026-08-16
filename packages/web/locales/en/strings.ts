@@ -256,6 +256,7 @@ export const strings: StringsDefinition = {
   subscribedWelcomeDetail: 'Welcome to VMP Premium. Enjoy unlimited access to all content.',
   renewsOn: 'Renews on',
   accessUntil: 'Access until',
+  subscriptionCanceling: 'Canceling',
   planMonthly: 'Monthly',
   planYearly: 'Yearly',
   planClub: 'Club membership',

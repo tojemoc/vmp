@@ -9,6 +9,7 @@ import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
 import {
   normalizeStripeStatus,
+  stripeCancelAtPeriodEnd,
   stripeGet,
   stripePost,
   stripeSubscriptionPeriodEndIso,
@@ -167,8 +168,10 @@ async function upsertSubscriptionRow(
     stripeSubscriptionId?: string | null;
     stripeCustomerId?: string | null;
     currentPeriodEnd?: string | null;
+    cancelAtPeriodEnd?: boolean;
   },
 ) {
+  const cancelAtPeriodEnd = params.cancelAtPeriodEnd === true ? 1 : 0;
   await db
     .prepare(`
     INSERT INTO subscriptions
@@ -183,9 +186,10 @@ async function upsertSubscriptionRow(
         stripe_subscription_id,
         stripe_customer_id,
         current_period_end,
+        cancel_at_period_end,
         updated_at
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
       user_id                  = excluded.user_id,
       status                   = excluded.status,
@@ -194,6 +198,7 @@ async function upsertSubscriptionRow(
       stripe_subscription_id   = excluded.stripe_subscription_id,
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
+      cancel_at_period_end     = excluded.cancel_at_period_end,
       updated_at               = CURRENT_TIMESTAMP
   `)
     .bind(
@@ -207,6 +212,7 @@ async function upsertSubscriptionRow(
       params.stripeSubscriptionId ?? null,
       params.stripeCustomerId ?? null,
       params.currentPeriodEnd ?? null,
+      cancelAtPeriodEnd,
     )
     .run();
 }
@@ -216,6 +222,7 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
   const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly';
   const status = normalizeStripeStatus(stripeSub.status);
   const currentPeriodEnd = stripeSubscriptionPeriodEndIso(stripeSub);
+  const cancelAtPeriodEnd = stripeCancelAtPeriodEnd(stripeSub);
 
   await upsertSubscriptionRow(db, {
     userId,
@@ -227,6 +234,7 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
     stripeSubscriptionId: stripeSub.id ?? null,
     stripeCustomerId: stripeSub.customer ?? null,
     currentPeriodEnd,
+    cancelAtPeriodEnd,
   });
 }
 
@@ -987,7 +995,7 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
         await db
           .prepare(`
           UPDATE subscriptions
-          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+          SET status = 'cancelled', cancel_at_period_end = 0, updated_at = CURRENT_TIMESTAMP
           WHERE stripe_subscription_id = ?
         `)
           .bind(stripeSub.id)
@@ -1095,6 +1103,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
             providerCustomerId: null,
             stripeCustomerId: null,
             currentPeriodEnd: null,
+            cancelAtPeriodEnd: false,
             createdAt: now,
             updatedAt: now,
           },
@@ -1107,7 +1116,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
     const sub = await db
       .prepare(`
       SELECT id, user_id, plan_type, status, provider, provider_customer_id, stripe_customer_id,
-             current_period_end, created_at, updated_at
+             current_period_end, cancel_at_period_end, created_at, updated_at
       FROM subscriptions
       WHERE user_id = ?
       ORDER BY created_at DESC
@@ -1147,6 +1156,10 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
           providerCustomerId: sub.provider_customer_id ?? null,
           stripeCustomerId: sub.stripe_customer_id,
           currentPeriodEnd: sub.current_period_end,
+          cancelAtPeriodEnd:
+            sub.cancel_at_period_end === 1 ||
+            sub.cancel_at_period_end === true ||
+            sub.cancel_at_period_end === '1',
           createdAt: sub.created_at,
           updatedAt: sub.updated_at,
           legacyManageUrl,
