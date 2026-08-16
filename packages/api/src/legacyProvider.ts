@@ -107,6 +107,27 @@ export function isLegacyProviderConfigured(
   );
 }
 
+/**
+ * True when either production or sandbox legacy credentials are present.
+ * Used for checkout / admin "configured" so local/sandbox testing works without
+ * a production LEGACY_ESHOP_API_URL.
+ */
+export function isLegacyCheckoutConfigured(env: LegacyEnv): boolean {
+  return (
+    isLegacyProviderConfigured(env, 'production') || isLegacyProviderConfigured(env, 'sandbox')
+  );
+}
+
+/**
+ * Prefer production API base; fall back to sandbox when production is incomplete.
+ * Order create/process/get must all use the same base for a given checkout.
+ */
+export function getLegacyCheckoutApiBase(env: LegacyEnv): string {
+  if (isLegacyProviderConfigured(env, 'production')) return getLegacyApiBase(env);
+  if (isLegacyProviderConfigured(env, 'sandbox')) return getLegacySandboxApiBase(env);
+  return getLegacyApiBase(env) || getLegacySandboxApiBase(env);
+}
+
 /** True when legacy webhook HMAC verification can run. */
 export function isLegacyWebhookConfigured(env: LegacyEnv): boolean {
   return Boolean(String(env.LEGACY_ESHOP_WEBHOOK_SECRET ?? '').trim());
@@ -133,7 +154,7 @@ export async function legacyPostRaw<T = Record<string, unknown>>(
   body: Record<string, unknown>,
 ): Promise<LegacyPostResult<T>> {
   const apiBase = trimTrailingSlashes(base);
-  if (!apiBase) throw new Error('Legacy billing API is not configured');
+  if (!apiBase) throw new Error('Bank payments are temporarily unavailable');
 
   const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
   const response = await legacyFetch(env, url, {
@@ -176,7 +197,7 @@ export async function legacyGet<T = Record<string, unknown>>(
   path: string,
 ): Promise<T> {
   const apiBase = trimTrailingSlashes(base);
-  if (!apiBase) throw new Error('Legacy billing API is not configured');
+  if (!apiBase) throw new Error('Bank payments are temporarily unavailable');
 
   const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
   const response = await legacyFetch(env, url, {
@@ -267,7 +288,7 @@ export function buildLegacyOrderBody(
 }
 
 export async function createLegacyOrder(env: LegacyEnv, input: LegacyCreateOrderInput) {
-  const base = getLegacyApiBase(env);
+  const base = getLegacyCheckoutApiBase(env);
   return legacyPost(env, base, '/order', buildLegacyOrderBody(env, input));
 }
 
@@ -364,13 +385,13 @@ export async function probeLegacyCardOnFile(
 
 export async function processLegacyOrder(env: LegacyEnv, idOrder: string) {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim();
-  const base = getLegacyApiBase(env);
+  const base = getLegacyCheckoutApiBase(env);
   return legacyPost(env, base, '/order/process', { idMerchant, idOrder });
 }
 
 export async function getLegacyOrder(env: LegacyEnv, idOrder: string) {
   const idMerchant = String(env.LEGACY_ESHOP_MERCHANT_ID ?? '').trim();
-  const base = getLegacyApiBase(env);
+  const base = getLegacyCheckoutApiBase(env);
   return legacyGet(
     env,
     base,

@@ -480,11 +480,7 @@
       // Backend sets pricing_not_configured when prices are missing OR no supported
       // providers remain (e.g. stub-only gopay/comgate). Surface that as priceError
       // so we do not show plan buttons with no checkout path.
-      if (
-        !hasVisiblePrice ||
-        providers.length === 0 ||
-        data.pricing_not_configured === true
-      ) {
+      if (!hasVisiblePrice || providers.length === 0 || data.pricing_not_configured === true) {
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
       }
@@ -493,11 +489,7 @@
       pendingLegacyCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
-      if (
-        pendingLegacyCheckoutIntent.value &&
-        showLegacyCheckout.value &&
-        !priceError.value
-      ) {
+      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
         pendingLegacyCheckoutIntent.value = false;
         void startLegacyCheckout();
       }
@@ -525,7 +517,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.checkoutUrl) {
-        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        checkoutError.value = formatLegacyCheckoutError(data);
         return;
       }
       window.location.href = String(data.checkoutUrl);
@@ -534,6 +526,25 @@
     } finally {
       legacyCheckoutStarting.value = false;
     }
+  }
+
+  function formatLegacyCheckoutError(data: { error?: string; code?: string }): string {
+    const code = String(data?.code ?? '');
+    if (
+      code === 'legacy_not_configured' ||
+      code === 'provider_not_configured' ||
+      code === 'provider_not_enabled'
+    ) {
+      return strings.checkoutProviderUnavailable;
+    }
+    if (code === 'prices_not_configured') {
+      return strings.checkoutPlanUnavailable;
+    }
+    const raw = String(data?.error ?? '');
+    if (/not configured|LEGACY_|API[_ ]?URL|FRONTEND_URL/i.test(raw)) {
+      return strings.checkoutProviderUnavailable;
+    }
+    return raw || strings.checkoutStartFailed;
   }
 
   async function goToLogin() {

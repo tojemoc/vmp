@@ -153,7 +153,7 @@
                 rel="noopener noreferrer"
                 class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
               >
-                {{ strings.accountManagePaymentMethod }}
+                {{ strings.accountPayWithProvider(legacyProviderDisplayName) }}
               </a>
             </div>
           </div>
@@ -209,7 +209,7 @@
               rel="noopener noreferrer"
               class="ml-3 inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors"
             >
-              {{ strings.accountManagePaymentMethod }}
+              {{ strings.accountPayWithProvider(legacyProviderDisplayName) }}
             </a>
             <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
           </div>

@@ -282,6 +282,7 @@ export const strings: StringsDefinition = {
     'Vyberte plán a pokračujte na naši zabezpečenou platební stránku pro propojení karty nebo bankovního účtu.',
   accountRelinkCheckoutWorking: 'Přesměrovávám…',
   accountManagePaymentMethod: 'Spravovat platební metodu',
+  accountPayWithProvider: (provider: string) => `Zaplatit přes ${provider}`,
   offlineDownloadMenuLabel: 'Stáhnout offline',
   offlineDownloadResume: 'Pokračovat ve stahování',
   offlineDownloadPwaRequiredTitle: 'Pro stahování nainstalujte aplikaci',
@@ -357,6 +358,10 @@ export const strings: StringsDefinition = {
   checkoutBlurbStripe: 'Bezpečná platba. Zrušení kdykoli.',
   checkoutBlurbBoth: 'Bezpečná platba. Zrušení kdykoli.',
   checkoutStartFailed: 'Nepodařilo se spustit platbu. Zkuste to prosím znovu.',
+  checkoutProviderUnavailable:
+    'Bankovní platby jsou dočasně nedostupné. Zvolte jiný způsob platby nebo to zkuste později.',
+  checkoutPlanUnavailable:
+    'Tento plán není momentálně dostupný pro bankovní platbu. Zvolte jiný plán.',
   checkoutSignInBefore: 'Před platbou budete požádáni o přihlášení.',
   checkoutPromoLabel: 'Promo kód',
   checkoutPromoPlaceholder: 'např. STUDENT2026',

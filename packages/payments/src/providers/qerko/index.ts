@@ -4,8 +4,10 @@ export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvide
   return {
     id: 'qerko',
     capabilities: {
-      newSubscriptions: false,
-      migrationOnly: true,
+      // When enabled in admin settings, Qerko supports brand-new checkouts
+      // (initial payment / CardOnFile create) as well as migrated relinks.
+      newSubscriptions: true,
+      migrationOnly: false,
       recurringPayments: true,
       refunds: true,
       webhooks: true,

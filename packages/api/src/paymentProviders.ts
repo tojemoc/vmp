@@ -13,7 +13,7 @@ import {
   providerIdToDbProvider,
 } from '@vmp/payments';
 import { startLegacyCheckout } from './legacyPayments.js';
-import { isLegacyProviderConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
+import { isLegacyCheckoutConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
 import { getSetting } from './settingsStore.js';
 
 /** All registry IDs (including stubs) that may appear in admin settings. */
@@ -38,7 +38,7 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       priceIdForPlan: (planType) => priceIdForPlan(env, planType),
     },
     qerko: {
-      isConfigured: () => isLegacyProviderConfigured(env),
+      isConfigured: () => isLegacyCheckoutConfigured(env),
       createCheckout: async (input) => {
         const corsHeaders: Record<string, string> = {};
         const response = await startLegacyCheckout(

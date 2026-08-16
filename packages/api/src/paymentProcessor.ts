@@ -18,8 +18,9 @@ export { normalizeStripeStatus } from './stripeClient.js';
 
 import type { PaymentProviderId } from '@vmp/payments';
 import { handleStripeInvoicePaid } from './eInvoicing.js';
-import { isLegacyProviderConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
+import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import { parseLocaleNumber } from './parseLocaleNumber.js';
 import {
   fromApiProviderId,
   getPaymentProviderOrder,
@@ -28,6 +29,8 @@ import {
   toApiProviderId,
   toSupportedApiProviderIds,
 } from './paymentProviders.js';
+
+export { parseLocaleNumber } from './parseLocaleNumber.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
@@ -97,9 +100,7 @@ async function buildAdminPlanList(env: any) {
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function parseConfiguredPrice(value: unknown): number | null {
-  if (value === '' || value == null) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+  return parseLocaleNumber(value);
 }
 
 async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
@@ -263,7 +264,7 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       // Empty when only stubs/unsupported providers remain — never invent Stripe.
       enabledProviders,
       providerOrder,
-      legacyConfigured: isLegacyProviderConfigured(env),
+      legacyConfigured: isLegacyCheckoutConfigured(env),
       ...(pricingNotConfigured || enabledProviders.length === 0
         ? { pricing_not_configured: true }
         : {}),
@@ -287,8 +288,8 @@ function parseCsvList(input: unknown, allowValues: string[]) {
 
 function parseOptionalPositiveNumber(input: unknown) {
   if (input === '' || input == null) return '';
-  const numeric = Number(input);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
+  const numeric = parseLocaleNumber(input);
+  if (numeric == null || numeric <= 0) {
     throw new Error('Prices must be positive numbers');
   }
   return String(numeric);
@@ -452,7 +453,7 @@ export async function handleAdminPaymentPlans(request: any, env: any, corsHeader
         getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
-        Promise.resolve(isLegacyProviderConfigured(env)),
+        Promise.resolve(isLegacyCheckoutConfigured(env)),
       ]);
     return jsonResponse(
       {
@@ -697,9 +698,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     // Explicit supported selection wins when present in order; otherwise fall back only when
     // the client omitted the provider or sent an unrecognized value.
     const providerId: PaymentProviderId | null =
-      selectedId && providerOrder.includes(selectedId)
-        ? selectedId
-        : (orderedRunnable[0] ?? null);
+      selectedId && providerOrder.includes(selectedId) ? selectedId : (orderedRunnable[0] ?? null);
     const apiProvider = providerId ? toApiProviderId(providerId) : null;
     if (!providerId || !apiProvider) {
       const noneAvailable = orderedRunnable.length === 0;
@@ -853,10 +852,47 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       err && typeof err === 'object' && 'code' in err
         ? String((err as { code?: string }).code)
         : '';
+    const statusRaw =
+      err && typeof err === 'object' && 'status' in err
+        ? Number((err as { status?: number }).status)
+        : NaN;
     if (code === 'stripe_timeout') {
       return jsonResponse(
         { error: 'Payment provider timed out. Please try again.', code },
         504,
+        corsHeaders,
+      );
+    }
+    const rawMessage = err instanceof Error ? err.message : '';
+    const looksLikeConfigLeak =
+      /not configured|LEGACY_[A-Z0-9_]+|API[_ ]?URL|FRONTEND_URL|misconfigured/i.test(rawMessage);
+    if (
+      code === 'legacy_not_configured' ||
+      code === 'provider_not_configured' ||
+      looksLikeConfigLeak
+    ) {
+      return jsonResponse(
+        {
+          error:
+            'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
+          code: code || 'provider_not_configured',
+        },
+        Number.isFinite(statusRaw) && statusRaw >= 400 ? statusRaw : 503,
+        corsHeaders,
+      );
+    }
+    if (code && rawMessage && Number.isFinite(statusRaw) && statusRaw >= 400 && statusRaw < 500) {
+      return jsonResponse({ error: rawMessage, code }, statusRaw, corsHeaders);
+    }
+    if (code && rawMessage && Number.isFinite(statusRaw) && statusRaw >= 500) {
+      return jsonResponse(
+        {
+          error: looksLikeConfigLeak
+            ? 'Bank payments are temporarily unavailable. Please choose another payment method or try again later.'
+            : rawMessage,
+          code,
+        },
+        statusRaw,
         corsHeaders,
       );
     }
@@ -1195,10 +1231,15 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
         (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
       ).trim();
       if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders);
+      const providerName =
+        String(
+          (await getSetting(env, 'legacy_provider_name', { defaultValue: 'Qerko' })) ?? 'Qerko',
+        ).trim() || 'Qerko';
       return jsonResponse(
         {
-          error: 'Customer portal is not available for this payment provider.',
+          error: `Manage your subscription in the ${providerName} app or website.`,
           code: 'portal_not_supported',
+          providerName,
         },
         409,
         corsHeaders,

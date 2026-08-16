@@ -277,6 +277,7 @@ export const strings: StringsDefinition = {
     'Choose your plan and continue to our secure payment page to link your card or bank account.',
   accountRelinkCheckoutWorking: 'Redirecting…',
   accountManagePaymentMethod: 'Manage payment method',
+  accountPayWithProvider: (provider: string) => `Pay with ${provider}`,
   offlineDownloadMenuLabel: 'Download for offline',
   offlineDownloadResume: 'Resume download',
   offlineDownloadPwaRequiredTitle: 'Install the app to download',
@@ -351,6 +352,10 @@ export const strings: StringsDefinition = {
   checkoutBlurbStripe: 'Secure checkout. Cancel any time.',
   checkoutBlurbBoth: 'Secure checkout. Cancel any time.',
   checkoutStartFailed: 'Could not start checkout. Please try again.',
+  checkoutProviderUnavailable:
+    'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
+  checkoutPlanUnavailable:
+    'This plan is not available for bank payment right now. Please choose another plan.',
   checkoutSignInBefore: 'You will be asked to sign in before checkout.',
   checkoutPromoLabel: 'Promo code',
   checkoutPromoPlaceholder: 'e.g. STUDENT2026',

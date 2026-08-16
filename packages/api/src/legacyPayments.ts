@@ -8,6 +8,7 @@ import { getDb } from './d1Session.js';
 import {
   createLegacyOrder,
   getLegacyOrder,
+  isLegacyCheckoutConfigured,
   isLegacyFetchTimeout,
   isLegacyProviderConfigured,
   isLegacyWebhookConfigured,
@@ -16,6 +17,7 @@ import {
   verifyLegacyWebhookSignature,
 } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import { parseLocaleNumber } from './parseLocaleNumber.js';
 import { getSetting } from './settingsStore.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -60,8 +62,8 @@ async function getPlanAmountMinor(env: any, planType: PlanType): Promise<number 
   const raw =
     (await getSetting(env, key, { ttlSeconds: 300 })) ??
     (await getSetting(env, fallbackKey, { ttlSeconds: 300 }));
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const numeric = parseLocaleNumber(raw);
+  if (numeric == null || numeric <= 0) return null;
   return Math.round(numeric * 100);
 }
 
@@ -139,9 +141,13 @@ export async function startLegacyCheckout(
   body: { planType?: unknown; returnPath?: unknown; purchaseId?: unknown },
   corsHeaders: Record<string, string>,
 ) {
-  if (!isLegacyProviderConfigured(env)) {
+  if (!isLegacyCheckoutConfigured(env)) {
     return jsonResponse(
-      { error: 'Legacy billing is not configured', code: 'legacy_not_configured' },
+      {
+        error:
+          'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
+        code: 'legacy_not_configured',
+      },
       503,
       corsHeaders,
     );
@@ -152,7 +158,10 @@ export async function startLegacyCheckout(
   const amountMinor = await getPlanAmountMinor(env, planType);
   if (amountMinor == null) {
     return jsonResponse(
-      { error: 'Legacy plan pricing is not configured', code: 'prices_not_configured' },
+      {
+        error: 'This plan is not available for bank payment right now. Please choose another plan.',
+        code: 'prices_not_configured',
+      },
       503,
       corsHeaders,
     );
@@ -281,7 +290,18 @@ export async function startLegacyCheckout(
     const message = err instanceof Error ? err.message : 'Legacy checkout failed';
     const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_checkout_failed';
     const status = isLegacyFetchTimeout(err) ? 504 : 502;
-    return jsonResponse({ error: message, code }, status, corsHeaders);
+    const looksLikeConfigLeak =
+      /not configured|LEGACY_[A-Z0-9_]+|API[_ ]?URL|FRONTEND_URL|misconfigured/i.test(message);
+    return jsonResponse(
+      {
+        error: looksLikeConfigLeak
+          ? 'Bank payments are temporarily unavailable. Please choose another payment method or try again later.'
+          : message,
+        code: looksLikeConfigLeak ? 'legacy_not_configured' : code,
+      },
+      looksLikeConfigLeak ? 503 : status,
+      corsHeaders,
+    );
   }
 }
 
