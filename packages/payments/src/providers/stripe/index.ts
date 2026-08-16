@@ -164,6 +164,10 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         payment_method_types: ['card', 'paypal', 'sepa_debit'],
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: input.email,
+        // Required for SK/CZ e-invoicing B2B routing: invoice.paid payloads expose
+        // customer_tax_ids + customer_address used by extractBuyerFromStripeInvoice.
+        tax_id_collection: { enabled: true },
+        billing_address_collection: 'required',
         metadata: {
           ...(input.promo?.metadata ?? {}),
           userId: input.userId,

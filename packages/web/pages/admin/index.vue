@@ -1301,6 +1301,22 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         </div>
 
         <div
+          v-if="activeAdminTab === 'einvoicing'"
+          id="einvoicing-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
+          <div
+            v-if="!isAdmin"
+            class="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          >
+            Only site administrators can configure e-invoicing and view the invoice ledger. Editors
+            can use other admin tabs.
+          </div>
+          <AdminEInvoicingPanel v-else />
+        </div>
+
+        <div
           v-if="activeAdminTab === 'pages'"
           id="pages-panel"
           role="tabpanel"
@@ -4045,6 +4061,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     | 'pills'
     | 'notifications'
     | 'newsletter'
+    | 'einvoicing'
     | 'pages'
     | 'users'
     | 'legacy_migration'
@@ -4058,6 +4075,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     { id: 'pills' as const, label: 'Pills' },
     { id: 'notifications' as const, label: 'Notifications' },
     { id: 'newsletter' as const, label: 'Newsletter' },
+    { id: 'einvoicing' as const, label: 'E-invoicing' },
     { id: 'pages' as const, label: 'Pages' },
     { id: 'users' as const, label: 'Users & roles' },
     { id: 'legacy_migration' as const, label: 'Legacy migration' },
@@ -4066,7 +4084,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   ];
   const adminTabs = computed(() =>
     baseAdminTabs.filter((tab) => {
-      if (tab.id === 'pills' || tab.id === 'legacy_migration' || tab.id === 'newsletter')
+      if (
+        tab.id === 'pills' ||
+        tab.id === 'legacy_migration' ||
+        tab.id === 'newsletter' ||
+        tab.id === 'einvoicing'
+      )
         return isAdmin.value;
       return true;
     }),
