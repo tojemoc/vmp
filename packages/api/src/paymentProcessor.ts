@@ -745,7 +745,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       return jsonResponse(
         {
           error:
-            'This payment provider is enabled in settings but is not configured on the server (missing API credentials).',
+            'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
           code: 'provider_not_configured',
         },
         503,
