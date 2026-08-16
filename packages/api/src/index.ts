@@ -36,6 +36,7 @@ import {
   handleGetMe,
   handleLogout,
   handleMagicPwaHandoff,
+  handleNativeRedeemMagicLink,
   handleRedeemPwaHandoff,
   handleRefreshToken,
   handleRequestMagicLink,
@@ -107,6 +108,13 @@ import {
   getVideoProxyCacheControl,
   resolveMediaEntrypointUrl,
 } from './mediaEntrypoints.js';
+import {
+  handleDevicePairingComplete,
+  handleDevicePairingPoll,
+  handleDevicePairingStart,
+  handleNativePushRegister,
+  handleNativePushUnregister,
+} from './nativeClients.js';
 import {
   getObjectStorage,
   parseHttpRangeHeader,
@@ -479,11 +487,23 @@ const workerHandler = {
       if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
         return handleVerifyMagicLink(request, env, corsHeaders);
       }
+      if (url.pathname === '/api/auth/native/redeem' && request.method === 'POST') {
+        return handleNativeRedeemMagicLink(request, env, corsHeaders);
+      }
       if (url.pathname === '/api/auth/magic-pwa-handoff' && request.method === 'POST') {
         return handleMagicPwaHandoff(request, env, corsHeaders);
       }
       if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
         return handleRedeemPwaHandoff(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/auth/device-pairing/start' && request.method === 'POST') {
+        return handleDevicePairingStart(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/auth/device-pairing/complete' && request.method === 'POST') {
+        return handleDevicePairingComplete(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/auth/device-pairing/poll' && request.method === 'POST') {
+        return handleDevicePairingPoll(request, env, corsHeaders);
       }
       if (url.pathname === '/api/auth/pwa-push-login/init' && request.method === 'POST') {
         return handlePwaPushLoginInit(request, env, corsHeaders);
@@ -973,6 +993,12 @@ const workerHandler = {
       }
       if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
         return handlePushSubscribe(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/push/device' && request.method === 'POST') {
+        return handleNativePushRegister(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/push/device' && request.method === 'DELETE') {
+        return handleNativePushUnregister(request, env, corsHeaders);
       }
       if (url.pathname === '/api/push/events' && request.method === 'POST') {
         return handlePushEvents(request, env, corsHeaders);
