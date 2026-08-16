@@ -169,6 +169,10 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
+import {
+  handleGetPlaybackPosition,
+  handlePutPlaybackPosition,
+} from './playbackPositions.js';
 import { handleGetAccountRss } from './rssAccount.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
@@ -957,6 +961,18 @@ const workerHandler = {
       }
       if (url.pathname === '/api/account/rss' && request.method === 'GET') {
         return handleGetAccountRss(request, env, corsHeaders);
+      }
+      {
+        const playbackPositionMatch = url.pathname.match(
+          /^\/api\/account\/playback-positions\/([^/]+)$/,
+        );
+        const playbackVideoId = playbackPositionMatch?.[1];
+        if (playbackVideoId && request.method === 'GET') {
+          return handleGetPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+        }
+        if (playbackVideoId && request.method === 'PUT') {
+          return handlePutPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+        }
       }
       if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
         return handleAccountInvoices(request, env, corsHeaders);

@@ -60,6 +60,7 @@ export const personalData: PersonalDataPage = {
       title: 'Server-side processing (no browser cookie)',
       paragraphs: [
         'When video streams are delivered, our API logs anonymised technical events (for example hashed IP, country from network headers, and viewing session buckets) to operate the service, prevent abuse, and show aggregate statistics to administrators. These logs are not used to advertise to you and are not shared with ad networks.',
+        'If you are signed in, we also store your last playback position per video on our servers so we can resume where you left off. Positions are updated occasionally while you watch and when you leave the page — not on every scrub of the timeline. Anonymous visitors do not get server-side resume.',
       ],
     },
     {
