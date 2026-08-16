@@ -9,7 +9,10 @@
   }>();
 
   const { strings } = useStrings();
-  const { isPremium } = useAuth();
+  // Parent (`watch/[videoId].vue`) already gates on video-access `hasAccess`.
+  // Do not also require `isPremium` here — subscription is only loaded on account/pricing,
+  // so premium viewers would never see the control on the watch page.
+  const { fetchSubscription } = useAuth();
   const { $pwa } = useNuxtApp();
   const {
     offlineDownloadsEnabled,
@@ -28,7 +31,9 @@
   const menuOpen = ref(false);
   const pwaModalOpen = ref(false);
   const installingPwa = ref(false);
+  const buttonRef = ref<HTMLElement | null>(null);
   const menuRef = ref<HTMLElement | null>(null);
+  const menuStyle = ref<Record<string, string>>({});
   const record = ref<Awaited<ReturnType<typeof getDownloadRecord>>>(null);
   const progress = ref({
     bytesDownloaded: 0,
@@ -40,6 +45,7 @@
 
   let unsubscribe: (() => void) | null = null;
   let mounted = false;
+  let menuPositionCleanup: (() => void) | null = null;
 
   const renditionOptions: OfflineRendition[] = ['480p', '720p', '1080p'];
 
@@ -61,7 +67,7 @@
       canAddToHomeScreenWithoutPrompt(),
   );
 
-  const showControl = computed(() => isPremium.value && pwaSupportedSurface.value);
+  const showControl = computed(() => pwaSupportedSurface.value);
 
   async function loadState() {
     if (!offlineDownloadsEnabled.value) return;
@@ -71,6 +77,8 @@
 
   onMounted(async () => {
     mounted = true;
+    void fetchSubscription();
+    document.addEventListener('click', closeMenuFromDocument);
     await loadState();
     if (!mounted || !offlineDownloadsEnabled.value) return;
     unsubscribe = watchProgress(props.videoId, (p) => {
@@ -79,13 +87,14 @@
         void loadState();
       }
     });
-    document.addEventListener('click', closeMenuFromDocument);
   });
 
   onUnmounted(() => {
     mounted = false;
     unsubscribe?.();
     unsubscribe = null;
+    menuPositionCleanup?.();
+    menuPositionCleanup = null;
     document.removeEventListener('click', closeMenuFromDocument);
   });
 
@@ -102,10 +111,37 @@
   function closeMenuFromDocument(event: MouseEvent) {
     if (!menuOpen.value) return;
     const target = event.target as Node | null;
-    if (menuRef.value && target && !menuRef.value.contains(target)) {
-      menuOpen.value = false;
-    }
+    if (!target) return;
+    if (buttonRef.value?.contains(target) || menuRef.value?.contains(target)) return;
+    menuOpen.value = false;
   }
+
+  function positionMenu() {
+    const button = buttonRef.value;
+    if (!button || typeof window === 'undefined') return;
+    const rect = button.getBoundingClientRect();
+    const gap = 8;
+    menuStyle.value = {
+      position: 'fixed',
+      right: `${Math.max(8, window.innerWidth - rect.right)}px`,
+      bottom: `${Math.max(8, window.innerHeight - rect.top + gap)}px`,
+      zIndex: '80',
+    };
+  }
+
+  watch(menuOpen, (open) => {
+    menuPositionCleanup?.();
+    menuPositionCleanup = null;
+    if (!open || typeof window === 'undefined') return;
+    positionMenu();
+    const onResize = () => positionMenu();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onResize, true);
+    menuPositionCleanup = () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onResize, true);
+    };
+  });
 
   const status = computed(() => record.value?.status ?? progress.value.status ?? null);
   const percent = computed(() => {
@@ -122,7 +158,7 @@
     () => status.value === 'downloading' || isDownloadActive(props.videoId),
   );
   const showProgress = computed(() => isActive.value || status.value === 'paused');
-  const downloadsAvailable = computed(() => offlineDownloadsEnabled.value && isPremium.value);
+  const downloadsAvailable = computed(() => offlineDownloadsEnabled.value);
 
   function openPwaModal() {
     menuOpen.value = false;
@@ -150,7 +186,9 @@
       openPwaModal();
       return;
     }
-    menuOpen.value = !menuOpen.value;
+    const next = !menuOpen.value;
+    if (next) positionMenu();
+    menuOpen.value = next;
   }
 
   async function handleDownload() {
@@ -198,8 +236,9 @@
 
 <template>
   <template v-if="showControl">
-    <div ref="menuRef" class="watch-offline-download">
+    <div class="watch-offline-download">
       <button
+        ref="buttonRef"
         type="button"
         class="watch-offline-download-button"
         :aria-label="strings.offlineDownloadMenuLabel"
@@ -225,12 +264,16 @@
           aria-hidden="true"
         />
       </button>
+    </div>
 
+    <Teleport to="body">
       <div
         v-if="menuOpen && downloadsAvailable"
+        ref="menuRef"
         class="watch-offline-download-menu"
         role="menu"
         :aria-label="strings.offlineDownloadMenuLabel"
+        :style="menuStyle"
         @click.stop
       >
         <p
@@ -336,7 +379,7 @@
           {{ record.errorMessage }}
         </p>
       </div>
-    </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -437,10 +480,6 @@
   }
 
   .watch-offline-download-menu {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 8px);
-    z-index: 40;
     min-width: 11rem;
     padding: 0.75rem;
     border-radius: 0.5rem;
