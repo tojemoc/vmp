@@ -8364,20 +8364,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   const transferSubDialogRef = ref<HTMLElement | null>(null);
   const lastFocusedEl = ref<HTMLElement | null>(null);
 
-  function setAdminTab(
-    tab:
-      | 'videos'
-      | 'categories'
-      | 'homepage'
-      | 'pills'
-      | 'notifications'
-      | 'newsletter'
-      | 'pages'
-      | 'users'
-      | 'legacy_migration'
-      | 'analytics'
-      | 'system',
-  ) {
+  function setAdminTab(tab: typeof activeAdminTab.value) {
     router.replace({ query: { ...route.query, tab } });
   }
 
