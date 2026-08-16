@@ -20,12 +20,43 @@ import { getSetting } from './settingsStore.js';
 const KNOWN_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'comgate'];
 const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
 
-export type ApiPaymentProviderId = 'stripe' | 'legacy';
+/** Public API provider ids exposed to checkout / pricing. */
+export type ApiPaymentProviderId = 'stripe' | 'legacy' | 'gopay';
 
 async function priceIdForPlan(env: any, planType: PlanType): Promise<string | null> {
   const stored = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 });
   const value = String(stored ?? '').trim();
   return value || null;
+}
+
+async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
+  const stored = await getSetting(env, `gopay_${planType}_price`, { ttlSeconds: 300 });
+  const value = String(stored ?? '').trim();
+  if (!value) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function requireConfiguredUrl(raw: unknown, label: string): string {
+  const value = String(raw ?? '')
+    .trim()
+    .replace(/\/$/, '');
+  if (!value) throw new Error(`${label} is not configured`);
+  return value;
+}
+
+export function getGoPayNotificationUrl(env: any): string {
+  const apiBase = requireConfiguredUrl(env.API_URL, 'API_URL');
+  return `${apiBase}/api/payments/webhook/gopay`;
+}
+
+export function isGoPayConfigured(env: any): boolean {
+  return Boolean(
+    String(env.GOPAY_CLIENT_ID ?? '').trim() &&
+      String(env.GOPAY_CLIENT_SECRET ?? '').trim() &&
+      String(env.GOPAY_GOID ?? '').trim() &&
+      String(env.API_URL ?? '').trim(),
+  );
 }
 
 export function buildPaymentsConfig(env: any): PaymentsConfig {
@@ -90,12 +121,38 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
         throw new Error('Direct Qerko subscription creation is not supported');
       },
     },
+    gopay: {
+      ...(String(env.GOPAY_CLIENT_ID ?? '').trim()
+        ? { clientId: String(env.GOPAY_CLIENT_ID).trim() }
+        : {}),
+      ...(String(env.GOPAY_CLIENT_SECRET ?? '').trim()
+        ? { clientSecret: String(env.GOPAY_CLIENT_SECRET).trim() }
+        : {}),
+      ...(String(env.GOPAY_GOID ?? '').trim() ? { goId: String(env.GOPAY_GOID).trim() } : {}),
+      apiBase: String(env.GOPAY_API_BASE ?? '').trim() || 'https://gw.sandbox.gopay.com/api',
+      frontendUrl: env.FRONTEND_URL,
+      ...(String(env.API_URL ?? '').trim()
+        ? { notificationUrl: getGoPayNotificationUrl(env) }
+        : {}),
+      amountMajorForPlan: (planType) => gopayAmountMajorForPlan(env, planType),
+      currency: async () => {
+        const stored = await getSetting(env, 'gopay_currency', {
+          defaultValue: 'CZK',
+          ttlSeconds: 300,
+        });
+        return (
+          String(stored ?? 'CZK')
+            .trim()
+            .toUpperCase() || 'CZK'
+        );
+      },
+    },
   };
 }
 
 /**
  * Providers listed in admin settings. Empty / missing → default Stripe.
- * Explicit stub-only lists (gopay, comgate) are preserved — do not invent Stripe.
+ * Explicit stub-only lists (comgate) are preserved — do not invent Stripe.
  */
 export async function getConfiguredProviderIds(env: any): Promise<PaymentProviderId[]> {
   const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' });
@@ -123,7 +180,8 @@ export async function getPaymentProviders(env: any) {
 export function toApiProviderId(id: PaymentProviderId): ApiPaymentProviderId | null {
   if (id === 'qerko') return 'legacy';
   if (id === 'stripe') return 'stripe';
-  // Stub / unknown IDs (gopay, comgate, …) are not exposed on the public API.
+  if (id === 'gopay') return 'gopay';
+  // Stub / unknown IDs (comgate, …) are not exposed on the public API.
   return null;
 }
 
@@ -133,7 +191,9 @@ export function toSupportedApiProviderIds(
 ): ApiPaymentProviderId[] {
   return ids
     .map(toApiProviderId)
-    .filter((id): id is ApiPaymentProviderId => id === 'stripe' || id === 'legacy');
+    .filter(
+      (id): id is ApiPaymentProviderId => id === 'stripe' || id === 'legacy' || id === 'gopay',
+    );
 }
 
 /**

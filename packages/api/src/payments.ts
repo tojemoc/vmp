@@ -12,6 +12,7 @@ export {
   handleGetPricing,
   handleGetStripeConfig,
   handleGetSubscription,
+  handleGoPayWebhook,
   handlePortal,
   handleSessionStatus,
 } from './paymentProcessor.js';

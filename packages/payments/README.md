@@ -8,10 +8,10 @@ Pluggable payment providers for VMP billing.
 |---|---|---|
 | `stripe` | Production | Yes |
 | `qerko` | Production (legacy eshop / migration) | Only when listed in tenant settings |
-| `gopay` | Stub (`NotImplementedError`) | No |
+| `gopay` | **Draft** — redirect checkout + recurrence + notifications | No (enable via admin) |
 | `comgate` | Stub (`NotImplementedError`) | No |
 
-Admin settings still store `legacy` in CSV lists; the registry normalizes that to `qerko`. D1 `subscriptions.provider` continues to use `legacy` for Qerko rows.
+Admin settings still store `legacy` in CSV lists; the registry normalizes that to `qerko`. D1 `subscriptions.provider` continues to use `legacy` for Qerko rows and `gopay` for GoPay rows.
 
 ## Tenant configuration
 
@@ -19,18 +19,52 @@ Admin settings still store `legacy` in CSV lists; the registry normalizes that t
 
 - Fresh launch: `stripe`
 - Migrated tenant: `stripe,legacy` (parsed as `stripe,qerko`)
+- Draft GoPay alongside Stripe: `stripe,gopay`
 
 `createEnabledProviders(enabledIds, config)` returns a `Map` of configured provider instances. Billing code must resolve the provider from this map — never import Stripe or Qerko SDKs directly.
+
+### GoPay admin_settings (no hardcoded prices)
+
+| Key | Purpose |
+|---|---|
+| `gopay_monthly_price` / `gopay_yearly_price` / `gopay_club_price` | Plan amounts in **major** units (e.g. `199` = 199 CZK) |
+| `gopay_currency` | ISO currency, default `CZK` |
+
+Worker secrets / vars:
+
+| Name | Purpose |
+|---|---|
+| `GOPAY_CLIENT_ID` / `GOPAY_CLIENT_SECRET` | OAuth2 client credentials |
+| `GOPAY_GOID` | Merchant goId |
+| `GOPAY_API_BASE` | Optional; default sandbox `https://gw.sandbox.gopay.com/api` (prod: `https://gate.gopay.cz/api`) |
+| `API_URL` | Used to build `notification_url` → `{API_URL}/api/payments/webhook/gopay` |
 
 ## Capabilities
 
 Each provider exposes `capabilities`:
 
-- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **false**)
+- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **false**; GoPay draft: **true**)
 - `migrationOnly` — only for pre-existing platform subscribers (Qerko: **true**)
 - `recurringPayments`, `refunds`, `webhooks` — feature flags for future UI/guards
 
 Checkout must gate on `provider.capabilities.newSubscriptions` instead of hardcoded provider IDs.
+
+## GoPay draft behaviour
+
+1. **Checkout** — `POST /api/payments/payment` with automatic `recurrence` (`MONTH` / period 1 or 12). Returns `gw_url` for browser redirect (same UX pattern as legacy Qerko).
+2. **Webhook** — GoPay sends **GET** `{notification_url}?id=&parent_id=`. The Worker re-fetches payment status with merchant credentials (notifications are **not** HMAC-signed).
+3. **Cancel** — `POST .../void-recurrence` on the parent payment id stored as `provider_subscription_id`.
+4. **Portal** — GoPay has no Stripe-style customer portal; `/api/payments/portal` returns `portal_not_supported` for GoPay subscriptions.
+
+### One-click / Apple Pay / Google Pay limitations
+
+From [GoPay docs](https://doc.gopay.cz/#android-a-ios) (also tracked in [#442](https://github.com/tojemoc/vmp/issues/442)):
+
+- The payment gateway is a **web application only**.
+- Apple Pay and Google Pay are available **only inside the hosted gateway**, not as native one-click dialogs from a mobile app.
+- **Do not use WebView** (`WebView` / `WKWebView`) — wallet methods will not work. Use Chrome Custom Tabs / `SFSafariViewController` (or a normal browser redirect).
+
+This draft therefore never promises native Apple/Google Pay; checkout always redirects to `gw_url`.
 
 ## Adding a provider
 
@@ -39,8 +73,4 @@ Checkout must gate on `provider.capabilities.newSubscriptions` instead of hardco
 3. Wire config in the API composition root (`packages/api/src/paymentProviders.ts`).
 4. Add webhook route `/api/payments/webhook/<id>` or dispatch by path.
 
-GoPay / Comgate are registered stubs — enable in settings only after real implementations land.
-
-## GoPay / Comgate assumptions (confirm with product)
-
-Stub capabilities are set to all `false` until real implementations land. Treat as placeholder until PSP contracts are finalized.
+Comgate remains a registered stub — enable in settings only after a real implementation lands.

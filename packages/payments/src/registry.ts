@@ -1,13 +1,14 @@
 import type { PaymentProviderId } from './ids.js';
+import { createGoPayProvider } from './providers/gopay/index.js';
 import { createQerkoProvider } from './providers/qerko/index.js';
 import { createStripeProvider } from './providers/stripe/index.js';
-import { createComgateProvider, createGoPayProvider } from './providers/stubs.js';
+import { createComgateProvider } from './providers/stubs.js';
 import type { PaymentProvider, PaymentsConfig } from './types.js';
 
 export const PROVIDER_FACTORIES: Record<PaymentProviderId, (config: unknown) => PaymentProvider> = {
   stripe: (config) => createStripeProvider(config as PaymentsConfig['stripe'] & object),
   qerko: (config) => createQerkoProvider(config as PaymentsConfig['qerko'] & object),
-  gopay: createGoPayProvider,
+  gopay: (config) => createGoPayProvider(config as PaymentsConfig['gopay'] & object),
   comgate: createComgateProvider,
 };
 
@@ -19,11 +20,15 @@ export function createEnabledProviders(
   for (const id of enabledIds) {
     const factory = PROVIDER_FACTORIES[id];
     if (!factory) continue;
-    const providerConfig =
-      id === 'stripe' ? config.stripe : id === 'qerko' ? config.qerko : undefined;
-    if (id === 'stripe' || id === 'qerko') {
-      if (!providerConfig) continue;
-      providers.set(id, factory(providerConfig));
+    if (id === 'stripe') {
+      if (!config.stripe) continue;
+      providers.set(id, factory(config.stripe));
+    } else if (id === 'qerko') {
+      if (!config.qerko) continue;
+      providers.set(id, factory(config.qerko));
+    } else if (id === 'gopay') {
+      if (!config.gopay) continue;
+      providers.set(id, factory(config.gopay));
     } else {
       providers.set(id, factory(undefined));
     }

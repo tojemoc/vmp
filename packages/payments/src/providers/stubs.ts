@@ -1,14 +1,5 @@
 import { NotImplementedError } from '../errors.js';
-import type {
-  CheckoutSession,
-  CreateCheckoutSessionInput,
-  CreateSubscriptionInput,
-  PaymentCustomer,
-  PaymentProvider,
-  PaymentProviderCapabilities,
-  RefundOptions,
-  Subscription,
-} from '../types.js';
+import type { PaymentProvider, PaymentProviderCapabilities } from '../types.js';
 
 const STUB_CAPABILITIES: PaymentProviderCapabilities = {
   newSubscriptions: false,
@@ -18,13 +9,14 @@ const STUB_CAPABILITIES: PaymentProviderCapabilities = {
   webhooks: false,
 };
 
-function stubProvider(id: 'gopay' | 'comgate', label: string): PaymentProvider {
-  const message = `${label} support is not yet implemented`;
+/** Comgate remains stub-only until a dedicated adapter lands (see #442). */
+export function createComgateProvider(_config: unknown): PaymentProvider {
+  const message = 'Comgate support is not yet implemented';
   const throwNI = () => {
     throw new NotImplementedError(message);
   };
   return {
-    id,
+    id: 'comgate',
     capabilities: STUB_CAPABILITIES,
     isConfigured: () => false,
     createCheckoutSession: async () => throwNI(),
@@ -35,12 +27,4 @@ function stubProvider(id: 'gopay' | 'comgate', label: string): PaymentProvider {
     verifyWebhookSignature: () => throwNI(),
     handleWebhook: async () => throwNI(),
   };
-}
-
-export function createGoPayProvider(_config: unknown): PaymentProvider {
-  return stubProvider('gopay', 'GoPay');
-}
-
-export function createComgateProvider(_config: unknown): PaymentProvider {
-  return stubProvider('comgate', 'Comgate');
 }

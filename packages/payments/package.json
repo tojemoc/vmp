@@ -8,10 +8,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test ./test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "tsx": "^4.23.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }

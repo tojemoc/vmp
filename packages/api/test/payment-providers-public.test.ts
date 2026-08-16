@@ -17,20 +17,28 @@ describe('resolvePublicEnabledProviders', () => {
     ]);
   });
 
+  it('exposes gopay when configured and runnable', () => {
+    assert.deepEqual(resolvePublicEnabledProviders(['stripe', 'gopay'], ['stripe', 'gopay']), [
+      'stripe',
+      'gopay',
+    ]);
+  });
+
   it('does not invent stripe when only stub providers remain after filtering', () => {
-    const configured = parseProviderIdList('gopay,comgate', KNOWN);
-    assert.deepEqual(configured, ['gopay', 'comgate']);
+    const configured = parseProviderIdList('comgate', KNOWN);
+    assert.deepEqual(configured, ['comgate']);
     assert.deepEqual(toSupportedApiProviderIds(configured), []);
     // Stubs are never runnable (isConfigured=false), so public list stays empty.
     assert.deepEqual(resolvePublicEnabledProviders(configured, []), []);
   });
 
-  it('maps stub IDs to null instead of throwing', () => {
-    assert.equal(toApiProviderId('gopay'), null);
+  it('maps comgate stub to null; gopay is a public API id', () => {
+    assert.equal(toApiProviderId('gopay'), 'gopay');
     assert.equal(toApiProviderId('comgate'), null);
   });
 
   it('excludes configured-but-not-runnable providers from public pricing', () => {
     assert.deepEqual(resolvePublicEnabledProviders(['stripe', 'qerko'], ['stripe']), ['stripe']);
+    assert.deepEqual(resolvePublicEnabledProviders(['gopay'], []), []);
   });
 });
