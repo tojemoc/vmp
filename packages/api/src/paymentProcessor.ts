@@ -705,9 +705,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     // Explicit supported selection wins when present in order; otherwise fall back only when
     // the client omitted the provider or sent an unrecognized value.
     const providerId: PaymentProviderId | null =
-      selectedId && providerOrder.includes(selectedId)
-        ? selectedId
-        : (orderedRunnable[0] ?? null);
+      selectedId && providerOrder.includes(selectedId) ? selectedId : (orderedRunnable[0] ?? null);
     const apiProvider = providerId ? toApiProviderId(providerId) : null;
     if (!providerId || !apiProvider) {
       const noneAvailable = orderedRunnable.length === 0;
