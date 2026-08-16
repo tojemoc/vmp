@@ -111,6 +111,7 @@ import {
 import {
   handleDevicePairingComplete,
   handleDevicePairingPoll,
+  handleDevicePairingPreview,
   handleDevicePairingStart,
   handleNativePushRegister,
   handleNativePushUnregister,
@@ -498,6 +499,9 @@ const workerHandler = {
       }
       if (url.pathname === '/api/auth/device-pairing/start' && request.method === 'POST') {
         return handleDevicePairingStart(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/auth/device-pairing/preview' && request.method === 'POST') {
+        return handleDevicePairingPreview(request, env, corsHeaders);
       }
       if (url.pathname === '/api/auth/device-pairing/complete' && request.method === 'POST') {
         return handleDevicePairingComplete(request, env, corsHeaders);

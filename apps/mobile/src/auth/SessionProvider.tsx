@@ -1,11 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as Linking from 'expo-linking';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  loadSession,
   redeemMagicLinkToken,
   restoreSession,
+  SessionRestoreError,
+  type SessionState,
   signOut,
   tokenFromAuthUrl,
-  type SessionState,
 } from './session';
 
 type SessionContextValue = {
@@ -14,7 +16,7 @@ type SessionContextValue = {
   error: string | null;
   setSession: (session: SessionState | null) => void;
   refreshFromStore: () => Promise<void>;
-  handleIncomingUrl: (url: string | null) => Promise<void>;
+  handleIncomingUrl: (url: string | null) => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -25,21 +27,34 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const handleIncomingUrl = useCallback(async (url: string | null) => {
+  const handleIncomingUrl = useCallback(async (url: string | null): Promise<boolean> => {
     const token = tokenFromAuthUrl(url);
-    if (!token) return;
+    if (!token) return false;
     try {
       setError(null);
       const next = await redeemMagicLinkToken(token);
       setSession(next);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in link failed');
+      return false;
     }
   }, []);
 
   const refreshFromStore = useCallback(async () => {
-    const next = await restoreSession();
-    setSession(next);
+    try {
+      const next = await restoreSession();
+      setSession(next);
+    } catch (err) {
+      if (err instanceof SessionRestoreError && err.retryable) {
+        const cached = await loadSession();
+        setSession(cached);
+        setError('Could not refresh session (will retry). Showing last known session.');
+        return;
+      }
+      setSession(null);
+      setError(err instanceof Error ? err.message : 'Session restore failed');
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -53,7 +68,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       try {
         const initialUrl = await Linking.getInitialURL();
         if (tokenFromAuthUrl(initialUrl)) {
-          await handleIncomingUrl(initialUrl);
+          const redeemed = await handleIncomingUrl(initialUrl);
+          if (!redeemed) {
+            await refreshFromStore();
+          }
         } else {
           await refreshFromStore();
         }

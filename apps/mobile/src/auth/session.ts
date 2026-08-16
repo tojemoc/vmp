@@ -1,6 +1,6 @@
 import type { NativeAuthUser, NativeSessionResponse } from '@vmp/shared';
 import * as SecureStore from 'expo-secure-store';
-import { logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
+import { ApiError, logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
 
 const ACCESS_KEY = 'vmp.accessToken';
 const REFRESH_KEY = 'vmp.refreshToken';
@@ -11,6 +11,15 @@ export type SessionState = {
   refreshToken: string;
   user: NativeAuthUser;
 };
+
+export class SessionRestoreError extends Error {
+  retryable: boolean;
+
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.retryable = retryable;
+  }
+}
 
 async function writeSession(session: SessionState): Promise<void> {
   await SecureStore.setItemAsync(ACCESS_KEY, session.accessToken);
@@ -47,20 +56,35 @@ export async function persistNativeSession(session: NativeSessionResponse): Prom
   return next;
 }
 
+/**
+ * Refresh against the server. Clears local session only on definitive 401.
+ * Network/5xx leave the stored session intact and throw a retryable error.
+ */
 export async function restoreSession(): Promise<SessionState | null> {
   const existing = await loadSession();
   if (!existing) return null;
   try {
     const refreshed = await refreshNativeSession(existing.refreshToken);
     return persistNativeSession(refreshed);
-  } catch {
-    await clearSession();
-    return null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      await clearSession();
+      return null;
+    }
+    throw new SessionRestoreError(
+      err instanceof Error ? err.message : 'Session refresh failed',
+      true,
+    );
   }
 }
 
 export async function redeemMagicLinkToken(token: string): Promise<SessionState> {
   const session = await redeemNativeMagicLink(token);
+  if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
+    throw new Error(
+      'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',
+    );
+  }
   if (!('refreshToken' in session) || !session.refreshToken) {
     throw new Error('Native redeem did not return a refreshToken');
   }

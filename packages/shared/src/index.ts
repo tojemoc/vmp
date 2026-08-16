@@ -187,3 +187,18 @@ export interface NativeSessionResponse {
   refreshToken: string;
   user: NativeAuthUser;
 }
+
+export interface NativeTwoFactorPendingResponse {
+  requiresTwoFactor: true;
+  pendingToken: string;
+}
+
+export type NativeRedeemResponse = NativeSessionResponse | NativeTwoFactorPendingResponse;
+
+export interface DevicePairingPreview {
+  pairingCode: string;
+  status: 'pending' | 'expired' | 'approved' | 'redeemed';
+  expiresAt: string;
+  deviceName: string | null;
+  devicePlatform: string | null;
+}

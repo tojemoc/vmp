@@ -1,4 +1,4 @@
-import type { NativeSessionResponse } from '@vmp/shared';
+import type { NativeRedeemResponse, NativeSessionResponse } from '@vmp/shared';
 import { apiUrl } from '../config';
 
 export class ApiError extends Error {
@@ -47,7 +47,7 @@ export async function requestMagicLink(email: string, redirect = '/'): Promise<v
   });
 }
 
-export async function redeemNativeMagicLink(token: string): Promise<NativeSessionResponse> {
+export async function redeemNativeMagicLink(token: string): Promise<NativeRedeemResponse> {
   return apiFetch('/api/auth/native/redeem', {
     method: 'POST',
     body: JSON.stringify({ token }),
@@ -72,8 +72,13 @@ export async function listPublishedVideos(accessToken: string) {
   return apiFetch('/api/videos', { method: 'GET' }, accessToken);
 }
 
+/** Preferred path: JWT supplies userId (see handleVideoAccess). */
 export async function getVideoAccess(videoId: string, accessToken: string) {
-  return apiFetch(`/api/video-access/${encodeURIComponent(videoId)}`, { method: 'GET' }, accessToken);
+  return apiFetch(
+    `/api/video-access/${encodeURIComponent(videoId)}`,
+    { method: 'GET' },
+    accessToken,
+  );
 }
 
 export async function registerNativePushDevice(
@@ -83,6 +88,14 @@ export async function registerNativePushDevice(
   return apiFetch(
     '/api/push/device',
     { method: 'POST', body: JSON.stringify(payload) },
+    accessToken,
+  );
+}
+
+export async function previewDevicePairing(accessToken: string, pairingCode: string) {
+  return apiFetch(
+    '/api/auth/device-pairing/preview',
+    { method: 'POST', body: JSON.stringify({ pairingCode }) },
     accessToken,
   );
 }

@@ -5,16 +5,14 @@
 
 import type { NativePushPlatform } from '@vmp/shared';
 import { hashToken, issueNativeSessionTokens, requireAuth } from './auth.js';
+import { getDb } from './d1Session.js';
 
 const PAIRING_TTL_SEC = 10 * 60;
 const PAIRING_POLL_INTERVAL_SEC = 2;
 const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-function getDb(env: any) {
-  const db = env.DB || env.video_subscription_db;
-  if (!db) throw new Error('D1 binding not found');
-  return db;
-}
+const PAIRING_START_LIMIT_PER_IP = 10;
+const PAIRING_POLL_LIMIT_PER_IP = 120;
+const PAIRING_CLEANUP_GRACE_SEC = 24 * 60 * 60;
 
 function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
@@ -30,6 +28,52 @@ function errorResponse(
   code?: string,
 ) {
   return jsonResponse(code ? { error, code } : { error }, status, corsHeaders);
+}
+
+function clientIp(request: Request): string {
+  return request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
+}
+
+async function isPairingRateLimited(
+  env: any,
+  kind: 'start' | 'poll',
+  request: Request,
+): Promise<boolean> {
+  const kv = env.RATE_LIMIT_KV;
+  if (!kv) return false;
+  try {
+    const ip = clientIp(request);
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const fingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
+    const key = `auth:device-pairing:${kind}:${fingerprint}`;
+    const limit = kind === 'start' ? PAIRING_START_LIMIT_PER_IP : PAIRING_POLL_LIMIT_PER_IP;
+    const currentRaw = await kv.get(key);
+    const current = Number.parseInt(currentRaw ?? '0', 10);
+    const count = Number.isFinite(current) ? current : 0;
+    if (count >= limit) return true;
+    await kv.put(key, String(count + 1), { expirationTtl: 120 });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function cleanupExpiredPairingSessions(db: any): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - PAIRING_CLEANUP_GRACE_SEC * 1000).toISOString();
+    await db
+      .prepare(`DELETE FROM device_pairing_sessions WHERE datetime(expires_at) < datetime(?)`)
+      .bind(cutoff)
+      .run();
+  } catch {
+    // Best-effort retention hygiene; never break pairing.
+  }
+}
+
+function normalizeOptionalLabel(raw: unknown, maxLen: number): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().slice(0, maxLen);
+  return trimmed || null;
 }
 
 /** Human-friendly 8-char pairing code (no ambiguous 0/O/1/I). */
@@ -61,11 +105,26 @@ export function normalizeNativePushPlatform(raw: unknown): NativePushPlatform | 
 /**
  * POST /api/auth/device-pairing/start
  * TV/device begins login — displays pairingCode for the user to enter on phone/web.
+ * Optional body: { deviceName?, devicePlatform? } for approval preview.
  */
 export async function handleDevicePairingStart(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return errorResponse('Method not allowed', 405, corsHeaders);
+  if (await isPairingRateLimited(env, 'start', request)) {
+    return errorResponse(
+      'Too many pairing attempts. Try again shortly.',
+      429,
+      corsHeaders,
+      'rate_limited',
+    );
+  }
+
+  const body = await request.json().catch(() => null);
+  const deviceName = normalizeOptionalLabel(body?.deviceName, 80);
+  const devicePlatform = normalizeOptionalLabel(body?.devicePlatform, 40);
 
   const db = getDb(env);
+  await cleanupExpiredPairingSessions(db);
+
   const pairingCode = generatePairingCode();
   const codeHash = await hashToken(pairingCode);
   const id = crypto.randomUUID();
@@ -73,10 +132,11 @@ export async function handleDevicePairingStart(request: any, env: any, corsHeade
 
   await db
     .prepare(`
-      INSERT INTO device_pairing_sessions (id, code_hash, status, expires_at)
-      VALUES (?, ?, 'pending', ?)
+      INSERT INTO device_pairing_sessions
+        (id, code_hash, status, device_name, device_platform, expires_at)
+      VALUES (?, ?, 'pending', ?, ?, ?)
     `)
-    .bind(id, codeHash, expiresAt)
+    .bind(id, codeHash, deviceName, devicePlatform, expiresAt)
     .run();
 
   return jsonResponse(
@@ -86,6 +146,58 @@ export async function handleDevicePairingStart(request: any, env: any, corsHeade
       pollIntervalSeconds: PAIRING_POLL_INTERVAL_SEC,
     },
     201,
+    corsHeaders,
+  );
+}
+
+/**
+ * POST /api/auth/device-pairing/preview  body: { pairingCode }
+ * Logged-in phone/web inspects device context before approving.
+ */
+export async function handleDevicePairingPreview(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') return errorResponse('Method not allowed', 405, corsHeaders);
+
+  try {
+    await requireAuth(request, env);
+  } catch {
+    return errorResponse('Unauthorized', 401, corsHeaders);
+  }
+
+  const body = await request.json().catch(() => null);
+  const pairingCode = normalizePairingCode(body?.pairingCode ?? body?.code);
+  if (!pairingCode) {
+    return errorResponse('pairingCode is required', 400, corsHeaders, 'invalid_code');
+  }
+
+  const db = getDb(env);
+  const codeHash = await hashToken(pairingCode);
+  const row = await db
+    .prepare(`
+      SELECT status, expires_at, device_name, device_platform, redeemed_at
+      FROM device_pairing_sessions
+      WHERE code_hash = ?
+      LIMIT 1
+    `)
+    .bind(codeHash)
+    .first();
+
+  if (!row) {
+    return errorResponse('Unknown or invalid pairing code', 404, corsHeaders, 'not_found');
+  }
+
+  let status = String(row.status || 'pending');
+  if (row.redeemed_at) status = 'redeemed';
+  else if (status === 'pending' && new Date(row.expires_at) < new Date()) status = 'expired';
+
+  return jsonResponse(
+    {
+      pairingCode,
+      status,
+      expiresAt: row.expires_at,
+      deviceName: row.device_name ?? null,
+      devicePlatform: row.device_platform ?? null,
+    },
+    200,
     corsHeaders,
   );
 }
@@ -115,7 +227,7 @@ export async function handleDevicePairingComplete(request: any, env: any, corsHe
 
   const row = await db
     .prepare(`
-      SELECT id, status, expires_at, redeemed_at
+      SELECT id, status, expires_at, redeemed_at, device_name, device_platform
       FROM device_pairing_sessions
       WHERE code_hash = ?
       LIMIT 1
@@ -162,7 +274,15 @@ export async function handleDevicePairingComplete(request: any, env: any, corsHe
     return errorResponse('Pairing code could not be approved', 409, corsHeaders, 'race');
   }
 
-  return jsonResponse({ ok: true }, 200, corsHeaders);
+  return jsonResponse(
+    {
+      ok: true,
+      deviceName: row.device_name ?? null,
+      devicePlatform: row.device_platform ?? null,
+    },
+    200,
+    corsHeaders,
+  );
 }
 
 /**
@@ -171,6 +291,14 @@ export async function handleDevicePairingComplete(request: any, env: any, corsHe
  */
 export async function handleDevicePairingPoll(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return errorResponse('Method not allowed', 405, corsHeaders);
+  if (await isPairingRateLimited(env, 'poll', request)) {
+    return errorResponse(
+      'Too many pairing polls. Try again shortly.',
+      429,
+      corsHeaders,
+      'rate_limited',
+    );
+  }
 
   const body = await request.json().catch(() => null);
   const pairingCode = normalizePairingCode(body?.pairingCode ?? body?.code);
@@ -271,30 +399,53 @@ export async function handleNativePushRegister(request: any, env: any, corsHeade
   if (!platform) {
     return errorResponse('platform must be ios or android', 400, corsHeaders, 'invalid_platform');
   }
-  if (!token || token.length > 4096) {
+  if (!token) {
     return errorResponse('token is required', 400, corsHeaders, 'invalid_token');
+  }
+  if (token.length > 4096) {
+    return errorResponse('token is too long', 400, corsHeaders, 'token_too_long');
   }
 
   const db = getDb(env);
-  const id = crypto.randomUUID();
+  const existing = await db
+    .prepare(`SELECT id, user_id FROM native_push_tokens WHERE platform = ? AND token = ? LIMIT 1`)
+    .bind(platform, token)
+    .first();
 
-  await db
-    .prepare(`
-      INSERT INTO native_push_tokens (id, user_id, platform, token, device_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(platform, token) DO UPDATE SET
-        user_id = excluded.user_id,
-        device_id = COALESCE(excluded.device_id, native_push_tokens.device_id),
-        updated_at = CURRENT_TIMESTAMP
-    `)
-    .bind(id, user.sub, platform, token, deviceId)
-    .run();
+  if (existing && existing.user_id !== user.sub) {
+    return errorResponse(
+      'Push token is already registered to another account',
+      409,
+      corsHeaders,
+      'token_owned',
+    );
+  }
+
+  if (existing) {
+    await db
+      .prepare(`
+        UPDATE native_push_tokens
+        SET device_id = COALESCE(?, device_id),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+      `)
+      .bind(deviceId, existing.id, user.sub)
+      .run();
+  } else {
+    await db
+      .prepare(`
+        INSERT INTO native_push_tokens (id, user_id, platform, token, device_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `)
+      .bind(crypto.randomUUID(), user.sub, platform, token, deviceId)
+      .run();
+  }
 
   return jsonResponse({ ok: true }, 201, corsHeaders);
 }
 
 /**
- * DELETE /api/push/device  body: { token } | { deviceId }
+ * DELETE /api/push/device  body or query: { token } | { deviceId }
  */
 export async function handleNativePushUnregister(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'DELETE') return errorResponse('Method not allowed', 405, corsHeaders);
@@ -307,8 +458,13 @@ export async function handleNativePushUnregister(request: any, env: any, corsHea
   }
 
   const body = await request.json().catch(() => null);
-  const token = typeof body?.token === 'string' ? body.token.trim() : '';
-  const deviceId = typeof body?.deviceId === 'string' ? body.deviceId.trim() : '';
+  const url = new URL(request.url);
+  const token = (
+    typeof body?.token === 'string' ? body.token : url.searchParams.get('token') || ''
+  ).trim();
+  const deviceId = (
+    typeof body?.deviceId === 'string' ? body.deviceId : url.searchParams.get('deviceId') || ''
+  ).trim();
 
   if (!token && !deviceId) {
     return errorResponse('token or deviceId is required', 400, corsHeaders);

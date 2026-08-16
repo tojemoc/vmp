@@ -595,8 +595,9 @@ async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsH
  * POST /api/auth/native/redeem  body: { token }
  *
  * Same magic-link consume as GET /api/auth/verify, but returns refreshToken in
- * the JSON body for native apps (Keychain / Keystore). Also sets the refresh
- * cookie for clients that can use it.
+ * the JSON body for native apps (Keychain / Keystore). Does **not** set the
+ * refresh cookie — native clients must use the JSON body token with
+ * POST /api/auth/refresh.
  */
 export async function handleNativeRedeemMagicLink(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -613,7 +614,15 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
       level: 'warn',
       error_code: 'invalid_or_used',
     });
-    return authJson({ error: phase.message }, 401, corsHeaders);
+    return authJson(
+      {
+        error:
+          'Sign-in link is invalid, expired, or was already used (including on another device). Request a new one.',
+        code: 'invalid_or_used',
+      },
+      401,
+      corsHeaders,
+    );
   }
   if (phase.tag === 'totp_pending') {
     return authJson(
@@ -626,11 +635,11 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
   const db = getDb(env);
   const session = await issueNativeSessionTokens(phase.user, env, db);
   const headers = buildResponseHeaders(corsHeaders);
-  headers.set('Set-Cookie', buildRefreshCookie(session.refreshToken, REFRESH_TOKEN_TTL));
   log({
     service: 'auth',
     event: 'native_magic_link_redeem_success',
     level: 'info',
+    totp_required: Boolean(phase.user.totp_enabled),
   });
   return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
 }
@@ -639,12 +648,14 @@ async function readRefreshTokenFromRequest(request: any): Promise<{
   rawToken: string | null;
   source: 'cookie' | 'body' | null;
 }> {
-  const fromCookie = getRefreshTokenFromCookie(request);
-  if (fromCookie) return { rawToken: fromCookie, source: 'cookie' };
-
+  // Prefer JSON body when present so native clients that also receive a cookie
+  // (e.g. WebView hybrids) still get refreshToken rotation in the response body.
   const body = await request.json().catch(() => null);
   const fromBody = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
   if (fromBody) return { rawToken: fromBody, source: 'body' };
+
+  const fromCookie = getRefreshTokenFromCookie(request);
+  if (fromCookie) return { rawToken: fromCookie, source: 'cookie' };
   return { rawToken: null, source: null };
 }
 

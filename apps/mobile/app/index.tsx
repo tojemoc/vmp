@@ -1,13 +1,6 @@
 import { Link, Redirect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { listPublishedVideos } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
 

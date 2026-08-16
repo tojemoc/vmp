@@ -52,9 +52,10 @@ Associated Domains / Digital Asset Links files are published with the Tier 1 app
 
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
-| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. |
+| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. IP rate-limited. |
+| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. |
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
-| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). |
+| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited. |
 
 ### Native push registration (Tier 1+)
 
@@ -68,18 +69,33 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 ### Reused as-is
 
 - `POST /api/auth/magic-link` — email still contains the web verify URL; the installed app intercepts it.
-- `GET /api/videos`, video-access / proxy, offline device + download APIs.
+- `GET /api/videos`, `GET /api/video-access/{videoId}` (preferred; user from JWT), video proxy, offline device + download APIs.
+  Legacy `GET /api/video-access/{userId}/{videoId}` remains for old clients only.
 
 ## Tier 1 PoC success criteria
 
 1. Magic link opens the **installed** app and yields a session **without** push-login.
-2. Device push token registers against `/api/push/device`.
+2. Device push token registers against `/api/push/device` (delivery deferred).
 3. One published video: online HLS + offline authorize/download/play using existing offline APIs.
 4. Web PWA unchanged (including existing iOS push-login for Home Screen users until a later deprecation decision).
 
-## Explicit non-goals (PoC)
+## Explicit non-goals / known PoC gaps
 
-Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS in Phase 1.
+- Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS in Phase 1.
+- **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
+- **APNs/FCM delivery** — token storage only; do not request notification permission until send path exists.
+- **Portrait-only orientation** and **background audio disabled** in `app.json` — tracked open issues before store submission.
+- **Approve TV in home header** — PoC discoverability; move to settings/profile before production.
+- **`apps/mobile` outside npm workspaces** — promote into root workspaces **before first TestFlight / internal Play build**.
+
+## Open PoC issues (track before store)
+
+1. Landscape / rotation support for watch.
+2. Optional background audio / PiP policy for long-form.
+3. Native TOTP entry + `/api/auth/2fa/verify` wiring.
+4. APNs/FCM send path + permission UX.
+5. Publish AASA + Digital Asset Links for production Universal Links.
+6. Workspace promotion + Nx `start` target for mobile.
 
 ## Package layout
 
@@ -93,3 +109,4 @@ Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shi
 ## Decision log
 
 - **2026-08**: Agree Expo + thin native modules for Tier 1; `react-native-tvos` for Tier 2; separate web clients for Tier 3; pairing-code auth for all TV; Phase 0 contracts before Tier 1 UI polish.
+- **2026-08 (review)**: Prefer body `refreshToken` over cookie when both present; native redeem does not set refresh cookie; pairing preview + device labels; push token ownership check; document 2FA/push/workspace gaps.

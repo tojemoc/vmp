@@ -1,13 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { requestMagicLink } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
 
