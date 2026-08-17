@@ -1,6 +1,7 @@
 import type { NativeAuthUser, NativeSessionResponse } from '@vmp/shared';
 import * as SecureStore from 'expo-secure-store';
 import { ApiError, logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
+import { customSchemeDeepLinksAllowed } from '../features';
 
 const ACCESS_KEY = 'vmp.accessToken';
 const REFRESH_KEY = 'vmp.refreshToken';
