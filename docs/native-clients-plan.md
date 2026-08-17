@@ -56,10 +56,10 @@ Production note: prefer exchanging a one-time handoff code (bound to app install
 
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
-| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. IP rate-limited. |
-| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. IP **and** per-code rate limited. |
+| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. IP rate-limited (`admin_settings.pairing_start_limit_per_ip`, default 10/min). |
+| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. IP (`pairing_preview_limit_per_ip`, default 30/min) **and** per-code (`pairing_preview_limit_per_code`, default 8/min) rate limited. |
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
-| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited. |
+| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited (`pairing_poll_limit_per_ip`, default 120/min). |
 
 **TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after a successful redeem.
 
@@ -142,4 +142,4 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.
 - **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels; poll retry vs terminal errors; AASA not live yet.
 - **2026-08 (review 4)**: Approve TV moved under Settings; checklist requires named maintainer sign-off; DELETE `/api/push/device` accepts body or query.
-- **2026-08 (review 5)**: `vmp://` opt-in default off; query token redaction; preview per-code rate limit; self-reported label copy.
+- **2026-08 (review 6)**: Pairing rate limits moved to `admin_settings` (migration 0046).

@@ -39,6 +39,7 @@ type PushRow = {
 class FakePairingDb {
   sessions: PairingRow[] = [];
   pushTokens: PushRow[] = [];
+  settings = new Map<string, string>([['settings_changed_at', '0']]);
   users = new Map<string, { id: string; email: string; role: string; totp_enabled: number }>();
 
   prepare(sql: string) {
@@ -135,6 +136,14 @@ class FakePairingDb {
             return { meta: { changes: 0 } };
           },
           async first() {
+            if (
+              normalized.includes('FROM admin_settings') &&
+              normalized.includes('WHERE key = ?')
+            ) {
+              const key = String(args[0]);
+              if (!db.settings.has(key)) return null;
+              return { value: db.settings.get(key) };
+            }
             if (
               normalized.includes('device_pairing_sessions') &&
               normalized.includes('code_hash')
@@ -398,6 +407,47 @@ describe('device pairing handlers', () => {
     assert.equal(limited.status, 429);
     const body = await limited.json();
     assert.equal(body.code, 'rate_limited');
+  });
+
+  it('reads pairing preview per-code limit from admin_settings', async () => {
+    const db = new FakePairingDb();
+    db.settings.set('pairing_preview_limit_per_code', '2');
+    const env = { DB: db, JWT_SECRET, RATE_LIMIT_KV: new FakeKv() };
+    const startRes = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        body: JSON.stringify({ deviceName: 'Office', devicePlatform: 'androidtv' }),
+      }),
+      env,
+      {},
+    );
+    const { pairingCode } = await startRes.json();
+    const headers = await authHeader('user-1');
+
+    for (let i = 0; i < 2; i++) {
+      const res = await handleDevicePairingPreview(
+        new Request('https://example.com/api/auth/device-pairing/preview', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pairingCode }),
+        }),
+        env,
+        {},
+      );
+      assert.equal(res.status, 200, `preview ${i + 1} should succeed`);
+      await res.json();
+    }
+
+    const limited = await handleDevicePairingPreview(
+      new Request('https://example.com/api/auth/device-pairing/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(limited.status, 429);
   });
 
   it('rejects complete without auth', async () => {

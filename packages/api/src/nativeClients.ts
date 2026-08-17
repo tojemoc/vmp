@@ -7,15 +7,44 @@ import type { NativePushPlatform } from '@vmp/shared';
 import { hashToken, issueNativeSessionTokens, requireAuth } from './auth.js';
 import { getDb } from './d1Session.js';
 import { log } from './logger.js';
+import { getSetting } from './settingsStore.js';
 
 const PAIRING_TTL_SEC = 10 * 60;
 const PAIRING_POLL_INTERVAL_SEC = 2;
 const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const PAIRING_START_LIMIT_PER_IP = 10;
-const PAIRING_POLL_LIMIT_PER_IP = 120;
-const PAIRING_PREVIEW_LIMIT_PER_IP = 30;
-const PAIRING_PREVIEW_LIMIT_PER_CODE = 8;
 const PAIRING_CLEANUP_GRACE_SEC = 24 * 60 * 60;
+
+const PAIRING_LIMIT_SETTINGS = {
+  start: { key: 'pairing_start_limit_per_ip', defaultValue: '10' },
+  poll: { key: 'pairing_poll_limit_per_ip', defaultValue: '120' },
+  preview: { key: 'pairing_preview_limit_per_ip', defaultValue: '30' },
+  previewCode: { key: 'pairing_preview_limit_per_code', defaultValue: '8' },
+} as const;
+
+function parsePairingLimit(raw: unknown, fallback: string): number {
+  const parsed = Number.parseInt(String(raw ?? fallback), 10);
+  const fallbackParsed = Number.parseInt(fallback, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackParsed;
+}
+
+/** Read pairing rate limits from admin_settings (see migration 0046). */
+async function getPairingLimit(
+  env: any,
+  kind: keyof typeof PAIRING_LIMIT_SETTINGS,
+): Promise<number> {
+  const { key, defaultValue } = PAIRING_LIMIT_SETTINGS[kind];
+  try {
+    const raw = await getSetting(env, key, { ttlSeconds: 60, defaultValue });
+    return parsePairingLimit(raw, defaultValue);
+  } catch {
+    try {
+      const raw = await getSetting(env, key, { ttlSeconds: 5, defaultValue });
+      return parsePairingLimit(raw, defaultValue);
+    } catch {
+      return parsePairingLimit(defaultValue, defaultValue);
+    }
+  }
+}
 
 function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
@@ -49,12 +78,7 @@ async function isPairingRateLimited(
     const minuteBucket = Math.floor(Date.now() / 60000);
     const fingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
     const key = `auth:device-pairing:${kind}:${fingerprint}`;
-    const limit =
-      kind === 'start'
-        ? PAIRING_START_LIMIT_PER_IP
-        : kind === 'poll'
-          ? PAIRING_POLL_LIMIT_PER_IP
-          : PAIRING_PREVIEW_LIMIT_PER_IP;
+    const limit = await getPairingLimit(env, kind);
     const currentRaw = await kv.get(key);
     const current = Number.parseInt(currentRaw ?? '0', 10);
     const count = Number.isFinite(current) ? current : 0;
@@ -75,7 +99,8 @@ async function isPairingPreviewCodeRateLimited(env: any, codeHash: string): Prom
     const currentRaw = await kv.get(key);
     const current = Number.parseInt(currentRaw ?? '0', 10);
     const count = Number.isFinite(current) ? current : 0;
-    if (count >= PAIRING_PREVIEW_LIMIT_PER_CODE) return true;
+    const limit = await getPairingLimit(env, 'previewCode');
+    if (count >= limit) return true;
     await kv.put(key, String(count + 1), { expirationTtl: 120 });
     return false;
   } catch {
