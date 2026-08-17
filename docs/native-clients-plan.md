@@ -23,7 +23,7 @@ TVs never open emailed magic links. Pairing is the correct auth pattern for Tier
 
 | Phase | Scope | Goal |
 | --- | --- | --- |
-| **0** | API contracts | Native magic-link redeem (refresh token in JSON), body-based refresh/logout, device push token register, device-pairing start/complete/poll. Unblocks Tier 2/3 later. |
+| **0** | API contracts | Native magic-link redeem (refresh token in JSON), body-based refresh/logout, device push token register, device-pairing start/preview/complete/poll. Unblocks Tier 2/3 later. |
 | **1** | Tier 1 PoC | Expo app: handoff, push register, catalog + one video online, offline download path wired to existing APIs. |
 | **2** | Tier 2 PoC | RN-tvOS fork on same app; focus nav for catalog + watch; pairing-code login; system player. |
 | **3** | Tier 3 PoC | **One** of Tizen or webOS as proof; lightweight web client against `@vmp/api`; pairing auth; no RN. |
@@ -57,6 +57,8 @@ Associated Domains / Digital Asset Links files are published with the Tier 1 app
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
 | `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited. |
 
+**TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after that point. If the TV loses the HTTP response (network drop, app kill), it cannot poll again successfully — the code returns `409 already_used`. **Recovery:** call `start` again and show a new code to the user. TV clients should persist tokens immediately on a `200` + `ready` body and treat non-2xx after approve as “start over.”
+
 ### Native push registration (Tier 1+)
 
 | Method | Path | Auth | Body |
@@ -65,6 +67,8 @@ Associated Domains / Digital Asset Links files are published with the Tier 1 app
 | `DELETE` | `/api/push/device` | Bearer JWT | `{ token }` or `{ deviceId }` — remove. |
 
 Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs/FCM send path) is a follow-up after tokens are stored.
+
+**Permission gate (mobile):** `apps/mobile/src/features.ts` exports `nativePushEnabled`, driven by build-time `EXPO_PUBLIC_NATIVE_PUSH_ENABLED` (`1` / `true` only). Default is **off**. Any notification permission prompt or token registration UI must check this flag; flip it only when the server send path ships in the same release.
 
 ### Reused as-is
 
@@ -83,7 +87,7 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 
 - Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS in Phase 1.
 - **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
-- **APNs/FCM delivery** — token storage only; do not request notification permission until send path exists.
+- **APNs/FCM delivery** — token storage only; `nativePushEnabled` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`) stays false until send path exists.
 - **Portrait-only orientation** and **background audio disabled** in `app.json` — tracked open issues before store submission.
 - **Approve TV in home header** — PoC discoverability; move to settings/profile before production.
 - **`apps/mobile` outside npm workspaces** — promote into root workspaces **before first TestFlight / internal Play build**.
@@ -110,3 +114,4 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 
 - **2026-08**: Agree Expo + thin native modules for Tier 1; `react-native-tvos` for Tier 2; separate web clients for Tier 3; pairing-code auth for all TV; Phase 0 contracts before Tier 1 UI polish.
 - **2026-08 (review)**: Prefer body `refreshToken` over cookie when both present; native redeem does not set refresh cookie; pairing preview + device labels; push token ownership check; document 2FA/push/workspace gaps.
+- **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.

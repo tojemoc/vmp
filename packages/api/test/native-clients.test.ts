@@ -134,7 +134,10 @@ class FakePairingDb {
             return { meta: { changes: 0 } };
           },
           async first() {
-            if (normalized.includes('device_pairing_sessions') && normalized.includes('code_hash')) {
+            if (
+              normalized.includes('device_pairing_sessions') &&
+              normalized.includes('code_hash')
+            ) {
               const codeHash = String(args[0]);
               const row = db.sessions.find((s) => s.code_hash === codeHash);
               if (!row) return null;
@@ -299,6 +302,34 @@ describe('device pairing handlers', () => {
     assert.equal(pollAgain.status, 409);
   });
 
+  it('rejects preview without auth', async () => {
+    const env = { DB: new FakePairingDb(), JWT_SECRET };
+    const res = await handleDevicePairingPreview(
+      new Request('https://example.com/api/auth/device-pairing/preview', {
+        method: 'POST',
+        body: JSON.stringify({ pairingCode: 'ABCDEFGH' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(res.status, 401);
+  });
+
+  it('rejects preview for unknown pairing code', async () => {
+    const env = { DB: new FakePairingDb(), JWT_SECRET };
+    const headers = await authHeader('user-1');
+    const res = await handleDevicePairingPreview(
+      new Request('https://example.com/api/auth/device-pairing/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairingCode: 'ABCDEFGH' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(res.status, 404);
+  });
+
   it('rejects complete without auth', async () => {
     const env = { DB: new FakePairingDb(), JWT_SECRET };
     const res = await handleDevicePairingComplete(
@@ -367,6 +398,19 @@ describe('native push handlers', () => {
       {},
     );
     assert.equal(takeover.status, 409);
+
+    const reregister = await handleNativePushRegister(
+      new Request('https://example.com/api/push/device', {
+        method: 'POST',
+        headers: headersA,
+        body: JSON.stringify({ platform: 'ios', token: 'tok-1', deviceId: 'phone-a-v2' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(reregister.status, 201);
+    assert.equal(db.pushTokens.length, 1);
+    assert.equal(db.pushTokens[0].device_id, 'phone-a-v2');
 
     const del = await handleNativePushUnregister(
       new Request('https://example.com/api/push/device?token=tok-1', {

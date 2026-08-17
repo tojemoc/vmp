@@ -10,16 +10,16 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 - Secure session storage (`expo-secure-store`)
 - Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
 - Device pairing **Approve TV** screen (`preview` + `complete`)
-- Native push **token register API** only — **do not** prompt for notification permission until APNs/FCM delivery ships
+- Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)
 
 ### Explicit PoC blockers / gaps
 
 | Gap | Who it blocks | Notes |
 | --- | --- | --- |
 | No native TOTP UI | Editors/admins (2FA-enforced roles) | API returns `requiresTwoFactor`; app shows an explicit error. Use a non-2FA viewer for PoC testing, or add TOTP before staff testing. |
-| No APNs/FCM send path | Anyone expecting push content | Token register exists; permission prompt must stay off until delivery lands. |
+| No APNs/FCM send path | Anyone expecting push content | Token register exists; `EXPO_PUBLIC_NATIVE_PUSH_ENABLED` must stay unset until delivery lands. |
 | Portrait-only + no background audio | UX polish | Tracked in plan “Open PoC issues”; change before store submission. |
-| Approve TV in home header | Infrequent action | PoC discoverability only; move to settings/profile before production. |
+| Approve TV in home header | Infrequent action | PoC discoverability only — see plan; move to settings/profile before production. |
 
 ## Why not an npm workspace member?
 
@@ -61,3 +61,7 @@ Magic-link tokens are single-use: if the link was opened on another device first
 1. Enter the code shown on the TV.
 2. **Preview** → `POST /api/auth/device-pairing/preview` (device name/platform).
 3. **Approve** → `POST /api/auth/device-pairing/complete`.
+
+## Native push (when enabled)
+
+Set `EXPO_PUBLIC_NATIVE_PUSH_ENABLED=1` only in builds where APNs/FCM delivery is live. Code must check `nativePushEnabled` from `src/features.ts` before calling `registerNativePushDevice` or requesting OS notification permission.

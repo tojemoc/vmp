@@ -1,5 +1,6 @@
 import type { NativeRedeemResponse, NativeSessionResponse } from '@vmp/shared';
 import { apiUrl } from '../config';
+import { nativePushEnabled } from './features';
 
 export class ApiError extends Error {
   status: number;
@@ -85,6 +86,11 @@ export async function registerNativePushDevice(
   accessToken: string,
   payload: { platform: 'ios' | 'android'; token: string; deviceId?: string },
 ) {
+  if (!nativePushEnabled) {
+    throw new Error(
+      'Native push is disabled (set EXPO_PUBLIC_NATIVE_PUSH_ENABLED when delivery ships).',
+    );
+  }
   return apiFetch(
     '/api/push/device',
     { method: 'POST', body: JSON.stringify(payload) },

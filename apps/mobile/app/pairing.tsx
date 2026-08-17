@@ -4,10 +4,21 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { completeDevicePairing, previewDevicePairing } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
 
+/** Matches server normalizePairingCode (packages/api/src/nativeClients.ts). */
+function normalizePairingCode(raw: string): string | null {
+  const normalized = raw
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (normalized.length < 6 || normalized.length > 12) return null;
+  return normalized;
+}
+
 /** Phone side of Tier 2/3 pairing — preview device context, then approve. */
 export default function PairingScreen() {
   const { session, booting } = useSession();
   const [code, setCode] = useState('');
+  const [previewedCode, setPreviewedCode] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     deviceName: string | null;
     devicePlatform: string | null;
@@ -15,6 +26,15 @@ export default function PairingScreen() {
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const normalizedInput = normalizePairingCode(code);
+  const canPreview = Boolean(normalizedInput) && !busy;
+  const canApprove =
+    Boolean(preview) &&
+    previewedCode !== null &&
+    normalizedInput === previewedCode &&
+    preview?.status === 'pending' &&
+    !busy;
 
   if (booting) {
     return (
@@ -28,32 +48,61 @@ export default function PairingScreen() {
     return <Redirect href="/login" />;
   }
 
+  function clearPreviewState() {
+    setPreview(null);
+    setPreviewedCode(null);
+  }
+
   async function onPreview() {
+    const normalized = normalizePairingCode(code);
+    if (!normalized) {
+      clearPreviewState();
+      setStatus('Enter a valid pairing code (6–12 characters).');
+      return;
+    }
+
     setBusy(true);
     setStatus(null);
+    const requestedCode = normalized;
     try {
-      const data = await previewDevicePairing(session!.accessToken, code);
+      const data = await previewDevicePairing(session!.accessToken, requestedCode);
+      if (normalizePairingCode(code) !== requestedCode) {
+        return;
+      }
+      setPreviewedCode(requestedCode);
       setPreview({
         deviceName: data.deviceName ?? null,
         devicePlatform: data.devicePlatform ?? null,
         status: data.status,
       });
     } catch (err) {
-      setPreview(null);
-      setStatus(err instanceof Error ? err.message : 'Preview failed');
+      if (normalizePairingCode(code) === requestedCode) {
+        clearPreviewState();
+        setStatus(err instanceof Error ? err.message : 'Preview failed');
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function onApprove() {
+    const normalized = normalizePairingCode(code);
+    if (!normalized || normalized !== previewedCode) {
+      setStatus('Preview the current code before approving.');
+      return;
+    }
+    if (preview?.status !== 'pending') {
+      setStatus('This pairing code is no longer pending approval.');
+      return;
+    }
+
     setBusy(true);
     setStatus(null);
     try {
-      await completeDevicePairing(session!.accessToken, code);
+      await completeDevicePairing(session!.accessToken, normalized);
       setStatus('Device approved. The TV can finish signing in.');
       setCode('');
-      setPreview(null);
+      clearPreviewState();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Approval failed');
     } finally {
@@ -65,8 +114,7 @@ export default function PairingScreen() {
     <View style={styles.container}>
       <Text style={styles.heading}>Approve a TV / device</Text>
       <Text style={styles.copy}>
-        PoC placement: home header action. Production should move this under settings/profile.
-        Preview the device label, then approve.
+        Enter the code shown on your TV, preview the device label, then approve to sign it in.
       </Text>
       <TextInput
         autoCapitalize="characters"
@@ -77,12 +125,12 @@ export default function PairingScreen() {
         value={code}
         onChangeText={(value) => {
           setCode(value);
-          setPreview(null);
+          clearPreviewState();
         }}
       />
       <Pressable
-        style={[styles.secondaryBtn, busy && styles.disabled]}
-        disabled={busy || code.trim().length < 6}
+        style={[styles.secondaryBtn, (!canPreview || busy) && styles.disabled]}
+        disabled={!canPreview}
         onPress={() => void onPreview()}
       >
         <Text style={styles.secondaryBtnText}>Preview</Text>
@@ -96,8 +144,8 @@ export default function PairingScreen() {
         </View>
       ) : null}
       <Pressable
-        style={[styles.primaryBtn, busy && styles.disabled]}
-        disabled={busy || code.trim().length < 6}
+        style={[styles.primaryBtn, !canApprove && styles.disabled]}
+        disabled={!canApprove}
         onPress={() => void onApprove()}
       >
         {busy ? (
