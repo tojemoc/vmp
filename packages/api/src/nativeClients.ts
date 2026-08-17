@@ -460,9 +460,41 @@ export async function handleDevicePairingPoll(request: any, env: any, corsHeader
     totp_enabled: row.totp_enabled,
     created_at: row.created_at,
   };
-  const session = await issueNativeSessionTokens(sessionUser, env, db);
 
-  return jsonResponse({ status: 'ready', ok: true, ...session }, 200, corsHeaders);
+  try {
+    const session = await issueNativeSessionTokens(sessionUser, env, db);
+    return jsonResponse({ status: 'ready', ok: true, ...session }, 200, corsHeaders);
+  } catch {
+    try {
+      await db
+        .prepare(`
+          UPDATE device_pairing_sessions
+          SET status = 'approved', redeemed_at = NULL
+          WHERE id = ? AND status = 'redeemed'
+        `)
+        .bind(row.id)
+        .run();
+    } catch {
+      log({
+        service: 'auth',
+        event: 'pairing_redeem_rollback_failed',
+        level: 'error',
+        http_path: '/api/auth/device-pairing/poll',
+      });
+    }
+    log({
+      service: 'auth',
+      event: 'pairing_session_issue_failed',
+      level: 'error',
+      http_path: '/api/auth/device-pairing/poll',
+    });
+    return errorResponse(
+      'Could not finish pairing. Retry shortly.',
+      503,
+      corsHeaders,
+      'session_issue_failed',
+    );
+  }
 }
 
 /**

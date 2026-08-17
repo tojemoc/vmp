@@ -43,6 +43,7 @@ class FakePairingDb {
   pushTokens: PushRow[] = [];
   settings = new Map<string, string>([['settings_changed_at', '0']]);
   users = new Map<string, { id: string; email: string; role: string; totp_enabled: number }>();
+  failRefreshInsert = false;
 
   prepare(sql: string) {
     const db = this;
@@ -69,6 +70,14 @@ class FakePairingDb {
                 completed_at: null,
                 redeemed_at: null,
               });
+              return { meta: { changes: 1 } };
+            }
+            if (normalized.includes('redeemed_at = NULL')) {
+              const id = String(args[0]);
+              const row = db.sessions.find((s) => s.id === id && s.status === 'redeemed');
+              if (!row) return { meta: { changes: 0 } };
+              row.status = 'approved';
+              row.redeemed_at = null;
               return { meta: { changes: 1 } };
             }
             if (normalized.includes("SET status = 'approved'")) {
@@ -99,6 +108,7 @@ class FakePairingDb {
               return { meta: { changes: 1 } };
             }
             if (normalized.startsWith('INSERT INTO refresh_tokens')) {
+              if (db.failRefreshInsert) throw new Error('D1 unavailable');
               return { meta: { changes: 1 } };
             }
             if (normalized.startsWith('INSERT INTO native_push_tokens')) {
@@ -390,6 +400,66 @@ describe('device pairing handlers', () => {
       {},
     );
     assert.equal(pollAgain.status, 409);
+  });
+
+  it('rolls back redeem when refresh token insert fails so poll can retry', async () => {
+    const db = new FakePairingDb();
+    db.users.set('user-1', {
+      id: 'user-1',
+      email: 'viewer@example.com',
+      role: 'viewer',
+      totp_enabled: 0,
+    });
+    const env = { DB: db, JWT_SECRET };
+    const startRes = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        body: JSON.stringify({ deviceName: 'Living Room', devicePlatform: 'tvos' }),
+      }),
+      env,
+      {},
+    );
+    const { pairingCode } = await startRes.json();
+    const headers = await authHeader('user-1');
+    const completeRes = await handleDevicePairingComplete(
+      new Request('https://example.com/api/auth/device-pairing/complete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(completeRes.status, 200);
+
+    db.failRefreshInsert = true;
+    const failedPoll = await handleDevicePairingPoll(
+      new Request('https://example.com/api/auth/device-pairing/poll', {
+        method: 'POST',
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(failedPoll.status, 503);
+    assert.equal((await failedPoll.json()).code, 'session_issue_failed');
+    assert.equal(db.sessions[0].status, 'approved');
+    assert.equal(db.sessions[0].redeemed_at, null);
+
+    db.failRefreshInsert = false;
+    const retryPoll = await handleDevicePairingPoll(
+      new Request('https://example.com/api/auth/device-pairing/poll', {
+        method: 'POST',
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(retryPoll.status, 200);
+    const retryBody = await retryPoll.json();
+    assert.equal(retryBody.status, 'ready');
+    assert.ok(retryBody.accessToken);
+    assert.ok(retryBody.refreshToken);
   });
 
   it('rejects preview without auth', async () => {
