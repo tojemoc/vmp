@@ -265,6 +265,9 @@ function getErrorField(error: unknown, key: string): unknown {
 }
 
 interface SegmentRateLimitBody {
+  mode?: string;
+  key?: string;
+  limit?: number;
   identifier?: string;
   videoId?: string;
   avgSegDur?: number | null;
@@ -284,9 +287,9 @@ function isClientDisconnectError(err: unknown, request: Request): boolean {
   return message.includes('abort') || message.includes('cancel') || message.includes('disconnect');
 }
 
-// ─── Durable Object for atomic segment rate limiting (Step 4c) ───────────────
+// ─── Durable Object for atomic rate limiting (HLS segments + device pairing) ─
 // Binding is configured in wrangler.json under durable_objects.bindings.
-// Used conditionally: only active when env.SEGMENT_RATE_LIMITER is present.
+// Used when env.SEGMENT_RATE_LIMITER is present. Pairing sends { mode: 'pairing', key, limit }.
 
 class SegmentRateLimiterDOBase {
   env: Record<string, unknown>;
@@ -310,6 +313,23 @@ class SegmentRateLimiterDOBase {
       }
       throw err;
     }
+    if (body.mode === 'pairing') {
+      const countKey =
+        typeof body.key === 'string' && body.key.trim() ? body.key.trim() : 'pairing:unknown';
+      const parsedLimit = Number(body.limit);
+      const limit = Number.isSafeInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 1;
+      const existing = Number((await this.state.storage.get<number>(countKey)) ?? 0);
+      if (existing >= limit) {
+        return new Response(JSON.stringify({ count: existing, limit, exceeded: true }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const count = await this.incrementAndScheduleCleanup(countKey);
+      return new Response(JSON.stringify({ count, limit, exceeded: count > limit }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const identifier = body.identifier ?? 'unknown';
     const videoId = body.videoId ?? 'unknown';
     const avgSegDur = body.avgSegDur ?? null;
@@ -319,8 +339,16 @@ class SegmentRateLimiterDOBase {
 
     const minute = Math.floor(Date.now() / 60000);
     const countKey = `${identifier}:${videoId}:${minute}`;
+    const count = await this.incrementAndScheduleCleanup(countKey);
+    const exceeded = count > threshold;
 
-    // Atomically increment the count
+    return new Response(JSON.stringify({ count, threshold, exceeded }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  async incrementAndScheduleCleanup(countKey: string): Promise<number> {
+    // DOs serialize requests per object — get+put is atomic here.
     let count = Number((await this.state.storage.get<number>(countKey)) ?? 0);
     count += 1;
     await this.state.storage.put(countKey, count);
@@ -334,12 +362,7 @@ class SegmentRateLimiterDOBase {
       await this.state.storage.put('pendingCleanupKeys', pending);
     }
     await this.state.storage.setAlarm(Date.now() + 120000);
-
-    const exceeded = count > threshold;
-
-    return new Response(JSON.stringify({ count, threshold, exceeded }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return count;
   }
 
   async alarm(): Promise<void> {

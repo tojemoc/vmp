@@ -11,8 +11,10 @@ import {
   handleNativePushUnregister,
   normalizeNativePushPlatform,
   normalizePairingCode,
+  parsePairingLimit,
   redactPushDeviceQuery,
 } from '../src/nativeClients.js';
+import { invalidateSetting } from '../src/settingsStore.js';
 
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
 
@@ -228,6 +230,21 @@ describe('normalizePairingCode', () => {
   });
 });
 
+describe('parsePairingLimit', () => {
+  it('accepts a complete positive integer', () => {
+    assert.equal(parsePairingLimit('8', '1'), 8);
+    assert.equal(parsePairingLimit(' 30 ', '1'), 30);
+  });
+
+  it('rejects trailing or non-numeric characters', () => {
+    assert.equal(parsePairingLimit('999junk', '8'), 8);
+    assert.equal(parsePairingLimit('10.5', '30'), 30);
+    assert.equal(parsePairingLimit('0', '10'), 10);
+    assert.equal(parsePairingLimit('-5', '10'), 10);
+    assert.equal(parsePairingLimit('', '120'), 120);
+  });
+});
+
 describe('normalizeNativePushPlatform', () => {
   it('accepts ios and android only', () => {
     assert.equal(normalizeNativePushPlatform('ios'), 'ios');
@@ -237,14 +254,50 @@ describe('normalizeNativePushPlatform', () => {
   });
 });
 
-class FakeKv {
-  map = new Map<string, string>();
-  async get(key: string) {
-    return this.map.get(key) ?? null;
+class FakeSegmentRateLimiter {
+  counts = new Map<string, number>();
+  idFromName(name: string) {
+    return { name };
   }
-  async put(key: string, value: string, _opts?: { expirationTtl?: number }) {
-    this.map.set(key, value);
+  get(id: { name: string }) {
+    const ns = this;
+    return {
+      async fetch(_input: string, init?: RequestInit) {
+        const body = JSON.parse(String(init?.body ?? '{}')) as {
+          mode?: string;
+          key?: string;
+          limit?: number;
+        };
+        if (body.mode !== 'pairing') {
+          return new Response(JSON.stringify({ error: 'unsupported' }), { status: 400 });
+        }
+        const key = String(body.key ?? id.name);
+        const limit = Number(body.limit);
+        const existing = ns.counts.get(key) ?? 0;
+        if (existing >= limit) {
+          return new Response(JSON.stringify({ count: existing, limit, exceeded: true }), {
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const count = existing + 1;
+        ns.counts.set(key, count);
+        return new Response(JSON.stringify({ count, limit, exceeded: count > limit }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    };
   }
+}
+
+async function pairingEnv(db: FakePairingDb, settingOverrides: Record<string, string> = {}) {
+  for (const [key, value] of Object.entries(settingOverrides)) {
+    db.settings.set(key, value);
+  }
+  const env = { DB: db, JWT_SECRET, SEGMENT_RATE_LIMITER: new FakeSegmentRateLimiter() };
+  for (const key of Object.keys(settingOverrides)) {
+    await invalidateSetting(env, key, false);
+  }
+  return env;
 }
 
 describe('redactPushDeviceQuery', () => {
@@ -369,7 +422,7 @@ describe('device pairing handlers', () => {
 
   it('rate-limits pairing preview per code', async () => {
     const db = new FakePairingDb();
-    const env = { DB: db, JWT_SECRET, RATE_LIMIT_KV: new FakeKv() };
+    const env = await pairingEnv(db);
     const startRes = await handleDevicePairingStart(
       new Request('https://example.com/api/auth/device-pairing/start', {
         method: 'POST',
@@ -411,8 +464,7 @@ describe('device pairing handlers', () => {
 
   it('reads pairing preview per-code limit from admin_settings', async () => {
     const db = new FakePairingDb();
-    db.settings.set('pairing_preview_limit_per_code', '2');
-    const env = { DB: db, JWT_SECRET, RATE_LIMIT_KV: new FakeKv() };
+    const env = await pairingEnv(db, { pairing_preview_limit_per_code: '2' });
     const startRes = await handleDevicePairingStart(
       new Request('https://example.com/api/auth/device-pairing/start', {
         method: 'POST',
@@ -448,6 +500,73 @@ describe('device pairing handlers', () => {
       {},
     );
     assert.equal(limited.status, 429);
+  });
+
+  it('falls back when pairing_preview_limit_per_code is not a full integer', async () => {
+    const db = new FakePairingDb();
+    const env = await pairingEnv(db, { pairing_preview_limit_per_code: '999junk' });
+    const startRes = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        body: JSON.stringify({ deviceName: 'Office', devicePlatform: 'androidtv' }),
+      }),
+      env,
+      {},
+    );
+    const { pairingCode } = await startRes.json();
+    const headers = await authHeader('user-1');
+
+    for (let i = 0; i < 8; i++) {
+      const res = await handleDevicePairingPreview(
+        new Request('https://example.com/api/auth/device-pairing/preview', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pairingCode }),
+        }),
+        env,
+        {},
+      );
+      assert.equal(res.status, 200, `preview ${i + 1} should succeed under default limit 8`);
+      await res.json();
+    }
+
+    const limited = await handleDevicePairingPreview(
+      new Request('https://example.com/api/auth/device-pairing/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(limited.status, 429);
+  });
+
+  it('rate-limits pairing start per IP from admin_settings', async () => {
+    const db = new FakePairingDb();
+    const env = await pairingEnv(db, { pairing_start_limit_per_ip: '1' });
+    const first = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '203.0.113.8' },
+        body: '{}',
+      }),
+      env,
+      {},
+    );
+    assert.equal(first.status, 201);
+    await first.json();
+
+    const second = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '203.0.113.8' },
+        body: '{}',
+      }),
+      env,
+      {},
+    );
+    assert.equal(second.status, 429);
   });
 
   it('rejects complete without auth', async () => {

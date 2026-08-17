@@ -73,5 +73,5 @@ These are **not** blockers for merging Phase 0 API + Expo scaffold PRs, but **ar
 | AASA / Digital Asset Links owner? | **Repository maintainer** deploys on the Cloudflare web Worker host (`FRONTEND_HOST`) and verifies with Apple/Google tools (**S5**). |
 | When does `vmp://` become dev-only? | **Default off.** Opt in with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` for local PoC. Store builds must not set it (**S6**). |
 | Unverified TV labels? | **S8** — UI caveat “Label set by the device”; attestation later |
-| S10 when? | **Before public pairing announcement**, not only store submission — per-code limits ship with this API |
+| S10 when? | **Before public pairing announcement**, not only store submission — per-code **and** per-IP limits ship with this API |
 | Refresh body vs cookie? | Body preferred when both present. Web must not POST JSON `{ refreshToken }` to `/api/auth/refresh`. Header-keyed format is a later additive change (not required for this merge). |

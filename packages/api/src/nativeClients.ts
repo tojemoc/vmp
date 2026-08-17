@@ -21,10 +21,13 @@ const PAIRING_LIMIT_SETTINGS = {
   previewCode: { key: 'pairing_preview_limit_per_code', defaultValue: '8' },
 } as const;
 
-function parsePairingLimit(raw: unknown, fallback: string): number {
-  const parsed = Number.parseInt(String(raw ?? fallback), 10);
+/** Accept only a complete positive integer string (reject "999junk"). */
+export function parsePairingLimit(raw: unknown, fallback: string): number {
   const fallbackParsed = Number.parseInt(fallback, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackParsed;
+  const text = String(raw ?? '').trim();
+  if (!/^[1-9]\d*$/.test(text)) return fallbackParsed;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallbackParsed;
 }
 
 /** Read pairing rate limits from admin_settings (see migration 0046). */
@@ -66,43 +69,52 @@ function clientIp(request: Request): string {
   return request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
 }
 
+/**
+ * Atomic increment via SegmentRateLimiterDO (same binding as HLS segment limits).
+ * Returns true when the request exceeds `limit`. Fail-open if the DO is missing.
+ */
+async function incrementPairingCounter(env: any, key: string, limit: number): Promise<boolean> {
+  const ns = env.SEGMENT_RATE_LIMITER;
+  if (!ns) return false;
+  try {
+    const doId = ns.idFromName(key);
+    const stub = ns.get(doId);
+    const response = await stub.fetch('https://rate-limit/pairing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'pairing', key, limit }),
+    });
+    if (!response.ok) return false;
+    const result = (await response.json()) as { exceeded?: boolean };
+    return Boolean(result.exceeded);
+  } catch {
+    return false;
+  }
+}
+
 async function isPairingRateLimited(
   env: any,
   kind: 'start' | 'poll' | 'preview',
   request: Request,
 ): Promise<boolean> {
-  const kv = env.RATE_LIMIT_KV;
-  if (!kv) return false;
   try {
     const ip = clientIp(request);
     const minuteBucket = Math.floor(Date.now() / 60000);
     const fingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
     const key = `auth:device-pairing:${kind}:${fingerprint}`;
     const limit = await getPairingLimit(env, kind);
-    const currentRaw = await kv.get(key);
-    const current = Number.parseInt(currentRaw ?? '0', 10);
-    const count = Number.isFinite(current) ? current : 0;
-    if (count >= limit) return true;
-    await kv.put(key, String(count + 1), { expirationTtl: 120 });
-    return false;
+    return incrementPairingCounter(env, key, limit);
   } catch {
     return false;
   }
 }
 
 async function isPairingPreviewCodeRateLimited(env: any, codeHash: string): Promise<boolean> {
-  const kv = env.RATE_LIMIT_KV;
-  if (!kv) return false;
   try {
     const minuteBucket = Math.floor(Date.now() / 60000);
     const key = `auth:device-pairing:preview-code:${codeHash}:${minuteBucket}`;
-    const currentRaw = await kv.get(key);
-    const current = Number.parseInt(currentRaw ?? '0', 10);
-    const count = Number.isFinite(current) ? current : 0;
     const limit = await getPairingLimit(env, 'previewCode');
-    if (count >= limit) return true;
-    await kv.put(key, String(count + 1), { expirationTtl: 120 });
-    return false;
+    return incrementPairingCounter(env, key, limit);
   } catch {
     return false;
   }
