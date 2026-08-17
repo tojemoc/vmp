@@ -45,7 +45,7 @@ jobs:
             // *after* this CodeRabbit comment's last edit, don't repeat it.
             // (Edits re-fire this workflow, so without this check every
             // edit would produce a new "@coderabbitai review" comment.)
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,

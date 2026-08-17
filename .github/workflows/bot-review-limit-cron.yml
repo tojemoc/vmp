@@ -27,6 +27,10 @@ permissions:
   issues: write
   pull-requests: read
 
+concurrency:
+  group: coderabbit-review-limit-retry
+  cancel-in-progress: false
+
 jobs:
   retry-rate-limited-reviews:
     runs-on: ubuntu-latest
