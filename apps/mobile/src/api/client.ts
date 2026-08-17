@@ -1,6 +1,6 @@
 import type { NativeRedeemResponse, NativeSessionResponse } from '@vmp/shared';
 import { apiUrl } from '../config';
-import { nativePushEnabled } from './features';
+import { nativePushEnabled } from '../features';
 
 export class ApiError extends Error {
   status: number;
