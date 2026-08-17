@@ -19,13 +19,15 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 | No native TOTP UI | Editors/admins (2FA-enforced roles) | API returns `requiresTwoFactor`; app shows an explicit error. Use a non-2FA viewer for PoC testing, or add TOTP before staff testing. |
 | No APNs/FCM send path | Anyone expecting push content | Token register exists; `EXPO_PUBLIC_NATIVE_PUSH_ENABLED` must stay unset until delivery lands. |
 | Portrait-only + no background audio | UX polish | Tracked in plan “Open PoC issues”; change before store submission. |
-| Approve TV in home header | Infrequent action | PoC discoverability only — see plan; move to settings/profile before production. |
+| Cross-device magic link | Same email opened on wrong device | Checklist **S7**; login copy warns single-use |
+| Unverified TV labels | Phishing at scale (future) | Checklist **S8** |
+| Approve TV in home header | Infrequent action | Checklist **S4** before store |
 
 ## Why not an npm workspace member?
 
 Root `package.json` workspaces are `packages/*` only. This app lives under `apps/mobile` so Expo’s dependency tree does not force a root lockfile rewrite during the PoC.
 
-**Promotion trigger:** join the root npm workspace (and CI) **before the first TestFlight / internal Play track build**. Until then, install locally:
+**Promotion trigger:** join the root npm workspace (and CI) **before the first TestFlight / internal Play track build**. Complete [`docs/native-clients-promotion-checklist.md`](../../docs/native-clients-promotion-checklist.md) — every **S-row** must pass or be waived.
 
 ```bash
 cd apps/mobile
@@ -47,8 +49,8 @@ Nx is not wired for this app while it sits outside workspaces; use the Expo CLI 
 
 | Scheme | Example | When |
 | --- | --- | --- |
-| Custom | `vmp://auth/verify?token=…` | Enough for early device testing without AASA |
-| Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | Required for production email → app handoff |
+| Custom | `vmp://auth/verify?token=…` | **Dev/PoC only** — before AASA is live; not for store builds (checklist S6) |
+| Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
 Replace `REPLACE_WITH_FRONTEND_HOST` in `app.json` before store builds. Publish Apple `apple-app-site-association` and Android Digital Asset Links on that host (same path the magic-link email already uses).
 
@@ -65,3 +67,5 @@ Magic-link tokens are single-use: if the link was opened on another device first
 ## Native push (when enabled)
 
 Set `EXPO_PUBLIC_NATIVE_PUSH_ENABLED=1` only in builds where APNs/FCM delivery is live. Code must check `nativePushEnabled` from `src/features.ts` before calling `registerNativePushDevice` or requesting OS notification permission.
+
+For store builds, set `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` so builds document intent to rely on HTTPS Universal/App Links only (checklist S6).

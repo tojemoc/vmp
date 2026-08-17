@@ -13,7 +13,7 @@ Living plan for store apps that sit beside the existing Nuxt PWA (`@vmp/web`). T
 
 | Tier | Platforms | UI / runtime | Auth | Player | Code reuse |
 | --- | --- | --- | --- | --- | --- |
-| **1** | iOS + Android (phone/tablet) | Expo (React Native) + thin native modules | Magic link → Universal Links / App Links (+ `vmp://` fallback) | `expo-video` first; AVPlayer / ExoPlayer if needed | `@vmp/shared`, HTTP client vs `@vmp/api` |
+| **1** | iOS + Android (phone/tablet) | Expo (React Native) + thin native modules | Magic link → verified HTTPS Universal Links / App Links; `vmp://` dev fallback only | `expo-video` first; AVPlayer / ExoPlayer if needed | `@vmp/shared`, HTTP client vs `@vmp/api` |
 | **2** | tvOS + Android TV / Google TV | Same RN app via `react-native-tvos`; **rebuild screens** for D-pad focus (`react-tv-space-navigation` or equivalent) | **Pairing code** (TV shows code; user confirms on phone/web) | System / native TV player | Same shared client + most navigation shell; not touch layouts |
 | **3** | Tizen (Samsung) + webOS (LG) | Proprietary web runtimes (Tizen Web / Luna + Enact) | Same pairing-code flow as Tier 2 | Platform HTML5 / AVPlay | HTTP/TS client only — **no** RN modules |
 
@@ -41,12 +41,16 @@ Base URL: existing `@vmp/api` Worker. Errors: `{ error: string, code?: string }`
 | `POST` | `/api/auth/refresh` | none | Cookie **or** `{ refreshToken }` — rotates refresh token. Body-based responses include `refreshToken` in JSON for secure storage. Cookie-only clients unchanged (no refresh token in JSON). |
 | `POST` | `/api/auth/logout` | none | Cookie **or** `{ refreshToken }` — deletes refresh row. |
 
-Deep link targets (app claims; not served as HTML by the API):
+Deep link targets:
 
-- `https://<FRONTEND_HOST>/auth/verify?token=…` (Universal Links / App Links)
-- `vmp://auth/verify?token=…` (custom scheme fallback)
+| Target | When | Notes |
+| --- | --- | --- |
+| `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
+| `vmp://auth/verify?token=…` | **Local PoC / dev only** | Non-exclusive custom scheme — any app could register `vmp://`. Use for simulator/device testing before AASA is live. **Remove or demote before TestFlight** (see [promotion checklist](native-clients-promotion-checklist.md)). |
 
-Associated Domains / Digital Asset Links files are published with the Tier 1 app IDs (see `apps/mobile/README.md`).
+**AASA / Digital Asset Links status:** **Not published yet.** `apps/mobile/app.json` still uses `REPLACE_WITH_FRONTEND_HOST`. Publishing verified association files on the real frontend host is open issue **#5** below and checklist item **S5**.
+
+Production note: prefer exchanging a one-time handoff code (bound to app install) over passing raw magic-link tokens via custom schemes if a non-HTTPS fallback is ever required post-launch.
 
 ### Device pairing (Tiers 2–3; endpoints land in Phase 0)
 
@@ -57,7 +61,18 @@ Associated Domains / Digital Asset Links files are published with the Tier 1 app
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
 | `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited. |
 
-**TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after that point. If the TV loses the HTTP response (network drop, app kill), it cannot poll again successfully — the code returns `409 already_used`. **Recovery:** call `start` again and show a new code to the user. TV clients should persist tokens immediately on a `200` + `ready` body and treat non-2xx after approve as “start over.”
+**TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after a successful redeem.
+
+| Response | TV client action |
+| --- | --- |
+| `200` + `pending` | Back off per `pollIntervalSeconds`; keep polling |
+| `429 rate_limited` | Retry with exponential backoff; **do not** call `start` |
+| Transient `5xx` / network error | Retry with backoff; session may still be valid |
+| `200` + `ready` | Persist tokens immediately from body |
+| `409 already_used` after approve | Terminal — call `start` and show a **new** code (lost response after server redeem) |
+| `200` + `expired` | Terminal — call `start` |
+
+Do **not** call `start` on retryable errors — that orphans the in-flight pairing session and forces unnecessary phone re-approval.
 
 ### Native push registration (Tier 1+)
 
@@ -79,7 +94,7 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 ## Tier 1 PoC success criteria
 
 1. Magic link opens the **installed** app and yields a session **without** push-login.
-2. Device push token registers against `/api/push/device` (delivery deferred).
+2. When `EXPO_PUBLIC_NATIVE_PUSH_ENABLED=1` (non-default), device push token registers against `/api/push/device` in the same release as APNs/FCM delivery. **Default PoC builds leave the flag unset** — criterion N/A until delivery ships.
 3. One published video: online HLS + offline authorize/download/play using existing offline APIs.
 4. Web PWA unchanged (including existing iOS push-login for Home Screen users until a later deprecation decision).
 
@@ -88,18 +103,27 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 - Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS in Phase 1.
 - **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
 - **APNs/FCM delivery** — token storage only; `nativePushEnabled` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`) stays false until send path exists.
-- **Portrait-only orientation** and **background audio disabled** in `app.json` — tracked open issues before store submission.
-- **Approve TV in home header** — PoC discoverability; move to settings/profile before production.
-- **`apps/mobile` outside npm workspaces** — promote into root workspaces **before first TestFlight / internal Play build**.
+- **Portrait-only orientation** and **background audio disabled** in `app.json` — checklist **S2/S3** before store.
+- **Approve TV in home header** — checklist **S4** before store.
+- **Cross-device magic link** — single-use token opened on laptop/phone mismatch; copy + error only in PoC; checklist **S7**.
+- **Unverified TV pairing labels** — TV self-reports `deviceName` / `devicePlatform`; checklist **S8**.
+- **`apps/mobile` outside npm workspaces** — promote per checklist **W1–W4** before TestFlight.
 
 ## Open PoC issues (track before store)
 
-1. Landscape / rotation support for watch.
-2. Optional background audio / PiP policy for long-form.
-3. Native TOTP entry + `/api/auth/2fa/verify` wiring.
-4. APNs/FCM send path + permission UX.
-5. Publish AASA + Digital Asset Links for production Universal Links.
-6. Workspace promotion + Nx `start` target for mobile.
+See also: **[promotion checklist](native-clients-promotion-checklist.md)** (blocking S-rows).
+
+1. Landscape / rotation support for watch (**S2**).
+2. Optional background audio / PiP policy for long-form (**S3**).
+3. Native TOTP entry + `/api/auth/2fa/verify` wiring (**S1**).
+4. APNs/FCM send path + permission UX (**S9**).
+5. Publish AASA + Digital Asset Links on production host (**S5** — not live; placeholder in `app.json`).
+6. Workspace promotion + Nx `start` target for mobile (**W3**).
+7. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
+8. TV pairing label trust — self-reported device context at approve time (**S8**).
+9. Move Approve TV out of home header (**S4**).
+10. Pairing preview rate limit per code (enumeration hardening) (**S10**).
+11. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
 
 ## Package layout
 
@@ -109,9 +133,11 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 | `packages/api` | Phase 0 routes + migrations |
 | `packages/shared` | Shared types for native client contracts |
 | `docs/native-clients-plan.md` | This document |
+| `docs/native-clients-promotion-checklist.md` | Blocking checklist before workspace promotion / TestFlight |
 
 ## Decision log
 
 - **2026-08**: Agree Expo + thin native modules for Tier 1; `react-native-tvos` for Tier 2; separate web clients for Tier 3; pairing-code auth for all TV; Phase 0 contracts before Tier 1 UI polish.
 - **2026-08 (review)**: Prefer body `refreshToken` over cookie when both present; native redeem does not set refresh cookie; pairing preview + device labels; push token ownership check; document 2FA/push/workspace gaps.
 - **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.
+- **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels, Approve TV placement; poll retry vs terminal errors; AASA not live yet.

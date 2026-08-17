@@ -28,7 +28,7 @@ export default function LoginScreen() {
     try {
       await requestMagicLink(email.trim());
       setStatus(
-        'Check your email. Open the link on this device so the app can redeem the session (Universal Link / vmp://).',
+        'Check your email on this phone or tablet and open the link here. The link works once — if you open it on another device first, request a new email.',
       );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not send sign-in link');
@@ -41,8 +41,8 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Text style={styles.heading}>Sign in</Text>
       <Text style={styles.copy}>
-        We email a magic link. On iOS/Android the installed app claims `/auth/verify` so you never
-        need PWA notification login.
+        We email a magic link. Open it on the device where this app is installed. If you check email
+        on a computer, forward or re-request the link on your phone before tapping.
       </Text>
       <TextInput
         autoCapitalize="none"

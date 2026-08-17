@@ -106,6 +106,9 @@ export async function signOut(): Promise<void> {
 /** Extract magic-link token from Universal Link or vmp:// deep link. */
 export function tokenFromAuthUrl(url: string | null | undefined): string | null {
   if (!url) return null;
+  if (!customSchemeDeepLinksAllowed && /^vmp:\/\//i.test(url)) {
+    return null;
+  }
   try {
     const parsed = new URL(url);
     const token = parsed.searchParams.get('token');
