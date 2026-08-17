@@ -98,6 +98,22 @@ export async function registerNativePushDevice(
   );
 }
 
+export async function unregisterNativePushDevice(
+  accessToken: string,
+  payload: { token?: string; deviceId?: string },
+) {
+  if (!nativePushEnabled) {
+    throw new Error(
+      'Native push is disabled (set EXPO_PUBLIC_NATIVE_PUSH_ENABLED when delivery ships).',
+    );
+  }
+  return apiFetch(
+    '/api/push/device',
+    { method: 'DELETE', body: JSON.stringify(payload) },
+    accessToken,
+  );
+}
+
 export async function previewDevicePairing(accessToken: string, pairingCode: string) {
   return apiFetch(
     '/api/auth/device-pairing/preview',

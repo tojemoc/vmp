@@ -13,7 +13,7 @@ type VideoRow = {
 };
 
 export default function HomeScreen() {
-  const { session, booting, error, logout } = useSession();
+  const { session, booting, error } = useSession();
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -54,14 +54,11 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.email}>{session.user.email}</Text>
         <View style={styles.headerActions}>
-          <Link href="/pairing" asChild>
+          <Link href="/settings" asChild>
             <Pressable style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnText}>Approve TV</Text>
+              <Text style={styles.secondaryBtnText}>Settings</Text>
             </Pressable>
           </Link>
-          <Pressable style={styles.secondaryBtn} onPress={() => void logout()}>
-            <Text style={styles.secondaryBtnText}>Sign out</Text>
-          </Pressable>
         </View>
       </View>
 

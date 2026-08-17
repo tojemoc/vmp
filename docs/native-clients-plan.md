@@ -79,7 +79,7 @@ Do **not** call `start` on retryable errors — that orphans the in-flight pairi
 | Method | Path | Auth | Body |
 | --- | --- | --- | --- |
 | `POST` | `/api/push/device` | Bearer JWT | `{ platform: 'ios' \| 'android', token, deviceId? }` — upsert APNs/FCM token. |
-| `DELETE` | `/api/push/device` | Bearer JWT | `{ token }` or `{ deviceId }` — remove. |
+| `DELETE` | `/api/push/device` | Bearer JWT | JSON body **or** query: `{ token }` or `{ deviceId }`. Prefer JSON body (Tizen/webOS). Query is accepted because some HTTP clients drop DELETE bodies. |
 
 Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs/FCM send path) is a follow-up after tokens are stored.
 
@@ -104,10 +104,11 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 - **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
 - **APNs/FCM delivery** — token storage only; `nativePushEnabled` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`) stays false until send path exists.
 - **Portrait-only orientation** and **background audio disabled** in `app.json` — checklist **S2/S3** before store.
-- **Approve TV in home header** — checklist **S4** before store.
 - **Cross-device magic link** — single-use token opened on laptop/phone mismatch; copy + error only in PoC; checklist **S7**.
 - **Unverified TV pairing labels** — TV self-reports `deviceName` / `devicePlatform`; checklist **S8**.
 - **`apps/mobile` outside npm workspaces** — promote per checklist **W1–W4** before TestFlight.
+
+Approve TV lives under **Settings** (not the home header). Checklist **S4** is a regression check at promotion.
 
 ## Open PoC issues (track before store)
 
@@ -121,9 +122,8 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 6. Workspace promotion + Nx `start` target for mobile (**W3**).
 7. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
 8. TV pairing label trust — self-reported device context at approve time (**S8**).
-9. Move Approve TV out of home header (**S4**).
-10. Pairing preview rate limit per code (enumeration hardening) (**S10**).
-11. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
+9. Pairing preview rate limit per code (enumeration hardening) (**S10**).
+10. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
 
 ## Package layout
 
@@ -140,4 +140,5 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08**: Agree Expo + thin native modules for Tier 1; `react-native-tvos` for Tier 2; separate web clients for Tier 3; pairing-code auth for all TV; Phase 0 contracts before Tier 1 UI polish.
 - **2026-08 (review)**: Prefer body `refreshToken` over cookie when both present; native redeem does not set refresh cookie; pairing preview + device labels; push token ownership check; document 2FA/push/workspace gaps.
 - **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.
-- **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels, Approve TV placement; poll retry vs terminal errors; AASA not live yet.
+- **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels; poll retry vs terminal errors; AASA not live yet.
+- **2026-08 (review 4)**: Approve TV moved under Settings; checklist requires named maintainer sign-off; DELETE `/api/push/device` accepts body or query.

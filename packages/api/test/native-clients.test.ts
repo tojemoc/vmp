@@ -412,7 +412,7 @@ describe('native push handlers', () => {
     assert.equal(db.pushTokens.length, 1);
     assert.equal(db.pushTokens[0].device_id, 'phone-a-v2');
 
-    const del = await handleNativePushUnregister(
+    const delQuery = await handleNativePushUnregister(
       new Request('https://example.com/api/push/device?token=tok-1', {
         method: 'DELETE',
         headers: headersA,
@@ -420,7 +420,30 @@ describe('native push handlers', () => {
       env,
       {},
     );
-    assert.equal(del.status, 200);
+    assert.equal(delQuery.status, 200);
+    assert.equal(db.pushTokens.length, 0);
+
+    const second = await handleNativePushRegister(
+      new Request('https://example.com/api/push/device', {
+        method: 'POST',
+        headers: headersA,
+        body: JSON.stringify({ platform: 'ios', token: 'tok-2', deviceId: 'phone-a' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(second.status, 201);
+
+    const delBody = await handleNativePushUnregister(
+      new Request('https://example.com/api/push/device', {
+        method: 'DELETE',
+        headers: headersA,
+        body: JSON.stringify({ token: 'tok-2' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(delBody.status, 200);
     assert.equal(db.pushTokens.length, 0);
   });
 

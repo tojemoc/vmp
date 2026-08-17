@@ -9,7 +9,7 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 - Magic-link request → deep-link redeem via `POST /api/auth/native/redeem`
 - Secure session storage (`expo-secure-store`)
 - Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
-- Device pairing **Approve TV** screen (`preview` + `complete`)
+- Device pairing **Approve a TV** under Settings (`preview` + `complete`)
 - Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)
 
 ### Explicit PoC blockers / gaps
@@ -21,7 +21,6 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 | Portrait-only + no background audio | UX polish | Tracked in plan “Open PoC issues”; change before store submission. |
 | Cross-device magic link | Same email opened on wrong device | Checklist **S7**; login copy warns single-use |
 | Unverified TV labels | Phishing at scale (future) | Checklist **S8** |
-| Approve TV in home header | Infrequent action | Checklist **S4** before store |
 
 ## Why not an npm workspace member?
 
@@ -58,7 +57,7 @@ Magic-link tokens are single-use: if the link was opened on another device first
 
 ## Pairing (Tier 2+)
 
-`apps/mobile/app/pairing.tsx` is live in the PoC:
+`apps/mobile/app/pairing.tsx` is reached from **Settings → Approve a TV** (not the home header):
 
 1. Enter the code shown on the TV.
 2. **Preview** → `POST /api/auth/device-pairing/preview` (device name/platform).
