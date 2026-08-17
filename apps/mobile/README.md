@@ -30,9 +30,11 @@ Root `package.json` workspaces are `packages/*` only. This app lives under `apps
 
 ```bash
 cd apps/mobile
-npm install
+npm ci
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
 ```
+
+`package-lock.json` in this directory is committed so `npm ci` is reproducible. After changing `package.json` versions, run `npm install` here (not the repo root) to refresh this lockfile.
 
 `EXPO_PUBLIC_API_URL` is **required** (no localhost default — that only targets the device itself).
 
