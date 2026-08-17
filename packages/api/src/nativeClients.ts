@@ -4,7 +4,7 @@
  */
 
 import type { NativePushPlatform } from '@vmp/shared';
-import { hashToken, issueNativeSessionTokens, requireAuth } from './auth.js';
+import { createNativeSessionMaterial, hashToken, requireAuth } from './auth.js';
 import { getDb } from './d1Session.js';
 import { log } from './logger.js';
 import { getSetting } from './settingsStore.js';
@@ -440,19 +440,6 @@ export async function handleDevicePairingPoll(request: any, env: any, corsHeader
     return errorResponse('Pairing session is not ready', 409, corsHeaders, 'invalid_status');
   }
 
-  const consume = await db
-    .prepare(`
-      UPDATE device_pairing_sessions
-      SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND status = 'approved' AND redeemed_at IS NULL
-    `)
-    .bind(row.id)
-    .run();
-
-  if (!consume.meta?.changes) {
-    return errorResponse('Pairing code already used', 409, corsHeaders, 'already_used');
-  }
-
   const sessionUser = {
     id: row.user_id,
     email: row.email,
@@ -462,26 +449,49 @@ export async function handleDevicePairingPoll(request: any, env: any, corsHeader
   };
 
   try {
-    const session = await issueNativeSessionTokens(sessionUser, env, db);
-    return jsonResponse({ status: 'ready', ok: true, ...session }, 200, corsHeaders);
-  } catch {
-    try {
-      await db
+    const material = await createNativeSessionMaterial(sessionUser, env);
+    const results = await db.batch([
+      db
+        .prepare(`
+          INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
+          SELECT ?, ?, ?, ?
+          WHERE EXISTS (
+            SELECT 1 FROM device_pairing_sessions
+            WHERE id = ? AND status = 'approved' AND redeemed_at IS NULL
+          )
+        `)
+        .bind(
+          crypto.randomUUID(),
+          row.user_id,
+          material.refreshTokenHash,
+          material.refreshExpiresAt,
+          row.id,
+        ),
+      db
         .prepare(`
           UPDATE device_pairing_sessions
-          SET status = 'approved', redeemed_at = NULL
-          WHERE id = ? AND status = 'redeemed'
+          SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND status = 'approved' AND redeemed_at IS NULL
         `)
-        .bind(row.id)
-        .run();
-    } catch {
-      log({
-        service: 'auth',
-        event: 'pairing_redeem_rollback_failed',
-        level: 'error',
-        http_path: '/api/auth/device-pairing/poll',
-      });
+        .bind(row.id),
+    ]);
+
+    if (!results?.[1]?.meta?.changes) {
+      return errorResponse('Pairing code already used', 409, corsHeaders, 'already_used');
     }
+
+    return jsonResponse(
+      {
+        status: 'ready',
+        ok: true,
+        accessToken: material.accessToken,
+        refreshToken: material.refreshToken,
+        user: material.user,
+      },
+      200,
+      corsHeaders,
+    );
+  } catch {
     log({
       service: 'auth',
       event: 'pairing_session_issue_failed',

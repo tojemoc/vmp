@@ -563,14 +563,33 @@ async function buildSessionUserPayload(user: any, env: any) {
 }
 
 /**
+ * Builds access + refresh token material without writing D1.
+ * Pairing poll batches the refresh-token insert with session redeem.
+ */
+export async function createNativeSessionMaterial(user: any, env: any) {
+  const accessToken = await createAccessToken(user, env.JWT_SECRET);
+  const refreshToken = generateToken();
+  const refreshTokenHash = await hashToken(refreshToken);
+  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL * 1000).toISOString();
+  const sessionUser = await buildSessionUserPayload(user, env);
+  return { accessToken, refreshToken, refreshTokenHash, refreshExpiresAt, user: sessionUser };
+}
+
+/**
  * Issues access + refresh tokens for native / TV clients that store the refresh
  * token in secure storage (not HttpOnly cookies).
  */
 export async function issueNativeSessionTokens(user: any, env: any, db: any) {
-  const accessToken = await createAccessToken(user, env.JWT_SECRET);
-  const refreshToken = await issueRefreshToken(user.id, db);
-  const sessionUser = await buildSessionUserPayload(user, env);
-  return { accessToken, refreshToken, user: sessionUser };
+  const material = await createNativeSessionMaterial(user, env);
+  await db
+    .prepare('INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(crypto.randomUUID(), user.id, material.refreshTokenHash, material.refreshExpiresAt)
+    .run();
+  return {
+    accessToken: material.accessToken,
+    refreshToken: material.refreshToken,
+    user: material.user,
+  };
 }
 
 async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsHeaders: any) {

@@ -72,14 +72,6 @@ class FakePairingDb {
               });
               return { meta: { changes: 1 } };
             }
-            if (normalized.includes('redeemed_at = NULL')) {
-              const id = String(args[0]);
-              const row = db.sessions.find((s) => s.id === id && s.status === 'redeemed');
-              if (!row) return { meta: { changes: 0 } };
-              row.status = 'approved';
-              row.redeemed_at = null;
-              return { meta: { changes: 1 } };
-            }
             if (normalized.includes("SET status = 'approved'")) {
               const userId = String(args[0]);
               const id = String(args[1]);
@@ -109,6 +101,13 @@ class FakePairingDb {
             }
             if (normalized.startsWith('INSERT INTO refresh_tokens')) {
               if (db.failRefreshInsert) throw new Error('D1 unavailable');
+              if (normalized.includes('WHERE EXISTS')) {
+                const sessionId = String(args[4]);
+                const row = db.sessions.find(
+                  (s) => s.id === sessionId && s.status === 'approved' && !s.redeemed_at,
+                );
+                if (!row) return { meta: { changes: 0 } };
+              }
               return { meta: { changes: 1 } };
             }
             if (normalized.startsWith('INSERT INTO native_push_tokens')) {
@@ -197,6 +196,20 @@ class FakePairingDb {
         };
       },
     };
+  }
+
+  async batch(statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>) {
+    const snapshot = this.sessions.map((session) => ({ ...session }));
+    try {
+      const results = [];
+      for (const statement of statements) {
+        results.push(await statement.run());
+      }
+      return results;
+    } catch (error) {
+      this.sessions = snapshot;
+      throw error;
+    }
   }
 }
 
@@ -402,7 +415,7 @@ describe('device pairing handlers', () => {
     assert.equal(pollAgain.status, 409);
   });
 
-  it('rolls back redeem when refresh token insert fails so poll can retry', async () => {
+  it('does not consume the pairing code when refresh token insert fails', async () => {
     const db = new FakePairingDb();
     db.users.set('user-1', {
       id: 'user-1',
