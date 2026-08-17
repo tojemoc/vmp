@@ -11,6 +11,7 @@ import {
   handleNativePushUnregister,
   normalizeNativePushPlatform,
   normalizePairingCode,
+  redactPushDeviceQuery,
 } from '../src/nativeClients.js';
 
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
@@ -227,6 +228,33 @@ describe('normalizeNativePushPlatform', () => {
   });
 });
 
+class FakeKv {
+  map = new Map<string, string>();
+  async get(key: string) {
+    return this.map.get(key) ?? null;
+  }
+  async put(key: string, value: string, _opts?: { expirationTtl?: number }) {
+    this.map.set(key, value);
+  }
+}
+
+describe('redactPushDeviceQuery', () => {
+  it('redacts token and deviceId query values', () => {
+    const raw = 'https://example.com/api/push/device?token=secret-token&deviceId=phone-1&keep=1';
+    const redacted = redactPushDeviceQuery(raw);
+    assert.equal(new URL(redacted).searchParams.get('token'), '[redacted]');
+    assert.equal(new URL(redacted).searchParams.get('deviceId'), '[redacted]');
+    assert.equal(new URL(redacted).searchParams.get('keep'), '1');
+    assert.equal(redacted.includes('secret-token'), false);
+    assert.equal(redacted.includes('phone-1'), false);
+  });
+
+  it('leaves URLs without those params unchanged', () => {
+    const raw = 'https://example.com/api/push/device';
+    assert.equal(redactPushDeviceQuery(raw), raw);
+  });
+});
+
 describe('device pairing handlers', () => {
   it('starts, previews, completes, and redeems once', async () => {
     const db = new FakePairingDb();
@@ -328,6 +356,48 @@ describe('device pairing handlers', () => {
       {},
     );
     assert.equal(res.status, 404);
+  });
+
+  it('rate-limits pairing preview per code', async () => {
+    const db = new FakePairingDb();
+    const env = { DB: db, JWT_SECRET, RATE_LIMIT_KV: new FakeKv() };
+    const startRes = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        body: JSON.stringify({ deviceName: 'Living Room', devicePlatform: 'tvos' }),
+      }),
+      env,
+      {},
+    );
+    const { pairingCode } = await startRes.json();
+    const headers = await authHeader('user-1');
+
+    for (let i = 0; i < 8; i++) {
+      const res = await handleDevicePairingPreview(
+        new Request('https://example.com/api/auth/device-pairing/preview', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pairingCode }),
+        }),
+        env,
+        {},
+      );
+      assert.equal(res.status, 200, `preview ${i + 1} should succeed`);
+      await res.json();
+    }
+
+    const limited = await handleDevicePairingPreview(
+      new Request('https://example.com/api/auth/device-pairing/preview', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ pairingCode }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(limited.status, 429);
+    const body = await limited.json();
+    assert.equal(body.code, 'rate_limited');
   });
 
   it('rejects complete without auth', async () => {

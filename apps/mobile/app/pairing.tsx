@@ -141,6 +141,9 @@ export default function PairingScreen() {
           <Text style={styles.previewLine}>
             Device: {preview.deviceName || 'unnamed'} ({preview.devicePlatform || 'unknown'})
           </Text>
+          <Text style={styles.previewHint}>
+            Label set by the device — not verified by the server.
+          </Text>
         </View>
       ) : null}
       <Pressable
@@ -199,6 +202,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   previewLine: { color: '#e2e8f0', fontSize: 14 },
+  previewHint: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
   disabled: { opacity: 0.6 },
   status: { color: '#cbd5e1', fontSize: 14, lineHeight: 20 },
 });

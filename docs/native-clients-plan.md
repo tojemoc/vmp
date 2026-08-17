@@ -46,7 +46,7 @@ Deep link targets:
 | Target | When | Notes |
 | --- | --- | --- |
 | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
-| `vmp://auth/verify?token=…` | **Local PoC / dev only** | Non-exclusive custom scheme — any app could register `vmp://`. Use for simulator/device testing before AASA is live. **Remove or demote before TestFlight** (see [promotion checklist](native-clients-promotion-checklist.md)). |
+| `vmp://auth/verify?token=…` | **Local PoC / dev only** | **Off by default.** Enable with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `EXPO_PUBLIC_DISABLE_VMP_SCHEME=0`). Token redemption is gated in `apps/mobile/src/auth/session.ts` via `customSchemeDeepLinksAllowed`. Non-exclusive — any app could register `vmp://`. Store builds must not set the flag (checklist **S6**). |
 
 **AASA / Digital Asset Links status:** **Not published yet.** `apps/mobile/app.json` still uses `REPLACE_WITH_FRONTEND_HOST`. Publishing verified association files on the real frontend host is open issue **#5** below and checklist item **S5**.
 
@@ -57,7 +57,7 @@ Production note: prefer exchanging a one-time handoff code (bound to app install
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. IP rate-limited. |
-| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. |
+| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. IP **and** per-code rate limited. |
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
 | `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited. |
 
@@ -79,7 +79,7 @@ Do **not** call `start` on retryable errors — that orphans the in-flight pairi
 | Method | Path | Auth | Body |
 | --- | --- | --- | --- |
 | `POST` | `/api/push/device` | Bearer JWT | `{ platform: 'ios' \| 'android', token, deviceId? }` — upsert APNs/FCM token. |
-| `DELETE` | `/api/push/device` | Bearer JWT | JSON body **or** query: `{ token }` or `{ deviceId }`. Prefer JSON body (Tizen/webOS). Query is accepted because some HTTP clients drop DELETE bodies. |
+| `DELETE` | `/api/push/device` | Bearer JWT | JSON body **preferred**. Query fallback `{ token }` / `{ deviceId }` for clients that drop DELETE bodies. **Query values must be redacted** (`[redacted]`) at the API edge and in worker logs (`redactPushDeviceQuery`). Never log raw query tokens. |
 
 Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs/FCM send path) is a follow-up after tokens are stored.
 
@@ -122,7 +122,7 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 6. Workspace promotion + Nx `start` target for mobile (**W3**).
 7. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
 8. TV pairing label trust — self-reported device context at approve time (**S8**).
-9. Pairing preview rate limit per code (enumeration hardening) (**S10**).
+9. Pairing preview per-code limits — keep in place before any **public announcement** of pairing (**S10**).
 10. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
 
 ## Package layout
@@ -142,3 +142,4 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.
 - **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels; poll retry vs terminal errors; AASA not live yet.
 - **2026-08 (review 4)**: Approve TV moved under Settings; checklist requires named maintainer sign-off; DELETE `/api/push/device` accepts body or query.
+- **2026-08 (review 5)**: `vmp://` opt-in default off; query token redaction; preview per-code rate limit; self-reported label copy.

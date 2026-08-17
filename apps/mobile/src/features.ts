@@ -8,7 +8,14 @@ export const nativePushEnabled =
   process.env.EXPO_PUBLIC_NATIVE_PUSH_ENABLED === '1' ||
   process.env.EXPO_PUBLIC_NATIVE_PUSH_ENABLED === 'true';
 
-/** Default true for local PoC; set EXPO_PUBLIC_DISABLE_VMP_SCHEME=1 before store builds. */
+/**
+ * Default **off** (store-safe). Enable custom-scheme token handoff only with an
+ * explicit development opt-in:
+ *   EXPO_PUBLIC_ENABLE_VMP_SCHEME=1
+ *   or EXPO_PUBLIC_DISABLE_VMP_SCHEME=0  (legacy opt-in spelling)
+ */
 export const customSchemeDeepLinksAllowed =
-  process.env.EXPO_PUBLIC_DISABLE_VMP_SCHEME !== '1' &&
-  process.env.EXPO_PUBLIC_DISABLE_VMP_SCHEME !== 'true';
+  process.env.EXPO_PUBLIC_ENABLE_VMP_SCHEME === '1' ||
+  process.env.EXPO_PUBLIC_ENABLE_VMP_SCHEME === 'true' ||
+  process.env.EXPO_PUBLIC_DISABLE_VMP_SCHEME === '0' ||
+  process.env.EXPO_PUBLIC_DISABLE_VMP_SCHEME === 'false';

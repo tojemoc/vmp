@@ -6,12 +6,15 @@
 import type { NativePushPlatform } from '@vmp/shared';
 import { hashToken, issueNativeSessionTokens, requireAuth } from './auth.js';
 import { getDb } from './d1Session.js';
+import { log } from './logger.js';
 
 const PAIRING_TTL_SEC = 10 * 60;
 const PAIRING_POLL_INTERVAL_SEC = 2;
 const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const PAIRING_START_LIMIT_PER_IP = 10;
 const PAIRING_POLL_LIMIT_PER_IP = 120;
+const PAIRING_PREVIEW_LIMIT_PER_IP = 30;
+const PAIRING_PREVIEW_LIMIT_PER_CODE = 8;
 const PAIRING_CLEANUP_GRACE_SEC = 24 * 60 * 60;
 
 function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
@@ -36,7 +39,7 @@ function clientIp(request: Request): string {
 
 async function isPairingRateLimited(
   env: any,
-  kind: 'start' | 'poll',
+  kind: 'start' | 'poll' | 'preview',
   request: Request,
 ): Promise<boolean> {
   const kv = env.RATE_LIMIT_KV;
@@ -46,7 +49,12 @@ async function isPairingRateLimited(
     const minuteBucket = Math.floor(Date.now() / 60000);
     const fingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
     const key = `auth:device-pairing:${kind}:${fingerprint}`;
-    const limit = kind === 'start' ? PAIRING_START_LIMIT_PER_IP : PAIRING_POLL_LIMIT_PER_IP;
+    const limit =
+      kind === 'start'
+        ? PAIRING_START_LIMIT_PER_IP
+        : kind === 'poll'
+          ? PAIRING_POLL_LIMIT_PER_IP
+          : PAIRING_PREVIEW_LIMIT_PER_IP;
     const currentRaw = await kv.get(key);
     const current = Number.parseInt(currentRaw ?? '0', 10);
     const count = Number.isFinite(current) ? current : 0;
@@ -55,6 +63,35 @@ async function isPairingRateLimited(
     return false;
   } catch {
     return false;
+  }
+}
+
+async function isPairingPreviewCodeRateLimited(env: any, codeHash: string): Promise<boolean> {
+  const kv = env.RATE_LIMIT_KV;
+  if (!kv) return false;
+  try {
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const key = `auth:device-pairing:preview-code:${codeHash}:${minuteBucket}`;
+    const currentRaw = await kv.get(key);
+    const current = Number.parseInt(currentRaw ?? '0', 10);
+    const count = Number.isFinite(current) ? current : 0;
+    if (count >= PAIRING_PREVIEW_LIMIT_PER_CODE) return true;
+    await kv.put(key, String(count + 1), { expirationTtl: 120 });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Redact token/deviceId query fallbacks before any log or error URL. */
+export function redactPushDeviceQuery(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    if (u.searchParams.has('token')) u.searchParams.set('token', '[redacted]');
+    if (u.searchParams.has('deviceId')) u.searchParams.set('deviceId', '[redacted]');
+    return u.toString();
+  } catch {
+    return rawUrl;
   }
 }
 
@@ -156,6 +193,14 @@ export async function handleDevicePairingStart(request: any, env: any, corsHeade
  */
 export async function handleDevicePairingPreview(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return errorResponse('Method not allowed', 405, corsHeaders);
+  if (await isPairingRateLimited(env, 'preview', request)) {
+    return errorResponse(
+      'Too many pairing previews. Try again shortly.',
+      429,
+      corsHeaders,
+      'rate_limited',
+    );
+  }
 
   try {
     await requireAuth(request, env);
@@ -171,6 +216,14 @@ export async function handleDevicePairingPreview(request: any, env: any, corsHea
 
   const db = getDb(env);
   const codeHash = await hashToken(pairingCode);
+  if (await isPairingPreviewCodeRateLimited(env, codeHash)) {
+    return errorResponse(
+      'Too many pairing previews for this code. Try again shortly.',
+      429,
+      corsHeaders,
+      'rate_limited',
+    );
+  }
   const row = await db
     .prepare(`
       SELECT status, expires_at, device_name, device_platform, redeemed_at
@@ -445,7 +498,8 @@ export async function handleNativePushRegister(request: any, env: any, corsHeade
 }
 
 /**
- * DELETE /api/push/device  body or query: { token } | { deviceId }
+ * DELETE /api/push/device  body (preferred) or query: { token } | { deviceId }
+ * Query values are redacted from any URL used in logs.
  */
 export async function handleNativePushUnregister(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'DELETE') return errorResponse('Method not allowed', 405, corsHeaders);
@@ -459,6 +513,9 @@ export async function handleNativePushUnregister(request: any, env: any, corsHea
 
   const body = await request.json().catch(() => null);
   const url = new URL(request.url);
+  const usedQueryFallback = !(
+    typeof body?.token === 'string' || typeof body?.deviceId === 'string'
+  );
   const token = (
     typeof body?.token === 'string' ? body.token : url.searchParams.get('token') || ''
   ).trim();
@@ -481,6 +538,16 @@ export async function handleNativePushUnregister(request: any, env: any, corsHea
       .prepare('DELETE FROM native_push_tokens WHERE user_id = ? AND device_id = ?')
       .bind(user.sub, deviceId)
       .run();
+  }
+
+  if (usedQueryFallback) {
+    log({
+      service: 'push',
+      event: 'native_push_unregister_query',
+      level: 'info',
+      http_path: '/api/push/device',
+      request_url: redactPushDeviceQuery(request.url),
+    });
   }
 
   return jsonResponse({ ok: true }, 200, corsHeaders);

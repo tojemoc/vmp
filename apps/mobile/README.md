@@ -48,7 +48,7 @@ Nx is not wired for this app while it sits outside workspaces; use the Expo CLI 
 
 | Scheme | Example | When |
 | --- | --- | --- |
-| Custom | `vmp://auth/verify?token=…` | **Dev/PoC only** — before AASA is live; not for store builds (checklist S6) |
+| Custom | `vmp://auth/verify?token=…` | **Off by default.** Opt in with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `EXPO_PUBLIC_DISABLE_VMP_SCHEME=0`) for local PoC. `session.ts` ignores `vmp://` tokens unless that flag is set. Store builds must leave both unset (checklist S6). |
 | Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
 Replace `REPLACE_WITH_FRONTEND_HOST` in `app.json` before store builds. Publish Apple `apple-app-site-association` and Android Digital Asset Links on that host (same path the magic-link email already uses).
@@ -60,11 +60,9 @@ Magic-link tokens are single-use: if the link was opened on another device first
 `apps/mobile/app/pairing.tsx` is reached from **Settings → Approve a TV** (not the home header):
 
 1. Enter the code shown on the TV.
-2. **Preview** → `POST /api/auth/device-pairing/preview` (device name/platform).
+2. **Preview** → `POST /api/auth/device-pairing/preview` (device name/platform, shown with “Label set by the device”).
 3. **Approve** → `POST /api/auth/device-pairing/complete`.
 
 ## Native push (when enabled)
 
 Set `EXPO_PUBLIC_NATIVE_PUSH_ENABLED=1` only in builds where APNs/FCM delivery is live. Code must check `nativePushEnabled` from `src/features.ts` before calling `registerNativePushDevice` or requesting OS notification permission.
-
-For store builds, set `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` so builds document intent to rely on HTTPS Universal/App Links only (checklist S6).
