@@ -305,6 +305,10 @@ jobs:
   publish-ios-release:
     if: ${{ inputs.publish_release && needs.build-ios.result == 'success' }}
     needs: build-ios
+    # Serialize publishes for the same release tag so a queued run re-checks after the leader finishes.
+    concurrency:
+      group: mobile-artifacts-publish-${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+      cancel-in-progress: false
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
@@ -336,14 +340,23 @@ jobs:
           find ./artifacts -name "*.ipa" -exec cp {} release/ios/ \;
           ls -la release/ios/
 
-      - name: Ensure release tag is unique
+      - name: Reserve release tag (atomic)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+          TARGET_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::Release tag $TAG already exists. Re-run with a unique build_number instead of replacing the IPA."
+          if out="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${TARGET_SHA}" 2>&1)"; then
+            echo "Reserved tag ${TAG} @ ${TARGET_SHA}"
+          elif echo "$out" | grep -q 'Reference already exists'; then
+            echo "::error::Release tag ${TAG} already exists (duplicate or concurrent dispatch). Re-run with a unique build_number."
+            exit 1
+          else
+            echo "$out" >&2
             exit 1
           fi
 
@@ -352,6 +365,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: "${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}"
+          overwrite_files: false
           name: "${{ needs.build-ios.outputs.flavor_label }} v${{ needs.build-ios.outputs.version_name }} (build ${{ needs.build-ios.outputs.build_number }})"
           body: |
             ## ${{ needs.build-ios.outputs.flavor_label }} iOS build
