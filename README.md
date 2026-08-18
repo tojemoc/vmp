@@ -51,6 +51,7 @@ Browser ──► @vmp/web (Worker SSR)
 | `@vmp/media-pipeline` | [`packages/media-pipeline`](packages/media-pipeline) | Media VM: Encore + Shaka HLS + R2 — [README](packages/media-pipeline/README.md) |
 | `@vmp/offloading` | [`packages/offloading`](packages/offloading) | R2 ↔ Garage hot/cold tiering — [README](packages/offloading/README.md) |
 | `@vmp/moq-probe` | [`packages/moq-probe`](packages/moq-probe) | MoQ live broadcast diagnostic probe — [README](packages/moq-probe/README.md) |
+| `@vmp/mobile` (PoC) | [`apps/mobile`](apps/mobile) | Expo Tier 1 client — not a root workspace member yet; see [native-clients plan](docs/native-clients-plan.md) |
 
 Core API/web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.md) for auth, D1 schema, roles, and agent workflow.
 
@@ -61,6 +62,7 @@ Core API/web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.md) f
 | [AGENTS.md](AGENTS.md) | **Canonical** architecture, git workflow, secrets, local Cloud setup, roadmap |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | CI/CD, env vars, smoke checks, bootstrap / rollback |
 | [docs/README.md](docs/README.md) | Index of API notes and historical design docs |
+| [docs/native-clients-plan.md](docs/native-clients-plan.md) | Multi-tier native/TV clients (Expo → TV → Tizen/webOS) |
 | [packages/web/docs/workers-deploy-env.md](packages/web/docs/workers-deploy-env.md) | Web Worker build-time env vars |
 | Package READMEs under `packages/*` | Package-specific ops (pipeline, api-node, storage, …) |
 
