@@ -2,6 +2,11 @@
   import type { OfflineRendition } from '@vmp/shared';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
   import {
+    clearOfflineDownloadReturn,
+    consumeOfflineDownloadReturn,
+    markOfflineDownloadReturn,
+  } from '~/utils/offlineDownloadReturn';
+  import {
     canAddToHomeScreenWithoutPrompt,
     canOpenCurrentPageInChrome,
     isInstalledPwa,
@@ -15,6 +20,7 @@
 
   const { strings } = useStrings();
   const { user, accessToken, ensureSubscriptionHydrated } = useAuth();
+  const route = useRoute();
   const { $pwa } = useNuxtApp();
   const {
     offlineDownloadsEnabled,
@@ -50,6 +56,7 @@
   let unsubscribe: (() => void) | null = null;
   let mounted = false;
   let menuPositionCleanup: (() => void) | null = null;
+  let resumeHandled = false;
 
   const renditionOptions: OfflineRendition[] = ['480p', '720p', '1080p'];
 
@@ -109,13 +116,16 @@
     mounted = true;
     document.addEventListener('click', closeMenuFromDocument);
     await loadState();
-    if (!mounted || !offlineDownloadsEnabled.value) return;
-    unsubscribe = watchProgress(props.videoId, (p) => {
-      progress.value = p;
-      if (p.status === 'completed' || p.status === 'failed' || p.status === 'paused') {
-        void loadState();
-      }
-    });
+    if (!mounted) return;
+    if (offlineDownloadsEnabled.value) {
+      unsubscribe = watchProgress(props.videoId, (p) => {
+        progress.value = p;
+        if (p.status === 'completed' || p.status === 'failed' || p.status === 'paused') {
+          void loadState();
+        }
+      });
+    }
+    await resumeDownloadIfRequested();
   });
 
   onUnmounted(() => {
@@ -133,7 +143,15 @@
       menuOpen.value = false;
       pwaModalOpen.value = false;
       error.value = null;
+      resumeHandled = false;
       await loadState();
+    },
+  );
+
+  watch(
+    () => [route.query.session_id, route.query.legacy_order, route.query.showDownload] as const,
+    () => {
+      void resumeDownloadIfRequested();
     },
   );
 
@@ -194,10 +212,14 @@
   function openPwaModal() {
     menuOpen.value = false;
     pwaModalOpen.value = true;
+    if (modalBlocker.value === 'needs_subscription') {
+      markOfflineDownloadReturn(props.videoId);
+    }
   }
 
   function closePwaModal() {
     pwaModalOpen.value = false;
+    clearOfflineDownloadReturn();
   }
 
   async function handleInstallPwa() {
@@ -216,7 +238,34 @@
     openCurrentPageInChrome();
   }
 
-  async function toggleMenu() {
+  function checkoutReturnPending(): boolean {
+    const sessionId = route.query.session_id;
+    const legacyOrder = route.query.legacy_order;
+    return (
+      (typeof sessionId === 'string' && sessionId.length > 0) ||
+      (typeof legacyOrder === 'string' && legacyOrder.length > 0)
+    );
+  }
+
+  async function stripDownloadReturnQuery() {
+    if (route.query.showDownload !== '1') return;
+    const nextQuery = { ...route.query };
+    delete nextQuery.showDownload;
+    await navigateTo({ path: route.path, query: nextQuery }, { replace: true });
+  }
+
+  async function resumeDownloadIfRequested() {
+    if (!mounted || resumeHandled || checkoutReturnPending()) return;
+    const fromQuery = route.query.showDownload === '1';
+    const fromStore = consumeOfflineDownloadReturn(props.videoId);
+    if (!fromQuery && !fromStore) return;
+    resumeHandled = true;
+    await stripDownloadReturnQuery();
+    if (!mounted) return;
+    await openDownloadSurface();
+  }
+
+  async function openDownloadSurface() {
     if (checkingEntitlement.value) return;
     checkingEntitlement.value = true;
     try {
@@ -225,12 +274,20 @@
         openPwaModal();
         return;
       }
-      const next = !menuOpen.value;
-      if (next) positionMenu();
-      menuOpen.value = next;
+      positionMenu();
+      menuOpen.value = true;
     } finally {
       checkingEntitlement.value = false;
     }
+  }
+
+  async function toggleMenu() {
+    if (checkingEntitlement.value) return;
+    if (menuOpen.value) {
+      menuOpen.value = false;
+      return;
+    }
+    await openDownloadSurface();
   }
 
   async function handleDownload() {
@@ -621,7 +678,7 @@
           </p>
           <SubscriptionCheckoutPanel
             :return-path="watchReturnPath"
-            reopen-premium-on-return
+            reopen-download-on-return
             :active="pwaModalOpen"
             embedded
             compact
