@@ -196,7 +196,18 @@ jobs:
 
       - name: Determine release flavor label
         id: flavor
-        run: echo "label=${{ inputs.flavor }}" >> "$GITHUB_OUTPUT"
+        env:
+          FLAVOR_LABEL: ${{ inputs.flavor }}
+        run: |
+          set -euo pipefail
+          case "${FLAVOR_LABEL}" in
+            release|beta|nightly|development) ;;
+            *)
+              echo "::error::Invalid flavor (must be release, beta, nightly, or development)."
+              exit 1
+              ;;
+          esac
+          printf 'label=%s\n' "${FLAVOR_LABEL}" >> "$GITHUB_OUTPUT"
 
       - name: Parse mobile version
         id: version
@@ -345,6 +356,7 @@ jobs:
           ls -la release/ios/
 
       - name: Reserve release tag (atomic)
+        id: reserve
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
@@ -352,20 +364,39 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if out="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+          created=false
+          skip_release=false
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; skipping recreate so a retry can finish Pages without replacing the IPA."
+            skip_release=true
+          elif out="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
             -f ref="refs/tags/${TAG}" \
             -f sha="${TARGET_SHA}" 2>&1)"; then
             echo "Reserved tag ${TAG} @ ${TARGET_SHA}"
+            created=true
           elif echo "$out" | grep -q 'Reference already exists'; then
-            echo "::error::Release tag ${TAG} already exists (duplicate or concurrent dispatch). Re-run with a unique build_number."
-            exit 1
+            existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+            object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.type)"
+            if [ "$object_type" = "tag" ]; then
+              existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${existing_sha}" --jq .object.sha)"
+            fi
+            if [ "$existing_sha" != "$TARGET_SHA" ]; then
+              echo "::error::Release tag ${TAG} already exists at ${existing_sha}, not this commit. Re-run with a unique build_number."
+              exit 1
+            fi
+            echo "Reusing tag ${TAG} @ ${TARGET_SHA} (retry of incomplete publish)"
           else
             echo "$out" >&2
             exit 1
           fi
 
+          echo "created=${created}" >> "$GITHUB_OUTPUT"
+          echo "skip_release=${skip_release}" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         id: release
+        if: ${{ steps.reserve.outputs.skip_release != 'true' }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: "${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}"
@@ -388,6 +419,14 @@ jobs:
           draft: false
           prerelease: ${{ inputs.flavor != 'release' }}
           files: release/ios/*
+
+      - name: Delete unused tag after failed release
+        if: ${{ failure() && steps.reserve.outputs.created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}"
 
       - name: Generate AltStore source from GitHub Releases
         env:
