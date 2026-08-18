@@ -289,7 +289,8 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaUnsupportedOpenChrome: 'Open in Chrome',
   offlineDownloadIosInstallTitle: 'Add VMP to your home screen',
   offlineDownloadIosInstallBenefit1: 'Open with one tap',
-  offlineDownloadIosInstallBenefit2: 'No store install — it does not take up space like a regular app',
+  offlineDownloadIosInstallBenefit2:
+    'No store install — it does not take up space like a regular app',
   offlineDownloadIosInstallBenefit3: 'Convenient offline access to your videos anytime',
   offlineDownloadIosInstallStep1: 'Tap the Share icon',
   offlineDownloadIosInstallStep2: 'Select',
