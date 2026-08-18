@@ -77,6 +77,7 @@
     "SENDER_EMAIL": "vmp@tjm.sk",
     "SENDER_NAME": "VMP",
     "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+    "POSTHOG_HOST": "https://eu.i.posthog.com",
     "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds",
     "VAPID_PUBLIC_KEY": "BNb3xGO1WgZozFD9h4Px9qBYICqXD_3x9GXzmVCnqmcdwpJF8vBdlC2mM5taUyonUrP2YpUNdw0Wf282zx4Pirw"
   },

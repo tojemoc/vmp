@@ -28,6 +28,11 @@ import {
   toApiProviderId,
   toSupportedApiProviderIds,
 } from './paymentProviders.js';
+import {
+  captureMappedPostHogEvent,
+  capturePostHogException,
+  posthogEventFromStripeWebhook,
+} from './posthog.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
@@ -697,9 +702,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     // Explicit supported selection wins when present in order; otherwise fall back only when
     // the client omitted the provider or sent an unrecognized value.
     const providerId: PaymentProviderId | null =
-      selectedId && providerOrder.includes(selectedId)
-        ? selectedId
-        : (orderedRunnable[0] ?? null);
+      selectedId && providerOrder.includes(selectedId) ? selectedId : (orderedRunnable[0] ?? null);
     const apiProvider = providerId ? toApiProviderId(providerId) : null;
     if (!providerId || !apiProvider) {
       const noneAvailable = orderedRunnable.length === 0;
@@ -925,6 +928,10 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               err: brevoErr,
             });
           }
+          await captureMappedPostHogEvent(
+            env,
+            posthogEventFromStripeWebhook('checkout.session.completed', session, userId),
+          );
         }
         break;
       }
@@ -974,6 +981,10 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
             });
           }
           await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id));
+          await captureMappedPostHogEvent(
+            env,
+            posthogEventFromStripeWebhook('invoice.paid', invoice, String(existing.user_id)),
+          );
         }
         break;
       }
@@ -1012,6 +1023,14 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
             });
             throw offlineErr;
           }
+          await captureMappedPostHogEvent(
+            env,
+            posthogEventFromStripeWebhook(
+              'customer.subscription.deleted',
+              stripeSub,
+              String(row.user_id),
+            ),
+          );
         }
         break;
       }
@@ -1051,6 +1070,14 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               });
               throw offlineErr;
             }
+            await captureMappedPostHogEvent(
+              env,
+              posthogEventFromStripeWebhook(
+                'invoice.payment_failed',
+                invoice,
+                String(existing.user_id),
+              ),
+            );
           }
         }
         break;
@@ -1064,6 +1091,9 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
     return jsonResponse({ ok: true }, 200, corsHeaders);
   } catch (err) {
     console.error('handleWebhook error:', err);
+    await capturePostHogException(env, err, {
+      properties: { handler: 'stripe_webhook' },
+    });
     // Return 500 so Stripe retries the event on transient failures
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }

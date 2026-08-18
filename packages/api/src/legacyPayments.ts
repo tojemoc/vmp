@@ -16,6 +16,7 @@ import {
   verifyLegacyWebhookSignature,
 } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import { captureMappedPostHogEvent, posthogEventFromLegacyWebhook } from './posthog.js';
 import { getSetting } from './settingsStore.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -544,6 +545,8 @@ export async function handleLegacyWebhook(
       console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr);
     }
   }
+
+  await captureMappedPostHogEvent(env, posthogEventFromLegacyWebhook(status, userId));
 
   return jsonResponse({ ok: true }, 200, corsHeaders);
 }

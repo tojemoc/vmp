@@ -143,6 +143,7 @@ import {
   handleWebhook,
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
+import { capturePostHogException, POSTHOG_TRACING_REQUEST_HEADERS } from './posthog.js';
 import {
   handleAdminIsicCampaigns,
   handleAdminPromoCampaigns,
@@ -491,563 +492,597 @@ const workerHandler = {
       const corsHeaders = buildCorsHeaders(request, env);
       const _reqStart = Date.now();
 
-      if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            ...corsHeaders,
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers':
-              'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token',
-            'Access-Control-Max-Age': '86400',
-          },
-        });
-      }
+      try {
+        if (request.method === 'OPTIONS') {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              ...corsHeaders,
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers':
+                'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
+                POSTHOG_TRACING_REQUEST_HEADERS.join(', '),
+              'Access-Control-Max-Age': '86400',
+            },
+          });
+        }
 
-      // ── Auth routes ───────────────────────────────────────────────────────────
-      if (url.pathname === '/api/auth/magic-link' && request.method === 'POST') {
-        return handleRequestMagicLink(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
-        return handleVerifyMagicLink(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/native/redeem' && request.method === 'POST') {
-        return handleNativeRedeemMagicLink(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/magic-pwa-handoff' && request.method === 'POST') {
-        return handleMagicPwaHandoff(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
-        return handleRedeemPwaHandoff(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/device-pairing/start' && request.method === 'POST') {
-        return handleDevicePairingStart(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/device-pairing/preview' && request.method === 'POST') {
-        return handleDevicePairingPreview(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/device-pairing/complete' && request.method === 'POST') {
-        return handleDevicePairingComplete(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/device-pairing/poll' && request.method === 'POST') {
-        return handleDevicePairingPoll(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/pwa-push-login/init' && request.method === 'POST') {
-        return handlePwaPushLoginInit(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/pwa-push-login/subscribe' && request.method === 'POST') {
-        return handlePwaPushLoginSubscribe(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/pwa-push-login/deliver' && request.method === 'POST') {
-        return handlePwaPushLoginDeliver(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/pwa-push-login/verify-2fa' && request.method === 'POST') {
-        return handlePwaPushLoginVerify2fa(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
-        return handleRefreshToken(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
-        return handleLogout(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/me' && request.method === 'GET') {
-        return handleGetMe(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/2fa/setup' && request.method === 'GET') {
-        return handleTotpSetup(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/2fa/confirm' && request.method === 'POST') {
-        return handleTotpConfirm(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/2fa/disable' && request.method === 'POST') {
-        return handleTotpDisable(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/auth/2fa/verify' && request.method === 'POST') {
-        return handleTotpVerify(request, env, corsHeaders);
-      }
+        // ── Auth routes ───────────────────────────────────────────────────────────
+        if (url.pathname === '/api/auth/magic-link' && request.method === 'POST') {
+          return handleRequestMagicLink(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
+          return handleVerifyMagicLink(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/native/redeem' && request.method === 'POST') {
+          return handleNativeRedeemMagicLink(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/magic-pwa-handoff' && request.method === 'POST') {
+          return handleMagicPwaHandoff(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/redeem-pwa-handoff' && request.method === 'POST') {
+          return handleRedeemPwaHandoff(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/device-pairing/start' && request.method === 'POST') {
+          return handleDevicePairingStart(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/device-pairing/preview' && request.method === 'POST') {
+          return handleDevicePairingPreview(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/device-pairing/complete' && request.method === 'POST') {
+          return handleDevicePairingComplete(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/device-pairing/poll' && request.method === 'POST') {
+          return handleDevicePairingPoll(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/pwa-push-login/init' && request.method === 'POST') {
+          return handlePwaPushLoginInit(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/pwa-push-login/subscribe' && request.method === 'POST') {
+          return handlePwaPushLoginSubscribe(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/pwa-push-login/deliver' && request.method === 'POST') {
+          return handlePwaPushLoginDeliver(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/pwa-push-login/verify-2fa' && request.method === 'POST') {
+          return handlePwaPushLoginVerify2fa(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
+          return handleRefreshToken(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+          return handleLogout(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/me' && request.method === 'GET') {
+          return handleGetMe(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/2fa/setup' && request.method === 'GET') {
+          return handleTotpSetup(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/2fa/confirm' && request.method === 'POST') {
+          return handleTotpConfirm(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/2fa/disable' && request.method === 'POST') {
+          return handleTotpDisable(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/2fa/verify' && request.method === 'POST') {
+          return handleTotpVerify(request, env, corsHeaders);
+        }
 
-      // ── Existing routes ───────────────────────────────────────────────────────
-      if (url.pathname === '/api/recommendations' && request.method === 'GET') {
-        return handleVideoRecommendations(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/videos') {
-        return handleVideosList(request, env, corsHeaders);
-      }
-      if (url.pathname.match(/^\/api\/videos\/[^/]+\/meta$/) && request.method === 'GET') {
-        return handleVideoPublicMeta(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/homepage/placement' && request.method === 'GET') {
-        return handleHomepagePlacement(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/feed/public') {
-        return handlePublicFeed(request, env, corsHeaders);
-      }
-      if (url.pathname.match(/^\/api\/feed\/[^/]+\/[^/]+$/)) {
-        return handlePersonalFeed(request, env, corsHeaders);
-      }
-      if (url.pathname.startsWith('/api/video-access/')) {
-        return handleVideoAccess(request, env, corsHeaders, ctx, _reqStart);
-      }
-      if (url.pathname.startsWith('/api/video-proxy/')) {
-        return handleVideoProxy(request, env, corsHeaders, ctx, _reqStart);
-      }
-      {
-        const pipelineStatusMatch = url.pathname.match(
-          /^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/,
-        );
-        const pipelineVideoId = pipelineStatusMatch?.[1];
-        if (pipelineVideoId && request.method === 'POST') {
-          return handleVideoPipelineStatus(request, env, corsHeaders, pipelineVideoId);
+        // ── Existing routes ───────────────────────────────────────────────────────
+        if (url.pathname === '/api/recommendations' && request.method === 'GET') {
+          return handleVideoRecommendations(request, env, corsHeaders);
         }
-      }
-      if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
-        return handleBootstrap(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/config') {
-        return handleAdminConfig(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/categories' &&
-        ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)
-      ) {
-        return handleAdminCategories(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/preview-locks') {
-        return handlePreviewLocks(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/videos') {
-        return handleAdminVideosList(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/videos/livestreams' && request.method === 'POST') {
-        return handleAdminLivestreamCreate(request, env, corsHeaders);
-      }
-      if (
-        url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) &&
-        request.method === 'POST'
-      ) {
-        return handleThumbnailUpload(request, env, corsHeaders);
-      }
-      if (
-        url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) &&
-        request.method === 'DELETE'
-      ) {
-        return handleThumbnailDelete(request, env, corsHeaders);
-      }
-      if (
-        url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream$/) &&
-        request.method === 'PATCH'
-      ) {
-        return handleAdminLivestreamUpdate(request, env, corsHeaders);
-      }
-      if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
-        return handleAdminVideoUpdate(request, env, ctx, corsHeaders);
-      }
-      if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+$/) && request.method === 'DELETE') {
-        return handleAdminVideoDelete(request, env, corsHeaders);
-      }
-      if (
-        url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/notify$/) &&
-        request.method === 'POST'
-      ) {
-        return handleAdminVideoNotify(request, env, ctx, corsHeaders);
-      }
-      if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) && request.method === 'POST') {
-        return handleVideoSwap(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/push/test' && request.method === 'POST') {
-        return handleAdminPushTest(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/newsletter/settings' &&
-        (request.method === 'GET' || request.method === 'PATCH')
-      ) {
-        return handleAdminNewsletterSettings(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/newsletter/send' && request.method === 'POST') {
-        return handleAdminNewsletterSend(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/newsletter/campaigns' && request.method === 'GET') {
-        return handleAdminNewsletterCampaigns(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/payments/settings' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminPaymentSettings(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/einvoicing/settings' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminEInvoicingSettings(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/einvoicing/invoices' && request.method === 'GET') {
-        return handleAdminEInvoices(request, env, corsHeaders);
-      }
-      {
-        const eInvoiceById = url.pathname.match(/^\/api\/admin\/einvoicing\/invoices\/([^/]+)$/);
-        if (eInvoiceById?.[1] && request.method === 'GET') {
-          return handleAdminEInvoiceById(request, env, corsHeaders, eInvoiceById[1]);
+        if (url.pathname === '/api/videos') {
+          return handleVideosList(request, env, corsHeaders);
         }
-      }
-      if (
-        url.pathname === '/api/admin/promotions/campaigns' &&
-        ['GET', 'POST', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminPromoCampaigns(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/promotions/codes' &&
-        ['GET', 'POST', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminPromoCodes(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/isic/campaigns' &&
-        ['GET', 'POST', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminIsicCampaigns(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/site-settings' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleSiteSettings(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/system/features' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminSystemFeatures(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
-        return handleAdminReplicationPush(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
-        return handleAdminReplicationSettings(request, env, corsHeaders);
-      }
-      {
-        const templateById = url.pathname.match(/^\/api\/admin\/newsletter\/templates\/([^/]+)$/);
-        if (templateById && (request.method === 'PATCH' || request.method === 'DELETE')) {
-          return handleAdminNewsletterTemplateById(request, env, corsHeaders, templateById[1]);
+        if (url.pathname.match(/^\/api\/videos\/[^/]+\/meta$/) && request.method === 'GET') {
+          return handleVideoPublicMeta(request, env, corsHeaders);
         }
-      }
-      if (
-        url.pathname === '/api/admin/newsletter/templates' &&
-        (request.method === 'GET' || request.method === 'POST')
-      ) {
-        return handleAdminNewsletterTemplates(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/newsletter/sync' && request.method === 'POST') {
-        return handleAdminNewsletterSync(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/newsletter/schedule' && request.method === 'POST') {
-        return handleAdminNewsletterSchedule(request, env, corsHeaders);
-      }
-      {
-        const draftById = url.pathname.match(/^\/api\/admin\/newsletter\/drafts\/([^/]+)$/);
-        if (draftById && (request.method === 'PATCH' || request.method === 'DELETE')) {
-          return handleAdminNewsletterDrafts(request, env, corsHeaders, draftById[1]);
+        if (url.pathname === '/api/homepage/placement' && request.method === 'GET') {
+          return handleHomepagePlacement(request, env, corsHeaders);
         }
-      }
-      if (
-        url.pathname === '/api/admin/newsletter/drafts' &&
-        (request.method === 'GET' || request.method === 'POST')
-      ) {
-        return handleAdminNewsletterDrafts(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/payments/plans' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminPaymentPlans(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/rss/podcast-rebuild-webhook' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleRssPodcastWebhookConfig(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/rss/podcast-preview-rebuild' && request.method === 'POST') {
-        return handleRssPodcastPreviewRebuildNotify(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
-        return handleHomepageContentPublic(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/homepage/content' &&
-        (request.method === 'GET' || request.method === 'PATCH')
-      ) {
-        return handleHomepageContent(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/users' &&
-        (request.method === 'GET' || request.method === 'PATCH' || request.method === 'POST')
-      ) {
-        return handleAdminUsers(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
-        return handleAdminUserImportCsv(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/users/transfer-subscription' && request.method === 'POST') {
-        return handleAdminTransferSubscription(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/analytics' &&
-        (request.method === 'GET' || request.method === 'PATCH')
-      ) {
-        return handleAdminAnalytics(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/site-settings' && request.method === 'GET') {
-        return handleSiteSettings(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/site-footer' && request.method === 'GET') {
-        return handleSiteFooterPublic(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/site-footer' && ['GET', 'PATCH'].includes(request.method)) {
-        return handleSiteFooterAdmin(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/pages' && request.method === 'GET') {
-        return handleCmsPagesList(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/pages' && request.method === 'POST') {
-        return handleCmsPageCreate(request, env, corsHeaders);
-      }
-      const cmsPageRestore = url.pathname.match(
-        /^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/,
-      );
-      const cmsPageRestoreId = cmsPageRestore?.[1];
-      const cmsPageRestoreRevisionId = cmsPageRestore?.[2];
-      if (cmsPageRestoreId && cmsPageRestoreRevisionId && request.method === 'POST') {
-        return handleCmsPageRestoreRevision(
-          request,
-          env,
-          corsHeaders,
-          cmsPageRestoreId,
-          cmsPageRestoreRevisionId,
-        );
-      }
-      const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/);
-      const cmsPageRevisionsId = cmsPageRevisions?.[1];
-      if (cmsPageRevisionsId && request.method === 'GET') {
-        return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisionsId);
-      }
-      const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/);
-      const cmsPagePublishId = cmsPagePublish?.[1];
-      if (cmsPagePublishId && request.method === 'POST') {
-        return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublishId);
-      }
-      const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/);
-      const cmsPageUnpublishId = cmsPageUnpublish?.[1];
-      if (cmsPageUnpublishId && request.method === 'POST') {
-        return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublishId);
-      }
-      const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/);
-      const cmsPageId = cmsPageById?.[1];
-      if (cmsPageId && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
-        return handleCmsPageById(request, env, corsHeaders, cmsPageId);
-      }
-      const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/);
-      const cmsPageSlug = cmsPageBySlug?.[1];
-      if (cmsPageSlug && request.method === 'GET') {
-        return handleCmsPageBySlug(request, env, corsHeaders, cmsPageSlug);
-      }
-      if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
-        return handleCmsMediaUpload(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/cms/media/batch' && request.method === 'GET') {
-        return handleCmsMediaBatch(request, env, corsHeaders);
-      }
-      const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/);
-      const cmsMediaId = cmsMediaById?.[1];
-      if (cmsMediaId && request.method === 'GET') {
-        return handleCmsMediaById(request, env, corsHeaders, cmsMediaId);
-      }
-      if (url.pathname === '/api/pills' && request.method === 'GET') {
-        return handlePillsPublic(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/pills/update' && request.method === 'POST') {
-        return handlePillsUpdate(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/pills' &&
-        ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)
-      ) {
-        return handleAdminPills(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/pills/image-upload' && request.method === 'POST') {
-        return handleAdminPillImageUpload(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/pills/settings' &&
-        ['GET', 'PATCH'].includes(request.method)
-      ) {
-        return handleAdminPillsSettings(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/smoke-auth' && request.method === 'GET') {
-        return handleAdminSmokeAuth(request, env, corsHeaders);
-      }
-      if (url.pathname.match(/^\/api\/categories\/[^/]+\/videos$/) && request.method === 'GET') {
-        return handleCategoryVideosBySlug(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
-        return handleGetPricing(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/stripe-config' && request.method === 'GET') {
-        return handleGetStripeConfig(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/checkout' && request.method === 'POST') {
-        return handleCheckout(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/session-status' && request.method === 'GET') {
-        return handleSessionStatus(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
-        return handleWebhook(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
-        return handleLegacyWebhook(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
-        return handleLegacyCheckout(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
-        return handleLegacyComplete(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/legacy/order-status' && request.method === 'GET') {
-        return handleLegacyOrderStatus(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
-        return handleAdminLegacyPaymentSettings(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/legacy-migration/stats' && request.method === 'GET') {
-        return handleAdminLegacyMigrationStats(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/legacy-migration/validate-batch' &&
-        request.method === 'POST'
-      ) {
-        return handleAdminLegacyMigrationValidateBatch(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/legacy-migration/relink-candidates' &&
-        request.method === 'GET'
-      ) {
-        return handleAdminLegacyMigrationRelinkCandidates(request, env, corsHeaders);
-      }
-      if (
-        url.pathname === '/api/admin/legacy-migration/send-relink-email' &&
-        request.method === 'POST'
-      ) {
-        return handleAdminLegacyMigrationSendRelinkEmail(request, env, corsHeaders);
-      }
-      // ── Offline downloads (M1/M2) ─────────────────────────────────────────────
-      if (url.pathname === '/api/offline/devices/register' && request.method === 'POST') {
-        return handleRegisterOfflineDevice(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/offline/devices' && request.method === 'GET') {
-        return handleListOfflineDevices(request, env, corsHeaders);
-      }
-      {
-        const offlineDeviceMatch = url.pathname.match(/^\/api\/offline\/devices\/([^/]+)$/);
-        const offlineDeviceId = offlineDeviceMatch?.[1];
-        if (offlineDeviceId && request.method === 'DELETE') {
-          return handleRevokeOfflineDevice(request, env, corsHeaders, offlineDeviceId);
+        if (url.pathname === '/api/feed/public') {
+          return handlePublicFeed(request, env, corsHeaders);
         }
-      }
-      if (url.pathname === '/api/downloads/licenses/renew' && request.method === 'POST') {
-        return handleRenewDownloadLicenses(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/downloads' && request.method === 'GET') {
-        return handleListDownloads(request, env, corsHeaders);
-      }
-      {
-        const downloadAssetMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/assets\/(.+)$/);
-        const downloadVideoId = downloadAssetMatch?.[1];
-        const downloadAssetPath = downloadAssetMatch?.[2];
-        if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
-          let decodedAssetPath: string;
-          try {
-            decodedAssetPath = decodeURIComponent(downloadAssetPath);
-          } catch {
-            return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders);
+        if (url.pathname.match(/^\/api\/feed\/[^/]+\/[^/]+$/)) {
+          return handlePersonalFeed(request, env, corsHeaders);
+        }
+        if (url.pathname.startsWith('/api/video-access/')) {
+          return handleVideoAccess(request, env, corsHeaders, ctx, _reqStart);
+        }
+        if (url.pathname.startsWith('/api/video-proxy/')) {
+          return handleVideoProxy(request, env, corsHeaders, ctx, _reqStart);
+        }
+        {
+          const pipelineStatusMatch = url.pathname.match(
+            /^\/api\/admin\/videos\/([^/]+)\/pipeline-status$/,
+          );
+          const pipelineVideoId = pipelineStatusMatch?.[1];
+          if (pipelineVideoId && request.method === 'POST') {
+            return handleVideoPipelineStatus(request, env, corsHeaders, pipelineVideoId);
           }
-          return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodedAssetPath);
         }
-      }
-      {
-        const downloadAuthorizeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/authorize$/);
-        const authorizeVideoId = downloadAuthorizeMatch?.[1];
-        if (authorizeVideoId && request.method === 'POST') {
-          return handleAuthorizeDownload(request, env, corsHeaders, authorizeVideoId);
+        if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
+          return handleBootstrap(request, env, corsHeaders);
         }
-      }
-      {
-        const downloadRevokeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)$/);
-        const revokeVideoId = downloadRevokeMatch?.[1];
-        if (revokeVideoId && request.method === 'DELETE') {
-          return handleRevokeDownload(request, env, corsHeaders, revokeVideoId);
+        if (url.pathname === '/api/admin/config') {
+          return handleAdminConfig(request, env, corsHeaders);
         }
-      }
+        if (
+          url.pathname === '/api/admin/categories' &&
+          ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)
+        ) {
+          return handleAdminCategories(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/preview-locks') {
+          return handlePreviewLocks(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/videos') {
+          return handleAdminVideosList(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/videos/livestreams' && request.method === 'POST') {
+          return handleAdminLivestreamCreate(request, env, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) &&
+          request.method === 'POST'
+        ) {
+          return handleThumbnailUpload(request, env, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/thumbnail$/) &&
+          request.method === 'DELETE'
+        ) {
+          return handleThumbnailDelete(request, env, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/livestream$/) &&
+          request.method === 'PATCH'
+        ) {
+          return handleAdminLivestreamUpdate(request, env, corsHeaders);
+        }
+        if (url.pathname.startsWith('/api/admin/videos/') && request.method === 'PATCH') {
+          return handleAdminVideoUpdate(request, env, ctx, corsHeaders);
+        }
+        if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+$/) && request.method === 'DELETE') {
+          return handleAdminVideoDelete(request, env, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/notify$/) &&
+          request.method === 'POST'
+        ) {
+          return handleAdminVideoNotify(request, env, ctx, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) &&
+          request.method === 'POST'
+        ) {
+          return handleVideoSwap(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/push/test' && request.method === 'POST') {
+          return handleAdminPushTest(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/newsletter/settings' &&
+          (request.method === 'GET' || request.method === 'PATCH')
+        ) {
+          return handleAdminNewsletterSettings(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/newsletter/send' && request.method === 'POST') {
+          return handleAdminNewsletterSend(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/newsletter/campaigns' && request.method === 'GET') {
+          return handleAdminNewsletterCampaigns(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/payments/settings' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminPaymentSettings(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/einvoicing/settings' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminEInvoicingSettings(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/einvoicing/invoices' && request.method === 'GET') {
+          return handleAdminEInvoices(request, env, corsHeaders);
+        }
+        {
+          const eInvoiceById = url.pathname.match(/^\/api\/admin\/einvoicing\/invoices\/([^/]+)$/);
+          if (eInvoiceById?.[1] && request.method === 'GET') {
+            return handleAdminEInvoiceById(request, env, corsHeaders, eInvoiceById[1]);
+          }
+        }
+        if (
+          url.pathname === '/api/admin/promotions/campaigns' &&
+          ['GET', 'POST', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminPromoCampaigns(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/promotions/codes' &&
+          ['GET', 'POST', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminPromoCodes(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/isic/campaigns' &&
+          ['GET', 'POST', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminIsicCampaigns(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/site-settings' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleSiteSettings(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/system/features' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminSystemFeatures(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
+          return handleAdminReplicationPush(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/replication' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminReplicationSettings(request, env, corsHeaders);
+        }
+        {
+          const templateById = url.pathname.match(/^\/api\/admin\/newsletter\/templates\/([^/]+)$/);
+          if (templateById && (request.method === 'PATCH' || request.method === 'DELETE')) {
+            return handleAdminNewsletterTemplateById(request, env, corsHeaders, templateById[1]);
+          }
+        }
+        if (
+          url.pathname === '/api/admin/newsletter/templates' &&
+          (request.method === 'GET' || request.method === 'POST')
+        ) {
+          return handleAdminNewsletterTemplates(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/newsletter/sync' && request.method === 'POST') {
+          return handleAdminNewsletterSync(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/newsletter/schedule' && request.method === 'POST') {
+          return handleAdminNewsletterSchedule(request, env, corsHeaders);
+        }
+        {
+          const draftById = url.pathname.match(/^\/api\/admin\/newsletter\/drafts\/([^/]+)$/);
+          if (draftById && (request.method === 'PATCH' || request.method === 'DELETE')) {
+            return handleAdminNewsletterDrafts(request, env, corsHeaders, draftById[1]);
+          }
+        }
+        if (
+          url.pathname === '/api/admin/newsletter/drafts' &&
+          (request.method === 'GET' || request.method === 'POST')
+        ) {
+          return handleAdminNewsletterDrafts(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/payments/plans' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminPaymentPlans(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/rss/podcast-rebuild-webhook' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleRssPodcastWebhookConfig(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/rss/podcast-preview-rebuild' &&
+          request.method === 'POST'
+        ) {
+          return handleRssPodcastPreviewRebuildNotify(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
+          return handleHomepageContentPublic(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/homepage/content' &&
+          (request.method === 'GET' || request.method === 'PATCH')
+        ) {
+          return handleHomepageContent(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/users' &&
+          (request.method === 'GET' || request.method === 'PATCH' || request.method === 'POST')
+        ) {
+          return handleAdminUsers(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
+          return handleAdminUserImportCsv(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/users/transfer-subscription' &&
+          request.method === 'POST'
+        ) {
+          return handleAdminTransferSubscription(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/analytics' &&
+          (request.method === 'GET' || request.method === 'PATCH')
+        ) {
+          return handleAdminAnalytics(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/site-settings' && request.method === 'GET') {
+          return handleSiteSettings(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/site-footer' && request.method === 'GET') {
+          return handleSiteFooterPublic(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/site-footer' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleSiteFooterAdmin(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/pages' && request.method === 'GET') {
+          return handleCmsPagesList(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/pages' && request.method === 'POST') {
+          return handleCmsPageCreate(request, env, corsHeaders);
+        }
+        const cmsPageRestore = url.pathname.match(
+          /^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/,
+        );
+        const cmsPageRestoreId = cmsPageRestore?.[1];
+        const cmsPageRestoreRevisionId = cmsPageRestore?.[2];
+        if (cmsPageRestoreId && cmsPageRestoreRevisionId && request.method === 'POST') {
+          return handleCmsPageRestoreRevision(
+            request,
+            env,
+            corsHeaders,
+            cmsPageRestoreId,
+            cmsPageRestoreRevisionId,
+          );
+        }
+        const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/);
+        const cmsPageRevisionsId = cmsPageRevisions?.[1];
+        if (cmsPageRevisionsId && request.method === 'GET') {
+          return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisionsId);
+        }
+        const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/);
+        const cmsPagePublishId = cmsPagePublish?.[1];
+        if (cmsPagePublishId && request.method === 'POST') {
+          return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublishId);
+        }
+        const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/);
+        const cmsPageUnpublishId = cmsPageUnpublish?.[1];
+        if (cmsPageUnpublishId && request.method === 'POST') {
+          return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublishId);
+        }
+        const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/);
+        const cmsPageId = cmsPageById?.[1];
+        if (cmsPageId && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+          return handleCmsPageById(request, env, corsHeaders, cmsPageId);
+        }
+        const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/);
+        const cmsPageSlug = cmsPageBySlug?.[1];
+        if (cmsPageSlug && request.method === 'GET') {
+          return handleCmsPageBySlug(request, env, corsHeaders, cmsPageSlug);
+        }
+        if (url.pathname === '/api/admin/cms/media' && request.method === 'POST') {
+          return handleCmsMediaUpload(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/cms/media/batch' && request.method === 'GET') {
+          return handleCmsMediaBatch(request, env, corsHeaders);
+        }
+        const cmsMediaById = url.pathname.match(/^\/api\/cms\/media\/([^/]+)$/);
+        const cmsMediaId = cmsMediaById?.[1];
+        if (cmsMediaId && request.method === 'GET') {
+          return handleCmsMediaById(request, env, corsHeaders, cmsMediaId);
+        }
+        if (url.pathname === '/api/pills' && request.method === 'GET') {
+          return handlePillsPublic(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/pills/update' && request.method === 'POST') {
+          return handlePillsUpdate(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/pills' &&
+          ['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)
+        ) {
+          return handleAdminPills(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/pills/image-upload' && request.method === 'POST') {
+          return handleAdminPillImageUpload(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/pills/settings' &&
+          ['GET', 'PATCH'].includes(request.method)
+        ) {
+          return handleAdminPillsSettings(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/smoke-auth' && request.method === 'GET') {
+          return handleAdminSmokeAuth(request, env, corsHeaders);
+        }
+        if (url.pathname.match(/^\/api\/categories\/[^/]+\/videos$/) && request.method === 'GET') {
+          return handleCategoryVideosBySlug(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
+          return handleGetPricing(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/stripe-config' && request.method === 'GET') {
+          return handleGetStripeConfig(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/checkout' && request.method === 'POST') {
+          return handleCheckout(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/session-status' && request.method === 'GET') {
+          return handleSessionStatus(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
+          return handleWebhook(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
+          return handleLegacyWebhook(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
+          return handleLegacyCheckout(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
+          return handleLegacyComplete(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/legacy/order-status' && request.method === 'GET') {
+          return handleLegacyOrderStatus(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
+          return handleAdminLegacyPaymentSettings(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/legacy-migration/stats' && request.method === 'GET') {
+          return handleAdminLegacyMigrationStats(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/legacy-migration/validate-batch' &&
+          request.method === 'POST'
+        ) {
+          return handleAdminLegacyMigrationValidateBatch(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/legacy-migration/relink-candidates' &&
+          request.method === 'GET'
+        ) {
+          return handleAdminLegacyMigrationRelinkCandidates(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/legacy-migration/send-relink-email' &&
+          request.method === 'POST'
+        ) {
+          return handleAdminLegacyMigrationSendRelinkEmail(request, env, corsHeaders);
+        }
+        // ── Offline downloads (M1/M2) ─────────────────────────────────────────────
+        if (url.pathname === '/api/offline/devices/register' && request.method === 'POST') {
+          return handleRegisterOfflineDevice(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/offline/devices' && request.method === 'GET') {
+          return handleListOfflineDevices(request, env, corsHeaders);
+        }
+        {
+          const offlineDeviceMatch = url.pathname.match(/^\/api\/offline\/devices\/([^/]+)$/);
+          const offlineDeviceId = offlineDeviceMatch?.[1];
+          if (offlineDeviceId && request.method === 'DELETE') {
+            return handleRevokeOfflineDevice(request, env, corsHeaders, offlineDeviceId);
+          }
+        }
+        if (url.pathname === '/api/downloads/licenses/renew' && request.method === 'POST') {
+          return handleRenewDownloadLicenses(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/downloads' && request.method === 'GET') {
+          return handleListDownloads(request, env, corsHeaders);
+        }
+        {
+          const downloadAssetMatch = url.pathname.match(
+            /^\/api\/downloads\/([^/]+)\/assets\/(.+)$/,
+          );
+          const downloadVideoId = downloadAssetMatch?.[1];
+          const downloadAssetPath = downloadAssetMatch?.[2];
+          if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
+            let decodedAssetPath: string;
+            try {
+              decodedAssetPath = decodeURIComponent(downloadAssetPath);
+            } catch {
+              return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders);
+            }
+            return handleDownloadAsset(
+              request,
+              env,
+              corsHeaders,
+              downloadVideoId,
+              decodedAssetPath,
+            );
+          }
+        }
+        {
+          const downloadAuthorizeMatch = url.pathname.match(
+            /^\/api\/downloads\/([^/]+)\/authorize$/,
+          );
+          const authorizeVideoId = downloadAuthorizeMatch?.[1];
+          if (authorizeVideoId && request.method === 'POST') {
+            return handleAuthorizeDownload(request, env, corsHeaders, authorizeVideoId);
+          }
+        }
+        {
+          const downloadRevokeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)$/);
+          const revokeVideoId = downloadRevokeMatch?.[1];
+          if (revokeVideoId && request.method === 'DELETE') {
+            return handleRevokeDownload(request, env, corsHeaders, revokeVideoId);
+          }
+        }
 
-      if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
-        return handleGetSubscription(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/promotions/validate' && request.method === 'POST') {
-        return handlePromoValidate(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/isic/validate' && request.method === 'POST') {
-        return handleIsicValidate(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/isic/campaigns' && request.method === 'GET') {
-        return handleIsicCampaignPublic(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/rss' && request.method === 'GET') {
-        return handleGetAccountRss(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
-        return handleAccountInvoices(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/account/transfer-subscription' && request.method === 'POST') {
-        return handleAccountTransferSubscription(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
-        return handlePortal(request, env, corsHeaders);
-      }
-      // ── Push notification routes ──────────────────────────────────────────────
-      if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
-        return handleGetVapidPublicKey(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
-        return handlePushSubscribe(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/push/device' && request.method === 'POST') {
-        return handleNativePushRegister(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/push/device' && request.method === 'DELETE') {
-        return handleNativePushUnregister(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/push/events' && request.method === 'POST') {
-        return handlePushEvents(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/admin/push-analytics' && request.method === 'GET') {
-        return handleAdminPushAnalytics(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/push/subscribe' && request.method === 'DELETE') {
-        return handlePushUnsubscribe(request, env, corsHeaders);
-      }
-      if (url.pathname === '/api/health') {
-        return jsonResponse({ status: 'healthy' }, 200, corsHeaders);
-      }
+        if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
+          return handleGetSubscription(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/promotions/validate' && request.method === 'POST') {
+          return handlePromoValidate(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/isic/validate' && request.method === 'POST') {
+          return handleIsicValidate(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/isic/campaigns' && request.method === 'GET') {
+          return handleIsicCampaignPublic(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/rss' && request.method === 'GET') {
+          return handleGetAccountRss(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
+          return handleAccountInvoices(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/transfer-subscription' && request.method === 'POST') {
+          return handleAccountTransferSubscription(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
+          return handlePortal(request, env, corsHeaders);
+        }
+        // ── Push notification routes ──────────────────────────────────────────────
+        if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
+          return handleGetVapidPublicKey(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/push/subscribe' && request.method === 'POST') {
+          return handlePushSubscribe(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/push/device' && request.method === 'POST') {
+          return handleNativePushRegister(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/push/device' && request.method === 'DELETE') {
+          return handleNativePushUnregister(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/push/events' && request.method === 'POST') {
+          return handlePushEvents(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/push-analytics' && request.method === 'GET') {
+          return handleAdminPushAnalytics(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/push/subscribe' && request.method === 'DELETE') {
+          return handlePushUnsubscribe(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/health') {
+          return jsonResponse({ status: 'healthy' }, 200, corsHeaders);
+        }
 
-      log({
-        service: 'worker',
-        event: 'route_not_found',
-        http_method: request.method,
-        http_path: url.pathname,
-        http_status: 404,
-      });
-      return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+        log({
+          service: 'worker',
+          event: 'route_not_found',
+          http_method: request.method,
+          http_path: url.pathname,
+          http_status: 404,
+        });
+        return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
+      } catch (err) {
+        await capturePostHogException(env, err, {
+          request,
+          properties: { handler: 'fetch', http_method: request.method, http_path: url.pathname },
+        });
+        throw err;
+      }
     });
   },
 
