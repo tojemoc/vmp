@@ -63,12 +63,13 @@ Inputs:
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on)
 - `build_android` — also build/upload an Android test APK (default on)
 
-Outputs:
+Outputs (when the corresponding input is enabled):
 
-- Android release `.apk` uploaded as a workflow artifact (when `build_android` is enabled)
-- Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
-- `altstore-source.json` published on the `gh-pages` branch (not committed to `main`) for SideStore / AltStore
-- Install page at `https://<org>.github.io/<repo>/` with OTA + source links
+- When `build_android` is enabled: Android release `.apk` uploaded as the workflow artifact **`mobile-android-apk`** (download from the run’s Artifacts section).
+- When `publish_release` is enabled:
+  - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
+  - `altstore-source.json` deployed to GitHub Pages (generated from `altstore-source.meta.json`, not committed to git)
+  - Install page at `https://<org>.github.io/<repo>/` with SideStore source link and secondary OTA link
 
 SideStore source URL (after first publish on `main`):
 

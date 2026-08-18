@@ -66,6 +66,10 @@ def fetch_release_by_tag(repo: str, tag: str, token: str | None) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def is_transient_http_error(exc: urllib.error.HTTPError) -> bool:
+    return exc.code in (403, 429) or exc.code >= 500
+
+
 def wait_for_release_ipa(
     repo: str,
     tag: str,
@@ -79,7 +83,20 @@ def wait_for_release_ipa(
     attempt = 0
     while time.monotonic() < deadline:
         attempt += 1
-        release = fetch_release_by_tag(repo, tag, token)
+        try:
+            release = fetch_release_by_tag(repo, tag, token)
+        except urllib.error.HTTPError as exc:
+            if not is_transient_http_error(exc):
+                raise
+            remaining = max(0, int(deadline - time.monotonic()))
+            print(
+                f"Transient GitHub API {exc.code} for {tag} "
+                f"(attempt {attempt}, ~{remaining}s left)",
+                file=sys.stderr,
+            )
+            time.sleep(poll_seconds)
+            continue
+
         if release and release_has_ios_ipa(release):
             print(
                 f"Release {tag} has iOS IPA on API (attempt {attempt})",

@@ -13,6 +13,8 @@
         --muted: #9aa7b8;
         --accent: #111827;
         --accent-hover: #1f2937;
+        --secondary: rgba(255, 255, 255, 0.08);
+        --secondary-hover: rgba(255, 255, 255, 0.12);
       }
       * {
         box-sizing: border-box;
@@ -64,6 +66,23 @@
       .install-btn:focus {
         background: var(--accent-hover);
       }
+      .secondary-btn {
+        display: block;
+        width: 100%;
+        margin-top: 0.75rem;
+        padding: 0.85rem 1.1rem;
+        border-radius: 12px;
+        background: var(--secondary);
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+      .secondary-btn:hover,
+      .secondary-btn:focus {
+        background: var(--secondary-hover);
+      }
       .notes {
         margin-top: 1.5rem;
         padding: 1rem;
@@ -93,15 +112,19 @@
         border-radius: 8px;
         color: var(--muted);
       }
+      .ota-note {
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>VMP</h1>
       <p class="version">Version __VERSION__</p>
-      <a class="install-btn" href="__INSTALL_URL__">Install on iPhone (OTA)</a>
       <div class="notes">
-        <strong>SideStore / AltStore (recommended for test builds)</strong>
+        <strong>SideStore / AltStore (recommended)</strong>
         <ul>
           <li>Add this source URL in SideStore (includes all GitHub pre-releases):</li>
         </ul>
@@ -110,6 +133,11 @@
           No Mac required — SideStore re-signs the IPA from GitHub Releases using your Apple ID.
         </p>
       </div>
+      <a class="secondary-btn" href="__INSTALL_URL__">Install via OTA (advanced)</a>
+      <p class="ota-note">
+        OTA install is secondary. It requires a properly signed distribution or ad-hoc provisioning profile;
+        CI test IPAs are ad-hoc signed for SideStore, so OTA may fail unless you have matching device provisioning.
+      </p>
     </main>
   </body>
 </html>

@@ -209,7 +209,7 @@ Manual workflow: `.github/workflows/mobile-artifacts.yml` (`workflow_dispatch` o
 - **Install page:** `https://tojemoc.github.io/vmp/`
 - **Playbook:** [docs/ios-sidestore-distribution-playbook.md](docs/ios-sidestore-distribution-playbook.md)
 
-IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is pushed to the **`gh-pages` branch** (never `main`) and served at the URL above. Testers add that URL in SideStore on iPhone — **no Mac required**. Canonical `flavor: release` publishing is allowed from `main` only.
+IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is generated from `docs/altstore-source.meta.json` and deployed to GitHub Pages via the official Pages deploy actions (never committed to `main`). Testers add the source URL in SideStore on iPhone — **no Mac required**. Canonical `flavor: release` publishing is allowed from `main` only.
 
 Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags).
 

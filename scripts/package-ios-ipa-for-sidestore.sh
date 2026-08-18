@@ -15,6 +15,7 @@ if [[ ! -d "$RUNNER_APP" ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname "$OUT_IPA")"
 OUT_IPA="$(cd "$(dirname "$OUT_IPA")" && pwd)/$(basename "$OUT_IPA")"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -31,7 +32,6 @@ if [[ -d "$APP/Frameworks" ]] && compgen -G "$APP/Frameworks"/* >/dev/null; then
 fi
 codesign -s - -f "$APP"
 
-mkdir -p "$(dirname "$OUT_IPA")"
 rm -f "$OUT_IPA"
 (
   cd "$WORKDIR"

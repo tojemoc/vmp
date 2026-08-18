@@ -46,7 +46,7 @@ on:
         default: true
         type: boolean
 
-# Write access is scoped to the publish job (releases + gh-pages). Other jobs stay read-only.
+# Write access is scoped to the publish job (GitHub Releases + Pages deploy). Other jobs stay read-only.
 permissions:
   contents: read
   actions: read
@@ -308,6 +308,11 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Guard canonical release publishing
         if: ${{ inputs.flavor == 'release' && github.ref != 'refs/heads/main' }}
@@ -372,17 +377,21 @@ jobs:
           ALTSTORE_WAIT_RELEASE_TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
         run: python3 scripts/generate-altstore-source.py
 
-      - name: Publish GitHub Pages from gh-pages (not main)
+      - name: Publish GitHub Pages (Actions deploy, no git push)
+        id: pages
         env:
           VERSION_NAME: ${{ needs.build-ios.outputs.version_name }}
           BUILD_NUMBER: ${{ needs.build-ios.outputs.build_number }}
           FLAVOR_LABEL: ${{ needs.build-ios.outputs.flavor_label }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
           TAG="${FLAVOR_LABEL}-v${VERSION_NAME}-build${BUILD_NUMBER}"
           IPA_FILE="vmp-${VERSION_NAME}-ios.ipa"
-          IPA_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${IPA_FILE}"
-          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${IPA_FILE}"
+          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY_NAME}"
           MANIFEST_URL="${PAGES_URL}/manifest.plist"
           INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${MANIFEST_URL}', safe=''))")"
           INSTALL_URL_HTML="${INSTALL_URL//&/&amp;}"
@@ -398,31 +407,17 @@ jobs:
           sed -i "s|__INSTALL_URL__|${INSTALL_URL_SED}|g" docs/index.html
           sed -i "s|__ALTSTORE_SOURCE_URL__|${ALTSTORE_SOURCE_URL}|g" docs/index.html
 
-          STAGING="$(mktemp -d)"
-          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/.nojekyll "$STAGING/"
+          mkdir -p site
+          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/.nojekyll site/
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
-          # Drop generated files from the dispatch ref so we never commit them to
-          # main or a feature branch. Pages live only on the gh-pages branch.
-          git reset --hard HEAD
-          git clean -fd
-          git fetch origin gh-pages:gh-pages || true
-          if git show-ref --verify --quiet refs/heads/gh-pages; then
-            git checkout gh-pages
-          else
-            git checkout --orphan gh-pages
-            git rm -rf --quiet . || true
-          fi
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v4
+        with:
+          path: site
 
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          cp "$STAGING/altstore-source.json" "$STAGING/index.html" "$STAGING/manifest.plist" "$STAGING/.nojekyll" .
-
-          git add -A altstore-source.json index.html manifest.plist .nojekyll
-          if git diff --staged --quiet; then
-            echo "GitHub Pages files already up to date"
-          else
-            git commit -m "chore: update GitHub Pages (OTA + AltStore source) for ${TAG} [skip ci]"
-            git push origin HEAD:gh-pages
-          fi
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

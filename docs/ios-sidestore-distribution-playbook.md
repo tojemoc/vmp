@@ -23,9 +23,9 @@ Install page (OTA manifest + source link):
 | Artifact | Location |
 | --- | --- |
 | IPA file | GitHub Release asset (`vmp-<version>-ios.ipa`) |
-| AltStore source JSON | `gh-pages` branch (`altstore-source.json`) |
-| Install page | `gh-pages` branch (`index.html`) |
-| OTA manifest (optional) | `gh-pages` branch (`manifest.plist`) |
+| AltStore source JSON | GitHub Pages deployment (`altstore-source.json`, generated from `altstore-source.meta.json`) |
+| Install page | GitHub Pages deployment (`index.html`, from template) |
+| OTA manifest (optional) | GitHub Pages deployment (`manifest.plist`, from template) |
 
 IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always points at **GitHub Release assets**.
 
@@ -72,9 +72,9 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 
 ## Repo setup (maintainer, one-time)
 
-1. **GitHub Pages:** Settings → Pages → Deploy from a branch → `gh-pages` / `/` (root). Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
-2. The publish job has `contents: write` so it can create GitHub Releases and push **only** to `gh-pages` (`git push origin HEAD:gh-pages`). It never pushes to `main`.
-3. First merge to `main` after this workflow lands; run **Mobile artifacts** from `main` once to populate Releases + Pages.
+1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: GitHub Actions**. Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
+2. The publish job uses the official Pages deploy actions (`configure-pages`, `upload-pages-artifact`, `deploy-pages`). It creates GitHub Releases and deploys generated Pages files **without** committing or pushing to `main` or any branch.
+3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. Canonical `flavor: release` is main-only; feature branches may publish pre-releases.
 
 ## Updating permissions metadata
 
@@ -83,7 +83,7 @@ When native entitlements or Info.plist privacy keys change (after `expo prebuild
 - `appPermissions.entitlements` — iOS entitlements (e.g. associated domains).
 - `appPermissions.privacy` — `NS*UsageDescription` keys from Info.plist.
 
-Regenerate `docs/altstore-source.json` on the next CI run or locally:
+Regenerate the AltStore source locally (writes `docs/altstore-source.json`, which is **not** committed):
 
 ```bash
 GITHUB_REPOSITORY=tojemoc/vmp python3 scripts/generate-altstore-source.py
