@@ -69,8 +69,10 @@ jobs:
       - name: Guard publishing from main only
         if: ${{ inputs.publish_release && github.ref != 'refs/heads/main' }}
         working-directory: ${{ github.workspace }}
+        env:
+          DISPATCH_REF: ${{ github.ref }}
         run: |
-          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${{ github.ref }}). Disable publish_release for artifact-only builds from feature branches."
+          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF}). Disable publish_release for artifact-only builds from feature branches."
           exit 1
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -320,8 +322,10 @@ jobs:
     steps:
       - name: Guard publishing from main only
         if: ${{ github.ref != 'refs/heads/main' }}
+        env:
+          DISPATCH_REF: ${{ github.ref }}
         run: |
-          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${{ github.ref }})."
+          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF})."
           exit 1
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
