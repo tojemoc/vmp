@@ -12,6 +12,7 @@ import { getSetting } from './settingsStore.js';
 const PAIRING_TTL_SEC = 10 * 60;
 const PAIRING_POLL_INTERVAL_SEC = 2;
 const PAIRING_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PAIRING_CODE_LENGTH = 10;
 const PAIRING_CLEANUP_GRACE_SEC = 24 * 60 * 60;
 
 const PAIRING_LIMIT_SETTINGS = {
@@ -19,6 +20,9 @@ const PAIRING_LIMIT_SETTINGS = {
   poll: { key: 'pairing_poll_limit_per_ip', defaultValue: '120' },
   preview: { key: 'pairing_preview_limit_per_ip', defaultValue: '30' },
   previewCode: { key: 'pairing_preview_limit_per_code', defaultValue: '8' },
+  startGlobal: { key: 'pairing_start_limit_global', defaultValue: '60' },
+  pollGlobal: { key: 'pairing_poll_limit_global', defaultValue: '600' },
+  previewGlobal: { key: 'pairing_preview_limit_global', defaultValue: '120' },
 } as const;
 
 /** Accept only a complete positive integer string (reject "999junk"). */
@@ -30,7 +34,7 @@ export function parsePairingLimit(raw: unknown, fallback: string): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallbackParsed;
 }
 
-/** Read pairing rate limits from admin_settings (see migration 0046). */
+/** Read pairing rate limits from admin_settings (migrations 0046 and 0047). */
 async function getPairingLimit(
   env: any,
   kind: keyof typeof PAIRING_LIMIT_SETTINGS,
@@ -69,13 +73,19 @@ function clientIp(request: Request): string {
   return request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
 }
 
+const PAIRING_GLOBAL_LIMIT_KIND = {
+  start: 'startGlobal',
+  poll: 'pollGlobal',
+  preview: 'previewGlobal',
+} as const;
+
 /**
  * Atomic increment via SegmentRateLimiterDO (same binding as HLS segment limits).
- * Returns true when the request exceeds `limit`. Fail-open if the DO is missing.
+ * Returns true when the request exceeds `limit`. Fail-closed if the DO is missing.
  */
 async function incrementPairingCounter(env: any, key: string, limit: number): Promise<boolean> {
   const ns = env.SEGMENT_RATE_LIMITER;
-  if (!ns) return false;
+  if (!ns) return true;
   try {
     const doId = ns.idFromName(key);
     const stub = ns.get(doId);
@@ -84,11 +94,11 @@ async function incrementPairingCounter(env: any, key: string, limit: number): Pr
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'pairing', key, limit }),
     });
-    if (!response.ok) return false;
+    if (!response.ok) return true;
     const result = (await response.json()) as { exceeded?: boolean };
     return Boolean(result.exceeded);
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -100,12 +110,21 @@ async function isPairingRateLimited(
   try {
     const ip = clientIp(request);
     const minuteBucket = Math.floor(Date.now() / 60000);
-    const fingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
-    const key = `auth:device-pairing:${kind}:${fingerprint}`;
-    const limit = await getPairingLimit(env, kind);
-    return incrementPairingCounter(env, key, limit);
+    const ipFingerprint = await hashToken(`${kind}:${ip}:${minuteBucket}`);
+    const globalFingerprint = await hashToken(`${kind}:global:${minuteBucket}`);
+    const ipLimited = await incrementPairingCounter(
+      env,
+      `auth:device-pairing:${kind}:${ipFingerprint}`,
+      await getPairingLimit(env, kind),
+    );
+    const globalLimited = await incrementPairingCounter(
+      env,
+      `auth:device-pairing:${kind}:global:${globalFingerprint}`,
+      await getPairingLimit(env, PAIRING_GLOBAL_LIMIT_KIND[kind]),
+    );
+    return ipLimited || globalLimited;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -116,7 +135,7 @@ async function isPairingPreviewCodeRateLimited(env: any, codeHash: string): Prom
     const limit = await getPairingLimit(env, 'previewCode');
     return incrementPairingCounter(env, key, limit);
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -150,8 +169,8 @@ function normalizeOptionalLabel(raw: unknown, maxLen: number): string | null {
   return trimmed || null;
 }
 
-/** Human-friendly 8-char pairing code (no ambiguous 0/O/1/I). */
-export function generatePairingCode(length = 8): string {
+/** Human-friendly 10-char pairing code (no ambiguous 0/O/1/I). */
+export function generatePairingCode(length = PAIRING_CODE_LENGTH): string {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
   let out = '';
@@ -393,7 +412,7 @@ export async function handleDevicePairingPoll(request: any, env: any, corsHeader
   const body = await request.json().catch(() => null);
   const pairingCode = normalizePairingCode(body?.pairingCode ?? body?.code);
   if (!pairingCode) {
-    return errorResponse('pairingCode is required', 400, corsHeaders, 'invalid_code');
+    return jsonResponse({ status: 'pending' }, 200, corsHeaders);
   }
 
   const db = getDb(env);
@@ -412,7 +431,7 @@ export async function handleDevicePairingPoll(request: any, env: any, corsHeader
     .first();
 
   if (!row) {
-    return errorResponse('Unknown or invalid pairing code', 404, corsHeaders, 'not_found');
+    return jsonResponse({ status: 'pending' }, 200, corsHeaders);
   }
 
   if (row.redeemed_at || row.status === 'redeemed') {

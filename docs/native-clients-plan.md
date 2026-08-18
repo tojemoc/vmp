@@ -46,7 +46,7 @@ Deep link targets:
 | Target | When | Notes |
 | --- | --- | --- |
 | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
-| `vmp://auth/verify?token=…` | **Local PoC / dev only** | **Off by default.** Enable with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `EXPO_PUBLIC_DISABLE_VMP_SCHEME=0`). Token redemption is gated in `apps/mobile/src/auth/session.ts` via `customSchemeDeepLinksAllowed`. Non-exclusive — any app could register `vmp://`. Store builds must not set the flag (checklist **S6**). |
+| `vmp://auth/verify?token=…` | **Local PoC / dev only** | **Off by default (fail-closed).** Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `true`). Kill switch: `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` (or `true`) always wins, including when both flags are set. `DISABLE=0` is not an opt-in. Token redemption is gated in `apps/mobile/src/auth/session.ts` via `customSchemeDeepLinksAllowed`. Non-exclusive — any app could register `vmp://`. Store builds must omit ENABLE (and may set DISABLE=1) (checklist **S6**). |
 
 **AASA / Digital Asset Links status:** **Not published yet.** `apps/mobile/app.json` still uses `REPLACE_WITH_FRONTEND_HOST`. Publishing verified association files on the real frontend host is open issue **#5** below and checklist item **S5**.
 
@@ -56,16 +56,16 @@ Production note: prefer exchanging a one-time handoff code (bound to app install
 
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
-| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. IP rate-limited (`admin_settings.pairing_start_limit_per_ip`, default 10/min) via `SegmentRateLimiterDO`. |
-| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. IP (`pairing_preview_limit_per_ip`, default 30/min) **and** per-code (`pairing_preview_limit_per_code`, default 8/min) rate limited via `SegmentRateLimiterDO`. |
+| `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. Default code is **10** Crockford-style chars (~50 bits). Rate-limited per IP (`pairing_start_limit_per_ip`, default 10/min) **and** globally (`pairing_start_limit_global`, default 60/min) via `SegmentRateLimiterDO`. **Fail-closed** (429) when the limiter binding is unavailable. |
+| `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. Per-IP (`pairing_preview_limit_per_ip`, default 30/min), **global** (`pairing_preview_limit_global`, default 120/min), **and** per-code (`pairing_preview_limit_per_code`, default 8/min) via `SegmentRateLimiterDO`. Per-code limits are not sufficient alone (guesses can fan out across codes). |
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
-| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). IP rate-limited (`pairing_poll_limit_per_ip`, default 120/min) via `SegmentRateLimiterDO`. |
+| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). Unknown, missing, or malformed codes return **`200 pending`** (no validity oracle). Per-IP (`pairing_poll_limit_per_ip`, default 120/min) **and** global (`pairing_poll_limit_global`, default 600/min) via `SegmentRateLimiterDO`. **Fail-closed** when the limiter is unavailable. |
 
 **TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after a successful redeem.
 
 | Response | TV client action |
 | --- | --- |
-| `200` + `pending` | Back off per `pollIntervalSeconds`; keep polling |
+| `200` + `pending` | Back off per `pollIntervalSeconds`; keep polling. Also returned for unknown/malformed codes (do not treat as fatal) |
 | `429 rate_limited` | Retry with exponential backoff; **do not** call `start` |
 | Transient `5xx` / network error | Retry with backoff; session may still be valid |
 | `200` + `ready` | Persist tokens immediately from body |
@@ -122,7 +122,7 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 6. Workspace promotion + Nx `start` target for mobile (**W3**).
 7. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
 8. TV pairing label trust — self-reported device context at approve time (**S8**).
-9. Pairing preview per-code limits — keep in place before any **public announcement** of pairing (**S10**).
+9. Pairing abuse controls — per-IP **and global** start/poll/preview budgets plus preview per-code limits, fail-closed limiter, before any **public announcement** of pairing (**S10**).
 10. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
 
 ## Package layout
@@ -145,3 +145,4 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 5)**: `vmp://` opt-in default off; query token redaction; preview per-code rate limit; self-reported label copy.
 - **2026-08 (review 6)**: Pairing rate limits moved to `admin_settings` (migration 0046).
 - **2026-08 (review 7)**: Pairing counters use `SegmentRateLimiterDO`; `parsePairingLimit` rejects non-integer values.
+- **2026-08 (review 8)**: `vmp://` ENABLE is canonical; DISABLE=1 always wins. Pairing codes default to 10 chars; start/poll/preview have global DO budgets in addition to per-IP; limiter fail-closed; poll unknown/malformed returns `pending`.

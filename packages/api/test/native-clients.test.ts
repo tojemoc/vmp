@@ -222,9 +222,9 @@ async function authHeader(userId: string) {
 }
 
 describe('generatePairingCode', () => {
-  it('returns an 8-character alphanumeric code without ambiguous glyphs', () => {
+  it('returns a 10-character alphanumeric code without ambiguous glyphs', () => {
     const code = generatePairingCode();
-    assert.equal(code.length, 8);
+    assert.equal(code.length, 10);
     assert.match(code, /^[A-HJ-NP-Z2-9]+$/);
   });
 
@@ -349,7 +349,7 @@ describe('device pairing handlers', () => {
       role: 'viewer',
       totp_enabled: 0,
     });
-    const env = { DB: db, JWT_SECRET };
+    const env = await pairingEnv(db);
 
     const startRes = await handleDevicePairingStart(
       new Request('https://example.com/api/auth/device-pairing/start', {
@@ -362,6 +362,7 @@ describe('device pairing handlers', () => {
     assert.equal(startRes.status, 201);
     const startBody = await startRes.json();
     assert.ok(startBody.pairingCode);
+    assert.equal(String(startBody.pairingCode).length, 10);
 
     const headers = await authHeader('user-1');
     const previewRes = await handleDevicePairingPreview(
@@ -423,7 +424,7 @@ describe('device pairing handlers', () => {
       role: 'viewer',
       totp_enabled: 0,
     });
-    const env = { DB: db, JWT_SECRET };
+    const env = await pairingEnv(db);
     const startRes = await handleDevicePairingStart(
       new Request('https://example.com/api/auth/device-pairing/start', {
         method: 'POST',
@@ -476,7 +477,7 @@ describe('device pairing handlers', () => {
   });
 
   it('rejects preview without auth', async () => {
-    const env = { DB: new FakePairingDb(), JWT_SECRET };
+    const env = await pairingEnv(new FakePairingDb());
     const res = await handleDevicePairingPreview(
       new Request('https://example.com/api/auth/device-pairing/preview', {
         method: 'POST',
@@ -489,7 +490,7 @@ describe('device pairing handlers', () => {
   });
 
   it('rejects preview for unknown pairing code', async () => {
-    const env = { DB: new FakePairingDb(), JWT_SECRET };
+    const env = await pairingEnv(new FakePairingDb());
     const headers = await authHeader('user-1');
     const res = await handleDevicePairingPreview(
       new Request('https://example.com/api/auth/device-pairing/preview', {
@@ -652,6 +653,72 @@ describe('device pairing handlers', () => {
     assert.equal(second.status, 429);
   });
 
+  it('rate-limits pairing start with a global budget across IPs', async () => {
+    const db = new FakePairingDb();
+    const env = await pairingEnv(db, { pairing_start_limit_global: '1' });
+    const first = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '203.0.113.10' },
+        body: '{}',
+      }),
+      env,
+      {},
+    );
+    assert.equal(first.status, 201);
+    await first.json();
+
+    const second = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '203.0.113.11' },
+        body: '{}',
+      }),
+      env,
+      {},
+    );
+    assert.equal(second.status, 429);
+  });
+
+  it('fails closed when SegmentRateLimiterDO is missing', async () => {
+    const env = { DB: new FakePairingDb(), JWT_SECRET };
+    const res = await handleDevicePairingStart(
+      new Request('https://example.com/api/auth/device-pairing/start', {
+        method: 'POST',
+        body: '{}',
+      }),
+      env,
+      {},
+    );
+    assert.equal(res.status, 429);
+    assert.equal((await res.json()).code, 'rate_limited');
+  });
+
+  it('returns pending for unknown or malformed poll codes', async () => {
+    const env = await pairingEnv(new FakePairingDb());
+    const unknown = await handleDevicePairingPoll(
+      new Request('https://example.com/api/auth/device-pairing/poll', {
+        method: 'POST',
+        body: JSON.stringify({ pairingCode: 'ZZZZZZZZZZ' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(unknown.status, 200);
+    assert.equal((await unknown.json()).status, 'pending');
+
+    const malformed = await handleDevicePairingPoll(
+      new Request('https://example.com/api/auth/device-pairing/poll', {
+        method: 'POST',
+        body: JSON.stringify({ pairingCode: 'ab' }),
+      }),
+      env,
+      {},
+    );
+    assert.equal(malformed.status, 200);
+    assert.equal((await malformed.json()).status, 'pending');
+  });
+
   it('rejects complete without auth', async () => {
     const env = { DB: new FakePairingDb(), JWT_SECRET };
     const res = await handleDevicePairingComplete(
@@ -667,7 +734,7 @@ describe('device pairing handlers', () => {
 
   it('expires pending sessions past expires_at on poll', async () => {
     const db = new FakePairingDb();
-    const env = { DB: db, JWT_SECRET };
+    const env = await pairingEnv(db);
     const startRes = await handleDevicePairingStart(
       new Request('https://example.com/api/auth/device-pairing/start', {
         method: 'POST',

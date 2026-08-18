@@ -50,7 +50,7 @@ Nx is not wired for this app while it sits outside workspaces; use the Expo CLI 
 
 | Scheme | Example | When |
 | --- | --- | --- |
-| Custom | `vmp://auth/verify?token=…` | **Off by default.** Opt in with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `EXPO_PUBLIC_DISABLE_VMP_SCHEME=0`) for local PoC. `session.ts` ignores `vmp://` tokens unless that flag is set. Store builds must leave both unset (checklist S6). |
+| Custom | `vmp://auth/verify?token=…` | **Off by default.** Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`. Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins if both are set. `session.ts` ignores `vmp://` tokens unless the flag is set. Store builds must omit ENABLE (checklist S6). |
 | Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
 Replace `REPLACE_WITH_FRONTEND_HOST` in `app.json` before store builds. Publish Apple `apple-app-site-association` and Android Digital Asset Links on that host (same path the magic-link email already uses).

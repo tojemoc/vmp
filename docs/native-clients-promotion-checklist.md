@@ -24,11 +24,11 @@ Linked plan: [`native-clients-plan.md`](native-clients-plan.md).
 | S3 | **Background audio policy** | Intentional setting documented; matches product expectation for long-form | Maintainer |
 | S4 | **Approve TV placement** | Under Settings/profile — **not** a home-header primary action | Maintainer |
 | S5 | **Universal Links / App Links** | AASA + Digital Asset Links live on production `FRONTEND_HOST`; verified with Apple/Google tools. **Owner:** repository maintainer (Cloudflare web Worker host) | Maintainer |
-| S6 | **`vmp://` not primary** | Custom scheme stays **off** unless `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (dev). Store build must not set that flag; HTTPS Universal/App Links only | Maintainer |
+| S6 | **`vmp://` not primary** | Custom scheme stays **off** unless `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (dev) **and** `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not `1`/`true`. Store build must omit ENABLE (DISABLE=1 allowed); HTTPS Universal/App Links only | Maintainer |
 | S7 | **Cross-device magic link** | Login/error copy explains single-use + same-device. First store build: **copy-only** unless maintainer waives to explore token-binding | Maintainer |
 | S8 | **TV pairing labels** | UI shows “Label set by the device”. Unverified labels accepted with that warning, or attestation added | Maintainer |
 | S9 | **Native push delivery** | `EXPO_PUBLIC_NATIVE_PUSH_ENABLED=1` only when APNs/FCM send path is live in same release | Maintainer |
-| S10 | **Pairing preview abuse** | Per-code **and** per-IP rate limits required **before any public announcement of pairing** (not only store submission). Endpoint is live in the API on merge. | Maintainer |
+| S10 | **Pairing abuse** | Per-IP **and global** start/poll/preview budgets **plus** preview per-code limits, fail-closed `SegmentRateLimiterDO`, required **before any public announcement of pairing** (not only store submission). Endpoint is live in the API on merge. | Maintainer |
 
 ## Phase 0 pairing contract
 
@@ -71,7 +71,7 @@ These are **not** blockers for merging Phase 0 API + Expo scaffold PRs, but **ar
 | Re-pair UX accepted? | **Yes for Tier 2 PoC** — new code + phone re-approval. Idempotency ADR **before public TV rollout**. |
 | Cross-device magic link (S7)? | **Copy-only for first store build** unless maintainer waives to explore token-binding. |
 | AASA / Digital Asset Links owner? | **Repository maintainer** deploys on the Cloudflare web Worker host (`FRONTEND_HOST`) and verifies with Apple/Google tools (**S5**). |
-| When does `vmp://` become dev-only? | **Default off.** Opt in with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` for local PoC. Store builds must not set it (**S6**). |
+| When does `vmp://` become dev-only? | **Default off.** Canonical opt-in `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`. `DISABLE=1` always wins. Store builds must omit ENABLE (**S6**). |
 | Unverified TV labels? | **S8** — UI caveat “Label set by the device”; attestation later |
-| S10 when? | **Before public pairing announcement**, not only store submission — per-code **and** per-IP limits ship with this API |
+| S10 when? | **Before public pairing announcement**, not only store submission — per-IP **and global** budgets plus preview per-code limits ship with this API |
 | Refresh body vs cookie? | Body preferred when both present. Web must not POST JSON `{ refreshToken }` to `/api/auth/refresh`. Header-keyed format is a later additive change (not required for this merge). |
