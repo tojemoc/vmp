@@ -9,13 +9,11 @@
   }>();
 
   const { strings } = useStrings();
-  // Parent (`watch/[videoId].vue`) already gates on video-access `hasAccess`.
-  // Do not also require `isPremium` here — subscription is only loaded on account/pricing,
-  // so premium viewers would never see the control on the watch page.
   const { fetchSubscription } = useAuth();
   const { $pwa } = useNuxtApp();
   const {
     offlineDownloadsEnabled,
+    canDownload,
     startDownload,
     pauseDownload,
     removeDownload,
@@ -57,7 +55,7 @@
   const pwaClient = computed(() => ($pwa ?? null) as PwaClient | null);
   const pwaInstallPromptAvailable = computed(() => Boolean(pwaClient.value?.showInstallPrompt));
 
-  /** Same “supports PWA” signal as the homepage install banner, plus iOS Add to Home Screen. */
+  /** True when the surface is capable of hosting the installed PWA. */
   const pwaSupportedSurface = computed(
     () =>
       import.meta.dev ||
@@ -67,7 +65,24 @@
       canAddToHomeScreenWithoutPrompt(),
   );
 
+  /** Show the button when the platform supports PWA. */
   const showControl = computed(() => pwaSupportedSurface.value);
+
+  /**
+   * True when the user can actually start a download right now:
+   * installed PWA (or dev) AND active subscription.
+   */
+  const downloadsAvailable = computed(() => canDownload.value);
+
+  /**
+   * Determine which modal variant to show when downloads are blocked.
+   * - 'needs_install': user is not in the installed app
+   * - 'needs_subscription': user is in the app (or dev) but lacks premium
+   */
+  const modalBlocker = computed<'needs_install' | 'needs_subscription'>(() => {
+    if (!offlineDownloadsEnabled.value) return 'needs_install';
+    return 'needs_subscription';
+  });
 
   async function loadState() {
     if (!offlineDownloadsEnabled.value) return;
@@ -158,7 +173,6 @@
     () => status.value === 'downloading' || isDownloadActive(props.videoId),
   );
   const showProgress = computed(() => isActive.value || status.value === 'paused');
-  const downloadsAvailable = computed(() => offlineDownloadsEnabled.value);
 
   function openPwaModal() {
     menuOpen.value = false;
@@ -246,7 +260,6 @@
         aria-haspopup="menu"
         @click.stop="toggleMenu"
       >
-        <!-- Explicit size: parent page scoped `.watch-icon-button svg` does not pierce into this component. -->
         <svg
           class="watch-offline-download-icon"
           viewBox="0 0 24 24"
@@ -395,38 +408,68 @@
           aria-labelledby="offline-download-pwa-title"
           aria-describedby="offline-download-pwa-desc"
         >
-          <h3
-            id="offline-download-pwa-title"
-            class="text-lg font-semibold text-gray-900 dark:text-white mb-2"
-          >
-            {{ strings.offlineDownloadPwaRequiredTitle }}
-          </h3>
-          <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
-            {{ strings.offlineDownloadPwaRequiredMessage }}
-          </p>
-          <div class="flex flex-col gap-2">
-            <button
-              v-if="pwaInstallPromptAvailable"
-              type="button"
-              class="w-full px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60"
-              :disabled="installingPwa"
-              @click="handleInstallPwa"
+          <template v-if="modalBlocker === 'needs_install'">
+            <h3
+              id="offline-download-pwa-title"
+              class="text-lg font-semibold text-gray-900 dark:text-white mb-2"
             >
-              {{ strings.pwaInstall }}
-            </button>
-            <button
-              type="button"
-              class="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
-              :class="
-                pwaInstallPromptAvailable
-                  ? 'text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  : 'text-white bg-blue-600 hover:bg-blue-700'
-              "
-              @click="closePwaModal"
+              {{ strings.offlineDownloadPwaRequiredTitle }}
+            </h3>
+            <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
+              {{ strings.offlineDownloadPwaRequiredMessage }}
+            </p>
+            <div class="flex flex-col gap-2">
+              <button
+                v-if="pwaInstallPromptAvailable"
+                type="button"
+                class="w-full px-4 py-2 text-sm font-semibold text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60"
+                :disabled="installingPwa"
+                @click="handleInstallPwa"
+              >
+                {{ strings.pwaInstall }}
+              </button>
+              <button
+                type="button"
+                class="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
+                :class="
+                  pwaInstallPromptAvailable
+                    ? 'text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    : 'text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700'
+                "
+                @click="closePwaModal"
+              >
+                {{ strings.offlineDownloadPwaRequiredDismiss }}
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <h3
+              id="offline-download-pwa-title"
+              class="text-lg font-semibold text-gray-900 dark:text-white mb-2"
             >
-              {{ strings.offlineDownloadPwaRequiredDismiss }}
-            </button>
-          </div>
+              {{ strings.offlineDownloadSubRequiredTitle }}
+            </h3>
+            <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
+              {{ strings.offlineDownloadSubRequiredMessage }}
+            </p>
+            <div class="flex flex-col gap-2">
+              <NuxtLink
+                to="/pricing"
+                class="block w-full px-4 py-2 text-sm font-semibold text-center text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors"
+                @click="closePwaModal"
+              >
+                {{ strings.offlineDownloadSubRequiredAction }}
+              </NuxtLink>
+              <button
+                type="button"
+                class="w-full px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                @click="closePwaModal"
+              >
+                {{ strings.offlineDownloadPwaRequiredDismiss }}
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </Teleport>

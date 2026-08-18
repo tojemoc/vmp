@@ -290,6 +290,10 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaRequiredMessage:
     'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
   offlineDownloadPwaRequiredDismiss: 'Rozumiem',
+  offlineDownloadSubRequiredTitle: 'Vyžaduje sa predplatné',
+  offlineDownloadSubRequiredMessage:
+    'Offline sťahovanie je dostupné pre prémiových predplatiteľov. Predplaťte si, aby ste si mohli ukladať videá na prehrávanie bez pripojenia.',
+  offlineDownloadSubRequiredAction: 'Zobraziť plány',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 

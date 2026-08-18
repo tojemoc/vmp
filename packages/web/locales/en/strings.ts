@@ -283,6 +283,10 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaRequiredMessage:
     'Offline downloads are only available in the installed app. Add VMP to your home screen, then open the video from the app to download it.',
   offlineDownloadPwaRequiredDismiss: 'Got it',
+  offlineDownloadSubRequiredTitle: 'Subscription required',
+  offlineDownloadSubRequiredMessage:
+    'Offline downloads are available for premium subscribers. Subscribe to save videos for playback without a network connection.',
+  offlineDownloadSubRequiredAction: 'View plans',
   offlineTapToUnmute: 'Tap to unmute',
   networkError: 'Network error. Please try again.',
 

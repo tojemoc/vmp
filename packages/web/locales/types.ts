@@ -260,6 +260,9 @@ export type StringsDefinition = {
   offlineDownloadPwaRequiredTitle: string;
   offlineDownloadPwaRequiredMessage: string;
   offlineDownloadPwaRequiredDismiss: string;
+  offlineDownloadSubRequiredTitle: string;
+  offlineDownloadSubRequiredMessage: string;
+  offlineDownloadSubRequiredAction: string;
   offlineTapToUnmute: string;
   networkError: string;
   podcastRssTitle: string;
