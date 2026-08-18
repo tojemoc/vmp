@@ -79,6 +79,10 @@ export default defineNuxtConfig({
         environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
         enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
       },
+      posthog: {
+        projectToken: process.env.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN || '',
+        host: process.env.NUXT_PUBLIC_POSTHOG_HOST || '',
+      },
       /** staging | beta | production | development — controls admin footer build label. */
       deployTier: buildInfo.deployTier,
       /** Release tag or package version (production / beta). */
