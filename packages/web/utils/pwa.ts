@@ -23,6 +23,43 @@ export function isInstalledPwa(): boolean {
   return iosStandalone || displayModeStandalone || displayModeFullscreen;
 }
 
+/**
+ * Platforms where offline-download UI is worth showing outside the installed app:
+ * iOS can Add to Home Screen; Chromium installability is checked separately via `$pwa.showInstallPrompt`.
+ */
+export function canAddToHomeScreenWithoutPrompt(): boolean {
+  return isIosLike() && !isInstalledPwa();
+}
+
+/** True on Android phones/tablets — Chrome intent URLs are reliable there. */
+export function isAndroid(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /Android/i.test(window.navigator.userAgent);
+}
+
+/**
+ * Try opening the current page in Chrome via an Android intent URL.
+ * Returns false when the platform does not support this handoff.
+ */
+export function openCurrentPageInChrome(): boolean {
+  if (!isAndroid() || typeof window === 'undefined') return false;
+  try {
+    const pageUrl = window.location.href;
+    const withoutScheme = pageUrl.replace(/^https?:\/\//i, '');
+    const fallback = encodeURIComponent(pageUrl);
+    window.location.assign(
+      `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${fallback};end`,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function canOpenCurrentPageInChrome(): boolean {
+  return isAndroid();
+}
+
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token';
 export const PWA_LOGIN_EMAIL_KEY = 'vmp_pwa_login_email';
 let fallbackDeviceToken: string | null = null;
