@@ -155,3 +155,50 @@ export interface OfflineDownloadSummary {
   manifestHash: string;
   manifestVersion: number;
 }
+
+/** Native app push platforms (APNs / FCM). Web Push stays on push_subscriptions. */
+export type NativePushPlatform = 'ios' | 'android';
+
+export interface NativePushDeviceRegistration {
+  platform: NativePushPlatform;
+  token: string;
+  deviceId?: string;
+}
+
+export interface DevicePairingStartResponse {
+  pairingCode: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+}
+
+export type DevicePairingPollStatus = 'pending' | 'expired' | 'ready';
+
+export interface NativeAuthUser {
+  id: string;
+  email: string;
+  role: string;
+  totpEnabled: boolean;
+  totpRequired: boolean;
+}
+
+export interface NativeSessionResponse {
+  ok: true;
+  accessToken: string;
+  refreshToken: string;
+  user: NativeAuthUser;
+}
+
+export interface NativeTwoFactorPendingResponse {
+  requiresTwoFactor: true;
+  pendingToken: string;
+}
+
+export type NativeRedeemResponse = NativeSessionResponse | NativeTwoFactorPendingResponse;
+
+export interface DevicePairingPreview {
+  pairingCode: string;
+  status: 'pending' | 'expired' | 'approved' | 'redeemed';
+  expiresAt: string;
+  deviceName: string | null;
+  devicePlatform: string | null;
+}

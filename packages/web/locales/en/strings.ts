@@ -283,6 +283,21 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaRequiredMessage:
     'Offline downloads are only available in the installed app. Add VMP to your home screen, then open the video from the app to download it.',
   offlineDownloadPwaRequiredDismiss: 'Got it',
+  offlineDownloadPwaUnsupportedTitle: 'PWA required for offline viewing',
+  offlineDownloadPwaUnsupportedMessage:
+    'Offline downloads need a browser that supports installing this site as an app. Open this video in Chrome, Edge, or Safari, install the VMP app, then return here to download.',
+  offlineDownloadPwaUnsupportedOpenChrome: 'Open in Chrome',
+  offlineDownloadIosInstallTitle: 'Add VMP to your home screen',
+  offlineDownloadIosInstallBenefit1: 'Open with one tap',
+  offlineDownloadIosInstallBenefit2:
+    'No store install — it does not take up space like a regular app',
+  offlineDownloadIosInstallBenefit3: 'Convenient offline access to your videos anytime',
+  offlineDownloadIosInstallStep1: 'Tap the Share icon',
+  offlineDownloadIosInstallStep2: 'Select',
+  offlineDownloadIosAddToHomeScreen: 'Add to Home Screen',
+  offlineDownloadSubRequiredTitle: 'Subscription required',
+  offlineDownloadSubRequiredMessage:
+    'Offline downloads are available for premium subscribers. Choose a plan below to save videos for playback without a network connection.',
   offlineTapToUnmute: 'Tap to unmute',
   networkError: 'Network error. Please try again.',
 
