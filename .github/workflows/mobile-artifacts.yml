@@ -401,24 +401,26 @@ jobs:
           }
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            owner_sha=""
             if tag_sha="$(resolve_tag_commit 2>/dev/null)"; then
               owner_sha="$tag_sha"
-            elif rel_sha="$(resolve_release_commit)"; then
-              owner_sha="$rel_sha"
             else
-              echo "::error::Release ${TAG} exists but its owning commit could not be verified. Re-run with a unique build_number."
-              exit 1
+              if ! owner_sha="$(resolve_release_commit)"; then
+                echo "::error::Release ${TAG} exists but its owning commit could not be verified. Re-run with a unique build_number."
+                exit 1
+              fi
+              restore_tag
             fi
             if [ "$owner_sha" != "$TARGET_SHA" ]; then
               echo "::error::Release ${TAG} belongs to ${owner_sha}, not this commit (${TARGET_SHA}). Re-run with a unique build_number."
               exit 1
             fi
-            if ! resolve_tag_commit >/dev/null 2>&1; then
-              restore_tag
+            ipa_count="$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(test("^vmp-.+-ios\\.ipa$"; "i"))] | length')"
+            if [ "$ipa_count" -gt 0 ]; then
+              echo "Release ${TAG} already has an IPA for this commit; skipping recreate so a retry can finish Pages."
+              skip_release=true
+            else
+              echo "Release ${TAG} exists for this commit but has no IPA; uploading the asset."
             fi
-            echo "Release ${TAG} already exists for this commit; skipping recreate so a retry can finish Pages without replacing the IPA."
-            skip_release=true
           elif out="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
             -f ref="refs/tags/${TAG}" \
             -f sha="${TARGET_SHA}" 2>&1)"; then
@@ -467,7 +469,7 @@ jobs:
           files: release/ios/*
 
       - name: Delete unused tag after failed release
-        if: ${{ failure() && steps.reserve.outputs.created == 'true' }}
+        if: ${{ failure() && steps.release.outcome == 'failure' && steps.reserve.outputs.created == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}

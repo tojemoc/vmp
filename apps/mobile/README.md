@@ -57,7 +57,7 @@ Inputs:
 - `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
 - `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
 - `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
-- `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit; an existing IPA is not replaced.
+- `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
 - `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)

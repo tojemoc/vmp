@@ -65,7 +65,7 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 1. GitHub → **Actions** → **Mobile artifacts** → **Run workflow**.
 2. Set `api_url` and `frontend_host` for the target environment.
 3. Choose `flavor` (`release`, `beta`, `nightly`, `development`).
-4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). A new IPA requires a unique flavor+version+build. Re-running a failed publish is allowed only for the **same commit**: the reserved tag is reused (or restored if a partial release dropped it) and an existing IPA is not replaced. A later dispatch from a different commit with the same identity is rejected.
+4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). A new IPA requires a unique flavor+version+build. Re-running a failed publish is allowed only for the **same commit**: a missing IPA is uploaded, an existing IPA is not replaced, and a reserved tag is reused (or restored if a partial release dropped it). A later dispatch from a different commit with the same identity is rejected.
 5. **Publishing** (`publish_release`) is only allowed when dispatching from `main` (all flavors). From a feature branch, disable `publish_release` to build IPA/APK artifacts without updating GitHub Releases or the public GitHub Pages install site.
 6. Download the Android APK from workflow artifacts if needed.
 7. On iPhone: add the Pages source URL in SideStore and install the desired version.
