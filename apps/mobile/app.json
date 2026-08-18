@@ -23,6 +23,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "1",
       "bundleIdentifier": "sk.tjm.vmp",
       "associatedDomains": ["applinks:REPLACE_WITH_FRONTEND_HOST"]
     },

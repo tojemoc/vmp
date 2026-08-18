@@ -201,6 +201,18 @@ When touching **anything related to MoQ livestreams** (MoQ packages, livestream 
 
 That prompt installs the MoQ skill and covers architecture, packages, relay setup, and pitfalls. Also see `.cursor/rules/moq-livestreams.mdc` and the `agent.notes` entry in `.cursor/environment.json`.
 
+### iOS SideStore test distribution (`apps/mobile`)
+
+Manual workflow: `.github/workflows/mobile-artifacts.yml` (`workflow_dispatch` only — not on every push).
+
+- **SideStore / AltStore source URL:** `https://tojemoc.github.io/vmp/altstore-source.json`
+- **Install page:** `https://tojemoc.github.io/vmp/`
+- **Playbook:** [docs/ios-sidestore-distribution-playbook.md](docs/ios-sidestore-distribution-playbook.md)
+
+IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON on GitHub Pages lists those release download URLs (not Pages-hosted IPAs). Testers add the source URL in SideStore on iPhone — **no Mac required**.
+
+Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags).
+
 ### Running services locally
 
 **API** (`packages/api`):

@@ -48,7 +48,7 @@ Nx is not wired for this app while it sits outside workspaces; use the Expo CLI 
 
 ## Manual GitHub artifact builds
 
-GitHub Actions includes a manual-only workflow at `.github/workflows/mobile-artifacts.yml`.
+GitHub Actions includes a manual-only workflow at `.github/workflows/mobile-artifacts.yml` (mirrors [tojemoc/floaty](https://github.com/tojemoc/floaty) SideStore distribution).
 
 Use **Actions → Mobile artifacts → Run workflow** when you want ad-hoc test builds without building mobile binaries on every push.
 
@@ -56,20 +56,25 @@ Inputs:
 
 - `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
 - `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
-- `native_push_enabled` — optional; toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
-- `enable_custom_scheme` — optional; toggles the dev-only `vmp://` fallback
-- `publish_sidestore_source` — optional; publishes the generated `.ipa` plus a minimal SideStore source on GitHub Pages
+- `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`)
+- `build_number` — optional iOS build number (defaults to `expo.ios.buildNumber` or the workflow run number)
+- `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
+- `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
+- `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on)
+- `build_android` — also build/upload an Android test APK (default on)
 
 Outputs:
 
-- Android release `.apk` uploaded as a workflow artifact
-- Unsigned iOS `.ipa` uploaded as a workflow artifact
-- Optional GitHub Pages site with:
-  - direct `.ipa` download
-  - `source.json` for SideStore / AltStore-style sources
-  - a `sidestore://source?url=...` convenience link
+- Android release `.apk` uploaded as a workflow artifact (when `build_android` is enabled)
+- Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
+- `docs/altstore-source.json` committed and served on GitHub Pages for SideStore / AltStore
+- Install page at `https://<org>.github.io/<repo>/` with OTA + source links
 
-The iOS artifact is intentionally **unsigned**. It is meant for SideStore/AltStore-style re-signing, not for TestFlight or App Store submission.
+SideStore source URL (after first publish on `main`):
+
+`https://tojemoc.github.io/vmp/altstore-source.json`
+
+See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-distribution-playbook.md) for tester instructions (no Mac required).
 
 ## Deep links
 

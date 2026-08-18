@@ -11,6 +11,20 @@ on:
         description: Frontend host used for Universal Links / App Links
         required: true
         type: string
+      flavor:
+        description: Release channel label (used in GitHub Release tag)
+        required: true
+        default: development
+        type: choice
+        options:
+          - release
+          - beta
+          - nightly
+          - development
+      build_number:
+        description: iOS build number (defaults to expo.ios.buildNumber or workflow run number)
+        required: false
+        type: string
       native_push_enabled:
         description: Enable native push registration UI in the build
         required: true
@@ -21,16 +35,20 @@ on:
         required: true
         default: false
         type: boolean
-      publish_sidestore_source:
-        description: Publish the built IPA plus a SideStore source on GitHub Pages
+      publish_release:
+        description: Publish GitHub Release, AltStore source JSON, and GitHub Pages install files
+        required: true
+        default: true
+        type: boolean
+      build_android:
+        description: Also build and upload an Android test APK artifact
         required: true
         default: true
         type: boolean
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
+  actions: read
 
 concurrency:
   group: mobile-artifacts-${{ github.ref }}
@@ -67,6 +85,7 @@ jobs:
         run: npm run typecheck
 
   build-android:
+    if: ${{ inputs.build_android }}
     needs: validate-mobile
     runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
@@ -140,10 +159,14 @@ jobs:
 
   build-ios:
     needs: validate-mobile
-    runs-on: macos-latest
+    runs-on: blacksmith-6vcpu-macos-26
     defaults:
       run:
         working-directory: apps/mobile
+    outputs:
+      version_name: ${{ steps.version.outputs.name }}
+      build_number: ${{ steps.version.outputs.build }}
+      flavor_label: ${{ steps.flavor.outputs.label }}
     env:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
@@ -161,17 +184,46 @@ jobs:
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
+      - name: Determine release flavor label
+        id: flavor
+        run: echo "label=${{ inputs.flavor }}" >> "$GITHUB_OUTPUT"
+
+      - name: Parse mobile version
+        id: version
+        env:
+          INPUT_BUILD: ${{ inputs.build_number }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(node -p "require('./app.json').expo.version")"
+          if [ -n "${INPUT_BUILD}" ]; then
+            BUILD_NUMBER="${INPUT_BUILD}"
+          else
+            BUILD_NUMBER="$(node -p "require('./app.json').expo.ios?.buildNumber || process.env.RUN_NUMBER")"
+          fi
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::iOS build number must be a positive integer. Found: $BUILD_NUMBER"
+            exit 1
+          fi
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Version name: $VERSION_NAME, build: $BUILD_NUMBER"
+
       - name: Install mobile dependencies
         run: npm ci
 
-      - name: Inject CI frontend host
+      - name: Inject CI frontend host and build number
+        env:
+          BUILD_NUMBER: ${{ steps.version.outputs.build }}
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'app.json';
           const host = process.env.FRONTEND_HOST;
+          const build = process.env.BUILD_NUMBER;
           const app = JSON.parse(fs.readFileSync(path, 'utf8'));
           app.expo.ios = app.expo.ios || {};
+          app.expo.ios.buildNumber = build;
           app.expo.ios.associatedDomains = [`applinks:${host}`];
           app.expo.android = app.expo.android || {};
           app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
@@ -204,144 +256,124 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
-      - name: Package unsigned IPA for SideStore
+      - name: Package iOS IPA for SideStore
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
           APP_PATH="ios/build/Build/Products/Release-iphoneos/VMP.app"
           test -d "$APP_PATH"
-          mkdir -p dist/Payload
-          cp -R "$APP_PATH" dist/Payload/VMP.app
-          (
-            cd dist
-            zip -qry vmp-mobile.ipa Payload
-          )
-          rm -rf dist/Payload
-          node <<'NODE'
-          const fs = require('node:fs');
-          const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-          const metadata = {
-            appName: app.expo.name,
-            version: app.expo.version,
-            bundleIdentifier: app.expo.ios?.bundleIdentifier,
-            artifactName: 'vmp-mobile.ipa',
-            builtAt: new Date().toISOString(),
-          };
-          fs.writeFileSync('dist/metadata.json', `${JSON.stringify(metadata, null, 2)}\n`);
-          NODE
+          mkdir -p "dist/$VERSION_NAME"
+          chmod +x ../../scripts/package-ios-ipa-for-sidestore.sh
+          ../../scripts/package-ios-ipa-for-sidestore.sh \
+            "$APP_PATH" \
+            "dist/$VERSION_NAME/vmp-${VERSION_NAME}-ios.ipa"
+          ls -la "dist/$VERSION_NAME/"
 
-      - name: Upload iOS IPA
+      - name: Verify IPA archive layout
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          IPA="dist/$VERSION_NAME/vmp-${VERSION_NAME}-ios.ipa"
+          if unzip -l "$IPA" | awk 'NR>3 {print $4}' | grep -q '\.\./'; then
+            echo "::error::IPA zip entries must not contain parent-directory paths (../)"
+            exit 1
+          fi
+          if ! unzip -l "$IPA" | awk 'NR>3 && $4 != "" {print $4; exit}' | grep -q '^Payload/'; then
+            echo "::error::IPA must contain Payload/ at archive root"
+            unzip -l "$IPA" | head -10
+            exit 1
+          fi
+
+      - name: Upload iOS IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mobile-ios-ipa
-          path: |
-            apps/mobile/dist/vmp-mobile.ipa
-            apps/mobile/dist/metadata.json
+          name: ios-ipa
+          path: apps/mobile/dist/
           if-no-files-found: error
 
-  publish-sidestore:
-    if: ${{ inputs.publish_sidestore_source }}
+  publish-ios-release:
+    if: ${{ inputs.publish_release && needs.build-ios.result == 'success' }}
     needs: build-ios
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Download iOS IPA artifact
         uses: actions/download-artifact@v4
         with:
-          name: mobile-ios-ipa
-          path: dist
+          name: ios-ipa
+          path: ./artifacts
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Create SideStore source site
-        env:
-          FRONTEND_HOST: ${{ inputs.frontend_host }}
-          API_URL: ${{ inputs.api_url }}
-          REPOSITORY_OWNER: ${{ github.repository_owner }}
-          REPOSITORY_NAME: ${{ github.event.repository.name }}
+      - name: Stage release files
         run: |
-          mkdir -p site/downloads
-          mv dist/vmp-mobile.ipa site/downloads/vmp-mobile.ipa
-          cp dist/metadata.json site/metadata.json
-          IPA_SIZE="$(stat -c%s site/downloads/vmp-mobile.ipa)"
-          export IPA_SIZE
-          node <<'NODE'
-          const fs = require('node:fs');
-          const metadata = JSON.parse(fs.readFileSync('site/metadata.json', 'utf8'));
-          const repoBaseUrl = `https://${process.env.REPOSITORY_OWNER}.github.io/${process.env.REPOSITORY_NAME}`;
-          const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="120" fill="#111827"/><text x="256" y="298" font-size="184" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif">VMP</text></svg>`;
-          fs.writeFileSync('site/icon.svg', iconSvg);
-          const ipaUrl = `${repoBaseUrl}/downloads/vmp-mobile.ipa`;
-          const sourceUrl = `${repoBaseUrl}/source.json`;
-          const source = {
-            name: 'VMP Mobile',
-            identifier: 'sk.tjm.vmp.sidestore',
-            sourceURL: sourceUrl,
-            apps: [
-              {
-                name: metadata.appName,
-                bundleIdentifier: metadata.bundleIdentifier,
-                developerName: 'VMP',
-                subtitle: 'Manual iOS sideload build',
-                localizedDescription:
-                  'Unsigned iOS build packaged for SideStore/AltStore-style sideloading. GitHub Actions also publishes the paired Android APK as a workflow artifact.',
-                iconURL: `${repoBaseUrl}/icon.svg`,
-                downloadURL: ipaUrl,
-                size: Number(process.env.IPA_SIZE),
-                version: metadata.version,
-                versionDate: metadata.builtAt,
-                versions: [
-                  {
-                    version: metadata.version,
-                    date: metadata.builtAt,
-                    size: Number(process.env.IPA_SIZE),
-                    downloadURL: ipaUrl,
-                    localizedDescription:
-                      'Manual workflow_dispatch build from the VMP repository.',
-                  },
-                ],
-              },
-            ],
-          };
-          fs.writeFileSync('site/source.json', `${JSON.stringify(source, null, 2)}\n`);
-          const sidestoreUrl = `sidestore://source?url=${encodeURIComponent(sourceUrl)}`;
-          const html = `<!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1" />
-              <title>VMP mobile artifacts</title>
-              <style>
-                body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 48rem; padding: 0 1rem; color: #111827; }
-                code { background: #f3f4f6; padding: 0.15rem 0.35rem; border-radius: 0.25rem; }
-                a.button { display: inline-block; margin-right: 0.75rem; margin-bottom: 0.75rem; padding: 0.8rem 1rem; border-radius: 0.5rem; background: #111827; color: #fff; text-decoration: none; }
-              </style>
-            </head>
-            <body>
-              <h1>VMP mobile artifacts</h1>
-              <p>This page is published by the manual <code>Mobile artifacts</code> workflow.</p>
-              <ul>
-                <li>Version: <code>${metadata.version}</code></li>
-                <li>Frontend host baked into the build: <code>${process.env.FRONTEND_HOST}</code></li>
-                <li>API URL baked into the build: <code>${process.env.API_URL}</code></li>
-              </ul>
-              <p>
-                <a class="button" href="./downloads/vmp-mobile.ipa">Download IPA</a>
-                <a class="button" href="./source.json">Open SideStore source JSON</a>
-                <a class="button" href="${sidestoreUrl}">Add source in SideStore</a>
-              </p>
-              <p>The IPA is unsigned and intended for SideStore/AltStore-style re-signing, not for App Store or TestFlight distribution.</p>
-            </body>
-          </html>`;
-          fs.writeFileSync('site/index.html', html);
-          NODE
+          mkdir -p release/ios
+          find ./artifacts -name "*.ipa" -exec cp {} release/ios/ \;
+          ls -la release/ios/
 
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
         with:
-          path: site
+          tag_name: "${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}"
+          name: "${{ needs.build-ios.outputs.flavor_label }} v${{ needs.build-ios.outputs.version_name }} (build ${{ needs.build-ios.outputs.build_number }})"
+          body: |
+            ## ${{ needs.build-ios.outputs.flavor_label }} iOS build
 
-      - name: Deploy GitHub Pages site
-        id: deployment
-        uses: actions/deploy-pages@v4
+            - Version: `${{ needs.build-ios.outputs.version_name }}`
+            - Build: `${{ needs.build-ios.outputs.build_number }}`
+            - Branch: `${{ github.ref_name }}`
+            - Commit: `${{ github.sha }}`
+            - API URL: `${{ inputs.api_url }}`
+            - Frontend host: `${{ inputs.frontend_host }}`
+
+            Install on iPhone (OTA): https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+            **SideStore / AltStore:** Add source URL
+            `https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/altstore-source.json`
+          draft: false
+          prerelease: ${{ inputs.flavor != 'release' }}
+          files: release/ios/*
+
+      - name: Generate AltStore source from GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ALTSTORE_WAIT_RELEASE_TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+        run: python3 scripts/generate-altstore-source.py
+
+      - name: Update GitHub Pages (OTA + AltStore source)
+        env:
+          VERSION_NAME: ${{ needs.build-ios.outputs.version_name }}
+          BUILD_NUMBER: ${{ needs.build-ios.outputs.build_number }}
+          FLAVOR_LABEL: ${{ needs.build-ios.outputs.flavor_label }}
+        run: |
+          set -euo pipefail
+          TAG="${FLAVOR_LABEL}-v${VERSION_NAME}-build${BUILD_NUMBER}"
+          IPA_FILE="vmp-${VERSION_NAME}-ios.ipa"
+          IPA_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${IPA_FILE}"
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          MANIFEST_URL="${PAGES_URL}/manifest.plist"
+          INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${MANIFEST_URL}', safe=''))")"
+          INSTALL_URL_HTML="${INSTALL_URL//&/&amp;}"
+          INSTALL_URL_SED="${INSTALL_URL_HTML//&/\\&}"
+
+          cp docs/manifest.plist.template docs/manifest.plist
+          sed -i "s|__IPA_URL__|${IPA_URL}|g" docs/manifest.plist
+          sed -i "s|__BUILD_NUMBER__|${BUILD_NUMBER}|g" docs/manifest.plist
+
+          cp docs/index.html.template docs/index.html
+          ALTSTORE_SOURCE_URL="${PAGES_URL}/altstore-source.json"
+          sed -i "s|__VERSION__|${VERSION_NAME}|g" docs/index.html
+          sed -i "s|__INSTALL_URL__|${INSTALL_URL_SED}|g" docs/index.html
+          sed -i "s|__ALTSTORE_SOURCE_URL__|${ALTSTORE_SOURCE_URL}|g" docs/index.html
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/manifest.plist docs/index.html docs/altstore-source.json
+          if git diff --staged --quiet; then
+            echo "GitHub Pages files already up to date"
+          else
+            git commit -m "chore: update GitHub Pages (OTA + AltStore source) for ${TAG} [skip ci]"
+            git push
+          fi
