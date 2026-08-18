@@ -21,6 +21,8 @@
  * shared across all component instances without a Pinia store.
  */
 
+import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
+
 export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
 
 export interface AuthUser {
@@ -94,6 +96,11 @@ export function useAuth() {
    * keep the session seamless.
    */
   function setAccessToken(token: string, authUser: AuthUser) {
+    if (shouldResetSubscriptionIdentity(user.value, authUser)) {
+      subscription.value = null;
+      subscriptionHydrated.value = false;
+      subscriptionFetchInFlight = null;
+    }
     accessToken.value = token;
     user.value = { ...authUser, totpEnabled: !!authUser.totpEnabled };
 
