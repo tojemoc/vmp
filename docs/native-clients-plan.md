@@ -59,13 +59,20 @@ Production note: prefer exchanging a one-time handoff code (bound to app install
 | `POST` | `/api/auth/device-pairing/start` | none | Creates short-lived session; optional `{ deviceName, devicePlatform }`; returns `{ pairingCode, expiresAt, pollIntervalSeconds }`. Default code is **10** Crockford-style chars (~50 bits). Rate-limited per IP (`pairing_start_limit_per_ip`, default 10/min) **and** globally (`pairing_start_limit_global`, default 60/min) via `SegmentRateLimiterDO`. **Fail-closed** (429) when the limiter binding is unavailable. |
 | `POST` | `/api/auth/device-pairing/preview` | Bearer JWT | `{ pairingCode }` — inspect device label before approve. Per-IP (`pairing_preview_limit_per_ip`, default 30/min), **global** (`pairing_preview_limit_global`, default 120/min), **and** per-code (`pairing_preview_limit_per_code`, default 8/min) via `SegmentRateLimiterDO`. Per-code limits are not sufficient alone (guesses can fan out across codes). |
 | `POST` | `/api/auth/device-pairing/complete` | Bearer JWT | `{ pairingCode }` — logged-in phone/web approves the TV/device session. |
-| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). Unknown, missing, or malformed codes return **`200 pending`** (no validity oracle). Per-IP (`pairing_poll_limit_per_ip`, default 120/min) **and** global (`pairing_poll_limit_global`, default 600/min) via `SegmentRateLimiterDO`. **Fail-closed** when the limiter is unavailable. |
+| `POST` | `/api/auth/device-pairing/poll` | none | `{ pairingCode }` — `pending` \| `expired` \| `ready` + session tokens when ready (one-shot redeem). Unknown, missing, or malformed codes return **`200 pending`** (no validity oracle). Per-IP (`pairing_poll_limit_per_ip`, default 120/min) **and** global (`pairing_poll_limit_global`, default 600/min) via `SegmentRateLimiterDO`. **Fail-closed** when the limiter is unavailable. **TV clients:** validate code format locally before calling (see below); bound polling by `expiresAt` and/or max attempts; after the bound, stop with the same non-validating outcome as a long `pending` wait. |
+
+**TV poll client guidance**
+
+1. **Local format gate (before each `poll`):** Normalize like the API (`normalizePairingCode` in `packages/api/src/nativeClients.ts`): trim, uppercase, strip non-alphanumerics, length **6–12**. If invalid, **do not call `poll`** — keep the waiting UI indistinguishable from `200 pending`. Never surface "invalid code" or other validity hints.
+2. **Polling bound:** Stop when **`Date.now() >= expiresAt`** from `start` **or** a client max-attempt budget is exhausted (recommended: `ceil((expiresAt - startedAt) / pollIntervalSeconds)`). After the bound without `ready`, `expired`, or `409 already_used`, stop polling and show the same non-validating timeout UX (offer `start` for a fresh code). Do **not** distinguish unknown, unapproved, or TTL-elapsed codes in copy or client error codes.
+3. **Never infer validity from `pending`:** Server returns `200 pending` for genuine pending sessions **and** for unknown/malformed codes — treat every `pending` the same.
 
 **TV poll recovery:** `poll` atomically marks the session `redeemed` when returning `ready`. There is **no retry window** with the same code after a successful redeem.
 
 | Response | TV client action |
 | --- | --- |
-| `200` + `pending` | Back off per `pollIntervalSeconds`; keep polling. Also returned for unknown/malformed codes (do not treat as fatal) |
+| `200` + `pending` | Back off per `pollIntervalSeconds`; keep polling. Also returned for unknown/malformed codes (do not treat as fatal). Skip `poll` entirely when local format validation fails — same waiting UI, no validity hints |
+| Polling bound reached (`expiresAt` or max attempts) | Terminal — same non-validating timeout UX as a long `pending` wait; call `start` for a new code. Do **not** reveal whether the code was unknown vs unapproved |
 | `429 rate_limited` | Retry with exponential backoff; **do not** call `start` |
 | Transient `5xx` / network error | Retry with backoff; session may still be valid |
 | `200` + `ready` | Persist tokens immediately from body |
@@ -146,3 +153,4 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 6)**: Pairing rate limits moved to `admin_settings` (migration 0046).
 - **2026-08 (review 7)**: Pairing counters use `SegmentRateLimiterDO`; `parsePairingLimit` rejects non-integer values.
 - **2026-08 (review 8)**: `vmp://` ENABLE is canonical; DISABLE=1 always wins. Pairing codes default to 10 chars; start/poll/preview have global DO budgets in addition to per-IP; limiter fail-closed; poll unknown/malformed returns `pending`.
+- **2026-08 (review 9)**: TV poll client guidance — local format gate, `expiresAt`/max-attempt bound, non-validating timeout UX.
