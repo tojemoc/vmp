@@ -350,31 +350,34 @@ export function useAuth() {
     const expectedSessionVersion = sessionVersion;
     const expectedToken = accessToken.value;
     let hydrated = false;
+
+    const stillCurrentSession = () =>
+      sessionVersion === expectedSessionVersion && accessToken.value === expectedToken;
+
     try {
       const res = await fetch(`${apiUrl}/api/account/subscription`, {
         headers: { Authorization: `Bearer ${expectedToken}` },
         credentials: 'include',
       });
-      if (sessionVersion !== expectedSessionVersion || accessToken.value !== expectedToken) {
-        return false;
-      }
+      if (!stillCurrentSession()) return false;
       if (res.ok) {
         const data = await res.json();
         subscription.value = data.subscription ?? null;
         hydrated = true;
       } else {
-        // Do not mark hydration complete on transient/failed responses;
-        // the caller should be able to retry later in the same session.
+        // Non-OK response (e.g. 401 after token expiry) — clear stale entitlements.
+        // Do not mark hydration complete so the caller can retry.
+        subscription.value = null;
         return false;
       }
     } catch {
+      if (stillCurrentSession()) {
+        // Network error — clear stale entitlements rather than showing wrong access.
+        subscription.value = null;
+      }
       return false;
     } finally {
-      if (
-        hydrated &&
-        sessionVersion === expectedSessionVersion &&
-        accessToken.value === expectedToken
-      ) {
+      if (hydrated && stillCurrentSession()) {
         subscriptionHydrated.value = true;
       }
     }
