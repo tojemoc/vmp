@@ -9,7 +9,7 @@
   }>();
 
   const { strings } = useStrings();
-  const { fetchSubscription } = useAuth();
+  const { user, accessToken, ensureSubscriptionHydrated } = useAuth();
   const { $pwa } = useNuxtApp();
   const {
     offlineDownloadsEnabled,
@@ -25,6 +25,7 @@
 
   const rendition = ref<OfflineRendition>('720p');
   const working = ref(false);
+  const checkingEntitlement = ref(false);
   const error = ref<string | null>(null);
   const menuOpen = ref(false);
   const pwaModalOpen = ref(false);
@@ -84,6 +85,15 @@
     return 'needs_subscription';
   });
 
+  async function resolveCanDownload(): Promise<boolean> {
+    if (!offlineDownloadsEnabled.value) return false;
+    const role = user.value?.role;
+    if (role && role !== 'viewer') return true;
+    if (!accessToken.value) return false;
+    await ensureSubscriptionHydrated();
+    return canDownload.value;
+  }
+
   async function loadState() {
     if (!offlineDownloadsEnabled.value) return;
     record.value = await getDownloadRecord(props.videoId);
@@ -92,7 +102,6 @@
 
   onMounted(async () => {
     mounted = true;
-    void fetchSubscription();
     document.addEventListener('click', closeMenuFromDocument);
     await loadState();
     if (!mounted || !offlineDownloadsEnabled.value) return;
@@ -195,20 +204,34 @@
     }
   }
 
-  function toggleMenu() {
-    if (!downloadsAvailable.value) {
-      openPwaModal();
-      return;
+  async function toggleMenu() {
+    if (checkingEntitlement.value) return;
+    checkingEntitlement.value = true;
+    try {
+      const allowed = await resolveCanDownload();
+      if (!allowed) {
+        openPwaModal();
+        return;
+      }
+      const next = !menuOpen.value;
+      if (next) positionMenu();
+      menuOpen.value = next;
+    } finally {
+      checkingEntitlement.value = false;
     }
-    const next = !menuOpen.value;
-    if (next) positionMenu();
-    menuOpen.value = next;
   }
 
   async function handleDownload() {
-    if (!downloadsAvailable.value) {
-      openPwaModal();
-      return;
+    if (checkingEntitlement.value) return;
+    checkingEntitlement.value = true;
+    try {
+      const allowed = await resolveCanDownload();
+      if (!allowed) {
+        openPwaModal();
+        return;
+      }
+    } finally {
+      checkingEntitlement.value = false;
     }
     if (working.value) return;
     working.value = true;
@@ -258,6 +281,7 @@
         :aria-label="strings.offlineDownloadMenuLabel"
         :aria-expanded="menuOpen"
         aria-haspopup="menu"
+        :disabled="checkingEntitlement"
         @click.stop="toggleMenu"
       >
         <svg

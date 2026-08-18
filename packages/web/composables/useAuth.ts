@@ -56,9 +56,11 @@ export interface SubscriptionData {
 const user = ref<AuthUser | null>(null);
 const accessToken = ref<string | null>(null);
 const subscription = ref<SubscriptionData | null>(null);
+const subscriptionHydrated = ref(false);
 const initialised = ref(false);
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+let subscriptionFetchInFlight: Promise<void> | null = null;
 /** Bumped on clearSession/logout so in-flight refresh cannot restore a stale session. */
 let sessionVersion = 0;
 
@@ -118,6 +120,8 @@ export function useAuth() {
     user.value = null;
     accessToken.value = null;
     subscription.value = null;
+    subscriptionHydrated.value = false;
+    subscriptionFetchInFlight = null;
     if (refreshTimer) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
@@ -351,7 +355,25 @@ export function useAuth() {
     } catch {
       // Network error — clear stale entitlements rather than showing wrong access
       subscription.value = null;
+    } finally {
+      subscriptionHydrated.value = true;
     }
+  }
+
+  /**
+   * Load subscription once per session when entitlement is needed (e.g. offline download).
+   * Dedupes concurrent callers so rapid clicks share one in-flight request.
+   */
+  async function ensureSubscriptionHydrated(): Promise<void> {
+    if (subscriptionHydrated.value || !accessToken.value) return;
+    if (subscriptionFetchInFlight) {
+      await subscriptionFetchInFlight;
+      return;
+    }
+    subscriptionFetchInFlight = fetchSubscription().finally(() => {
+      subscriptionFetchInFlight = null;
+    });
+    await subscriptionFetchInFlight;
   }
 
   /**
@@ -391,6 +413,7 @@ export function useAuth() {
     user: readonly(user),
     accessToken: readonly(accessToken),
     subscription: readonly(subscription),
+    subscriptionHydrated: readonly(subscriptionHydrated),
     initialised: readonly(initialised),
 
     // Methods
@@ -402,6 +425,7 @@ export function useAuth() {
     refreshSession,
     ensureFreshSession,
     fetchSubscription,
+    ensureSubscriptionHydrated,
     logout,
     authHeader,
     initialise,
