@@ -338,26 +338,40 @@ export function useAuth() {
    * Called lazily (from account page or after checkout) rather than on every boot
    * to avoid an extra round-trip for users who are just browsing.
    */
-  async function fetchSubscription(): Promise<void> {
-    if (!accessToken.value) return;
+  async function fetchSubscription(): Promise<boolean> {
+    if (!accessToken.value) return false;
+    const expectedSessionVersion = sessionVersion;
+    const expectedToken = accessToken.value;
+    let hydrated = false;
     try {
       const res = await fetch(`${apiUrl}/api/account/subscription`, {
-        headers: authHeader(),
+        headers: { Authorization: `Bearer ${expectedToken}` },
         credentials: 'include',
       });
+      if (sessionVersion !== expectedSessionVersion || accessToken.value !== expectedToken) {
+        return false;
+      }
       if (res.ok) {
         const data = await res.json();
         subscription.value = data.subscription ?? null;
+        hydrated = true;
       } else {
-        // Non-OK response (e.g. 401 after token expiry) — clear stale entitlements
-        subscription.value = null;
+        // Do not mark hydration complete on transient/failed responses;
+        // the caller should be able to retry later in the same session.
+        return false;
       }
     } catch {
-      // Network error — clear stale entitlements rather than showing wrong access
-      subscription.value = null;
+      return false;
     } finally {
-      subscriptionHydrated.value = true;
+      if (
+        hydrated &&
+        sessionVersion === expectedSessionVersion &&
+        accessToken.value === expectedToken
+      ) {
+        subscriptionHydrated.value = true;
+      }
     }
+    return hydrated;
   }
 
   /**
@@ -370,10 +384,21 @@ export function useAuth() {
       await subscriptionFetchInFlight;
       return;
     }
-    subscriptionFetchInFlight = fetchSubscription().finally(() => {
-      subscriptionFetchInFlight = null;
-    });
-    await subscriptionFetchInFlight;
+    const expectedSessionVersion = sessionVersion;
+    const expectedToken = accessToken.value;
+    const request = fetchSubscription();
+    subscriptionFetchInFlight = request;
+    try {
+      await request;
+    } finally {
+      if (
+        subscriptionFetchInFlight === request &&
+        sessionVersion === expectedSessionVersion &&
+        accessToken.value === expectedToken
+      ) {
+        subscriptionFetchInFlight = null;
+      }
+    }
   }
 
   /**

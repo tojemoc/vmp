@@ -88,6 +88,7 @@
   async function resolveCanDownload(): Promise<boolean> {
     if (!offlineDownloadsEnabled.value) return false;
     const role = user.value?.role;
+    // Staff roles can exercise premium workflows without holding a viewer subscription.
     if (role && role !== 'viewer') return true;
     if (!accessToken.value) return false;
     await ensureSubscriptionHydrated();
@@ -277,7 +278,8 @@
       <button
         ref="buttonRef"
         type="button"
-        class="watch-offline-download-button"
+        class="watch-offline-download-button text-white dark:text-white"
+        :class="{ 'opacity-70': checkingEntitlement }"
         :aria-label="strings.offlineDownloadMenuLabel"
         :aria-expanded="menuOpen"
         aria-haspopup="menu"
@@ -515,12 +517,13 @@
     min-width: var(--media-control-height, 2.25rem);
     min-height: var(--media-control-height, 2.25rem);
     padding: 0.25rem;
-    color: #fff;
     border: 0;
     border-radius: 0.25rem;
     background: transparent;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition:
+      background 0.15s ease,
+      opacity 0.15s ease;
   }
 
   .watch-offline-download-button:hover,
