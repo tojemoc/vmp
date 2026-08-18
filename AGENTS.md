@@ -174,6 +174,7 @@ Steps 1–7 are complete. Work continues from step 8.
 | 7 | Thumbnail Management | ✅ Done |
 | 8 | Brevo Newsletter Sync | Pending |
 | 9 | RSS / Podcast Feed | Pending |
+| — | Native / TV clients (multi-tier) | Phase 0 + Tier 1 scaffold — see [docs/native-clients-plan.md](docs/native-clients-plan.md) |
 
 ### Step 8 — Brevo Newsletter Sync
 
