@@ -117,7 +117,41 @@ export interface QerkoPaymentsConfig {
   createSubscription: (input: CreateSubscriptionInput) => Promise<Subscription>;
 }
 
+/** GoPay hosted gateway — amounts come from admin_settings via amountMajorForPlan. */
+export interface GoPayPaymentsConfig {
+  clientId?: string;
+  clientSecret?: string;
+  /** GoPay e-shop goId (numeric). */
+  goId?: string;
+  /** API root, e.g. https://gw.sandbox.gopay.com/api or https://gate.gopay.cz/api */
+  apiBase?: string;
+  frontendUrl?: string;
+  /** Absolute notification URL (GET ?id=&parent_id=). */
+  notificationUrl?: string;
+  amountMajorForPlan: (planType: PlanType) => Promise<number | null>;
+  currency: () => Promise<string>;
+}
+
+/** Comgate hosted gateway — amounts come from admin_settings via amountMajorForPlan. */
+export interface ComgatePaymentsConfig {
+  /** Merchant ID in the Comgate system. */
+  merchant?: string;
+  /** Secret for background communication. */
+  secret?: string;
+  /** API root, default https://payments.comgate.cz */
+  apiBase?: string;
+  frontendUrl?: string;
+  /** ISO country code for payment method filtering, default 'CZ'. */
+  country?: string;
+  /** ISO 639-1 lang code for the payment gateway, default 'cs'. */
+  lang?: string;
+  amountMajorForPlan: (planType: PlanType) => Promise<number | null>;
+  currency: () => Promise<string>;
+}
+
 export interface PaymentsConfig {
   stripe?: StripePaymentsConfig;
   qerko?: QerkoPaymentsConfig;
+  gopay?: GoPayPaymentsConfig;
+  comgate?: ComgatePaymentsConfig;
 }

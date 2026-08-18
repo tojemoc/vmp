@@ -4,7 +4,8 @@
       <div>
         <h3 class="font-semibold text-gray-900 dark:text-white">Plans &amp; pricing</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-          Configure Stripe and legacy checkout providers, plan amounts, and Stripe price IDs.
+          Configure Stripe, GoPay (draft), and legacy checkout providers, plan amounts, and Stripe
+          price IDs.
         </p>
       </div>
       <button
@@ -50,7 +51,47 @@
             >(not configured on server)</span
           >
         </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="enabledProviders"
+            type="checkbox"
+            value="gopay"
+            class="rounded border-gray-300 dark:border-gray-600"
+            :disabled="!gopay.configured"
+          >
+          GoPay (draft redirect gateway)
+          <span v-if="!gopay.configured" class="text-xs text-amber-700 dark:text-amber-300"
+            >(not configured on server)</span
+          >
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="enabledProviders"
+            type="checkbox"
+            value="comgate"
+            class="rounded border-gray-300 dark:border-gray-600"
+            :disabled="!comgate.configured"
+          >
+          Comgate (draft redirect gateway)
+          <span v-if="!comgate.configured" class="text-xs text-amber-700 dark:text-amber-300"
+            >(not configured on server)</span
+          >
+        </label>
       </div>
+      <p
+        v-if="gopay.configured"
+        class="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded px-3 py-2"
+      >
+        GoPay is web-gateway only: Apple Pay / Google Pay require the hosted gateway (no native
+        one-click). Do not embed the gateway in a WebView.
+      </p>
+      <p
+        v-if="comgate.configured"
+        class="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded px-3 py-2"
+      >
+        Comgate recurring requires activation by Comgate support (card via ČSOB or Česká
+        spořitelna). Renewal scheduling is merchant-driven.
+      </p>
       <p
         v-if="legacy.configured && !legacy.hasWebhookSecret"
         class="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded px-3 py-2"
@@ -66,7 +107,7 @@
           v-model="providerOrderText"
           type="text"
           class="mt-1 w-full max-w-md px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-          placeholder="stripe,legacy"
+          placeholder="stripe,gopay,legacy"
         >
       </label>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -78,6 +119,56 @@
           Legacy {{ plan }} price (EUR)
           <input
             v-model="legacyPrices[plan as LegacyPlanKey]"
+            type="text"
+            inputmode="decimal"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+          >
+        </label>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="text-xs text-gray-600 dark:text-gray-300 block">
+          Comgate currency
+          <input
+            v-model="comgateCurrency"
+            type="text"
+            maxlength="3"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono uppercase"
+            placeholder="CZK"
+          >
+        </label>
+        <label
+          v-for="plan in ['monthly', 'yearly', 'club']"
+          :key="`comgate-price-${plan}`"
+          class="text-xs text-gray-600 dark:text-gray-300 block"
+        >
+          Comgate {{ plan }} price
+          <input
+            v-model="comgatePrices[plan as LegacyPlanKey]"
+            type="text"
+            inputmode="decimal"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+          >
+        </label>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="text-xs text-gray-600 dark:text-gray-300 block">
+          GoPay currency
+          <input
+            v-model="gopayCurrency"
+            type="text"
+            maxlength="3"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono uppercase"
+            placeholder="CZK"
+          >
+        </label>
+        <label
+          v-for="plan in ['monthly', 'yearly', 'club']"
+          :key="`gopay-price-${plan}`"
+          class="text-xs text-gray-600 dark:text-gray-300 block"
+        >
+          GoPay {{ plan }} price
+          <input
+            v-model="gopayPrices[plan as LegacyPlanKey]"
             type="text"
             inputmode="decimal"
             class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
@@ -390,7 +481,7 @@
   }
 
   type LegacyPlanKey = 'monthly' | 'yearly' | 'club';
-  type PaymentProvider = 'stripe' | 'legacy';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay';
 
   const config = useRuntimeConfig();
   const { authHeader } = useAuth();
@@ -403,6 +494,8 @@
     providerName: '',
     showManageButton: false,
   });
+  const gopay = ref({ configured: false });
+  const comgate = ref({ configured: false });
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const providerOrderText = ref('stripe,legacy');
   const legacyPrices = ref<Record<LegacyPlanKey, string>>({
@@ -410,6 +503,18 @@
     yearly: '',
     club: '',
   });
+  const gopayPrices = ref<Record<LegacyPlanKey, string>>({
+    monthly: '',
+    yearly: '',
+    club: '',
+  });
+  const gopayCurrency = ref('CZK');
+  const comgatePrices = ref<Record<LegacyPlanKey, string>>({
+    monthly: '',
+    yearly: '',
+    club: '',
+  });
+  const comgateCurrency = ref('CZK');
   const basePrices = ref<Record<LegacyPlanKey, string>>({
     monthly: '',
     yearly: '',
@@ -437,6 +542,10 @@
   const editForm = ref({ label: '', amountEur: '', interval: 'month', stripePriceId: '' });
   const addForm = ref({ label: '', amountEur: '', interval: 'month', stripePriceId: '' });
 
+  function isPaymentProvider(value: string): value is PaymentProvider {
+    return value === 'stripe' || value === 'legacy' || value === 'gopay';
+  }
+
   async function loadPaymentSettings() {
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
       headers: authHeader(),
@@ -444,11 +553,11 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     const enabled = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+      ? data.enabledProviders.filter((p: string) => isPaymentProvider(p))
       : ['stripe'];
     enabledProviders.value = enabled.length ? enabled : ['stripe'];
     const order = Array.isArray(data.providerOrder)
-      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
+      ? data.providerOrder.filter((p: string) => isPaymentProvider(p))
       : ['stripe', 'legacy'];
     providerOrderText.value = (order.length ? order : ['stripe', 'legacy']).join(',');
     const allowed = Array.isArray(data.allowedPlans)
@@ -479,6 +588,22 @@
       yearly: String(legacyProviderPrices.yearly ?? ''),
       club: String(legacyProviderPrices.club ?? ''),
     };
+    const gopayProviderPrices = data.providerPrices?.gopay ?? {};
+    gopayPrices.value = {
+      monthly: String(gopayProviderPrices.monthly ?? ''),
+      yearly: String(gopayProviderPrices.yearly ?? ''),
+      club: String(gopayProviderPrices.club ?? ''),
+    };
+    gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+    const comgateProviderPrices = data.providerPrices?.comgate ?? {};
+    comgatePrices.value = {
+      monthly: String(comgateProviderPrices.monthly ?? ''),
+      yearly: String(comgateProviderPrices.yearly ?? ''),
+      club: String(comgateProviderPrices.club ?? ''),
+    };
+    comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
+    gopay.value = { configured: Boolean(data.gopayConfigured) };
+    comgate.value = { configured: Boolean(data.comgateConfigured) };
   }
 
   async function loadLegacyOrders() {
@@ -524,6 +649,12 @@
           providerName: data.legacy.providerName ?? '',
           showManageButton: Boolean(data.legacy.showManageButton),
         };
+      }
+      if (data.gopay) {
+        gopay.value = { configured: Boolean(data.gopay.configured) };
+      }
+      if (data.comgate) {
+        comgate.value = { configured: Boolean(data.comgate.configured) };
       }
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Failed to load plans';
@@ -608,7 +739,7 @@
       const order = providerOrderText.value
         .split(',')
         .map((v) => v.trim().toLowerCase())
-        .filter((v): v is PaymentProvider => v === 'stripe' || v === 'legacy');
+        .filter((v): v is PaymentProvider => isPaymentProvider(v));
       const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
@@ -624,8 +755,20 @@
               yearly: legacyPrices.value.yearly,
               club: legacyPrices.value.club,
             },
+            gopay: {
+              monthly: gopayPrices.value.monthly,
+              yearly: gopayPrices.value.yearly,
+              club: gopayPrices.value.club,
+            },
+            comgate: {
+              monthly: comgatePrices.value.monthly,
+              yearly: comgatePrices.value.yearly,
+              club: comgatePrices.value.club,
+            },
           },
           stripePriceIds: stripePriceIds.value,
+          gopayCurrency: gopayCurrency.value,
+          comgateCurrency: comgateCurrency.value,
         }),
       });
       const data = await res.json().catch(() => ({}));

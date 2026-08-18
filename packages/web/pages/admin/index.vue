@@ -4209,7 +4209,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' });
   const newsletterEditingTemplateId = ref<string | null>(null);
   const newsletterTemplateSaving = ref(false);
-  type PaymentProvider = 'stripe' | 'legacy';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
   type PlanType = 'monthly' | 'yearly' | 'club';
   interface AdminPaymentPlanRow {
     id: string;
@@ -4260,8 +4260,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     providerOrder: PaymentProvider[];
     allowedPlans: PlanType[];
     basePrices: PaymentPriceRow;
-    providerPrices: { stripe: PaymentPriceRow };
+    providerPrices: {
+      stripe: PaymentPriceRow;
+      gopay?: PaymentPriceRow;
+      comgate?: PaymentPriceRow;
+    };
     stripePriceIds: PaymentPriceRow;
+    gopayCurrency?: string;
+    comgateCurrency?: string;
   }>({
     enabledProviders: ['stripe'],
     providerOrder: ['stripe', 'legacy'],
@@ -4269,8 +4275,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     basePrices: { monthly: '', yearly: '', club: '' },
     providerPrices: {
       stripe: { monthly: '', yearly: '', club: '' },
+      gopay: { monthly: '', yearly: '', club: '' },
+      comgate: { monthly: '', yearly: '', club: '' },
     },
     stripePriceIds: { monthly: '', yearly: '', club: '' },
+    gopayCurrency: 'CZK',
+    comgateCurrency: 'CZK',
   });
   const paymentSettingsSaving = ref(false);
   const paymentSettingsMessage = ref('');
@@ -6010,10 +6020,16 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       }
       const data = await res.json();
       const enabled = Array.isArray(data.enabledProviders)
-        ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+        ? data.enabledProviders.filter(
+            (p: string) =>
+              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+          )
         : ['stripe'];
       const order = Array.isArray(data.providerOrder)
-        ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
+        ? data.providerOrder.filter(
+            (p: string) =>
+              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+          )
         : ['stripe', 'legacy'];
       const allowed = Array.isArray(data.allowedPlans)
         ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club')
@@ -6042,12 +6058,42 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 ? String(data.providerPrices.stripe.club)
                 : '',
           },
+          gopay: {
+            monthly:
+              data.providerPrices?.gopay?.monthly != null
+                ? String(data.providerPrices.gopay.monthly)
+                : '',
+            yearly:
+              data.providerPrices?.gopay?.yearly != null
+                ? String(data.providerPrices.gopay.yearly)
+                : '',
+            club:
+              data.providerPrices?.gopay?.club != null
+                ? String(data.providerPrices.gopay.club)
+                : '',
+          },
+          comgate: {
+            monthly:
+              data.providerPrices?.comgate?.monthly != null
+                ? String(data.providerPrices.comgate.monthly)
+                : '',
+            yearly:
+              data.providerPrices?.comgate?.yearly != null
+                ? String(data.providerPrices.comgate.yearly)
+                : '',
+            club:
+              data.providerPrices?.comgate?.club != null
+                ? String(data.providerPrices.comgate.club)
+                : '',
+          },
         },
         stripePriceIds: {
           monthly: data.stripePriceIds?.monthly != null ? String(data.stripePriceIds.monthly) : '',
           yearly: data.stripePriceIds?.yearly != null ? String(data.stripePriceIds.yearly) : '',
           club: data.stripePriceIds?.club != null ? String(data.stripePriceIds.club) : '',
         },
+        gopayCurrency: String(data.gopayCurrency ?? 'CZK'),
+        comgateCurrency: String(data.comgateCurrency ?? 'CZK'),
       };
     } catch (e: any) {
       paymentSettingsMessage.value = `Could not load payment settings: ${e.message}`;
@@ -6523,6 +6569,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           basePrices: ps.basePrices,
           providerPrices: ps.providerPrices,
           stripePriceIds: ps.stripePriceIds,
+          gopayCurrency: ps.gopayCurrency ?? 'CZK',
+          comgateCurrency: ps.comgateCurrency ?? 'CZK',
         }),
       });
       if (!res.ok) {

@@ -26,6 +26,8 @@ export function defineCatalog(
     paymentProviderLabel(provider: string) {
       if (provider === 'stripe') return 'Stripe';
       if (provider === 'legacy') return 'Legacy';
+      if (provider === 'gopay') return 'GoPay';
+      if (provider === 'comgate') return 'Comgate';
       return provider;
     },
     roleLabel(role: string | undefined) {

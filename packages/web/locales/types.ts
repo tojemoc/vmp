@@ -1,7 +1,7 @@
 export type UiLocale = 'en' | 'sk' | 'cs';
 
 export type PlanType = 'monthly' | 'yearly' | 'club';
-export type PaymentProvider = 'stripe' | 'legacy';
+export type PaymentProvider = 'stripe' | 'legacy' | 'gopay';
 
 export type PersonalDataSection = {
   id: string;
