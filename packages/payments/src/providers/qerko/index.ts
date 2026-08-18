@@ -1,4 +1,4 @@
-import type { PaymentProvider, QerkoPaymentsConfig } from '../../types.js';
+import type { ManageSubscriptionInput, PaymentProvider, QerkoPaymentsConfig } from '../../types.js';
 
 export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvider {
   return {
@@ -28,6 +28,11 @@ export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvide
     handleWebhook(rawBody) {
       const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
       return config.parseWebhook(body);
+    },
+
+    async getManageUrl(input) {
+      if (!config.getManageUrl) return null;
+      return config.getManageUrl(input);
     },
   };
 }

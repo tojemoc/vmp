@@ -2,6 +2,7 @@ import type {
   CheckoutSession,
   CreateCheckoutSessionInput,
   CreateSubscriptionInput,
+  ManageSubscriptionInput,
   NormalizedPaymentEvent,
   PaymentCustomer,
   PaymentProvider,
@@ -9,6 +10,7 @@ import type {
   StripePaymentsConfig,
   Subscription,
 } from '../../types.js';
+import { normalizeStripeInvoice } from './invoice.js';
 
 const STRIPE_API_VERSION = '2026-03-25.dahlia';
 
@@ -312,7 +314,10 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: 'cancelled',
           };
-        case 'invoice.paid':
+        case 'invoice.paid': {
+          const invoice = normalizeStripeInvoice(object, {
+            planType: metadata.planType ?? null,
+          });
           return {
             ...base,
             type: 'invoice.paid' as const,
@@ -320,7 +325,9 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
               ? { subscriptionId: object.subscription }
               : {}),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
+            ...(invoice ? { invoice } : {}),
           };
+        }
         case 'invoice.payment_failed':
           return {
             ...base,
@@ -334,6 +341,19 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         default:
           return { ...base, type: 'unknown' as const };
       }
+    },
+
+    async getManageUrl(input: ManageSubscriptionInput): Promise<string | null> {
+      const customerId = String(input.customerId ?? '').trim();
+      if (!customerId) return null;
+      const frontendUrl = String(config.frontendUrl ?? 'http://localhost:3000').replace(/\/$/, '');
+      const returnUrl = String(input.returnUrl ?? `${frontendUrl}/account`).trim();
+      const portalSession = await stripePost(config, '/billing_portal/sessions', {
+        customer: customerId,
+        return_url: returnUrl,
+      });
+      if (portalSession.error || typeof portalSession.url !== 'string') return null;
+      return portalSession.url;
     },
   };
 }

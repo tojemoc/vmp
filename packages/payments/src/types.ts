@@ -65,6 +65,46 @@ export type NormalizedPaymentEventType =
   | 'invoice.paid'
   | 'unknown';
 
+/** Buyer details extracted from a provider invoice/payment confirmation. */
+export interface NormalizedInvoiceBuyerAddress {
+  line1?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}
+
+export interface NormalizedInvoiceBuyer {
+  country: string | null;
+  vatId: string | null;
+  name: string | null;
+  email: string | null;
+  address: NormalizedInvoiceBuyerAddress | null;
+  peppolEndpointId?: string | null;
+  peppolSchemeId?: string | null;
+  isBusiness: boolean;
+}
+
+export interface NormalizedInvoiceLineItem {
+  description: string;
+  quantity: number;
+  netAmountCents: number;
+  vatRatePercent: number | null;
+}
+
+/** Provider-agnostic invoice payload for e-invoicing and ledger writes. */
+export interface NormalizedInvoiceData {
+  providerInvoiceId: string;
+  providerPaymentId?: string | null;
+  providerSubscriptionId?: string | null;
+  issueDate: string;
+  currency: string;
+  netAmountCents: number;
+  taxAmountCents: number;
+  grossAmountCents: number;
+  buyer: NormalizedInvoiceBuyer;
+  lineItems: NormalizedInvoiceLineItem[];
+}
+
 export interface NormalizedPaymentEvent {
   type: NormalizedPaymentEventType;
   providerId: PaymentProviderId;
@@ -77,7 +117,15 @@ export interface NormalizedPaymentEvent {
   status?: string;
   currentPeriodEnd?: string | null;
   promoCodeId?: string;
+  /** Populated on `invoice.paid` when the provider can supply invoice details. */
+  invoice?: NormalizedInvoiceData;
   raw: unknown;
+}
+
+export interface ManageSubscriptionInput {
+  customerId?: string | null;
+  subscriptionId?: string | null;
+  returnUrl?: string;
 }
 
 export interface PaymentProvider {
@@ -96,6 +144,9 @@ export interface PaymentProvider {
     signatureHeader: string,
   ): boolean | Promise<boolean>;
   handleWebhook(rawBody: Buffer | string): Promise<NormalizedPaymentEvent>;
+
+  /** Customer self-service URL (billing portal, bank app, etc.), or null if unsupported. */
+  getManageUrl?(input: ManageSubscriptionInput): Promise<string | null>;
 }
 
 export interface StripePaymentsConfig {
@@ -115,6 +166,7 @@ export interface QerkoPaymentsConfig {
   getCustomer: (customerId: string) => Promise<PaymentCustomer | null>;
   refund: (paymentId: string, opts?: RefundOptions) => Promise<void>;
   createSubscription: (input: CreateSubscriptionInput) => Promise<Subscription>;
+  getManageUrl?: (input: ManageSubscriptionInput) => Promise<string | null>;
 }
 
 export interface PaymentsConfig {
