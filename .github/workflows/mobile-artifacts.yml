@@ -1,0 +1,347 @@
+name: Mobile artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: API base URL baked into the mobile build
+        required: true
+        type: string
+      frontend_host:
+        description: Frontend host used for Universal Links / App Links
+        required: true
+        type: string
+      native_push_enabled:
+        description: Enable native push registration UI in the build
+        required: true
+        default: false
+        type: boolean
+      enable_custom_scheme:
+        description: Enable the vmp:// deep-link fallback (dev-only)
+        required: true
+        default: false
+        type: boolean
+      publish_sidestore_source:
+        description: Publish the built IPA plus a SideStore source on GitHub Pages
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: mobile-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPO_NO_TELEMETRY: 1
+  CI: 1
+
+jobs:
+  validate-mobile:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Lint mobile app
+        run: npm run lint
+
+      - name: Typecheck mobile app
+        run: npm run typecheck
+
+  build-android:
+    needs: validate-mobile
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      FRONTEND_HOST: ${{ inputs.frontend_host }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Inject CI frontend host
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'app.json';
+          const host = process.env.FRONTEND_HOST;
+          const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          app.expo.ios = app.expo.ios || {};
+          app.expo.ios.associatedDomains = [`applinks:${host}`];
+          app.expo.android = app.expo.android || {};
+          app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
+            ...filter,
+            data: (filter.data || []).map((entry) =>
+              entry.scheme === 'https' ? { ...entry, host } : entry,
+            ),
+          }));
+          fs.writeFileSync(path, `${JSON.stringify(app, null, 2)}\n`);
+          NODE
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Package Android artifact
+        run: |
+          mkdir -p dist
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/vmp-mobile-${SHORT_SHA}.apk"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-android-apk
+          path: apps/mobile/dist/*.apk
+          if-no-files-found: error
+
+  build-ios:
+    needs: validate-mobile
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      FRONTEND_HOST: ${{ inputs.frontend_host }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Inject CI frontend host
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'app.json';
+          const host = process.env.FRONTEND_HOST;
+          const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          app.expo.ios = app.expo.ios || {};
+          app.expo.ios.associatedDomains = [`applinks:${host}`];
+          app.expo.android = app.expo.android || {};
+          app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
+            ...filter,
+            data: (filter.data || []).map((entry) =>
+              entry.scheme === 'https' ? { ...entry, host } : entry,
+            ),
+          }));
+          fs.writeFileSync(path, `${JSON.stringify(app, null, 2)}\n`);
+          NODE
+
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Build unsigned iOS app
+        run: |
+          if [ -d ios/VMP.xcworkspace ]; then
+            IOS_PROJECT_FLAG="-workspace ios/VMP.xcworkspace"
+          else
+            IOS_PROJECT_FLAG="-project ios/VMP.xcodeproj"
+          fi
+          xcodebuild \
+            $IOS_PROJECT_FLAG \
+            -scheme VMP \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination generic/platform=iOS \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA for SideStore
+        run: |
+          APP_PATH="ios/build/Build/Products/Release-iphoneos/VMP.app"
+          test -d "$APP_PATH"
+          mkdir -p dist/Payload
+          cp -R "$APP_PATH" dist/Payload/VMP.app
+          (
+            cd dist
+            zip -qry vmp-mobile.ipa Payload
+          )
+          rm -rf dist/Payload
+          node <<'NODE'
+          const fs = require('node:fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          const metadata = {
+            appName: app.expo.name,
+            version: app.expo.version,
+            bundleIdentifier: app.expo.ios?.bundleIdentifier,
+            artifactName: 'vmp-mobile.ipa',
+            builtAt: new Date().toISOString(),
+          };
+          fs.writeFileSync('dist/metadata.json', `${JSON.stringify(metadata, null, 2)}\n`);
+          NODE
+
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ios-ipa
+          path: |
+            apps/mobile/dist/vmp-mobile.ipa
+            apps/mobile/dist/metadata.json
+          if-no-files-found: error
+
+  publish-sidestore:
+    if: ${{ inputs.publish_sidestore_source }}
+    needs: build-ios
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download iOS IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-ios-ipa
+          path: dist
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Create SideStore source site
+        env:
+          FRONTEND_HOST: ${{ inputs.frontend_host }}
+          API_URL: ${{ inputs.api_url }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          mkdir -p site/downloads
+          mv dist/vmp-mobile.ipa site/downloads/vmp-mobile.ipa
+          cp dist/metadata.json site/metadata.json
+          IPA_SIZE="$(stat -c%s site/downloads/vmp-mobile.ipa)"
+          export IPA_SIZE
+          node <<'NODE'
+          const fs = require('node:fs');
+          const metadata = JSON.parse(fs.readFileSync('site/metadata.json', 'utf8'));
+          const repoBaseUrl = `https://${process.env.REPOSITORY_OWNER}.github.io/${process.env.REPOSITORY_NAME}`;
+          const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="120" fill="#111827"/><text x="256" y="298" font-size="184" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif">VMP</text></svg>`;
+          fs.writeFileSync('site/icon.svg', iconSvg);
+          const ipaUrl = `${repoBaseUrl}/downloads/vmp-mobile.ipa`;
+          const sourceUrl = `${repoBaseUrl}/source.json`;
+          const source = {
+            name: 'VMP Mobile',
+            identifier: 'sk.tjm.vmp.sidestore',
+            sourceURL: sourceUrl,
+            apps: [
+              {
+                name: metadata.appName,
+                bundleIdentifier: metadata.bundleIdentifier,
+                developerName: 'VMP',
+                subtitle: 'Manual iOS sideload build',
+                localizedDescription:
+                  'Unsigned iOS build packaged for SideStore/AltStore-style sideloading. GitHub Actions also publishes the paired Android APK as a workflow artifact.',
+                iconURL: `${repoBaseUrl}/icon.svg`,
+                downloadURL: ipaUrl,
+                size: Number(process.env.IPA_SIZE),
+                version: metadata.version,
+                versionDate: metadata.builtAt,
+                versions: [
+                  {
+                    version: metadata.version,
+                    date: metadata.builtAt,
+                    size: Number(process.env.IPA_SIZE),
+                    downloadURL: ipaUrl,
+                    localizedDescription:
+                      'Manual workflow_dispatch build from the VMP repository.',
+                  },
+                ],
+              },
+            ],
+          };
+          fs.writeFileSync('site/source.json', `${JSON.stringify(source, null, 2)}\n`);
+          const sidestoreUrl = `sidestore://source?url=${encodeURIComponent(sourceUrl)}`;
+          const html = `<!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>VMP mobile artifacts</title>
+              <style>
+                body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 48rem; padding: 0 1rem; color: #111827; }
+                code { background: #f3f4f6; padding: 0.15rem 0.35rem; border-radius: 0.25rem; }
+                a.button { display: inline-block; margin-right: 0.75rem; margin-bottom: 0.75rem; padding: 0.8rem 1rem; border-radius: 0.5rem; background: #111827; color: #fff; text-decoration: none; }
+              </style>
+            </head>
+            <body>
+              <h1>VMP mobile artifacts</h1>
+              <p>This page is published by the manual <code>Mobile artifacts</code> workflow.</p>
+              <ul>
+                <li>Version: <code>${metadata.version}</code></li>
+                <li>Frontend host baked into the build: <code>${process.env.FRONTEND_HOST}</code></li>
+                <li>API URL baked into the build: <code>${process.env.API_URL}</code></li>
+              </ul>
+              <p>
+                <a class="button" href="./downloads/vmp-mobile.ipa">Download IPA</a>
+                <a class="button" href="./source.json">Open SideStore source JSON</a>
+                <a class="button" href="${sidestoreUrl}">Add source in SideStore</a>
+              </p>
+              <p>The IPA is unsigned and intended for SideStore/AltStore-style re-signing, not for App Store or TestFlight distribution.</p>
+            </body>
+          </html>`;
+          fs.writeFileSync('site/index.html', html);
+          NODE
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages site
+        id: deployment
+        uses: actions/deploy-pages@v4

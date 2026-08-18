@@ -46,6 +46,31 @@ EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
 
 Nx is not wired for this app while it sits outside workspaces; use the Expo CLI commands above. After workspace promotion, add an Nx `start` target and prefer `npm exec nx start mobile` (or the chosen project name).
 
+## Manual GitHub artifact builds
+
+GitHub Actions includes a manual-only workflow at `.github/workflows/mobile-artifacts.yml`.
+
+Use **Actions → Mobile artifacts → Run workflow** when you want ad-hoc test builds without building mobile binaries on every push.
+
+Inputs:
+
+- `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
+- `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
+- `native_push_enabled` — optional; toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
+- `enable_custom_scheme` — optional; toggles the dev-only `vmp://` fallback
+- `publish_sidestore_source` — optional; publishes the generated `.ipa` plus a minimal SideStore source on GitHub Pages
+
+Outputs:
+
+- Android release `.apk` uploaded as a workflow artifact
+- Unsigned iOS `.ipa` uploaded as a workflow artifact
+- Optional GitHub Pages site with:
+  - direct `.ipa` download
+  - `source.json` for SideStore / AltStore-style sources
+  - a `sidestore://source?url=...` convenience link
+
+The iOS artifact is intentionally **unsigned**. It is meant for SideStore/AltStore-style re-signing, not for TestFlight or App Store submission.
+
 ## Deep links
 
 | Scheme | Example | When |
