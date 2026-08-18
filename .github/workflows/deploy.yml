@@ -53,6 +53,8 @@ jobs:
           git-sha: ${{ github.sha }}
           ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
           sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          posthog-project-token: ${{ vars.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN }}
+          posthog-host: ${{ vars.NUXT_PUBLIC_POSTHOG_HOST }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   deploy-production:
@@ -85,4 +87,6 @@ jobs:
           app-version: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
           sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          posthog-project-token: ${{ vars.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN }}
+          posthog-host: ${{ vars.NUXT_PUBLIC_POSTHOG_HOST }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}

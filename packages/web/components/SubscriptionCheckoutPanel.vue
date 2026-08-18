@@ -249,6 +249,7 @@
 </template>
 
 <script setup lang="ts">
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   const props = withDefaults(
@@ -480,11 +481,7 @@
       // Backend sets pricing_not_configured when prices are missing OR no supported
       // providers remain (e.g. stub-only gopay/comgate). Surface that as priceError
       // so we do not show plan buttons with no checkout path.
-      if (
-        !hasVisiblePrice ||
-        providers.length === 0 ||
-        data.pricing_not_configured === true
-      ) {
+      if (!hasVisiblePrice || providers.length === 0 || data.pricing_not_configured === true) {
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
       }
@@ -493,11 +490,7 @@
       pendingLegacyCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
-      if (
-        pendingLegacyCheckoutIntent.value &&
-        showLegacyCheckout.value &&
-        !priceError.value
-      ) {
+      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
         pendingLegacyCheckoutIntent.value = false;
         void startLegacyCheckout();
       }
@@ -528,6 +521,10 @@
         checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: selectedPlan.value,
+        provider: 'legacy',
+      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;

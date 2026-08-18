@@ -89,6 +89,7 @@
 
 <script setup lang="ts">
   import { getNativeEmailInboxHref } from '~/utils/emailInbox';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import { isIosInstalledPwa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
@@ -140,6 +141,7 @@
     try {
       await signIn(email.value, redirectTo);
       sent.value = true;
+      capturePostHogEvent('magic_link_requested');
     } catch (err: any) {
       errorMessage.value = err.message || strings.loginErrorGeneric;
     } finally {

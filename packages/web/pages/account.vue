@@ -404,6 +404,7 @@
 </template>
 
 <script setup lang="ts">
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   usePageSeo({ title: strings.yourAccount, noIndex: true });
@@ -543,6 +544,7 @@
       }
       showTotpDisable.value = false;
       totpDisableCode.value = '';
+      capturePostHogEvent('two_factor_authentication_disabled');
     } catch (e: unknown) {
       totpDisableError.value = e instanceof Error ? e.message : strings.totpAccountDisableFailed;
     } finally {
@@ -567,6 +569,7 @@
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        capturePostHogEvent('subscription_checkout_completed', { provider: 'legacy' });
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {
         legacyCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -575,6 +578,7 @@
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
         await clearStripeSessionQuery({ subscribed: '1' });
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -637,6 +641,7 @@
         portalError.value = data.error ?? strings.billingPortalFailed;
         return;
       }
+      capturePostHogEvent('billing_portal_opened');
       window.location.href = data.portalUrl;
     } catch {
       portalError.value = strings.networkError;

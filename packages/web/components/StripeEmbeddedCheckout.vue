@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
   import { loadStripe, type Stripe } from '@stripe/stripe-js';
-
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   type PlanType = 'monthly' | 'yearly' | 'club';
@@ -345,6 +345,11 @@
 
       const clientSecret = await createCheckoutSession();
       if (generation !== teardownGeneration || sessionKey !== nextKey) return;
+
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: props.planType,
+        provider: 'stripe',
+      });
 
       checkoutInstance = initCheckout.call(stripe, { clientSecret });
       const loadActionsResult = await checkoutInstance.loadActions();

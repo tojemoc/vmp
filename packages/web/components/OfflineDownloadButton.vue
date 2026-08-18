@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import type { OfflineRendition } from '@vmp/shared';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
 
   const props = defineProps<{
     videoId: string;
@@ -132,6 +133,10 @@
       await loadState();
       trackOfflineEvent('offline_download_requested', {
         videoId: props.videoId,
+        rendition: rendition.value,
+      });
+      capturePostHogEvent('offline_download_requested', {
+        video_id: props.videoId,
         rendition: rendition.value,
       });
     } catch (e: unknown) {
