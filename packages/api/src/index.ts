@@ -126,6 +126,7 @@ import {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
   handleCheckout,
+  handleComgateWebhook,
   handleGetPricing,
   handleGetStripeConfig,
   handleGetSubscription,
@@ -861,6 +862,9 @@ const workerHandler = {
       }
       if (url.pathname === '/api/payments/webhook/gopay' && request.method === 'GET') {
         return handleGoPayWebhook(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/payments/webhook/comgate' && request.method === 'POST') {
+        return handleComgateWebhook(request, env, corsHeaders);
       }
       if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
         return handleLegacyWebhook(request, env, corsHeaders);

@@ -26,6 +26,7 @@ import {
   fromApiProviderId,
   getPaymentProviderOrder,
   getPaymentProviders,
+  isComgateConfigured,
   isGoPayConfigured,
   resolvePublicEnabledProviders,
   toApiProviderId,
@@ -105,7 +106,19 @@ function parseConfiguredPrice(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay') {
+async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate') {
+  if (provider === 'comgate') {
+    const [monthly, yearly, club] = await Promise.all([
+      getSetting(env, 'comgate_monthly_price', { ttlSeconds: 300 }),
+      getSetting(env, 'comgate_yearly_price', { ttlSeconds: 300 }),
+      getSetting(env, 'comgate_club_price', { ttlSeconds: 300 }),
+    ]);
+    return {
+      monthly: parseConfiguredPrice(monthly),
+      yearly: parseConfiguredPrice(yearly),
+      club: parseConfiguredPrice(club),
+    };
+  }
   if (provider === 'gopay') {
     const [monthly, yearly, club] = await Promise.all([
       getSetting(env, 'gopay_monthly_price', { ttlSeconds: 300 }),
@@ -131,10 +144,13 @@ async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'go
   };
 }
 
-async function getEffectivePricingSettings(env: any, provider: 'stripe' | 'legacy' | 'gopay') {
+async function getEffectivePricingSettings(
+  env: any,
+  provider: 'stripe' | 'legacy' | 'gopay' | 'comgate',
+) {
   const [providerPricing, fallbackPricing] = await Promise.all([
     getPricingSettings(env, provider),
-    provider === 'gopay'
+    provider === 'gopay' || provider === 'comgate'
       ? Promise.resolve({ monthly: null, yearly: null, club: null })
       : getPricingSettings(env),
   ]);
@@ -188,7 +204,7 @@ async function upsertSubscriptionRow(
     userId: string;
     planType: PlanType;
     status: SubscriptionStatus;
-    provider: 'stripe' | 'legacy' | 'gopay';
+    provider: 'stripe' | 'legacy' | 'gopay' | 'comgate';
     providerSubscriptionId: string | null;
     providerCustomerId: string | null;
     stripeSubscriptionId?: string | null;
@@ -269,7 +285,9 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       stripePricing,
       legacyPricing,
       gopayPricing,
+      comgatePricing,
       gopayCurrency,
+      comgateCurrency,
       allowedPlans,
       { enabled, runnable },
       providerOrder,
@@ -277,7 +295,9 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       getEffectivePricingSettings(env, 'stripe'),
       getEffectivePricingSettings(env, 'legacy'),
       getEffectivePricingSettings(env, 'gopay'),
+      getEffectivePricingSettings(env, 'comgate'),
       getSetting(env, 'gopay_currency', { defaultValue: 'CZK', ttlSeconds: 300 }),
+      getSetting(env, 'comgate_currency', { defaultValue: 'CZK', ttlSeconds: 300 }),
       getAllowedPlans(env),
       getPaymentProviders(env),
       getPaymentProviderOrder(env).then((ids) => toSupportedApiProviderIds(ids)),
@@ -287,7 +307,9 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       ? stripePricing
       : enabledProviders.includes('gopay')
         ? gopayPricing
-        : stripePricing;
+        : enabledProviders.includes('comgate')
+          ? comgatePricing
+          : stripePricing;
     const pricingNotConfigured =
       (allowedPlans.includes('monthly') && primaryPricing.monthly == null) ||
       (allowedPlans.includes('yearly') && primaryPricing.yearly == null) ||
@@ -301,16 +323,21 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
         stripe: stripePricing,
         legacy: legacyPricing,
         gopay: gopayPricing,
+        comgate: comgatePricing,
       },
       gopayCurrency:
         String(gopayCurrency ?? 'CZK')
           .trim()
           .toUpperCase() || 'CZK',
-      // Empty when only stubs/unsupported providers remain — never invent Stripe.
+      comgateCurrency:
+        String(comgateCurrency ?? 'CZK')
+          .trim()
+          .toUpperCase() || 'CZK',
       enabledProviders,
       providerOrder,
       legacyConfigured: isLegacyProviderConfigured(env),
       gopayConfigured: isGoPayConfigured(env),
+      comgateConfigured: isComgateConfigured(env),
       ...(pricingNotConfigured || enabledProviders.length === 0
         ? { pricing_not_configured: true }
         : {}),
@@ -369,6 +396,10 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'gopay_yearly_price',
       'gopay_club_price',
       'gopay_currency',
+      'comgate_monthly_price',
+      'comgate_yearly_price',
+      'comgate_club_price',
+      'comgate_currency',
     ] as const;
     const values = await Promise.all(keys.map((key) => getSetting(env, key)));
     const valueByKey = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
@@ -378,11 +409,13 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
           'stripe',
           'legacy',
           'gopay',
+          'comgate',
         ]),
         providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,legacy', [
           'stripe',
           'legacy',
           'gopay',
+          'comgate',
         ]),
         allowedPlans: parseCsvList(valueByKey.allowed_plans ?? 'monthly,yearly,club', [
           'monthly',
@@ -410,6 +443,11 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
             yearly: valueByKey.gopay_yearly_price ?? '',
             club: valueByKey.gopay_club_price ?? '',
           },
+          comgate: {
+            monthly: valueByKey.comgate_monthly_price ?? '',
+            yearly: valueByKey.comgate_yearly_price ?? '',
+            club: valueByKey.comgate_club_price ?? '',
+          },
         },
         stripePriceIds: {
           monthly: valueByKey.stripe_price_monthly ?? '',
@@ -417,7 +455,9 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
           club: valueByKey.stripe_price_club ?? '',
         },
         gopayCurrency: valueByKey.gopay_currency ?? 'CZK',
+        comgateCurrency: valueByKey.comgate_currency ?? 'CZK',
         gopayConfigured: isGoPayConfigured(env),
+        comgateConfigured: isComgateConfigured(env),
       },
       200,
       corsHeaders,
@@ -438,6 +478,7 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'stripe',
       'legacy',
       'gopay',
+      'comgate',
     ]);
     if (!enabledProviders.length) {
       return jsonResponse(
@@ -450,6 +491,7 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'stripe',
       'legacy',
       'gopay',
+      'comgate',
     ]);
     const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', [
       'monthly',
@@ -460,6 +502,9 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
     const providerPrices = body.providerPrices ?? {};
     const stripePriceIds = body.stripePriceIds ?? {};
     const gopayCurrency = String(body.gopayCurrency ?? 'CZK')
+      .trim()
+      .toUpperCase();
+    const comgateCurrency = String(body.comgateCurrency ?? 'CZK')
       .trim()
       .toUpperCase();
 
@@ -483,6 +528,10 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       ['gopay_yearly_price', parseOptionalPositiveNumber(providerPrices?.gopay?.yearly)],
       ['gopay_club_price', parseOptionalPositiveNumber(providerPrices?.gopay?.club)],
       ['gopay_currency', gopayCurrency || 'CZK'],
+      ['comgate_monthly_price', parseOptionalPositiveNumber(providerPrices?.comgate?.monthly)],
+      ['comgate_yearly_price', parseOptionalPositiveNumber(providerPrices?.comgate?.yearly)],
+      ['comgate_club_price', parseOptionalPositiveNumber(providerPrices?.comgate?.club)],
+      ['comgate_currency', comgateCurrency || 'CZK'],
       ['stripe_price_monthly', String(stripePriceIds.monthly ?? '').trim()],
       ['stripe_price_yearly', String(stripePriceIds.yearly ?? '').trim()],
       ['stripe_price_club', String(stripePriceIds.club ?? '').trim()],
@@ -538,9 +587,13 @@ export async function handleAdminPaymentPlans(request: any, env: any, corsHeader
         },
         gopay: {
           configured: isGoPayConfigured(env),
-          // Wallet methods only inside hosted gateway — no native one-click.
           oneClickLimitations:
             'GoPay is web-gateway only. Apple Pay / Google Pay require the hosted gateway; do not use WebView.',
+        },
+        comgate: {
+          configured: isComgateConfigured(env),
+          recurringLimitations:
+            'Comgate recurring requires activation by support (card via ČSOB or Česká spořitelna only). Renewal scheduling is merchant-driven.',
         },
       },
       200,
@@ -929,7 +982,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       err && typeof err === 'object' && 'code' in err
         ? String((err as { code?: string }).code)
         : '';
-    if (code === 'stripe_timeout' || code === 'gopay_timeout') {
+    if (code === 'stripe_timeout' || code === 'gopay_timeout' || code === 'comgate_timeout') {
       return jsonResponse(
         { error: 'Payment provider timed out. Please try again.', code },
         504,
@@ -1332,6 +1385,135 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
 }
 
 /**
+ * POST /api/payments/webhook/comgate — NO auth (Comgate calls this)
+ * Notifications include `secret` for verification; status is re-verified via API.
+ * Must reply `code=0&message=OK`.
+ */
+export async function handleComgateWebhook(request: any, env: any, corsHeaders: any) {
+  const rawBody = await request.text();
+  const { providers } = await getPaymentProviders(env);
+  let comgateProvider = providers.get('comgate');
+  if (!comgateProvider) {
+    const config = buildPaymentsConfig(env);
+    if (!config.comgate) {
+      return new Response('code=0&message=OK', {
+        status: 200,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+      });
+    }
+    const forced = createEnabledProviders(['comgate'], config);
+    comgateProvider = forced.get('comgate');
+  }
+  if (!comgateProvider || !comgateProvider.isConfigured()) {
+    return new Response('code=0&message=OK', {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+    });
+  }
+
+  const valid = await comgateProvider.verifyWebhookSignature(rawBody, '');
+  if (!valid) {
+    return new Response('code=1400&message=invalid secret', {
+      status: 400,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+    });
+  }
+
+  try {
+    const event = await comgateProvider.handleWebhook(rawBody);
+    const db = getDb(env);
+    const subscriptionId = String(event.subscriptionId ?? '').trim();
+    const purchaseId = String(event.purchaseId ?? '').trim();
+
+    if (event.type === 'checkout.completed' || event.type === 'invoice.paid') {
+      if (!subscriptionId) {
+        return new Response('code=0&message=OK', {
+          status: 200,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+        });
+      }
+      // Look for existing subscription by transId or refId
+      const existing = await db
+        .prepare(
+          `SELECT user_id, plan_type FROM subscriptions
+           WHERE provider = 'comgate' AND (provider_subscription_id = ? OR purchase_id = ?)
+           LIMIT 1`,
+        )
+        .bind(subscriptionId, purchaseId || subscriptionId)
+        .first();
+      const userId = String(existing?.user_id ?? '').trim();
+      const planType = normalizePlanType(String(existing?.plan_type ?? 'monthly'));
+      if (userId) {
+        await upsertSubscriptionRow(db, {
+          userId,
+          planType,
+          status: 'active',
+          provider: 'comgate',
+          providerSubscriptionId: subscriptionId,
+          providerCustomerId: userId,
+          currentPeriodEnd: periodEndIsoForPlan(planType),
+        });
+        try {
+          await syncNewsletterForStripeSubscription(db, userId, 'active', env);
+        } catch (brevoErr) {
+          console.error('[comgate webhook] newsletter sync failed', { userId, err: brevoErr });
+        }
+      }
+    }
+
+    if (event.type === 'payment.failed') {
+      if (subscriptionId) {
+        const existing = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'comgate' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate' AND provider_subscription_id = ?`,
+          )
+          .bind(subscriptionId)
+          .run();
+        if (existing?.user_id) {
+          try {
+            await removeSubscriberFromNewsletter(db, existing.user_id, env);
+          } catch (brevoErr) {
+            console.error('[comgate webhook] newsletter remove failed', {
+              userId: existing.user_id,
+              err: brevoErr,
+            });
+          }
+          try {
+            await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_cancelled');
+          } catch (offlineErr) {
+            console.error('[comgate webhook] offline revoke failed', {
+              userId: existing.user_id,
+              err: offlineErr,
+            });
+            throw offlineErr;
+          }
+        }
+      }
+    }
+
+    return new Response('code=0&message=OK', {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+    });
+  } catch (err) {
+    console.error('handleComgateWebhook error:', err);
+    return new Response('code=0&message=OK', {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+    });
+  }
+}
+
+/**
  * GET /api/account/subscription — protected
  * Returns the most recent subscription row for the authenticated user.
  */
@@ -1453,11 +1635,10 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
     if ((sub.provider ?? 'stripe') !== 'stripe') {
-      if (sub.provider === 'gopay') {
+      if (sub.provider === 'gopay' || sub.provider === 'comgate') {
         return jsonResponse(
           {
-            error:
-              'GoPay has no customer portal. Cancel recurrence via support or a future account cancel action. Apple/Google Pay are gateway-only (no native one-click).',
+            error: `${sub.provider === 'gopay' ? 'GoPay' : 'Comgate'} has no customer portal. Cancel subscription via support or a future account cancel action.`,
             code: 'portal_not_supported',
           },
           409,

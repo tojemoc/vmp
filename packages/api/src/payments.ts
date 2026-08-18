@@ -9,6 +9,7 @@ export {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
   handleCheckout,
+  handleComgateWebhook,
   handleGetPricing,
   handleGetStripeConfig,
   handleGetSubscription,

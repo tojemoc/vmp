@@ -21,7 +21,7 @@ const KNOWN_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'co
 const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
 
 /** Public API provider ids exposed to checkout / pricing. */
-export type ApiPaymentProviderId = 'stripe' | 'legacy' | 'gopay';
+export type ApiPaymentProviderId = 'stripe' | 'legacy' | 'gopay' | 'comgate';
 
 async function priceIdForPlan(env: any, planType: PlanType): Promise<string | null> {
   const stored = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 });
@@ -31,6 +31,14 @@ async function priceIdForPlan(env: any, planType: PlanType): Promise<string | nu
 
 async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
   const stored = await getSetting(env, `gopay_${planType}_price`, { ttlSeconds: 300 });
+  const value = String(stored ?? '').trim();
+  if (!value) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+async function comgateAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
+  const stored = await getSetting(env, `comgate_${planType}_price`, { ttlSeconds: 300 });
   const value = String(stored ?? '').trim();
   if (!value) return null;
   const numeric = Number(value);
@@ -56,6 +64,12 @@ export function isGoPayConfigured(env: any): boolean {
       String(env.GOPAY_CLIENT_SECRET ?? '').trim() &&
       String(env.GOPAY_GOID ?? '').trim() &&
       String(env.API_URL ?? '').trim(),
+  );
+}
+
+export function isComgateConfigured(env: any): boolean {
+  return Boolean(
+    String(env.COMGATE_MERCHANT ?? '').trim() && String(env.COMGATE_SECRET ?? '').trim(),
   );
 }
 
@@ -147,12 +161,35 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
         );
       },
     },
+    comgate: {
+      ...(String(env.COMGATE_MERCHANT ?? '').trim()
+        ? { merchant: String(env.COMGATE_MERCHANT).trim() }
+        : {}),
+      ...(String(env.COMGATE_SECRET ?? '').trim()
+        ? { secret: String(env.COMGATE_SECRET).trim() }
+        : {}),
+      apiBase: String(env.COMGATE_API_BASE ?? '').trim() || 'https://payments.comgate.cz',
+      frontendUrl: env.FRONTEND_URL,
+      country: String(env.COMGATE_COUNTRY ?? 'CZ').trim() || 'CZ',
+      lang: 'cs',
+      amountMajorForPlan: (planType) => comgateAmountMajorForPlan(env, planType),
+      currency: async () => {
+        const stored = await getSetting(env, 'comgate_currency', {
+          defaultValue: 'CZK',
+          ttlSeconds: 300,
+        });
+        return (
+          String(stored ?? 'CZK')
+            .trim()
+            .toUpperCase() || 'CZK'
+        );
+      },
+    },
   };
 }
 
 /**
  * Providers listed in admin settings. Empty / missing → default Stripe.
- * Explicit stub-only lists (comgate) are preserved — do not invent Stripe.
  */
 export async function getConfiguredProviderIds(env: any): Promise<PaymentProviderId[]> {
   const stored = await getSetting(env, 'payments_enabled_providers', { defaultValue: 'stripe' });
@@ -181,7 +218,7 @@ export function toApiProviderId(id: PaymentProviderId): ApiPaymentProviderId | n
   if (id === 'qerko') return 'legacy';
   if (id === 'stripe') return 'stripe';
   if (id === 'gopay') return 'gopay';
-  // Stub / unknown IDs (comgate, …) are not exposed on the public API.
+  if (id === 'comgate') return 'comgate';
   return null;
 }
 
@@ -192,7 +229,8 @@ export function toSupportedApiProviderIds(
   return ids
     .map(toApiProviderId)
     .filter(
-      (id): id is ApiPaymentProviderId => id === 'stripe' || id === 'legacy' || id === 'gopay',
+      (id): id is ApiPaymentProviderId =>
+        id === 'stripe' || id === 'legacy' || id === 'gopay' || id === 'comgate',
     );
 }
 

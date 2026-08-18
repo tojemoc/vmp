@@ -197,6 +197,24 @@
       </p>
     </div>
 
+    <div
+      v-if="!loadingPrices && !priceError && isLoggedIn && showComgateCheckout"
+      class="mb-4 text-left"
+    >
+      <button
+        type="button"
+        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+        :class="legacyButtonClass"
+        :disabled="comgateCheckoutStarting"
+        @click="startComgateCheckout"
+      >
+        <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+        <span v-else
+          >Pay with Comgate ({{ formatComgatePrice(comgatePlanPrice) }})</span
+        >
+      </button>
+    </div>
+
     <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
       <StripeEmbeddedCheckout
         v-if="stripeCheckoutMounted && showStripeCheckout"
@@ -317,12 +335,15 @@
   const legacyPrices = ref<Prices>({ ...defaultPrices });
   const gopayPrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
   const gopayCurrency = ref('CZK');
+  const comgatePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
+  const comgateCurrency = ref('CZK');
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
   const selectedPlan = ref<PlanType>('monthly');
   const legacyCheckoutStarting = ref(false);
   const gopayCheckoutStarting = ref(false);
+  const comgateCheckoutStarting = ref(false);
   const walletAvailable = ref(false);
   /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
   const walletDetectionDone = ref(false);
@@ -352,6 +373,7 @@
   /** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
   const pendingLegacyCheckoutIntent = ref(false);
   const pendingGoPayCheckoutIntent = ref(false);
+  const pendingComgateCheckoutIntent = ref(false);
 
   const stripeCheckoutMounted = computed(() => true);
 
@@ -360,6 +382,8 @@
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
 
   const showGoPayCheckout = computed(() => enabledProviders.value.includes('gopay'));
+
+  const showComgateCheckout = computed(() => enabledProviders.value.includes('comgate'));
 
   const checkoutBlurb = computed(() => {
     if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
@@ -383,6 +407,11 @@
 
   const gopayPlanPrice = computed(() => {
     const value = gopayPrices.value[selectedPlan.value];
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const comgatePlanPrice = computed(() => {
+    const value = comgatePrices.value[selectedPlan.value];
     return Number.isFinite(value) && value > 0 ? Number(value) : null;
   });
 
@@ -464,6 +493,11 @@
     return `${amount.toFixed(2)} ${gopayCurrency.value}`;
   }
 
+  function formatComgatePrice(amount: number | null | undefined): string {
+    if (amount == null || !Number.isFinite(amount)) return '…';
+    return `${amount.toFixed(2)} ${comgateCurrency.value}`;
+  }
+
   function planPrice(plan: PlanType): number | null {
     const value = prices.value[plan];
     return Number.isFinite(value) ? Number(value) : null;
@@ -516,10 +550,18 @@
         club: Number(gopayRaw.club ?? 0),
       };
       gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+      const comgateRaw = data?.pricesByProvider?.comgate ?? {};
+      comgatePrices.value = {
+        monthly: Number(comgateRaw.monthly ?? 0),
+        yearly: Number(comgateRaw.yearly ?? 0),
+        club: Number(comgateRaw.club ?? 0),
+      };
+      comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
 
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter(
-            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay',
+            (p: string) =>
+              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
           )
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
@@ -535,19 +577,25 @@
       // Backend sets pricing_not_configured when prices are missing OR no supported
       // providers remain (e.g. stub-only comgate). Surface that as priceError
       // so we do not show plan buttons with no checkout path.
+      const hasComgatePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => {
+        const v = comgatePrices.value[plan];
+        return Number.isFinite(v) && v > 0;
+      });
       if (
-        (!hasVisiblePrice && !hasGoPayPrice) ||
+        (!hasVisiblePrice && !hasGoPayPrice && !hasComgatePrice) ||
         providers.length === 0 ||
         data.pricing_not_configured === true
       ) {
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
+        pendingComgateCheckoutIntent.value = false;
       }
     } catch {
       priceError.value = true;
       pendingLegacyCheckoutIntent.value = false;
       pendingGoPayCheckoutIntent.value = false;
+      pendingComgateCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
       if (
@@ -565,6 +613,14 @@
       ) {
         pendingGoPayCheckoutIntent.value = false;
         void startGoPayCheckout();
+      }
+      if (
+        pendingComgateCheckoutIntent.value &&
+        showComgateCheckout.value &&
+        !priceError.value
+      ) {
+        pendingComgateCheckoutIntent.value = false;
+        void startComgateCheckout();
       }
     }
   }
@@ -630,6 +686,38 @@
       checkoutError.value = strings.networkError;
     } finally {
       gopayCheckoutStarting.value = false;
+    }
+  }
+
+  async function startComgateCheckout() {
+    checkoutError.value = null;
+    if (!isLoggedIn.value) {
+      await startLoginFlow(props.returnPath);
+      return;
+    }
+
+    comgateCheckoutStarting.value = true;
+    try {
+      const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          planType: selectedPlan.value,
+          provider: 'comgate',
+          returnPath: props.returnPath,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkoutUrl) {
+        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        return;
+      }
+      window.location.href = String(data.checkoutUrl);
+    } catch {
+      checkoutError.value = strings.networkError;
+    } finally {
+      comgateCheckoutStarting.value = false;
     }
   }
 
@@ -716,6 +804,13 @@
         void startGoPayCheckout();
       } else {
         pendingGoPayCheckoutIntent.value = true;
+      }
+    }
+    if (provider === 'comgate') {
+      if (showComgateCheckout.value) {
+        void startComgateCheckout();
+      } else {
+        pendingComgateCheckoutIntent.value = true;
       }
     }
   }

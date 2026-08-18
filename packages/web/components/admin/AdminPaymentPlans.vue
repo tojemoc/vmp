@@ -64,6 +64,19 @@
             >(not configured on server)</span
           >
         </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="enabledProviders"
+            type="checkbox"
+            value="comgate"
+            class="rounded border-gray-300 dark:border-gray-600"
+            :disabled="!comgate.configured"
+          >
+          Comgate (draft redirect gateway)
+          <span v-if="!comgate.configured" class="text-xs text-amber-700 dark:text-amber-300"
+            >(not configured on server)</span
+          >
+        </label>
       </div>
       <p
         v-if="gopay.configured"
@@ -71,6 +84,13 @@
       >
         GoPay is web-gateway only: Apple Pay / Google Pay require the hosted gateway (no native
         one-click). Do not embed the gateway in a WebView.
+      </p>
+      <p
+        v-if="comgate.configured"
+        class="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded px-3 py-2"
+      >
+        Comgate recurring requires activation by Comgate support (card via ČSOB or Česká
+        spořitelna). Renewal scheduling is merchant-driven.
       </p>
       <p
         v-if="legacy.configured && !legacy.hasWebhookSecret"
@@ -99,6 +119,31 @@
           Legacy {{ plan }} price (EUR)
           <input
             v-model="legacyPrices[plan as LegacyPlanKey]"
+            type="text"
+            inputmode="decimal"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+          >
+        </label>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="text-xs text-gray-600 dark:text-gray-300 block">
+          Comgate currency
+          <input
+            v-model="comgateCurrency"
+            type="text"
+            maxlength="3"
+            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono uppercase"
+            placeholder="CZK"
+          >
+        </label>
+        <label
+          v-for="plan in ['monthly', 'yearly', 'club']"
+          :key="`comgate-price-${plan}`"
+          class="text-xs text-gray-600 dark:text-gray-300 block"
+        >
+          Comgate {{ plan }} price
+          <input
+            v-model="comgatePrices[plan as LegacyPlanKey]"
             type="text"
             inputmode="decimal"
             class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
@@ -450,6 +495,7 @@
     showManageButton: false,
   });
   const gopay = ref({ configured: false });
+  const comgate = ref({ configured: false });
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const providerOrderText = ref('stripe,legacy');
   const legacyPrices = ref<Record<LegacyPlanKey, string>>({
@@ -463,6 +509,12 @@
     club: '',
   });
   const gopayCurrency = ref('CZK');
+  const comgatePrices = ref<Record<LegacyPlanKey, string>>({
+    monthly: '',
+    yearly: '',
+    club: '',
+  });
+  const comgateCurrency = ref('CZK');
   const basePrices = ref<Record<LegacyPlanKey, string>>({
     monthly: '',
     yearly: '',
@@ -543,7 +595,15 @@
       club: String(gopayProviderPrices.club ?? ''),
     };
     gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+    const comgateProviderPrices = data.providerPrices?.comgate ?? {};
+    comgatePrices.value = {
+      monthly: String(comgateProviderPrices.monthly ?? ''),
+      yearly: String(comgateProviderPrices.yearly ?? ''),
+      club: String(comgateProviderPrices.club ?? ''),
+    };
+    comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
     gopay.value = { configured: Boolean(data.gopayConfigured) };
+    comgate.value = { configured: Boolean(data.comgateConfigured) };
   }
 
   async function loadLegacyOrders() {
@@ -592,6 +652,9 @@
       }
       if (data.gopay) {
         gopay.value = { configured: Boolean(data.gopay.configured) };
+      }
+      if (data.comgate) {
+        comgate.value = { configured: Boolean(data.comgate.configured) };
       }
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Failed to load plans';
@@ -697,9 +760,15 @@
               yearly: gopayPrices.value.yearly,
               club: gopayPrices.value.club,
             },
+            comgate: {
+              monthly: comgatePrices.value.monthly,
+              yearly: comgatePrices.value.yearly,
+              club: comgatePrices.value.club,
+            },
           },
           stripePriceIds: stripePriceIds.value,
           gopayCurrency: gopayCurrency.value,
+          comgateCurrency: comgateCurrency.value,
         }),
       });
       const data = await res.json().catch(() => ({}));

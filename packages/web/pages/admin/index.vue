@@ -4209,7 +4209,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   const newsletterTemplateForm = ref({ name: '', subject: '', htmlBody: '' });
   const newsletterEditingTemplateId = ref<string | null>(null);
   const newsletterTemplateSaving = ref(false);
-  type PaymentProvider = 'stripe' | 'legacy' | 'gopay';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
   type PlanType = 'monthly' | 'yearly' | 'club';
   interface AdminPaymentPlanRow {
     id: string;
@@ -4260,9 +4260,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     providerOrder: PaymentProvider[];
     allowedPlans: PlanType[];
     basePrices: PaymentPriceRow;
-    providerPrices: { stripe: PaymentPriceRow; gopay?: PaymentPriceRow };
+    providerPrices: {
+      stripe: PaymentPriceRow;
+      gopay?: PaymentPriceRow;
+      comgate?: PaymentPriceRow;
+    };
     stripePriceIds: PaymentPriceRow;
     gopayCurrency?: string;
+    comgateCurrency?: string;
   }>({
     enabledProviders: ['stripe'],
     providerOrder: ['stripe', 'legacy'],
@@ -4271,9 +4276,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     providerPrices: {
       stripe: { monthly: '', yearly: '', club: '' },
       gopay: { monthly: '', yearly: '', club: '' },
+      comgate: { monthly: '', yearly: '', club: '' },
     },
     stripePriceIds: { monthly: '', yearly: '', club: '' },
     gopayCurrency: 'CZK',
+    comgateCurrency: 'CZK',
   });
   const paymentSettingsSaving = ref(false);
   const paymentSettingsMessage = ref('');
@@ -6014,12 +6021,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       const data = await res.json();
       const enabled = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter(
-            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay',
+            (p: string) =>
+              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
           )
         : ['stripe'];
       const order = Array.isArray(data.providerOrder)
         ? data.providerOrder.filter(
-            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay',
+            (p: string) =>
+              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
           )
         : ['stripe', 'legacy'];
       const allowed = Array.isArray(data.allowedPlans)
@@ -6063,6 +6072,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 ? String(data.providerPrices.gopay.club)
                 : '',
           },
+          comgate: {
+            monthly:
+              data.providerPrices?.comgate?.monthly != null
+                ? String(data.providerPrices.comgate.monthly)
+                : '',
+            yearly:
+              data.providerPrices?.comgate?.yearly != null
+                ? String(data.providerPrices.comgate.yearly)
+                : '',
+            club:
+              data.providerPrices?.comgate?.club != null
+                ? String(data.providerPrices.comgate.club)
+                : '',
+          },
         },
         stripePriceIds: {
           monthly: data.stripePriceIds?.monthly != null ? String(data.stripePriceIds.monthly) : '',
@@ -6070,6 +6093,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           club: data.stripePriceIds?.club != null ? String(data.stripePriceIds.club) : '',
         },
         gopayCurrency: String(data.gopayCurrency ?? 'CZK'),
+        comgateCurrency: String(data.comgateCurrency ?? 'CZK'),
       };
     } catch (e: any) {
       paymentSettingsMessage.value = `Could not load payment settings: ${e.message}`;
@@ -6546,6 +6570,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           providerPrices: ps.providerPrices,
           stripePriceIds: ps.stripePriceIds,
           gopayCurrency: ps.gopayCurrency ?? 'CZK',
+          comgateCurrency: ps.comgateCurrency ?? 'CZK',
         }),
       });
       if (!res.ok) {
