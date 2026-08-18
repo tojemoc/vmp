@@ -391,18 +391,12 @@ export function useAuth() {
       await subscriptionFetchInFlight;
       return;
     }
-    const expectedSessionVersion = sessionVersion;
-    const expectedToken = accessToken.value;
-    const request = fetchSubscription();
+    const request: Promise<void> = fetchSubscription().then(() => undefined);
     subscriptionFetchInFlight = request;
     try {
       await request;
     } finally {
-      if (
-        subscriptionFetchInFlight === request &&
-        sessionVersion === expectedSessionVersion &&
-        accessToken.value === expectedToken
-      ) {
+      if (subscriptionFetchInFlight === request) {
         subscriptionFetchInFlight = null;
       }
     }
