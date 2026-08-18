@@ -1535,7 +1535,7 @@
       }
     }
 
-    if (route.query.showPremium === '1') {
+    if (route.query.showPremium === '1' && route.query.showDownload !== '1') {
       showPremiumOverlay.value = true;
     }
   });
