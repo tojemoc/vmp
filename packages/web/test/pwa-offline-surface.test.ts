@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { canAddToHomeScreenWithoutPrompt, isInstalledPwa, isIosLike } from '../utils/pwa';
+import {
+  canAddToHomeScreenWithoutPrompt,
+  canOpenCurrentPageInChrome,
+  isAndroid,
+  isInstalledPwa,
+  isIosLike,
+} from '../utils/pwa';
 
 describe('pwa offline-download surface helpers', () => {
   const originalNavigator = globalThis.navigator;
@@ -92,5 +98,20 @@ describe('pwa offline-download surface helpers', () => {
     });
     assert.equal(isIosLike(), false);
     assert.equal(canAddToHomeScreenWithoutPrompt(), false);
+  });
+
+  it('detects Android and Chrome intent handoff availability', () => {
+    mockWindow({ ua: 'Mozilla/5.0 (Linux; Android 14) Firefox/121.0' });
+    assert.equal(isAndroid(), true);
+    assert.equal(canOpenCurrentPageInChrome(), true);
+  });
+
+  it('does not offer Chrome intent handoff on desktop Firefox', () => {
+    mockWindow({
+      ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+      platform: 'Win32',
+    });
+    assert.equal(isAndroid(), false);
+    assert.equal(canOpenCurrentPageInChrome(), false);
   });
 });

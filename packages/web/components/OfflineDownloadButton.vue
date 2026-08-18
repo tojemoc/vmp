@@ -1,7 +1,12 @@
 <script setup lang="ts">
   import type { OfflineRendition } from '@vmp/shared';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
-  import { canAddToHomeScreenWithoutPrompt, isInstalledPwa } from '~/utils/pwa';
+  import {
+    canAddToHomeScreenWithoutPrompt,
+    canOpenCurrentPageInChrome,
+    isInstalledPwa,
+    openCurrentPageInChrome,
+  } from '~/utils/pwa';
 
   const props = defineProps<{
     videoId: string;
@@ -66,26 +71,25 @@
       canAddToHomeScreenWithoutPrompt(),
   );
 
-  /** Show the button when the platform supports PWA. */
-  const showControl = computed(() => pwaSupportedSurface.value);
+  const iosInstallGuide = computed(() => canAddToHomeScreenWithoutPrompt());
+  const watchReturnPath = computed(() => `/watch/${encodeURIComponent(props.videoId)}`);
 
-  /**
-   * True when the user can actually start a download right now:
-   * installed PWA (or dev) AND active subscription.
-   */
-  const downloadsAvailable = computed(() => canDownload.value);
+  type ModalBlocker = 'needs_pwa_support' | 'needs_install' | 'needs_subscription';
 
   /**
    * Determine which modal variant to show when downloads are blocked.
-   * - 'needs_install': user is not in the installed app
+   * - 'needs_pwa_support': browser cannot install or run the offline PWA
+   * - 'needs_install': user is not in the installed app yet
    * - 'needs_subscription': user is in the app (or dev) but lacks premium
    */
-  const modalBlocker = computed<'needs_install' | 'needs_subscription'>(() => {
+  const modalBlocker = computed<ModalBlocker>(() => {
+    if (!pwaSupportedSurface.value) return 'needs_pwa_support';
     if (!offlineDownloadsEnabled.value) return 'needs_install';
     return 'needs_subscription';
   });
 
   async function resolveCanDownload(): Promise<boolean> {
+    if (!pwaSupportedSurface.value) return false;
     if (!offlineDownloadsEnabled.value) return false;
     const role = user.value?.role;
     // Staff roles can exercise premium workflows without holding a viewer subscription.
@@ -184,6 +188,9 @@
   );
   const showProgress = computed(() => isActive.value || status.value === 'paused');
 
+  /** True when the user can actually start a download right now. */
+  const downloadsAvailable = computed(() => canDownload.value);
+
   function openPwaModal() {
     menuOpen.value = false;
     pwaModalOpen.value = true;
@@ -203,6 +210,10 @@
     } finally {
       installingPwa.value = false;
     }
+  }
+
+  function handleOpenInChrome() {
+    openCurrentPageInChrome();
   }
 
   async function toggleMenu() {
@@ -273,8 +284,7 @@
 </script>
 
 <template>
-  <template v-if="showControl">
-    <div class="watch-offline-download">
+  <div class="watch-offline-download">
       <button
         ref="buttonRef"
         type="button"
@@ -428,16 +438,151 @@
         @click.self="closePwaModal"
       >
         <div
-          class="w-full max-w-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 shadow-xl"
+          class="relative w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl max-h-[min(90dvh,calc(100dvh-2rem))] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+          :class="modalBlocker === 'needs_subscription' ? 'max-w-lg p-5 sm:p-6' : 'max-w-md p-6'"
           role="dialog"
           aria-modal="true"
           aria-labelledby="offline-download-pwa-title"
           aria-describedby="offline-download-pwa-desc"
         >
-          <template v-if="modalBlocker === 'needs_install'">
+          <button
+            type="button"
+            class="absolute top-3 right-3 inline-flex items-center justify-center w-8 h-8 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            :aria-label="strings.offlineDownloadPwaRequiredDismiss"
+            @click="closePwaModal"
+          >
+            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
+
+          <template v-if="modalBlocker === 'needs_pwa_support'">
             <h3
               id="offline-download-pwa-title"
-              class="text-lg font-semibold text-gray-900 dark:text-white mb-2"
+              class="text-lg font-semibold text-gray-900 dark:text-white mb-2 pr-8"
+            >
+              {{ strings.offlineDownloadPwaUnsupportedTitle }}
+            </h3>
+            <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
+              {{ strings.offlineDownloadPwaUnsupportedMessage }}
+            </p>
+            <div class="flex flex-col gap-2">
+              <button
+                v-if="canOpenCurrentPageInChrome()"
+                type="button"
+                class="w-full px-4 py-2 text-sm font-semibold text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors"
+                @click="handleOpenInChrome"
+              >
+                {{ strings.offlineDownloadPwaUnsupportedOpenChrome }}
+              </button>
+              <button
+                type="button"
+                class="w-full px-4 py-2 text-sm font-semibold rounded-lg transition-colors"
+                :class="
+                  canOpenCurrentPageInChrome()
+                    ? 'text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    : 'text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700'
+                "
+                @click="closePwaModal"
+              >
+                {{ strings.offlineDownloadPwaRequiredDismiss }}
+              </button>
+            </div>
+          </template>
+
+          <template v-else-if="modalBlocker === 'needs_install' && iosInstallGuide">
+            <div class="flex items-start gap-3 mb-4 pr-8">
+              <img
+                src="/icons/pwa-192.png"
+                alt=""
+                class="w-12 h-12 rounded-xl shrink-0"
+                width="48"
+                height="48"
+              />
+              <h3
+                id="offline-download-pwa-title"
+                class="text-lg font-semibold text-gray-900 dark:text-white leading-snug"
+              >
+                {{ strings.offlineDownloadIosInstallTitle }}
+              </h3>
+            </div>
+            <ul
+              id="offline-download-pwa-desc"
+              class="space-y-1.5 mb-5 text-sm text-gray-600 dark:text-gray-400 list-disc pl-5"
+            >
+              <li>{{ strings.offlineDownloadIosInstallBenefit1 }}</li>
+              <li>{{ strings.offlineDownloadIosInstallBenefit2 }}</li>
+              <li>{{ strings.offlineDownloadIosInstallBenefit3 }}</li>
+            </ul>
+            <ol class="space-y-4 mb-2">
+              <li class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <span
+                    class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold shrink-0"
+                    aria-hidden="true"
+                  >
+                    1
+                  </span>
+                  <span class="text-sm font-medium text-gray-900 dark:text-white">
+                    {{ strings.offlineDownloadIosInstallStep1 }}
+                  </span>
+                </div>
+                <svg
+                  class="w-6 h-6 text-gray-700 dark:text-gray-300 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  aria-hidden="true"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M8.5 14.5L12 11l3.5 3.5M12 18V6M6 3h12a1.5 1.5 0 011.5 1.5v15A1.5 1.5 0 0118 21H6a1.5 1.5 0 01-1.5-1.5v-15A1.5 1.5 0 016 3z"
+                  />
+                </svg>
+              </li>
+              <li class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <span
+                    class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold shrink-0"
+                    aria-hidden="true"
+                  >
+                    2
+                  </span>
+                  <span class="text-sm font-medium text-gray-900 dark:text-white">
+                    {{ strings.offlineDownloadIosInstallStep2 }}
+                  </span>
+                </div>
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-900 dark:text-gray-100 shrink-0"
+                >
+                  {{ strings.offlineDownloadIosAddToHomeScreen }}
+                  <svg
+                    class="w-4 h-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                </span>
+              </li>
+            </ol>
+          </template>
+
+          <template v-else-if="modalBlocker === 'needs_install'">
+            <h3
+              id="offline-download-pwa-title"
+              class="text-lg font-semibold text-gray-900 dark:text-white mb-2 pr-8"
             >
               {{ strings.offlineDownloadPwaRequiredTitle }}
             </h3>
@@ -472,34 +617,24 @@
           <template v-else>
             <h3
               id="offline-download-pwa-title"
-              class="text-lg font-semibold text-gray-900 dark:text-white mb-2"
+              class="text-lg font-semibold text-gray-900 dark:text-white mb-2 pr-8"
             >
               {{ strings.offlineDownloadSubRequiredTitle }}
             </h3>
-            <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-5">
+            <p id="offline-download-pwa-desc" class="text-sm text-gray-600 dark:text-gray-400 mb-4">
               {{ strings.offlineDownloadSubRequiredMessage }}
             </p>
-            <div class="flex flex-col gap-2">
-              <NuxtLink
-                to="/pricing"
-                class="block w-full px-4 py-2 text-sm font-semibold text-center text-white dark:text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 rounded-lg transition-colors"
-                @click="closePwaModal"
-              >
-                {{ strings.offlineDownloadSubRequiredAction }}
-              </NuxtLink>
-              <button
-                type="button"
-                class="w-full px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                @click="closePwaModal"
-              >
-                {{ strings.offlineDownloadPwaRequiredDismiss }}
-              </button>
-            </div>
+            <SubscriptionCheckoutPanel
+              :return-path="watchReturnPath"
+              reopen-premium-on-return
+              :active="pwaModalOpen"
+              embedded
+              compact
+            />
           </template>
         </div>
       </div>
     </Teleport>
-  </template>
 </template>
 
 <style scoped>
