@@ -23,9 +23,9 @@ Install page (OTA manifest + source link):
 | Artifact | Location |
 | --- | --- |
 | IPA file | GitHub Release asset (`vmp-<version>-ios.ipa`) |
-| AltStore source JSON | `docs/altstore-source.json` → GitHub Pages |
-| Install page | `docs/index.html` → GitHub Pages |
-| OTA manifest (optional) | `docs/manifest.plist` → GitHub Pages |
+| AltStore source JSON | `gh-pages` branch (`altstore-source.json`) |
+| Install page | `gh-pages` branch (`index.html`) |
+| OTA manifest (optional) | `gh-pages` branch (`manifest.plist`) |
 
 IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always points at **GitHub Release assets**.
 
@@ -65,15 +65,16 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 1. GitHub → **Actions** → **Mobile artifacts** → **Run workflow**.
 2. Set `api_url` and `frontend_host` for the target environment.
 3. Choose `flavor` (`release`, `beta`, `nightly`, `development`).
-4. Optionally override `build_number` (defaults to `expo.ios.buildNumber` in `apps/mobile/app.json`).
-5. Download the Android APK from workflow artifacts if needed.
-6. On iPhone: add the Pages source URL in SideStore and install the desired version.
+4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). Must be unique per flavor+version or the job fails instead of replacing an existing IPA.
+5. Canonical `flavor: release` is only allowed when dispatching from `main`. Feature branches may publish `beta` / `nightly` / `development` pre-releases.
+6. Download the Android APK from workflow artifacts if needed.
+7. On iPhone: add the Pages source URL in SideStore and install the desired version.
 
 ## Repo setup (maintainer, one-time)
 
-1. **GitHub Pages:** Settings → Pages → Build from branch → `/docs` on `main`.
-2. Ensure workflow permissions allow `contents: write` (for releases + `[skip ci]` commits to `docs/`).
-3. First merge to `main` after this workflow lands; run **Mobile artifacts** once to populate Releases + Pages.
+1. **GitHub Pages:** Settings → Pages → Deploy from a branch → `gh-pages` / `/` (root). Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
+2. The publish job has `contents: write` so it can create GitHub Releases and push **only** to `gh-pages` (`git push origin HEAD:gh-pages`). It never pushes to `main`.
+3. First merge to `main` after this workflow lands; run **Mobile artifacts** from `main` once to populate Releases + Pages.
 
 ## Updating permissions metadata
 

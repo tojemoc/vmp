@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       flavor:
-        description: Release channel label (used in GitHub Release tag)
+        description: Release channel label (used in GitHub Release tag). Canonical "release" is only allowed from main.
         required: true
         default: development
         type: choice
@@ -22,7 +22,7 @@ on:
           - nightly
           - development
       build_number:
-        description: iOS build number (defaults to expo.ios.buildNumber or workflow run number)
+        description: iOS build number (defaults to this workflow run number; must be unique per flavor+version)
         required: false
         type: string
       native_push_enabled:
@@ -46,8 +46,9 @@ on:
         default: true
         type: boolean
 
+# Write access is scoped to the publish job (releases + gh-pages). Other jobs stay read-only.
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 concurrency:
@@ -65,11 +66,18 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v6
+      - name: Guard canonical release publishing
+        if: ${{ inputs.publish_release && inputs.flavor == 'release' && github.ref != 'refs/heads/main' }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "::error::flavor=release can only be published from main (got ${{ github.ref }}). Use beta, nightly, or development from a feature branch."
+          exit 1
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
@@ -98,17 +106,17 @@ jobs:
       EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
       FRONTEND_HOST: ${{ inputs.frontend_host }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '17'
@@ -151,7 +159,7 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk "dist/vmp-mobile-${SHORT_SHA}.apk"
 
       - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-android-apk
           path: apps/mobile/dist/*.apk
@@ -174,11 +182,11 @@ jobs:
       EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
       FRONTEND_HOST: ${{ inputs.frontend_host }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
@@ -199,7 +207,10 @@ jobs:
           if [ -n "${INPUT_BUILD}" ]; then
             BUILD_NUMBER="${INPUT_BUILD}"
           else
-            BUILD_NUMBER="$(node -p "require('./app.json').expo.ios?.buildNumber || process.env.RUN_NUMBER")"
+            # Unique per workflow run so two dispatches never reuse the same
+            # <flavor>-v<semver>-build<build> tag. app.json buildNumber is a
+            # local/dev default only and is not used as CI identity.
+            BUILD_NUMBER="${RUN_NUMBER}"
           fi
           if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::error::iOS build number must be a positive integer. Found: $BUILD_NUMBER"
@@ -285,7 +296,7 @@ jobs:
           fi
 
       - name: Upload iOS IPA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ios-ipa
           path: apps/mobile/dist/
@@ -295,13 +306,21 @@ jobs:
     if: ${{ inputs.publish_release && needs.build-ios.result == 'success' }}
     needs: build-ios
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - name: Guard canonical release publishing
+        if: ${{ inputs.flavor == 'release' && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::flavor=release can only be published from main (got ${{ github.ref }})."
+          exit 1
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: Download iOS IPA artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ios-ipa
           path: ./artifacts
@@ -312,9 +331,20 @@ jobs:
           find ./artifacts -name "*.ipa" -exec cp {} release/ios/ \;
           ls -la release/ios/
 
+      - name: Ensure release tag is unique
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release tag $TAG already exists. Re-run with a unique build_number instead of replacing the IPA."
+            exit 1
+          fi
+
       - name: Create GitHub Release
         id: release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: "${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}"
           name: "${{ needs.build-ios.outputs.flavor_label }} v${{ needs.build-ios.outputs.version_name }} (build ${{ needs.build-ios.outputs.build_number }})"
@@ -342,7 +372,7 @@ jobs:
           ALTSTORE_WAIT_RELEASE_TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
         run: python3 scripts/generate-altstore-source.py
 
-      - name: Update GitHub Pages (OTA + AltStore source)
+      - name: Publish GitHub Pages from gh-pages (not main)
         env:
           VERSION_NAME: ${{ needs.build-ios.outputs.version_name }}
           BUILD_NUMBER: ${{ needs.build-ios.outputs.build_number }}
@@ -368,12 +398,31 @@ jobs:
           sed -i "s|__INSTALL_URL__|${INSTALL_URL_SED}|g" docs/index.html
           sed -i "s|__ALTSTORE_SOURCE_URL__|${ALTSTORE_SOURCE_URL}|g" docs/index.html
 
+          STAGING="$(mktemp -d)"
+          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/.nojekyll "$STAGING/"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/manifest.plist docs/index.html docs/altstore-source.json
+
+          # Drop generated files from the dispatch ref so we never commit them to
+          # main or a feature branch. Pages live only on the gh-pages branch.
+          git reset --hard HEAD
+          git clean -fd
+          git fetch origin gh-pages:gh-pages || true
+          if git show-ref --verify --quiet refs/heads/gh-pages; then
+            git checkout gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf --quiet . || true
+          fi
+
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp "$STAGING/altstore-source.json" "$STAGING/index.html" "$STAGING/manifest.plist" "$STAGING/.nojekyll" .
+
+          git add -A altstore-source.json index.html manifest.plist .nojekyll
           if git diff --staged --quiet; then
             echo "GitHub Pages files already up to date"
           else
             git commit -m "chore: update GitHub Pages (OTA + AltStore source) for ${TAG} [skip ci]"
-            git push
+            git push origin HEAD:gh-pages
           fi

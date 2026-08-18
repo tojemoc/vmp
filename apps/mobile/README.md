@@ -56,8 +56,8 @@ Inputs:
 
 - `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
 - `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
-- `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`)
-- `build_number` — optional iOS build number (defaults to `expo.ios.buildNumber` or the workflow run number)
+- `flavor` — release channel tag prefix (`release` is only allowed from `main`; `beta` / `nightly` / `development` may run from a feature branch)
+- `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag)
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
 - `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on)
@@ -67,7 +67,7 @@ Outputs:
 
 - Android release `.apk` uploaded as a workflow artifact (when `build_android` is enabled)
 - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
-- `docs/altstore-source.json` committed and served on GitHub Pages for SideStore / AltStore
+- `altstore-source.json` published on the `gh-pages` branch (not committed to `main`) for SideStore / AltStore
 - Install page at `https://<org>.github.io/<repo>/` with OTA + source links
 
 SideStore source URL (after first publish on `main`):
