@@ -362,12 +362,13 @@ export function useAuth() {
       if (!stillCurrentSession()) return false;
       if (res.ok) {
         const data = await res.json();
+        if (!stillCurrentSession()) return false;
         subscription.value = data.subscription ?? null;
         hydrated = true;
       } else {
         // Non-OK response (e.g. 401 after token expiry) — clear stale entitlements.
         // Do not mark hydration complete so the caller can retry.
-        subscription.value = null;
+        if (stillCurrentSession()) subscription.value = null;
         return false;
       }
     } catch {
