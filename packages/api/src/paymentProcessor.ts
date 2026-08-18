@@ -3,25 +3,25 @@
  */
 
 import { requireAuth, requireRole } from './auth.js';
-import { removeSubscriberFromNewsletter, syncNewsletterForStripeSubscription } from './brevo.js';
+import { removeSubscriberFromNewsletter, syncNewsletterForSubscription } from './brevo.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
 import {
   normalizeStripeStatus,
   stripeGet,
-  stripePost,
   stripeSubscriptionPeriodEndIso,
 } from './stripeClient.js';
 
 export { normalizeStripeStatus } from './stripeClient.js';
 
 import type { NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
-import { handleStripeInvoicePaid } from './eInvoicing.js';
+import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
 import {
+  dbProviderToRegistryId,
   fromApiProviderId,
   getPaymentProviderOrder,
   getPaymentProviders,
@@ -213,23 +213,102 @@ async function upsertSubscriptionRow(
     .run();
 }
 
-async function upsertStripeSubscription(db: any, userId: string, stripeSub: any, env: any) {
-  const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null;
-  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly';
-  const status = normalizeStripeStatus(stripeSub.status);
-  const currentPeriodEnd = stripeSubscriptionPeriodEndIso(stripeSub);
+async function upsertSubscriptionFromNormalizedEvent(
+  db: any,
+  env: any,
+  event: NormalizedPaymentEvent,
+): Promise<string | null> {
+  const userId =
+    typeof event.userId === 'string' && event.userId.trim()
+      ? event.userId.trim()
+      : await findUserIdForPaymentEvent(db, event);
+  if (!userId) return null;
+
+  let planType = event.planType;
+  let status = event.status;
+  let currentPeriodEnd = event.currentPeriodEnd ?? null;
+  let providerSubscriptionId = event.subscriptionId?.trim() || null;
+  let providerCustomerId = event.customerId?.trim() || null;
+  let stripeSubscriptionId: string | null = null;
+  let stripeCustomerId: string | null = null;
+
+  if (event.providerId === 'stripe') {
+    stripeSubscriptionId = providerSubscriptionId;
+    stripeCustomerId = providerCustomerId;
+
+    const rawSub =
+      event.type === 'subscription.created' || event.type === 'subscription.updated'
+        ? getNormalizedRawObject(event)
+        : null;
+
+    const needsStripeFetch =
+      Boolean(providerSubscriptionId) &&
+      (event.type === 'checkout.completed' ||
+        event.type === 'invoice.paid' ||
+        !planType ||
+        (!status && rawSub?.id));
+
+    if (needsStripeFetch && providerSubscriptionId) {
+      const stripeSub = await stripeGet(`/subscriptions/${providerSubscriptionId}`, env);
+      if (stripeSub?.id) {
+        const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null;
+        if (!planType && priceId) {
+          planType = (await resolvePlanType(db, priceId, env)) as PlanType;
+        }
+        status = status || String(stripeSub.status ?? '');
+        currentPeriodEnd = currentPeriodEnd || stripeSubscriptionPeriodEndIso(stripeSub);
+        providerSubscriptionId = String(stripeSub.id);
+        providerCustomerId =
+          typeof stripeSub.customer === 'string' ? stripeSub.customer : providerCustomerId;
+        stripeSubscriptionId = providerSubscriptionId;
+        stripeCustomerId = providerCustomerId;
+      }
+    } else if (rawSub?.id) {
+      if (!planType) {
+        const priceId = (rawSub.items as { data?: Array<{ price?: { id?: string } }> })?.data?.[0]
+          ?.price?.id;
+        if (priceId) planType = (await resolvePlanType(db, priceId, env)) as PlanType;
+      }
+      if (!status && rawSub.status) status = String(rawSub.status);
+      if (!currentPeriodEnd) {
+        currentPeriodEnd = stripeSubscriptionPeriodEndIso(
+          rawSub as Parameters<typeof stripeSubscriptionPeriodEndIso>[0],
+        );
+      }
+      providerSubscriptionId = providerSubscriptionId || String(rawSub.id);
+      if (!providerCustomerId && typeof rawSub.customer === 'string') {
+        providerCustomerId = rawSub.customer;
+      }
+    }
+  }
+
+  if (!providerSubscriptionId) return userId;
+
+  const dbStatus =
+    event.providerId === 'stripe'
+      ? normalizeStripeStatus(status ?? 'active')
+      : normalizeGenericSubscriptionStatus(status ?? 'active');
 
   await upsertSubscriptionRow(db, {
     userId,
-    planType: normalizePlanType(planType),
-    status,
-    provider: 'stripe',
-    providerSubscriptionId: stripeSub.id ?? null,
-    providerCustomerId: stripeSub.customer ?? null,
-    stripeSubscriptionId: stripeSub.id ?? null,
-    stripeCustomerId: stripeSub.customer ?? null,
+    planType: normalizePlanType(planType ?? 'monthly'),
+    status: dbStatus,
+    provider: providerIdToDbProvider(event.providerId),
+    providerSubscriptionId,
+    providerCustomerId,
+    stripeSubscriptionId,
+    stripeCustomerId,
     currentPeriodEnd,
   });
+  return userId;
+}
+
+function normalizeGenericSubscriptionStatus(raw: string): SubscriptionStatus {
+  const value = raw.trim().toLowerCase();
+  if (value === 'trialing') return 'trialing';
+  if (value === 'past_due' || value === 'past-due') return 'past_due';
+  if (value === 'cancelled' || value === 'canceled' || value === 'deleted') return 'cancelled';
+  return 'active';
 }
 
 function getNormalizedRawObject(event: NormalizedPaymentEvent): Record<string, unknown> {
@@ -277,10 +356,10 @@ async function findUserIdForPaymentEvent(
 
 async function syncSubscriptionNewsletter(db: any, userId: string, status: string, env: any) {
   try {
-    await syncNewsletterForStripeSubscription(db, userId, status, env);
+    await syncNewsletterForSubscription(db, userId, status, env);
   } catch (brevoErr) {
-    console.error('[payments webhook] syncNewsletterForStripeSubscription failed', {
-      fn: 'syncNewsletterForStripeSubscription',
+    console.error('[payments webhook] syncNewsletterForSubscription failed', {
+      fn: 'syncNewsletterForSubscription',
       userId,
       status,
       err: brevoErr,
@@ -1032,9 +1111,27 @@ export async function handleWebhook(
   try {
     const db = getDb(env);
     switch (normalizedEvent.type) {
-      case 'checkout.completed': {
-        if (
+      case 'checkout.completed':
+      case 'subscription.created':
+      case 'subscription.updated':
+      case 'invoice.paid': {
+        const userId = await upsertSubscriptionFromNormalizedEvent(db, env, normalizedEvent);
+        if (!userId) break;
+
+        const newsletterStatus =
           normalizedEvent.providerId === 'stripe' &&
+          (normalizedEvent.type === 'subscription.created' ||
+            normalizedEvent.type === 'subscription.updated')
+            ? String(getNormalizedRawObject(normalizedEvent).status ?? normalizedEvent.status ?? '')
+            : String(normalizedEvent.status ?? 'active');
+        if (newsletterStatus) {
+          await syncSubscriptionNewsletter(db, userId, newsletterStatus, env);
+        }
+
+        if (
+          normalizedEvent.type === 'checkout.completed' &&
+          normalizedEvent.providerId === 'stripe' &&
+          normalizedEvent.promoCodeId?.trim() &&
           normalizedEvent.userId &&
           normalizedEvent.subscriptionId
         ) {
@@ -1043,53 +1140,19 @@ export async function handleWebhook(
             env,
           );
           if (stripeSub.id) {
-            await upsertStripeSubscription(db, normalizedEvent.userId, stripeSub, env);
-            const promoCodeId = normalizedEvent.promoCodeId?.trim() ?? '';
-            if (promoCodeId) {
-              await applyPromoRedemption(env, {
-                promoCodeId,
-                userId: normalizedEvent.userId,
-                provider: 'stripe',
-                planType: String(normalizedEvent.planType || 'monthly'),
-                providerSubscriptionId: stripeSub.id ?? null,
-                grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
-              });
-            }
-            await syncSubscriptionNewsletter(
-              db,
-              normalizedEvent.userId,
-              String(stripeSub.status ?? ''),
-              env,
-            );
+            await applyPromoRedemption(env, {
+              promoCodeId: normalizedEvent.promoCodeId.trim(),
+              userId: normalizedEvent.userId,
+              provider: 'stripe',
+              planType: String(normalizedEvent.planType || 'monthly'),
+              providerSubscriptionId: String(stripeSub.id),
+              grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
+            });
           }
         }
-        break;
-      }
-      case 'subscription.created':
-      case 'subscription.updated': {
-        if (normalizedEvent.providerId === 'stripe') {
-          const stripeSub = getNormalizedRawObject(normalizedEvent);
-          const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
-          if (userId && stripeSub.id) {
-            await upsertStripeSubscription(db, userId, stripeSub, env);
-            await syncSubscriptionNewsletter(db, userId, String(stripeSub.status ?? ''), env);
-          }
-        }
-        break;
-      }
-      case 'invoice.paid': {
-        if (normalizedEvent.providerId === 'stripe' && normalizedEvent.subscriptionId) {
-          const stripeSub = await stripeGet(
-            `/subscriptions/${normalizedEvent.subscriptionId}`,
-            env,
-          );
-          if (!stripeSub.id) break;
-          const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
-          if (userId) {
-            await upsertStripeSubscription(db, userId, stripeSub, env);
-            await syncSubscriptionNewsletter(db, userId, String(stripeSub.status ?? ''), env);
-            await handleStripeInvoicePaid(env, db, getNormalizedRawObject(normalizedEvent), userId);
-          }
+
+        if (normalizedEvent.type === 'invoice.paid') {
+          await handlePaymentInvoicePaid(env, db, userId, normalizedEvent);
         }
         break;
       }
@@ -1250,7 +1313,8 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     const db = getDb(env);
     const sub = await db
       .prepare(`
-      SELECT provider, stripe_customer_id FROM subscriptions
+      SELECT provider, provider_customer_id, stripe_customer_id, provider_subscription_id
+      FROM subscriptions
       WHERE user_id = ?
       ORDER BY created_at DESC LIMIT 1
     `)
@@ -1260,45 +1324,41 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     if (!sub) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
-    if ((sub.provider ?? 'stripe') !== 'stripe') {
-      const manageUrl = String(
-        (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
-      ).trim();
-      if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders);
-      const providerName =
-        String(
-          (await getSetting(env, 'legacy_provider_name', { defaultValue: 'Qerko' })) ?? 'Qerko',
-        ).trim() || 'Qerko';
-      return jsonResponse(
-        {
-          error: `Manage your subscription in the ${providerName} app or website.`,
-          code: 'portal_not_supported',
-          providerName,
-        },
-        409,
-        corsHeaders,
-      );
-    }
-    if (!sub?.stripe_customer_id) {
-      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
-    }
 
+    const dbProvider = String(sub.provider ?? 'stripe');
+    const registryId = dbProviderToRegistryId(dbProvider);
+    const { providers } = await getPaymentProviders(env);
+    const provider = providers.get(registryId);
+    const customerId = String(sub.provider_customer_id ?? sub.stripe_customer_id ?? '').trim();
+    const subscriptionId = String(sub.provider_subscription_id ?? '').trim();
     const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000';
-    const portalSession = await stripePost(
-      '/billing_portal/sessions',
-      {
-        customer: sub.stripe_customer_id,
-        return_url: `${frontendUrl}/account`,
-      },
-      env,
-    );
 
-    if (portalSession.error || !portalSession.url) {
-      console.error('Stripe portal session error:', portalSession.error);
-      return jsonResponse({ error: 'Failed to create portal session' }, 502, corsHeaders);
+    if (provider?.getManageUrl) {
+      const portalUrl = await provider.getManageUrl({
+        customerId: customerId || null,
+        subscriptionId: subscriptionId || null,
+        returnUrl: `${frontendUrl}/account`,
+      });
+      if (portalUrl) {
+        return jsonResponse({ portalUrl }, 200, corsHeaders);
+      }
     }
 
-    return jsonResponse({ portalUrl: portalSession.url }, 200, corsHeaders);
+    const providerName =
+      dbProvider === 'legacy'
+        ? String(
+            (await getSetting(env, 'legacy_provider_name', { defaultValue: 'Qerko' })) ?? 'Qerko',
+          ).trim() || 'Qerko'
+        : registryId;
+    return jsonResponse(
+      {
+        error: `Manage your subscription in the ${providerName} app or website.`,
+        code: 'portal_not_supported',
+        providerName,
+      },
+      409,
+      corsHeaders,
+    );
   } catch (err) {
     console.error('handlePortal error:', err);
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);

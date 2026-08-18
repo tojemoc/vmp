@@ -16,25 +16,11 @@
 
 ---
 
-## 1. Webhook Processing 🔴
+## 1. Webhook Processing 🟢
 
-**Files:** `packages/api/src/paymentProcessor.ts` (`handleWebhook`, lines ~905-1106)
+**Status:** Normalized in this PR — `handleWebhook` consumes `PaymentProvider.handleWebhook()` → `NormalizedPaymentEvent`.
 
-- Reads `Stripe-Signature` header directly.
-- Parses raw Stripe event JSON (event types: `checkout.session.completed`,
-  `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`,
-  `invoice.payment_failed`).
-- Calls `stripeGet('/subscriptions/...')` to fetch full subscription objects.
-- Calls `upsertStripeSubscription()` which reads Stripe-specific nested fields
-  (`items.data[0].price.id`, `customer`, etc.).
-
-**Gap:** `PaymentProvider.handleWebhook()` exists on the interface but the main handler
-bypasses it — events are never normalized before processing.
-
-**To universalize:**
-- Route incoming webhooks to the correct provider's `handleWebhook()`.
-- Consume only `NormalizedPaymentEvent` in the orchestration layer.
-- Per-provider webhook endpoints or signature-based dispatch.
+**Remaining:** Provider-specific enrichment (e.g. Stripe subscription fetch for planType) is isolated in `upsertSubscriptionFromNormalizedEvent`; new providers should populate `planType`, `status`, and `currentPeriodEnd` in their normalizer to avoid API round-trips.
 
 ---
 
@@ -80,19 +66,11 @@ Generic columns already exist (`provider`, `provider_subscription_id`,
 
 ---
 
-## 4. E-Invoicing 🔴
+## 4. E-Invoicing 🟢
 
-**Files:** `packages/api/src/eInvoicing.ts`, `migrations/0044_einvoicing.sql`
+**Status:** `NormalizedInvoiceData` on payment events + `createInvoiceFromPayment()` in `eInvoicing.ts`. Stripe extracts invoice fields in `@vmp/payments` (`normalizeStripeInvoice`).
 
-- `handleStripeInvoicePaid()` — triggered exclusively from Stripe `invoice.paid` webhook.
-- `extractBuyerFromStripeInvoice()` — parses Stripe invoice object for buyer details.
-- `buildLineItemsFromStripeInvoice()` — reads Stripe `lines.data` array.
-- `createInvoiceFromStripe()` — entry point.
-
-**To universalize:**
-- Define a `NormalizedInvoiceEvent` with buyer, items, totals.
-- Each provider extracts that from their own payment confirmation event.
-- The e-invoice builder works from the normalized structure.
+**Remaining:** GoPay/Comgate/other providers must implement invoice extractors when they support recurring billing + e-invoicing.
 
 ---
 
@@ -112,17 +90,11 @@ Generic columns already exist (`provider`, `provider_subscription_id`,
 
 ---
 
-## 6. Billing / Customer Portal 🟠
+## 6. Billing / Customer Portal 🟢
 
-**Files:** `packages/api/src/paymentProcessor.ts` (`handlePortal`, lines ~1167-1230)
+**Status:** Optional `PaymentProvider.getManageUrl()`. Portal handler uses provider registry + `provider_customer_id` (falls back to legacy `stripe_customer_id`).
 
-- Queries `stripe_customer_id` and creates Stripe Billing Portal session.
-- Falls back to `legacy_manage_subscription_url` for non-Stripe providers.
-
-**To universalize:**
-- Each provider should expose a `getManageUrl(customerId)` method (or `null`).
-- Portal handler calls the active provider; Stripe returns portal URL, Qerko returns
-  their app URL, others return `null` → show in-app cancel UI.
+**Remaining:** GoPay/Comgate branches should implement `getManageUrl` when those providers ship.
 
 ---
 
@@ -162,11 +134,7 @@ Generic columns already exist (`provider`, `provider_subscription_id`,
 
 **Files:** `packages/api/src/brevo.ts`
 
-- `syncNewsletterForStripeSubscription()` — name is Stripe-specific but the function
-  accepts a normalized status string and has no Stripe API calls.
-
-**To universalize:** Rename to `syncNewsletterForSubscription()`. Already effectively
-provider-agnostic (called from legacy webhook path too).
+- Renamed to `syncNewsletterForSubscription()` (Stripe-specific alias kept deprecated).
 
 ---
 
@@ -192,10 +160,21 @@ enabled providers.
 
 ## Priority Order for Universalizing
 
-1. **Webhook normalization** — route all payment events through `PaymentProvider.handleWebhook()` → `NormalizedPaymentEvent`. Biggest impact, unblocks everything else.
-2. **DB schema migration** — deprecate `stripe_*` query paths in favor of `provider_*`.
-3. **E-invoicing abstraction** — define `NormalizedInvoiceEvent`; provider-specific extractors.
+1. ~~**Webhook normalization**~~ — done (`NormalizedPaymentEvent` orchestration).
+2. **DB schema migration** — deprecate `stripe_*` query paths in favor of `provider_*` (portal/subscription lookups partially migrated).
+3. ~~**E-invoicing abstraction**~~ — done (`NormalizedInvoiceData` + `createInvoiceFromPayment`).
 4. **Checkout UI** — per-provider checkout slots (Stripe keeps Elements; others use redirect).
-5. **Billing portal** — `PaymentProvider.getManageUrl()`.
-6. **Promo coupons** — per-provider coupon ID mapping.
-7. **Rename / cosmetic** — locale keys, function names, privacy text.
+5. ~~**Billing portal**~~ — done (`PaymentProvider.getManageUrl()`).
+6. **Promo coupons** — per-provider coupon ID mapping (`provider_coupon_ids` JSON column).
+7. **Rename / cosmetic** — locale keys, privacy text.
+
+### Coordination with provider PRs (e.g. `cursor/gopay-payment-provider-draft-1946`)
+
+Merge **abstraction PR first** when possible. Provider branches should only add:
+
+- Registry entries + `createGoPayProvider` / `createComgateProvider` implementations
+- Provider-specific webhook normalizers (including `invoice` when applicable)
+- Optional `getManageUrl` for hosted manage flows
+- Admin UI toggles for new gateway IDs
+
+Avoid re-implementing orchestration in provider PRs — extend `@vmp/payments` types and plug into existing API handlers.

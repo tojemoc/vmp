@@ -8,6 +8,8 @@
 import { requireAuth, requireRole } from './auth.js';
 import { getObjectStorage } from './objectStorage.js';
 import { getSetting, setSettings } from './settingsStore.js';
+import type { NormalizedInvoiceBuyer, NormalizedInvoiceData, PaymentProviderId } from '@vmp/payments';
+import { normalizeStripeInvoice } from '@vmp/payments';
 
 export type SellerJurisdiction = 'SK' | 'CZ';
 export type InvoiceFormat = 'peppol_ubl' | 'isdoc' | 'pdf_archive' | 'none';
@@ -600,11 +602,32 @@ export function buildLineItemsFromStripeInvoice(
   });
 }
 
-export async function createInvoiceFromStripe(
+export function buyerFromNormalizedInvoice(buyer: NormalizedInvoiceBuyer): BuyerProfile {
+  return {
+    country: buyer.country,
+    vatId: buyer.vatId,
+    name: buyer.name,
+    email: buyer.email,
+    address: buyer.address
+      ? {
+          line1: buyer.address.line1 ?? null,
+          city: buyer.address.city ?? null,
+          postalCode: buyer.address.postalCode ?? null,
+          country: buyer.address.country ?? null,
+        }
+      : null,
+    peppolEndpointId: buyer.peppolEndpointId ?? buyer.vatId,
+    peppolSchemeId: buyer.peppolSchemeId ?? null,
+    isBusiness: buyer.isBusiness,
+  };
+}
+
+export async function createInvoiceFromPayment(
   env: any,
   params: {
     userId: string;
-    stripeInvoice: any;
+    providerId: PaymentProviderId;
+    invoice: NormalizedInvoiceData;
     planType?: string | null;
     userEmail?: string | null;
   },
@@ -615,15 +638,16 @@ export async function createInvoiceFromStripe(
   reason?: string;
 }> {
   const db = getDb(env);
-  const stripeInvoice = params.stripeInvoice;
-  const stripeInvoiceId = String(stripeInvoice?.id ?? '').trim();
-  if (!stripeInvoiceId) {
-    return { created: false, invoiceId: null, status: null, reason: 'missing_stripe_invoice_id' };
+  const invoice = params.invoice;
+  const providerInvoiceId = String(invoice.providerInvoiceId ?? '').trim();
+  if (!providerInvoiceId) {
+    return { created: false, invoiceId: null, status: null, reason: 'missing_provider_invoice_id' };
   }
 
+  const idempotencyKey = `${params.providerId}:${providerInvoiceId}`;
   const existing = await db
-    .prepare('SELECT id, status FROM einvoices WHERE stripe_invoice_id = ? LIMIT 1')
-    .bind(stripeInvoiceId)
+    .prepare('SELECT id, status FROM einvoices WHERE idempotency_key = ? LIMIT 1')
+    .bind(idempotencyKey)
     .first();
   if (existing?.id) {
     return {
@@ -653,7 +677,10 @@ export async function createInvoiceFromStripe(
   );
   const b2cMode = b2cModeRaw === 'none' ? 'none' : 'pdf_archive';
   const seller = await loadSellerProfile(env);
-  const buyer = extractBuyerFromStripeInvoice(stripeInvoice, params.userEmail);
+  const buyer = buyerFromNormalizedInvoice({
+    ...invoice.buyer,
+    email: invoice.buyer.email || params.userEmail || null,
+  });
   const routing = resolveInvoiceRouting(buyer, seller, {
     now: new Date(),
     skVoluntaryEnabled,
@@ -667,27 +694,31 @@ export async function createInvoiceFromStripe(
     return { created: false, invoiceId: null, status: 'not_required', reason: routing.reason };
   }
 
-  const issueDate = isoDateFromUnixSeconds(
-    stripeInvoice?.status_transitions?.paid_at || stripeInvoice?.created,
-  );
+  const issueDate = invoice.issueDate;
   const year = Number(issueDate.slice(0, 4));
   const prefix = String(
     await getSetting(env, 'einvoicing_invoice_prefix', { defaultValue: 'VMP' }),
   );
   const sequence = await nextInvoiceSequence(db, seller.jurisdiction, year);
   const invoiceNumber = formatInvoiceNumber(prefix, seller.jurisdiction, year, sequence);
-  const netAmountCents = centsFromStripeAmount(
-    stripeInvoice?.subtotal ?? stripeInvoice?.total_excluding_tax,
-  );
-  const taxAmountCents = centsFromStripeAmount(stripeInvoice?.tax ?? 0);
-  const grossAmountCents = centsFromStripeAmount(
-    stripeInvoice?.total ?? netAmountCents + taxAmountCents,
-  );
-  const currency = String(stripeInvoice?.currency || 'eur').toUpperCase();
-  const lineItems = buildLineItemsFromStripeInvoice(stripeInvoice, params.planType ?? null);
+  const netAmountCents = invoice.netAmountCents;
+  const taxAmountCents = invoice.taxAmountCents;
+  const grossAmountCents = invoice.grossAmountCents;
+  const currency = invoice.currency;
+  const lineItems: InvoiceLineItem[] = invoice.lineItems.map((line) => ({
+    description: line.description,
+    quantity: line.quantity,
+    netAmountCents: line.netAmountCents,
+    vatRatePercent: line.vatRatePercent,
+  }));
   const vatRatePercent = deriveVatRatePercent(netAmountCents, taxAmountCents);
   const invoiceId = crypto.randomUUID();
-  const idempotencyKey = `stripe:${stripeInvoiceId}`;
+
+  const stripeInvoiceId = params.providerId === 'stripe' ? providerInvoiceId : null;
+  const stripePaymentIntentId =
+    params.providerId === 'stripe' ? (invoice.providerPaymentId ?? null) : null;
+  const stripeSubscriptionId =
+    params.providerId === 'stripe' ? (invoice.providerSubscriptionId ?? null) : null;
 
   let xmlPayload: string | null = null;
   let xmlR2Key: string | null = null;
@@ -750,12 +781,8 @@ export async function createInvoiceFromStripe(
       invoiceNumber,
       params.userId,
       stripeInvoiceId,
-      typeof stripeInvoice?.payment_intent === 'string'
-        ? stripeInvoice.payment_intent
-        : (stripeInvoice?.payment_intent?.id ?? null),
-      typeof stripeInvoice?.subscription === 'string'
-        ? stripeInvoice.subscription
-        : (stripeInvoice?.subscription?.id ?? null),
+      stripePaymentIntentId,
+      stripeSubscriptionId,
       params.planType ?? null,
       issueDate,
       currency,
@@ -784,12 +811,59 @@ export async function createInvoiceFromStripe(
   return { created: true, invoiceId, status: initialStatus, reason: routing.reason };
 }
 
-export async function handleStripeInvoicePaid(
+export async function createInvoiceFromStripe(
+  env: any,
+  params: {
+    userId: string;
+    stripeInvoice: any;
+    planType?: string | null;
+    userEmail?: string | null;
+  },
+): Promise<{
+  created: boolean;
+  invoiceId: string | null;
+  status: InvoiceStatus | null;
+  reason?: string;
+}> {
+  const invoice = normalizeStripeInvoice(params.stripeInvoice ?? {}, {
+    planType: params.planType ?? null,
+    fallbackEmail: params.userEmail ?? null,
+  });
+  if (!invoice) {
+    return { created: false, invoiceId: null, status: null, reason: 'missing_stripe_invoice_id' };
+  }
+  return createInvoiceFromPayment(env, {
+    userId: params.userId,
+    providerId: 'stripe',
+    invoice,
+    planType: params.planType ?? null,
+    userEmail: params.userEmail ?? null,
+  });
+}
+
+export async function handlePaymentInvoicePaid(
   env: any,
   db: any,
-  stripeInvoice: any,
   userId: string,
+  event: {
+    providerId: PaymentProviderId;
+    invoice?: NormalizedInvoiceData;
+    planType?: string | null;
+    raw?: unknown;
+  },
 ) {
+  let invoice = event.invoice;
+  if (!invoice && event.providerId === 'stripe') {
+    const raw = event.raw;
+    const stripeInvoice =
+      raw && typeof raw === 'object' && 'data' in raw
+        ? ((raw as { data?: { object?: Record<string, unknown> } }).data?.object ?? {})
+        : {};
+    invoice =
+      normalizeStripeInvoice(stripeInvoice, { planType: event.planType ?? null }) ?? undefined;
+  }
+  if (!invoice) return;
+
   const user = await db
     .prepare('SELECT email FROM users WHERE id = ? LIMIT 1')
     .bind(userId)
@@ -800,11 +874,25 @@ export async function handleStripeInvoicePaid(
     )
     .bind(userId)
     .first();
-  await createInvoiceFromStripe(env, {
+  await createInvoiceFromPayment(env, {
     userId,
-    stripeInvoice,
-    planType: sub?.plan_type ? String(sub.plan_type) : null,
+    providerId: event.providerId,
+    invoice,
+    planType: event.planType ?? (sub?.plan_type ? String(sub.plan_type) : null),
     userEmail: user?.email ? String(user.email) : null,
+  });
+}
+
+/** @deprecated Use handlePaymentInvoicePaid — kept for direct Stripe webhook callers. */
+export async function handleStripeInvoicePaid(
+  env: any,
+  db: any,
+  stripeInvoice: any,
+  userId: string,
+) {
+  await handlePaymentInvoicePaid(env, db, userId, {
+    providerId: 'stripe',
+    raw: { data: { object: stripeInvoice } },
   });
 }
 

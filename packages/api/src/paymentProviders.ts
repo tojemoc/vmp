@@ -89,6 +89,12 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       createSubscription: async () => {
         throw new Error('Direct Qerko subscription creation is not supported');
       },
+      getManageUrl: async () => {
+        const url = String(
+          (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
+        ).trim();
+        return url || null;
+      },
     },
   };
 }
@@ -150,6 +156,12 @@ export function resolvePublicEnabledProviders(
 
 export function fromApiProviderId(raw: string): PaymentProviderId | null {
   return normalizeProviderId(raw);
+}
+
+/** Map D1 `subscriptions.provider` values to registry provider IDs. */
+export function dbProviderToRegistryId(dbProvider: string): PaymentProviderId {
+  if (dbProvider === 'legacy') return 'qerko';
+  return 'stripe';
 }
 
 export { providerIdToDbProvider };

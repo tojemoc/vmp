@@ -3,7 +3,7 @@
  */
 
 import { requireAuth, requireRole } from './auth.js';
-import { syncNewsletterForStripeSubscription } from './brevo.js';
+import { syncNewsletterForSubscription } from './brevo.js';
 import { getDb } from './d1Session.js';
 import {
   createLegacyOrder,
@@ -410,9 +410,9 @@ export async function handleLegacyComplete(
       .run();
 
     try {
-      await syncNewsletterForStripeSubscription(db, user.sub, status, env);
+      await syncNewsletterForSubscription(db, user.sub, status, env);
     } catch (brevoErr) {
-      console.error('[legacy complete] syncNewsletterForStripeSubscription failed', brevoErr);
+      console.error('[legacy complete] syncNewsletterForSubscription failed', brevoErr);
     }
 
     return jsonResponse({ ok: true, status, purchaseId }, 200, corsHeaders);
@@ -547,9 +547,9 @@ export async function handleLegacyWebhook(
   });
 
   try {
-    await syncNewsletterForStripeSubscription(db, String((sub as any).user_id), status, env);
+    await syncNewsletterForSubscription(db, String((sub as any).user_id), status, env);
   } catch (brevoErr) {
-    console.error('[legacy webhook] syncNewsletterForStripeSubscription failed', brevoErr);
+    console.error('[legacy webhook] syncNewsletterForSubscription failed', brevoErr);
   }
 
   const userId = String((sub as any).user_id);

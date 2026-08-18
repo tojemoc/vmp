@@ -82,4 +82,33 @@ describe('stripe webhook normalization', () => {
     assert.equal(event.customerId, 'cus_failed');
     assert.equal(event.status, 'past_due');
   });
+
+  it('attaches normalized invoice data on invoice.paid', async () => {
+    const provider = createProvider();
+    const event = await provider.handleWebhook(
+      JSON.stringify({
+        type: 'invoice.paid',
+        data: {
+          object: {
+            id: 'in_789',
+            currency: 'eur',
+            subtotal: 1999,
+            tax: 0,
+            total: 1999,
+            created: 1_700_000_000,
+            subscription: 'sub_789',
+            customer: 'cus_789',
+            customer_email: 'pay@example.com',
+            lines: { data: [{ description: 'Yearly', quantity: 1, amount_excluding_tax: 1999 }] },
+          },
+        },
+      }),
+    );
+
+    assert.equal(event.type, 'invoice.paid');
+    assert.equal(event.subscriptionId, 'sub_789');
+    assert.ok(event.invoice);
+    assert.equal(event.invoice?.providerInvoiceId, 'in_789');
+    assert.equal(event.invoice?.grossAmountCents, 1999);
+  });
 });
