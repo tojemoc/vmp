@@ -46,6 +46,37 @@ EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
 
 Nx is not wired for this app while it sits outside workspaces; use the Expo CLI commands above. After workspace promotion, add an Nx `start` target and prefer `npm exec nx start mobile` (or the chosen project name).
 
+## Manual GitHub artifact builds
+
+GitHub Actions includes a manual-only workflow at `.github/workflows/mobile-artifacts.yml` (mirrors [tojemoc/floaty](https://github.com/tojemoc/floaty) SideStore distribution).
+
+Use **Actions → Mobile artifacts → Run workflow** when you want ad-hoc test builds without building mobile binaries on every push.
+
+Inputs:
+
+- `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
+- `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
+- `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
+- `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
+- `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
+- `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
+- `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
+- `build_android` — also build/upload an Android test APK (default on)
+
+Outputs (when the corresponding input is enabled):
+
+- When `build_android` is enabled: Android release `.apk` uploaded as the workflow artifact **`mobile-android-apk`** (download from the run’s Artifacts section).
+- When `publish_release` is enabled:
+  - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
+  - `altstore-source.json` deployed to GitHub Pages (generated from `altstore-source.meta.json`, not committed to git)
+  - Install page at `https://<org>.github.io/<repo>/` with SideStore source link and secondary OTA link
+
+SideStore source URL (after first publish on `main`):
+
+`https://tojemoc.github.io/vmp/altstore-source.json`
+
+See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-distribution-playbook.md) for tester instructions (no Mac required).
+
 ## Deep links
 
 | Scheme | Example | When |
