@@ -184,9 +184,7 @@
         @click="startGoPayCheckout"
       >
         <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else
-          >Pay with GoPay ({{ formatGoPayPrice(gopayPlanPrice) }})</span
-        >
+        <span v-else>Pay with GoPay ({{ formatGoPayPrice(gopayPlanPrice) }})</span>
       </button>
       <p
         class="text-[11px] mt-1.5"
@@ -209,9 +207,7 @@
         @click="startComgateCheckout"
       >
         <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else
-          >Pay with Comgate ({{ formatComgatePrice(comgatePlanPrice) }})</span
-        >
+        <span v-else>Pay with Comgate ({{ formatComgatePrice(comgatePlanPrice) }})</span>
       </button>
     </div>
 
@@ -322,7 +318,7 @@
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
-  type PaymentProvider = 'stripe' | 'legacy' | 'gopay';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
 
   interface Prices {
     monthly: number;
@@ -560,8 +556,7 @@
 
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter(
-            (p: string) =>
-              p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
           )
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
@@ -598,27 +593,15 @@
       pendingComgateCheckoutIntent.value = false;
     } finally {
       loadingPrices.value = false;
-      if (
-        pendingLegacyCheckoutIntent.value &&
-        showLegacyCheckout.value &&
-        !priceError.value
-      ) {
+      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
         pendingLegacyCheckoutIntent.value = false;
         void startLegacyCheckout();
       }
-      if (
-        pendingGoPayCheckoutIntent.value &&
-        showGoPayCheckout.value &&
-        !priceError.value
-      ) {
+      if (pendingGoPayCheckoutIntent.value && showGoPayCheckout.value && !priceError.value) {
         pendingGoPayCheckoutIntent.value = false;
         void startGoPayCheckout();
       }
-      if (
-        pendingComgateCheckoutIntent.value &&
-        showComgateCheckout.value &&
-        !priceError.value
-      ) {
+      if (pendingComgateCheckoutIntent.value && showComgateCheckout.value && !priceError.value) {
         pendingComgateCheckoutIntent.value = false;
         void startComgateCheckout();
       }
