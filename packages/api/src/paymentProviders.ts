@@ -160,8 +160,7 @@ export function fromApiProviderId(raw: string): PaymentProviderId | null {
 
 /** Map D1 `subscriptions.provider` values to registry provider IDs. */
 export function dbProviderToRegistryId(dbProvider: string): PaymentProviderId {
-  if (dbProvider === 'legacy') return 'qerko';
-  return 'stripe';
+  return normalizeProviderId(dbProvider) ?? 'stripe';
 }
 
 export { providerIdToDbProvider };

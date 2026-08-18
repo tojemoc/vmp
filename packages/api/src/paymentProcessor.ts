@@ -15,7 +15,7 @@ import {
 
 export { normalizeStripeStatus } from './stripeClient.js';
 
-import type { NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
+import type { DbPaymentProvider, NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
 import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
@@ -163,7 +163,7 @@ async function upsertSubscriptionRow(
     userId: string;
     planType: PlanType;
     status: SubscriptionStatus;
-    provider: 'stripe' | 'legacy';
+    provider: DbPaymentProvider;
     providerSubscriptionId: string | null;
     providerCustomerId: string | null;
     stripeSubscriptionId?: string | null;

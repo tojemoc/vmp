@@ -7,6 +7,9 @@ export class NotImplementedError extends Error {
 
 export type PaymentProviderId = 'stripe' | 'qerko' | 'gopay' | 'comgate';
 
+/** Values stored on `subscriptions.provider` (Qerko is persisted as `legacy`). */
+export type DbPaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
+
 /** Admin settings / API may still use `legacy` — maps to Qerko. */
 export const PROVIDER_ID_ALIASES: Record<string, PaymentProviderId> = {
   stripe: 'stripe',
@@ -41,7 +44,7 @@ export function parseProviderIdList(
 }
 
 /** DB `subscriptions.provider` column value for a registry provider. */
-export function providerIdToDbProvider(id: PaymentProviderId): string {
+export function providerIdToDbProvider(id: PaymentProviderId): DbPaymentProvider {
   return id === 'qerko' ? 'legacy' : id;
 }
 
