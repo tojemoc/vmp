@@ -66,7 +66,7 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 2. Set `api_url` and `frontend_host` for the target environment.
 3. Choose `flavor` (`release`, `beta`, `nightly`, `development`).
 4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). Must be unique per flavor+version or the job fails instead of replacing an existing IPA.
-5. Canonical `flavor: release` is only allowed when dispatching from `main`. Feature branches may publish `beta` / `nightly` / `development` pre-releases.
+5. **Publishing** (`publish_release`) is only allowed when dispatching from `main` (all flavors). From a feature branch, disable `publish_release` to build IPA/APK artifacts without updating GitHub Releases or the public GitHub Pages install site.
 6. Download the Android APK from workflow artifacts if needed.
 7. On iPhone: add the Pages source URL in SideStore and install the desired version.
 
@@ -74,7 +74,7 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 
 1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: GitHub Actions**. Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
 2. The publish job uses the official Pages deploy actions (`configure-pages`, `upload-pages-artifact`, `deploy-pages`). It creates GitHub Releases and deploys generated Pages files **without** committing or pushing to `main` or any branch.
-3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. Canonical `flavor: release` is main-only; feature branches may publish pre-releases.
+3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. All publishing (any flavor) requires dispatch from `main`.
 
 ## Updating permissions metadata
 

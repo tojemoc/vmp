@@ -56,11 +56,11 @@ Inputs:
 
 - `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
 - `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
-- `flavor` — release channel tag prefix (`release` is only allowed from `main`; `beta` / `nightly` / `development` may run from a feature branch)
+- `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
 - `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag)
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
 - `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
-- `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on)
+- `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
 - `build_android` — also build/upload an Android test APK (default on)
 
 Outputs (when the corresponding input is enabled):
