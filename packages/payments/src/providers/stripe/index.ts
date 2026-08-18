@@ -12,6 +12,21 @@ import type {
 
 const STRIPE_API_VERSION = '2026-03-25.dahlia';
 
+function stripeSubscriptionPeriodEndUnix(stripeSub: {
+  current_period_end?: number | null;
+  items?: { data?: Array<{ current_period_end?: number | null }> };
+}): number | null {
+  const end = stripeSub.current_period_end ?? stripeSub.items?.data?.[0]?.current_period_end;
+  return typeof end === 'number' ? end : null;
+}
+
+function stripeSubscriptionPeriodEndIso(
+  stripeSub: Parameters<typeof stripeSubscriptionPeriodEndUnix>[0],
+): string | null {
+  const end = stripeSubscriptionPeriodEndUnix(stripeSub);
+  return end != null ? new Date(end * 1000).toISOString() : null;
+}
+
 function encodeStripeBody(obj: Record<string, unknown>, prefix = ''): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(obj)) {
@@ -267,6 +282,17 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
               : {}),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
           };
+        case 'customer.subscription.created':
+          return {
+            ...base,
+            type: 'subscription.created' as const,
+            subscriptionId: String(object.id ?? ''),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
+            ...(typeof object.status === 'string' ? { status: object.status } : {}),
+            ...(stripeSubscriptionPeriodEndIso(object)
+              ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
+              : {}),
+          };
         case 'customer.subscription.updated':
           return {
             ...base,
@@ -274,12 +300,16 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             subscriptionId: String(object.id ?? ''),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: String(object.status ?? ''),
+            ...(stripeSubscriptionPeriodEndIso(object)
+              ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
+              : {}),
           };
         case 'customer.subscription.deleted':
           return {
             ...base,
             type: 'subscription.deleted' as const,
             subscriptionId: String(object.id ?? ''),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: 'cancelled',
           };
         case 'invoice.paid':
@@ -294,10 +324,11 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         case 'invoice.payment_failed':
           return {
             ...base,
-            type: 'payment.failed' as const,
+            type: 'subscription.past_due' as const,
             ...(typeof object.subscription === 'string'
               ? { subscriptionId: object.subscription }
               : {}),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: 'past_due',
           };
         default:

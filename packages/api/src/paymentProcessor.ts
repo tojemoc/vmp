@@ -16,7 +16,7 @@ import {
 
 export { normalizeStripeStatus } from './stripeClient.js';
 
-import type { PaymentProviderId } from '@vmp/payments';
+import type { NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
 import { handleStripeInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
@@ -25,6 +25,7 @@ import {
   fromApiProviderId,
   getPaymentProviderOrder,
   getPaymentProviders,
+  providerIdToDbProvider,
   resolvePublicEnabledProviders,
   toApiProviderId,
   toSupportedApiProviderIds,
@@ -229,6 +230,96 @@ async function upsertStripeSubscription(db: any, userId: string, stripeSub: any,
     stripeCustomerId: stripeSub.customer ?? null,
     currentPeriodEnd,
   });
+}
+
+function getNormalizedRawObject(event: NormalizedPaymentEvent): Record<string, unknown> {
+  if (!event.raw || typeof event.raw !== 'object') return {};
+  const raw = event.raw as { data?: { object?: Record<string, unknown> } };
+  return raw.data?.object ?? {};
+}
+
+async function findUserIdForPaymentEvent(
+  db: any,
+  event: Pick<
+    NormalizedPaymentEvent,
+    'providerId' | 'userId' | 'subscriptionId' | 'customerId' | 'purchaseId' | 'providerOrderId'
+  >,
+): Promise<string | null> {
+  if (typeof event.userId === 'string' && event.userId.trim()) return event.userId.trim();
+
+  const provider = providerIdToDbProvider(event.providerId);
+  const refs: Array<{ column: string; value: string }> = [];
+  const pushRef = (column: string, value: unknown) => {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) return;
+    if (!refs.some((ref) => ref.column === column && ref.value === normalized)) {
+      refs.push({ column, value: normalized });
+    }
+  };
+
+  pushRef('provider_subscription_id', event.subscriptionId);
+  pushRef('provider_customer_id', event.customerId);
+  pushRef('purchase_id', event.purchaseId);
+  pushRef('provider_subscription_id', event.providerOrderId);
+  if (event.providerId === 'stripe') {
+    pushRef('stripe_subscription_id', event.subscriptionId);
+    pushRef('stripe_customer_id', event.customerId);
+  }
+  if (refs.length === 0) return null;
+
+  const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
+  const row = await db
+    .prepare(`SELECT user_id FROM subscriptions WHERE provider = ? AND (${where}) LIMIT 1`)
+    .bind(provider, ...refs.map((ref) => ref.value))
+    .first();
+  return row?.user_id ? String(row.user_id) : null;
+}
+
+async function syncSubscriptionNewsletter(db: any, userId: string, status: string, env: any) {
+  try {
+    await syncNewsletterForStripeSubscription(db, userId, status, env);
+  } catch (brevoErr) {
+    console.error('[payments webhook] syncNewsletterForStripeSubscription failed', {
+      fn: 'syncNewsletterForStripeSubscription',
+      userId,
+      status,
+      err: brevoErr,
+    });
+  }
+}
+
+async function updateSubscriptionStatusByProviderRef(
+  db: any,
+  event: Pick<NormalizedPaymentEvent, 'providerId' | 'subscriptionId' | 'customerId'>,
+  nextStatus: SubscriptionStatus,
+) {
+  const provider = providerIdToDbProvider(event.providerId);
+  const refs: Array<{ column: string; value: string }> = [];
+  const pushRef = (column: string, value: unknown) => {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) return;
+    if (!refs.some((ref) => ref.column === column && ref.value === normalized)) {
+      refs.push({ column, value: normalized });
+    }
+  };
+
+  pushRef('provider_subscription_id', event.subscriptionId);
+  pushRef('provider_customer_id', event.customerId);
+  if (event.providerId === 'stripe') {
+    pushRef('stripe_subscription_id', event.subscriptionId);
+    pushRef('stripe_customer_id', event.customerId);
+  }
+  if (refs.length === 0) return;
+
+  const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
+  await db
+    .prepare(
+      `UPDATE subscriptions
+       SET status = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE provider = ? AND (${where})`,
+    )
+    .bind(nextStatus, provider, ...refs.map((ref) => ref.value))
+    .run();
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
@@ -901,149 +992,133 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 }
 
 /**
- * POST /api/payments/webhook — NO auth (Stripe calls this directly)
- * Verifies Stripe signature and handles subscription lifecycle events.
+ * POST /api/payments/webhook[/provider] — NO auth
+ * Verifies the provider signature, normalizes the provider event, and then
+ * handles subscription lifecycle changes through provider-agnostic event types.
  */
-export async function handleWebhook(request: any, env: any, corsHeaders: any) {
+export async function handleWebhook(
+  request: any,
+  env: any,
+  corsHeaders: any,
+  providerId: PaymentProviderId = 'stripe',
+) {
   const rawBody = await request.text();
-  const sigHeader = request.headers.get('Stripe-Signature') ?? '';
   const { providers } = await getPaymentProviders(env);
-  const stripeProvider = providers.get('stripe');
-  if (!stripeProvider) {
-    return jsonResponse({ error: 'Stripe provider not configured' }, 503, corsHeaders);
+  const provider = providers.get(providerId);
+  if (!provider) {
+    return jsonResponse({ error: 'Payment provider not configured' }, 503, corsHeaders);
   }
-  const valid = await stripeProvider.verifyWebhookSignature(rawBody, sigHeader);
+  const sigHeader =
+    providerId === 'stripe'
+      ? (request.headers.get('Stripe-Signature') ?? '')
+      : providerId === 'qerko'
+        ? (request.headers.get('X-Legacy-Signature') ??
+          request.headers.get('X-Webhook-Signature') ??
+          request.headers.get('Authorization') ??
+          '')
+        : '';
+  const valid = await provider.verifyWebhookSignature(rawBody, sigHeader);
   if (!valid) {
     return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders);
   }
 
-  let event;
+  let normalizedEvent: NormalizedPaymentEvent;
   try {
-    event = JSON.parse(rawBody);
+    normalizedEvent = await provider.handleWebhook(rawBody);
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders);
   }
 
   try {
     const db = getDb(env);
-
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const userId = session.metadata?.userId;
-        if (!userId || !session.subscription) break;
-
-        // Fetch the full subscription object to get current_period_end and plan
-        const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env);
-        if (stripeSub.id) {
-          await upsertStripeSubscription(db, userId, stripeSub, env);
-          const promoCodeId =
-            typeof session?.metadata?.promoCodeId === 'string'
-              ? session.metadata.promoCodeId.trim()
-              : '';
-          if (promoCodeId) {
-            await applyPromoRedemption(env, {
-              promoCodeId,
-              userId,
-              provider: 'stripe',
-              planType: String(session?.metadata?.planType || 'monthly'),
-              providerSubscriptionId: stripeSub.id ?? null,
-              grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
-            });
-          }
-          try {
-            await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
+    switch (normalizedEvent.type) {
+      case 'checkout.completed': {
+        if (
+          normalizedEvent.providerId === 'stripe' &&
+          normalizedEvent.userId &&
+          normalizedEvent.subscriptionId
+        ) {
+          const stripeSub = await stripeGet(
+            `/subscriptions/${normalizedEvent.subscriptionId}`,
+            env,
+          );
+          if (stripeSub.id) {
+            await upsertStripeSubscription(db, normalizedEvent.userId, stripeSub, env);
+            const promoCodeId = normalizedEvent.promoCodeId?.trim() ?? '';
+            if (promoCodeId) {
+              await applyPromoRedemption(env, {
+                promoCodeId,
+                userId: normalizedEvent.userId,
+                provider: 'stripe',
+                planType: String(normalizedEvent.planType || 'monthly'),
+                providerSubscriptionId: stripeSub.id ?? null,
+                grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
+              });
+            }
+            await syncSubscriptionNewsletter(
+              db,
+              normalizedEvent.userId,
+              String(stripeSub.status ?? ''),
+              env,
+            );
           }
         }
         break;
       }
-
-      case 'customer.subscription.updated': {
-        const stripeSub = event.data.object;
-        // Find our user_id via stripe_subscription_id
-        const existing = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
-          try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId: existing.user_id,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
+      case 'subscription.created':
+      case 'subscription.updated': {
+        if (normalizedEvent.providerId === 'stripe') {
+          const stripeSub = getNormalizedRawObject(normalizedEvent);
+          const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
+          if (userId && stripeSub.id) {
+            await upsertStripeSubscription(db, userId, stripeSub, env);
+            await syncSubscriptionNewsletter(db, userId, String(stripeSub.status ?? ''), env);
           }
         }
         break;
       }
-
       case 'invoice.paid': {
-        const invoice = event.data.object;
-        if (!invoice.subscription) break;
-        const stripeSub = await stripeGet(`/subscriptions/${invoice.subscription}`, env);
-        if (!stripeSub.id) break;
-        const existing = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
-          try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId: existing.user_id,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
+        if (normalizedEvent.providerId === 'stripe' && normalizedEvent.subscriptionId) {
+          const stripeSub = await stripeGet(
+            `/subscriptions/${normalizedEvent.subscriptionId}`,
+            env,
+          );
+          if (!stripeSub.id) break;
+          const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
+          if (userId) {
+            await upsertStripeSubscription(db, userId, stripeSub, env);
+            await syncSubscriptionNewsletter(db, userId, String(stripeSub.status ?? ''), env);
+            await handleStripeInvoicePaid(env, db, getNormalizedRawObject(normalizedEvent), userId);
           }
-          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id));
         }
         break;
       }
-
-      case 'customer.subscription.deleted': {
-        const stripeSub = event.data.object;
-        const row = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        await db
-          .prepare(`
-          UPDATE subscriptions
-          SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-          WHERE stripe_subscription_id = ?
-        `)
-          .bind(stripeSub.id)
-          .run();
-        if (row?.user_id) {
+      case 'subscription.deleted':
+      case 'subscription.past_due': {
+        const nextStatus: SubscriptionStatus =
+          normalizedEvent.type === 'subscription.deleted' ? 'cancelled' : 'past_due';
+        const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
+        await updateSubscriptionStatusByProviderRef(db, normalizedEvent, nextStatus);
+        if (userId) {
           try {
-            await removeSubscriberFromNewsletter(db, row.user_id, env);
+            await removeSubscriberFromNewsletter(db, userId, env);
           } catch (brevoErr) {
-            console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
+            console.error('[payments webhook] removeSubscriberFromNewsletter failed', {
               fn: 'removeSubscriberFromNewsletter',
-              userId: row.user_id,
+              userId,
               err: brevoErr,
             });
           }
           try {
-            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
+            await revokeOfflineLicensesForUser(
+              db,
+              userId,
+              nextStatus === 'cancelled' ? 'subscription_cancelled' : 'subscription_past_due',
+            );
           } catch (offlineErr) {
-            console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
+            console.error('[payments webhook] revokeOfflineLicensesForUser failed', {
               fn: 'revokeOfflineLicensesForUser',
-              userId: row.user_id,
+              userId,
               err: offlineErr,
             });
             throw offlineErr;
@@ -1051,49 +1126,8 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
         }
         break;
       }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        if (invoice.subscription) {
-          const existing = await db
-            .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-            .bind(invoice.subscription)
-            .first();
-          await db
-            .prepare(`
-            UPDATE subscriptions
-            SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
-            WHERE stripe_subscription_id = ?
-          `)
-            .bind(invoice.subscription)
-            .run();
-          if (existing?.user_id) {
-            try {
-              await removeSubscriberFromNewsletter(db, existing.user_id, env);
-            } catch (brevoErr) {
-              console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
-                fn: 'removeSubscriberFromNewsletter',
-                userId: existing.user_id,
-                err: brevoErr,
-              });
-            }
-            try {
-              await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
-            } catch (offlineErr) {
-              console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
-                fn: 'revokeOfflineLicensesForUser',
-                userId: existing.user_id,
-                err: offlineErr,
-              });
-              throw offlineErr;
-            }
-          }
-        }
-        break;
-      }
-
       default:
-        // Unhandled event type — acknowledge receipt so Stripe doesn't retry
+        // Unhandled event type — acknowledge receipt so providers don't retry forever.
         break;
     }
 

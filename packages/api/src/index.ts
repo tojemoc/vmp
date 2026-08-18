@@ -861,6 +861,9 @@ const workerHandler = {
       if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
         return handleLegacyWebhook(request, env, corsHeaders);
       }
+      if (url.pathname === '/api/payments/webhook/stripe' && request.method === 'POST') {
+        return handleWebhook(request, env, corsHeaders, 'stripe');
+      }
       if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
         return handleLegacyCheckout(request, env, corsHeaders);
       }
