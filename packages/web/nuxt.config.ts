@@ -6,6 +6,30 @@ loadMonorepoRootEnv();
 
 const buildInfo = readBuildInfoDefaults();
 
+const posthogPublicKey = (
+  process.env.NUXT_PUBLIC_POSTHOG_KEY ||
+  process.env.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+  ''
+).trim();
+const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || '').trim();
+const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
+const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
+const posthogEnabled = Boolean(posthogPublicKey);
+const posthogSourcemapsEnabled = Boolean(
+  posthogEnabled && posthogProjectId && posthogPersonalApiKey,
+);
+
+function hostnameFromUrl(value: string): string | undefined {
+  try {
+    return new URL(value).hostname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const apiUrl = process.env.API_URL || 'https://vmp-api.tjm.sk';
+const posthogTracingHost = hostnameFromUrl(apiUrl);
+
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
@@ -25,12 +49,38 @@ export default defineNuxtConfig({
 
   sourcemap: { client: 'hidden' },
 
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/color-mode', '@vite-pwa/nuxt', '@sentry/nuxt/module'],
+  modules: [
+    '@nuxtjs/tailwindcss',
+    '@nuxtjs/color-mode',
+    '@vite-pwa/nuxt',
+    '@sentry/nuxt/module',
+    '@posthog/nuxt',
+  ],
 
   sentry: {
     org: 'tojemoc',
     project: 'vmp-fe-primary',
     authToken: process.env.SENTRY_AUTH_TOKEN,
+  },
+
+  posthogConfig: {
+    publicKey: posthogPublicKey,
+    host: posthogHost,
+    clientConfig: {
+      person_profiles: 'identified_only',
+      capture_exceptions: posthogEnabled,
+      ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
+    },
+    serverConfig: {
+      enableExceptionAutocapture: posthogEnabled,
+    },
+    sourcemaps: {
+      enabled: posthogSourcemapsEnabled,
+      projectId: posthogProjectId,
+      personalApiKey: posthogPersonalApiKey,
+      releaseName: 'vmp-web',
+      releaseVersion: buildInfo.gitCommit,
+    },
   },
 
   nitro: {
@@ -68,7 +118,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiUrl: process.env.API_URL || 'https://vmp-api.tjm.sk',
+      apiUrl,
       /** Canonical site origin for og:url and absolute og:image (defaults to request origin). */
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
       /** UI language for this deployment: `en`, `sk`, or `cs` (one locale per instance). */
@@ -78,10 +128,6 @@ export default defineNuxtConfig({
         tracesSampleRate: parseTracesSampleRate(process.env.NUXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE),
         environment: process.env.NUXT_PUBLIC_SENTRY_ENVIRONMENT || '',
         enableLogs: parseEnvBoolean(process.env.NUXT_PUBLIC_SENTRY_ENABLE_LOGS),
-      },
-      posthog: {
-        projectToken: process.env.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN || '',
-        host: process.env.NUXT_PUBLIC_POSTHOG_HOST || '',
       },
       /** staging | beta | production | development — controls admin footer build label. */
       deployTier: buildInfo.deployTier,

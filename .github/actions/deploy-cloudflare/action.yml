@@ -42,14 +42,26 @@ inputs:
     required: false
     default: ''
     description: Optional public Sentry DSN passed into Nuxt.
+  posthog-key:
+    required: false
+    default: ''
+    description: Optional public PostHog project key (NUXT_PUBLIC_POSTHOG_KEY).
   posthog-project-token:
     required: false
     default: ''
-    description: Optional public PostHog project token passed into Nuxt.
+    description: Optional fallback public PostHog token (NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN).
   posthog-host:
     required: false
     default: ''
     description: Optional PostHog ingest host passed into Nuxt (e.g. https://eu.i.posthog.com).
+  posthog-project-id:
+    required: false
+    default: ''
+    description: Optional PostHog project ID for source-map upload.
+  posthog-personal-api-key:
+    required: false
+    default: ''
+    description: Optional PostHog personal API key for source-map upload (server-only).
   sentry-auth-token:
     required: false
     default: ''
@@ -94,8 +106,11 @@ runs:
         NUXT_PUBLIC_GIT_COMMIT: ${{ inputs.git-sha }}
         NUXT_PUBLIC_UI_LOCALE: ${{ inputs.ui-locale }}
         NUXT_PUBLIC_SENTRY_DSN: ${{ inputs.sentry-dsn }}
+        NUXT_PUBLIC_POSTHOG_KEY: ${{ inputs.posthog-key }}
         NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-project-token }}
         NUXT_PUBLIC_POSTHOG_HOST: ${{ inputs.posthog-host }}
+        POSTHOG_PROJECT_ID: ${{ inputs.posthog-project-id }}
+        POSTHOG_PERSONAL_API_KEY: ${{ inputs.posthog-personal-api-key }}
         SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
         NODE_ENV: production
       run: npm run build

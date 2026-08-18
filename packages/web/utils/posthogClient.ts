@@ -1,17 +1,16 @@
-import type { PostHog } from 'posthog-js';
+type PostHogCaptureClient = {
+  capture: (event: string, properties?: Record<string, unknown>) => unknown;
+};
 
-let client: PostHog | null = null;
-
-export function setPostHogClient(next: PostHog | null): void {
-  client = next;
-}
-
-export function getPostHogClient(): PostHog | null {
+function getPostHogClient(): PostHogCaptureClient | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const client = (window as Window & { posthog?: PostHogCaptureClient }).posthog;
+  if (!client || typeof client.capture !== 'function') return undefined;
   return client;
 }
 
 /** Capture a snake_case product event when the browser PostHog client is initialized. */
 export function capturePostHogEvent(event: string, properties: Record<string, unknown> = {}): void {
-  if (import.meta.server || !client) return;
-  client.capture(event, properties);
+  if (import.meta.server) return;
+  getPostHogClient()?.capture(event, properties);
 }

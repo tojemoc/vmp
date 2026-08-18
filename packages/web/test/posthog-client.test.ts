@@ -1,28 +1,40 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 
-import {
-  capturePostHogEvent,
-  getPostHogClient,
-  setPostHogClient,
-} from '../utils/posthogClient';
+import { capturePostHogEvent } from '../utils/posthogClient';
+
+type WindowWithPostHog = {
+  posthog?: { capture: (event: string, properties?: Record<string, unknown>) => unknown };
+};
+
+function setWindow(next: WindowWithPostHog | undefined): void {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: next,
+  });
+}
 
 describe('posthogClient', () => {
-  it('capturePostHogEvent is a no-op without an initialized client', () => {
-    setPostHogClient(null);
+  afterEach(() => {
+    setWindow(undefined);
+  });
+
+  it('capturePostHogEvent is a no-op without a PostHog client', () => {
     assert.doesNotThrow(() => {
       capturePostHogEvent('magic_link_requested');
     });
-    assert.equal(getPostHogClient(), null);
   });
 
-  it('capturePostHogEvent forwards events to the shared client', () => {
+  it('capturePostHogEvent forwards events to window.posthog', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
-    setPostHogClient({
-      capture: (event: string, properties?: Record<string, unknown>) => {
-        captured.push({ event, properties: properties ?? {} });
+    setWindow({
+      posthog: {
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
       },
-    } as never);
+    });
 
     capturePostHogEvent('subscription_checkout_started', {
       plan_type: 'monthly',
