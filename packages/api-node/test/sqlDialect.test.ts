@@ -113,6 +113,41 @@ describe('translateSqliteToPostgres datetime', () => {
   });
 });
 
+describe('translateSqliteToPostgres instr', () => {
+  it('translates instr() outside string literals', () => {
+    const out = translateSqliteToPostgres(`WHERE instr(content, 'hello') > 0`);
+    assert.match(out, /strpos\(content/);
+    assert.doesNotMatch(out, /\binstr\s*\(/i);
+  });
+
+  it('preserves instr inside string literals', () => {
+    const out = translateSqliteToPostgres(`WHERE note = 'instr(a,b)' AND instr(content, 'x') > 0`);
+    assert.match(out, /note = 'instr\(a,b\)'/);
+    assert.match(out, /strpos\(content/);
+  });
+
+  it('preserves instr inside double-quoted identifiers', () => {
+    const out = translateSqliteToPostgres(`SELECT "instr(col)" FROM t WHERE instr(a, b) > 0`);
+    assert.match(out, /"instr\(col\)"/);
+    assert.match(out, /strpos\(a/);
+  });
+});
+
+describe('translateSqliteToPostgres json_insert strip', () => {
+  it('strips json_insert UPDATE statement', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')), updated_at = CURRENT_TIMESTAMP WHERE id = 'test';`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.doesNotMatch(out, /\bUPDATE\b.*json_insert/i);
+  });
+
+  it('does not consume statements after the json_insert semicolon', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')) WHERE id = 'x'; SELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /SELECT 1/);
+  });
+});
+
 describe('translateSqliteToPostgres rowid', () => {
   it('maps SQLite rowid to Postgres ctid for dedup migrations', () => {
     const sql = `UPDATE subscriptions SET purchase_id = NULL

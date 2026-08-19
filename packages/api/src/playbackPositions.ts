@@ -172,30 +172,57 @@ export async function handleListPlaybackPositions(
   const db = getDb(env);
   if (!db) return jsonResponse({ error: 'Database not configured' }, 503, corsHeaders);
 
-  const rows = await db
-    .prepare(
-      `SELECT pp.video_id, pp.position_seconds, pp.updated_at,
-              v.title, v.slug, v.thumbnail_url, v.full_duration
-       FROM playback_positions pp
-       INNER JOIN videos v ON v.id = pp.video_id
-       WHERE pp.user_id = ?
-         AND v.publish_status = 'published'
-         AND pp.position_seconds >= ?
-       ORDER BY pp.updated_at DESC
-       LIMIT 50`,
-    )
-    .bind(user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS)
-    .all();
+  const TARGET_ITEMS = 20;
+  const BATCH_SIZE = 60;
+  const items: Array<{
+    videoId: string;
+    title: string;
+    slug: string | null;
+    thumbnailUrl: string | null;
+    positionSeconds: number;
+    durationSeconds: number | null;
+    updatedAt: string | null;
+    watchPath: string;
+    progressPercent: number | null;
+  }> = [];
+  let lastUpdatedAt: string | null = null;
 
-  const items = (rows.results ?? [])
-    .map((row: any) => {
+  while (items.length < TARGET_ITEMS) {
+    const offsetClause = lastUpdatedAt
+      ? `AND pp.updated_at < ?`
+      : '';
+    const binds = lastUpdatedAt
+      ? [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, lastUpdatedAt, BATCH_SIZE]
+      : [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, BATCH_SIZE];
+
+    const rows = await db
+      .prepare(
+        `SELECT pp.video_id, pp.position_seconds, pp.updated_at,
+                v.title, v.slug, v.thumbnail_url, v.full_duration
+         FROM playback_positions pp
+         INNER JOIN videos v ON v.id = pp.video_id
+         WHERE pp.user_id = ?
+           AND v.publish_status = 'published'
+           AND pp.position_seconds >= ?
+           ${offsetClause}
+         ORDER BY pp.updated_at DESC
+         LIMIT ?`,
+      )
+      .bind(...binds)
+      .all();
+
+    const batch = rows.results ?? [];
+    if (batch.length === 0) break;
+
+    for (const row of batch as any[]) {
+      lastUpdatedAt = row.updated_at ?? null;
       const positionSeconds = Number(row.position_seconds);
       const durationSeconds =
         Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
-      if (isNearPlaybackEnd(positionSeconds, durationSeconds)) return null;
+      if (isNearPlaybackEnd(positionSeconds, durationSeconds)) continue;
 
       const watchSlug = row.slug ? String(row.slug) : String(row.video_id);
-      return {
+      items.push({
         videoId: String(row.video_id),
         title: String(row.title ?? ''),
         slug: row.slug ? String(row.slug) : null,
@@ -208,10 +235,12 @@ export async function handleListPlaybackPositions(
           durationSeconds != null && durationSeconds > 0
             ? Math.min(100, Math.round((positionSeconds / durationSeconds) * 100))
             : null,
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 20);
+      });
+      if (items.length >= TARGET_ITEMS) break;
+    }
+
+    if ((batch as any[]).length < BATCH_SIZE) break;
+  }
 
   return jsonResponse({ items }, 200, corsHeaders);
 }

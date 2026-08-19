@@ -126,23 +126,27 @@ export function usePlaybackPosition(options: {
   ): Promise<void> {
     const serverNowMs = Date.now();
     const capturedAtMs = normalizeClientCapturedAtMs(serverNowMs, serverNowMs);
-    const task = async () => {
-      const videoId = overrideVideoId ?? options.videoId();
-      if (!videoId) return;
-      if (!overrideVideoId && !options.enabled()) return;
+    const videoId = overrideVideoId ?? options.videoId();
+    const positionSeconds = options.getPosition();
+    const durationSeconds = options.getDuration();
+    const headers = { ...options.authHeader() };
+    const isSeeking = options.isSeeking();
+    const activelyWatching = options.isActivelyWatching();
+    const enabled = options.enabled();
 
-      const positionSeconds = options.getPosition();
-      const durationSeconds = options.getDuration();
-      const headers = options.authHeader();
+    const task = async () => {
+      if (!videoId) return;
+      if (!overrideVideoId && !enabled) return;
+
       if (!headers.Authorization) return;
 
       if (
         !shouldSavePlaybackPosition({
           positionSeconds,
           durationSeconds,
-          isSeeking: options.isSeeking(),
+          isSeeking,
           reason,
-          activelyWatching: options.isActivelyWatching(),
+          activelyWatching,
         })
       ) {
         return;

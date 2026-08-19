@@ -150,12 +150,23 @@ describe('shouldRejectStalePlaybackWrite', () => {
     );
   });
 
-  it('does not reject when either timestamp is missing', () => {
+  it('does not reject when existing timestamp is missing', () => {
     assert.equal(
       shouldRejectStalePlaybackWrite({
         existingCapturedAtMs: null,
         incomingCapturedAtMs: 1000,
         serverNowMs: 1500,
+      }),
+      false,
+    );
+  });
+
+  it('does not reject when incoming timestamp is missing', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: null,
+        serverNowMs: 2500,
       }),
       false,
     );

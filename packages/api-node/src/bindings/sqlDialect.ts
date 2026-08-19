@@ -188,18 +188,54 @@ export function translateSqliteToPostgres(sql: string): string {
   // SQLite implicit rowid (e.g. migration 0029 dedup) → Postgres ctid system column.
   s = s.replace(/\browid\b/gi, 'ctid');
 
-  // SQLite instr(haystack, needle) → Postgres strpos(haystack, needle) (1-indexed, 0 = not found).
-  s = s.replace(/\binstr\s*\(/gi, 'strpos(');
+  // SQLite instr(haystack, needle) → Postgres strpos(haystack, needle).
+  // Only replace outside string literals and quoted identifiers.
+  s = replaceOutsideQuotes(s, /\binstr\s*\(/gi, 'strpos(');
 
-  // SQLite json_valid/json_type/json() — used by CMS migration fallback.
-  // Strip UPDATE statements that use json_insert (Postgres jsonb_insert has different semantics;
-  // the REPLACE-based paths handle >99% of deployments).
+  // SQLite json_insert UPDATE — strip the statement up to its semicolon.
+  // Postgres jsonb_insert has incompatible semantics; the REPLACE-based migration
+  // paths cover the common case and this block is a fallback for admin-edited pages.
+  // This runs on the full string (not quote-aware) because the statement body
+  // contains string literals with JSON; we match UPDATE...json_insert... to the
+  // next semicolon which is always the statement terminator.
   s = s.replace(
-    /UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\([\s\S]*?;/gi,
-    '-- (skipped: SQLite json_insert block not supported on Postgres)',
+    /UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\([\s\S]*?;\s*/gi,
+    '-- (skipped: SQLite json_insert block not supported on Postgres)\n',
   );
 
   return s;
+}
+
+/**
+ * Apply a regex replacement only on SQL tokens outside single-quoted string
+ * literals and double-quoted identifiers.
+ */
+function replaceOutsideQuotes(sql: string, pattern: RegExp, replacement: string): string {
+  const segments: string[] = [];
+  let pos = 0;
+  while (pos < sql.length) {
+    const ch = sql[pos];
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      let end = pos + 1;
+      while (end < sql.length) {
+        if (sql[end] === quote) {
+          if (sql[end + 1] === quote) { end += 2; continue; }
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+      segments.push(sql.slice(pos, end));
+      pos = end;
+    } else {
+      let end = pos + 1;
+      while (end < sql.length && sql[end] !== "'" && sql[end] !== '"') end += 1;
+      segments.push(sql.slice(pos, end).replace(pattern, replacement));
+      pos = end;
+    }
+  }
+  return segments.join('');
 }
 
 function findMatchingParen(input: string, openIndex: number): number {

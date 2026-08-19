@@ -2339,18 +2339,20 @@
     () => route.params.videoId,
     async (newVideoId, oldVideoId, onCleanup) => {
       if (newVideoId === oldVideoId) return;
-      if (oldVideoId != null && String(oldVideoId)) {
-        await flushPlaybackPosition(String(oldVideoId));
-      }
-      accessNotFound.value = false;
-      descriptionExpanded.value = false;
-      descriptionClamped.value = false;
       const { abortController, isCurrentInvocation, cancel } = createLoadInvocation();
 
       onCleanup(() => {
-        void flushPlaybackPosition();
         cancel();
       });
+
+      if (oldVideoId != null && String(oldVideoId)) {
+        await flushPlaybackPosition(String(oldVideoId));
+      }
+      if (!isCurrentInvocation()) return;
+
+      accessNotFound.value = false;
+      descriptionExpanded.value = false;
+      descriptionClamped.value = false;
 
       try {
         await waitForVideoMeta(abortController.signal);
