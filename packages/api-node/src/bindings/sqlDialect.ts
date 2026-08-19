@@ -192,12 +192,8 @@ export function translateSqliteToPostgres(sql: string): string {
   // Only replace outside string literals and quoted identifiers.
   s = replaceOutsideQuotes(s, /\binstr\s*\(/gi, 'strpos(');
 
-  // SQLite json_insert UPDATE — strip the statement up to its semicolon.
-  // Postgres jsonb_insert has incompatible semantics; the REPLACE-based migration
-  // paths cover the common case and this block is a fallback for admin-edited pages.
-  // This runs on the full string (not quote-aware) because the statement body
-  // contains string literals with JSON; we match UPDATE...json_insert... to the
-  // next semicolon which is always the statement terminator.
+  // SQLite json_insert UPDATE — strip on Postgres; migration files provide a
+  // -- POSTGRES: equivalent (see expandPostgresOnlyStatements) for the same path.
   s = s.replace(
     /UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\([\s\S]*?;\s*/gi,
     '-- (skipped: SQLite json_insert block not supported on Postgres)\n',

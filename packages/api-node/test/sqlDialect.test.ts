@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   bindQuestionMarks,
@@ -130,6 +132,21 @@ describe('translateSqliteToPostgres instr', () => {
     const out = translateSqliteToPostgres(`SELECT "instr(col)" FROM t WHERE instr(a, b) > 0`);
     assert.match(out, /"instr\(col\)"/);
     assert.match(out, /strpos\(a/);
+  });
+});
+
+describe('translateSqliteDdl migration 0049 cms playback disclosure', () => {
+  it('keeps Postgres jsonb append fallback when json_insert block is stripped', () => {
+    const raw = readFileSync(
+      join(import.meta.dirname, '../../api/migrations/0049_cms_playback_position_notice.sql'),
+      'utf8',
+    );
+    const out = translateSqliteDdl(raw);
+    assert.match(out, /content::jsonb\s*\|\|/);
+    assert.match(out, /jsonb_typeof\(content::jsonb\)\s*=\s*'array'/);
+    assert.match(out, /on-demand video \(VOD\)/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+    assert.doesNotMatch(out, /\binstr\s*\(/i);
   });
 });
 
