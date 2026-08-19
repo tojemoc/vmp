@@ -175,6 +175,7 @@ Steps 1–7 are complete. Work continues from step 8.
 | 8 | Brevo Newsletter Sync | Pending |
 | 9 | RSS / Podcast Feed | Pending |
 | — | Native / TV clients (multi-tier) | Phase 0 + Tier 1 scaffold — see [docs/native-clients-plan.md](docs/native-clients-plan.md) |
+| 10 | Self-Service Account Deletion | Pending (blocked on payment gateway adapter) |
 
 ### Step 8 — Brevo Newsletter Sync
 
@@ -190,6 +191,38 @@ Steps 1–7 are complete. Work continues from step 8.
 - Account page section with copyable RSS URL and instructions.
 - Public listing feed: `GET /api/feed/public` — stable URL for directory submission; always serves **preview-only** enclosures.
 - Account helper: `GET /api/account/rss` (auth required) — returns `{ publicUrl, personalUrl }` for copy/paste into podcast apps.
+
+### Step 10 — Self-Service Account Deletion
+
+**Blocked on**: payment gateway adapter completion (all Stripe-touching work is on hold until the adapter is provider-agnostic).
+
+#### API (`@vmp/api`)
+
+- `POST /api/account/delete-request` — auth-required; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min).
+- `POST /api/account/delete-confirm` — validates token + requires user to submit a confirmation phrase (e.g. "I understand my subscription will be cancelled without refund").
+- On confirmation:
+  - Cancel active subscription immediately via the payment gateway adapter (no refund).
+  - `DELETE FROM users WHERE id = ?` — `ON DELETE CASCADE` foreign keys on `playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions` handle cleanup.
+  - Revoke all sessions (delete refresh tokens, invalidate JWT).
+  - Optionally: Brevo contact removal.
+- New migration: `deletion_confirmations` table or reuse `magic_link_tokens` with a type discriminator.
+
+#### Web (`@vmp/web`)
+
+- Account page section: "Delete my account" with warning copy.
+- Confirmation flow: email sent → enter code/click link → type confirmation phrase → done.
+- Redirect to homepage post-deletion.
+
+#### Legal / regulatory (CZ + SK)
+
+- **Czech law**: Consumer Protection Act (zákon č. 634/1992 Sb.), Civil Code (zákon č. 89/2012 Sb.) — digital content contracts; EU Consumer Rights Directive implemented via § 1820+ of the Civil Code. For digital content/services delivered immediately (streaming access), the 14-day withdrawal right can be waived with prior express consent.
+- **Slovak law**: zákon č. 102/2014 Z.z. — same EU directive transposition, same waiver mechanism.
+- **Key wording**: pre-purchase consent checkbox or acknowledgment that (a) access begins immediately upon payment, (b) the consumer waives the 14-day withdrawal right, and (c) all sales are final with no refund for the remaining subscription period upon cancellation or deletion.
+- **GDPR Art. 17 (right to erasure)**: the self-service flow satisfies this; the support-channel fallback remains as backup.
+
+#### Checkout integration
+
+The "all sales are final" / waiver-of-withdrawal consent should be captured **at checkout time**, not at deletion time. This means adding consent text to the checkout flow via the payment gateway adapter (e.g. Stripe `custom_text` on Checkout Session, or a pre-checkout step in the frontend).
 
 ## Cursor Cloud-specific instructions
 
