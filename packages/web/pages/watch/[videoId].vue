@@ -2300,7 +2300,7 @@
     async (newVideoId, oldVideoId, onCleanup) => {
       if (newVideoId === oldVideoId) return;
       if (oldVideoId != null && String(oldVideoId)) {
-        flushPlaybackPosition();
+        await flushPlaybackPosition(String(oldVideoId));
       }
       accessNotFound.value = false;
       descriptionExpanded.value = false;
@@ -2308,7 +2308,7 @@
       const { abortController, isCurrentInvocation, cancel } = createLoadInvocation();
 
       onCleanup(() => {
-        flushPlaybackPosition();
+        void flushPlaybackPosition();
         cancel();
       });
 

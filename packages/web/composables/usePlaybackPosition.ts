@@ -5,6 +5,7 @@
  * - Skip saves while the user is scrubbing (seeking).
  * - Periodic saves only while playback is actively progressing.
  * - Always flush on navigate-away / before switching videos (force=true).
+ * - Writes are serialized so lifecycle flushes cannot be overwritten by stale periodic saves.
  */
 
 export const PLAYBACK_POSITION_SAVE_INTERVAL_MS = 30_000;
@@ -70,7 +71,7 @@ export function usePlaybackPosition(options: {
 }) {
   let lastSavedPosition: number | null = null;
   let lastSaveAtMs = 0;
-  let inFlight: Promise<void> | null = null;
+  let writeChain: Promise<void> = Promise.resolve();
   let intervalId: ReturnType<typeof setInterval> | null = null;
 
   async function fetchSavedPosition(videoId: string): Promise<number | null> {
@@ -94,45 +95,49 @@ export function usePlaybackPosition(options: {
     }
   }
 
-  async function savePosition(reason: PlaybackPositionSaveReason): Promise<void> {
-    if (!options.enabled()) return;
-    const videoId = options.videoId();
-    if (!videoId) return;
+  async function savePosition(
+    reason: PlaybackPositionSaveReason,
+    overrideVideoId?: string,
+  ): Promise<void> {
+    const capturedAtMs = Date.now();
+    const task = async () => {
+      const videoId = overrideVideoId ?? options.videoId();
+      if (!videoId) return;
+      if (!overrideVideoId && !options.enabled()) return;
 
-    const positionSeconds = options.getPosition();
-    const durationSeconds = options.getDuration();
-    const headers = options.authHeader();
-    if (!headers.Authorization) return;
+      const positionSeconds = options.getPosition();
+      const durationSeconds = options.getDuration();
+      const headers = options.authHeader();
+      if (!headers.Authorization) return;
 
-    if (
-      !shouldSavePlaybackPosition({
+      if (
+        !shouldSavePlaybackPosition({
+          positionSeconds,
+          durationSeconds,
+          isSeeking: options.isSeeking(),
+          reason,
+          activelyWatching: options.isActivelyWatching(),
+        })
+      ) {
+        return;
+      }
+
+      if (
+        reason === 'periodic' &&
+        lastSavedPosition != null &&
+        Math.abs(positionSeconds - lastSavedPosition) < 2
+      ) {
+        return;
+      }
+
+      const force = reason === 'flush';
+      const body = JSON.stringify({
         positionSeconds,
-        durationSeconds,
-        isSeeking: options.isSeeking(),
-        reason,
-        activelyWatching: options.isActivelyWatching(),
-      })
-    ) {
-      return;
-    }
+        durationSeconds: durationSeconds > 0 ? durationSeconds : undefined,
+        force,
+        capturedAtMs,
+      });
 
-    // Skip redundant periodic saves when the playhead has barely moved.
-    if (
-      reason === 'periodic' &&
-      lastSavedPosition != null &&
-      Math.abs(positionSeconds - lastSavedPosition) < 2
-    ) {
-      return;
-    }
-
-    const force = reason === 'flush';
-    const body = JSON.stringify({
-      positionSeconds,
-      durationSeconds: durationSeconds > 0 ? durationSeconds : undefined,
-      force,
-    });
-
-    const run = async () => {
       try {
         await fetch(
           `${options.apiUrl()}/api/account/playback-positions/${encodeURIComponent(videoId)}`,
@@ -153,13 +158,8 @@ export function usePlaybackPosition(options: {
       }
     };
 
-    if (inFlight && !force) {
-      return;
-    }
-    inFlight = run().finally(() => {
-      inFlight = null;
-    });
-    await inFlight;
+    writeChain = writeChain.then(task, task);
+    return writeChain;
   }
 
   function startPeriodicSaves() {
@@ -177,8 +177,8 @@ export function usePlaybackPosition(options: {
     }
   }
 
-  function flush() {
-    void savePosition('flush');
+  async function flush(overrideVideoId?: string): Promise<void> {
+    return savePosition('flush', overrideVideoId);
   }
 
   function resetLocalState() {
@@ -187,9 +187,11 @@ export function usePlaybackPosition(options: {
   }
 
   if (import.meta.client) {
-    const onPageHide = () => flush();
+    const onPageHide = () => {
+      void flush();
+    };
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === 'hidden') void flush();
     };
 
     onMounted(() => {
@@ -202,7 +204,7 @@ export function usePlaybackPosition(options: {
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
       stopPeriodicSaves();
-      flush();
+      void flush();
     });
   }
 

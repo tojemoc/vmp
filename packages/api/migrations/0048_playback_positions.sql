@@ -5,6 +5,7 @@ CREATE TABLE playback_positions (
   user_id TEXT NOT NULL,
   video_id TEXT NOT NULL,
   position_seconds REAL NOT NULL,
+  client_captured_at_ms INTEGER NOT NULL DEFAULT 0,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, video_id),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

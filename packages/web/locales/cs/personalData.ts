@@ -60,7 +60,7 @@ export const personalData: PersonalDataPage = {
       title: 'Zpracování na straně serveru (bez cookie prohlížeče)',
       paragraphs: [
         'Při doručování video streamů naše API zaznamenává anonymizované technické události (například hashovaná IP, země ze síťových hlaviček a buckety relací sledování) k provozu služby, prevenci zneužití a zobrazení souhrnných statistik administrátorům. Tyto logy se nepoužívají k reklamě vůči vám a nesdílejí se s reklamními sítěmi.',
-        'Pokud jste přihlášeni, ukládáme také vaši poslední pozici přehrávání u jednotlivých videí na našich serverech, abychom mohli pokračovat tam, kde jste skončili. Pozice se aktualizují občas během sledování a při opuštění stránky — ne při každém posunu na časové ose. Anonymní návštěvníci serverové obnovení pozice nedostanou.',
+        'Pokud jste přihlášeni, ukládáme také vaši poslední pozici přehrávání u jednotlivých on-demand videí (VOD) na našich serverech, abychom mohli pokračovat tam, kde jste skončili. Pozice se aktualizují občas během sledování a při opuštění stránky — ne při každém posunu na časové ose. Anonymní návštěvníci serverové obnovení pozice nedostanou. Všechny uložené pozice se odstraní při smazání účtu.',
       ],
     },
     {

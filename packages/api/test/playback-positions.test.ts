@@ -5,6 +5,7 @@ import {
   normalizeOptionalDurationSeconds,
   normalizePositionSeconds,
   PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  shouldRejectStalePlaybackWrite,
   shouldThrottlePlaybackWrite,
 } from '../src/playbackPositions.js';
 
@@ -89,6 +90,45 @@ describe('shouldThrottlePlaybackWrite', () => {
         lastUpdatedAt: new Date(now - 6000).toISOString(),
         nowMs: now,
         force: false,
+      }),
+      false,
+    );
+  });
+});
+
+describe('shouldRejectStalePlaybackWrite', () => {
+  it('rejects writes older than the stored capture time', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 1000,
+      }),
+      true,
+    );
+  });
+
+  it('allows equal or newer capture times', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 2000,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 2500,
+      }),
+      false,
+    );
+  });
+
+  it('does not reject when either timestamp is missing', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: null,
+        incomingCapturedAtMs: 1000,
       }),
       false,
     );

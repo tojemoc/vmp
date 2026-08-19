@@ -2,10 +2,12 @@
  * Auth-gated last-playback-position store for VOD resume (#488).
  *
  * GET  /api/account/playback-positions/:videoId
- * PUT  /api/account/playback-positions/:videoId  { positionSeconds, durationSeconds? }
+ * PUT  /api/account/playback-positions/:videoId
+ *      { positionSeconds, durationSeconds?, force?, capturedAtMs? }
  *
  * Writes are intentionally cheap to spam: server enforces a short cooldown per
  * user/video unless the client marks the write as a flush (navigate-away / next video).
+ * Stale writes (older capturedAtMs than the stored row) are rejected.
  */
 
 import { requireAuth } from './auth.js';
@@ -67,6 +69,19 @@ export function normalizeOptionalDurationSeconds(raw: unknown): number | null {
   return value;
 }
 
+export function normalizeCapturedAtMs(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    return Math.floor(raw);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.floor(parsed);
+  }
+  return null;
+}
+
 /**
  * Decide whether a position should be cleared (finished / too early) instead of saved.
  * Returns 'clear' | 'save' | 'ignore'.
@@ -103,6 +118,17 @@ export function shouldThrottlePlaybackWrite(opts: {
   if (!Number.isFinite(lastMs)) return false;
   const nowMs = opts.nowMs ?? Date.now();
   return nowMs - lastMs < PLAYBACK_POSITION_MIN_WRITE_INTERVAL_MS;
+}
+
+export function shouldRejectStalePlaybackWrite(opts: {
+  existingCapturedAtMs: number | null | undefined;
+  incomingCapturedAtMs: number | null | undefined;
+}): boolean {
+  const existing = opts.existingCapturedAtMs;
+  const incoming = opts.incomingCapturedAtMs;
+  if (existing == null || incoming == null) return false;
+  if (!Number.isFinite(existing) || !Number.isFinite(incoming)) return false;
+  return incoming < existing;
 }
 
 function parseVideoIdParam(raw: string | undefined): string | null {
@@ -144,7 +170,7 @@ export async function handleGetPlaybackPosition(
 
   const row = await db
     .prepare(
-      `SELECT position_seconds, updated_at
+      `SELECT position_seconds, updated_at, client_captured_at_ms
        FROM playback_positions
        WHERE user_id = ? AND video_id = ?`,
     )
@@ -205,6 +231,7 @@ export async function handlePutPlaybackPosition(
 
   const durationSeconds = normalizeOptionalDurationSeconds(body.durationSeconds);
   const force = body.force === true || body.flush === true;
+  const capturedAtMs = normalizeCapturedAtMs(body.capturedAtMs) ?? Date.now();
 
   const videoId = await resolveVideoId(db, idOrSlug);
   if (!videoId) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
@@ -235,12 +262,33 @@ export async function handlePutPlaybackPosition(
 
   const existing = await db
     .prepare(
-      `SELECT position_seconds, updated_at
+      `SELECT position_seconds, updated_at, client_captured_at_ms
        FROM playback_positions
        WHERE user_id = ? AND video_id = ?`,
     )
     .bind(user.sub, videoId)
     .first();
+
+  if (
+    shouldRejectStalePlaybackWrite({
+      existingCapturedAtMs:
+        existing?.client_captured_at_ms != null ? Number(existing.client_captured_at_ms) : null,
+      incomingCapturedAtMs: capturedAtMs,
+    })
+  ) {
+    return jsonResponse(
+      {
+        videoId,
+        positionSeconds:
+          existing?.position_seconds != null ? Number(existing.position_seconds) : null,
+        updatedAt: existing?.updated_at ?? null,
+        skipped: true,
+        reason: 'stale',
+      },
+      200,
+      corsHeaders,
+    );
+  }
 
   if (
     shouldThrottlePlaybackWrite({
@@ -266,20 +314,46 @@ export async function handlePutPlaybackPosition(
 
   await db
     .prepare(
-      `INSERT INTO playback_positions (user_id, video_id, position_seconds, updated_at)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `INSERT INTO playback_positions (
+         user_id, video_id, position_seconds, client_captured_at_ms, updated_at
+       ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(user_id, video_id) DO UPDATE SET
          position_seconds = excluded.position_seconds,
-         updated_at = CURRENT_TIMESTAMP`,
+         client_captured_at_ms = excluded.client_captured_at_ms,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE excluded.client_captured_at_ms >= playback_positions.client_captured_at_ms`,
     )
-    .bind(user.sub, videoId, rounded)
+    .bind(user.sub, videoId, rounded, capturedAtMs)
     .run();
+
+  const saved = await db
+    .prepare(
+      `SELECT position_seconds, updated_at, client_captured_at_ms
+       FROM playback_positions
+       WHERE user_id = ? AND video_id = ?`,
+    )
+    .bind(user.sub, videoId)
+    .first();
+
+  if (saved?.client_captured_at_ms != null && Number(saved.client_captured_at_ms) > capturedAtMs) {
+    return jsonResponse(
+      {
+        videoId,
+        positionSeconds: saved.position_seconds != null ? Number(saved.position_seconds) : null,
+        updatedAt: saved.updated_at ?? null,
+        skipped: true,
+        reason: 'stale',
+      },
+      200,
+      corsHeaders,
+    );
+  }
 
   return jsonResponse(
     {
       videoId,
       positionSeconds: rounded,
-      updatedAt: new Date().toISOString(),
+      updatedAt: saved?.updated_at ?? new Date().toISOString(),
       cleared: false,
     },
     200,
