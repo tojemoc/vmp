@@ -175,6 +175,7 @@ Steps 1–7 are complete. Work continues from step 8.
 | 8 | Brevo Newsletter Sync | Pending |
 | 9 | RSS / Podcast Feed | Pending |
 | — | Native / TV clients (multi-tier) | Phase 0 + Tier 1 scaffold — see [docs/native-clients-plan.md](docs/native-clients-plan.md) |
+| 10 | Self-Service Account Deletion | Pending (blocked on payment gateway adapter) |
 
 ### Step 8 — Brevo Newsletter Sync
 
@@ -208,6 +209,38 @@ Steps 1–7 are complete. Work continues from step 8.
 - **Re-encode clears all positions:** The `fully_processed` pipeline callback clears every user's saved position, including quality-only re-encodes where the timeline is unchanged. To preserve resume on quality upgrades, the pipeline callback would need a `contentChanged` flag — this requires a media-pipeline contract change. The admin endpoint `DELETE /api/admin/videos/:id/playback-positions` is available as a manual alternative.
 - **Postgres (api-node) migration compatibility:** Migration files use D1/SQLite SQL. The `translateSqliteDdl` function in `packages/api-node/src/bindings/sqlDialect.ts` handles most translations. SQLite-only functions (`json_insert`, `json_valid`, `json_type`, `json()`) are not translatable — statements using them are stripped. `instr()` is translated to `strpos()`. When writing new migrations that use SQLite-specific JSON functions, add a comment explaining the Postgres fallback and ensure the REPLACE-based paths cover the common case.
 - **Client clock skew:** A device whose clock is ahead by up to 5 minutes can suppress writes from other devices for that duration. This is acceptable for a resume feature; server-side timestamp arbitration would require a more complex API contract.
+
+### Step 10 — Self-Service Account Deletion
+
+**Blocked on**: payment gateway adapter completion (all Stripe-touching work is on hold until the adapter is provider-agnostic).
+
+#### API (`@vmp/api`)
+
+- `POST /api/account/delete-request` — auth-required; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min).
+- `POST /api/account/delete-confirm` — validates token + requires user to submit a confirmation phrase (e.g. "I understand my subscription will be cancelled without refund").
+- On confirmation:
+  - Cancel active subscription immediately via the payment gateway adapter (no refund).
+  - `DELETE FROM users WHERE id = ?` — `ON DELETE CASCADE` foreign keys on `playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions` handle cleanup.
+  - Revoke all sessions (delete refresh tokens, invalidate JWT).
+  - Optionally: Brevo contact removal.
+- New migration: `deletion_confirmations` table or reuse `magic_link_tokens` with a type discriminator.
+
+#### Web (`@vmp/web`)
+
+- Account page section: "Delete my account" with warning copy.
+- Confirmation flow: email sent → enter code/click link → type confirmation phrase → done.
+- Redirect to homepage post-deletion.
+
+#### Legal / regulatory (CZ + SK)
+
+- **Czech law**: Consumer Protection Act (zákon č. 634/1992 Sb.), Civil Code (zákon č. 89/2012 Sb.) — digital content contracts; EU Consumer Rights Directive implemented via § 1820+ of the Civil Code. For digital content/services delivered immediately (streaming access), the 14-day withdrawal right can be waived with prior express consent.
+- **Slovak law**: zákon č. 102/2014 Z.z. — same EU directive transposition, same waiver mechanism.
+- **Key wording**: pre-purchase consent checkbox or acknowledgment that (a) access begins immediately upon payment, (b) the consumer waives the 14-day withdrawal right, and (c) all sales are final with no refund for the remaining subscription period upon cancellation or deletion.
+- **GDPR Art. 17 (right to erasure)**: the self-service flow satisfies this; the support-channel fallback remains as backup.
+
+#### Checkout integration
+
+The "all sales are final" / waiver-of-withdrawal consent should be captured **at checkout time**, not at deletion time. This means adding consent text to the checkout flow via the payment gateway adapter (e.g. Stripe `custom_text` on Checkout Session, or a pre-checkout step in the frontend).
 
 ## Cursor Cloud-specific instructions
 
