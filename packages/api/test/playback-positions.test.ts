@@ -46,9 +46,13 @@ describe('classifyPlaybackPosition', () => {
     assert.equal(classifyPlaybackPosition(120, 600), 'save');
   });
 
-  it('clears near-end positions', () => {
+  it('clears near-end positions on long-form content', () => {
     assert.equal(classifyPlaybackPosition(580, 600), 'clear');
     assert.equal(classifyPlaybackPosition(570, 600), 'clear');
+  });
+
+  it('does not treat 2:30 on a 3-minute clip as finished', () => {
+    assert.equal(classifyPlaybackPosition(150, 180), 'save');
   });
 
   it('clears positions past duration as finished', () => {
@@ -102,6 +106,7 @@ describe('shouldRejectStalePlaybackWrite', () => {
       shouldRejectStalePlaybackWrite({
         existingCapturedAtMs: 2000,
         incomingCapturedAtMs: 1000,
+        serverNowMs: 2500,
       }),
       true,
     );
@@ -112,6 +117,7 @@ describe('shouldRejectStalePlaybackWrite', () => {
       shouldRejectStalePlaybackWrite({
         existingCapturedAtMs: 2000,
         incomingCapturedAtMs: 2000,
+        serverNowMs: 2500,
       }),
       false,
     );
@@ -119,6 +125,7 @@ describe('shouldRejectStalePlaybackWrite', () => {
       shouldRejectStalePlaybackWrite({
         existingCapturedAtMs: 2000,
         incomingCapturedAtMs: 2500,
+        serverNowMs: 3000,
       }),
       false,
     );
@@ -129,6 +136,7 @@ describe('shouldRejectStalePlaybackWrite', () => {
       shouldRejectStalePlaybackWrite({
         existingCapturedAtMs: null,
         incomingCapturedAtMs: 1000,
+        serverNowMs: 1500,
       }),
       false,
     );

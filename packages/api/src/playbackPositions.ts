@@ -1,28 +1,50 @@
 /**
  * Auth-gated last-playback-position store for VOD resume (#488).
  *
+ * GET  /api/account/playback-positions
  * GET  /api/account/playback-positions/:videoId
  * PUT  /api/account/playback-positions/:videoId
  *      { positionSeconds, durationSeconds?, force?, capturedAtMs? }
+ * DELETE /api/account/playback-positions/:videoId
  *
  * Writes are intentionally cheap to spam: server enforces a short cooldown per
  * user/video unless the client marks the write as a flush (navigate-away / next video).
- * Stale writes (older capturedAtMs than the stored row) are rejected.
+ * Stale writes (older capturedAtMs than the stored row) are rejected unless the stored
+ * row has a clock-skewed timestamp far in the future.
  */
 
-import { requireAuth } from './auth.js';
+import {
+  isNearPlaybackEnd,
+  normalizeClientCapturedAtMs,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  shouldRejectStalePlaybackWrite,
+} from '@vmp/shared';
+import { requireAuth, requireRole } from './auth.js';
 
-/** Minimum meaningful watch position before we persist (seconds). */
-export const PLAYBACK_POSITION_MIN_SAVE_SECONDS = 5;
-
-/** Treat as finished when within this many seconds of the end. */
-export const PLAYBACK_POSITION_END_EPSILON_SECONDS = 30;
-
-/** Fraction of duration at/above which we clear the saved position. */
-export const PLAYBACK_POSITION_END_FRACTION = 0.95;
+export {
+  getPlaybackEndClearThresholds,
+  getPlaybackSaveIntervalMs,
+  isNearPlaybackEnd,
+  normalizeClientCapturedAtMs,
+  PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS,
+  PLAYBACK_POSITION_END_EPSILON_MIN_FRACTION,
+  PLAYBACK_POSITION_END_FRACTION_LONG,
+  PLAYBACK_POSITION_MAX_CLOCK_SKEW_MS,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MAX_MS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MIN_MS,
+  PLAYBACK_POSITION_SHORT_FORM_MAX_SECONDS,
+  shouldRejectStalePlaybackWrite,
+} from '@vmp/shared';
 
 /** Minimum interval between non-flush upserts for the same user/video. */
 export const PLAYBACK_POSITION_MIN_WRITE_INTERVAL_MS = 5000;
+
+/** @deprecated Use PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS from @vmp/shared */
+export const PLAYBACK_POSITION_END_EPSILON_SECONDS = 30;
+
+/** @deprecated Use PLAYBACK_POSITION_END_FRACTION_LONG from @vmp/shared */
+export const PLAYBACK_POSITION_END_FRACTION = 0.95;
 
 type CorsHeaders = Record<string, string>;
 
@@ -94,13 +116,7 @@ export function classifyPlaybackPosition(
   if (positionSeconds < PLAYBACK_POSITION_MIN_SAVE_SECONDS) return 'clear';
 
   if (durationSeconds != null && durationSeconds > 0) {
-    const remaining = durationSeconds - positionSeconds;
-    if (
-      remaining <= PLAYBACK_POSITION_END_EPSILON_SECONDS ||
-      positionSeconds / durationSeconds >= PLAYBACK_POSITION_END_FRACTION
-    ) {
-      return 'clear';
-    }
+    if (isNearPlaybackEnd(positionSeconds, durationSeconds)) return 'clear';
     if (positionSeconds > durationSeconds + 1) return 'ignore';
   }
 
@@ -120,17 +136,6 @@ export function shouldThrottlePlaybackWrite(opts: {
   return nowMs - lastMs < PLAYBACK_POSITION_MIN_WRITE_INTERVAL_MS;
 }
 
-export function shouldRejectStalePlaybackWrite(opts: {
-  existingCapturedAtMs: number | null | undefined;
-  incomingCapturedAtMs: number | null | undefined;
-}): boolean {
-  const existing = opts.existingCapturedAtMs;
-  const incoming = opts.incomingCapturedAtMs;
-  if (existing == null || incoming == null) return false;
-  if (!Number.isFinite(existing) || !Number.isFinite(incoming)) return false;
-  return incoming < existing;
-}
-
 function parseVideoIdParam(raw: string | undefined): string | null {
   if (!raw) return null;
   let decoded: string;
@@ -142,6 +147,73 @@ function parseVideoIdParam(raw: string | undefined): string | null {
   const trimmed = decoded.trim();
   if (!trimmed || trimmed.includes('/') || trimmed === '.' || trimmed === '..') return null;
   return trimmed;
+}
+
+export async function clearPlaybackPositionsForVideo(db: any, videoId: string): Promise<number> {
+  const result = await db
+    .prepare('DELETE FROM playback_positions WHERE video_id = ?')
+    .bind(videoId)
+    .run();
+  return Number(result.meta?.changes ?? 0);
+}
+
+export async function handleListPlaybackPositions(
+  request: Request,
+  env: any,
+  corsHeaders: CorsHeaders,
+) {
+  let user: { sub: string };
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const db = getDb(env);
+  if (!db) return jsonResponse({ error: 'Database not configured' }, 503, corsHeaders);
+
+  const rows = await db
+    .prepare(
+      `SELECT pp.video_id, pp.position_seconds, pp.updated_at,
+              v.title, v.slug, v.thumbnail_url, v.full_duration, v.publish_status
+       FROM playback_positions pp
+       INNER JOIN videos v ON v.id = pp.video_id
+       WHERE pp.user_id = ?
+       ORDER BY pp.updated_at DESC
+       LIMIT 50`,
+    )
+    .bind(user.sub)
+    .all();
+
+  const items = (rows.results ?? [])
+    .map((row: any) => {
+      const positionSeconds = Number(row.position_seconds);
+      const durationSeconds =
+        Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
+      if (row.publish_status !== 'published') return null;
+      if (positionSeconds < PLAYBACK_POSITION_MIN_SAVE_SECONDS) return null;
+      if (isNearPlaybackEnd(positionSeconds, durationSeconds)) return null;
+
+      const watchSlug = row.slug ? String(row.slug) : String(row.video_id);
+      return {
+        videoId: String(row.video_id),
+        title: String(row.title ?? ''),
+        slug: row.slug ? String(row.slug) : null,
+        thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : null,
+        positionSeconds,
+        durationSeconds,
+        updatedAt: row.updated_at ?? null,
+        watchPath: `/watch/${encodeURIComponent(watchSlug)}`,
+        progressPercent:
+          durationSeconds != null && durationSeconds > 0
+            ? Math.min(100, Math.round((positionSeconds / durationSeconds) * 100))
+            : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+
+  return jsonResponse({ items }, 200, corsHeaders);
 }
 
 export async function handleGetPlaybackPosition(
@@ -192,6 +264,67 @@ export async function handleGetPlaybackPosition(
   );
 }
 
+export async function handleDeletePlaybackPosition(
+  request: Request,
+  env: any,
+  corsHeaders: CorsHeaders,
+  videoIdParam: string,
+) {
+  let user: { sub: string };
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const idOrSlug = parseVideoIdParam(videoIdParam);
+  if (!idOrSlug) {
+    return jsonResponse({ error: 'Invalid video id' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
+  if (!db) return jsonResponse({ error: 'Database not configured' }, 503, corsHeaders);
+
+  const videoId = await resolveVideoId(db, idOrSlug);
+  if (!videoId) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
+
+  await db
+    .prepare('DELETE FROM playback_positions WHERE user_id = ? AND video_id = ?')
+    .bind(user.sub, videoId)
+    .run();
+
+  return jsonResponse({ videoId, deleted: true }, 200, corsHeaders);
+}
+
+export async function handleAdminClearPlaybackPositions(
+  request: Request,
+  env: any,
+  corsHeaders: CorsHeaders,
+  videoIdParam: string,
+) {
+  try {
+    await requireRole(request, env, 'editor', 'admin', 'super_admin');
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const videoId = parseVideoIdParam(videoIdParam);
+  if (!videoId) {
+    return jsonResponse({ error: 'Invalid video id' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
+  if (!db) return jsonResponse({ error: 'Database not configured' }, 503, corsHeaders);
+
+  const existing = await db.prepare('SELECT id FROM videos WHERE id = ?').bind(videoId).first();
+  if (!existing) {
+    return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
+  }
+
+  const deletedCount = await clearPlaybackPositionsForVideo(db, videoId);
+  return jsonResponse({ videoId, deletedCount }, 200, corsHeaders);
+}
+
 export async function handlePutPlaybackPosition(
   request: Request,
   env: any,
@@ -231,7 +364,11 @@ export async function handlePutPlaybackPosition(
 
   const durationSeconds = normalizeOptionalDurationSeconds(body.durationSeconds);
   const force = body.force === true || body.flush === true;
-  const capturedAtMs = normalizeCapturedAtMs(body.capturedAtMs) ?? Date.now();
+  const serverNowMs = Date.now();
+  const capturedAtMs = normalizeClientCapturedAtMs(
+    normalizeCapturedAtMs(body.capturedAtMs),
+    serverNowMs,
+  );
 
   const videoId = await resolveVideoId(db, idOrSlug);
   if (!videoId) return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
@@ -274,6 +411,7 @@ export async function handlePutPlaybackPosition(
       existingCapturedAtMs:
         existing?.client_captured_at_ms != null ? Number(existing.client_captured_at_ms) : null,
       incomingCapturedAtMs: capturedAtMs,
+      serverNowMs,
     })
   ) {
     return jsonResponse(

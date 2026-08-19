@@ -244,6 +244,11 @@ export const strings: StringsDefinition = {
   mediaFailedToLoad: 'Média se nepodařilo načíst',
   liveCanvasUnavailable: 'Živé plátno není dostupné',
   videoElementUnavailable: 'Video prvek není dostupný',
+  playbackResumeRequiresSignIn:
+    'Pro pokračování v místě, kde jste skončili, se přihlaste s aktivním předplatným. Pokud relace vypršela, přihlaste se znovu na tomto zařízení.',
+  playbackResumeRequiresSubscription:
+    'Pokračování v místě, kde jste skončili, je k dispozici s aktivním předplatným.',
+  playbackResumedAt: (time: string) => `Pokračování od ${time}`,
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   rateLimitTitle: 'Dosažen limit bezplatných ukázek',
@@ -309,6 +314,16 @@ export const strings: StringsDefinition = {
   podcastRssIntro:
     'Použijte svou osobní URL v podcast aplikaci pro plné epizody během předplatného.',
   podcastRssPersonalLabel: 'Vaše osobní URL',
+  continueWatchingTitle: 'Pokračovat ve sledování',
+  continueWatchingIntro:
+    'Pokračujte tam, kde jste u VOD videí skončili. Odstraněním položky smažete uloženou pozici.',
+  continueWatchingEmpty: 'Momentálně nemáte rozpracovaná videa.',
+  continueWatchingRemove: 'Odstranit',
+  continueWatchingRemoving: 'Odstraňování…',
+  continueWatchingLoadFailed: 'Nepodařilo se načíst seznam pokračování ve sledování.',
+  continueWatchingLoadNetworkError: 'Chyba sítě při načítání seznamu pokračování ve sledování.',
+  continueWatchingRemoveFailed: 'Nepodařilo se odstranit uloženou pozici.',
+  continueWatchingProgress: (percent: number) => `${percent} % zhlédnuto`,
   copy: 'Kopírovat',
   copied: 'Zkopírováno',
   rssLoadFailed: 'Nepodařilo se načíst RSS URL.',

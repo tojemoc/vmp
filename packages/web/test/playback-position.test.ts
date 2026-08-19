@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  getPlaybackSaveIntervalMs,
   shouldResumePlaybackPosition,
   shouldSavePlaybackPosition,
 } from '../composables/usePlaybackPosition';
@@ -10,10 +11,17 @@ describe('shouldResumePlaybackPosition', () => {
     assert.equal(shouldResumePlaybackPosition(120, 600), true);
   });
 
-  it('skips near-start and near-end', () => {
+  it('skips near-start positions', () => {
     assert.equal(shouldResumePlaybackPosition(2, 600), false);
-    assert.equal(shouldResumePlaybackPosition(590, 600), false);
     assert.equal(shouldResumePlaybackPosition(null, 600), false);
+  });
+
+  it('does not treat 2:30 on a 3-minute clip as finished', () => {
+    assert.equal(shouldResumePlaybackPosition(150, 180), true);
+  });
+
+  it('skips near-end on long-form content', () => {
+    assert.equal(shouldResumePlaybackPosition(590, 600), false);
   });
 });
 
@@ -68,5 +76,11 @@ describe('shouldSavePlaybackPosition', () => {
       }),
       true,
     );
+  });
+});
+
+describe('getPlaybackSaveIntervalMs', () => {
+  it('returns shorter intervals for short clips', () => {
+    assert.ok(getPlaybackSaveIntervalMs(120) < getPlaybackSaveIntervalMs(3600));
   });
 });

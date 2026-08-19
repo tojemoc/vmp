@@ -592,6 +592,20 @@
               {{ videoData.video.title }}
             </h1>
 
+            <p
+              v-if="playbackResumeHint"
+              class="text-sm text-gray-600 dark:text-gray-400 mb-3"
+            >
+              {{ playbackResumeHint }}
+            </p>
+
+            <p
+              v-if="resumeAppliedNotice"
+              class="mb-3 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
+            >
+              {{ resumeAppliedNotice }}
+            </p>
+
             <div
               v-if="playingOffline"
               class="mb-4 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
@@ -1029,6 +1043,18 @@
       !videoData.value?.video?.isLivestream,
   );
 
+  const playbackResumeHint = computed(() => {
+    if (!videoData.value || videoData.value.video?.isLivestream) return null;
+    if (playbackPositionEnabled.value) return null;
+    if (isLoggedIn.value && !videoData.value.hasAccess) {
+      return strings.playbackResumeRequiresSubscription;
+    }
+    return strings.playbackResumeRequiresSignIn;
+  });
+
+  const resumeAppliedNotice = ref<string | null>(null);
+  let resumeNoticeTimeout: ReturnType<typeof setTimeout> | null = null;
+
   const {
     fetchSavedPosition,
     flush: flushPlaybackPosition,
@@ -1208,14 +1234,22 @@
     if (pendingResumeSeconds == null) return;
     if (resumeAppliedForVideoId === targetVideoId) return;
     const duration = effectiveFullDuration.value;
-    if (!shouldResumePlaybackPosition(pendingResumeSeconds, duration || null)) {
+    const resumeAt = pendingResumeSeconds;
+    if (!shouldResumePlaybackPosition(resumeAt, duration || null)) {
       pendingResumeSeconds = null;
       return;
     }
-    setPlaybackTime(pendingResumeSeconds);
-    currentTime.value = pendingResumeSeconds;
+    setPlaybackTime(resumeAt);
+    currentTime.value = resumeAt;
     resumeAppliedForVideoId = targetVideoId;
     pendingResumeSeconds = null;
+
+    resumeAppliedNotice.value = strings.playbackResumedAt(formatDuration(resumeAt));
+    if (resumeNoticeTimeout) clearTimeout(resumeNoticeTimeout);
+    resumeNoticeTimeout = setTimeout(() => {
+      resumeAppliedNotice.value = null;
+      resumeNoticeTimeout = null;
+    }, 8000);
   };
 
   const pausePlayback = (media: MediaLikeElement | null = videoElement.value) => {
@@ -1798,6 +1832,11 @@
     // a zeroed playhead or we would clear the saved resume point before GET.
     pendingResumeSeconds = null;
     resumeAppliedForVideoId = null;
+    resumeAppliedNotice.value = null;
+    if (resumeNoticeTimeout) {
+      clearTimeout(resumeNoticeTimeout);
+      resumeNoticeTimeout = null;
+    }
     resetPlaybackPositionState();
     isSeekingPlayback.value = false;
     isActivelyWatching.value = false;

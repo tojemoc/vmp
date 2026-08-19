@@ -8,9 +8,34 @@
  * - Writes are serialized so lifecycle flushes cannot be overwritten by stale periodic saves.
  */
 
+import {
+  getPlaybackSaveIntervalMs,
+  isNearPlaybackEnd,
+  normalizeClientCapturedAtMs,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+} from '@vmp/shared';
+
+export {
+  getPlaybackEndClearThresholds,
+  getPlaybackSaveIntervalMs,
+  isNearPlaybackEnd,
+  PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS,
+  PLAYBACK_POSITION_END_FRACTION_LONG,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MAX_MS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MIN_MS,
+} from '@vmp/shared';
+
+/** @deprecated Use PLAYBACK_POSITION_SAVE_INTERVAL_MAX_MS from @vmp/shared */
 export const PLAYBACK_POSITION_SAVE_INTERVAL_MS = 30_000;
-export const PLAYBACK_POSITION_MIN_RESUME_SECONDS = 5;
+
+/** @deprecated Use PLAYBACK_POSITION_MIN_SAVE_SECONDS from @vmp/shared */
+export const PLAYBACK_POSITION_MIN_RESUME_SECONDS = PLAYBACK_POSITION_MIN_SAVE_SECONDS;
+
+/** @deprecated Use PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS from @vmp/shared */
 export const PLAYBACK_POSITION_END_EPSILON_SECONDS = 30;
+
+/** @deprecated Use PLAYBACK_POSITION_END_FRACTION_LONG from @vmp/shared */
 export const PLAYBACK_POSITION_END_FRACTION = 0.95;
 
 export type PlaybackPositionSaveReason = 'periodic' | 'flush';
@@ -20,16 +45,8 @@ export function shouldResumePlaybackPosition(
   durationSeconds: number | null | undefined,
 ): boolean {
   if (positionSeconds == null || !Number.isFinite(positionSeconds)) return false;
-  if (positionSeconds < PLAYBACK_POSITION_MIN_RESUME_SECONDS) return false;
-  if (durationSeconds != null && durationSeconds > 0) {
-    const remaining = durationSeconds - positionSeconds;
-    if (
-      remaining <= PLAYBACK_POSITION_END_EPSILON_SECONDS ||
-      positionSeconds / durationSeconds >= PLAYBACK_POSITION_END_FRACTION
-    ) {
-      return false;
-    }
-  }
+  if (positionSeconds < PLAYBACK_POSITION_MIN_SAVE_SECONDS) return false;
+  if (isNearPlaybackEnd(positionSeconds, durationSeconds)) return false;
   return true;
 }
 
@@ -43,18 +60,11 @@ export function shouldSavePlaybackPosition(opts: {
   if (!Number.isFinite(opts.positionSeconds) || opts.positionSeconds < 0) return false;
   if (opts.isSeeking && opts.reason !== 'flush') return false;
   if (opts.reason === 'periodic' && !opts.activelyWatching) return false;
-  if (opts.positionSeconds < PLAYBACK_POSITION_MIN_RESUME_SECONDS) {
-    // Still allow flush so we can clear near-start / finished state server-side.
+  if (opts.positionSeconds < PLAYBACK_POSITION_MIN_SAVE_SECONDS) {
     return opts.reason === 'flush';
   }
-  if (opts.durationSeconds != null && opts.durationSeconds > 0) {
-    const remaining = opts.durationSeconds - opts.positionSeconds;
-    if (
-      remaining <= PLAYBACK_POSITION_END_EPSILON_SECONDS ||
-      opts.positionSeconds / opts.durationSeconds >= PLAYBACK_POSITION_END_FRACTION
-    ) {
-      return opts.reason === 'flush';
-    }
+  if (isNearPlaybackEnd(opts.positionSeconds, opts.durationSeconds)) {
+    return opts.reason === 'flush';
   }
   return true;
 }
@@ -72,7 +82,7 @@ export function usePlaybackPosition(options: {
   let lastSavedPosition: number | null = null;
   let lastSaveAtMs = 0;
   let writeChain: Promise<void> = Promise.resolve();
-  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let periodicTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   async function fetchSavedPosition(videoId: string): Promise<number | null> {
     if (!options.enabled() || !videoId) return null;
@@ -95,11 +105,26 @@ export function usePlaybackPosition(options: {
     }
   }
 
+  async function deleteSavedPosition(videoId: string): Promise<boolean> {
+    const headers = options.authHeader();
+    if (!headers.Authorization) return false;
+    try {
+      const res = await fetch(
+        `${options.apiUrl()}/api/account/playback-positions/${encodeURIComponent(videoId)}`,
+        { method: 'DELETE', headers },
+      );
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function savePosition(
     reason: PlaybackPositionSaveReason,
     overrideVideoId?: string,
   ): Promise<void> {
-    const capturedAtMs = Date.now();
+    const serverNowMs = Date.now();
+    const capturedAtMs = normalizeClientCapturedAtMs(serverNowMs, serverNowMs);
     const task = async () => {
       const videoId = overrideVideoId ?? options.videoId();
       if (!videoId) return;
@@ -162,18 +187,23 @@ export function usePlaybackPosition(options: {
     return writeChain;
   }
 
-  function startPeriodicSaves() {
+  function scheduleNextPeriodicSave() {
     stopPeriodicSaves();
     if (!import.meta.client) return;
-    intervalId = setInterval(() => {
-      void savePosition('periodic');
-    }, PLAYBACK_POSITION_SAVE_INTERVAL_MS);
+    const intervalMs = getPlaybackSaveIntervalMs(options.getDuration());
+    periodicTimeoutId = setTimeout(() => {
+      void savePosition('periodic').finally(() => scheduleNextPeriodicSave());
+    }, intervalMs);
+  }
+
+  function startPeriodicSaves() {
+    scheduleNextPeriodicSave();
   }
 
   function stopPeriodicSaves() {
-    if (intervalId != null) {
-      clearInterval(intervalId);
-      intervalId = null;
+    if (periodicTimeoutId != null) {
+      clearTimeout(periodicTimeoutId);
+      periodicTimeoutId = null;
     }
   }
 
@@ -210,12 +240,12 @@ export function usePlaybackPosition(options: {
 
   return {
     fetchSavedPosition,
+    deleteSavedPosition,
     savePosition,
     flush,
     startPeriodicSaves,
     stopPeriodicSaves,
     resetLocalState,
-    /** Exposed for tests / debugging. */
     getLastSaveMeta: () => ({ lastSavedPosition, lastSaveAtMs }),
   };
 }

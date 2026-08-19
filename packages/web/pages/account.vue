@@ -224,6 +224,95 @@
         </template>
       </div>
 
+      <!-- Continue watching -->
+      <div
+        v-if="hasActiveSubscription"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.continueWatchingTitle }}
+          </h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ strings.continueWatchingIntro }}
+          </p>
+        </div>
+
+        <div v-if="continueWatchingError" class="text-sm text-red-600 dark:text-red-400">
+          {{ continueWatchingError }}
+        </div>
+        <div v-else-if="loadingContinueWatching" class="space-y-3">
+          <div class="h-16 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
+          <div class="h-16 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
+        </div>
+        <p
+          v-else-if="!continueWatchingItems.length"
+          class="text-sm text-gray-600 dark:text-gray-400"
+        >
+          {{ strings.continueWatchingEmpty }}
+        </p>
+        <ul v-else class="space-y-3">
+          <li
+            v-for="item in continueWatchingItems"
+            :key="item.videoId"
+            class="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+          >
+            <NuxtLink
+              :to="item.watchPath"
+              class="flex min-w-0 flex-1 items-center gap-3 group"
+            >
+              <div
+                class="relative h-14 w-24 shrink-0 overflow-hidden rounded bg-gray-200 dark:bg-gray-800"
+              >
+                <img
+                  v-if="item.thumbnailUrl"
+                  :src="item.thumbnailUrl"
+                  :alt="item.title"
+                  class="h-full w-full object-cover transition-transform group-hover:scale-105"
+                  loading="lazy"
+                  width="96"
+                  height="56"
+                >
+              </div>
+              <div class="min-w-0 flex-1">
+                <p
+                  class="truncate font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                >
+                  {{ item.title }}
+                </p>
+                <p
+                  v-if="item.progressPercent != null"
+                  class="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                >
+                  {{ strings.continueWatchingProgress(item.progressPercent) }}
+                </p>
+                <div
+                  v-if="item.progressPercent != null"
+                  class="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden"
+                >
+                  <div
+                    class="h-full rounded-full bg-blue-600"
+                    :style="{ width: `${item.progressPercent}%` }"
+                  />
+                </div>
+              </div>
+            </NuxtLink>
+            <button
+              type="button"
+              class="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              :disabled="removingVideoId === item.videoId"
+              @click="removeContinueWatchingItem(item.videoId)"
+            >
+              {{
+                removingVideoId === item.videoId
+                  ? strings.continueWatchingRemoving
+                  : strings.continueWatchingRemove
+              }}
+            </button>
+          </li>
+        </ul>
+      </div>
+
       <!-- Podcast RSS -->
       <OfflineDownloadsPanel />
 
@@ -555,6 +644,23 @@
   const rssPersonalUrl = ref('');
   const copiedWhich = ref<'personal' | null>(null);
 
+  type ContinueWatchingItem = {
+    videoId: string;
+    title: string;
+    slug: string | null;
+    thumbnailUrl: string | null;
+    positionSeconds: number;
+    durationSeconds: number | null;
+    updatedAt: string | null;
+    watchPath: string;
+    progressPercent: number | null;
+  };
+
+  const loadingContinueWatching = ref(true);
+  const continueWatchingError = ref<string | null>(null);
+  const continueWatchingItems = ref<ContinueWatchingItem[]>([]);
+  const removingVideoId = ref<string | null>(null);
+
   onMounted(async () => {
     if (
       import.meta.client &&
@@ -597,6 +703,11 @@
     loadingSub.value = false;
 
     await fetchRssUrls();
+    if (hasActiveSubscription.value) {
+      await fetchContinueWatching();
+    } else {
+      loadingContinueWatching.value = false;
+    }
   });
 
   watch(subscription, (sub) => {
@@ -663,6 +774,54 @@
       rssError.value = strings.rssLoadNetworkError;
     } finally {
       loadingRss.value = false;
+    }
+  }
+
+  async function fetchContinueWatching() {
+    loadingContinueWatching.value = true;
+    continueWatchingError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/playback-positions`, {
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        continueWatchingError.value = data.error ?? strings.continueWatchingLoadFailed;
+        return;
+      }
+      continueWatchingItems.value = Array.isArray(data.items) ? data.items : [];
+    } catch {
+      continueWatchingError.value = strings.continueWatchingLoadNetworkError;
+    } finally {
+      loadingContinueWatching.value = false;
+    }
+  }
+
+  async function removeContinueWatchingItem(videoId: string) {
+    removingVideoId.value = videoId;
+    continueWatchingError.value = null;
+    try {
+      const res = await fetch(
+        `${apiUrl}/api/account/playback-positions/${encodeURIComponent(videoId)}`,
+        {
+          method: 'DELETE',
+          headers: authHeader(),
+          credentials: 'include',
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        continueWatchingError.value = data.error ?? strings.continueWatchingRemoveFailed;
+        return;
+      }
+      continueWatchingItems.value = continueWatchingItems.value.filter(
+        (item) => item.videoId !== videoId,
+      );
+    } catch {
+      continueWatchingError.value = strings.continueWatchingRemoveFailed;
+    } finally {
+      removingVideoId.value = null;
     }
   }
 
