@@ -188,14 +188,12 @@ export async function handleListPlaybackPositions(
   let lastUpdatedAt: string | null = null;
 
   while (items.length < TARGET_ITEMS) {
-    const offsetClause = lastUpdatedAt
-      ? `AND pp.updated_at < ?`
-      : '';
-    const binds = lastUpdatedAt
+    const offsetClause: string = lastUpdatedAt ? 'AND pp.updated_at < ?' : '';
+    const binds: Array<string | number> = lastUpdatedAt
       ? [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, lastUpdatedAt, BATCH_SIZE]
       : [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, BATCH_SIZE];
 
-    const rows = await db
+    const rows: { results?: unknown[] } = await db
       .prepare(
         `SELECT pp.video_id, pp.position_seconds, pp.updated_at,
                 v.title, v.slug, v.thumbnail_url, v.full_duration
@@ -211,11 +209,11 @@ export async function handleListPlaybackPositions(
       .bind(...binds)
       .all();
 
-    const batch = rows.results ?? [];
+    const batch = (rows.results ?? []) as Array<Record<string, unknown>>;
     if (batch.length === 0) break;
 
-    for (const row of batch as any[]) {
-      lastUpdatedAt = row.updated_at ?? null;
+    for (const row of batch) {
+      lastUpdatedAt = row.updated_at != null ? String(row.updated_at) : null;
       const positionSeconds = Number(row.position_seconds);
       const durationSeconds =
         Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
@@ -229,7 +227,7 @@ export async function handleListPlaybackPositions(
         thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : null,
         positionSeconds,
         durationSeconds,
-        updatedAt: row.updated_at ?? null,
+        updatedAt: row.updated_at != null ? String(row.updated_at) : null,
         watchPath: `/watch/${encodeURIComponent(watchSlug)}`,
         progressPercent:
           durationSeconds != null && durationSeconds > 0
@@ -239,7 +237,7 @@ export async function handleListPlaybackPositions(
       if (items.length >= TARGET_ITEMS) break;
     }
 
-    if ((batch as any[]).length < BATCH_SIZE) break;
+    if (batch.length < BATCH_SIZE) break;
   }
 
   return jsonResponse({ items }, 200, corsHeaders);
