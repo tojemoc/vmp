@@ -1045,6 +1045,7 @@
 
   const playbackResumeHint = computed(() => {
     if (!videoData.value || videoData.value.video?.isLivestream) return null;
+    if (isFullPublicPreview.value) return null;
     if (playbackPositionEnabled.value) return null;
     if (isLoggedIn.value && !videoData.value.hasAccess) {
       return strings.playbackResumeRequiresSubscription;

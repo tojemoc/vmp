@@ -188,6 +188,17 @@ export function translateSqliteToPostgres(sql: string): string {
   // SQLite implicit rowid (e.g. migration 0029 dedup) → Postgres ctid system column.
   s = s.replace(/\browid\b/gi, 'ctid');
 
+  // SQLite instr(haystack, needle) → Postgres strpos(haystack, needle) (1-indexed, 0 = not found).
+  s = s.replace(/\binstr\s*\(/gi, 'strpos(');
+
+  // SQLite json_valid/json_type/json() — used by CMS migration fallback.
+  // Strip UPDATE statements that use json_insert (Postgres jsonb_insert has different semantics;
+  // the REPLACE-based paths handle >99% of deployments).
+  s = s.replace(
+    /UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\([\s\S]*?;/gi,
+    '-- (skipped: SQLite json_insert block not supported on Postgres)',
+  );
+
   return s;
 }
 

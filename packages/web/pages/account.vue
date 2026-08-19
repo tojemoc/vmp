@@ -311,6 +311,12 @@
             </button>
           </li>
         </ul>
+        <p
+          v-if="continueWatchingItems.length >= 20"
+          class="text-xs text-gray-500 dark:text-gray-400"
+        >
+          {{ strings.continueWatchingTruncated }}
+        </p>
       </div>
 
       <!-- Podcast RSS -->

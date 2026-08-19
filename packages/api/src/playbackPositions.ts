@@ -175,14 +175,16 @@ export async function handleListPlaybackPositions(
   const rows = await db
     .prepare(
       `SELECT pp.video_id, pp.position_seconds, pp.updated_at,
-              v.title, v.slug, v.thumbnail_url, v.full_duration, v.publish_status
+              v.title, v.slug, v.thumbnail_url, v.full_duration
        FROM playback_positions pp
        INNER JOIN videos v ON v.id = pp.video_id
        WHERE pp.user_id = ?
+         AND v.publish_status = 'published'
+         AND pp.position_seconds >= ?
        ORDER BY pp.updated_at DESC
        LIMIT 50`,
     )
-    .bind(user.sub)
+    .bind(user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS)
     .all();
 
   const items = (rows.results ?? [])
@@ -190,8 +192,6 @@ export async function handleListPlaybackPositions(
       const positionSeconds = Number(row.position_seconds);
       const durationSeconds =
         Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
-      if (row.publish_status !== 'published') return null;
-      if (positionSeconds < PLAYBACK_POSITION_MIN_SAVE_SECONDS) return null;
       if (isNearPlaybackEnd(positionSeconds, durationSeconds)) return null;
 
       const watchSlug = row.slug ? String(row.slug) : String(row.video_id);

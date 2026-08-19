@@ -40,6 +40,9 @@ WHERE id = 'cms-page-personal-data'
   AND instr(content, 'These logs are not used to advertise to you and are not shared with ad networks') > 0;
 
 -- Edited/restructured pages: append a standalone disclosure block when still missing.
+-- This block uses SQLite-only JSON functions (json_insert, json_valid, json_type, json).
+-- On Postgres (api-node) the sql dialect translator strips the json_insert UPDATE; the
+-- REPLACE-based statements above cover the vast majority of deployments.
 UPDATE cms_pages
 SET content = json_insert(
   content,

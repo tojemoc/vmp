@@ -2,12 +2,31 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   classifyPlaybackPosition,
+  normalizeCapturedAtMs,
   normalizeOptionalDurationSeconds,
   normalizePositionSeconds,
   PLAYBACK_POSITION_MIN_SAVE_SECONDS,
   shouldRejectStalePlaybackWrite,
   shouldThrottlePlaybackWrite,
 } from '../src/playbackPositions.js';
+
+describe('normalizeCapturedAtMs', () => {
+  it('accepts positive numbers and floors them', () => {
+    assert.equal(normalizeCapturedAtMs(1234567890.9), 1234567890);
+  });
+
+  it('accepts numeric strings', () => {
+    assert.equal(normalizeCapturedAtMs('1000'), 1000);
+  });
+
+  it('rejects zero, negative, and non-numeric values', () => {
+    assert.equal(normalizeCapturedAtMs(0), null);
+    assert.equal(normalizeCapturedAtMs(-500), null);
+    assert.equal(normalizeCapturedAtMs('nope'), null);
+    assert.equal(normalizeCapturedAtMs(undefined), null);
+    assert.equal(normalizeCapturedAtMs(Number.NaN), null);
+  });
+});
 
 describe('normalizePositionSeconds', () => {
   it('accepts finite non-negative numbers', () => {

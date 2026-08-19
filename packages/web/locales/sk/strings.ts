@@ -246,7 +246,7 @@ export const strings: StringsDefinition = {
   liveCanvasUnavailable: 'Živé plátno nie je dostupné',
   videoElementUnavailable: 'Video prvok nie je dostupný',
   playbackResumeRequiresSignIn:
-    'Ak chcete pokračovať tam, kde ste skončili, prihláste sa s aktívnym predplatným. Ak relácia vypršala, prihláste sa znova na tomto zariadení.',
+    'Ak chcete pokračovať tam, kde ste skončili, prihláste sa s aktívnym predplatným.',
   playbackResumeRequiresSubscription:
     'Pokračovanie tam, kde ste skončili, je k dispozícii s aktívnym predplatným.',
   playbackResumedAt: (time: string) => `Pokračovanie od ${time}`,
@@ -326,6 +326,7 @@ export const strings: StringsDefinition = {
   continueWatchingLoadNetworkError: 'Chyba siete pri načítavaní zoznamu pokračovania v sledovaní.',
   continueWatchingRemoveFailed: 'Nepodarilo sa odstrániť uloženú pozíciu.',
   continueWatchingProgress: (percent: number) => `${percent} % videné`,
+  continueWatchingTruncated: 'Zobrazujeme 20 naposledy sledovaných.',
   copy: 'Kopírovať',
   copied: 'Skopírované',
   rssLoadFailed: 'Nepodarilo sa načítať RSS URL.',

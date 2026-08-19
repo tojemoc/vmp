@@ -83,6 +83,7 @@ export function usePlaybackPosition(options: {
   let lastSaveAtMs = 0;
   let writeChain: Promise<void> = Promise.resolve();
   let periodicTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
 
   async function fetchSavedPosition(videoId: string): Promise<number | null> {
     if (!options.enabled() || !videoId) return null;
@@ -164,7 +165,7 @@ export function usePlaybackPosition(options: {
       });
 
       try {
-        await fetch(
+        const res = await fetch(
           `${options.apiUrl()}/api/account/playback-positions/${encodeURIComponent(videoId)}`,
           {
             method: 'PUT',
@@ -176,8 +177,18 @@ export function usePlaybackPosition(options: {
             keepalive: force,
           },
         );
-        lastSavedPosition = positionSeconds;
-        lastSaveAtMs = Date.now();
+        if (res.ok) {
+          try {
+            const data = (await res.json()) as { skipped?: boolean };
+            if (!data.skipped) {
+              lastSavedPosition = positionSeconds;
+              lastSaveAtMs = Date.now();
+            }
+          } catch {
+            lastSavedPosition = positionSeconds;
+            lastSaveAtMs = Date.now();
+          }
+        }
       } catch {
         // Best-effort; resume still works from the last successful write.
       }
@@ -189,10 +200,12 @@ export function usePlaybackPosition(options: {
 
   function scheduleNextPeriodicSave() {
     stopPeriodicSaves();
-    if (!import.meta.client) return;
+    if (!import.meta.client || disposed) return;
     const intervalMs = getPlaybackSaveIntervalMs(options.getDuration());
     periodicTimeoutId = setTimeout(() => {
-      void savePosition('periodic').finally(() => scheduleNextPeriodicSave());
+      void savePosition('periodic').finally(() => {
+        if (!disposed) scheduleNextPeriodicSave();
+      });
     }, intervalMs);
   }
 
@@ -231,6 +244,7 @@ export function usePlaybackPosition(options: {
     });
 
     onUnmounted(() => {
+      disposed = true;
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
       stopPeriodicSaves();

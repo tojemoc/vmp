@@ -240,7 +240,7 @@ export const strings: StringsDefinition = {
   liveCanvasUnavailable: 'Live canvas is unavailable',
   videoElementUnavailable: 'Video element is unavailable',
   playbackResumeRequiresSignIn:
-    'Sign in with an active subscription to resume where you left off. If your session expired, sign in again on this device.',
+    'Sign in with an active subscription to resume where you left off.',
   playbackResumeRequiresSubscription:
     'Resume where you left off is available with an active subscription.',
   playbackResumedAt: (time: string) => `Resuming from ${time}`,
@@ -319,6 +319,7 @@ export const strings: StringsDefinition = {
   continueWatchingLoadNetworkError: 'Network error loading continue-watching list.',
   continueWatchingRemoveFailed: 'Could not remove saved position.',
   continueWatchingProgress: (percent: number) => `${percent}% watched`,
+  continueWatchingTruncated: 'Showing your 20 most recently watched.',
   copy: 'Copy',
   copied: 'Copied',
   rssLoadFailed: 'Could not load RSS URLs.',
