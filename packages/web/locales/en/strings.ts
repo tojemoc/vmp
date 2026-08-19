@@ -312,6 +312,8 @@ export const strings: StringsDefinition = {
   continueWatchingTitle: 'Continue watching',
   continueWatchingIntro:
     'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',
+  continueWatchingIntroLapsed:
+    'Saved playback positions remain on our servers while you are signed in. Remove any entry below to delete its saved position. Resume is available again when your subscription is active.',
   continueWatchingEmpty: 'No videos in progress right now.',
   continueWatchingRemove: 'Remove',
   continueWatchingRemoving: 'Removing…',

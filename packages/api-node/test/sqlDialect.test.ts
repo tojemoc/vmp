@@ -5,7 +5,9 @@ import { describe, it } from 'node:test';
 import {
   bindQuestionMarks,
   expandPostgresOnlyStatements,
+  splitExecutableSqlStatements,
   splitQuestionMarks,
+  transformExecutableSql,
   translateSqliteDdl,
   translateSqliteToPostgres,
 } from '../src/bindings/sqlDialect.js';
@@ -115,6 +117,34 @@ describe('translateSqliteToPostgres datetime', () => {
   });
 });
 
+describe('transformExecutableSql instr', () => {
+  it('translates instr() outside string literals', () => {
+    const out = transformExecutableSql(`WHERE instr(content, 'hello') > 0`, (code) =>
+      code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /strpos\(content/);
+    assert.doesNotMatch(out, /\binstr\s*\(/i);
+  });
+
+  it('preserves instr inside single-quoted literals', () => {
+    const out = transformExecutableSql(
+      `WHERE note = 'instr(a,b)' AND instr(content, 'x') > 0`,
+      (code) => code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /note = 'instr\(a,b\)'/);
+    assert.match(out, /strpos\(content/);
+  });
+
+  it('preserves instr inside dollar-quoted literals', () => {
+    const out = transformExecutableSql(
+      `WHERE body = $$instr(a,b)$$ AND instr(content, 'x') > 0`,
+      (code) => code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /body = \$\$instr\(a,b\)\$\$/);
+    assert.match(out, /strpos\(content/);
+  });
+});
+
 describe('translateSqliteToPostgres instr', () => {
   it('translates instr() outside string literals', () => {
     const out = translateSqliteToPostgres(`WHERE instr(content, 'hello') > 0`);
@@ -133,6 +163,14 @@ describe('translateSqliteToPostgres instr', () => {
     assert.match(out, /"instr\(col\)"/);
     assert.match(out, /strpos\(a/);
   });
+
+  it('preserves instr inside dollar-quoted literals', () => {
+    const out = translateSqliteToPostgres(
+      `WHERE body = $$keep instr(a,b) here$$ AND instr(content, 'x') > 0`,
+    );
+    assert.match(out, /\$\$keep instr\(a,b\) here\$\$/);
+    assert.match(out, /strpos\(content/);
+  });
 });
 
 describe('translateSqliteDdl migration 0049 cms playback disclosure', () => {
@@ -146,7 +184,7 @@ describe('translateSqliteDdl migration 0049 cms playback disclosure', () => {
     assert.match(out, /jsonb_typeof\(content::jsonb\)\s*=\s*'array'/);
     assert.match(out, /on-demand video \(VOD\)/);
     assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
-    assert.doesNotMatch(out, /\binstr\s*\(/i);
+    assert.match(out, /strpos\(content/);
   });
 });
 
@@ -155,13 +193,31 @@ describe('translateSqliteToPostgres json_insert strip', () => {
     const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')), updated_at = CURRENT_TIMESTAMP WHERE id = 'test';`;
     const out = translateSqliteToPostgres(sql);
     assert.match(out, /skipped/i);
-    assert.doesNotMatch(out, /\bUPDATE\b.*json_insert/i);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
   });
 
   it('does not consume statements after the json_insert semicolon', () => {
     const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')) WHERE id = 'x'; SELECT 1;`;
     const out = translateSqliteToPostgres(sql);
     assert.match(out, /SELECT 1/);
+  });
+
+  it('does not treat semicolons inside JSON string literals as statement boundaries', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"text":"a;b"}')) WHERE id = 'x'; SELECT 2;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.match(out, /SELECT 2/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+  });
+});
+
+describe('splitExecutableSqlStatements', () => {
+  it('ignores semicolons inside single-quoted JSON payloads', () => {
+    const sql = `UPDATE t SET c = json('{"text":"a;b"}') WHERE id = 1; SELECT 1;`;
+    const statements = splitExecutableSqlStatements(sql);
+    assert.equal(statements.length, 2);
+    assert.match(statements[0]!, /json\('\{"text":"a;b"\}'\)/);
+    assert.match(statements[1]!, /SELECT 1/);
   });
 });
 

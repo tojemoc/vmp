@@ -186,12 +186,19 @@ export async function handleListPlaybackPositions(
     progressPercent: number | null;
   }> = [];
   let lastUpdatedAt: string | null = null;
+  let lastVideoId: string | null = null;
+  let hasMore = false;
 
   while (items.length < TARGET_ITEMS) {
-    const offsetClause: string = lastUpdatedAt ? 'AND pp.updated_at < ?' : '';
-    const binds: Array<string | number> = lastUpdatedAt
-      ? [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, lastUpdatedAt, BATCH_SIZE]
-      : [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS, BATCH_SIZE];
+    const cursorClause =
+      lastUpdatedAt != null && lastVideoId != null
+        ? 'AND (pp.updated_at < ? OR (pp.updated_at = ? AND pp.video_id < ?))'
+        : '';
+    const binds: Array<string | number> = [user.sub, PLAYBACK_POSITION_MIN_SAVE_SECONDS];
+    if (lastUpdatedAt != null && lastVideoId != null) {
+      binds.push(lastUpdatedAt, lastUpdatedAt, lastVideoId);
+    }
+    binds.push(BATCH_SIZE);
 
     const rows: { results?: unknown[] } = await db
       .prepare(
@@ -202,8 +209,8 @@ export async function handleListPlaybackPositions(
          WHERE pp.user_id = ?
            AND v.publish_status = 'published'
            AND pp.position_seconds >= ?
-           ${offsetClause}
-         ORDER BY pp.updated_at DESC
+           ${cursorClause}
+         ORDER BY pp.updated_at DESC, pp.video_id DESC
          LIMIT ?`,
       )
       .bind(...binds)
@@ -214,6 +221,7 @@ export async function handleListPlaybackPositions(
 
     for (const row of batch) {
       lastUpdatedAt = row.updated_at != null ? String(row.updated_at) : null;
+      lastVideoId = row.video_id != null ? String(row.video_id) : null;
       const positionSeconds = Number(row.position_seconds);
       const durationSeconds =
         Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
@@ -234,13 +242,19 @@ export async function handleListPlaybackPositions(
             ? Math.min(100, Math.round((positionSeconds / durationSeconds) * 100))
             : null,
       });
-      if (items.length >= TARGET_ITEMS) break;
+      if (items.length >= TARGET_ITEMS) {
+        hasMore = batch.length === BATCH_SIZE;
+        break;
+      }
     }
 
-    if (batch.length < BATCH_SIZE) break;
+    if (batch.length < BATCH_SIZE) {
+      hasMore = false;
+      break;
+    }
   }
 
-  return jsonResponse({ items }, 200, corsHeaders);
+  return jsonResponse({ items, hasMore }, 200, corsHeaders);
 }
 
 export async function handleGetPlaybackPosition(

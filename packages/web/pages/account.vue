@@ -224,9 +224,9 @@
         </template>
       </div>
 
-      <!-- Continue watching -->
+      <!-- Continue watching / saved positions -->
       <div
-        v-if="hasActiveSubscription"
+        v-if="isLoggedIn"
         class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
       >
         <div>
@@ -234,7 +234,11 @@
             {{ strings.continueWatchingTitle }}
           </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {{ strings.continueWatchingIntro }}
+            {{
+              continueWatchingDeletionOnly
+                ? strings.continueWatchingIntroLapsed
+                : strings.continueWatchingIntro
+            }}
           </p>
         </div>
 
@@ -258,6 +262,7 @@
             class="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
           >
             <NuxtLink
+              v-if="!continueWatchingDeletionOnly"
               :to="item.watchPath"
               class="flex min-w-0 flex-1 items-center gap-3 group"
             >
@@ -297,6 +302,32 @@
                 </div>
               </div>
             </NuxtLink>
+            <div v-else class="flex min-w-0 flex-1 items-center gap-3">
+              <div
+                class="relative h-14 w-24 shrink-0 overflow-hidden rounded bg-gray-200 dark:bg-gray-800"
+              >
+                <img
+                  v-if="item.thumbnailUrl"
+                  :src="item.thumbnailUrl"
+                  :alt="item.title"
+                  class="h-full w-full object-cover"
+                  loading="lazy"
+                  width="96"
+                  height="56"
+                >
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate font-medium text-gray-900 dark:text-white">
+                  {{ item.title }}
+                </p>
+                <p
+                  v-if="item.progressPercent != null"
+                  class="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                >
+                  {{ strings.continueWatchingProgress(item.progressPercent) }}
+                </p>
+              </div>
+            </div>
             <button
               type="button"
               class="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
@@ -312,7 +343,7 @@
           </li>
         </ul>
         <p
-          v-if="continueWatchingItems.length >= 20"
+          v-if="continueWatchingHasMore"
           class="text-xs text-gray-500 dark:text-gray-400"
         >
           {{ strings.continueWatchingTruncated }}
@@ -527,6 +558,10 @@
     return sub.status === 'active' || sub.status === 'trialing' || sub.status === 'needs_relink';
   });
 
+  const continueWatchingDeletionOnly = computed(
+    () => isLoggedIn.value && !hasActiveSubscription.value,
+  );
+
   const legacyManageUrl = computed(() => {
     const sub = subscription.value;
     const url = sub?.legacyManageUrl;
@@ -665,6 +700,7 @@
   const loadingContinueWatching = ref(true);
   const continueWatchingError = ref<string | null>(null);
   const continueWatchingItems = ref<ContinueWatchingItem[]>([]);
+  const continueWatchingHasMore = ref(false);
   const removingVideoId = ref<string | null>(null);
 
   onMounted(async () => {
@@ -709,7 +745,7 @@
     loadingSub.value = false;
 
     await fetchRssUrls();
-    if (hasActiveSubscription.value) {
+    if (isLoggedIn.value) {
       await fetchContinueWatching();
     } else {
       loadingContinueWatching.value = false;
@@ -797,6 +833,7 @@
         return;
       }
       continueWatchingItems.value = Array.isArray(data.items) ? data.items : [];
+      continueWatchingHasMore.value = data.hasMore === true;
     } catch {
       continueWatchingError.value = strings.continueWatchingLoadNetworkError;
     } finally {

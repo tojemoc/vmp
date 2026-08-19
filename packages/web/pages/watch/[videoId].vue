@@ -805,6 +805,7 @@
   import { usePushAttribution } from '~/composables/usePushAttribution';
   import { sizeUrl } from '~/composables/useThumbnail';
   import { renderMarkdownToHtml } from '~/utils/markdown';
+  import { claimActivePlayerVideoIdForFlush } from '~/utils/playbackRouteFlush';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
   import {
     checkPlaylistAvailability,
@@ -926,6 +927,7 @@
 
   const isSeekingPlayback = ref(false);
   const isActivelyWatching = ref(false);
+  const activePlayerVideoId = ref<string | null>(null);
   let pendingResumeSeconds: number | null = null;
   let resumeAppliedForVideoId: string | null = null;
 
@@ -1922,6 +1924,7 @@
       ensureCurrent();
       loading.value = false;
       isNavigatingToAnotherVideo.value = false;
+      activePlayerVideoId.value = String(videoData.value?.videoId ?? targetVideoId);
       await nextTick();
       measureDescriptionClamp();
       ensureCurrent();
@@ -2337,16 +2340,17 @@
 
   watch(
     () => route.params.videoId,
-    async (newVideoId, oldVideoId, onCleanup) => {
-      if (newVideoId === oldVideoId) return;
+    async (newVideoId, _oldVideoId, onCleanup) => {
+      if (newVideoId === _oldVideoId) return;
       const { abortController, isCurrentInvocation, cancel } = createLoadInvocation();
 
       onCleanup(() => {
         cancel();
       });
 
-      if (oldVideoId != null && String(oldVideoId)) {
-        await flushPlaybackPosition(String(oldVideoId));
+      const claimedVideoId = claimActivePlayerVideoIdForFlush(activePlayerVideoId);
+      if (claimedVideoId) {
+        await flushPlaybackPosition(claimedVideoId);
       }
       if (!isCurrentInvocation()) return;
 

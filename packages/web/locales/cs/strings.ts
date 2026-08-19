@@ -317,6 +317,8 @@ export const strings: StringsDefinition = {
   continueWatchingTitle: 'Pokračovat ve sledování',
   continueWatchingIntro:
     'Pokračujte tam, kde jste u VOD videí skončili. Odstraněním položky smažete uloženou pozici.',
+  continueWatchingIntroLapsed:
+    'Uložené pozice přehrávání zůstávají na našich serverech, dokud jste přihlášeni. Odstraněním položky níže smažete uloženou pozici. Pokračování ve sledování bude znovu dostupné po obnovení předplatného.',
   continueWatchingEmpty: 'Momentálně nemáte rozpracovaná videa.',
   continueWatchingRemove: 'Odstranit',
   continueWatchingRemoving: 'Odstraňování…',

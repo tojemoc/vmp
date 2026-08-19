@@ -189,49 +189,268 @@ export function translateSqliteToPostgres(sql: string): string {
   s = s.replace(/\browid\b/gi, 'ctid');
 
   // SQLite instr(haystack, needle) → Postgres strpos(haystack, needle).
-  // Only replace outside string literals and quoted identifiers.
-  s = replaceOutsideQuotes(s, /\binstr\s*\(/gi, 'strpos(');
+  // Only replace outside literals, comments, and dollar-quoted text.
+  s = transformExecutableSql(s, (code) => code.replace(/\binstr\s*\(/gi, 'strpos('));
 
   // SQLite json_insert UPDATE — strip on Postgres; migration files provide a
   // -- POSTGRES: equivalent (see expandPostgresOnlyStatements) for the same path.
-  s = s.replace(
-    /UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\([\s\S]*?;\s*/gi,
-    '-- (skipped: SQLite json_insert block not supported on Postgres)\n',
-  );
+  s = stripJsonInsertUpdateStatements(s);
 
   return s;
 }
 
+type SqlScanState =
+  | 'code'
+  | 'single'
+  | 'double'
+  | 'dollar'
+  | 'lineComment'
+  | 'blockComment';
+
 /**
- * Apply a regex replacement only on SQL tokens outside single-quoted string
- * literals and double-quoted identifiers.
+ * Walk SQL and invoke `transform` only on executable code segments (not literals/comments).
  */
-function replaceOutsideQuotes(sql: string, pattern: RegExp, replacement: string): string {
-  const segments: string[] = [];
-  let pos = 0;
-  while (pos < sql.length) {
-    const ch = sql[pos];
-    if (ch === "'" || ch === '"') {
-      const quote = ch;
-      let end = pos + 1;
-      while (end < sql.length) {
-        if (sql[end] === quote) {
-          if (sql[end + 1] === quote) { end += 2; continue; }
-          end += 1;
-          break;
-        }
-        end += 1;
-      }
-      segments.push(sql.slice(pos, end));
-      pos = end;
-    } else {
-      let end = pos + 1;
-      while (end < sql.length && sql[end] !== "'" && sql[end] !== '"') end += 1;
-      segments.push(sql.slice(pos, end).replace(pattern, replacement));
-      pos = end;
+export function transformExecutableSql(sql: string, transform: (code: string) => string): string {
+  let out = '';
+  let codeBuffer = '';
+  let state: SqlScanState = 'code';
+  let dollarTag = '';
+
+  const flushCode = () => {
+    if (codeBuffer) {
+      out += transform(codeBuffer);
+      codeBuffer = '';
     }
+  };
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i]!;
+    const next = i + 1 < sql.length ? sql[i + 1]! : '';
+
+    if (state === 'dollar') {
+      if (sql.startsWith(dollarTag, i)) {
+        out += dollarTag;
+        i += dollarTag.length - 1;
+        state = 'code';
+        dollarTag = '';
+      } else {
+        out += ch;
+      }
+      continue;
+    }
+
+    if (state === 'lineComment') {
+      out += ch;
+      if (ch === '\n') state = 'code';
+      continue;
+    }
+
+    if (state === 'blockComment') {
+      out += ch;
+      if (ch === '*' && next === '/') {
+        out += next;
+        i += 1;
+        state = 'code';
+      }
+      continue;
+    }
+
+    if (state === 'single') {
+      out += ch;
+      if (ch === "'" && next === "'") {
+        out += next;
+        i += 1;
+        continue;
+      }
+      if (ch === "'") state = 'code';
+      continue;
+    }
+
+    if (state === 'double') {
+      out += ch;
+      if (ch === '"' && next === '"') {
+        out += next;
+        i += 1;
+        continue;
+      }
+      if (ch === '"') state = 'code';
+      continue;
+    }
+
+    // state === 'code'
+    if (ch === '-' && next === '-') {
+      flushCode();
+      out += ch + next;
+      i += 1;
+      state = 'lineComment';
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      flushCode();
+      out += ch + next;
+      i += 1;
+      state = 'blockComment';
+      continue;
+    }
+    if (ch === '$') {
+      const tag = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/)?.[0];
+      if (tag) {
+        flushCode();
+        out += tag;
+        i += tag.length - 1;
+        state = 'dollar';
+        dollarTag = tag;
+        continue;
+      }
+    }
+    if (ch === "'") {
+      flushCode();
+      out += ch;
+      state = 'single';
+      continue;
+    }
+    if (ch === '"') {
+      flushCode();
+      out += ch;
+      state = 'double';
+      continue;
+    }
+
+    codeBuffer += ch;
   }
-  return segments.join('');
+
+  flushCode();
+  return out;
+}
+
+/** Split SQL on semicolons that terminate executable statements. */
+export function splitExecutableSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let state: SqlScanState = 'code';
+  let dollarTag = '';
+
+  const pushStatement = () => {
+    const trimmed = current.trim();
+    if (
+      trimmed &&
+      /\S/.test(trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))
+    ) {
+      statements.push(trimmed);
+    }
+    current = '';
+  };
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i]!;
+    const next = i + 1 < sql.length ? sql[i + 1]! : '';
+
+    if (state === 'dollar') {
+      if (sql.startsWith(dollarTag, i)) {
+        current += dollarTag;
+        i += dollarTag.length - 1;
+        state = 'code';
+        dollarTag = '';
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (state === 'lineComment') {
+      current += ch;
+      if (ch === '\n') state = 'code';
+      continue;
+    }
+
+    if (state === 'blockComment') {
+      current += ch;
+      if (ch === '*' && next === '/') {
+        current += next;
+        i += 1;
+        state = 'code';
+      }
+      continue;
+    }
+
+    if (state === 'single') {
+      current += ch;
+      if (ch === "'" && next === "'") {
+        current += next;
+        i += 1;
+        continue;
+      }
+      if (ch === "'") state = 'code';
+      continue;
+    }
+
+    if (state === 'double') {
+      current += ch;
+      if (ch === '"' && next === '"') {
+        current += next;
+        i += 1;
+        continue;
+      }
+      if (ch === '"') state = 'code';
+      continue;
+    }
+
+    if (ch === '-' && next === '-') {
+      current += ch + next;
+      i += 1;
+      state = 'lineComment';
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      current += ch + next;
+      i += 1;
+      state = 'blockComment';
+      continue;
+    }
+    if (ch === '$') {
+      const tag = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/)?.[0];
+      if (tag) {
+        current += tag;
+        i += tag.length - 1;
+        state = 'dollar';
+        dollarTag = tag;
+        continue;
+      }
+    }
+    if (ch === "'") {
+      current += ch;
+      state = 'single';
+      continue;
+    }
+    if (ch === '"') {
+      current += ch;
+      state = 'double';
+      continue;
+    }
+    if (ch === ';') {
+      pushStatement();
+      continue;
+    }
+
+    current += ch;
+  }
+
+  pushStatement();
+  return statements;
+}
+
+function stripJsonInsertUpdateStatements(sql: string): string {
+  const statements = splitExecutableSqlStatements(sql);
+  if (statements.length === 0) return sql;
+
+  const stripped = statements.map((statement) => {
+    if (/^\s*UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\(/i.test(statement)) {
+      return '-- (skipped: SQLite json_insert block not supported on Postgres)';
+    }
+    return statement;
+  });
+
+  return `${stripped.join(';\n\n')};\n`;
 }
 
 function findMatchingParen(input: string, openIndex: number): number {
