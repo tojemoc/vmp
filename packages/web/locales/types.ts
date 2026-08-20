@@ -347,6 +347,9 @@ export type StringsDefinition = {
   personalDataBannerSummary: string;
   personalDataLearnMore: string;
   personalDataBannerAcknowledge: string;
+  personalDataContactTitle: string;
+  personalDataContactIntro: string;
+  personalDataContactAccountHint: string;
   personalDataTableName: string;
   personalDataTableMechanism: string;
   personalDataTablePurpose: string;

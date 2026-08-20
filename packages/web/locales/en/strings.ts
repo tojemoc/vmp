@@ -239,8 +239,7 @@ export const strings: StringsDefinition = {
   mediaFailedToLoad: 'Media failed to load',
   liveCanvasUnavailable: 'Live canvas is unavailable',
   videoElementUnavailable: 'Video element is unavailable',
-  playbackResumeRequiresSignIn:
-    'Sign in with an active subscription to resume where you left off.',
+  playbackResumeRequiresSignIn: 'Sign in with an active subscription to resume where you left off.',
   playbackResumeRequiresSubscription:
     'Resume where you left off is available with an active subscription.',
   playbackResumedAt: (time: string) => `Resuming from ${time}`,
@@ -402,6 +401,11 @@ export const strings: StringsDefinition = {
     'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
   personalDataLearnMore: 'Personal data notice',
   personalDataBannerAcknowledge: 'I understand',
+  personalDataContactTitle: 'Contact for privacy requests',
+  personalDataContactIntro:
+    'To request access, erasure, or other GDPR rights — including account deletion — email our support address:',
+  personalDataContactAccountHint:
+    'You can also reach support from your account page after signing in.',
   personalDataTableName: 'Name / key',
   personalDataTableMechanism: 'Mechanism',
   personalDataTablePurpose: 'Purpose',

@@ -409,6 +409,10 @@ export const strings: StringsDefinition = {
     'Vyhýbame sa nepodstatným cookies. Prihlásenie, platba a predvoľby prehrávača používajú nevyhnutné úložisko, aby služba fungovala.',
   personalDataLearnMore: 'Informácia o osobných údajoch',
   personalDataBannerAcknowledge: 'Rozumiem',
+  personalDataContactTitle: 'Kontakt pre žiadosti o ochranu osobných údajov',
+  personalDataContactIntro:
+    'Pre žiadosť o prístup, výmaz alebo iné práva podľa GDPR — vrátane vymazania účtu — napíšte na našu adresu podpory:',
+  personalDataContactAccountHint: 'Podporu môžete kontaktovať aj zo stránky účtu po prihlásení.',
   personalDataTableName: 'Názov / kľúč',
   personalDataTableMechanism: 'Mechanizmus',
   personalDataTablePurpose: 'Účel',

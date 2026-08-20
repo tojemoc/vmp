@@ -60,7 +60,7 @@ export const personalData: PersonalDataPage = {
       title: 'Server-side processing (no browser cookie)',
       paragraphs: [
         'When video streams are delivered, our API logs anonymised technical events (for example hashed IP, country from network headers, and viewing session buckets) to operate the service, prevent abuse, and show aggregate statistics to administrators. These logs are not used to advertise to you and are not shared with ad networks.',
-        'If you are signed in, we also store your last playback position per on-demand video (VOD) on our servers so we can resume where you left off. Positions are updated occasionally while you watch and when you leave the page — not on every scrub of the timeline. Anonymous visitors do not get server-side resume. You can remove a saved position for any video from Continue watching on your account page. If you request account deletion through the support channel published on this site, your saved positions are removed as part of that process.',
+        'If you are signed in, we also store your last playback position per on-demand video (VOD) on our servers so we can resume where you left off. Positions are updated occasionally while you watch and when you leave the page — not on every scrub of the timeline. Anonymous visitors do not get server-side resume. You can remove a saved position for any currently available video from Continue watching on your account page. If you request account deletion by emailing the support address shown at the bottom of this page, your saved positions are removed as part of that process.',
       ],
     },
     {
@@ -68,7 +68,7 @@ export const personalData: PersonalDataPage = {
       title: 'Your rights (EU / UK visitors)',
       paragraphs: [
         'Under the GDPR you may request access, rectification, erasure, restriction, portability, or object to processing based on legitimate interest. You may withdraw consent where processing is consent-based (we use little consent-based processing today).',
-        'To exercise rights, contact us using the support channel published on this site. You may also lodge a complaint with your supervisory authority:',
+        'To exercise rights, email the support address shown at the bottom of this page. You may also lodge a complaint with your supervisory authority:',
       ],
       bullets: [
         'Czechia — Úřad pro ochranu osobních údajů (ÚOOÚ), uoou.cz',

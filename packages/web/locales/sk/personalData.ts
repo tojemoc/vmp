@@ -60,7 +60,7 @@ export const personalData: PersonalDataPage = {
       title: 'Spracovanie na strane servera (bez cookie prehliadača)',
       paragraphs: [
         'Pri doručovaní video streamov naše API zaznamenáva anonymizované technické udalosti (napríklad hashovaná IP, krajina zo sieťových hlavičiek a buckety relácií sledovania) na prevádzku služby, prevenciu zneužitia a zobrazenie súhrnných štatistík administrátorom. Tieto logy sa nepoužívajú na reklamu voči vám a nezdieľajú sa s reklamnými sieťami.',
-        'Ak ste prihlásení, ukladáme aj vašu poslednú pozíciu prehrávania pri jednotlivých on-demand videách (VOD) na našich serveroch, aby sme mohli pokračovať tam, kde ste skončili. Pozície sa aktualizujú občas počas sledovania a pri opustení stránky — nie pri každom posune na časovej osi. Anonymní návštevníci serverové obnovenie pozície nedostanú. Uloženú pozíciu pre konkrétne video môžete odstrániť v sekcii Pokračovať v sledovaní na stránke účtu. Ak požiadate o vymazanie účtu prostredníctvom kontaktného kanála podpory zverejneného na tomto webe, uložené pozície budú v rámci tohto procesu odstránené.',
+        'Ak ste prihlásení, ukladáme aj vašu poslednú pozíciu prehrávania pri jednotlivých on-demand videách (VOD) na našich serveroch, aby sme mohli pokračovať tam, kde ste skončili. Pozície sa aktualizujú občas počas sledovania a pri opustení stránky — nie pri každom posune na časovej osi. Anonymní návštevníci serverové obnovenie pozície nedostanú. Uloženú pozíciu pre konkrétne aktuálne dostupné video môžete odstrániť v sekcii Pokračovať v sledovaní na stránke účtu. Ak požiadate o vymazanie účtu e-mailom na adresu podpory uvedenú v dolnej časti tejto stránky, uložené pozície budú v rámci tohto procesu odstránené.',
       ],
     },
     {
@@ -68,7 +68,7 @@ export const personalData: PersonalDataPage = {
       title: 'Vaše práva (návštevníci z EÚ / UK)',
       paragraphs: [
         'Podľa GDPR môžete požiadať o prístup, opravu, vymazanie, obmedzenie, prenosnosť alebo namietať proti spracovaniu na základe oprávneného záujmu. Súhlas môžete odvolať tam, kde je spracovanie založené na súhlase (dnes používame málo spracovania založeného na súhlase).',
-        'Na uplatnenie práv nás kontaktujte cez podporný kanál zverejnený na tejto stránke. Môžete tiež podať sťažnosť u dozorného orgánu:',
+        'Na uplatnenie práv nás kontaktujte e-mailom na adresu podpory uvedenú v dolnej časti tejto stránky. Môžete tiež podať sťažnosť u dozorného orgánu:',
       ],
       bullets: [
         'Česko — Úřad pro ochranu osobních údajů (ÚOOÚ), uoou.cz',
