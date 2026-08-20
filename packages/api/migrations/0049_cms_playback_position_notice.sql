@@ -27,6 +27,19 @@ WHERE id = 'cms-page-personal-data'
   AND instr(content, 'on-demand video (VOD)') > 0
   AND instr(content, 'All saved positions are removed when your account is deleted') > 0;
 
+-- Upgrade edited pages that mention VOD but still lack the Continue watching / deletion note.
+UPDATE cms_pages
+SET content = REPLACE(
+  content,
+  'Anonymous visitors do not get server-side resume.',
+  'Anonymous visitors do not get server-side resume. You can remove a saved position for any video from Continue watching on your account page. If you request account deletion through the support channel published on this site, your saved positions are removed as part of that process.'
+),
+updated_at = CURRENT_TIMESTAMP
+WHERE id = 'cms-page-personal-data'
+  AND instr(content, 'Continue watching on your account page') = 0
+  AND instr(content, 'on-demand video (VOD)') > 0
+  AND instr(content, 'Anonymous visitors do not get server-side resume') > 0;
+
 -- Standard installs: insert disclosure into the server-processing rich_text block.
 UPDATE cms_pages
 SET content = REPLACE(
@@ -38,6 +51,21 @@ updated_at = CURRENT_TIMESTAMP
 WHERE id = 'cms-page-personal-data'
   AND instr(content, 'on-demand video (VOD)') = 0
   AND instr(content, 'These logs are not used to advertise to you and are not shared with ad networks') > 0;
+
+-- Edited/restructured pages with VOD but reworded body: append deletion note when still missing.
+-- POSTGRES: UPDATE cms_pages SET content = (content::jsonb || '[{"type":"rich_text","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"You can remove a saved position for any video from Continue watching on your account page. If you request account deletion through the support channel published on this site, your saved positions are removed as part of that process."}]}]}}]'::jsonb)::text, updated_at = CURRENT_TIMESTAMP WHERE id = 'cms-page-personal-data' AND position('Continue watching on your account page' in content) = 0 AND position('on-demand video (VOD)' in content) > 0 AND jsonb_typeof(content::jsonb) = 'array';
+UPDATE cms_pages
+SET content = json_insert(
+  content,
+  '$[#]',
+  json('{"type":"rich_text","content":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"You can remove a saved position for any video from Continue watching on your account page. If you request account deletion through the support channel published on this site, your saved positions are removed as part of that process."}]}]}}')
+),
+updated_at = CURRENT_TIMESTAMP
+WHERE id = 'cms-page-personal-data'
+  AND json_valid(content) = 1
+  AND json_type(content) = 'array'
+  AND instr(content, 'Continue watching on your account page') = 0
+  AND instr(content, 'on-demand video (VOD)') > 0;
 
 -- Edited/restructured pages: append a standalone disclosure block when still missing.
 -- This block uses SQLite-only JSON functions (json_insert, json_valid, json_type, json).

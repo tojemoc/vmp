@@ -223,6 +223,14 @@ describe('translateSqliteToPostgres json_insert strip', () => {
     assert.equal(out, sql);
     assert.match(out, /--\s*POSTGRES:\s*ALTER TABLE cms_pages ADD COLUMN IF NOT EXISTS note TEXT;/);
   });
+
+  it('preserves a trailing -- POSTGRES hint after json_insert strip', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')) WHERE id = 'x';\n-- POSTGRES: SELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.match(out, /--\s*POSTGRES:\s*SELECT 1;/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+  });
 });
 
 describe('splitExecutableSqlStatements', () => {

@@ -363,10 +363,14 @@ export function splitExecutableSqlStatements(sql: string): string[] {
 
   const pushStatement = () => {
     const trimmed = current.trim();
-    if (
-      trimmed &&
-      /\S/.test(trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))
-    ) {
+    if (!trimmed) {
+      current = '';
+      return;
+    }
+    const withoutComments = trimmed
+      .replace(/--.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/\S/.test(withoutComments) || /--/.test(trimmed)) {
       statements.push(trimmed);
     }
     current = '';

@@ -262,7 +262,7 @@
             class="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
           >
             <component
-              :is="continueWatchingDeletionOnly ? 'div' : resolveComponent('NuxtLink')"
+              :is="continueWatchingDeletionOnly ? 'div' : NuxtLink"
               v-bind="continueWatchingDeletionOnly ? {} : { to: item.watchPath }"
               :class="[
                 'flex min-w-0 flex-1 items-center gap-3',
@@ -818,6 +818,7 @@
       const data = await res.json();
       if (!res.ok) {
         continueWatchingError.value = data.error ?? strings.continueWatchingLoadFailed;
+        continueWatchingHasMore.value = false;
         return;
       }
       continueWatchingItems.value = Array.isArray(data.items) ? data.items : [];
