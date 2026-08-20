@@ -11,3 +11,19 @@ export function claimActivePlayerVideoIdForFlush(activePlayerVideoId: {
   const trimmed = String(claimed).trim();
   return trimmed ? trimmed : null;
 }
+
+/**
+ * Assign the active player video ID only after the player for this invocation is ready.
+ * Stale A/B navigations must not claim the C route (or any later route).
+ */
+export function assignActivePlayerVideoIdIfCurrent(
+  activePlayerVideoId: { value: string | null },
+  videoId: string | null | undefined,
+  isCurrentInvocation: () => boolean,
+): void {
+  if (!isCurrentInvocation()) return;
+  if (videoId == null) return;
+  const trimmed = String(videoId).trim();
+  if (!trimmed) return;
+  activePlayerVideoId.value = trimmed;
+}

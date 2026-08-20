@@ -261,10 +261,13 @@
             :key="item.videoId"
             class="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
           >
-            <NuxtLink
-              v-if="!continueWatchingDeletionOnly"
-              :to="item.watchPath"
-              class="flex min-w-0 flex-1 items-center gap-3 group"
+            <component
+              :is="continueWatchingDeletionOnly ? 'div' : resolveComponent('NuxtLink')"
+              v-bind="continueWatchingDeletionOnly ? {} : { to: item.watchPath }"
+              :class="[
+                'flex min-w-0 flex-1 items-center gap-3',
+                continueWatchingDeletionOnly ? '' : 'group',
+              ]"
             >
               <div
                 class="relative h-14 w-24 shrink-0 overflow-hidden rounded bg-gray-200 dark:bg-gray-800"
@@ -273,7 +276,10 @@
                   v-if="item.thumbnailUrl"
                   :src="item.thumbnailUrl"
                   :alt="item.title"
-                  class="h-full w-full object-cover transition-transform group-hover:scale-105"
+                  :class="[
+                    'h-full w-full object-cover',
+                    continueWatchingDeletionOnly ? '' : 'transition-transform group-hover:scale-105',
+                  ]"
                   loading="lazy"
                   width="96"
                   height="56"
@@ -281,7 +287,12 @@
               </div>
               <div class="min-w-0 flex-1">
                 <p
-                  class="truncate font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400"
+                  :class="[
+                    'truncate font-medium text-gray-900 dark:text-white',
+                    continueWatchingDeletionOnly
+                      ? ''
+                      : 'group-hover:text-blue-600 dark:group-hover:text-blue-400',
+                  ]"
                 >
                   {{ item.title }}
                 </p>
@@ -292,7 +303,7 @@
                   {{ strings.continueWatchingProgress(item.progressPercent) }}
                 </p>
                 <div
-                  v-if="item.progressPercent != null"
+                  v-if="!continueWatchingDeletionOnly && item.progressPercent != null"
                   class="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden"
                 >
                   <div
@@ -301,33 +312,7 @@
                   />
                 </div>
               </div>
-            </NuxtLink>
-            <div v-else class="flex min-w-0 flex-1 items-center gap-3">
-              <div
-                class="relative h-14 w-24 shrink-0 overflow-hidden rounded bg-gray-200 dark:bg-gray-800"
-              >
-                <img
-                  v-if="item.thumbnailUrl"
-                  :src="item.thumbnailUrl"
-                  :alt="item.title"
-                  class="h-full w-full object-cover"
-                  loading="lazy"
-                  width="96"
-                  height="56"
-                >
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="truncate font-medium text-gray-900 dark:text-white">
-                  {{ item.title }}
-                </p>
-                <p
-                  v-if="item.progressPercent != null"
-                  class="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
-                >
-                  {{ strings.continueWatchingProgress(item.progressPercent) }}
-                </p>
-              </div>
-            </div>
+            </component>
             <button
               type="button"
               class="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
@@ -530,9 +515,12 @@
 </template>
 
 <script setup lang="ts">
+  import { resolveComponent } from 'vue';
   import strings from '~/utils/strings';
 
   usePageSeo({ title: strings.yourAccount, noIndex: true });
+
+  const NuxtLink = resolveComponent('NuxtLink');
 
   const route = useRoute();
   const config = useRuntimeConfig();
@@ -858,9 +846,13 @@
         continueWatchingError.value = data.error ?? strings.continueWatchingRemoveFailed;
         return;
       }
+      const shouldRefetch = continueWatchingHasMore.value;
       continueWatchingItems.value = continueWatchingItems.value.filter(
         (item) => item.videoId !== videoId,
       );
+      if (shouldRefetch) {
+        await fetchContinueWatching();
+      }
     } catch {
       continueWatchingError.value = strings.continueWatchingRemoveFailed;
     } finally {

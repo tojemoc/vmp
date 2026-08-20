@@ -207,19 +207,30 @@ type SqlScanState =
   | 'lineComment'
   | 'blockComment';
 
+type SqlSegment =
+  | { kind: 'code'; text: string }
+  | { kind: 'literal'; text: string };
+
 /**
- * Walk SQL and invoke `transform` only on executable code segments (not literals/comments).
+ * Shared SQL scanner: yields executable code vs literals (quotes, comments, dollar-quotes).
  */
-export function transformExecutableSql(sql: string, transform: (code: string) => string): string {
-  let out = '';
+function* iterateSqlSegments(sql: string): Generator<SqlSegment> {
   let codeBuffer = '';
+  let literalBuffer = '';
   let state: SqlScanState = 'code';
   let dollarTag = '';
 
-  const flushCode = () => {
+  const flushCode = function* (): Generator<SqlSegment> {
     if (codeBuffer) {
-      out += transform(codeBuffer);
+      yield { kind: 'code', text: codeBuffer };
       codeBuffer = '';
+    }
+  };
+
+  const flushLiteral = function* (): Generator<SqlSegment> {
+    if (literalBuffer) {
+      yield { kind: 'literal', text: literalBuffer };
+      literalBuffer = '';
     }
   };
 
@@ -229,65 +240,76 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
 
     if (state === 'dollar') {
       if (sql.startsWith(dollarTag, i)) {
-        out += dollarTag;
+        literalBuffer += dollarTag;
         i += dollarTag.length - 1;
+        yield* flushLiteral();
         state = 'code';
         dollarTag = '';
       } else {
-        out += ch;
+        literalBuffer += ch;
       }
       continue;
     }
 
     if (state === 'lineComment') {
-      out += ch;
-      if (ch === '\n') state = 'code';
+      literalBuffer += ch;
+      if (ch === '\n') {
+        yield* flushLiteral();
+        state = 'code';
+      }
       continue;
     }
 
     if (state === 'blockComment') {
-      out += ch;
+      literalBuffer += ch;
       if (ch === '*' && next === '/') {
-        out += next;
+        literalBuffer += next;
         i += 1;
+        yield* flushLiteral();
         state = 'code';
       }
       continue;
     }
 
     if (state === 'single') {
-      out += ch;
+      literalBuffer += ch;
       if (ch === "'" && next === "'") {
-        out += next;
+        literalBuffer += next;
         i += 1;
         continue;
       }
-      if (ch === "'") state = 'code';
+      if (ch === "'") {
+        yield* flushLiteral();
+        state = 'code';
+      }
       continue;
     }
 
     if (state === 'double') {
-      out += ch;
+      literalBuffer += ch;
       if (ch === '"' && next === '"') {
-        out += next;
+        literalBuffer += next;
         i += 1;
         continue;
       }
-      if (ch === '"') state = 'code';
+      if (ch === '"') {
+        yield* flushLiteral();
+        state = 'code';
+      }
       continue;
     }
 
     // state === 'code'
     if (ch === '-' && next === '-') {
-      flushCode();
-      out += ch + next;
+      yield* flushCode();
+      literalBuffer += ch + next;
       i += 1;
       state = 'lineComment';
       continue;
     }
     if (ch === '/' && next === '*') {
-      flushCode();
-      out += ch + next;
+      yield* flushCode();
+      literalBuffer += ch + next;
       i += 1;
       state = 'blockComment';
       continue;
@@ -295,8 +317,8 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
     if (ch === '$') {
       const tag = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/)?.[0];
       if (tag) {
-        flushCode();
-        out += tag;
+        yield* flushCode();
+        literalBuffer += tag;
         i += tag.length - 1;
         state = 'dollar';
         dollarTag = tag;
@@ -304,14 +326,14 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
       }
     }
     if (ch === "'") {
-      flushCode();
-      out += ch;
+      yield* flushCode();
+      literalBuffer += ch;
       state = 'single';
       continue;
     }
     if (ch === '"') {
-      flushCode();
-      out += ch;
+      yield* flushCode();
+      literalBuffer += ch;
       state = 'double';
       continue;
     }
@@ -319,7 +341,18 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
     codeBuffer += ch;
   }
 
-  flushCode();
+  yield* flushCode();
+  yield* flushLiteral();
+}
+
+/**
+ * Walk SQL and invoke `transform` only on executable code segments (not literals/comments).
+ */
+export function transformExecutableSql(sql: string, transform: (code: string) => string): string {
+  let out = '';
+  for (const segment of iterateSqlSegments(sql)) {
+    out += segment.kind === 'code' ? transform(segment.text) : segment.text;
+  }
   return out;
 }
 
@@ -327,8 +360,6 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
 export function splitExecutableSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let current = '';
-  let state: SqlScanState = 'code';
-  let dollarTag = '';
 
   const pushStatement = () => {
     const trimmed = current.trim();
@@ -341,110 +372,41 @@ export function splitExecutableSqlStatements(sql: string): string[] {
     current = '';
   };
 
-  for (let i = 0; i < sql.length; i += 1) {
-    const ch = sql[i]!;
-    const next = i + 1 < sql.length ? sql[i + 1]! : '';
+  for (const segment of iterateSqlSegments(sql)) {
+    if (segment.kind === 'literal') {
+      current += segment.text;
+      continue;
+    }
 
-    if (state === 'dollar') {
-      if (sql.startsWith(dollarTag, i)) {
-        current += dollarTag;
-        i += dollarTag.length - 1;
-        state = 'code';
-        dollarTag = '';
-      } else {
-        current += ch;
+    let i = 0;
+    while (i < segment.text.length) {
+      const semi = segment.text.indexOf(';', i);
+      if (semi === -1) {
+        current += segment.text.slice(i);
+        break;
       }
-      continue;
-    }
-
-    if (state === 'lineComment') {
-      current += ch;
-      if (ch === '\n') state = 'code';
-      continue;
-    }
-
-    if (state === 'blockComment') {
-      current += ch;
-      if (ch === '*' && next === '/') {
-        current += next;
-        i += 1;
-        state = 'code';
-      }
-      continue;
-    }
-
-    if (state === 'single') {
-      current += ch;
-      if (ch === "'" && next === "'") {
-        current += next;
-        i += 1;
-        continue;
-      }
-      if (ch === "'") state = 'code';
-      continue;
-    }
-
-    if (state === 'double') {
-      current += ch;
-      if (ch === '"' && next === '"') {
-        current += next;
-        i += 1;
-        continue;
-      }
-      if (ch === '"') state = 'code';
-      continue;
-    }
-
-    if (ch === '-' && next === '-') {
-      current += ch + next;
-      i += 1;
-      state = 'lineComment';
-      continue;
-    }
-    if (ch === '/' && next === '*') {
-      current += ch + next;
-      i += 1;
-      state = 'blockComment';
-      continue;
-    }
-    if (ch === '$') {
-      const tag = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/)?.[0];
-      if (tag) {
-        current += tag;
-        i += tag.length - 1;
-        state = 'dollar';
-        dollarTag = tag;
-        continue;
-      }
-    }
-    if (ch === "'") {
-      current += ch;
-      state = 'single';
-      continue;
-    }
-    if (ch === '"') {
-      current += ch;
-      state = 'double';
-      continue;
-    }
-    if (ch === ';') {
+      current += segment.text.slice(i, semi);
       pushStatement();
-      continue;
+      i = semi + 1;
     }
-
-    current += ch;
   }
 
   pushStatement();
   return statements;
 }
 
+const JSON_INSERT_UPDATE_RE =
+  /^\s*UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\(/i;
+
 function stripJsonInsertUpdateStatements(sql: string): string {
   const statements = splitExecutableSqlStatements(sql);
   if (statements.length === 0) return sql;
+  if (!statements.some((statement) => JSON_INSERT_UPDATE_RE.test(statement))) {
+    return sql;
+  }
 
   const stripped = statements.map((statement) => {
-    if (/^\s*UPDATE\s+\w+\s+SET\s+content\s*=\s*json_insert\s*\(/i.test(statement)) {
+    if (JSON_INSERT_UPDATE_RE.test(statement)) {
       return '-- (skipped: SQLite json_insert block not supported on Postgres)';
     }
     return statement;

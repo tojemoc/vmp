@@ -805,7 +805,7 @@
   import { usePushAttribution } from '~/composables/usePushAttribution';
   import { sizeUrl } from '~/composables/useThumbnail';
   import { renderMarkdownToHtml } from '~/utils/markdown';
-  import { claimActivePlayerVideoIdForFlush } from '~/utils/playbackRouteFlush';
+  import { claimActivePlayerVideoIdForFlush, assignActivePlayerVideoIdIfCurrent } from '~/utils/playbackRouteFlush';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
   import {
     checkPlaylistAvailability,
@@ -1924,7 +1924,6 @@
       ensureCurrent();
       loading.value = false;
       isNavigatingToAnotherVideo.value = false;
-      activePlayerVideoId.value = String(videoData.value?.videoId ?? targetVideoId);
       await nextTick();
       measureDescriptionClamp();
       ensureCurrent();
@@ -1938,6 +1937,11 @@
             options.signal,
           );
           ensureCurrent();
+          assignActivePlayerVideoIdIfCurrent(
+            activePlayerVideoId,
+            videoData.value?.videoId ?? targetVideoId,
+            guard,
+          );
         }
         return;
       }
@@ -1973,6 +1977,11 @@
         }
         await initializeVideoElement(resolvedPlaylist, guard, options.signal);
         ensureCurrent();
+        assignActivePlayerVideoIdIfCurrent(
+          activePlayerVideoId,
+          videoData.value?.videoId ?? targetVideoId,
+          guard,
+        );
       }
     } catch (e: any) {
       if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) return;

@@ -188,8 +188,13 @@ export async function handleListPlaybackPositions(
   let lastUpdatedAt: string | null = null;
   let lastVideoId: string | null = null;
   let hasMore = false;
+  let lookingForExtra = false;
 
-  while (items.length < TARGET_ITEMS) {
+  while (true) {
+    if (!lookingForExtra && items.length >= TARGET_ITEMS) {
+      lookingForExtra = true;
+    }
+
     const cursorClause =
       lastUpdatedAt != null && lastVideoId != null
         ? 'AND (pp.updated_at < ? OR (pp.updated_at = ? AND pp.video_id < ?))'
@@ -219,6 +224,7 @@ export async function handleListPlaybackPositions(
     const batch = (rows.results ?? []) as Array<Record<string, unknown>>;
     if (batch.length === 0) break;
 
+    let foundExtra = false;
     for (const row of batch) {
       lastUpdatedAt = row.updated_at != null ? String(row.updated_at) : null;
       lastVideoId = row.video_id != null ? String(row.video_id) : null;
@@ -226,6 +232,12 @@ export async function handleListPlaybackPositions(
       const durationSeconds =
         Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
       if (isNearPlaybackEnd(positionSeconds, durationSeconds)) continue;
+
+      if (lookingForExtra) {
+        hasMore = true;
+        foundExtra = true;
+        break;
+      }
 
       const watchSlug = row.slug ? String(row.slug) : String(row.video_id);
       items.push({
@@ -242,16 +254,14 @@ export async function handleListPlaybackPositions(
             ? Math.min(100, Math.round((positionSeconds / durationSeconds) * 100))
             : null,
       });
+
       if (items.length >= TARGET_ITEMS) {
-        hasMore = batch.length === BATCH_SIZE;
-        break;
+        lookingForExtra = true;
       }
     }
 
-    if (batch.length < BATCH_SIZE) {
-      hasMore = false;
-      break;
-    }
+    if (foundExtra) break;
+    if (batch.length < BATCH_SIZE) break;
   }
 
   return jsonResponse({ items, hasMore }, 200, corsHeaders);

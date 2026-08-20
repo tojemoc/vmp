@@ -209,6 +209,20 @@ describe('translateSqliteToPostgres json_insert strip', () => {
     assert.match(out, /SELECT 2/);
     assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
   });
+
+  it('does not reflow SQL without a json_insert UPDATE', () => {
+    const sql = `UPDATE cms_pages SET content = REPLACE(content, 'a', 'b') WHERE id = 'x';\nSELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.equal(out, sql);
+    assert.doesNotMatch(out, /;\n$/);
+  });
+
+  it('preserves a trailing -- POSTGRES hint when no json_insert UPDATE is present', () => {
+    const sql = `UPDATE cms_pages SET title = 'x' WHERE id = 'y';\n-- POSTGRES: ALTER TABLE cms_pages ADD COLUMN IF NOT EXISTS note TEXT;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.equal(out, sql);
+    assert.match(out, /--\s*POSTGRES:\s*ALTER TABLE cms_pages ADD COLUMN IF NOT EXISTS note TEXT;/);
+  });
 });
 
 describe('splitExecutableSqlStatements', () => {
