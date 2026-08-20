@@ -354,7 +354,7 @@ export async function handleAdminClearPlaybackPositions(
   videoIdParam: string,
 ) {
   try {
-    await requireRole(request, env, 'editor', 'admin', 'super_admin');
+    await requireRole(request, env, 'admin', 'super_admin');
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }

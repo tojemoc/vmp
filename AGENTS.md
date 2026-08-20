@@ -198,7 +198,7 @@ Steps 1–7 are complete. Work continues from step 8.
 - Resume requires sign-in **and** active subscription with full access (not preview-only).
 - Near-end clear uses **duration-tiered** thresholds from `@vmp/shared` (`playbackPosition.ts`): short-form (≤5 min) uses a proportional 15% tail; long-form keeps 30s absolute + 95% fraction.
 - Periodic save interval scales with duration (~10% of clip length, clamped 5–30s).
-- Positions for all users on a video are cleared when the pipeline reports `fully_processed` (re-encode under same ID). Editors can also call `DELETE /api/admin/videos/:id/playback-positions`.
+- Positions for all users on a video are cleared when the pipeline reports `fully_processed` (re-encode under same ID). Admins can also call `DELETE /api/admin/videos/:id/playback-positions` (requires `admin` or `super_admin`; editors cannot).
 - Account page **Continue watching** lists in-progress VOD; users can remove individual saved positions.
 - Client `capturedAtMs` writes are clamped if >5 min ahead of server time; stale rejection is skipped when stored timestamp is skewed into the future (clock recovery).
 - Catalog short-form share is still unknown — if most content is under 5 minutes, revisit thresholds in `@vmp/shared`.
