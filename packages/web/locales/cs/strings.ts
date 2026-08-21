@@ -131,6 +131,7 @@ export const strings: StringsDefinition = {
   totpBackToSignIn: 'Zpět na přihlášení',
   totpLostAuthenticator: 'Ztratili jste přístup k autentifikátoru?',
   totpContactSupport: 'Kontaktovat podporu',
+  totpSupportUnavailable: 'E-mail podpory není nastaven.',
   totpInvalidCode: 'Neplatný kód. Zkuste to prosím znovu.',
   totpVerificationFailed: 'Ověření selhalo',
   totpPwaSessionExpired: 'Relace přihlášení vypršela. Znovu otevřete odkaz z e-mailu.',
@@ -244,6 +245,11 @@ export const strings: StringsDefinition = {
   mediaFailedToLoad: 'Média se nepodařilo načíst',
   liveCanvasUnavailable: 'Živé plátno není dostupné',
   videoElementUnavailable: 'Video prvek není dostupný',
+  playbackResumeRequiresSignIn:
+    'Pro pokračování v místě, kde jste skončili, se přihlaste s aktivním předplatným.',
+  playbackResumeRequiresSubscription:
+    'Pokračování v místě, kde jste skončili, je k dispozici s aktivním předplatným.',
+  playbackResumedAt: (time: string) => `Pokračování od ${time}`,
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   rateLimitTitle: 'Dosažen limit bezplatných ukázek',
@@ -256,11 +262,14 @@ export const strings: StringsDefinition = {
   currentPlan: 'Aktuální plán',
   providerLabel: 'Poskytovatel',
   manageSubscription: 'Spravovat předplatné',
+  resumeSubscription: 'Obnovit předplatné',
   openingPortal: 'Otevírá se…',
   subscribedWelcome: 'Nyní jste předplatitelem!',
   subscribedWelcomeDetail: 'Vítejte ve VMP Premium. Užijte si neomezený přístup ke všemu obsahu.',
   renewsOn: 'Obnoví se',
   accessUntil: 'Přístup do',
+  subscriptionCanceling: 'Ruší se',
+  subscriptionCancelingHint: 'Předplatné se neobnoví. Obnovte ho, dokud přístup neskončí.',
   planMonthly: 'Měsíční',
   planYearly: 'Roční',
   planClub: 'Klubové předplatné',
@@ -309,6 +318,19 @@ export const strings: StringsDefinition = {
   podcastRssIntro:
     'Použijte svou osobní URL v podcast aplikaci pro plné epizody během předplatného.',
   podcastRssPersonalLabel: 'Vaše osobní URL',
+  continueWatchingTitle: 'Pokračovat ve sledování',
+  continueWatchingIntro:
+    'Pokračujte tam, kde jste u VOD videí skončili. Odstraněním položky smažete uloženou pozici.',
+  continueWatchingIntroLapsed:
+    'Uložené pozice přehrávání zůstávají na našich serverech, dokud jste přihlášeni. Odstraněním položky níže smažete uloženou pozici. Pokračování ve sledování bude znovu dostupné po obnovení předplatného.',
+  continueWatchingEmpty: 'Momentálně nemáte rozpracovaná videa.',
+  continueWatchingRemove: 'Odstranit',
+  continueWatchingRemoving: 'Odstraňování…',
+  continueWatchingLoadFailed: 'Nepodařilo se načíst seznam pokračování ve sledování.',
+  continueWatchingLoadNetworkError: 'Chyba sítě při načítání seznamu pokračování ve sledování.',
+  continueWatchingRemoveFailed: 'Nepodařilo se odstranit uloženou pozici.',
+  continueWatchingProgress: (percent: number) => `${percent} % zhlédnuto`,
+  continueWatchingTruncated: 'Zobrazujeme 20 naposledy sledovaných.',
   copy: 'Kopírovat',
   copied: 'Zkopírováno',
   rssLoadFailed: 'Nepodařilo se načíst RSS URL.',
@@ -389,6 +411,12 @@ export const strings: StringsDefinition = {
     'Vyhýbáme se nepodstatným cookies. Přihlášení, platba a předvolby přehrávače používají nezbytné úložiště, aby služba fungovala.',
   personalDataLearnMore: 'Informace o osobních údajích',
   personalDataBannerAcknowledge: 'Rozumím',
+  personalDataContactTitle: 'Kontakt pro žádosti o ochranu osobních údajů',
+  personalDataContactIntro:
+    'Pro žádost o přístup, výmaz nebo jiná práva podle GDPR — včetně smazání účtu — napište na naši adresu podpory:',
+  personalDataContactUnavailable:
+    'Na tomto webu zatím není nastaven e-mail podpory. Po přihlášení použijte stránku účtu, nebo se vraťte později, až provozovatel zveřejní kontaktní adresu.',
+  personalDataContactAccountHint: 'Podporu můžete kontaktovat také ze stránky účtu po přihlášení.',
   personalDataTableName: 'Název / klíč',
   personalDataTableMechanism: 'Mechanismus',
   personalDataTablePurpose: 'Účel',
@@ -434,6 +462,8 @@ export const strings: StringsDefinition = {
     },
     newsletterAdminOnly:
       'Newsletter a Brevo mohou konfigurovat pouze administrátoři stránky. Editoři mohou používat ostatní záložky.',
+    supportEmailMissingWarning:
+      'E-mail podpory není nastaven. Stránka o osobních údajích nemůže zobrazit mailto kontakt, dokud zde neuložíte adresu.',
     slotEmpty: (n: number) => `Slot ${n}`,
     noVideoSelected: 'Není vybráno video',
     blockTitlePlaceholder: 'Název bloku',
