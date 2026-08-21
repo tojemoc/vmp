@@ -324,7 +324,7 @@
             <button
               type="button"
               class="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
-              :disabled="removingVideoId === item.videoId"
+              :disabled="removingVideoId != null"
               @click="removeContinueWatchingItem(item.videoId)"
             >
               {{
@@ -840,6 +840,7 @@
   }
 
   async function removeContinueWatchingItem(videoId: string) {
+    if (removingVideoId.value != null) return;
     removingVideoId.value = videoId;
     continueWatchingError.value = null;
     try {
