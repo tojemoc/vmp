@@ -72,6 +72,11 @@ export function posthogContextFromRequest(request: Request | undefined): {
   return { distinctId, sessionId };
 }
 
+/** Request-scoped id so unauthenticated exceptions do not pile onto one person. */
+export function newAnonymousPostHogDistinctId(): string {
+  return `server_error:${crypto.randomUUID()}`;
+}
+
 function sessionProperties(sessionId: string | null): Record<string, unknown> {
   return sessionId ? { $session_id: sessionId } : {};
 }
@@ -123,9 +128,11 @@ export async function capturePostHogException(
   options: { request?: Request; distinctId?: string; properties?: Record<string, unknown> } = {},
 ): Promise<void> {
   const fromRequest = posthogContextFromRequest(options.request);
-  const distinctId = (options.distinctId ?? fromRequest.distinctId ?? '').trim() || 'anonymous';
+  const resolved = (options.distinctId ?? fromRequest.distinctId ?? '').trim();
+  const distinctId = resolved || newAnonymousPostHogDistinctId();
   const properties = {
     ...sessionProperties(fromRequest.sessionId),
+    ...(resolved ? {} : { anonymous_exception: true }),
     ...options.properties,
   };
 

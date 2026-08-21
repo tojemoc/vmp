@@ -20,6 +20,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Ak len čítate verejné stránky a neprihlásite sa, nenastavujeme autentifikačnú cookie. Anonymné ukážky videí sú poskytované cez naše API; pozícia prehrávania sa medzi návštevami neukladá.',
         'Používame analytiku zameranú na súkromie bez cookies (Umami Cloud, dátová oblasť EÚ) na meranie veľkosti publika. Umami v predvolenej konfigurácii nenastavuje marketingové cookies ani cross-site identifikátory. Pre tento obmedzený štatistický účel sa opierame o oprávnený záujem a môžete namietať (pozrite Vaše práva).',
+        'Keď ste prihlásení, používame aj PostHog (EÚ cloud) na produktovú analytiku. Udalosti sú viazané len na interné ID účtu — e-mailovú adresu do PostHogu neodosielame. Personálne profily vznikajú len pre prihlásených používateľov.',
       ],
     },
     {
@@ -28,7 +29,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Niektoré funkcie fungujú len vtedy, ak prehliadač uloží malé množstvo údajov. Sú nevyhnutné pre funkciu, o ktorú žiadate — nie na reklamu alebo profilovanie.',
         'Prihlásením, predplatením, povolením notifikácií, inštaláciou webovej aplikácie alebo zmenou rýchlosti prehrávania používate funkcie, ktoré vyžadujú úložisko uvedené v tabuľke nižšie. Väčšinu tohto úložiska sa môžete vyhnúť tým, že tieto funkcie nepoužijete (napríklad zostanete odhlásení a nemeníte nastavenia prehrávača).',
-        'Vašu interakciu nepoužívame ako súhlas s nesúvisiacimi marketingovými trackermi. Ak niekedy pridáme voliteľnú analytiku alebo marketingové nástroje, ktoré nie sú nevyhnutné, najprv požiadame o súhlas.',
+        'Vašu interakciu nepoužívame ako súhlas s nesúvisiacimi marketingovými trackermi. Voliteľné reklamné nástroje, ktoré nie sú nevyhnutné, by najprv vyžadovali súhlas. Produktová analytika pre prihlásených (PostHog) používa iba ID účtu a je uvedená u spracovateľov nižšie.',
       ],
     },
     {
@@ -44,11 +45,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primárne hosting používa Cloudflare (API Worker, databáza D1, médiá R2, frontend Pages). Prevádzka prebieha cez globálnu sieť Cloudflare; nemôžeme zaručiť, že každý bajt zostane v EÚ, ale minimalizujeme osobné údaje a kde je to možné používame analytiku so sídlom v EÚ.',
         'Záložná infraštruktúra môže bežať na Deno Deploy (API) a Vercel (frontend).',
-        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
+        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; PostHog (EÚ) pre produktovú analytiku prihlásených (iba ID účtu, bez e-mailu); Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnosť (globálny edge)',
         'Umami Cloud (región EÚ) — štatistika zobrazení stránok bez cookies',
+        'PostHog (EÚ cloud) — produktová analytika pre prihlásených (iba ID účtu)',
         'Stripe — spracovanie platieb pri predplatení',
         'Brevo — magic-link a e-maily účtu',
         'Sentry — monitorovanie chýb a stability (technické logy)',
@@ -140,6 +142,14 @@ export const personalData: PersonalDataPage = {
       purpose: 'Krátkodobý auth a stav UI počas jednej karty',
       lifetime: 'Kým sa karta nezatvorí',
       necessary: 'Áno — bezpečnosť počas prihlasovacích tokov',
+    },
+    {
+      name: 'PostHog persistence (ph_*)',
+      mechanism: 'localStorage / first-party cookies',
+      purpose:
+        'Produktová analytika pre prihlásené relácie (distinct id / session). Neukladá váš e-mail.',
+      lifetime: 'Kým nevymažete údaje stránky alebo odhlásenie neresetuje identitu',
+      necessary: 'Funkčné — produktová analytika pre prihlásených (uvedené)',
     },
     {
       name: 'vmp_personal_data_notice_ack',

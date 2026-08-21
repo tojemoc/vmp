@@ -161,4 +161,15 @@ describe('PostHog API helper', () => {
     });
     assert.deepEqual(seen, [{ distinctId: 'user_9' }]);
   });
+
+  it('attributes unauthenticated exceptions to a request-scoped distinct id', async () => {
+    const seen: Array<{ distinctId: string; properties?: Record<string, unknown> }> = [];
+    setPostHogExceptionForTests((_error, distinctId, properties) => {
+      seen.push({ distinctId, properties });
+    });
+    await capturePostHogException({ POSTHOG_PROJECT_TOKEN: 'phc_test' }, new Error('boom'));
+    assert.equal(seen.length, 1);
+    assert.match(seen[0].distinctId, /^server_error:[0-9a-f-]{36}$/i);
+    assert.equal(seen[0].properties?.anonymous_exception, true);
+  });
 });

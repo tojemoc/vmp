@@ -346,11 +346,6 @@
       const clientSecret = await createCheckoutSession();
       if (generation !== teardownGeneration || sessionKey !== nextKey) return;
 
-      capturePostHogEvent('subscription_checkout_started', {
-        plan_type: props.planType,
-        provider: 'stripe',
-      });
-
       checkoutInstance = initCheckout.call(stripe, { clientSecret });
       const loadActionsResult = await checkoutInstance.loadActions();
       if (generation !== teardownGeneration) return;
@@ -359,6 +354,13 @@
         throw new Error(strings.checkoutStartFailed);
       }
       confirmActions = loadActionsResult.actions;
+
+      // Fire only once the embedded form is interactive (matches legacy
+      // checkout, which fires immediately before navigating to payment).
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: props.planType,
+        provider: 'stripe',
+      });
 
       loading.value = false;
       await syncMountedSurfaces();

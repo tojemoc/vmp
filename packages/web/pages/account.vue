@@ -741,6 +741,7 @@
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        // Client return-URL funnel only — conversion SoT is API `subscription_activated`.
         capturePostHogEvent('subscription_checkout_completed', { provider: 'legacy' });
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {
@@ -750,6 +751,7 @@
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        // Client return-URL funnel only — conversion SoT is API `subscription_activated`.
         capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
         await clearStripeSessionQuery({ subscribed: '1' });
       } else {

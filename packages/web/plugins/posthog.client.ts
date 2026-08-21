@@ -41,8 +41,9 @@ export default defineNuxtPlugin({
         reset();
       }
 
+      // GDPR: identify by internal user id only — never email or other PII.
+      // Role is non-PII platform metadata useful for product segments.
       identify(authUser.id, {
-        email: authUser.email,
         role: authUser.role,
       });
       lastIdentifiedUserId = authUser.id;
