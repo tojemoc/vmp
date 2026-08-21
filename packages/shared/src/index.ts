@@ -30,6 +30,21 @@ export {
   sanitizeVideoSlug,
   transliterateToAscii,
 } from './videoSlug.js';
+export {
+  getPlaybackEndClearThresholds,
+  getPlaybackSaveIntervalMs,
+  isNearPlaybackEnd,
+  normalizeClientCapturedAtMs,
+  PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS,
+  PLAYBACK_POSITION_END_EPSILON_MIN_FRACTION,
+  PLAYBACK_POSITION_END_FRACTION_LONG,
+  PLAYBACK_POSITION_MAX_CLOCK_SKEW_MS,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MAX_MS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MIN_MS,
+  PLAYBACK_POSITION_SHORT_FORM_MAX_SECONDS,
+  shouldRejectStalePlaybackWrite,
+} from './playbackPosition.js';
 
 export interface User {
   id: string;
