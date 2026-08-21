@@ -270,6 +270,8 @@ export const strings: StringsDefinition = {
   renewsOn: 'Obnoví sa',
   accessUntil: 'Prístup do',
   subscriptionCanceling: 'Ruší sa',
+  subscriptionCancelingHint:
+    'Predplatné sa neobnoví. Pomocou Spravovať predplatné nižšie ho môžete obnoviť, kým prístup neskončí.',
   planMonthly: 'Mesačné',
   planYearly: 'Ročné',
   planClub: 'Klubové predplatné',

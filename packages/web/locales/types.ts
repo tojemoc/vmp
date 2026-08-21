@@ -239,6 +239,7 @@ export type StringsDefinition = {
   renewsOn: string;
   accessUntil: string;
   subscriptionCanceling: string;
+  subscriptionCancelingHint: string;
   planMonthly: string;
   planYearly: string;
   planClub: string;

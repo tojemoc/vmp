@@ -203,10 +203,22 @@
             </span>
           </div>
 
+          <p
+            v-if="subscription.cancelAtPeriodEnd"
+            class="mt-2 text-sm text-amber-800 dark:text-amber-200"
+          >
+            {{ strings.subscriptionCancelingHint }}
+          </p>
+
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
             <button
               v-if="!(showLegacyManageButton && legacyManageUrl)"
-              class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              :class="
+                subscription.cancelAtPeriodEnd
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
+              "
               :disabled="openingPortal"
               @click="openPortal"
             >

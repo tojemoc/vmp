@@ -262,6 +262,8 @@ export const strings: StringsDefinition = {
   renewsOn: 'Renews on',
   accessUntil: 'Access until',
   subscriptionCanceling: 'Canceling',
+  subscriptionCancelingHint:
+    'Your plan will not renew. Use Manage subscription below to resume before access ends.',
   planMonthly: 'Monthly',
   planYearly: 'Yearly',
   planClub: 'Club membership',
