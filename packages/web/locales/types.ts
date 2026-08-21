@@ -129,6 +129,7 @@ export type StringsDefinition = {
   totpBackToSignIn: string;
   totpLostAuthenticator: string;
   totpContactSupport: string;
+  totpSupportUnavailable: string;
   totpInvalidCode: string;
   totpVerificationFailed: string;
   totpPwaSessionExpired: string;

@@ -127,6 +127,7 @@ export const strings: StringsDefinition = {
   totpBackToSignIn: 'Back to sign in',
   totpLostAuthenticator: 'Lost access to your authenticator?',
   totpContactSupport: 'Contact support',
+  totpSupportUnavailable: 'Support email is not configured.',
   totpInvalidCode: 'Invalid code. Please try again.',
   totpVerificationFailed: 'Verification failed',
   totpPwaSessionExpired: 'Sign-in session expired. Open the link from your email again.',

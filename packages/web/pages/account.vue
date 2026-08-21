@@ -147,6 +147,13 @@
               >
                 {{ strings.accountContactSupport }}
               </a>
+              <NuxtLink
+                v-else
+                to="/personal-data"
+                class="inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 text-sm font-medium rounded-lg transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/60"
+              >
+                {{ strings.personalDataLearnMore }}
+              </NuxtLink>
               <a
                 v-if="showLegacyManageButton"
                 :href="legacyManageUrl!"

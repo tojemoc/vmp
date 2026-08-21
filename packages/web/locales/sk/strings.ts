@@ -132,6 +132,7 @@ export const strings: StringsDefinition = {
   totpBackToSignIn: 'Späť na prihlásenie',
   totpLostAuthenticator: 'Stratili ste prístup k autentifikátoru?',
   totpContactSupport: 'Kontaktovať podporu',
+  totpSupportUnavailable: 'E-mail podpory nie je nastavený.',
   totpInvalidCode: 'Neplatný kód. Skúste to prosím znova.',
   totpVerificationFailed: 'Overenie zlyhalo',
   totpPwaSessionExpired: 'Relácia prihlásenia vypršala. Znova otvorte odkaz z e-mailu.',

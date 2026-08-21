@@ -88,7 +88,15 @@
             class="text-blue-600 dark:text-blue-400 hover:underline"
             >{{ strings.totpContactSupport }}</a
           >
-          <span v-else>{{ strings.totpContactSupport }}</span>
+          <span v-else class="inline">
+            {{ strings.totpSupportUnavailable }}
+            <NuxtLink
+              to="/personal-data"
+              class="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              {{ strings.personalDataLearnMore }}
+            </NuxtLink>
+          </span>
         </p>
       </form>
     </div>
