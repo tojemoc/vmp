@@ -29,6 +29,7 @@ export interface Subscription {
   status: string;
   planType?: PlanType;
   currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
 }
 
 export interface CreateCheckoutSessionInput {
@@ -76,6 +77,7 @@ export interface NormalizedPaymentEvent {
   providerOrderId?: string;
   status?: string;
   currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
   promoCodeId?: string;
   raw: unknown;
 }

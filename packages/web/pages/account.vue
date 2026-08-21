@@ -183,9 +183,13 @@
             </div>
             <span
               class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
-              :class="statusBadgeClass(subscription.status)"
+              :class="statusBadgeClass(subscription.status, subscription.cancelAtPeriodEnd)"
             >
-              {{ subscription.status }}
+              {{
+                subscription.cancelAtPeriodEnd
+                  ? strings.subscriptionCanceling
+                  : subscription.status
+              }}
             </span>
           </div>
 
@@ -193,22 +197,37 @@
             v-if="subscription.currentPeriodEnd"
             class="mt-4 text-sm text-gray-600 dark:text-gray-400"
           >
-            <span v-if="subscription.status === 'active'">{{ strings.renewsOn }} </span>
-            <span v-else>{{ strings.accessUntil }} </span>
+            <span>{{ periodEndLabel }}</span>
             <span class="font-medium text-gray-900 dark:text-white">
               {{ formatDate(subscription.currentPeriodEnd) }}
             </span>
           </div>
 
+          <p
+            v-if="subscription.cancelAtPeriodEnd"
+            class="mt-2 text-sm text-amber-800 dark:text-amber-200"
+          >
+            {{ strings.subscriptionCancelingHint }}
+          </p>
+
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
             <button
               v-if="!(showLegacyManageButton && legacyManageUrl)"
-              class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              :class="
+                subscription.cancelAtPeriodEnd
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-gray-900'
+                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
+              "
               :disabled="openingPortal"
               @click="openPortal"
             >
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
-              <span v-else>{{ strings.manageSubscription }}</span>
+              <span v-else>{{
+                subscription.cancelAtPeriodEnd
+                  ? strings.resumeSubscription
+                  : strings.manageSubscription
+              }}</span>
             </button>
             <a
               v-if="showLegacyManageButton && legacyManageUrl"
@@ -554,6 +573,15 @@
     return sub.status === 'active' || sub.status === 'trialing';
   });
 
+  /** Label before period-end date; trailing space avoids missing-space copy bugs. */
+  const periodEndLabel = computed(() => {
+    const sub = subscription.value;
+    if (!sub) return '';
+    const label =
+      sub.cancelAtPeriodEnd || sub.status !== 'active' ? strings.accessUntil : strings.renewsOn;
+    return `${label} `;
+  });
+
   const continueWatchingDeletionOnly = computed(
     () => isLoggedIn.value && !hasActiveSubscription.value,
   );
@@ -754,7 +782,10 @@
     }
   });
 
-  function statusBadgeClass(status: string): string {
+  function statusBadgeClass(status: string, cancelAtPeriodEnd?: boolean): string {
+    if (cancelAtPeriodEnd) {
+      return 'bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100';
+    }
     if (status === 'active' || status === 'trialing') {
       return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
     }

@@ -233,11 +233,14 @@ export type StringsDefinition = {
   currentPlan: string;
   providerLabel: string;
   manageSubscription: string;
+  resumeSubscription: string;
   openingPortal: string;
   subscribedWelcome: string;
   subscribedWelcomeDetail: string;
   renewsOn: string;
   accessUntil: string;
+  subscriptionCanceling: string;
+  subscriptionCancelingHint: string;
   planMonthly: string;
   planYearly: string;
   planClub: string;

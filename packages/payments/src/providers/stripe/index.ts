@@ -274,6 +274,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             subscriptionId: String(object.id ?? ''),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: String(object.status ?? ''),
+            cancelAtPeriodEnd: object.cancel_at_period_end === true,
           };
         case 'customer.subscription.deleted':
           return {
