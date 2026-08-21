@@ -825,6 +825,7 @@
       continueWatchingHasMore.value = data.hasMore === true;
     } catch {
       continueWatchingError.value = strings.continueWatchingLoadNetworkError;
+      continueWatchingHasMore.value = false;
     } finally {
       loadingContinueWatching.value = false;
     }

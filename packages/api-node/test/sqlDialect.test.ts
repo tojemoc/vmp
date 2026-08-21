@@ -183,6 +183,9 @@ describe('translateSqliteDdl migration 0049 cms playback disclosure', () => {
     assert.match(out, /content::jsonb\s*\|\|/);
     assert.match(out, /jsonb_typeof\(content::jsonb\)\s*=\s*'array'/);
     assert.match(out, /on-demand video \(VOD\)/);
+    assert.match(out, /Continue watching on your account page/);
+    assert.match(out, /If you request account deletion/);
+    assert.match(out, /To request erasure of your account/);
     assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
     assert.match(out, /strpos\(content/);
   });
