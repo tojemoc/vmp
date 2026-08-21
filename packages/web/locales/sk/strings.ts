@@ -412,6 +412,8 @@ export const strings: StringsDefinition = {
   personalDataContactTitle: 'Kontakt pre žiadosti o ochranu osobných údajov',
   personalDataContactIntro:
     'Pre žiadosť o prístup, výmaz alebo iné práva podľa GDPR — vrátane vymazania účtu — napíšte na našu adresu podpory:',
+  personalDataContactUnavailable:
+    'Na tomto webe zatiaľ nie je nastavený e-mail podpory. Po prihlásení použite stránku účtu, alebo sa vráťte neskôr, keď prevádzkovateľ zverejní kontaktnú adresu.',
   personalDataContactAccountHint: 'Podporu môžete kontaktovať aj zo stránky účtu po prihlásení.',
   personalDataTableName: 'Názov / kľúč',
   personalDataTableMechanism: 'Mechanizmus',
@@ -458,6 +460,8 @@ export const strings: StringsDefinition = {
     },
     newsletterAdminOnly:
       'Newsletter a Brevo môžu konfigurovať len administrátori stránky. Editori môžu používať ostatné záložky.',
+    supportEmailMissingWarning:
+      'E-mail podpory nie je nastavený. Stránka o osobných údajoch nemôže zobraziť mailto kontakt, kým tu neuložíte adresu.',
     slotEmpty: (n: number) => `Slot ${n}`,
     noVideoSelected: 'Nie je vybrané video',
     blockTitlePlaceholder: 'Názov bloku',

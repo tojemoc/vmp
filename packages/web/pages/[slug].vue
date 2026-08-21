@@ -21,16 +21,21 @@
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
           {{ strings.personalDataContactTitle }}
         </h2>
-        <p class="text-sm text-gray-600 dark:text-gray-400">
-          {{ strings.personalDataContactIntro }}
-        </p>
-        <p>
-          <a
-            :href="supportMailto"
-            class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline break-all"
-          >
-            {{ supportEmail }}
-          </a>
+        <template v-if="supportEmail">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            {{ strings.personalDataContactIntro }}
+          </p>
+          <p>
+            <a
+              :href="supportMailto"
+              class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline break-all"
+            >
+              {{ supportEmail }}
+            </a>
+          </p>
+        </template>
+        <p v-else class="text-sm text-amber-800 dark:text-amber-200">
+          {{ strings.personalDataContactUnavailable }}
         </p>
         <p class="text-sm text-gray-600 dark:text-gray-400">
           {{ strings.personalDataContactAccountHint }}
@@ -62,8 +67,10 @@
   const isPersonalDataPage = computed(() => slug.value === 'personal-data');
 
   const { siteSettings } = useSiteSettings();
-  const supportEmail = computed(() => siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk');
-  const supportMailto = computed(() => `mailto:${supportEmail.value}`);
+  const supportEmail = computed(() => siteSettings.value.supportEmail?.trim() || '');
+  const supportMailto = computed(() =>
+    supportEmail.value ? `mailto:${supportEmail.value}` : '',
+  );
 
   if (isCmsReservedSlug(slug.value)) {
     throw createError({ statusCode: 404, statusMessage: 'Page not found' });

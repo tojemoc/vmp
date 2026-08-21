@@ -141,6 +141,7 @@
             </div>
             <div class="flex flex-wrap gap-3">
               <a
+                v-if="supportMailto"
                 :href="supportMailto"
                 class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
               >
@@ -575,8 +576,8 @@
   });
 
   const supportMailto = computed(() => {
-    const email = siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk';
-    return `mailto:${email}`;
+    const email = siteSettings.value.supportEmail?.trim() || '';
+    return email ? `mailto:${email}` : '';
   });
 
   const relinkBannerDismissed = ref(false);

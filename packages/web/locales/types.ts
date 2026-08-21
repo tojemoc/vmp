@@ -363,6 +363,7 @@ export type StringsDefinition = {
   continueWatchingTruncated: string;
   personalDataContactTitle: string;
   personalDataContactIntro: string;
+  personalDataContactUnavailable: string;
   personalDataContactAccountHint: string;
   personalDataTableName: string;
   personalDataTableMechanism: string;
@@ -399,6 +400,7 @@ export type StringsDefinition = {
       system: string;
     };
     newsletterAdminOnly: string;
+    supportEmailMissingWarning: string;
     slotEmpty: (n: number) => string;
     noVideoSelected: string;
     blockTitlePlaceholder: string;

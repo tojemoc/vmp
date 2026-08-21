@@ -404,6 +404,8 @@ export const strings: StringsDefinition = {
   personalDataContactTitle: 'Contact for privacy requests',
   personalDataContactIntro:
     'To request access, erasure, or other GDPR rights — including account deletion — email our support address:',
+  personalDataContactUnavailable:
+    'A support email is not configured on this site yet. Sign in and use your account page, or check back after the site operator publishes a contact address.',
   personalDataContactAccountHint:
     'You can also reach support from your account page after signing in.',
   personalDataTableName: 'Name / key',
@@ -451,6 +453,8 @@ export const strings: StringsDefinition = {
     },
     newsletterAdminOnly:
       'Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.',
+    supportEmailMissingWarning:
+      'Support email is not set. The personal-data page cannot show a mailto contact until you save an address here.',
     slotEmpty: (n: number) => `Slot ${n}`,
     noVideoSelected: 'No video selected',
     blockTitlePlaceholder: 'Block title',

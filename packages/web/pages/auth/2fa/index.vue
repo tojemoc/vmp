@@ -82,9 +82,13 @@
 
         <p class="text-center text-xs text-gray-500 dark:text-gray-500">
           {{ strings.totpLostAuthenticator }}
-          <a :href="supportMailto" class="text-blue-600 dark:text-blue-400 hover:underline"
+          <a
+            v-if="supportMailto"
+            :href="supportMailto"
+            class="text-blue-600 dark:text-blue-400 hover:underline"
             >{{ strings.totpContactSupport }}</a
           >
+          <span v-else>{{ strings.totpContactSupport }}</span>
         </p>
       </form>
     </div>
@@ -101,8 +105,8 @@
   const { siteSettings } = useSiteSettings();
 
   const supportMailto = computed(() => {
-    const email = siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk';
-    return `mailto:${email}`;
+    const email = siteSettings.value.supportEmail?.trim() || '';
+    return email ? `mailto:${email}` : '';
   });
   const { verifyTotp } = useAuth();
   const { startLoginFlow } = useLoginFlow();
