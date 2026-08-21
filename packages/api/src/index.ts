@@ -179,6 +179,13 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
+import {
+  handleAdminClearPlaybackPositions,
+  handleDeletePlaybackPosition,
+  handleGetPlaybackPosition,
+  handleListPlaybackPositions,
+  handlePutPlaybackPosition,
+} from './playbackPositions.js';
 import { handleGetAccountRss } from './rssAccount.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
@@ -654,11 +661,25 @@ const workerHandler = {
         ) {
           return handleAdminVideoNotify(request, env, ctx, corsHeaders);
         }
-        if (
-          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) && request.method === 'POST') {
           return handleVideoSwap(request, env, corsHeaders);
+        }
+        if (
+          url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/playback-positions$/) &&
+          request.method === 'DELETE'
+        ) {
+          const adminPlaybackMatch = url.pathname.match(
+            /^\/api\/admin\/videos\/([^/]+)\/playback-positions$/,
+          );
+          const adminPlaybackVideoId = adminPlaybackMatch?.[1];
+          if (adminPlaybackVideoId) {
+            return handleAdminClearPlaybackPositions(
+              request,
+              env,
+              corsHeaders,
+              adminPlaybackVideoId,
+            );
+          }
         }
         if (url.pathname === '/api/admin/push/test' && request.method === 'POST') {
           return handleAdminPushTest(request, env, corsHeaders);
@@ -729,10 +750,7 @@ const workerHandler = {
         if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
           return handleAdminReplicationPush(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/replication' &&
-          ['GET', 'PATCH'].includes(request.method)
-        ) {
+        if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
           return handleAdminReplicationSettings(request, env, corsHeaders);
         }
         {
@@ -777,10 +795,7 @@ const workerHandler = {
         ) {
           return handleRssPodcastWebhookConfig(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/rss/podcast-preview-rebuild' &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname === '/api/admin/rss/podcast-preview-rebuild' && request.method === 'POST') {
           return handleRssPodcastPreviewRebuildNotify(request, env, corsHeaders);
         }
         if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
@@ -801,10 +816,7 @@ const workerHandler = {
         if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
           return handleAdminUserImportCsv(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/users/transfer-subscription' &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname === '/api/admin/users/transfer-subscription' && request.method === 'POST') {
           return handleAdminTransferSubscription(request, env, corsHeaders);
         }
         if (
@@ -819,10 +831,7 @@ const workerHandler = {
         if (url.pathname === '/api/site-footer' && request.method === 'GET') {
           return handleSiteFooterPublic(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/site-footer' &&
-          ['GET', 'PATCH'].includes(request.method)
-        ) {
+        if (url.pathname === '/api/admin/site-footer' && ['GET', 'PATCH'].includes(request.method)) {
           return handleSiteFooterAdmin(request, env, corsHeaders);
         }
         if (url.pathname === '/api/pages' && request.method === 'GET') {
@@ -980,9 +989,7 @@ const workerHandler = {
           return handleListDownloads(request, env, corsHeaders);
         }
         {
-          const downloadAssetMatch = url.pathname.match(
-            /^\/api\/downloads\/([^/]+)\/assets\/(.+)$/,
-          );
+          const downloadAssetMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/assets\/(.+)$/);
           const downloadVideoId = downloadAssetMatch?.[1];
           const downloadAssetPath = downloadAssetMatch?.[2];
           if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
@@ -992,19 +999,11 @@ const workerHandler = {
             } catch {
               return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders);
             }
-            return handleDownloadAsset(
-              request,
-              env,
-              corsHeaders,
-              downloadVideoId,
-              decodedAssetPath,
-            );
+            return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodedAssetPath);
           }
         }
         {
-          const downloadAuthorizeMatch = url.pathname.match(
-            /^\/api\/downloads\/([^/]+)\/authorize$/,
-          );
+          const downloadAuthorizeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/authorize$/);
           const authorizeVideoId = downloadAuthorizeMatch?.[1];
           if (authorizeVideoId && request.method === 'POST') {
             return handleAuthorizeDownload(request, env, corsHeaders, authorizeVideoId);
@@ -1032,6 +1031,24 @@ const workerHandler = {
         }
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
+          return handleListPlaybackPositions(request, env, corsHeaders);
+        }
+        {
+          const playbackPositionMatch = url.pathname.match(
+            /^\/api\/account\/playback-positions\/([^/]+)$/,
+          );
+          const playbackVideoId = playbackPositionMatch?.[1];
+          if (playbackVideoId && request.method === 'GET') {
+            return handleGetPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+          }
+          if (playbackVideoId && request.method === 'PUT') {
+            return handlePutPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+          }
+          if (playbackVideoId && request.method === 'DELETE') {
+            return handleDeletePlaybackPosition(request, env, corsHeaders, playbackVideoId);
+          }
         }
         if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
           return handleAccountInvoices(request, env, corsHeaders);

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install VMP (iOS)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1419;
+        --card: #1a2332;
+        --text: #e7ecf3;
+        --muted: #9aa7b8;
+        --accent: #111827;
+        --accent-hover: #1f2937;
+        --secondary: rgba(255, 255, 255, 0.08);
+        --secondary-hover: rgba(255, 255, 255, 0.12);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+      }
+      main {
+        width: 100%;
+        max-width: 420px;
+        background: var(--card);
+        border-radius: 16px;
+        padding: 2rem 1.5rem;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.75rem;
+        font-weight: 700;
+      }
+      .version {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-bottom: 1.5rem;
+      }
+      .install-btn {
+        display: block;
+        width: 100%;
+        padding: 1rem 1.25rem;
+        border: none;
+        border-radius: 12px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 1.1rem;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .install-btn:hover,
+      .install-btn:focus {
+        background: var(--accent-hover);
+      }
+      .secondary-btn {
+        display: block;
+        width: 100%;
+        margin-top: 0.75rem;
+        padding: 0.85rem 1.1rem;
+        border-radius: 12px;
+        background: var(--secondary);
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+      .secondary-btn:hover,
+      .secondary-btn:focus {
+        background: var(--secondary-hover);
+      }
+      .notes {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .notes strong {
+        color: var(--text);
+      }
+      .notes ul {
+        margin: 0.5rem 0 0;
+        padding-left: 1.2rem;
+      }
+      .notes li {
+        margin-bottom: 0.35rem;
+      }
+      .source-url {
+        display: block;
+        margin-top: 0.5rem;
+        padding: 0.5rem 0.65rem;
+        font-size: 0.75rem;
+        word-break: break-all;
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 8px;
+        color: var(--muted);
+      }
+      .ota-note {
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>VMP</h1>
+      <p class="version">Version __VERSION__</p>
+      <div class="notes">
+        <strong>SideStore / AltStore (recommended)</strong>
+        <ul>
+          <li>Add this source URL in SideStore (includes all GitHub pre-releases):</li>
+        </ul>
+        <code class="source-url">__ALTSTORE_SOURCE_URL__</code>
+        <p style="margin-top: 1rem">
+          No Mac required — SideStore re-signs the IPA from GitHub Releases using your Apple ID.
+        </p>
+      </div>
+      <a class="secondary-btn" href="__INSTALL_URL__">Install via OTA (advanced)</a>
+      <p class="ota-note">
+        OTA install is secondary. It requires a properly signed distribution or ad-hoc provisioning profile;
+        CI test IPAs are ad-hoc signed for SideStore, so OTA may fail unless you have matching device provisioning.
+      </p>
+    </main>
+  </body>
+</html>

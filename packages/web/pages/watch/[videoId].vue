@@ -290,6 +290,9 @@
                 preload="auto"
                 @timeupdate="handleTimeUpdate"
                 @seeking="handleSeeking"
+                @seeked="handleSeeked"
+                @play="isActivelyWatching = true"
+                @pause="isActivelyWatching = false"
               ></videojs-video>
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
@@ -589,6 +592,20 @@
               {{ videoData.video.title }}
             </h1>
 
+            <p
+              v-if="playbackResumeHint"
+              class="text-sm text-gray-600 dark:text-gray-400 mb-3"
+            >
+              {{ playbackResumeHint }}
+            </p>
+
+            <p
+              v-if="resumeAppliedNotice"
+              class="mb-3 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
+            >
+              {{ resumeAppliedNotice }}
+            </p>
+
             <div
               v-if="playingOffline"
               class="mb-4 inline-flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-900 dark:text-blue-200"
@@ -780,10 +797,15 @@
     isLiveRecommendation,
     useMoqLivePlayerControls,
   } from '~/composables/useMoqLivePlayerControls';
+  import {
+    shouldResumePlaybackPosition,
+    usePlaybackPosition,
+  } from '~/composables/usePlaybackPosition';
   import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate';
   import { usePushAttribution } from '~/composables/usePushAttribution';
   import { sizeUrl } from '~/composables/useThumbnail';
   import { renderMarkdownToHtml } from '~/utils/markdown';
+  import { claimActivePlayerVideoIdForFlush, assignActivePlayerVideoIdIfCurrent } from '~/utils/playbackRouteFlush';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
   import {
     checkPlaylistAvailability,
@@ -903,6 +925,12 @@
   const { returningFromLegacy, completeLegacyCheckoutReturn, clearLegacyOrderQuery } =
     useLegacyCheckoutReturn();
 
+  const isSeekingPlayback = ref(false);
+  const isActivelyWatching = ref(false);
+  const activePlayerVideoId = ref<string | null>(null);
+  let pendingResumeSeconds: number | null = null;
+  let resumeAppliedForVideoId: string | null = null;
+
   type MediaLikeElement = HTMLElement & {
     src: string;
     currentTime: number;
@@ -1009,6 +1037,47 @@
   const effectiveFullDuration = computed(
     () => resolvedFullDuration.value || videoData.value?.video?.fullDuration || 0,
   );
+
+  const playbackPositionEnabled = computed(
+    () =>
+      isLoggedIn.value &&
+      Boolean(videoData.value?.hasAccess) &&
+      !videoData.value?.video?.isLivestream,
+  );
+
+  const playbackResumeHint = computed(() => {
+    if (!videoData.value || videoData.value.video?.isLivestream) return null;
+    if (isFullPublicPreview.value) return null;
+    if (playbackPositionEnabled.value) return null;
+    if (isLoggedIn.value && !videoData.value.hasAccess) {
+      return strings.playbackResumeRequiresSubscription;
+    }
+    return strings.playbackResumeRequiresSignIn;
+  });
+
+  const resumeAppliedNotice = ref<string | null>(null);
+  let resumeNoticeTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const {
+    fetchSavedPosition,
+    flush: flushPlaybackPosition,
+    resetLocalState: resetPlaybackPositionState,
+  } = usePlaybackPosition({
+    apiUrl: () => String(config.public.apiUrl),
+    authHeader,
+    enabled: () => playbackPositionEnabled.value,
+    videoId: () => String(videoData.value?.videoId ?? videoId.value),
+    getPosition: () => {
+      // Prefer an unapplied resume target so navigate-away before seek does not clear it.
+      if (pendingResumeSeconds != null && pendingResumeSeconds > currentTime.value) {
+        return pendingResumeSeconds;
+      }
+      return currentTime.value;
+    },
+    getDuration: () => effectiveFullDuration.value,
+    isSeeking: () => isSeekingPlayback.value,
+    isActivelyWatching: () => isActivelyWatching.value,
+  });
 
   /** Full-length preview for non-subscribers (admin set preview lock to full duration). */
   const isFullPublicPreview = computed(() => {
@@ -1161,6 +1230,29 @@
       return;
     }
     if (media && 'currentTime' in media) media.currentTime = seconds;
+  };
+
+  const applyPendingResume = () => {
+    const targetVideoId = String(videoData.value?.videoId ?? videoId.value);
+    if (pendingResumeSeconds == null) return;
+    if (resumeAppliedForVideoId === targetVideoId) return;
+    const duration = effectiveFullDuration.value;
+    const resumeAt = pendingResumeSeconds;
+    if (!shouldResumePlaybackPosition(resumeAt, duration || null)) {
+      pendingResumeSeconds = null;
+      return;
+    }
+    setPlaybackTime(resumeAt);
+    currentTime.value = resumeAt;
+    resumeAppliedForVideoId = targetVideoId;
+    pendingResumeSeconds = null;
+
+    resumeAppliedNotice.value = strings.playbackResumedAt(formatDuration(resumeAt));
+    if (resumeNoticeTimeout) clearTimeout(resumeNoticeTimeout);
+    resumeNoticeTimeout = setTimeout(() => {
+      resumeAppliedNotice.value = null;
+      resumeNoticeTimeout = null;
+    }, 8000);
   };
 
   const pausePlayback = (media: MediaLikeElement | null = videoElement.value) => {
@@ -1454,6 +1546,7 @@
     const video = resolveTimeUpdateTarget(event.target);
     if (!video) return;
     currentTime.value = video.currentTime;
+    isActivelyWatching.value = !video.paused;
     enforcePreviewLimit(video);
   };
 
@@ -1464,9 +1557,14 @@
   });
 
   const handleSeeking = (event: Event) => {
+    isSeekingPlayback.value = true;
     const video = resolveTimeUpdateTarget(event.target);
     if (!video) return;
     enforcePreviewLimit(video);
+  };
+
+  const handleSeeked = () => {
+    isSeekingPlayback.value = false;
   };
 
   const handleSeekbarInput = (event: Event) => {
@@ -1535,7 +1633,7 @@
       }
     }
 
-    if (route.query.showPremium === '1') {
+    if (route.query.showPremium === '1' && route.query.showDownload !== '1') {
       showPremiumOverlay.value = true;
     }
   });
@@ -1733,6 +1831,19 @@
     const prevRateLimited = rateLimited.value;
     const prevVideoNotFound = videoNotFound.value;
 
+    // Route watcher / pagehide flush the previous video; do not flush here with
+    // a zeroed playhead or we would clear the saved resume point before GET.
+    pendingResumeSeconds = null;
+    resumeAppliedForVideoId = null;
+    resumeAppliedNotice.value = null;
+    if (resumeNoticeTimeout) {
+      clearTimeout(resumeNoticeTimeout);
+      resumeNoticeTimeout = null;
+    }
+    resetPlaybackPositionState();
+    isSeekingPlayback.value = false;
+    isActivelyWatching.value = false;
+
     accessNotFound.value = false;
     playbackUnavailable.value = false;
     autoplayBlocked.value = false;
@@ -1784,6 +1895,14 @@
         return;
       }
 
+      if (isLoggedIn.value && videoData.value?.hasAccess && !videoData.value?.video?.isLivestream) {
+        const saved = await fetchSavedPosition(String(videoData.value?.videoId ?? targetVideoId));
+        ensureCurrent();
+        if (shouldResumePlaybackPosition(saved, videoData.value?.video?.fullDuration ?? null)) {
+          pendingResumeSeconds = saved;
+        }
+      }
+
       recommendations.value = [];
       try {
         const recsResponse = await fetch(
@@ -1818,6 +1937,11 @@
             options.signal,
           );
           ensureCurrent();
+          assignActivePlayerVideoIdIfCurrent(
+            activePlayerVideoId,
+            videoData.value?.videoId ?? targetVideoId,
+            guard,
+          );
         }
         return;
       }
@@ -1853,6 +1977,11 @@
         }
         await initializeVideoElement(resolvedPlaylist, guard, options.signal);
         ensureCurrent();
+        assignActivePlayerVideoIdIfCurrent(
+          activePlayerVideoId,
+          videoData.value?.videoId ?? targetVideoId,
+          guard,
+        );
       }
     } catch (e: any) {
       if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) return;
@@ -2037,6 +2166,8 @@
     ensureActive();
 
     handleLoadedMetadata = () => {
+      if (!isCurrentInvocation()) return;
+      applyPendingResume();
       if (import.meta.env.DEV) {
         console.log('Video metadata loaded');
       }
@@ -2051,7 +2182,9 @@
       if (isCurrentInvocation()) buffering.value = true;
     };
     handlePlaying = () => {
-      if (isCurrentInvocation()) buffering.value = false;
+      if (!isCurrentInvocation()) return;
+      buffering.value = false;
+      isActivelyWatching.value = true;
     };
     handleCanPlay = () => {
       if (isCurrentInvocation()) buffering.value = false;
@@ -2085,6 +2218,7 @@
       handleNativeTimeUpdate = () => {
         if (!isCurrentInvocation()) return;
         currentTime.value = nativeVideo.currentTime;
+        isActivelyWatching.value = !nativeVideo.paused;
         enforcePreviewLimit(nativeVideo);
       };
       nativeVideo.addEventListener('timeupdate', handleNativeTimeUpdate);
@@ -2135,12 +2269,14 @@
 
     video.addEventListener('error', handleMediaError);
 
+    applyPendingResume();
     applyPlaybackRate(video);
 
     try {
       await video.play();
       ensureActive();
       autoplayPlayError.value = false;
+      isActivelyWatching.value = true;
     } catch (e: any) {
       if (e?.name === 'AbortError' || signal?.aborted || !isCurrentInvocation()) throw e;
       buffering.value = false;
@@ -2213,16 +2349,23 @@
 
   watch(
     () => route.params.videoId,
-    async (newVideoId, oldVideoId, onCleanup) => {
-      if (newVideoId === oldVideoId) return;
-      accessNotFound.value = false;
-      descriptionExpanded.value = false;
-      descriptionClamped.value = false;
+    async (newVideoId, _oldVideoId, onCleanup) => {
+      if (newVideoId === _oldVideoId) return;
       const { abortController, isCurrentInvocation, cancel } = createLoadInvocation();
 
       onCleanup(() => {
         cancel();
       });
+
+      const claimedVideoId = claimActivePlayerVideoIdForFlush(activePlayerVideoId);
+      if (claimedVideoId) {
+        await flushPlaybackPosition(claimedVideoId);
+      }
+      if (!isCurrentInvocation()) return;
+
+      accessNotFound.value = false;
+      descriptionExpanded.value = false;
+      descriptionClamped.value = false;
 
       try {
         await waitForVideoMeta(abortController.signal);

@@ -132,6 +132,7 @@ export const strings: StringsDefinition = {
   totpBackToSignIn: 'Späť na prihlásenie',
   totpLostAuthenticator: 'Stratili ste prístup k autentifikátoru?',
   totpContactSupport: 'Kontaktovať podporu',
+  totpSupportUnavailable: 'E-mail podpory nie je nastavený.',
   totpInvalidCode: 'Neplatný kód. Skúste to prosím znova.',
   totpVerificationFailed: 'Overenie zlyhalo',
   totpPwaSessionExpired: 'Relácia prihlásenia vypršala. Znova otvorte odkaz z e-mailu.',
@@ -245,6 +246,11 @@ export const strings: StringsDefinition = {
   mediaFailedToLoad: 'Médiá sa nepodarilo načítať',
   liveCanvasUnavailable: 'Živé plátno nie je dostupné',
   videoElementUnavailable: 'Video prvok nie je dostupný',
+  playbackResumeRequiresSignIn:
+    'Ak chcete pokračovať tam, kde ste skončili, prihláste sa s aktívnym predplatným.',
+  playbackResumeRequiresSubscription:
+    'Pokračovanie tam, kde ste skončili, je k dispozícii s aktívnym predplatným.',
+  playbackResumedAt: (time: string) => `Pokračovanie od ${time}`,
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   rateLimitTitle: 'Dosiahnutý limit bezplatných ukážok',
@@ -257,12 +263,15 @@ export const strings: StringsDefinition = {
   currentPlan: 'Aktuálny plán',
   providerLabel: 'Poskytovateľ',
   manageSubscription: 'Spravovať predplatné',
+  resumeSubscription: 'Obnoviť predplatné',
   openingPortal: 'Otvára sa…',
   subscribedWelcome: 'Teraz ste predplatiteľom!',
   subscribedWelcomeDetail:
     'Vitajte vo VMP Premium. Užite si neobmedzený prístup ku všetkému obsahu.',
   renewsOn: 'Obnoví sa',
   accessUntil: 'Prístup do',
+  subscriptionCanceling: 'Ruší sa',
+  subscriptionCancelingHint: 'Predplatné sa neobnoví. Obnovte ho, kým prístup neskončí.',
   planMonthly: 'Mesačné',
   planYearly: 'Ročné',
   planClub: 'Klubové predplatné',
@@ -290,6 +299,20 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaRequiredMessage:
     'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
   offlineDownloadPwaRequiredDismiss: 'Rozumiem',
+  offlineDownloadPwaUnsupportedTitle: 'Offline prehrávanie vyžaduje PWA',
+  offlineDownloadPwaUnsupportedMessage:
+    'Offline sťahovanie vyžaduje prehliadač, ktorý podporuje inštaláciu tejto stránky ako aplikácie. Otvorte toto video v Chrome, Edge alebo Safari, nainštalujte aplikáciu VMP a potom sa sem vráťte na stiahnutie.',
+  offlineDownloadPwaUnsupportedOpenChrome: 'Otvoriť v Chrome',
+  offlineDownloadIosInstallTitle: 'Pridajte si VMP na plochu smartfónu',
+  offlineDownloadIosInstallBenefit1: 'otvoríte jedným klikom',
+  offlineDownloadIosInstallBenefit2: 'nič neinštalujete, nezaberá miesto ako bežná aplikácia',
+  offlineDownloadIosInstallBenefit3: 'pohodlný prístup k videám offline kedykoľvek',
+  offlineDownloadIosInstallStep1: 'Kliknite na ikonu',
+  offlineDownloadIosInstallStep2: 'Vyberte',
+  offlineDownloadIosAddToHomeScreen: 'Pridať na plochu',
+  offlineDownloadSubRequiredTitle: 'Vyžaduje sa predplatné',
+  offlineDownloadSubRequiredMessage:
+    'Offline sťahovanie je dostupné pre prémiových predplatiteľov. Vyberte si plán nižšie a ukladajte videá na prehrávanie bez pripojenia.',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 
@@ -297,6 +320,19 @@ export const strings: StringsDefinition = {
   podcastRssIntro:
     'Použite svoju osobnú URL v podcast aplikácii pre plné epizódy počas predplatného.',
   podcastRssPersonalLabel: 'Vaša osobná URL',
+  continueWatchingTitle: 'Pokračovať v sledovaní',
+  continueWatchingIntro:
+    'Pokračujte tam, kde ste pri VOD videách skončili. Odstránením položky vymažete uloženú pozíciu.',
+  continueWatchingIntroLapsed:
+    'Uložené pozície prehrávania zostávajú na našich serveroch, kým ste prihlásení. Odstránením položky nižšie vymažete uloženú pozíciu. Pokračovanie v sledovaní bude znova dostupné po obnovení predplatného.',
+  continueWatchingEmpty: 'Momentálne nemáte rozpracované videá.',
+  continueWatchingRemove: 'Odstrániť',
+  continueWatchingRemoving: 'Odstraňovanie…',
+  continueWatchingLoadFailed: 'Nepodarilo sa načítať zoznam pokračovania v sledovaní.',
+  continueWatchingLoadNetworkError: 'Chyba siete pri načítavaní zoznamu pokračovania v sledovaní.',
+  continueWatchingRemoveFailed: 'Nepodarilo sa odstrániť uloženú pozíciu.',
+  continueWatchingProgress: (percent: number) => `${percent} % videné`,
+  continueWatchingTruncated: 'Zobrazujeme 20 naposledy sledovaných.',
   copy: 'Kopírovať',
   copied: 'Skopírované',
   rssLoadFailed: 'Nepodarilo sa načítať RSS URL.',
@@ -377,6 +413,12 @@ export const strings: StringsDefinition = {
     'Vyhýbame sa nepodstatným cookies. Prihlásenie, platba a predvoľby prehrávača používajú nevyhnutné úložisko, aby služba fungovala.',
   personalDataLearnMore: 'Informácia o osobných údajoch',
   personalDataBannerAcknowledge: 'Rozumiem',
+  personalDataContactTitle: 'Kontakt pre žiadosti o ochranu osobných údajov',
+  personalDataContactIntro:
+    'Pre žiadosť o prístup, výmaz alebo iné práva podľa GDPR — vrátane vymazania účtu — napíšte na našu adresu podpory:',
+  personalDataContactUnavailable:
+    'Na tomto webe zatiaľ nie je nastavený e-mail podpory. Po prihlásení použite stránku účtu, alebo sa vráťte neskôr, keď prevádzkovateľ zverejní kontaktnú adresu.',
+  personalDataContactAccountHint: 'Podporu môžete kontaktovať aj zo stránky účtu po prihlásení.',
   personalDataTableName: 'Názov / kľúč',
   personalDataTableMechanism: 'Mechanizmus',
   personalDataTablePurpose: 'Účel',
@@ -422,6 +464,8 @@ export const strings: StringsDefinition = {
     },
     newsletterAdminOnly:
       'Newsletter a Brevo môžu konfigurovať len administrátori stránky. Editori môžu používať ostatné záložky.',
+    supportEmailMissingWarning:
+      'E-mail podpory nie je nastavený. Stránka o osobných údajoch nemôže zobraziť mailto kontakt, kým tu neuložíte adresu.',
     slotEmpty: (n: number) => `Slot ${n}`,
     noVideoSelected: 'Nie je vybrané video',
     blockTitlePlaceholder: 'Názov bloku',

@@ -164,6 +164,16 @@ export function stripeSubscriptionPeriodEndIso(
   return end != null ? new Date(end * 1000).toISOString() : null;
 }
 
+/**
+ * Whether Stripe will end the subscription at `current_period_end` without renewing.
+ * Status stays `active`/`trialing` until the period ends, so callers must persist this flag.
+ */
+export function stripeCancelAtPeriodEnd(
+  stripeSub: { cancel_at_period_end?: boolean | null } | null | undefined,
+): boolean {
+  return stripeSub?.cancel_at_period_end === true;
+}
+
 /** Map Stripe subscription statuses to our internal values. */
 export function normalizeStripeStatus(stripeStatus: string): SubscriptionStatus {
   const statusMap: Record<string, SubscriptionStatus> = {

@@ -258,6 +258,8 @@
       returnPath: string;
       /** When true, append `showPremium=1` to login redirect (watch page). */
       reopenPremiumOnReturn?: boolean;
+      /** When true, resume the offline-download menu after login/checkout instead of the premium overlay. */
+      reopenDownloadOnReturn?: boolean;
       /** Load pricing immediately (account page). When false, parent controls via `active`. */
       active?: boolean;
       /** Use account-page styling instead of dark modal styling. */
@@ -267,6 +269,7 @@
     }>(),
     {
       reopenPremiumOnReturn: false,
+      reopenDownloadOnReturn: false,
       active: true,
       embedded: false,
       compact: false,
@@ -431,11 +434,19 @@
 
   function buildLoginRedirect(plan: PlanType): string {
     const params = new URLSearchParams();
-    if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
+    if (props.reopenDownloadOnReturn) params.set('showDownload', '1');
+    else if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
     params.set('checkout_provider', 'stripe');
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
+  }
+
+  function loginReturnPath(): string {
+    if (props.reopenDownloadOnReturn || props.reopenPremiumOnReturn) {
+      return buildLoginRedirect(selectedPlan.value);
+    }
+    return props.returnPath;
   }
 
   async function loadPrices() {
@@ -500,7 +511,7 @@
   async function startLegacyCheckout() {
     checkoutError.value = null;
     if (!isLoggedIn.value) {
-      await startLoginFlow(props.returnPath);
+      await startLoginFlow(loginReturnPath());
       return;
     }
 
@@ -534,7 +545,7 @@
   }
 
   async function goToLogin() {
-    await startLoginFlow(props.returnPath);
+    await startLoginFlow(loginReturnPath());
   }
 
   function isStalePromoValidation(

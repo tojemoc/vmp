@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   bindQuestionMarks,
   expandPostgresOnlyStatements,
+  splitExecutableSqlStatements,
   splitQuestionMarks,
+  transformExecutableSql,
   translateSqliteDdl,
   translateSqliteToPostgres,
 } from '../src/bindings/sqlDialect.js';
@@ -110,6 +114,135 @@ describe('translateSqliteToPostgres datetime', () => {
     const bound = bindQuestionMarks(sql, 1);
     assert.match(bound, /\$1/);
     assert.doesNotMatch(bound, /datetime\s*\(/i);
+  });
+});
+
+describe('transformExecutableSql instr', () => {
+  it('translates instr() outside string literals', () => {
+    const out = transformExecutableSql(`WHERE instr(content, 'hello') > 0`, (code) =>
+      code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /strpos\(content/);
+    assert.doesNotMatch(out, /\binstr\s*\(/i);
+  });
+
+  it('preserves instr inside single-quoted literals', () => {
+    const out = transformExecutableSql(
+      `WHERE note = 'instr(a,b)' AND instr(content, 'x') > 0`,
+      (code) => code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /note = 'instr\(a,b\)'/);
+    assert.match(out, /strpos\(content/);
+  });
+
+  it('preserves instr inside dollar-quoted literals', () => {
+    const out = transformExecutableSql(
+      `WHERE body = $$instr(a,b)$$ AND instr(content, 'x') > 0`,
+      (code) => code.replace(/\binstr\s*\(/gi, 'strpos('),
+    );
+    assert.match(out, /body = \$\$instr\(a,b\)\$\$/);
+    assert.match(out, /strpos\(content/);
+  });
+});
+
+describe('translateSqliteToPostgres instr', () => {
+  it('translates instr() outside string literals', () => {
+    const out = translateSqliteToPostgres(`WHERE instr(content, 'hello') > 0`);
+    assert.match(out, /strpos\(content/);
+    assert.doesNotMatch(out, /\binstr\s*\(/i);
+  });
+
+  it('preserves instr inside string literals', () => {
+    const out = translateSqliteToPostgres(`WHERE note = 'instr(a,b)' AND instr(content, 'x') > 0`);
+    assert.match(out, /note = 'instr\(a,b\)'/);
+    assert.match(out, /strpos\(content/);
+  });
+
+  it('preserves instr inside double-quoted identifiers', () => {
+    const out = translateSqliteToPostgres(`SELECT "instr(col)" FROM t WHERE instr(a, b) > 0`);
+    assert.match(out, /"instr\(col\)"/);
+    assert.match(out, /strpos\(a/);
+  });
+
+  it('preserves instr inside dollar-quoted literals', () => {
+    const out = translateSqliteToPostgres(
+      `WHERE body = $$keep instr(a,b) here$$ AND instr(content, 'x') > 0`,
+    );
+    assert.match(out, /\$\$keep instr\(a,b\) here\$\$/);
+    assert.match(out, /strpos\(content/);
+  });
+});
+
+describe('translateSqliteDdl migration 0049 cms playback disclosure', () => {
+  it('keeps Postgres jsonb append fallback when json_insert block is stripped', () => {
+    const raw = readFileSync(
+      join(import.meta.dirname, '../../api/migrations/0049_cms_playback_position_notice.sql'),
+      'utf8',
+    );
+    const out = translateSqliteDdl(raw);
+    assert.match(out, /content::jsonb\s*\|\|/);
+    assert.match(out, /jsonb_typeof\(content::jsonb\)\s*=\s*'array'/);
+    assert.match(out, /on-demand video \(VOD\)/);
+    assert.match(out, /Continue watching on your account page/);
+    assert.match(out, /If you request account deletion/);
+    assert.match(out, /To request erasure of your account/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+    assert.match(out, /strpos\(content/);
+  });
+});
+
+describe('translateSqliteToPostgres json_insert strip', () => {
+  it('strips json_insert UPDATE statement', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')), updated_at = CURRENT_TIMESTAMP WHERE id = 'test';`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+  });
+
+  it('does not consume statements after the json_insert semicolon', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')) WHERE id = 'x'; SELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /SELECT 1/);
+  });
+
+  it('does not treat semicolons inside JSON string literals as statement boundaries', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"text":"a;b"}')) WHERE id = 'x'; SELECT 2;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.match(out, /SELECT 2/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+  });
+
+  it('does not reflow SQL without a json_insert UPDATE', () => {
+    const sql = `UPDATE cms_pages SET content = REPLACE(content, 'a', 'b') WHERE id = 'x';\nSELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.equal(out, sql);
+    assert.doesNotMatch(out, /;\n$/);
+  });
+
+  it('preserves a trailing -- POSTGRES hint when no json_insert UPDATE is present', () => {
+    const sql = `UPDATE cms_pages SET title = 'x' WHERE id = 'y';\n-- POSTGRES: ALTER TABLE cms_pages ADD COLUMN IF NOT EXISTS note TEXT;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.equal(out, sql);
+    assert.match(out, /--\s*POSTGRES:\s*ALTER TABLE cms_pages ADD COLUMN IF NOT EXISTS note TEXT;/);
+  });
+
+  it('preserves a trailing -- POSTGRES hint after json_insert strip', () => {
+    const sql = `UPDATE cms_pages SET content = json_insert(content, '$[#]', json('{"a":1}')) WHERE id = 'x';\n-- POSTGRES: SELECT 1;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /skipped/i);
+    assert.match(out, /--\s*POSTGRES:\s*SELECT 1;/);
+    assert.doesNotMatch(out, /SET\s+content\s*=\s*json_insert/i);
+  });
+});
+
+describe('splitExecutableSqlStatements', () => {
+  it('ignores semicolons inside single-quoted JSON payloads', () => {
+    const sql = `UPDATE t SET c = json('{"text":"a;b"}') WHERE id = 1; SELECT 1;`;
+    const statements = splitExecutableSqlStatements(sql);
+    assert.equal(statements.length, 2);
+    assert.match(statements[0]!, /json\('\{"text":"a;b"\}'\)/);
+    assert.match(statements[1]!, /SELECT 1/);
   });
 });
 
