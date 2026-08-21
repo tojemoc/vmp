@@ -5,6 +5,7 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { log } from './logger.js';
+import { clearPlaybackPositionsForVideo } from './playbackPositions.js';
 
 interface PipelineEnv {
   DB?: D1Database;
@@ -149,8 +150,19 @@ export async function handleVideoPipelineStatus(
 
     log({ service: 'pipeline', event: 'pipeline_status_updated', video_id: videoId, stage });
 
-    if (stage === 'fully_processed' && env.RATE_LIMIT_KV) {
-      await env.RATE_LIMIT_KV.delete(`duration:${videoId}`);
+    if (stage === 'fully_processed') {
+      const deletedPositions = await clearPlaybackPositionsForVideo(db, videoId);
+      if (deletedPositions > 0) {
+        log({
+          service: 'pipeline',
+          event: 'playback_positions_cleared_on_reencode',
+          video_id: videoId,
+          deleted_count: deletedPositions,
+        });
+      }
+      if (env.RATE_LIMIT_KV) {
+        await env.RATE_LIMIT_KV.delete(`duration:${videoId}`);
+      }
     }
 
     return jsonResponse({ ok: true }, 200, corsHeaders);

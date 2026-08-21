@@ -1,5 +1,8 @@
 PRAGMA foreign_keys = OFF;
 
+DROP TABLE IF EXISTS native_push_tokens;
+DROP TABLE IF EXISTS device_pairing_sessions;
+DROP TABLE IF EXISTS playback_positions;
 DROP TABLE IF EXISTS video_segment_events;
 DROP TABLE IF EXISTS rss_feed_polls;
 DROP TABLE IF EXISTS pills_updates_audit;

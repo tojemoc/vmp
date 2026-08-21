@@ -30,8 +30,6 @@ const SITE_KEYS = [
   'gtm_measurement_path',
 ] as const;
 
-const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk';
-
 /** Web contract: persisted as '1' or '0' in admin_settings. */
 function normalizeGtmEnabled(raw: unknown): '1' | '0' | null {
   if (raw === '1' || raw === '0') return raw;
@@ -41,7 +39,7 @@ function normalizeGtmEnabled(raw: unknown): '1' | '0' | null {
 }
 
 function defaultValueForSiteKey(key: (typeof SITE_KEYS)[number]): string {
-  if (key === 'site_support_email') return DEFAULT_SUPPORT_EMAIL;
+  // Do not invent a tenant email: empty means "not configured" for public mailto UIs.
   if (key === 'gtm_enabled') return '0';
   return '';
 }

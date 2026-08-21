@@ -7,7 +7,8 @@
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
  *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
- *  - Refresh token issuance and rotation.
+ *  - Native redeem: POST /api/auth/native/redeem (magic link → JWT + refreshToken in JSON).
+ *  - Refresh token issuance and rotation (cookie and/or JSON body for native clients).
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
  *
@@ -550,26 +551,131 @@ export async function consumeMagicLinkForUser(
   return { tag: 'session_ready', user };
 }
 
-async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsHeaders: any) {
+async function buildSessionUserPayload(user: any, env: any) {
   const totpRequired = shouldRequireTotpEnrollment(user, env);
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    totpEnabled: !!user.totp_enabled,
+    totpRequired,
+  };
+}
+
+/**
+ * Builds access + refresh token material without writing D1.
+ * Pairing poll batches the refresh-token insert with session redeem.
+ */
+export async function createNativeSessionMaterial(user: any, env: any) {
   const accessToken = await createAccessToken(user, env.JWT_SECRET);
-  const refreshToken = await issueRefreshToken(user.id, db);
+  const refreshToken = generateToken();
+  const refreshTokenHash = await hashToken(refreshToken);
+  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL * 1000).toISOString();
+  const sessionUser = await buildSessionUserPayload(user, env);
+  return { accessToken, refreshToken, refreshTokenHash, refreshExpiresAt, user: sessionUser };
+}
+
+/**
+ * Issues access + refresh tokens for native / TV clients that store the refresh
+ * token in secure storage (not HttpOnly cookies).
+ */
+export async function issueNativeSessionTokens(user: any, env: any, db: any) {
+  const material = await createNativeSessionMaterial(user, env);
+  await db
+    .prepare('INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(crypto.randomUUID(), user.id, material.refreshTokenHash, material.refreshExpiresAt)
+    .run();
+  return {
+    accessToken: material.accessToken,
+    refreshToken: material.refreshToken,
+    user: material.user,
+  };
+}
+
+async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsHeaders: any) {
+  const {
+    accessToken,
+    refreshToken,
+    user: sessionUser,
+  } = await issueNativeSessionTokens(user, env, db);
   const headers = buildResponseHeaders(corsHeaders);
   headers.set('Set-Cookie', buildRefreshCookie(refreshToken, REFRESH_TOKEN_TTL));
   return new Response(
     JSON.stringify({
       ok: true,
       accessToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        totpEnabled: !!user.totp_enabled,
-        totpRequired,
-      },
+      user: sessionUser,
     }),
     { status: 200, headers },
   );
+}
+
+/**
+ * POST /api/auth/native/redeem  body: { token }
+ *
+ * Same magic-link consume as GET /api/auth/verify, but returns refreshToken in
+ * the JSON body for native apps (Keychain / Keystore). Does **not** set the
+ * refresh cookie — native clients must use the JSON body token with
+ * POST /api/auth/refresh.
+ */
+export async function handleNativeRedeemMagicLink(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
+
+  const body = await request.json().catch(() => null);
+  const token = typeof body?.token === 'string' ? body.token.trim() : '';
+  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders);
+
+  const phase = await consumeMagicLinkForUser(env, token);
+  if (phase.tag === 'invalid') {
+    log({
+      service: 'auth',
+      event: 'native_magic_link_redeem_failed',
+      level: 'warn',
+      error_code: 'invalid_or_used',
+    });
+    return authJson(
+      {
+        error:
+          'Sign-in link is invalid, expired, or was already used (including on another device). Request a new one.',
+        code: 'invalid_or_used',
+      },
+      401,
+      corsHeaders,
+    );
+  }
+  if (phase.tag === 'totp_pending') {
+    return authJson(
+      { requiresTwoFactor: true, pendingToken: phase.pendingToken },
+      200,
+      corsHeaders,
+    );
+  }
+
+  const db = getDb(env);
+  const session = await issueNativeSessionTokens(phase.user, env, db);
+  const headers = buildResponseHeaders(corsHeaders);
+  log({
+    service: 'auth',
+    event: 'native_magic_link_redeem_success',
+    level: 'info',
+    totp_required: Boolean(phase.user.totp_enabled),
+  });
+  return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
+}
+
+async function readRefreshTokenFromRequest(request: any): Promise<{
+  rawToken: string | null;
+  source: 'cookie' | 'body' | null;
+}> {
+  // Prefer JSON body when present so native clients that also receive a cookie
+  // (e.g. WebView hybrids) still get refreshToken rotation in the response body.
+  const body = await request.json().catch(() => null);
+  const fromBody = typeof body?.refreshToken === 'string' ? body.refreshToken.trim() : '';
+  if (fromBody) return { rawToken: fromBody, source: 'body' };
+
+  const fromCookie = getRefreshTokenFromCookie(request);
+  if (fromCookie) return { rawToken: fromCookie, source: 'cookie' };
+  return { rawToken: null, source: null };
 }
 
 /**
@@ -713,15 +819,14 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
 /**
  * POST /api/auth/refresh
  *
- * Reads the HttpOnly refresh token cookie, validates it, atomically rotates the
- * refresh row (UPDATE … WHERE token_hash), and returns a new JWT + refresh cookie.
- *
- * The frontend calls this on app init to silently restore a session after a
- * page reload, and again ~1 minute before the JWT expires.
+ * Reads the HttpOnly refresh token cookie **or** JSON `{ refreshToken }` (native),
+ * validates it, atomically rotates the refresh row, and returns a new JWT.
+ * Cookie clients keep refresh in Set-Cookie only; body clients also get
+ * `refreshToken` in the JSON body for secure storage.
  */
 export async function handleRefreshToken(request: any, env: any, corsHeaders: any) {
-  const rawToken = getRefreshTokenFromCookie(request);
-  // No cookie — visitor has no session. 204 (not 401) avoids a red XHR in DevTools
+  const { rawToken, source } = await readRefreshTokenFromRequest(request);
+  // No cookie / body — visitor has no session. 204 (not 401) avoids a red XHR in DevTools
   // on every page load; the frontend treats this as "not logged in".
   if (!rawToken) {
     return new Response(null, {
@@ -772,36 +877,36 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
     });
   }
 
-  const totpRequired = shouldRequireTotpEnrollment(user, env);
+  const sessionUser = await buildSessionUserPayload(user, env);
   const newAccessToken = await createAccessToken(user, env.JWT_SECRET);
 
   const headers = buildResponseHeaders(corsHeaders);
   headers.set('Set-Cookie', buildRefreshCookie(newRefreshToken, REFRESH_TOKEN_TTL));
 
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      accessToken: newAccessToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        totpEnabled: !!user.totp_enabled,
-        totpRequired,
-      },
-    }),
-    { status: 200, headers },
-  );
+  const payload: Record<string, unknown> = {
+    ok: true,
+    accessToken: newAccessToken,
+    user: sessionUser,
+  };
+  if (source === 'body') {
+    payload.refreshToken = newRefreshToken;
+  }
+
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers,
+  });
 }
 
 /**
  * POST /api/auth/logout
  *
  * Deletes the refresh token from D1 and clears the cookie.
+ * Accepts cookie or JSON `{ refreshToken }` (native).
  * The frontend should also discard the in-memory JWT.
  */
 export async function handleLogout(request: any, env: any, corsHeaders: any) {
-  const rawToken = getRefreshTokenFromCookie(request);
+  const { rawToken } = await readRefreshTokenFromRequest(request);
 
   if (rawToken) {
     const db = getDb(env);

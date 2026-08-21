@@ -30,6 +30,21 @@ export {
   sanitizeVideoSlug,
   transliterateToAscii,
 } from './videoSlug.js';
+export {
+  getPlaybackEndClearThresholds,
+  getPlaybackSaveIntervalMs,
+  isNearPlaybackEnd,
+  normalizeClientCapturedAtMs,
+  PLAYBACK_POSITION_END_EPSILON_MAX_SECONDS,
+  PLAYBACK_POSITION_END_EPSILON_MIN_FRACTION,
+  PLAYBACK_POSITION_END_FRACTION_LONG,
+  PLAYBACK_POSITION_MAX_CLOCK_SKEW_MS,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MAX_MS,
+  PLAYBACK_POSITION_SAVE_INTERVAL_MIN_MS,
+  PLAYBACK_POSITION_SHORT_FORM_MAX_SECONDS,
+  shouldRejectStalePlaybackWrite,
+} from './playbackPosition.js';
 
 export interface User {
   id: string;
@@ -154,4 +169,51 @@ export interface OfflineDownloadSummary {
   lastRenewedAt: string | null;
   manifestHash: string;
   manifestVersion: number;
+}
+
+/** Native app push platforms (APNs / FCM). Web Push stays on push_subscriptions. */
+export type NativePushPlatform = 'ios' | 'android';
+
+export interface NativePushDeviceRegistration {
+  platform: NativePushPlatform;
+  token: string;
+  deviceId?: string;
+}
+
+export interface DevicePairingStartResponse {
+  pairingCode: string;
+  expiresAt: string;
+  pollIntervalSeconds: number;
+}
+
+export type DevicePairingPollStatus = 'pending' | 'expired' | 'ready';
+
+export interface NativeAuthUser {
+  id: string;
+  email: string;
+  role: string;
+  totpEnabled: boolean;
+  totpRequired: boolean;
+}
+
+export interface NativeSessionResponse {
+  ok: true;
+  accessToken: string;
+  refreshToken: string;
+  user: NativeAuthUser;
+}
+
+export interface NativeTwoFactorPendingResponse {
+  requiresTwoFactor: true;
+  pendingToken: string;
+}
+
+export type NativeRedeemResponse = NativeSessionResponse | NativeTwoFactorPendingResponse;
+
+export interface DevicePairingPreview {
+  pairingCode: string;
+  status: 'pending' | 'expired' | 'approved' | 'redeemed';
+  expiresAt: string;
+  deviceName: string | null;
+  devicePlatform: string | null;
 }

@@ -2529,11 +2529,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     <input
                       v-model="siteBranding.site_support_email"
                       type="email"
-                      placeholder="vmp@tjm.sk"
+                      placeholder="support@example.com"
                       class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
                     >
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Used for mailto links on the account and 2FA pages.
+                      Used for mailto links on the personal-data, account, and 2FA pages. Leave empty
+                      only while configuring the site — public privacy contact will show an
+                      unavailable state until set.
+                    </p>
+                    <p
+                      v-if="!String(siteBranding.site_support_email || '').trim()"
+                      class="mt-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5"
+                      role="status"
+                    >
+                      {{ strings.admin.supportEmailMissingWarning }}
                     </p>
                   </label>
                   <label class="block text-sm text-gray-700 dark:text-gray-300">
@@ -3453,7 +3462,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         <div class="mt-4 flex justify-end">
           <button
             type="button"
-            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
             @click="closeScheduleModal"
           >
             Done
@@ -3584,7 +3593,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div class="flex justify-end gap-2 mt-5">
             <button
               type="button"
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="closeTransferSubscriptionModal"
             >
               Cancel
@@ -3617,7 +3626,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div class="flex justify-end gap-2">
             <button
               type="button"
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="transferSubModal.step = 0"
             >
               Back
@@ -3757,7 +3766,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </p>
           <div class="flex justify-end gap-2">
             <button
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="swapModal.step = 0"
             >
               Back
@@ -4016,6 +4025,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   }
 
   const config = useRuntimeConfig();
+  const { strings } = useStrings();
   const { authHeader, canEditContent, isAdmin, initialised, user } = useAuth();
   const router = useRouter();
   const route = useRoute();
@@ -6333,7 +6343,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         site_description: data.site_description || '',
         site_logo_url: data.site_logo_url || '',
         site_favicon_url: data.site_favicon_url || '',
-        site_support_email: data.site_support_email || 'vmp@tjm.sk',
+        site_support_email: data.site_support_email || '',
         podcast_title: data.podcast_title || '',
         podcast_description: data.podcast_description || '',
         gtm_enabled:
