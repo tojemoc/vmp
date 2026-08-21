@@ -269,7 +269,7 @@ export const strings: StringsDefinition = {
   accessUntil: 'Přístup do',
   subscriptionCanceling: 'Ruší se',
   subscriptionCancelingHint:
-    'Předplatné se neobnoví. Pomocí Spravovat předplatné níže ho můžete obnovit, dokud přístup neskončí.',
+    'Předplatné se neobnoví. Pomocí tlačítka „Spravovat předplatné“ níže ho můžete obnovit, dokud přístup neskončí.',
   planMonthly: 'Měsíční',
   planYearly: 'Roční',
   planClub: 'Klubové předplatné',

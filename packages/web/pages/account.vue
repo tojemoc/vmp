@@ -216,7 +216,7 @@
               class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               :class="
                 subscription.cancelAtPeriodEnd
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-gray-900'
                   : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
               "
               :disabled="openingPortal"
