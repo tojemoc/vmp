@@ -59,7 +59,7 @@ describe('handleSiteSettings GET', () => {
     const body = await response.json();
     assert.equal(body.site_name, 'VMP');
     assert.equal(body.gtm_enabled, '1');
-    assert.equal(body.site_support_email, 'vmp@tjm.sk');
+    assert.equal(body.site_support_email, '');
 
     const adminSettingsQueries = db.queryLog.filter((sql) => sql.includes('admin_settings'));
     const batchedQueries = adminSettingsQueries.filter((sql) => sql.includes('key IN'));

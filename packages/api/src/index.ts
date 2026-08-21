@@ -178,6 +178,13 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
+import {
+  handleAdminClearPlaybackPositions,
+  handleDeletePlaybackPosition,
+  handleGetPlaybackPosition,
+  handleListPlaybackPositions,
+  handlePutPlaybackPosition,
+} from './playbackPositions.js';
 import { handleGetAccountRss } from './rssAccount.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
@@ -654,6 +661,23 @@ const workerHandler = {
       if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) && request.method === 'POST') {
         return handleVideoSwap(request, env, corsHeaders);
       }
+      if (
+        url.pathname.match(/^\/api\/admin\/videos\/([^/]+)\/playback-positions$/) &&
+        request.method === 'DELETE'
+      ) {
+        const adminPlaybackMatch = url.pathname.match(
+          /^\/api\/admin\/videos\/([^/]+)\/playback-positions$/,
+        );
+        const adminPlaybackVideoId = adminPlaybackMatch?.[1];
+        if (adminPlaybackVideoId) {
+          return handleAdminClearPlaybackPositions(
+            request,
+            env,
+            corsHeaders,
+            adminPlaybackVideoId,
+          );
+        }
+      }
       if (url.pathname === '/api/admin/push/test' && request.method === 'POST') {
         return handleAdminPushTest(request, env, corsHeaders);
       }
@@ -1004,6 +1028,24 @@ const workerHandler = {
       }
       if (url.pathname === '/api/account/rss' && request.method === 'GET') {
         return handleGetAccountRss(request, env, corsHeaders);
+      }
+      if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
+        return handleListPlaybackPositions(request, env, corsHeaders);
+      }
+      {
+        const playbackPositionMatch = url.pathname.match(
+          /^\/api\/account\/playback-positions\/([^/]+)$/,
+        );
+        const playbackVideoId = playbackPositionMatch?.[1];
+        if (playbackVideoId && request.method === 'GET') {
+          return handleGetPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+        }
+        if (playbackVideoId && request.method === 'PUT') {
+          return handlePutPlaybackPosition(request, env, corsHeaders, playbackVideoId);
+        }
+        if (playbackVideoId && request.method === 'DELETE') {
+          return handleDeletePlaybackPosition(request, env, corsHeaders, playbackVideoId);
+        }
       }
       if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
         return handleAccountInvoices(request, env, corsHeaders);

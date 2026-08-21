@@ -191,6 +191,24 @@ Steps 1–7 are complete. Work continues from step 8.
 - Public listing feed: `GET /api/feed/public` — stable URL for directory submission; always serves **preview-only** enclosures.
 - Account helper: `GET /api/account/rss` (auth required) — returns `{ publicUrl, personalUrl }` for copy/paste into podcast apps.
 
+### Playback position resume (#488)
+
+- D1 table `playback_positions` stores last VOD position per signed-in user/video.
+- API: `GET/PUT/DELETE /api/account/playback-positions/:videoId`, list at `GET /api/account/playback-positions`.
+- Resume requires sign-in **and** active subscription with full access (not preview-only).
+- Near-end clear uses **duration-tiered** thresholds from `@vmp/shared` (`playbackPosition.ts`): short-form (≤5 min) uses a proportional 15% tail; long-form keeps 30s absolute + 95% fraction.
+- Periodic save interval scales with duration (~10% of clip length, clamped 5–30s).
+- Positions for all users on a video are cleared when the pipeline reports `fully_processed` (re-encode under same ID). Admins can also call `DELETE /api/admin/videos/:id/playback-positions` (requires `admin` or `super_admin`; editors cannot).
+- Account page **Continue watching** lists in-progress VOD; users can remove individual saved positions.
+- Client `capturedAtMs` writes are clamped if >5 min ahead of server time; stale rejection is skipped when stored timestamp is skewed into the future (clock recovery).
+- Catalog short-form share is still unknown — if most content is under 5 minutes, revisit thresholds in `@vmp/shared`.
+
+#### Known limitations and future improvements
+
+- **Re-encode clears all positions:** The `fully_processed` pipeline callback clears every user's saved position, including quality-only re-encodes where the timeline is unchanged. To preserve resume on quality upgrades, the pipeline callback would need a `contentChanged` flag — this requires a media-pipeline contract change. The admin endpoint `DELETE /api/admin/videos/:id/playback-positions` is available as a manual alternative.
+- **Postgres (api-node) migration compatibility:** Migration files use D1/SQLite SQL. The `translateSqliteDdl` function in `packages/api-node/src/bindings/sqlDialect.ts` handles most translations. SQLite-only functions (`json_insert`, `json_valid`, `json_type`, `json()`) are not translatable — statements using them are stripped. `instr()` is translated to `strpos()`. When writing new migrations that use SQLite-specific JSON functions, add a comment explaining the Postgres fallback and ensure the REPLACE-based paths cover the common case.
+- **Client clock skew:** A device whose clock is ahead by up to 5 minutes can suppress writes from other devices for that duration. This is acceptable for a resume feature; server-side timestamp arbitration would require a more complex API contract.
+
 ## Cursor Cloud-specific instructions
 
 ### MoQ livestreams

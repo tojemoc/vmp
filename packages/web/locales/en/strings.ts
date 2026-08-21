@@ -127,6 +127,7 @@ export const strings: StringsDefinition = {
   totpBackToSignIn: 'Back to sign in',
   totpLostAuthenticator: 'Lost access to your authenticator?',
   totpContactSupport: 'Contact support',
+  totpSupportUnavailable: 'Support email is not configured.',
   totpInvalidCode: 'Invalid code. Please try again.',
   totpVerificationFailed: 'Verification failed',
   totpPwaSessionExpired: 'Sign-in session expired. Open the link from your email again.',
@@ -239,6 +240,10 @@ export const strings: StringsDefinition = {
   mediaFailedToLoad: 'Media failed to load',
   liveCanvasUnavailable: 'Live canvas is unavailable',
   videoElementUnavailable: 'Video element is unavailable',
+  playbackResumeRequiresSignIn: 'Sign in with an active subscription to resume where you left off.',
+  playbackResumeRequiresSubscription:
+    'Resume where you left off is available with an active subscription.',
+  playbackResumedAt: (time: string) => `Resuming from ${time}`,
 
   // ── Rate limit ─────────────────────────────────────────────────────────────
   rateLimitTitle: 'Free preview limit reached',
@@ -304,6 +309,19 @@ export const strings: StringsDefinition = {
   podcastRssTitle: 'Podcast RSS',
   podcastRssIntro: 'Use your personal URL in your podcast app for full episodes while subscribed.',
   podcastRssPersonalLabel: 'Your personal URL',
+  continueWatchingTitle: 'Continue watching',
+  continueWatchingIntro:
+    'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',
+  continueWatchingIntroLapsed:
+    'Saved playback positions remain on our servers while you are signed in. Remove any entry below to delete its saved position. Resume is available again when your subscription is active.',
+  continueWatchingEmpty: 'No videos in progress right now.',
+  continueWatchingRemove: 'Remove',
+  continueWatchingRemoving: 'Removing…',
+  continueWatchingLoadFailed: 'Could not load continue-watching list.',
+  continueWatchingLoadNetworkError: 'Network error loading continue-watching list.',
+  continueWatchingRemoveFailed: 'Could not remove saved position.',
+  continueWatchingProgress: (percent: number) => `${percent}% watched`,
+  continueWatchingTruncated: 'Showing your 20 most recently watched.',
   copy: 'Copy',
   copied: 'Copied',
   rssLoadFailed: 'Could not load RSS URLs.',
@@ -384,6 +402,13 @@ export const strings: StringsDefinition = {
     'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
   personalDataLearnMore: 'Personal data notice',
   personalDataBannerAcknowledge: 'I understand',
+  personalDataContactTitle: 'Contact for privacy requests',
+  personalDataContactIntro:
+    'To request access, erasure, or other GDPR rights — including account deletion — email our support address:',
+  personalDataContactUnavailable:
+    'A support email is not configured on this site yet. Sign in and use your account page, or check back after the site operator publishes a contact address.',
+  personalDataContactAccountHint:
+    'You can also reach support from your account page after signing in.',
   personalDataTableName: 'Name / key',
   personalDataTableMechanism: 'Mechanism',
   personalDataTablePurpose: 'Purpose',
@@ -429,6 +454,8 @@ export const strings: StringsDefinition = {
     },
     newsletterAdminOnly:
       'Only site administrators can configure Brevo and send newsletter campaigns. Editors can use other admin tabs.',
+    supportEmailMissingWarning:
+      'Support email is not set. The personal-data page cannot show a mailto contact until you save an address here.',
     slotEmpty: (n: number) => `Slot ${n}`,
     noVideoSelected: 'No video selected',
     blockTitlePlaceholder: 'Block title',

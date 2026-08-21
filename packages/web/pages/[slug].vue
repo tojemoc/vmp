@@ -14,6 +14,37 @@
         <CmsBlockRenderer :blocks="bodyBlocks" :image-urls="imageUrls" />
       </article>
 
+      <section
+        v-if="isPersonalDataPage"
+        class="mt-10 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-3"
+      >
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+          {{ strings.personalDataContactTitle }}
+        </h2>
+        <template v-if="supportEmail">
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            {{ strings.personalDataContactIntro }}
+          </p>
+          <p>
+            <a
+              :href="supportMailto"
+              class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline break-all"
+            >
+              {{ supportEmail }}
+            </a>
+          </p>
+        </template>
+        <p v-else class="text-sm text-amber-800 dark:text-amber-200">
+          {{ strings.personalDataContactUnavailable }}
+        </p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {{ strings.personalDataContactAccountHint }}
+          <NuxtLink to="/account" class="text-blue-600 dark:text-blue-400 hover:underline">
+            {{ strings.yourAccount }}
+          </NuxtLink>
+        </p>
+      </section>
+
       <p class="mt-10 text-sm text-gray-500 dark:text-gray-400">
         <NuxtLink to="/" class="text-blue-600 dark:text-blue-400 hover:underline">
           {{ strings.backToHomepage }}
@@ -33,6 +64,13 @@
   const { strings } = useStrings();
 
   const slug = computed(() => String(route.params.slug ?? ''));
+  const isPersonalDataPage = computed(() => slug.value === 'personal-data');
+
+  const { siteSettings } = useSiteSettings();
+  const supportEmail = computed(() => siteSettings.value.supportEmail?.trim() || '');
+  const supportMailto = computed(() =>
+    supportEmail.value ? `mailto:${supportEmail.value}` : '',
+  );
 
   if (isCmsReservedSlug(slug.value)) {
     throw createError({ statusCode: 404, statusMessage: 'Page not found' });

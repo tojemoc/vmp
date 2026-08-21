@@ -1,0 +1,174 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import {
+  classifyPlaybackPosition,
+  normalizeCapturedAtMs,
+  normalizeOptionalDurationSeconds,
+  normalizePositionSeconds,
+  PLAYBACK_POSITION_MIN_SAVE_SECONDS,
+  shouldRejectStalePlaybackWrite,
+  shouldThrottlePlaybackWrite,
+} from '../src/playbackPositions.js';
+
+describe('normalizeCapturedAtMs', () => {
+  it('accepts positive numbers and floors them', () => {
+    assert.equal(normalizeCapturedAtMs(1234567890.9), 1234567890);
+  });
+
+  it('accepts numeric strings', () => {
+    assert.equal(normalizeCapturedAtMs('1000'), 1000);
+  });
+
+  it('rejects zero, negative, and non-numeric values', () => {
+    assert.equal(normalizeCapturedAtMs(0), null);
+    assert.equal(normalizeCapturedAtMs(-500), null);
+    assert.equal(normalizeCapturedAtMs('nope'), null);
+    assert.equal(normalizeCapturedAtMs(undefined), null);
+    assert.equal(normalizeCapturedAtMs(Number.NaN), null);
+  });
+});
+
+describe('normalizePositionSeconds', () => {
+  it('accepts finite non-negative numbers', () => {
+    assert.equal(normalizePositionSeconds(0), 0);
+    assert.equal(normalizePositionSeconds(12.5), 12.5);
+    assert.equal(normalizePositionSeconds('90'), 90);
+  });
+
+  it('rejects invalid values', () => {
+    assert.equal(normalizePositionSeconds(-1), null);
+    assert.equal(normalizePositionSeconds(Number.NaN), null);
+    assert.equal(normalizePositionSeconds('nope'), null);
+    assert.equal(normalizePositionSeconds(undefined), null);
+  });
+});
+
+describe('normalizeOptionalDurationSeconds', () => {
+  it('returns null for missing or non-positive values', () => {
+    assert.equal(normalizeOptionalDurationSeconds(undefined), null);
+    assert.equal(normalizeOptionalDurationSeconds(0), null);
+    assert.equal(normalizeOptionalDurationSeconds(-5), null);
+  });
+
+  it('returns positive durations', () => {
+    assert.equal(normalizeOptionalDurationSeconds(120), 120);
+  });
+});
+
+describe('classifyPlaybackPosition', () => {
+  it('clears positions before the minimum save threshold', () => {
+    assert.equal(classifyPlaybackPosition(0, 600), 'clear');
+    assert.equal(classifyPlaybackPosition(PLAYBACK_POSITION_MIN_SAVE_SECONDS - 0.1, 600), 'clear');
+  });
+
+  it('saves mid-video positions', () => {
+    assert.equal(classifyPlaybackPosition(120, 600), 'save');
+  });
+
+  it('clears near-end positions on long-form content', () => {
+    assert.equal(classifyPlaybackPosition(580, 600), 'clear');
+    assert.equal(classifyPlaybackPosition(570, 600), 'clear');
+  });
+
+  it('does not treat 2:30 on a 3-minute clip as finished', () => {
+    assert.equal(classifyPlaybackPosition(150, 180), 'save');
+  });
+
+  it('clears positions past duration as finished', () => {
+    assert.equal(classifyPlaybackPosition(700, 600), 'clear');
+  });
+
+  it('saves without duration metadata', () => {
+    assert.equal(classifyPlaybackPosition(45, null), 'save');
+  });
+});
+
+describe('shouldThrottlePlaybackWrite', () => {
+  it('does not throttle forced flushes', () => {
+    assert.equal(
+      shouldThrottlePlaybackWrite({
+        lastUpdatedAt: new Date().toISOString(),
+        force: true,
+      }),
+      false,
+    );
+  });
+
+  it('throttles recent non-flush writes', () => {
+    const now = Date.now();
+    assert.equal(
+      shouldThrottlePlaybackWrite({
+        lastUpdatedAt: new Date(now - 1000).toISOString(),
+        nowMs: now,
+        force: false,
+      }),
+      true,
+    );
+  });
+
+  it('allows writes after the cooldown', () => {
+    const now = Date.now();
+    assert.equal(
+      shouldThrottlePlaybackWrite({
+        lastUpdatedAt: new Date(now - 6000).toISOString(),
+        nowMs: now,
+        force: false,
+      }),
+      false,
+    );
+  });
+});
+
+describe('shouldRejectStalePlaybackWrite', () => {
+  it('rejects writes older than the stored capture time', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 1000,
+        serverNowMs: 2500,
+      }),
+      true,
+    );
+  });
+
+  it('allows equal or newer capture times', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 2000,
+        serverNowMs: 2500,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: 2500,
+        serverNowMs: 3000,
+      }),
+      false,
+    );
+  });
+
+  it('does not reject when existing timestamp is missing', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: null,
+        incomingCapturedAtMs: 1000,
+        serverNowMs: 1500,
+      }),
+      false,
+    );
+  });
+
+  it('does not reject when incoming timestamp is missing', () => {
+    assert.equal(
+      shouldRejectStalePlaybackWrite({
+        existingCapturedAtMs: 2000,
+        incomingCapturedAtMs: null,
+        serverNowMs: 2500,
+      }),
+      false,
+    );
+  });
+});
