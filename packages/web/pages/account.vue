@@ -551,7 +551,7 @@
   const hasActiveSubscription = computed(() => {
     const sub = subscription.value;
     if (!sub) return false;
-    return sub.status === 'active' || sub.status === 'trialing' || sub.status === 'needs_relink';
+    return sub.status === 'active' || sub.status === 'trialing';
   });
 
   const continueWatchingDeletionOnly = computed(
