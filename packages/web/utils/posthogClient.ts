@@ -12,5 +12,9 @@ function getPostHogClient(): PostHogCaptureClient | undefined {
 /** Capture a snake_case product event when the browser PostHog client is initialized. */
 export function capturePostHogEvent(event: string, properties: Record<string, unknown> = {}): void {
   if (import.meta.server) return;
-  getPostHogClient()?.capture(event, properties);
+  try {
+    getPostHogClient()?.capture(event, properties);
+  } catch {
+    // Best-effort: analytics must not break product flows.
+  }
 }

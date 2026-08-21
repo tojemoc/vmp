@@ -11,7 +11,10 @@ const posthogPublicKey = (
   process.env.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN ||
   ''
 ).trim();
-const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || '').trim();
+const posthogHost = (
+  process.env.NUXT_PUBLIC_POSTHOG_HOST ||
+  'https://eu.i.posthog.com'
+).trim();
 const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
 const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
 const posthogEnabled = Boolean(posthogPublicKey);

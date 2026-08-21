@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import {
+  captureMappedPostHogEvent,
   capturePostHogEvent,
   capturePostHogException,
   createPostHogClient,
@@ -9,16 +10,19 @@ import {
   posthogContextFromRequest,
   posthogEventFromLegacyWebhook,
   posthogEventFromStripeWebhook,
+  redactPathForAnalytics,
+  resetPostHogClientForTests,
   resolvePostHogHost,
   resolvePostHogProjectToken,
   setPostHogCaptureForTests,
   setPostHogExceptionForTests,
-} from '../src/posthog.ts';
+} from '../src/posthog.js';
 
 describe('PostHog API helper', () => {
   afterEach(() => {
     setPostHogCaptureForTests(null);
     setPostHogExceptionForTests(null);
+    resetPostHogClientForTests();
   });
 
   it('resolves project token and host from Worker env', () => {
@@ -55,6 +59,19 @@ describe('PostHog API helper', () => {
       distinctId: 'user_1',
       sessionId: 'sess_1',
     });
+  });
+
+  it('redacts path identifiers for analytics properties', () => {
+    assert.equal(
+      redactPathForAnalytics(
+        '/api/feed/550e8400-e29b-41d4-a716-446655440000/abcdef0123456789abcdef01',
+      ),
+      '/api/feed/:id/:token',
+    );
+    assert.equal(
+      redactPathForAnalytics('/api/account/playback-positions/video_123'),
+      '/api/account/playback-positions/video_123',
+    );
   });
 
   it('maps Stripe webhook types to product events without duplicating checkout create invoices', () => {
@@ -141,7 +158,7 @@ describe('PostHog API helper', () => {
     await capturePostHogEvent(
       { POSTHOG_PROJECT_TOKEN: 'phc_test' },
       { distinctId: 'user_1', event: 'subscription_activated', properties: { provider: 'stripe' } },
-      request,
+      { request },
     );
     assert.deepEqual(captured, [
       {
@@ -149,6 +166,28 @@ describe('PostHog API helper', () => {
         properties: { $session_id: 'sess_abc', provider: 'stripe' },
       },
     ]);
+  });
+
+  it('schedules mapped captures via waitUntil when ctx is provided', async () => {
+    const captured: string[] = [];
+    const scheduled: Promise<unknown>[] = [];
+    setPostHogCaptureForTests(async (input) => {
+      await Promise.resolve();
+      captured.push(input.event);
+    });
+    const result = captureMappedPostHogEvent(
+      { POSTHOG_PROJECT_TOKEN: 'phc_test' },
+      { distinctId: 'user_1', event: 'subscription_activated' },
+      {
+        waitUntil(promise) {
+          scheduled.push(promise);
+        },
+      },
+    );
+    assert.equal(result, undefined);
+    assert.equal(scheduled.length, 1);
+    await scheduled[0];
+    assert.deepEqual(captured, ['subscription_activated']);
   });
 
   it('forwards exceptions through the test handler', async () => {

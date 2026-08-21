@@ -20,7 +20,8 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Ak len čítate verejné stránky a neprihlásite sa, nenastavujeme autentifikačnú cookie. Anonymné ukážky videí sú poskytované cez naše API; pozícia prehrávania sa medzi návštevami neukladá.',
         'Používame analytiku zameranú na súkromie bez cookies (Umami Cloud, dátová oblasť EÚ) na meranie veľkosti publika. Umami v predvolenej konfigurácii nenastavuje marketingové cookies ani cross-site identifikátory. Pre tento obmedzený štatistický účel sa opierame o oprávnený záujem a môžete namietať (pozrite Vaše práva).',
-        'Keď ste prihlásení, používame aj PostHog (EÚ cloud) na produktovú analytiku. Udalosti sú viazané len na interné ID účtu — e-mailovú adresu do PostHogu neodosielame. Personálne profily vznikajú len pre prihlásených používateľov.',
+        'Používame aj PostHog (EÚ cloud) na produktovú analytiku. Pred prihlásením môžu byť zaznamenané anonymné udalosti (napríklad žiadosť o magic link). Tieto udalosti používajú anonymné id prehliadača a nevytvárajú personálny profil v PostHogu. Po prihlásení sú udalosti viazané len na interné ID účtu — e-mailovú adresu neodosielame. Personálne profily vznikajú len pre prihlásených používateľov.',
+        'Naše API môže odosielať technické výnimky do PostHogu na analýzu spoľahlivosti. Neautentizované chyby používajú krátkodobé náhodné id (nie váš účet). Uchovávanie udalostí sa riadi nastavením retencie nášho PostHog projektu v EÚ.',
       ],
     },
     {
@@ -29,7 +30,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Niektoré funkcie fungujú len vtedy, ak prehliadač uloží malé množstvo údajov. Sú nevyhnutné pre funkciu, o ktorú žiadate — nie na reklamu alebo profilovanie.',
         'Prihlásením, predplatením, povolením notifikácií, inštaláciou webovej aplikácie alebo zmenou rýchlosti prehrávania používate funkcie, ktoré vyžadujú úložisko uvedené v tabuľke nižšie. Väčšinu tohto úložiska sa môžete vyhnúť tým, že tieto funkcie nepoužijete (napríklad zostanete odhlásení a nemeníte nastavenia prehrávača).',
-        'Vašu interakciu nepoužívame ako súhlas s nesúvisiacimi marketingovými trackermi. Voliteľné reklamné nástroje, ktoré nie sú nevyhnutné, by najprv vyžadovali súhlas. Produktová analytika pre prihlásených (PostHog) používa iba ID účtu a je uvedená u spracovateľov nižšie.',
+        'Vašu interakciu nepoužívame ako súhlas s nesúvisiacimi marketingovými trackermi. Voliteľné reklamné nástroje, ktoré nie sú nevyhnutné, by najprv vyžadovali súhlas. Produktová analytika PostHog (anonymné udalosti pred prihlásením a udalosti s ID účtu po prihlásení) je uvedená u spracovateľov nižšie.',
       ],
     },
     {
@@ -45,12 +46,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primárne hosting používa Cloudflare (API Worker, databáza D1, médiá R2, frontend Pages). Prevádzka prebieha cez globálnu sieť Cloudflare; nemôžeme zaručiť, že každý bajt zostane v EÚ, ale minimalizujeme osobné údaje a kde je to možné používame analytiku so sídlom v EÚ.',
         'Záložná infraštruktúra môže bežať na Deno Deploy (API) a Vercel (frontend).',
-        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; PostHog (EÚ) pre produktovú analytiku prihlásených (iba ID účtu, bez e-mailu); Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
+        'Ďalší spracovatelia zahŕňajú: Umami Cloud (EÚ) pre anonymnú štatistiku; PostHog (EÚ) pre produktovú analytiku (anonymné udalosti pred prihlásením bez personálnych profilov; po prihlásení len ID účtu, bez e-mailu; výnimky API); Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API. Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnosť (globálny edge)',
         'Umami Cloud (región EÚ) — štatistika zobrazení stránok bez cookies',
-        'PostHog (EÚ cloud) — produktová analytika pre prihlásených (iba ID účtu)',
+        'PostHog (EÚ cloud) — produktová analytika a technické výnimky (po prihlásení ID účtu; bez e-mailu)',
         'Stripe — spracovanie platieb pri predplatení',
         'Brevo — magic-link a e-maily účtu',
         'Sentry — monitorovanie chýb a stability (technické logy)',
@@ -147,9 +148,9 @@ export const personalData: PersonalDataPage = {
       name: 'PostHog persistence (ph_*)',
       mechanism: 'localStorage / first-party cookies',
       purpose:
-        'Produktová analytika pre prihlásené relácie (distinct id / session). Neukladá váš e-mail.',
+        'Produktová analytika (anonymná pred prihlásením; po prihlásení viazaná na ID účtu). Neukladá váš e-mail. Uchovávanie podľa nastavení PostHog projektu v EÚ.',
       lifetime: 'Kým nevymažete údaje stránky alebo odhlásenie neresetuje identitu',
-      necessary: 'Funkčné — produktová analytika pre prihlásených (uvedené)',
+      necessary: 'Funkčné — produktová analytika (uvedené)',
     },
     {
       name: 'vmp_personal_data_notice_ack',

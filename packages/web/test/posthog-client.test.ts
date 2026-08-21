@@ -48,4 +48,17 @@ describe('posthogClient', () => {
       },
     ]);
   });
+
+  it('capturePostHogEvent swallows client capture errors', () => {
+    setWindow({
+      posthog: {
+        capture: () => {
+          throw new Error('posthog down');
+        },
+      },
+    });
+    assert.doesNotThrow(() => {
+      capturePostHogEvent('magic_link_requested');
+    });
+  });
 });

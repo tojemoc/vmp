@@ -12,7 +12,7 @@
     "@smithy/core": "npm:@smithy/core",
     "@smithy/core/protocols": "npm:@smithy/core/protocols",
     "@smithy/fetch-http-handler": "npm:@smithy/fetch-http-handler",
-    "posthog-node": "npm:posthog-node"
+    "posthog-node": "npm:posthog-node@5.49.1"
   },
   "deploy": {
     "org": "tjm",

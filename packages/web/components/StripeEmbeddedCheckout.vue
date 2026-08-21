@@ -355,16 +355,15 @@
       }
       confirmActions = loadActionsResult.actions;
 
-      // Fire only once the embedded form is interactive (matches legacy
-      // checkout, which fires immediately before navigating to payment).
+      loading.value = false;
+      await syncMountedSurfaces();
+      if (generation !== teardownGeneration) return;
+
+      // Fire only once mounted surfaces are ready (form interactive).
       capturePostHogEvent('subscription_checkout_started', {
         plan_type: props.planType,
         provider: 'stripe',
       });
-
-      loading.value = false;
-      await syncMountedSurfaces();
-      if (generation !== teardownGeneration) return;
     } catch (err: unknown) {
       if (generation !== teardownGeneration) return;
       initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed;

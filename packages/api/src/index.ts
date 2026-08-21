@@ -143,7 +143,11 @@ import {
   handleWebhook,
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
-import { capturePostHogException, POSTHOG_TRACING_REQUEST_HEADERS } from './posthog.js';
+import {
+  capturePostHogException,
+  POSTHOG_TRACING_REQUEST_HEADERS,
+  redactPathForAnalytics,
+} from './posthog.js';
 import {
   handleAdminIsicCampaigns,
   handleAdminPromoCampaigns,
@@ -930,10 +934,10 @@ const workerHandler = {
           return handleSessionStatus(request, env, corsHeaders);
         }
         if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
-          return handleWebhook(request, env, corsHeaders);
+          return handleWebhook(request, env, corsHeaders, ctx);
         }
         if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
-          return handleLegacyWebhook(request, env, corsHeaders);
+          return handleLegacyWebhook(request, env, corsHeaders, ctx);
         }
         if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
           return handleLegacyCheckout(request, env, corsHeaders);
@@ -1094,9 +1098,14 @@ const workerHandler = {
         });
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
       } catch (err) {
-        await capturePostHogException(env, err, {
+        capturePostHogException(env, err, {
           request,
-          properties: { handler: 'fetch', http_method: request.method, http_path: url.pathname },
+          ctx,
+          properties: {
+            handler: 'fetch',
+            http_method: request.method,
+            http_path: redactPathForAnalytics(url.pathname),
+          },
         });
         throw err;
       }

@@ -471,6 +471,7 @@ export async function handleLegacyWebhook(
   request: Request,
   env: any,
   corsHeaders: Record<string, string>,
+  ctx?: { waitUntil?: (promise: Promise<unknown>) => void },
 ) {
   const rawBody = await request.text();
   const signature =
@@ -546,7 +547,7 @@ export async function handleLegacyWebhook(
     }
   }
 
-  await captureMappedPostHogEvent(env, posthogEventFromLegacyWebhook(status, userId));
+  captureMappedPostHogEvent(env, posthogEventFromLegacyWebhook(status, userId), ctx);
 
   return jsonResponse({ ok: true }, 200, corsHeaders);
 }

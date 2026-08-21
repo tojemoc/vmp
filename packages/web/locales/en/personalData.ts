@@ -20,7 +20,8 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'If you only read public pages and do not sign in, we do not set an authentication cookie. Anonymous video previews are served through our API; playback position is not saved between visits.',
         'We use privacy-oriented, cookieless pageview analytics (Umami Cloud, EU data region) to measure audience size. Umami does not set marketing cookies or cross-site identifiers in its default configuration. We rely on legitimate interest for this limited statistical purpose and you can object (see Your rights).',
-        'When you are signed in, we also use PostHog (EU cloud) for product analytics. Events are tied to your internal account ID only — we do not send your email address to PostHog. Person profiles are created only for signed-in users.',
+        'We also use PostHog (EU cloud) for product analytics. Before you sign in, a small set of anonymous events may be recorded (for example requesting a magic link). Those events use an anonymous browser id and do not create a PostHog person profile. After you sign in, events are tied to your internal account ID only — we do not send your email address to PostHog. Person profiles are created only for signed-in users.',
+        'Our API may send technical exception events to PostHog for reliability analysis. Unauthenticated errors use a short-lived random id (not your account). Event retention follows our PostHog EU project retention settings.',
       ],
     },
     {
@@ -29,7 +30,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Certain features only work if the browser stores a small amount of data. These are strictly necessary for the feature you request — not for advertising or profiling.',
         'By signing in, subscribing, enabling notifications, installing the web app, or changing playback speed, you use features that require the storage listed in the table below. You can avoid most of this storage by not using those features (for example, stay logged out and do not change player settings).',
-        'We do not use your interaction as consent to unrelated marketing trackers. Optional advertising tools that are not strictly necessary would require consent first. Signed-in product analytics (PostHog) uses your account ID only and is disclosed under processors below.',
+        'We do not use your interaction as consent to unrelated marketing trackers. Optional advertising tools that are not strictly necessary would require consent first. PostHog product analytics (anonymous pre-auth events and signed-in account-id events) is disclosed under processors below.',
       ],
     },
     {
@@ -45,12 +46,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
         'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
-        'Other processors include: Umami Cloud (EU) for anonymous statistics; PostHog (EU) for signed-in product analytics (account ID only, no email); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
+        'Other processors include: Umami Cloud (EU) for anonymous statistics; PostHog (EU) for product analytics (anonymous pre-auth events without person profiles; signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, security (global edge)',
         'Umami Cloud (EU region) — cookieless pageview statistics',
-        'PostHog (EU cloud) — product analytics for signed-in users (account ID only)',
+        'PostHog (EU cloud) — product analytics and technical exceptions (account ID after sign-in; no email)',
         'Stripe — payment processing when you subscribe',
         'Brevo — magic-link and account email',
         'Sentry — error and stability monitoring (technical logs)',
@@ -147,9 +148,9 @@ export const personalData: PersonalDataPage = {
       name: 'PostHog persistence (ph_*)',
       mechanism: 'localStorage / first-party cookies',
       purpose:
-        'Product analytics for signed-in sessions (distinct id / session). Not used to store your email.',
+        'Product analytics session/distinct id (anonymous before sign-in; linked to account id after). Does not store your email. Retention follows our PostHog EU project settings.',
       lifetime: 'Until you clear site data or sign out resets identity',
-      necessary: 'Functional — signed-in product analytics (disclosed)',
+      necessary: 'Functional — product analytics (disclosed)',
     },
     {
       name: 'vmp_personal_data_notice_ack',

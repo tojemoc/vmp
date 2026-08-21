@@ -879,7 +879,12 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
  * POST /api/payments/webhook — NO auth (Stripe calls this directly)
  * Verifies Stripe signature and handles subscription lifecycle events.
  */
-export async function handleWebhook(request: any, env: any, corsHeaders: any) {
+export async function handleWebhook(
+  request: any,
+  env: any,
+  corsHeaders: any,
+  ctx?: { waitUntil?: (promise: Promise<unknown>) => void },
+) {
   const rawBody = await request.text();
   const sigHeader = request.headers.get('Stripe-Signature') ?? '';
   const { providers } = await getPaymentProviders(env);
@@ -936,9 +941,10 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               err: brevoErr,
             });
           }
-          await captureMappedPostHogEvent(
+          captureMappedPostHogEvent(
             env,
             posthogEventFromStripeWebhook('checkout.session.completed', session, userId),
+            ctx,
           );
         }
         break;
@@ -989,9 +995,10 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
             });
           }
           await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id));
-          await captureMappedPostHogEvent(
+          captureMappedPostHogEvent(
             env,
             posthogEventFromStripeWebhook('invoice.paid', invoice, String(existing.user_id)),
+            ctx,
           );
         }
         break;
@@ -1031,13 +1038,14 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
             });
             throw offlineErr;
           }
-          await captureMappedPostHogEvent(
+          captureMappedPostHogEvent(
             env,
             posthogEventFromStripeWebhook(
               'customer.subscription.deleted',
               stripeSub,
               String(row.user_id),
             ),
+            ctx,
           );
         }
         break;
@@ -1078,13 +1086,14 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
               });
               throw offlineErr;
             }
-            await captureMappedPostHogEvent(
+            captureMappedPostHogEvent(
               env,
               posthogEventFromStripeWebhook(
                 'invoice.payment_failed',
                 invoice,
                 String(existing.user_id),
               ),
+              ctx,
             );
           }
         }
@@ -1099,7 +1108,8 @@ export async function handleWebhook(request: any, env: any, corsHeaders: any) {
     return jsonResponse({ ok: true }, 200, corsHeaders);
   } catch (err) {
     console.error('handleWebhook error:', err);
-    await capturePostHogException(env, err, {
+    capturePostHogException(env, err, {
+      ...(ctx ? { ctx } : {}),
       properties: { handler: 'stripe_webhook' },
     });
     // Return 500 so Stripe retries the event on transient failures
