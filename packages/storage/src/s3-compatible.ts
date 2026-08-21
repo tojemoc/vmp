@@ -73,7 +73,8 @@ function resolveContentLength(
 ): number | undefined {
   if (opts?.contentLength != null) return opts.contentLength;
   if (typeof body === 'string') return Buffer.byteLength(body);
-  if (Buffer.isBuffer(body)) return body.length;
+  // Prefer instanceof Uint8Array over Buffer.isBuffer: with @cloudflare/workers-types
+  // loaded alongside @types/node, Buffer is typed as `any` and isBuffer stops narrowing.
   if (body instanceof Uint8Array) return body.byteLength;
   return undefined;
 }
