@@ -263,6 +263,7 @@ export const strings: StringsDefinition = {
   currentPlan: 'Aktuálny plán',
   providerLabel: 'Poskytovateľ',
   manageSubscription: 'Spravovať predplatné',
+  resumeSubscription: 'Obnoviť predplatné',
   openingPortal: 'Otvára sa…',
   subscribedWelcome: 'Teraz ste predplatiteľom!',
   subscribedWelcomeDetail:

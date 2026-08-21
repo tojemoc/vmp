@@ -256,6 +256,7 @@ export const strings: StringsDefinition = {
   currentPlan: 'Current plan',
   providerLabel: 'Provider',
   manageSubscription: 'Manage subscription',
+  resumeSubscription: 'Resume subscription',
   openingPortal: 'Opening…',
   subscribedWelcome: "You're now subscribed!",
   subscribedWelcomeDetail: 'Welcome to VMP Premium. Enjoy unlimited access to all content.',

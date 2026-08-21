@@ -233,6 +233,7 @@ export type StringsDefinition = {
   currentPlan: string;
   providerLabel: string;
   manageSubscription: string;
+  resumeSubscription: string;
   openingPortal: string;
   subscribedWelcome: string;
   subscribedWelcomeDetail: string;

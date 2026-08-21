@@ -223,7 +223,11 @@
               @click="openPortal"
             >
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
-              <span v-else>{{ strings.manageSubscription }}</span>
+              <span v-else>{{
+                subscription.cancelAtPeriodEnd
+                  ? strings.resumeSubscription
+                  : strings.manageSubscription
+              }}</span>
             </button>
             <a
               v-if="showLegacyManageButton && legacyManageUrl"

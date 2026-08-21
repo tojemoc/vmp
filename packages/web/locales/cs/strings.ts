@@ -262,6 +262,7 @@ export const strings: StringsDefinition = {
   currentPlan: 'Aktuální plán',
   providerLabel: 'Poskytovatel',
   manageSubscription: 'Spravovat předplatné',
+  resumeSubscription: 'Obnovit předplatné',
   openingPortal: 'Otevírá se…',
   subscribedWelcome: 'Nyní jste předplatitelem!',
   subscribedWelcomeDetail: 'Vítejte ve VMP Premium. Užijte si neomezený přístup ke všemu obsahu.',
