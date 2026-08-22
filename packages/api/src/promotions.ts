@@ -2,7 +2,7 @@ import { requireAuth, requireRole } from './auth.js';
 import { getSetting, setSettings } from './settingsStore.js';
 
 type RewardType = 'free_month' | 'free_year' | 'discount_percent';
-type PromoProvider = 'stripe';
+type PromoProvider = 'stripe' | 'legacy';
 type PopupBehavior = 'default' | 'highlight_campaign' | 'hide_standard' | 'isic_first';
 
 function getDb(env: any) {
@@ -221,12 +221,20 @@ export async function resolvePromoCodeForCheckout(
   if (!valid.ok) return { ok: false, reason: valid.code, status: valid.status, error: valid.error };
   const rewardMapping = getCheckoutRewardMapping(promoCode);
   if (promoCode.reward_type === 'discount_percent') {
+    if (provider !== 'stripe') {
+      return {
+        ok: false,
+        reason: 'promo_provider_mapping_missing',
+        status: 400,
+        error: 'This promo code is not available for the selected payment method.',
+      };
+    }
     if (!rewardMapping.stripeCouponId) {
       return {
         ok: false,
         reason: 'promo_provider_mapping_missing',
         status: 400,
-        error: 'Promo code is not configured for Stripe checkout',
+        error: 'Promo code is not configured for checkout with this payment method',
       };
     }
   }

@@ -1,11 +1,13 @@
-import type { PaymentProvider, QerkoPaymentsConfig } from '../../types.js';
+import type { ManageSubscriptionInput, PaymentProvider, QerkoPaymentsConfig } from '../../types.js';
 
 export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvider {
   return {
     id: 'qerko',
     capabilities: {
-      newSubscriptions: false,
-      migrationOnly: true,
+      // When enabled in admin settings, Qerko supports brand-new checkouts
+      // (initial payment / CardOnFile create) as well as migrated relinks.
+      newSubscriptions: true,
+      migrationOnly: false,
       recurringPayments: true,
       refunds: true,
       webhooks: true,
@@ -26,6 +28,11 @@ export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvide
     handleWebhook(rawBody) {
       const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
       return config.parseWebhook(body);
+    },
+
+    async getManageUrl(input) {
+      if (!config.getManageUrl) return null;
+      return config.getManageUrl(input);
     },
   };
 }

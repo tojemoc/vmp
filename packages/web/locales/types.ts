@@ -259,6 +259,8 @@ export type StringsDefinition = {
   accountRelinkCheckoutIntro: string;
   accountRelinkCheckoutWorking: string;
   accountManagePaymentMethod: string;
+  /** CTA for legacy/Qerko manage link, e.g. "Manage with Qerko". */
+  accountPayWithProvider: (provider: string) => string;
   offlineDownloadMenuLabel: string;
   offlineDownloadResume: string;
   offlineDownloadPwaRequiredTitle: string;
@@ -336,6 +338,8 @@ export type StringsDefinition = {
   checkoutBlurbStripe: string;
   checkoutBlurbBoth: string;
   checkoutStartFailed: string;
+  checkoutProviderUnavailable: string;
+  checkoutPlanUnavailable: string;
   checkoutSignInBefore: string;
   checkoutPromoLabel: string;
   checkoutPromoPlaceholder: string;

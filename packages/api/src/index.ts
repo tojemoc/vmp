@@ -934,7 +934,10 @@ const workerHandler = {
           return handleSessionStatus(request, env, corsHeaders);
         }
         if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
-          return handleWebhook(request, env, corsHeaders, ctx);
+          return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
+        }
+        if (url.pathname === '/api/payments/webhook/stripe' && request.method === 'POST') {
+          return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
         }
         if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
           return handleLegacyWebhook(request, env, corsHeaders, ctx);

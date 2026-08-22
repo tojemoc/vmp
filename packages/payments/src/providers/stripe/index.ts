@@ -2,6 +2,7 @@ import type {
   CheckoutSession,
   CreateCheckoutSessionInput,
   CreateSubscriptionInput,
+  ManageSubscriptionInput,
   NormalizedPaymentEvent,
   PaymentCustomer,
   PaymentProvider,
@@ -9,8 +10,24 @@ import type {
   StripePaymentsConfig,
   Subscription,
 } from '../../types.js';
+import { normalizeStripeInvoice } from './invoice.js';
 
 const STRIPE_API_VERSION = '2026-03-25.dahlia';
+
+function stripeSubscriptionPeriodEndUnix(stripeSub: {
+  current_period_end?: number | null;
+  items?: { data?: Array<{ current_period_end?: number | null }> };
+}): number | null {
+  const end = stripeSub.current_period_end ?? stripeSub.items?.data?.[0]?.current_period_end;
+  return typeof end === 'number' ? end : null;
+}
+
+function stripeSubscriptionPeriodEndIso(
+  stripeSub: Parameters<typeof stripeSubscriptionPeriodEndUnix>[0],
+): string | null {
+  const end = stripeSubscriptionPeriodEndUnix(stripeSub);
+  return end != null ? new Date(end * 1000).toISOString() : null;
+}
 
 function encodeStripeBody(obj: Record<string, unknown>, prefix = ''): string {
   const parts: string[] = [];
@@ -267,6 +284,18 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
               : {}),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
           };
+        case 'customer.subscription.created':
+          return {
+            ...base,
+            type: 'subscription.created' as const,
+            subscriptionId: String(object.id ?? ''),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
+            ...(typeof object.status === 'string' ? { status: object.status } : {}),
+            ...(stripeSubscriptionPeriodEndIso(object)
+              ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
+              : {}),
+            cancelAtPeriodEnd: object.cancel_at_period_end === true,
+          };
         case 'customer.subscription.updated':
           return {
             ...base,
@@ -274,6 +303,9 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             subscriptionId: String(object.id ?? ''),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: String(object.status ?? ''),
+            ...(stripeSubscriptionPeriodEndIso(object)
+              ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
+              : {}),
             cancelAtPeriodEnd: object.cancel_at_period_end === true,
           };
         case 'customer.subscription.deleted':
@@ -281,9 +313,13 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             ...base,
             type: 'subscription.deleted' as const,
             subscriptionId: String(object.id ?? ''),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: 'cancelled',
           };
-        case 'invoice.paid':
+        case 'invoice.paid': {
+          const invoice = normalizeStripeInvoice(object, {
+            planType: metadata.planType ?? null,
+          });
           return {
             ...base,
             type: 'invoice.paid' as const,
@@ -291,19 +327,35 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
               ? { subscriptionId: object.subscription }
               : {}),
             ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
+            ...(invoice ? { invoice } : {}),
           };
+        }
         case 'invoice.payment_failed':
           return {
             ...base,
-            type: 'payment.failed' as const,
+            type: 'subscription.past_due' as const,
             ...(typeof object.subscription === 'string'
               ? { subscriptionId: object.subscription }
               : {}),
+            ...(typeof object.customer === 'string' ? { customerId: object.customer } : {}),
             status: 'past_due',
           };
         default:
           return { ...base, type: 'unknown' as const };
       }
+    },
+
+    async getManageUrl(input: ManageSubscriptionInput): Promise<string | null> {
+      const customerId = String(input.customerId ?? '').trim();
+      if (!customerId) return null;
+      const frontendUrl = String(config.frontendUrl ?? 'http://localhost:3000').replace(/\/$/, '');
+      const returnUrl = String(input.returnUrl ?? `${frontendUrl}/account`).trim();
+      const portalSession = await stripePost(config, '/billing_portal/sessions', {
+        customer: customerId,
+        return_url: returnUrl,
+      });
+      if (portalSession.error || typeof portalSession.url !== 'string') return null;
+      return portalSession.url;
     },
   };
 }

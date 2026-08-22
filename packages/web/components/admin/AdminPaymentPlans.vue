@@ -1,10 +1,10 @@
 <template>
-  <div class="space-y-4">
+  <div class="space-y-6">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h3 class="font-semibold text-gray-900 dark:text-white">Plans &amp; pricing</h3>
+        <h3 class="font-semibold text-gray-900 dark:text-white">Payment gateways &amp; plans</h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-          Configure Stripe and legacy checkout providers, plan amounts, and Stripe price IDs.
+          Enable checkout providers, set their display order, then manage plan prices under Plans.
         </p>
       </div>
       <button
@@ -21,12 +21,16 @@
       {{ message }}
     </div>
 
-    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <h4 class="font-semibold text-gray-900 dark:text-white">Checkout providers</h4>
-      <p class="text-xs text-gray-600 dark:text-gray-400">
-        Disable legacy for new subscribers while keeping it available for imported users who need to
-        relink (via dedicated relink checkout).
-      </p>
+    <!-- ── Gateways ─────────────────────────────────────────────────────── -->
+    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Gateways</h4>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          Disable Qerko for new subscribers while keeping it available for imported users who need
+          to relink (via dedicated relink checkout).
+        </p>
+      </div>
+
       <div class="flex flex-wrap gap-4">
         <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
@@ -34,6 +38,7 @@
             type="checkbox"
             value="stripe"
             class="rounded border-gray-300 dark:border-gray-600"
+            @change="syncProviderOrderFromEnabled"
           >
           Stripe (card, PayPal, SEPA)
         </label>
@@ -44,107 +49,256 @@
             value="legacy"
             class="rounded border-gray-300 dark:border-gray-600"
             :disabled="!legacy.configured"
+            @change="syncProviderOrderFromEnabled"
           >
-          Legacy (bank / Qerko)
+          Qerko (bank / legacy)
           <span v-if="!legacy.configured" class="text-xs text-amber-700 dark:text-amber-300"
             >(not configured on server)</span
           >
         </label>
       </div>
+
       <p
         v-if="legacy.configured && !legacy.hasWebhookSecret"
         class="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded px-3 py-2"
       >
-        Warning: Legacy API credentials are set but
-        <code class="font-mono">LEGACY_ESHOP_WEBHOOK_SECRET</code> is missing. Enabling Qerko at
-        checkout can collect payment without activating subscriptions until the webhook secret is
-        configured.
+        Warning: Qerko API credentials are set but
+        <code class="font-mono">LEGACY_ESHOP_WEBHOOK_SECRET</code>
+        is missing. Enabling Qerko at checkout can collect payment without activating subscriptions
+        until the webhook secret is configured.
       </p>
-      <label class="block text-sm text-gray-700 dark:text-gray-300">
-        Provider order (comma-separated)
-        <input
-          v-model="providerOrderText"
-          type="text"
-          class="mt-1 w-full max-w-md px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-          placeholder="stripe,legacy"
-        >
-      </label>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <label
-          v-for="plan in ['monthly', 'yearly', 'club']"
-          :key="`legacy-price-${plan}`"
-          class="text-xs text-gray-600 dark:text-gray-300 block"
-        >
-          Legacy {{ plan }} price (EUR)
+
+      <div v-if="orderedEnabledProviders.length" class="space-y-2">
+        <p class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          Checkout order (drag to reorder)
+        </p>
+        <ul class="space-y-1.5 max-w-md">
+          <li
+            v-for="(provider, index) in orderedEnabledProviders"
+            :key="provider"
+            draggable="true"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white cursor-grab active:cursor-grabbing select-none"
+            :class="
+              dragOverIndex === index ? 'ring-2 ring-blue-400 border-blue-400' : ''
+            "
+            @dragstart="onProviderDragStart(index)"
+            @dragover.prevent="dragOverIndex = index"
+            @dragleave="dragOverIndex = null"
+            @drop.prevent="onProviderDrop(index)"
+            @dragend="onProviderDragEnd"
+          >
+            <span class="text-gray-400 dark:text-gray-500 font-mono text-xs" aria-hidden="true"
+              >⋮⋮</span
+            >
+            <span class="flex-1">{{ providerLabel(provider) }}</span>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="index === 0"
+                :aria-label="`Move ${providerLabel(provider)} up in checkout order`"
+                @click="moveProviderUp(index)"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="index === orderedEnabledProviders.length - 1"
+                :aria-label="`Move ${providerLabel(provider)} down in checkout order`"
+                @click="moveProviderDown(index)"
+              >
+                ↓
+              </button>
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400">#{{ index + 1 }}</span>
+          </li>
+        </ul>
+      </div>
+      <p v-else class="text-xs text-amber-700 dark:text-amber-300">
+        Enable at least one gateway above.
+      </p>
+
+      <div class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3">
+        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">
+          Qerko subscriber management
+        </h5>
+        <p class="text-xs text-gray-600 dark:text-gray-400">
+          Customers with a Qerko subscription see a “Manage with Qerko” button that opens this URL (the
+          Qerko manage / app link from the gateway docs). Leave empty to hide the button.
+        </p>
+        <label class="block text-sm text-gray-700 dark:text-gray-300">
+          Manage with Qerko URL
           <input
-            v-model="legacyPrices[plan as LegacyPlanKey]"
-            type="text"
-            inputmode="decimal"
-            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            v-model="legacy.manageSubscriptionUrl"
+            type="url"
+            class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+            placeholder="https://…"
           >
         </label>
+        <label class="block text-sm text-gray-700 dark:text-gray-300">
+          Provider display name
+          <input
+            v-model="legacy.providerName"
+            type="text"
+            class="mt-1 w-full max-w-md px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            placeholder="Qerko"
+          >
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="legacy.showManageButton"
+            type="checkbox"
+            class="rounded border-gray-300 dark:border-gray-600"
+          >
+          Show “Manage with {{ legacy.providerName.trim() || 'Qerko' }}” to Qerko subscribers
+        </label>
       </div>
+
       <button
         type="button"
         class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
-        :disabled="saving"
-        @click="saveProviderSettings"
+        :disabled="saving || !enabledProviders.length"
+        @click="saveGatewaySettings"
       >
-        {{ saving ? 'Saving…' : 'Save provider settings' }}
+        {{ saving ? 'Saving…' : 'Save gateway settings' }}
       </button>
     </div>
 
-    <div v-if="loading && !plans.length" class="text-sm text-gray-500 dark:text-gray-400">
-      Loading plans…
-    </div>
+    <!-- ── Plans ────────────────────────────────────────────────────────── -->
+    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Plans</h4>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          Display amounts, Stripe price IDs, and optional Qerko price overrides. Use either
+          <code class="font-mono text-[11px]">9.99</code>
+          or
+          <code class="font-mono text-[11px]">9,99</code>
+          for decimals.
+        </p>
+      </div>
 
-    <div v-else class="space-y-2">
-      <div
-        v-for="plan in plans"
-        :key="plan.id"
-        class="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
-      >
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="flex-1 min-w-[10rem]">
-            <p class="font-medium text-gray-900 dark:text-white">{{ plan.label }}</p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ plan.amountEur != null ? `€${plan.amountEur}` : '—' }}
-              / {{ plan.interval }}
-            </p>
-          </div>
-          <button
-            type="button"
-            class="font-mono text-xs text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 truncate max-w-[12rem]"
-            :title="plan.stripePriceId || 'No price ID'"
-            @click="copyPriceId(plan.stripePriceId)"
-          >
-            {{ plan.stripePriceId || 'price_…' }}
-          </button>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input
-              type="checkbox"
-              class="rounded border-gray-300 dark:border-gray-600"
-              :checked="plan.enabled"
-              @change="toggleEnabled(plan, ($event.target as HTMLInputElement).checked)"
-            >
-            Enabled
-          </label>
-          <button
-            type="button"
-            class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-            @click="toggleEdit(plan.id)"
-          >
-            {{ editingId === plan.id ? 'Close' : 'Edit' }}
-          </button>
-        </div>
+      <div v-if="loading && !plans.length" class="text-sm text-gray-500 dark:text-gray-400">
+        Loading plans…
+      </div>
+
+      <div v-else class="space-y-2">
         <div
-          v-if="editingId === plan.id"
-          class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 md:grid-cols-3 gap-3"
+          v-for="plan in plans"
+          :key="plan.id"
+          class="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
         >
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex-1 min-w-[10rem]">
+              <p class="font-medium text-gray-900 dark:text-white">{{ plan.label }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ plan.amountEur != null ? `€${formatAmount(plan.amountEur)}` : '—' }}
+                / {{ plan.interval }}
+                <span v-if="legacyPrices[plan.id as LegacyPlanKey]" class="ml-1">
+                  · Qerko €{{ legacyPrices[plan.id as LegacyPlanKey] || '—' }}
+                </span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="font-mono text-xs text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 truncate max-w-[12rem]"
+              :title="plan.stripePriceId || 'No price ID'"
+              @click="copyPriceId(plan.stripePriceId)"
+            >
+              {{ plan.stripePriceId || 'price_…' }}
+            </button>
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                class="rounded border-gray-300 dark:border-gray-600"
+                :checked="plan.enabled"
+                @change="toggleEnabled(plan, ($event.target as HTMLInputElement).checked)"
+              >
+              Enabled
+            </label>
+            <button
+              type="button"
+              class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              @click="toggleEdit(plan.id)"
+            >
+              {{ editingId === plan.id ? 'Close' : 'Edit' }}
+            </button>
+          </div>
+          <div
+            v-if="editingId === plan.id"
+            class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 grid grid-cols-1 md:grid-cols-3 gap-3"
+          >
+            <label class="text-xs text-gray-600 dark:text-gray-300 block"
+              >Label
+              <input
+                v-model="editForm.label"
+                type="text"
+                class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+            </label>
+            <label class="text-xs text-gray-600 dark:text-gray-300 block"
+              >Display amount EUR
+              <input
+                v-model="editForm.amountEur"
+                type="text"
+                inputmode="decimal"
+                class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                placeholder="9,99 or 9.99"
+              >
+            </label>
+            <label class="text-xs text-gray-600 dark:text-gray-300 block"
+              >Interval
+              <select
+                v-model="editForm.interval"
+                class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              >
+                <option value="month">month</option>
+                <option value="year">year</option>
+              </select>
+            </label>
+            <label class="text-xs text-gray-600 dark:text-gray-300 block md:col-span-2"
+              >Stripe price ID
+              <input
+                v-model="editForm.stripePriceId"
+                type="text"
+                class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                placeholder="price_..."
+              >
+            </label>
+            <label v-if="isCorePlan(plan.id)" class="text-xs text-gray-600 dark:text-gray-300 block"
+              >Qerko price EUR
+              <input
+                v-model="editForm.legacyPriceEur"
+                type="text"
+                inputmode="decimal"
+                class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                placeholder="optional override"
+              >
+            </label>
+            <div class="md:col-span-3">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
+                :disabled="saving"
+                @click="savePlan(plan.id)"
+              >
+                {{ saving ? 'Saving…' : 'Save plan' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="showAddForm"
+        class="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-4 space-y-3"
+      >
+        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">New plan</h5>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label class="text-xs text-gray-600 dark:text-gray-300 block"
             >Label
             <input
-              v-model="editForm.label"
+              v-model="addForm.label"
               type="text"
               class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
             >
@@ -152,163 +306,67 @@
           <label class="text-xs text-gray-600 dark:text-gray-300 block"
             >Amount EUR
             <input
-              v-model="editForm.amountEur"
+              v-model="addForm.amountEur"
               type="text"
               inputmode="decimal"
               class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              placeholder="9,99 or 9.99"
             >
           </label>
           <label class="text-xs text-gray-600 dark:text-gray-300 block"
             >Interval
             <select
-              v-model="editForm.interval"
+              v-model="addForm.interval"
               class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
             >
               <option value="month">month</option>
               <option value="year">year</option>
             </select>
           </label>
-          <label class="text-xs text-gray-600 dark:text-gray-300 block md:col-span-3"
-            >Stripe price ID
+          <label class="text-xs text-gray-600 dark:text-gray-300 block"
+            >Stripe price ID (required)
             <input
-              v-model="editForm.stripePriceId"
+              v-model="addForm.stripePriceId"
               type="text"
               class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-              placeholder="price_..."
             >
           </label>
-          <div class="md:col-span-3">
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
-              :disabled="saving"
-              @click="savePlan(plan.id)"
-            >
-              {{ saving ? 'Saving…' : 'Save plan' }}
-            </button>
-          </div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+            :disabled="saving || !addForm.stripePriceId.trim()"
+            @click="addPlan"
+          >
+            Save plan
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+            @click="showAddForm = false"
+          >
+            Cancel
+          </button>
         </div>
       </div>
-    </div>
-
-    <div
-      v-if="showAddForm"
-      class="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-4 space-y-3"
-    >
-      <h4 class="text-sm font-semibold text-gray-900 dark:text-white">New plan</h4>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label class="text-xs text-gray-600 dark:text-gray-300 block"
-          >Label
-          <input
-            v-model="addForm.label"
-            type="text"
-            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-          >
-        </label>
-        <label class="text-xs text-gray-600 dark:text-gray-300 block"
-          >Amount EUR
-          <input
-            v-model="addForm.amountEur"
-            type="text"
-            inputmode="decimal"
-            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-          >
-        </label>
-        <label class="text-xs text-gray-600 dark:text-gray-300 block"
-          >Interval
-          <select
-            v-model="addForm.interval"
-            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-          >
-            <option value="month">month</option>
-            <option value="year">year</option>
-          </select>
-        </label>
-        <label class="text-xs text-gray-600 dark:text-gray-300 block"
-          >Stripe price ID (required)
-          <input
-            v-model="addForm.stripePriceId"
-            type="text"
-            class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-          >
-        </label>
-      </div>
-      <div class="flex gap-2">
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
-          :disabled="saving || !addForm.stripePriceId.trim()"
-          @click="addPlan"
-        >
-          Save plan
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
-          @click="showAddForm = false"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-    <button
-      v-else
-      type="button"
-      class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
-      @click="showAddForm = true"
-    >
-      + Add plan
-    </button>
-
-    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <h4 class="font-semibold text-gray-900 dark:text-white">Legacy subscriber management</h4>
-      <p class="text-xs text-gray-600 dark:text-gray-400">
-        When a legacy subscriber's plan expires or enters past_due, they will see a prompt to manage
-        their payment method at the URL below. Monthly subscribers are most at risk of bank-side
-        blocking when the merchant name changes.
-      </p>
-      <label class="block text-sm text-gray-700 dark:text-gray-300">
-        Manage subscription URL
-        <input
-          v-model="legacy.manageSubscriptionUrl"
-          type="url"
-          class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-          placeholder="https://..."
-        >
-      </label>
-      <label class="block text-sm text-gray-700 dark:text-gray-300">
-        Legacy provider display name
-        <input
-          v-model="legacy.providerName"
-          type="text"
-          class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-          placeholder="Qerko"
-        >
-      </label>
-      <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input
-          v-model="legacy.showManageButton"
-          type="checkbox"
-          class="rounded border-gray-300 dark:border-gray-600"
-        >
-        Show "Manage payment method" button to legacy subscribers
-      </label>
       <button
+        v-else
         type="button"
-        class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
-        :disabled="saving"
-        @click="saveLegacy"
+        class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        @click="showAddForm = true"
       >
-        Save legacy settings
+        + Add plan
       </button>
     </div>
 
+    <!-- ── Recent Qerko orders ──────────────────────────────────────────── -->
     <div
       v-if="legacy.configured"
       class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3"
     >
       <div class="flex items-center justify-between gap-3">
-        <h4 class="font-semibold text-gray-900 dark:text-white">Recent legacy checkout orders</h4>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Recent Qerko checkout orders</h4>
         <button
           type="button"
           class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -328,7 +386,7 @@
         Loading orders…
       </div>
       <div v-else-if="!legacyOrders.length" class="text-sm text-gray-500 dark:text-gray-400">
-        No legacy checkout sessions yet.
+        No Qerko checkout sessions yet.
       </div>
       <div v-else class="overflow-x-auto">
         <table class="min-w-full text-xs text-left text-gray-700 dark:text-gray-300">
@@ -392,6 +450,8 @@
   type LegacyPlanKey = 'monthly' | 'yearly' | 'club';
   type PaymentProvider = 'stripe' | 'legacy';
 
+  const CORE_PLANS: LegacyPlanKey[] = ['monthly', 'yearly', 'club'];
+
   const config = useRuntimeConfig();
   const { authHeader } = useAuth();
 
@@ -400,11 +460,11 @@
     configured: false,
     hasWebhookSecret: false,
     manageSubscriptionUrl: '',
-    providerName: '',
+    providerName: 'Qerko',
     showManageButton: false,
   });
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
-  const providerOrderText = ref('stripe,legacy');
+  const providerOrder = ref<PaymentProvider[]>(['stripe', 'legacy']);
   const legacyPrices = ref<Record<LegacyPlanKey, string>>({
     monthly: '',
     yearly: '',
@@ -434,8 +494,95 @@
   const messageClass = ref('');
   const editingId = ref<string | null>(null);
   const showAddForm = ref(false);
-  const editForm = ref({ label: '', amountEur: '', interval: 'month', stripePriceId: '' });
+  const editForm = ref({
+    label: '',
+    amountEur: '',
+    interval: 'month',
+    stripePriceId: '',
+    legacyPriceEur: '',
+  });
   const addForm = ref({ label: '', amountEur: '', interval: 'month', stripePriceId: '' });
+  const draggingIndex = ref<number | null>(null);
+  const dragOverIndex = ref<number | null>(null);
+
+  const orderedEnabledProviders = computed(() => {
+    const enabled = new Set(enabledProviders.value);
+    const ordered = providerOrder.value.filter((p) => enabled.has(p));
+    for (const p of enabledProviders.value) {
+      if (!ordered.includes(p)) ordered.push(p);
+    }
+    return ordered;
+  });
+
+  function providerLabel(provider: PaymentProvider): string {
+    if (provider === 'stripe') return 'Stripe (card, PayPal, SEPA)';
+    return `Qerko (${legacy.value.providerName.trim() || 'bank / legacy'})`;
+  }
+
+  function isCorePlan(id: string): id is LegacyPlanKey {
+    return CORE_PLANS.includes(id as LegacyPlanKey);
+  }
+
+  function formatAmount(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
+  function syncProviderOrderFromEnabled() {
+    const enabled = new Set(enabledProviders.value);
+    const next = providerOrder.value.filter((p) => enabled.has(p));
+    for (const p of enabledProviders.value) {
+      if (!next.includes(p)) next.push(p);
+    }
+    providerOrder.value = next;
+  }
+
+  function onProviderDragStart(index: number) {
+    draggingIndex.value = index;
+  }
+
+  function onProviderDrop(targetIndex: number) {
+    if (draggingIndex.value === null || draggingIndex.value === targetIndex) {
+      dragOverIndex.value = null;
+      return;
+    }
+    const list = [...orderedEnabledProviders.value];
+    const [moved] = list.splice(draggingIndex.value, 1);
+    if (!moved) return;
+    list.splice(targetIndex, 0, moved);
+    providerOrder.value = list;
+    draggingIndex.value = null;
+    dragOverIndex.value = null;
+  }
+
+  function onProviderDragEnd() {
+    draggingIndex.value = null;
+    dragOverIndex.value = null;
+  }
+
+  function moveProvider(fromIndex: number, toIndex: number) {
+    const list = [...orderedEnabledProviders.value];
+    if (
+      fromIndex < 0 ||
+      fromIndex >= list.length ||
+      toIndex < 0 ||
+      toIndex >= list.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const [moved] = list.splice(fromIndex, 1);
+    if (!moved) return;
+    list.splice(toIndex, 0, moved);
+    providerOrder.value = list;
+  }
+
+  function moveProviderUp(index: number) {
+    moveProvider(index, index - 1);
+  }
+
+  function moveProviderDown(index: number) {
+    moveProvider(index, index + 1);
+  }
 
   async function loadPaymentSettings() {
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
@@ -447,10 +594,14 @@
       ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
       : ['stripe'];
     enabledProviders.value = enabled.length ? enabled : ['stripe'];
+    if (!legacy.value.configured) {
+      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+    }
     const order = Array.isArray(data.providerOrder)
       ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
       : ['stripe', 'legacy'];
-    providerOrderText.value = (order.length ? order : ['stripe', 'legacy']).join(',');
+    providerOrder.value = order.length ? order : ['stripe', 'legacy'];
+    syncProviderOrderFromEnabled();
     const allowed = Array.isArray(data.allowedPlans)
       ? data.allowedPlans.filter((p: string) => p === 'monthly' || p === 'yearly' || p === 'club')
       : ['monthly', 'yearly', 'club'];
@@ -494,7 +645,7 @@
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       legacyOrders.value = data.orders ?? [];
     } catch (e: unknown) {
-      message.value = e instanceof Error ? e.message : 'Failed to load legacy orders';
+      message.value = e instanceof Error ? e.message : 'Failed to load Qerko orders';
       messageClass.value =
         'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
     } finally {
@@ -503,7 +654,8 @@
   }
 
   async function reloadAll() {
-    await Promise.all([loadPlans(), loadPaymentSettings(), loadLegacyOrders()]);
+    await loadPlans();
+    await Promise.all([loadPaymentSettings(), loadLegacyOrders()]);
   }
 
   async function loadPlans() {
@@ -521,9 +673,13 @@
           configured: Boolean(data.legacy.configured),
           hasWebhookSecret: Boolean(data.legacy.hasWebhookSecret),
           manageSubscriptionUrl: data.legacy.manageSubscriptionUrl ?? '',
-          providerName: data.legacy.providerName ?? '',
+          providerName: data.legacy.providerName || 'Qerko',
           showManageButton: Boolean(data.legacy.showManageButton),
         };
+      }
+      if (!legacy.value.configured) {
+        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+        syncProviderOrderFromEnabled();
       }
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Failed to load plans';
@@ -546,11 +702,12 @@
       amountEur: plan.amountEur != null ? String(plan.amountEur) : '',
       interval: plan.interval || 'month',
       stripePriceId: plan.stripePriceId,
+      legacyPriceEur: isCorePlan(plan.id) ? legacyPrices.value[plan.id] : '',
     };
     editingId.value = id;
   }
 
-  async function patchPlan(plan: Record<string, unknown>) {
+  async function patchPlan(plan: Record<string, unknown>): Promise<boolean> {
     saving.value = true;
     message.value = '';
     try {
@@ -567,23 +724,80 @@
         'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
       editingId.value = null;
       showAddForm.value = false;
+      return true;
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Save failed';
       messageClass.value =
         'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+      return false;
     } finally {
       saving.value = false;
     }
   }
 
-  function savePlan(id: string) {
-    void patchPlan({
+  async function savePlan(id: string) {
+    const legacyPriceEur = editForm.value.legacyPriceEur;
+    const amountEur = editForm.value.amountEur;
+    const stripePriceId = editForm.value.stripePriceId;
+    const ok = await patchPlan({
       id,
       label: editForm.value.label,
-      amountEur: editForm.value.amountEur,
+      amountEur,
       interval: editForm.value.interval,
-      stripePriceId: editForm.value.stripePriceId,
+      stripePriceId,
     });
+    if (!ok || !isCorePlan(id)) return;
+    legacyPrices.value = {
+      ...legacyPrices.value,
+      [id]: legacyPriceEur,
+    };
+    if (amountEur.trim()) {
+      basePrices.value = { ...basePrices.value, [id]: amountEur };
+    }
+    if (stripePriceId.trim()) {
+      stripePriceIds.value = {
+        ...stripePriceIds.value,
+        [id]: stripePriceId,
+      };
+    }
+    saving.value = true;
+    try {
+      await persistPricingSettings();
+      message.value = 'Plan saved.';
+      messageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: unknown) {
+      message.value = e instanceof Error ? e.message : 'Plan saved, but Qerko price failed to save';
+      messageClass.value =
+        'border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-200';
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  async function persistPricingSettings() {
+    const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        enabledProviders: enabledProviders.value,
+        providerOrder: orderedEnabledProviders.value,
+        allowedPlans: allowedPlansSetting.value,
+        basePrices: basePrices.value,
+        providerPrices: {
+          stripe: stripePrices.value,
+          legacy: {
+            monthly: legacyPrices.value.monthly,
+            yearly: legacyPrices.value.yearly,
+            club: legacyPrices.value.club,
+          },
+        },
+        stripePriceIds: stripePriceIds.value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    await loadPaymentSettings();
   }
 
   async function addPlan() {
@@ -601,67 +815,35 @@
     void patchPlan({ id: plan.id, enabled });
   }
 
-  async function saveProviderSettings() {
+  async function saveGatewaySettings() {
     saving.value = true;
     message.value = '';
     try {
-      const order = providerOrderText.value
-        .split(',')
-        .map((v) => v.trim().toLowerCase())
-        .filter((v): v is PaymentProvider => v === 'stripe' || v === 'legacy');
-      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeader() },
-        body: JSON.stringify({
-          enabledProviders: enabledProviders.value,
-          providerOrder: order.length ? order : enabledProviders.value,
-          allowedPlans: allowedPlansSetting.value,
-          basePrices: basePrices.value,
-          providerPrices: {
-            stripe: stripePrices.value,
-            legacy: {
-              monthly: legacyPrices.value.monthly,
-              yearly: legacyPrices.value.yearly,
-              club: legacyPrices.value.club,
-            },
-          },
-          stripePriceIds: stripePriceIds.value,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      message.value = 'Provider settings saved.';
-      messageClass.value =
-        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
-      await loadPaymentSettings();
-    } catch (e: unknown) {
-      message.value = e instanceof Error ? e.message : 'Save failed';
-      messageClass.value =
-        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
-    } finally {
-      saving.value = false;
-    }
-  }
-
-  async function saveLegacy() {
-    saving.value = true;
-    try {
-      const res = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, {
+      if (!legacy.value.configured) {
+        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
+        syncProviderOrderFromEnabled();
+      }
+      if (!enabledProviders.value.length) {
+        throw new Error('Enable at least one gateway before saving.');
+      }
+      await persistPricingSettings();
+      const legacyRes = await fetch(`${config.public.apiUrl}/api/admin/payments/plans`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
           legacy: {
             manageSubscriptionUrl: legacy.value.manageSubscriptionUrl,
-            providerName: legacy.value.providerName,
+            providerName: legacy.value.providerName.trim() || 'Qerko',
             showManageButton: legacy.value.showManageButton,
           },
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      message.value = 'Legacy settings saved.';
+      const legacyData = await legacyRes.json().catch(() => ({}));
+      if (!legacyRes.ok) throw new Error(legacyData.error || `HTTP ${legacyRes.status}`);
+      message.value = 'Gateway settings saved.';
       messageClass.value =
         'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+      await loadPlans();
     } catch (e: unknown) {
       message.value = e instanceof Error ? e.message : 'Save failed';
       messageClass.value =

@@ -141,20 +141,30 @@ async function brevoFetch(path: any, options = {}, env: any) {
 }
 
 /**
- * Sync newsletter membership from a Stripe subscription status.
+ * Sync newsletter membership from a subscription status (any payment provider).
  */
+export async function syncNewsletterForSubscription(
+  db: any,
+  userId: any,
+  subscriptionStatus: any,
+  env: any,
+) {
+  const paying = ['active', 'trialing'].includes(subscriptionStatus);
+  if (paying) {
+    await syncPayingSubscriberToNewsletter(db, userId, env);
+  } else {
+    await removeSubscriberFromNewsletter(db, userId, env);
+  }
+}
+
+/** @deprecated Use syncNewsletterForSubscription */
 export async function syncNewsletterForStripeSubscription(
   db: any,
   userId: any,
   stripeStatus: any,
   env: any,
 ) {
-  const paying = ['active', 'trialing'].includes(stripeStatus);
-  if (paying) {
-    await syncPayingSubscriberToNewsletter(db, userId, env);
-  } else {
-    await removeSubscriberFromNewsletter(db, userId, env);
-  }
+  return syncNewsletterForSubscription(db, userId, stripeStatus, env);
 }
 
 /**
