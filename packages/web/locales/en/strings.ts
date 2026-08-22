@@ -402,7 +402,7 @@ export const strings: StringsDefinition = {
   // ── Personal data notice (GDPR transparency) ───────────────────────────────
   personalDataPageTitle: 'Personal data processing',
   personalDataBannerSummary:
-    'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
+    'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary cookies so the service works.',
   personalDataLearnMore: 'Personal data notice',
   personalDataBannerAcknowledge: 'I understand',
   posthogAnalyticsConsentTitle: 'Product analytics consent',

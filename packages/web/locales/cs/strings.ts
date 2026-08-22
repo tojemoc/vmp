@@ -408,7 +408,7 @@ export const strings: StringsDefinition = {
   // ── Personal data notice (GDPR transparency) ───────────────────────────────
   personalDataPageTitle: 'Zpracování osobních údajů',
   personalDataBannerSummary:
-    'Vyhýbáme se nepodstatným cookies. Přihlášení, platba a předvolby přehrávače používají nezbytné úložiště, aby služba fungovala.',
+    'Vyhýbáme se nepodstatným cookies. Přihlášení, platba a předvolby přehrávače používají striktně nezbytné cookies, aby služba fungovala.',
   personalDataLearnMore: 'Informace o osobních údajích',
   personalDataBannerAcknowledge: 'Rozumím',
   posthogAnalyticsConsentTitle: 'Souhlas s produktovou analytikou',
