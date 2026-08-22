@@ -22,6 +22,7 @@ export const personalData: PersonalDataPage = {
         'We use privacy-oriented, cookieless pageview analytics (Umami Cloud, EU data region) to measure audience size. Umami does not set marketing cookies or cross-site identifiers in its default configuration. We rely on legitimate interest for this limited statistical purpose and you can object (see Your rights).',
         'We also use PostHog (EU cloud) for product analytics. PostHog runs only after you explicitly accept it in the on-site banner. Until then, no analytics cookies or localStorage are used (memory-only mode). After acceptance, events are tied to your internal account ID when signed in — we do not send your email address to PostHog. Person profiles are created only for signed-in users.',
         'Our API may send technical exception events to PostHog for reliability analysis. Unauthenticated errors use a short-lived random id (not your account). Event retention follows our PostHog EU project retention settings.',
+        'Separately from consent-based browser analytics, our API sends subscription lifecycle events to PostHog from payment webhooks (activation, renewal, cancellation, payment failure), keyed by your account ID only — based on our legitimate interest in operating billing reliably; declining browser analytics does not stop these server-side events.',
       ],
     },
     {

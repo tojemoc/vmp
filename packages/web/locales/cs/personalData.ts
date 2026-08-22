@@ -22,6 +22,7 @@ export const personalData: PersonalDataPage = {
         'Používáme analytiku zaměřenou na soukromí bez cookies (Umami Cloud, datová oblast EU) k měření velikosti publika. Umami ve výchozí konfiguraci nenastavuje marketingové cookies ani cross-site identifikátory. Pro tento omezený statistický účel se opíráme o oprávněný zájem a můžete namítat (viz Vaše práva).',
         'Pro produktovou analytiku používáme PostHog (EU cloud). PostHog běží až poté, co výslovně přijmete v banneru na webu. Do té doby se nepoužívají analytické cookies ani localStorage (pouze paměť relace). Po přijetí jsou události po přihlášení vázány na interní ID účtu — e-mailovou adresu neodesíláme. Personální profily vznikají jen pro přihlášené uživatele.',
         'Naše API může odesílat technické výjimky do PostHogu pro analýzu spolehlivosti. Neautentizované chyby používají krátkodobé náhodné id (ne váš účet). Uchovávání událostí se řídí nastavením retence našeho PostHog projektu v EU.',
+        'Odděleně od produktové analytiky v prohlížeči založené na souhlasu naše API odesílá do PostHogu události životního cyklu předplatného z platebních webhooků (aktivace, obnovení, zrušení, neúspěšná platba), vázané pouze na ID účtu — na základě našeho oprávněného zájmu spolehlivě provozovat fakturaci; odmítnutí analytiky v prohlížeči tyto serverové události nezastaví.',
       ],
     },
     {

@@ -741,8 +741,8 @@
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
-        // Client return-URL funnel only — conversion SoT is API `subscription_activated`.
-        capturePostHogEvent('subscription_checkout_completed', { provider: 'legacy' });
+        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'legacy' });
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {
         legacyCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -751,8 +751,8 @@
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
-        // Client return-URL funnel only — conversion SoT is API `subscription_activated`.
-        capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
+        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'stripe' });
         await clearStripeSessionQuery({ subscribed: '1' });
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;

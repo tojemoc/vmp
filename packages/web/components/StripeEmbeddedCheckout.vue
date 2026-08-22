@@ -359,7 +359,8 @@
       await syncMountedSurfaces();
       if (generation !== teardownGeneration) return;
 
-      // Fire only once mounted surfaces are ready (form interactive).
+      // Stripe: fires when the embedded form is interactive — not comparable to legacy
+      // subscription_checkout_started, which fires immediately before redirect away.
       capturePostHogEvent('subscription_checkout_started', {
         plan_type: props.planType,
         provider: 'stripe',
