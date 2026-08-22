@@ -74,5 +74,3 @@ export function usePostHogConsent() {
     denyAnalyticsConsent,
   };
 }
-
-export { POSTHOG_ANALYTICS_CONSENT_KEY };

@@ -13,10 +13,12 @@ export function hasPostHogAnalyticsConsent(): boolean {
   }
 }
 
+type PostHogPersistence = 'memory' | 'localStorage' | 'sessionStorage' | 'localStorage+cookie' | 'cookie';
+
 type PostHogPersistenceClient = {
   opt_in_capturing?: () => void;
   opt_out_capturing?: () => void;
-  set_config?: (config: { persistence?: string }) => void;
+  set_config?: (config: { persistence?: PostHogPersistence }) => void;
 };
 
 /** Apply consent to an initialized PostHog client (memory-only until granted). */
