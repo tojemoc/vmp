@@ -20,6 +20,9 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'If you only read public pages and do not sign in, we do not set an authentication cookie. Anonymous video previews are served through our API; playback position is not saved between visits.',
         'We use privacy-oriented, cookieless pageview analytics (Umami Cloud, EU data region) to measure audience size. Umami does not set marketing cookies or cross-site identifiers in its default configuration. We rely on legitimate interest for this limited statistical purpose and you can object (see Your rights).',
+        'We also use PostHog (EU cloud) for product analytics. PostHog runs only after you explicitly accept it in the on-site banner. Until then, no analytics cookies or localStorage are used (memory-only mode). After acceptance, events are tied to your internal account ID when signed in — we do not send your email address to PostHog. Person profiles are created only for signed-in users.',
+        'Our API may send technical exception events to PostHog for reliability analysis. Unauthenticated errors use a short-lived random id (not your account). Event retention follows our PostHog EU project retention settings.',
+        'Separately from consent-based browser analytics, our API sends subscription lifecycle events to PostHog from payment webhooks (activation, renewal, cancellation, payment failure), keyed by your account ID only — based on our legitimate interest in operating billing reliably; declining browser analytics does not stop these server-side events.',
       ],
     },
     {
@@ -28,7 +31,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Certain features only work if the browser stores a small amount of data. These are strictly necessary for the feature you request — not for advertising or profiling.',
         'By signing in, subscribing, enabling notifications, installing the web app, or changing playback speed, you use features that require the storage listed in the table below. You can avoid most of this storage by not using those features (for example, stay logged out and do not change player settings).',
-        'We do not use your interaction as consent to unrelated marketing trackers. If we ever add optional analytics or marketing tools that are not strictly necessary, we will ask for consent first.',
+        'We do not use your interaction as consent to unrelated marketing trackers. Optional advertising tools that are not strictly necessary would require consent first. PostHog product analytics requires your explicit consent in the banner before any events are captured or persisted.',
       ],
     },
     {
@@ -44,11 +47,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
         'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
-        'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
+        'Other processors include: Umami Cloud (EU) for anonymous statistics; PostHog (EU) for product analytics after explicit consent (signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, security (global edge)',
         'Umami Cloud (EU region) — cookieless pageview statistics',
+        'PostHog (EU cloud) — product analytics after consent (account ID after sign-in; no email)',
         'Stripe — payment processing when you subscribe',
         'Brevo — magic-link and account email',
         'Sentry — error and stability monitoring (technical logs)',
@@ -60,6 +64,7 @@ export const personalData: PersonalDataPage = {
       title: 'Server-side processing (no browser cookie)',
       paragraphs: [
         'When video streams are delivered, our API logs anonymised technical events (for example hashed IP, country from network headers, and viewing session buckets) to operate the service, prevent abuse, and show aggregate statistics to administrators. These logs are not used to advertise to you and are not shared with ad networks.',
+        'If you are signed in, we also store your last playback position per on-demand video (VOD) on our servers so we can resume where you left off. Positions are updated occasionally while you watch and when you leave the page — not on every scrub of the timeline. Anonymous visitors do not get server-side resume. You can remove a saved position for any currently available video from Continue watching on your account page. To request erasure of your account and related personal data — including all saved playback positions — email the support address shown at the bottom of this page.',
       ],
     },
     {
@@ -67,7 +72,7 @@ export const personalData: PersonalDataPage = {
       title: 'Your rights (EU / UK visitors)',
       paragraphs: [
         'Under the GDPR you may request access, rectification, erasure, restriction, portability, or object to processing based on legitimate interest. You may withdraw consent where processing is consent-based (we use little consent-based processing today).',
-        'To exercise rights, contact us using the support channel published on this site. You may also lodge a complaint with your supervisory authority:',
+        'To exercise rights, email the support address shown at the bottom of this page. You may also lodge a complaint with your supervisory authority:',
       ],
       bullets: [
         'Czechia — Úřad pro ochranu osobních údajů (ÚOOÚ), uoou.cz',
@@ -139,6 +144,21 @@ export const personalData: PersonalDataPage = {
       purpose: 'Short-lived auth and UI state during a single tab session',
       lifetime: 'Until tab closes',
       necessary: 'Yes — security during login flows',
+    },
+    {
+      name: 'vmp_posthog_analytics_consent',
+      mechanism: 'localStorage',
+      purpose: 'Remembers whether you accepted or declined PostHog product analytics',
+      lifetime: 'Until you clear site data',
+      necessary: 'No — consent preference (only after you choose)',
+    },
+    {
+      name: 'PostHog persistence (ph_*)',
+      mechanism: 'localStorage / first-party cookies',
+      purpose:
+        'Product analytics session/distinct id after you accept analytics. Does not store your email. Retention follows our PostHog EU project settings.',
+      lifetime: 'Until you clear site data, decline analytics, or sign out resets identity',
+      necessary: 'No — consent-based analytics (only after you accept)',
     },
     {
       name: 'vmp_personal_data_notice_ack',

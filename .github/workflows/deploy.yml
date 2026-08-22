@@ -9,6 +9,27 @@ on:
       - main
     tags:
       - 'v*.*.*'
+    # Path filters apply to branch pushes only; tag pushes always deploy (production).
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.cursor/**'
+      - '.agents/**'
+      - '.opencode/**'
+      - '.github/skills/**'
+      - '.github/prompts/**'
+      - '.github/agents/**'
+      - 'apps/mobile/**'
+      - 'packages/media-pipeline/**'
+      - 'packages/moq-probe/**'
+      - 'packages/offloading/**'
+      - '.github/workflows/media-pipeline-docker.yml'
+      - '.github/workflows/mobile-artifacts.yml'
+      - '.github/workflows/ort-scan.yml'
+      - '.github/workflows/stickydisk-cleanup.yml'
+      - '.github/workflows/bot-review-limit-cron.yml'
+      - '.github/workflows/coderabbit-instant-trigger.yml'
+      - '.github/workflows/dependabot-auto-merge.yml'
   workflow_dispatch:
     inputs:
       target:
@@ -53,6 +74,11 @@ jobs:
           git-sha: ${{ github.sha }}
           ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
           sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          posthog-key: ${{ vars.NUXT_PUBLIC_POSTHOG_KEY }}
+          posthog-project-token: ${{ vars.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN }}
+          posthog-host: ${{ vars.NUXT_PUBLIC_POSTHOG_HOST }}
+          posthog-project-id: ${{ vars.POSTHOG_PROJECT_ID }}
+          posthog-personal-api-key: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   deploy-production:
@@ -85,4 +111,9 @@ jobs:
           app-version: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           ui-locale: ${{ vars.NUXT_PUBLIC_UI_LOCALE }}
           sentry-dsn: ${{ vars.NUXT_PUBLIC_SENTRY_DSN }}
+          posthog-key: ${{ vars.NUXT_PUBLIC_POSTHOG_KEY }}
+          posthog-project-token: ${{ vars.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN }}
+          posthog-host: ${{ vars.NUXT_PUBLIC_POSTHOG_HOST }}
+          posthog-project-id: ${{ vars.POSTHOG_PROJECT_ID }}
+          posthog-personal-api-key: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}

@@ -11,13 +11,12 @@ interface SiteSettings {
   siteDescription: string;
   logoUrl: string;
   faviconUrl: string;
+  /** Empty when `site_support_email` is not configured in admin settings. */
   supportEmail: string;
   gtmEnabled: boolean;
   gtmContainerId: string;
   gtmMeasurementPath: string;
 }
-
-const DEFAULT_SUPPORT_EMAIL = 'vmp@tjm.sk';
 
 function defaultSiteSettings(): SiteSettings {
   return {
@@ -26,7 +25,7 @@ function defaultSiteSettings(): SiteSettings {
     siteDescription: strings.siteDescription,
     logoUrl: '',
     faviconUrl: '',
-    supportEmail: DEFAULT_SUPPORT_EMAIL,
+    supportEmail: '',
     gtmEnabled: false,
     gtmContainerId: '',
     gtmMeasurementPath: '',
@@ -41,7 +40,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     siteDescription: String(data.site_description || strings.siteDescription),
     logoUrl: String(data.site_logo_url || ''),
     faviconUrl: String(data.site_favicon_url || ''),
-    supportEmail: String(data.site_support_email || DEFAULT_SUPPORT_EMAIL),
+    supportEmail: String(data.site_support_email || '').trim(),
     gtmEnabled: String(data.gtm_enabled ?? '0') === '1',
     gtmContainerId: String(data.gtm_container_id || ''),
     gtmMeasurementPath: String(data.gtm_measurement_path || ''),

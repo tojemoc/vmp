@@ -105,7 +105,9 @@ export class PostgresKVAdapter {
     if (type === 'json') {
       if (row.value_encoding === 'binary') return null;
       try {
-        return JSON.parse(row.value.toString('utf8')) as object;
+        // TextDecoder avoids Buffer.toString(encoding) which breaks when
+        // @cloudflare/workers-types + @types/node merge Buffer with Uint8Array.
+        return JSON.parse(new TextDecoder().decode(row.value)) as object;
       } catch {
         return null;
       }
@@ -119,9 +121,9 @@ export class PostgresKVAdapter {
       return ReadableStreamNode.toWeb(nodeStream) as ReadableStream;
     }
     if (row.value_encoding === 'binary') {
-      return row.value.toString('utf8');
+      return new TextDecoder().decode(row.value);
     }
-    return row.value.toString('utf8');
+    return new TextDecoder().decode(row.value);
   }
 
   async put(

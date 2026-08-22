@@ -346,7 +346,8 @@ async function enqueueStreamSubscriptions(
   const rows = await db
     .prepare(`
     SELECT id, user_id, plan_type, status, provider, provider_subscription_id, provider_customer_id,
-           stripe_subscription_id, stripe_customer_id, current_period_end, created_at, updated_at
+           stripe_subscription_id, stripe_customer_id, current_period_end, cancel_at_period_end,
+           created_at, updated_at
     FROM subscriptions
     WHERE (? = '' OR datetime(updated_at) > datetime(?) OR (datetime(updated_at) = datetime(?) AND id > ?))
     ORDER BY datetime(updated_at) ASC, id ASC

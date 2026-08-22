@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   normalizeStripeStatus,
+  stripeCancelAtPeriodEnd,
   stripeSubscriptionPeriodEndIso,
   stripeSubscriptionPeriodEndUnix,
 } from '../src/stripeClient.js';
@@ -35,6 +36,17 @@ describe('stripeSubscriptionPeriodEndIso', () => {
       stripeSubscriptionPeriodEndIso({ current_period_end: 1_700_000_000 }),
       new Date(1_700_000_000 * 1000).toISOString(),
     );
+  });
+});
+
+describe('stripeCancelAtPeriodEnd', () => {
+  it('is true only when Stripe sets cancel_at_period_end', () => {
+    assert.equal(stripeCancelAtPeriodEnd({ cancel_at_period_end: true }), true);
+    assert.equal(stripeCancelAtPeriodEnd({ cancel_at_period_end: false }), false);
+    assert.equal(stripeCancelAtPeriodEnd({ cancel_at_period_end: null }), false);
+    assert.equal(stripeCancelAtPeriodEnd({}), false);
+    assert.equal(stripeCancelAtPeriodEnd(null), false);
+    assert.equal(stripeCancelAtPeriodEnd(undefined), false);
   });
 });
 

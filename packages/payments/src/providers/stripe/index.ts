@@ -294,6 +294,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             ...(stripeSubscriptionPeriodEndIso(object)
               ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
               : {}),
+            cancelAtPeriodEnd: object.cancel_at_period_end === true,
           };
         case 'customer.subscription.updated':
           return {
@@ -305,6 +306,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
             ...(stripeSubscriptionPeriodEndIso(object)
               ? { currentPeriodEnd: stripeSubscriptionPeriodEndIso(object) }
               : {}),
+            cancelAtPeriodEnd: object.cancel_at_period_end === true,
           };
         case 'customer.subscription.deleted':
           return {

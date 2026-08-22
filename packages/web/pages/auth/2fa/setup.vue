@@ -147,6 +147,7 @@
 <script setup lang="ts">
   import QRCode from 'qrcode';
   import { navigateTo, useRoute } from '#app';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   // Do NOT use the admin middleware here — it would cause a redirect loop
@@ -263,6 +264,7 @@
       } else {
         markTotpEnabled();
       }
+      capturePostHogEvent('two_factor_authentication_enabled');
       state.value = 'done';
 
       redirectTimer = setTimeout(() => navigateTo(postSetupRedirect.value), 1500);

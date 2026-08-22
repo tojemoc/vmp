@@ -141,11 +141,19 @@
             </div>
             <div class="flex flex-wrap gap-3">
               <a
+                v-if="supportMailto"
                 :href="supportMailto"
                 class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white dark:text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {{ strings.accountContactSupport }}
               </a>
+              <NuxtLink
+                v-else
+                to="/personal-data"
+                class="inline-flex items-center px-4 py-2 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-100 text-sm font-medium rounded-lg transition-colors hover:bg-amber-100 dark:hover:bg-amber-950/60"
+              >
+                {{ strings.personalDataLearnMore }}
+              </NuxtLink>
               <a
                 v-if="showLegacyManageButton"
                 :href="legacyManageUrl!"
@@ -175,9 +183,13 @@
             </div>
             <span
               class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
-              :class="statusBadgeClass(subscription.status)"
+              :class="statusBadgeClass(subscription.status, subscription.cancelAtPeriodEnd)"
             >
-              {{ subscription.status }}
+              {{
+                subscription.cancelAtPeriodEnd
+                  ? strings.subscriptionCanceling
+                  : subscription.status
+              }}
             </span>
           </div>
 
@@ -185,22 +197,37 @@
             v-if="subscription.currentPeriodEnd"
             class="mt-4 text-sm text-gray-600 dark:text-gray-400"
           >
-            <span v-if="subscription.status === 'active'">{{ strings.renewsOn }} </span>
-            <span v-else>{{ strings.accessUntil }} </span>
+            <span>{{ periodEndLabel }}</span>
             <span class="font-medium text-gray-900 dark:text-white">
               {{ formatDate(subscription.currentPeriodEnd) }}
             </span>
           </div>
 
+          <p
+            v-if="subscription.cancelAtPeriodEnd"
+            class="mt-2 text-sm text-amber-800 dark:text-amber-200"
+          >
+            {{ strings.subscriptionCancelingHint }}
+          </p>
+
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
             <button
               v-if="!(showLegacyManageButton && legacyManageUrl)"
-              class="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              :class="
+                subscription.cancelAtPeriodEnd
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-gray-900'
+                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white'
+              "
               :disabled="openingPortal"
               @click="openPortal"
             >
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
-              <span v-else>{{ strings.manageSubscription }}</span>
+              <span v-else>{{
+                subscription.cancelAtPeriodEnd
+                  ? strings.resumeSubscription
+                  : strings.manageSubscription
+              }}</span>
             </button>
             <a
               v-if="showLegacyManageButton && legacyManageUrl"
@@ -222,6 +249,117 @@
             :active="!hasActiveSubscription"
           />
         </template>
+      </div>
+
+      <!-- Continue watching / saved positions -->
+      <div
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.continueWatchingTitle }}
+          </h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{
+              continueWatchingDeletionOnly
+                ? strings.continueWatchingIntroLapsed
+                : strings.continueWatchingIntro
+            }}
+          </p>
+        </div>
+
+        <div v-if="continueWatchingError" class="text-sm text-red-600 dark:text-red-400">
+          {{ continueWatchingError }}
+        </div>
+        <div v-else-if="loadingContinueWatching" class="space-y-3">
+          <div class="h-16 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
+          <div class="h-16 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
+        </div>
+        <p
+          v-else-if="!continueWatchingItems.length"
+          class="text-sm text-gray-600 dark:text-gray-400"
+        >
+          {{ strings.continueWatchingEmpty }}
+        </p>
+        <ul v-else class="space-y-3">
+          <li
+            v-for="item in continueWatchingItems"
+            :key="item.videoId"
+            class="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
+          >
+            <component
+              :is="continueWatchingDeletionOnly ? 'div' : NuxtLink"
+              v-bind="continueWatchingDeletionOnly ? {} : { to: item.watchPath }"
+              :class="[
+                'flex min-w-0 flex-1 items-center gap-3',
+                continueWatchingDeletionOnly ? '' : 'group',
+              ]"
+            >
+              <div
+                class="relative h-14 w-24 shrink-0 overflow-hidden rounded bg-gray-200 dark:bg-gray-800"
+              >
+                <img
+                  v-if="item.thumbnailUrl"
+                  :src="item.thumbnailUrl"
+                  :alt="item.title"
+                  :class="[
+                    'h-full w-full object-cover',
+                    continueWatchingDeletionOnly ? '' : 'transition-transform group-hover:scale-105',
+                  ]"
+                  loading="lazy"
+                  width="96"
+                  height="56"
+                >
+              </div>
+              <div class="min-w-0 flex-1">
+                <p
+                  :class="[
+                    'truncate font-medium text-gray-900 dark:text-white',
+                    continueWatchingDeletionOnly
+                      ? ''
+                      : 'group-hover:text-blue-600 dark:group-hover:text-blue-400',
+                  ]"
+                >
+                  {{ item.title }}
+                </p>
+                <p
+                  v-if="item.progressPercent != null"
+                  class="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                >
+                  {{ strings.continueWatchingProgress(item.progressPercent) }}
+                </p>
+                <div
+                  v-if="!continueWatchingDeletionOnly && item.progressPercent != null"
+                  class="mt-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden"
+                >
+                  <div
+                    class="h-full rounded-full bg-blue-600"
+                    :style="{ width: `${item.progressPercent}%` }"
+                  />
+                </div>
+              </div>
+            </component>
+            <button
+              type="button"
+              class="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              :disabled="removingVideoId != null"
+              @click="removeContinueWatchingItem(item.videoId)"
+            >
+              {{
+                removingVideoId === item.videoId
+                  ? strings.continueWatchingRemoving
+                  : strings.continueWatchingRemove
+              }}
+            </button>
+          </li>
+        </ul>
+        <p
+          v-if="continueWatchingHasMore"
+          class="text-xs text-gray-500 dark:text-gray-400"
+        >
+          {{ strings.continueWatchingTruncated }}
+        </p>
       </div>
 
       <!-- Podcast RSS -->
@@ -404,9 +542,13 @@
 </template>
 
 <script setup lang="ts">
+  import { resolveComponent } from 'vue';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   usePageSeo({ title: strings.yourAccount, noIndex: true });
+
+  const NuxtLink = resolveComponent('NuxtLink');
 
   const route = useRoute();
   const config = useRuntimeConfig();
@@ -429,8 +571,21 @@
   const hasActiveSubscription = computed(() => {
     const sub = subscription.value;
     if (!sub) return false;
-    return sub.status === 'active' || sub.status === 'trialing' || sub.status === 'needs_relink';
+    return sub.status === 'active' || sub.status === 'trialing';
   });
+
+  /** Label before period-end date; trailing space avoids missing-space copy bugs. */
+  const periodEndLabel = computed(() => {
+    const sub = subscription.value;
+    if (!sub) return '';
+    const label =
+      sub.cancelAtPeriodEnd || sub.status !== 'active' ? strings.accessUntil : strings.renewsOn;
+    return `${label} `;
+  });
+
+  const continueWatchingDeletionOnly = computed(
+    () => isLoggedIn.value && !hasActiveSubscription.value,
+  );
 
   const legacyManageUrl = computed(() => {
     const sub = subscription.value;
@@ -457,8 +612,8 @@
   });
 
   const supportMailto = computed(() => {
-    const email = siteSettings.value.supportEmail?.trim() || 'vmp@tjm.sk';
-    return `mailto:${email}`;
+    const email = siteSettings.value.supportEmail?.trim() || '';
+    return email ? `mailto:${email}` : '';
   });
 
   const relinkBannerDismissed = ref(false);
@@ -543,6 +698,7 @@
       }
       showTotpDisable.value = false;
       totpDisableCode.value = '';
+      capturePostHogEvent('two_factor_authentication_disabled');
     } catch (e: unknown) {
       totpDisableError.value = e instanceof Error ? e.message : strings.totpAccountDisableFailed;
     } finally {
@@ -554,6 +710,24 @@
   const copyError = ref<string | null>(null);
   const rssPersonalUrl = ref('');
   const copiedWhich = ref<'personal' | null>(null);
+
+  type ContinueWatchingItem = {
+    videoId: string;
+    title: string;
+    slug: string | null;
+    thumbnailUrl: string | null;
+    positionSeconds: number;
+    durationSeconds: number | null;
+    updatedAt: string | null;
+    watchPath: string;
+    progressPercent: number | null;
+  };
+
+  const loadingContinueWatching = ref(true);
+  const continueWatchingError = ref<string | null>(null);
+  const continueWatchingItems = ref<ContinueWatchingItem[]>([]);
+  const continueWatchingHasMore = ref(false);
+  const removingVideoId = ref<string | null>(null);
 
   onMounted(async () => {
     if (
@@ -567,6 +741,8 @@
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'legacy' });
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {
         legacyCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -575,6 +751,8 @@
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
+        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'stripe' });
         await clearStripeSessionQuery({ subscribed: '1' });
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -597,6 +775,11 @@
     loadingSub.value = false;
 
     await fetchRssUrls();
+    if (isLoggedIn.value) {
+      await fetchContinueWatching();
+    } else {
+      loadingContinueWatching.value = false;
+    }
   });
 
   watch(subscription, (sub) => {
@@ -605,7 +788,10 @@
     }
   });
 
-  function statusBadgeClass(status: string): string {
+  function statusBadgeClass(status: string, cancelAtPeriodEnd?: boolean): string {
+    if (cancelAtPeriodEnd) {
+      return 'bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100';
+    }
     if (status === 'active' || status === 'trialing') {
       return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
     }
@@ -637,6 +823,7 @@
         portalError.value = data.error ?? strings.billingPortalFailed;
         return;
       }
+      capturePostHogEvent('billing_portal_opened');
       window.location.href = data.portalUrl;
     } catch {
       portalError.value = strings.networkError;
@@ -663,6 +850,62 @@
       rssError.value = strings.rssLoadNetworkError;
     } finally {
       loadingRss.value = false;
+    }
+  }
+
+  async function fetchContinueWatching() {
+    loadingContinueWatching.value = true;
+    continueWatchingError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/playback-positions`, {
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        continueWatchingError.value = data.error ?? strings.continueWatchingLoadFailed;
+        continueWatchingHasMore.value = false;
+        return;
+      }
+      continueWatchingItems.value = Array.isArray(data.items) ? data.items : [];
+      continueWatchingHasMore.value = data.hasMore === true;
+    } catch {
+      continueWatchingError.value = strings.continueWatchingLoadNetworkError;
+      continueWatchingHasMore.value = false;
+    } finally {
+      loadingContinueWatching.value = false;
+    }
+  }
+
+  async function removeContinueWatchingItem(videoId: string) {
+    if (removingVideoId.value != null) return;
+    removingVideoId.value = videoId;
+    continueWatchingError.value = null;
+    try {
+      const res = await fetch(
+        `${apiUrl}/api/account/playback-positions/${encodeURIComponent(videoId)}`,
+        {
+          method: 'DELETE',
+          headers: authHeader(),
+          credentials: 'include',
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        continueWatchingError.value = data.error ?? strings.continueWatchingRemoveFailed;
+        return;
+      }
+      const shouldRefetch = continueWatchingHasMore.value;
+      continueWatchingItems.value = continueWatchingItems.value.filter(
+        (item) => item.videoId !== videoId,
+      );
+      if (shouldRefetch) {
+        await fetchContinueWatching();
+      }
+    } catch {
+      continueWatchingError.value = strings.continueWatchingRemoveFailed;
+    } finally {
+      removingVideoId.value = null;
     }
   }
 

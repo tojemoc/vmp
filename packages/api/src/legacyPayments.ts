@@ -18,6 +18,11 @@ import {
 } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
+import {
+  captureMappedPostHogEvent,
+  posthogEventFromLegacyWebhook,
+  type PostHogWaitUntilCtx,
+} from './posthog.js';
 import { getSetting } from './settingsStore.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -490,6 +495,7 @@ export async function handleLegacyWebhook(
   request: Request,
   env: any,
   corsHeaders: Record<string, string>,
+  ctx?: PostHogWaitUntilCtx,
 ) {
   const rawBody = await request.text();
   const signature =
@@ -564,6 +570,8 @@ export async function handleLegacyWebhook(
       console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr);
     }
   }
+
+  captureMappedPostHogEvent(env, posthogEventFromLegacyWebhook(status, userId), ctx);
 
   return jsonResponse({ ok: true }, 200, corsHeaders);
 }

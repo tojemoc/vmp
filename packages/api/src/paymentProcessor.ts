@@ -9,6 +9,7 @@ import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
 import {
   normalizeStripeStatus,
+  stripeCancelAtPeriodEnd,
   stripeGet,
   stripeSubscriptionPeriodEndIso,
 } from './stripeClient.js';
@@ -20,6 +21,12 @@ import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
+import {
+  captureMappedPostHogEvent,
+  capturePostHogException,
+  posthogEventFromStripeWebhook,
+  type PostHogWaitUntilCtx,
+} from './posthog.js';
 import {
   dbProviderToRegistryId,
   fromApiProviderId,
@@ -169,8 +176,10 @@ async function upsertSubscriptionRow(
     stripeSubscriptionId?: string | null;
     stripeCustomerId?: string | null;
     currentPeriodEnd?: string | null;
+    cancelAtPeriodEnd?: boolean;
   },
 ) {
+  const cancelAtPeriodEnd = params.cancelAtPeriodEnd === true ? 1 : 0;
   await db
     .prepare(`
     INSERT INTO subscriptions
@@ -185,9 +194,10 @@ async function upsertSubscriptionRow(
         stripe_subscription_id,
         stripe_customer_id,
         current_period_end,
+        cancel_at_period_end,
         updated_at
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
       user_id                  = excluded.user_id,
       status                   = excluded.status,
@@ -196,6 +206,7 @@ async function upsertSubscriptionRow(
       stripe_subscription_id   = excluded.stripe_subscription_id,
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
+      cancel_at_period_end     = excluded.cancel_at_period_end,
       updated_at               = CURRENT_TIMESTAMP
   `)
     .bind(
@@ -209,6 +220,7 @@ async function upsertSubscriptionRow(
       params.stripeSubscriptionId ?? null,
       params.stripeCustomerId ?? null,
       params.currentPeriodEnd ?? null,
+      cancelAtPeriodEnd,
     )
     .run();
 }
@@ -231,6 +243,7 @@ async function upsertSubscriptionFromNormalizedEvent(
   let providerCustomerId = event.customerId?.trim() || null;
   let stripeSubscriptionId: string | null = null;
   let stripeCustomerId: string | null = null;
+  let cancelAtPeriodEnd = event.cancelAtPeriodEnd === true;
 
   if (event.providerId === 'stripe') {
     stripeSubscriptionId = providerSubscriptionId;
@@ -262,6 +275,7 @@ async function upsertSubscriptionFromNormalizedEvent(
           typeof stripeSub.customer === 'string' ? stripeSub.customer : providerCustomerId;
         stripeSubscriptionId = providerSubscriptionId;
         stripeCustomerId = providerCustomerId;
+        cancelAtPeriodEnd = stripeCancelAtPeriodEnd(stripeSub);
       }
     } else if (rawSub?.id) {
       if (!planType) {
@@ -279,6 +293,7 @@ async function upsertSubscriptionFromNormalizedEvent(
       if (!providerCustomerId && typeof rawSub.customer === 'string') {
         providerCustomerId = rawSub.customer;
       }
+      cancelAtPeriodEnd = event.cancelAtPeriodEnd === true || stripeCancelAtPeriodEnd(rawSub);
     }
   }
 
@@ -299,8 +314,40 @@ async function upsertSubscriptionFromNormalizedEvent(
     stripeSubscriptionId,
     stripeCustomerId,
     currentPeriodEnd,
+    cancelAtPeriodEnd,
   });
   return userId;
+}
+
+function stripeWebhookTypeForPostHog(event: NormalizedPaymentEvent): string | null {
+  switch (event.type) {
+    case 'checkout.completed':
+      return 'checkout.session.completed';
+    case 'subscription.deleted':
+      return 'customer.subscription.deleted';
+    case 'invoice.paid':
+      return 'invoice.paid';
+    case 'subscription.past_due':
+      return 'invoice.payment_failed';
+    default:
+      return null;
+  }
+}
+
+function captureStripeWebhookPostHog(
+  env: any,
+  event: NormalizedPaymentEvent,
+  userId: string,
+  ctx?: PostHogWaitUntilCtx,
+) {
+  if (event.providerId !== 'stripe') return;
+  const stripeType = stripeWebhookTypeForPostHog(event);
+  if (!stripeType) return;
+  captureMappedPostHogEvent(
+    env,
+    posthogEventFromStripeWebhook(stripeType, getNormalizedRawObject(event), userId),
+    ctx,
+  );
 }
 
 function normalizeGenericSubscriptionStatus(raw: string): SubscriptionStatus {
@@ -391,10 +438,12 @@ async function updateSubscriptionStatusByProviderRef(
   if (refs.length === 0) return;
 
   const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
+  const cancelClause =
+    nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
   await db
     .prepare(
       `UPDATE subscriptions
-       SET status = ?, updated_at = CURRENT_TIMESTAMP
+       SET status = ?, updated_at = CURRENT_TIMESTAMP${cancelClause}
        WHERE provider = ? AND (${where})`,
     )
     .bind(nextStatus, provider, ...refs.map((ref) => ref.value))
@@ -1080,6 +1129,7 @@ export async function handleWebhook(
   env: any,
   corsHeaders: any,
   providerId: PaymentProviderId = 'stripe',
+  ctx?: PostHogWaitUntilCtx,
 ) {
   const rawBody = await request.text();
   const { providers } = await getPaymentProviders(env);
@@ -1154,6 +1204,7 @@ export async function handleWebhook(
         if (normalizedEvent.type === 'invoice.paid') {
           await handlePaymentInvoicePaid(env, db, userId, normalizedEvent);
         }
+        captureStripeWebhookPostHog(env, normalizedEvent, userId, ctx);
         break;
       }
       case 'subscription.deleted':
@@ -1186,6 +1237,7 @@ export async function handleWebhook(
             });
             throw offlineErr;
           }
+          captureStripeWebhookPostHog(env, normalizedEvent, userId, ctx);
         }
         break;
       }
@@ -1197,6 +1249,10 @@ export async function handleWebhook(
     return jsonResponse({ ok: true }, 200, corsHeaders);
   } catch (err) {
     console.error('handleWebhook error:', err);
+    capturePostHogException(env, err, {
+      ...(ctx ? { ctx } : {}),
+      properties: { handler: 'payments_webhook', providerId },
+    });
     // Return 500 so Stripe retries the event on transient failures
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
@@ -1228,6 +1284,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
             providerCustomerId: null,
             stripeCustomerId: null,
             currentPeriodEnd: null,
+            cancelAtPeriodEnd: false,
             createdAt: now,
             updatedAt: now,
           },
@@ -1240,7 +1297,7 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
     const sub = await db
       .prepare(`
       SELECT id, user_id, plan_type, status, provider, provider_customer_id, stripe_customer_id,
-             current_period_end, created_at, updated_at
+             current_period_end, cancel_at_period_end, created_at, updated_at
       FROM subscriptions
       WHERE user_id = ?
       ORDER BY created_at DESC
@@ -1280,6 +1337,10 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
           providerCustomerId: sub.provider_customer_id ?? null,
           stripeCustomerId: sub.stripe_customer_id,
           currentPeriodEnd: sub.current_period_end,
+          cancelAtPeriodEnd:
+            sub.cancel_at_period_end === 1 ||
+            sub.cancel_at_period_end === true ||
+            sub.cancel_at_period_end === '1',
           createdAt: sub.created_at,
           updatedAt: sub.updated_at,
           legacyManageUrl,
