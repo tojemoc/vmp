@@ -8,6 +8,9 @@
 # Why `types: [created, edited]`: CodeRabbit sometimes edits its existing
 # comment in place instead of posting a new one. A workflow that only
 # listens for `created` will miss those updates entirely.
+#
+# Uses inline Node (not actions/github-script) to avoid codeload 429s when
+# GitHub rate-limits action archive downloads.
 
 name: CodeRabbit instant re-trigger
 
@@ -17,7 +20,7 @@ on:
 
 permissions:
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   retrigger:
@@ -28,48 +31,12 @@ jobs:
       github.event.comment.user.login == 'coderabbitai[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Re-trigger review if manual-trigger message is present
-        uses: actions/github-script@v7
+      - uses: actions/checkout@v4
         with:
-          script: |
-            const body = context.payload.comment.body;
-            const prNumber = context.payload.issue.number;
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
 
-            // Only act on the specific "manual trigger required" message.
-            if (!/should be triggered manually/i.test(body)) {
-              console.log('Not a manual-trigger notice, skipping.');
-              return;
-            }
-
-            // Idempotency guard: if we've already posted a trigger comment
-            // *after* this CodeRabbit comment's last edit, don't repeat it.
-            // (Edits re-fire this workflow, so without this check every
-            // edit would produce a new "@coderabbitai review" comment.)
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              per_page: 100,
-            });
-
-            const thisCommentTime = new Date(
-              context.payload.comment.updated_at || context.payload.comment.created_at
-            );
-
-            const alreadyRetriggered = comments.some(c =>
-              c.user.login === 'github-actions[bot]' &&
-              /@coderabbitai review/i.test(c.body) &&
-              new Date(c.created_at) > thisCommentTime
-            );
-
-            if (alreadyRetriggered) {
-              console.log('Already retriggered for this comment state, skipping.');
-              return;
-            }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: '@coderabbitai review',
-            });
+      - name: Re-trigger review if manual-trigger message is present
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/coderabbit-instant-retrigger.mjs
