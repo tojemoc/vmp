@@ -1,3 +1,4 @@
+import { getBrowserPostHog } from '~/utils/posthogBrowserClient';
 import {
   applyPostHogConsentToClient,
   POSTHOG_ANALYTICS_CONSENT_KEY,
@@ -31,7 +32,7 @@ function writeConsent(value: PostHogConsentValue): void {
 
 function syncConsentToPostHogClient(granted: boolean): void {
   if (!import.meta.client) return;
-  const posthog = usePostHog();
+  const posthog = getBrowserPostHog();
   if (!posthog) return;
   applyPostHogConsentToClient(posthog, granted);
 }

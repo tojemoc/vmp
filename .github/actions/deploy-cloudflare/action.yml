@@ -106,8 +106,10 @@ runs:
         NUXT_PUBLIC_GIT_COMMIT: ${{ inputs.git-sha }}
         NUXT_PUBLIC_UI_LOCALE: ${{ inputs.ui-locale }}
         NUXT_PUBLIC_SENTRY_DSN: ${{ inputs.sentry-dsn }}
-        NUXT_PUBLIC_POSTHOG_KEY: ${{ inputs.posthog-key }}
-        NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-project-token }}
+        # Coalesce repo vars so any of KEY / PROJECT_TOKEN reaches runtimeConfig.public.posthog.publicKey.
+        NUXT_PUBLIC_POSTHOG_KEY: ${{ inputs.posthog-key || inputs.posthog-project-token }}
+        NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-key || inputs.posthog-project-token }}
+        NUXT_PUBLIC_POSTHOG_PUBLIC_KEY: ${{ inputs.posthog-key || inputs.posthog-project-token }}
         NUXT_PUBLIC_POSTHOG_HOST: ${{ inputs.posthog-host }}
         POSTHOG_PROJECT_ID: ${{ inputs.posthog-project-id }}
         POSTHOG_PERSONAL_API_KEY: ${{ inputs.posthog-personal-api-key }}

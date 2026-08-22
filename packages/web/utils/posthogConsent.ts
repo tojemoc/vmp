@@ -15,7 +15,7 @@ export function hasPostHogAnalyticsConsent(): boolean {
 
 type PostHogPersistence = 'memory' | 'localStorage' | 'sessionStorage' | 'localStorage+cookie' | 'cookie';
 
-type PostHogPersistenceClient = {
+export type PostHogPersistenceClient = {
   opt_in_capturing?: () => void;
   opt_out_capturing?: () => void;
   set_config?: (config: { persistence?: PostHogPersistence }) => void;

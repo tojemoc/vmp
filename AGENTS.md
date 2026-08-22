@@ -315,6 +315,8 @@ POSTHOG_PROJECT_TOKEN — public PostHog project token (same value as NUXT_PUBLI
 POSTHOG_HOST          — ingest host; defaults to https://eu.i.posthog.com (also in wrangler.json vars)
 ```
 
+Frontend PostHog token is **baked at Nuxt build time** (GitHub repo vars → deploy action). Use any of `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, or `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` (maps to `runtimeConfig.public.posthog.publicKey`). CI coalesces all three from the repo vars.
+
 Do **not** put `POSTHOG_PERSONAL_API_KEY` on the API Worker. That key is GitHub-only for web source-map upload.
 
 Queue bindings (Worker `env` keys, from `packages/api/wrangler.json`): `vmp_replication_events`, `vmp_push_delivery`. Queue resource names: `vmp-replication-events`, `vmp-push-delivery`.
