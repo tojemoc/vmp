@@ -566,6 +566,7 @@ export async function handleLegacyWebhook(
       await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
     } catch (offlineErr) {
       console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr);
+      throw offlineErr;
     }
   }
 

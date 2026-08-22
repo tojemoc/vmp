@@ -121,8 +121,14 @@ describe('normalizeStripeInvoice', () => {
           {
             description: 'Monthly plan',
             quantity: 1,
-            amount_excluding_tax: 1000,
-            tax_amounts: [{ amount: 200 }],
+            amount_excluding_tax: 600,
+            tax_amounts: [{ amount: 120 }],
+          },
+          {
+            description: 'Add-on',
+            quantity: 1,
+            amount_excluding_tax: 400,
+            tax_amounts: [{ amount: 80 }],
           },
         ],
       },
@@ -131,9 +137,16 @@ describe('normalizeStripeInvoice', () => {
     assert.ok(invoice);
     assert.equal(invoice.netAmountCents, 800);
     assert.equal(invoice.taxAmountCents, 160);
-    assert.equal(invoice.lineItems.length, 1);
-    assert.equal(invoice.lineItems[0]!.netAmountCents, 800);
-    assert.equal(invoice.lineItems[0]!.vatRatePercent, 20);
+    assert.equal(invoice.lineItems.length, 2);
+    const monthly = invoice.lineItems.find((line) => line.description === 'Monthly plan');
+    const addon = invoice.lineItems.find((line) => line.description === 'Add-on');
+    assert.ok(monthly);
+    assert.ok(addon);
+    // Discount 200 allocated 60%/40% → 120 and 80.
+    assert.equal(monthly!.netAmountCents, 480);
+    assert.equal(addon!.netAmountCents, 320);
+    assert.equal(monthly!.vatRatePercent, 20);
+    assert.equal(addon!.vatRatePercent, 20);
     assert.equal(invoice.lineItems.find((line) => line.description === 'Discount'), undefined);
     const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
     assert.equal(lineNetSum, 800);
