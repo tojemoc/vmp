@@ -99,12 +99,44 @@ describe('normalizeStripeInvoice', () => {
 
     assert.ok(invoice);
     assert.equal(invoice.netAmountCents, 800);
-    const discountLine = invoice.lineItems.find((line) => line.description === 'Discount');
-    assert.ok(discountLine);
-    assert.equal(discountLine!.netAmountCents, -200);
+    assert.equal(invoice.lineItems.length, 1);
+    assert.equal(invoice.lineItems[0]!.netAmountCents, 800);
+    assert.equal(invoice.lineItems.find((line) => line.description === 'Discount'), undefined);
     const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
     assert.equal(lineNetSum, 800);
     assert.equal(invoice.grossAmountCents, 800);
+  });
+
+  it('allocates invoice-level discount across taxed lines preserving VAT rate', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_disc_tax',
+      currency: 'eur',
+      subtotal: 1000,
+      total_excluding_tax: 800,
+      tax: 160,
+      total: 960,
+      created: 1_700_000_000,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 1000,
+            tax_amounts: [{ amount: 200 }],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.netAmountCents, 800);
+    assert.equal(invoice.taxAmountCents, 160);
+    assert.equal(invoice.lineItems.length, 1);
+    assert.equal(invoice.lineItems[0]!.netAmountCents, 800);
+    assert.equal(invoice.lineItems[0]!.vatRatePercent, 20);
+    assert.equal(invoice.lineItems.find((line) => line.description === 'Discount'), undefined);
+    const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+    assert.equal(lineNetSum, 800);
   });
 });
 

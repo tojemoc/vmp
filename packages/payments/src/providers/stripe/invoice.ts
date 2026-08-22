@@ -106,20 +106,32 @@ function applyInvoiceLevelDiscount(
   const subtotal = centsFromStripeAmount(stripeInvoice.subtotal);
   if (invoiceNet <= 0 || subtotal <= invoiceNet) return lineItems;
 
-  const lineSum = lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+  const positiveLines = lineItems.filter((line) => line.netAmountCents > 0);
+  const lineSum = positiveLines.reduce((sum, line) => sum + line.netAmountCents, 0);
   const basis = lineSum > 0 ? lineSum : subtotal;
   const discountCents = basis - invoiceNet;
   if (discountCents <= 0) return lineItems;
 
-  return [
-    ...lineItems,
-    {
-      description: 'Discount',
-      quantity: 1,
-      netAmountCents: -discountCents,
-      vatRatePercent: 0,
-    },
-  ];
+  // Allocate invoice-level discount across taxable lines so each keeps its VAT rate.
+  let remainingDiscount = discountCents;
+  let positiveSeen = 0;
+  const positiveCount = positiveLines.length;
+
+  return lineItems.map((line) => {
+    if (line.netAmountCents <= 0) return line;
+
+    positiveSeen++;
+    const isLast = positiveSeen === positiveCount;
+    const share = isLast
+      ? remainingDiscount
+      : Math.round((line.netAmountCents / basis) * discountCents);
+    remainingDiscount -= share;
+
+    return {
+      ...line,
+      netAmountCents: line.netAmountCents - share,
+    };
+  });
 }
 
 export function buildLineItemsFromStripeInvoice(

@@ -6,6 +6,7 @@ import {
   createEnabledProviders,
   getRunnableProviderIds,
   normalizeProviderId,
+  parseQerkoWebhookPayload,
   type PaymentProviderId,
   type PaymentsConfig,
   type PlanType,
@@ -65,20 +66,8 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       },
       verifyWebhook: (rawBody, signatureHeader) =>
         verifyLegacyWebhookSignature(env, rawBody, signatureHeader),
-      parseWebhook: async (rawBody) => {
-        const payload = rawBody ? JSON.parse(rawBody) : {};
-        const purchaseId = String(payload.purchaseId ?? payload.purchase_id ?? '').trim();
-        return {
-          type: 'subscription.updated',
-          providerId: 'qerko',
-          purchaseId,
-          providerOrderId: String(payload.idOrder ?? payload.orderId ?? purchaseId).trim(),
-          planType: String(payload.planType ?? 'monthly') as PlanType,
-          status: String(payload.status ?? payload.subscriptionStatus ?? ''),
-          currentPeriodEnd: payload.currentPeriodEnd ?? payload.current_period_end ?? null,
-          raw: payload,
-        };
-      },
+      parseWebhook: async (rawBody) =>
+        parseQerkoWebhookPayload(rawBody ? JSON.parse(rawBody) : {}),
       cancelSubscription: async () => {
         throw new Error('Qerko subscription cancellation is managed in the legacy eshop portal');
       },

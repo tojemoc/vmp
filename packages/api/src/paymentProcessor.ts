@@ -255,12 +255,19 @@ async function upsertSubscriptionFromNormalizedEvent(
   let cancelAtPeriodEnd = event.cancelAtPeriodEnd === true;
 
   if (event.providerId === 'qerko') {
-    providerSubscriptionId =
-      event.providerOrderId?.trim() ||
-      event.subscriptionId?.trim() ||
-      event.purchaseId?.trim() ||
-      null;
-    purchaseId = event.purchaseId?.trim() || purchaseId;
+    const raw =
+      event.raw && typeof event.raw === 'object' ? (event.raw as Record<string, unknown>) : {};
+    const subscription =
+      raw.subscription && typeof raw.subscription === 'object'
+        ? (raw.subscription as Record<string, unknown>)
+        : null;
+    const cardOnFile = String(
+      subscription?.cardOnFile ?? raw.cardOnFile ?? event.subscriptionId ?? event.purchaseId ?? '',
+    ).trim();
+
+    // Stable CardOnFile identity for ON CONFLICT(provider, provider_subscription_id).
+    providerSubscriptionId = cardOnFile || event.subscriptionId?.trim() || null;
+    purchaseId = event.purchaseId?.trim() || cardOnFile || purchaseId;
     if (!providerCustomerId && purchaseId) {
       providerCustomerId = purchaseId;
     }

@@ -151,7 +151,7 @@
             type="checkbox"
             class="rounded border-gray-300 dark:border-gray-600"
           >
-          Show “Pay with {{ legacy.providerName.trim() || 'Qerko' }}” to Qerko subscribers
+          Show “Manage with {{ legacy.providerName.trim() || 'Qerko' }}” to Qerko subscribers
         </label>
       </div>
 
