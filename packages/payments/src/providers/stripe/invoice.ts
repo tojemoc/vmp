@@ -108,9 +108,8 @@ function applyInvoiceLevelDiscount(
 
   const positiveLines = lineItems.filter((line) => line.netAmountCents > 0);
   const lineSum = positiveLines.reduce((sum, line) => sum + line.netAmountCents, 0);
-  // Invoice-level discount is always subtotal − post-discount net (not lineSum − net).
+  // Guaranteed > 0 by the subtotal <= invoiceNet guard above.
   const discountCents = subtotal - invoiceNet;
-  if (discountCents <= 0) return lineItems;
 
   // Allocate across positive lines; lineSum is the proportional basis only.
   const basis = lineSum > 0 ? lineSum : subtotal;
