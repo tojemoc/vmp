@@ -1,16 +1,18 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
+import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
+import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
 loadMonorepoRootEnv();
 
 const buildInfo = readBuildInfoDefaults();
 
-const posthogPublicKey = (
-  process.env.NUXT_PUBLIC_POSTHOG_KEY ||
-  process.env.NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN ||
-  ''
-).trim();
+const posthogPublicKey = resolvePostHogPublicKeyFromEnv();
+if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
+  // Nuxt maps NUXT_PUBLIC_POSTHOG_PUBLIC_KEY → runtimeConfig.public.posthog.publicKey.
+  process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = posthogPublicKey;
+}
 const posthogHost = (
   process.env.NUXT_PUBLIC_POSTHOG_HOST ||
   'https://eu.i.posthog.com'
@@ -57,7 +59,7 @@ export default defineNuxtConfig({
     '@nuxtjs/color-mode',
     '@vite-pwa/nuxt',
     '@sentry/nuxt/module',
-    '@posthog/nuxt',
+    ...(posthogEnabled ? (['@posthog/nuxt'] as const) : []),
   ],
 
   sentry: {
@@ -66,30 +68,48 @@ export default defineNuxtConfig({
     authToken: process.env.SENTRY_AUTH_TOKEN,
   },
 
-  posthogConfig: {
-    publicKey: posthogPublicKey,
-    host: posthogHost,
-    clientConfig: {
-      person_profiles: 'identified_only',
-      capture_exceptions: posthogEnabled,
-      opt_out_capturing_by_default: true,
-      persistence: 'memory',
-      ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
-      loaded: (posthog) => {
-        posthog.register({ $environment: buildInfo.deployTier || 'development' });
-      },
-    },
-    serverConfig: {
-      enableExceptionAutocapture: posthogEnabled,
-    },
-    sourcemaps: {
-      enabled: posthogSourcemapsEnabled,
-      projectId: posthogProjectId,
-      personalApiKey: posthogPersonalApiKey,
-      releaseName: 'vmp-web',
-      releaseVersion: buildInfo.gitCommit,
-    },
-  },
+  ...(posthogEnabled
+    ? {
+        posthogConfig: {
+          publicKey: posthogPublicKey,
+          host: posthogHost,
+          clientConfig: {
+            person_profiles: 'identified_only',
+            capture_exceptions: true,
+            opt_out_capturing_by_default: true,
+            persistence: 'memory',
+            ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
+            loaded: (posthog: {
+              register: (props: Record<string, unknown>) => void;
+              opt_in_capturing?: () => void;
+              opt_out_capturing?: () => void;
+              set_config?: (config: {
+                persistence?:
+                  | 'memory'
+                  | 'localStorage'
+                  | 'sessionStorage'
+                  | 'localStorage+cookie'
+                  | 'cookie';
+              }) => void;
+            }) => {
+              posthog.register({ $environment: buildInfo.deployTier || 'development' });
+              // Re-apply after __loaded — composable/plugin sync may have run too early.
+              applyStoredPostHogConsentToClient(posthog);
+            },
+          },
+          serverConfig: {
+            enableExceptionAutocapture: true,
+          },
+          sourcemaps: {
+            enabled: posthogSourcemapsEnabled,
+            projectId: posthogProjectId,
+            personalApiKey: posthogPersonalApiKey,
+            releaseName: 'vmp-web',
+            releaseVersion: buildInfo.gitCommit,
+          },
+        },
+      }
+    : {}),
 
   nitro: {
     // Workbox navigateFallback requires "/" in the precache manifest (SSR builds).
@@ -144,6 +164,11 @@ export default defineNuxtConfig({
       /** Full git SHA baked in at build time (staging footer shows short form). */
       gitCommit: buildInfo.gitCommit,
       gitRepoUrl: buildInfo.gitRepoUrl,
+      /** Baked PostHog project token — override via NUXT_PUBLIC_POSTHOG_PUBLIC_KEY (or KEY / PROJECT_TOKEN aliases). */
+      posthog: {
+        publicKey: posthogPublicKey,
+        host: posthogHost,
+      },
     },
   },
 
