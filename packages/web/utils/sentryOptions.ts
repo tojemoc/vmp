@@ -41,6 +41,33 @@ function redactRecord(record: Record<string, unknown>): Record<string, unknown> 
   return redacted;
 }
 
+/** Vite/esbuild HMR noise when locale modules briefly fail to compile in dev. */
+export function isViteLocaleTransformNoise(message: string | undefined): boolean {
+  if (!message) return false;
+  return message.includes('Transform failed with') && message.includes('/locales/');
+}
+
+/**
+ * Runtime ReferenceError from ephemeral dev edits. esbuild emits bare identifiers
+ * like `INVALID` that TypeScript would reject in CI, so this cannot ship in
+ * production bundles from committed source.
+ */
+export function isDevEphemeralReferenceNoise(message: string | undefined): boolean {
+  if (!message) return false;
+  return message.includes('INVALID is not defined');
+}
+
+function getSentryErrorMessage(event: ErrorEvent): string | undefined {
+  const exceptionValue = event.exception?.values?.[0]?.value;
+  if (typeof exceptionValue === 'string' && exceptionValue.trim()) {
+    return exceptionValue;
+  }
+  if (typeof event.message === 'string' && event.message.trim()) {
+    return event.message;
+  }
+  return undefined;
+}
+
 export function buildSentryInitOptions(config: SentryPublicConfig) {
   if (!config.dsn) return null;
 
@@ -62,6 +89,11 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
   }
 
   options.beforeSend = (event) => {
+    const message = getSentryErrorMessage(event);
+    if (isViteLocaleTransformNoise(message) || isDevEphemeralReferenceNoise(message)) {
+      return null;
+    }
+
     if (event.request?.headers) {
       event.request.headers = redactRecord(
         event.request.headers as Record<string, unknown>,
