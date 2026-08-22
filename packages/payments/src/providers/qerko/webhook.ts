@@ -1,5 +1,11 @@
 import type { NormalizedPaymentEvent, PlanType } from '../../types.js';
 
+function optionalPeriodEnd(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 /** Parse a Qerko (legacy eshop) webhook JSON body into a normalized payment event. */
 export function parseQerkoWebhookPayload(payload: Record<string, unknown>): NormalizedPaymentEvent {
   const subscription =
@@ -34,7 +40,7 @@ export function parseQerkoWebhookPayload(payload: Record<string, unknown>): Norm
     ...(cardOnFile ? { subscriptionId: cardOnFile } : {}),
     planType: String(payload.planType ?? 'monthly') as PlanType,
     status,
-    currentPeriodEnd: payload.currentPeriodEnd ?? payload.current_period_end ?? null,
+    currentPeriodEnd: optionalPeriodEnd(payload.currentPeriodEnd ?? payload.current_period_end),
     raw: payload,
   };
 }
