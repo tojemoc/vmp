@@ -353,6 +353,8 @@ export type StringsDefinition = {
   personalDataBannerAcknowledge: string;
   posthogAnalyticsConsentTitle: string;
   posthogAnalyticsConsentSummary: string;
+  /** Link label after the analytics consent summary (e.g. privacy notice). */
+  posthogAnalyticsConsentLearnMore: string;
   posthogAnalyticsConsentAccept: string;
   posthogAnalyticsConsentDecline: string;
   playbackResumeRequiresSignIn: string;

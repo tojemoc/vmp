@@ -402,14 +402,15 @@ export const strings: StringsDefinition = {
   // ── Personal data notice (GDPR transparency) ───────────────────────────────
   personalDataPageTitle: 'Personal data processing',
   personalDataBannerSummary:
-    'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
+    'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary cookies so the service works.',
   personalDataLearnMore: 'Personal data notice',
   personalDataBannerAcknowledge: 'I understand',
   posthogAnalyticsConsentTitle: 'Product analytics consent',
   posthogAnalyticsConsentSummary:
-    'We use PostHog (EU) for product analytics. Until you choose, no analytics cookies or local storage are used. Accept to help us improve the service, or decline to opt out.',
-  posthogAnalyticsConsentAccept: 'Accept analytics',
-  posthogAnalyticsConsentDecline: 'Decline',
+    'We use analytics cookies (PostHog, EU) to improve our services — only if you allow it.',
+  posthogAnalyticsConsentLearnMore: 'More about personal data processing',
+  posthogAnalyticsConsentAccept: 'I allow',
+  posthogAnalyticsConsentDecline: "I don't allow",
   personalDataContactTitle: 'Contact for privacy requests',
   personalDataContactIntro:
     'To request access, erasure, or other GDPR rights — including account deletion — email our support address:',
