@@ -33,8 +33,12 @@ function writeConsent(value: PostHogConsentValue): void {
 function syncConsentToPostHogClient(granted: boolean): void {
   if (!import.meta.client) return;
   const posthog = getBrowserPostHog();
-  if (!posthog) return;
-  applyPostHogConsentToClient(posthog, granted);
+  if (!posthog?.__loaded) return;
+  try {
+    applyPostHogConsentToClient(posthog, granted);
+  } catch (err) {
+    console.error('[PostHog] consent apply failed', err);
+  }
 }
 
 function applyStoredConsent(): void {

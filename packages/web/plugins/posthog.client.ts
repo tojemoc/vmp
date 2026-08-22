@@ -1,9 +1,15 @@
 /**
  * App-specific PostHog identity sync. Initialization, Vue error capture, and
- * source maps come from `@posthog/nuxt`.
+ * source maps come from `@posthog/nuxt` (which wraps posthog-js).
+ *
+ * Never destructure `identify` / `reset` off the client — they need `this`.
  */
 import type { AuthUser } from '~/composables/useAuth';
-import { getBrowserPostHog, type PostHogIdentityClient } from '~/utils/posthogBrowserClient';
+import {
+  getBrowserPostHog,
+  isBrowserPostHogReady,
+  type PostHogIdentityClient,
+} from '~/utils/posthogBrowserClient';
 import { isPostHogConfigured } from '~/utils/posthogPublicKey';
 
 function syncPostHogIdentity(
@@ -12,6 +18,8 @@ function syncPostHogIdentity(
   hasAnalyticsConsent: boolean,
   lastIdentifiedUserId: { current: string | null },
 ): void {
+  if (!isBrowserPostHogReady(posthogClient)) return;
+
   if (!hasAnalyticsConsent) {
     if (lastIdentifiedUserId.current !== null) {
       posthogClient.reset?.();
@@ -34,6 +42,7 @@ function syncPostHogIdentity(
     posthogClient.reset?.();
   }
 
+  // GDPR: identify by internal user id only — never email or other PII.
   posthogClient.identify?.(authUser.id, {
     role: authUser.role,
   });
@@ -54,9 +63,6 @@ export default defineNuxtPlugin({
       return;
     }
 
-    const posthogClient = getBrowserPostHog();
-    if (!posthogClient) return;
-
     const { user, initialised } = useAuth();
     const { hasAnalyticsConsent } = usePostHogConsent();
     const lastIdentifiedUserId = { current: null as string | null };
@@ -65,7 +71,14 @@ export default defineNuxtPlugin({
       [initialised, user, hasAnalyticsConsent],
       ([ready, authUser, consentGranted]) => {
         if (!ready) return;
-        syncPostHogIdentity(posthogClient, authUser, consentGranted, lastIdentifiedUserId);
+        // Resolve on each tick so we pick up the Nuxt module client after init.
+        const posthogClient = getBrowserPostHog();
+        if (!posthogClient) return;
+        try {
+          syncPostHogIdentity(posthogClient, authUser, consentGranted, lastIdentifiedUserId);
+        } catch (err) {
+          console.error('[PostHog] identity sync failed', err);
+        }
       },
       { immediate: true },
     );
