@@ -78,15 +78,18 @@ Generic columns already exist (`provider`, `provider_subscription_id`,
 
 **Files:** `packages/api/src/promotions.ts`, `promo_codes` table
 
-- `PromoProvider` type = `'stripe'` only.
-- `stripe_coupon_id` required for discount-percent promos.
-- `resolvePromoCodeForCheckout()` only resolves when `provider = 'stripe'`.
-- Free month/year promos are already provider-agnostic (just grant access directly).
+**Current state (partially generalized):**
+- `PromoProvider` type = `'stripe' | 'legacy'` (Qerko checkout uses `'legacy'`).
+- `resolvePromoCodeForCheckout()` accepts any `PromoProvider`; free month/year promos
+  are provider-agnostic.
+- Discount-percent promos still require a Stripe coupon: the resolver returns
+  `promo_provider_mapping_missing` when `provider !== 'stripe'` or when
+  `stripe_coupon_id` is unset.
 
 **To universalize:**
 - Add `provider_coupon_ids: Record<ProviderId, string>` per promo code.
-- Allow `resolvePromoCodeForCheckout()` to accept any provider and return the relevant
-  coupon reference (or `null` if that provider doesn't support coupons).
+- Allow `resolvePromoCodeForCheckout()` to return a coupon reference for any
+  provider that supports percentage discounts (not Stripe-only).
 
 ---
 

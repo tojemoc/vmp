@@ -1422,6 +1422,11 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     const subscriptionId = String(sub.provider_subscription_id ?? '').trim();
     const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000';
 
+    // Stripe Billing Portal requires a customer id; missing id means the row is incomplete.
+    if (registryId === 'stripe' && !customerId) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
+    }
+
     if (provider?.getManageUrl) {
       const portalUrl = await provider.getManageUrl({
         customerId: customerId || null,
