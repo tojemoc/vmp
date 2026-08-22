@@ -6,6 +6,7 @@
     consumeOfflineDownloadReturn,
     markOfflineDownloadReturn,
   } from '~/utils/offlineDownloadReturn';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import {
     canAddToHomeScreenWithoutPrompt,
     canOpenCurrentPageInChrome,
@@ -311,6 +312,10 @@
       await loadState();
       trackOfflineEvent('offline_download_requested', {
         videoId: props.videoId,
+        rendition: rendition.value,
+      });
+      capturePostHogEvent('offline_download_requested', {
+        video_id: props.videoId,
         rendition: rendition.value,
       });
     } catch (e: unknown) {

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
@@ -12,6 +12,35 @@ const storageIndex = path.join(storageRoot, 'index.ts');
 const storageNode = path.join(storageRoot, 'node.ts');
 const storageWorker = path.join(storageRoot, 'worker.ts');
 
+function readPackageJson(pkgPath) {
+  return JSON.parse(readFileSync(pkgPath, 'utf8'));
+}
+
+/**
+ * Deno Deploy installs only this package (`npm install --no-workspaces`).
+ * Workspace `npm ci` hoists Worker deps, so GitHub's verify:api-node can
+ * succeed even when a Worker npm dependency is missing here. Mirror every
+ * non-workspace `@vmp/api` dependency in api-node package.json.
+ */
+function assertWorkerNpmDepsMirrored() {
+  const apiPkg = readPackageJson(path.join(packageRoot, '../api/package.json'));
+  const nodePkg = readPackageJson(path.join(packageRoot, 'package.json'));
+  const installed = {
+    ...nodePkg.dependencies,
+    ...nodePkg.devDependencies,
+  };
+  const missing = Object.keys(apiPkg.dependencies ?? {}).filter(
+    (dep) => !dep.startsWith('@vmp/') && !installed[dep],
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `[build] @vmp/api depends on ${missing.join(', ')}, but @vmp/api-node does not ` +
+        'declare them. Deno Deploy package-local install cannot resolve Worker imports. ' +
+        'Add the packages to packages/api-node/package.json.',
+    );
+  }
+}
+
 for (const required of [
   ['Worker sources', apiEntry],
   ['Shared types', sharedEntry],
@@ -24,6 +53,8 @@ for (const required of [
     );
   }
 }
+
+assertWorkerNpmDepsMirrored();
 
 mkdirSync('dist', { recursive: true });
 

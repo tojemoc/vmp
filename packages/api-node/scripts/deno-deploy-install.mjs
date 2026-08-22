@@ -9,9 +9,10 @@
  * aliases. `@vmp/storage` is a file: dependency so this package-local install
  * can link it without publishing.
  *
- * Sibling packages import npm deps (AWS SDK, Sentry) that live in this
- * package's node_modules — symlink that directory into each sibling so esbuild
- * can resolve them when bundling ../api and ../storage sources.
+ * Sibling packages import npm deps (AWS SDK, Sentry, posthog-node) that live
+ * in this package's node_modules — symlink that directory into each sibling so
+ * esbuild can resolve them when bundling ../api and ../storage sources.
+ * Every non-workspace dependency of @vmp/api must also be declared here.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs';

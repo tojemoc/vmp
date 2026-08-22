@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
   import { loadStripe, type Stripe } from '@stripe/stripe-js';
-
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   type PlanType = 'monthly' | 'yearly' | 'club';
@@ -358,6 +358,13 @@
       loading.value = false;
       await syncMountedSurfaces();
       if (generation !== teardownGeneration) return;
+
+      // Stripe: fires when the embedded form is interactive — not comparable to legacy
+      // subscription_checkout_started, which fires immediately before redirect away.
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: props.planType,
+        provider: 'stripe',
+      });
     } catch (err: unknown) {
       if (generation !== teardownGeneration) return;
       initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed;

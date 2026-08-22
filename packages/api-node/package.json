@@ -22,6 +22,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1111.0",
     "@smithy/fetch-http-handler": "^5.7.2",
     "@vmp/storage": "file:../storage",
+    "posthog-node": "5.49.1",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
