@@ -9,6 +9,27 @@ on:
       - main
     tags:
       - 'v*.*.*'
+    # Path filters apply to branch pushes only; tag pushes always deploy (production).
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.cursor/**'
+      - '.agents/**'
+      - '.opencode/**'
+      - '.github/skills/**'
+      - '.github/prompts/**'
+      - '.github/agents/**'
+      - 'apps/mobile/**'
+      - 'packages/media-pipeline/**'
+      - 'packages/moq-probe/**'
+      - 'packages/offloading/**'
+      - '.github/workflows/media-pipeline-docker.yml'
+      - '.github/workflows/mobile-artifacts.yml'
+      - '.github/workflows/ort-scan.yml'
+      - '.github/workflows/stickydisk-cleanup.yml'
+      - '.github/workflows/bot-review-limit-cron.yml'
+      - '.github/workflows/coderabbit-instant-trigger.yml'
+      - '.github/workflows/dependabot-auto-merge.yml'
   workflow_dispatch:
     inputs:
       target:

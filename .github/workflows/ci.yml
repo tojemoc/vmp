@@ -22,12 +22,44 @@ on:
       - '.github/skills/**'
       - '.github/prompts/**'
       - '.github/agents/**'
+      - 'apps/mobile/**'
+      - 'packages/media-pipeline/**'
+      - 'packages/moq-probe/**'
+      - 'packages/offloading/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api-node: ${{ steps.detect.outputs.api-node }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect api-node relevant changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          api_node=false
+          while IFS= read -r file; do
+            case "$file" in
+              packages/api-node/*|packages/shared/*|packages/storage/*|packages/api/*|package.json|package-lock.json)
+                api_node=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE" "$HEAD")
+          echo "api-node=$api_node" >> "$GITHUB_OUTPUT"
+
   typecheck:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
@@ -58,18 +90,26 @@ jobs:
         if: always()
 
   api-node:
+    needs: changes
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
+      - name: Skip api-node verification (no relevant changes)
+        if: needs.changes.outputs.api-node != 'true'
+        run: echo "No api-node-related files changed; skipping verify:api-node."
+
       - uses: actions/checkout@v6
+        if: needs.changes.outputs.api-node == 'true'
         with:
           persist-credentials: false
 
       - uses: actions/setup-node@v6
+        if: needs.changes.outputs.api-node == 'true'
         with:
           node-version: lts/*
           cache: npm
 
       - name: Install dependencies (npm ci with npm install fallback)
+        if: needs.changes.outputs.api-node == 'true'
         run: |
           if ! npm ci; then
             echo "::warning title=npm ci failed; using npm install fallback::Lockfile drift detected (package.json and package-lock.json may be out of sync). Regenerate and commit package-lock.json."
@@ -77,4 +117,5 @@ jobs:
           fi
 
       - name: Verify api-node (typecheck, tests, esbuild bundle)
+        if: needs.changes.outputs.api-node == 'true'
         run: npm run verify:api-node

@@ -10,19 +10,13 @@ on:
       - main
     paths:
       - 'packages/media-pipeline/**'
-      - 'packages/shared/**'
       - 'packages/storage/**'
-      - 'package.json'
-      - 'package-lock.json'
       - '.dockerignore'
       - '.github/workflows/media-pipeline-docker.yml'
   pull_request:
     paths:
       - 'packages/media-pipeline/**'
-      - 'packages/shared/**'
       - 'packages/storage/**'
-      - 'package.json'
-      - 'package-lock.json'
       - '.dockerignore'
       - '.github/workflows/media-pipeline-docker.yml'
   workflow_dispatch:
