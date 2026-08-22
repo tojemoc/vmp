@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 
+import { POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 import { capturePostHogEvent } from '../utils/posthogClient';
 
 type WindowWithPostHog = {
@@ -16,6 +17,17 @@ function setWindow(next: WindowWithPostHog | undefined): void {
 }
 
 describe('posthogClient', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    });
+  });
+
   afterEach(() => {
     setWindow(undefined);
   });
@@ -26,13 +38,36 @@ describe('posthogClient', () => {
     });
   });
 
-  it('capturePostHogEvent forwards events to window.posthog', () => {
+  it('capturePostHogEvent is a no-op without analytics consent', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
     setWindow({
       posthog: {
         capture: (event, properties) => {
           captured.push({ event, properties: properties ?? {} });
         },
+      },
+    });
+
+    capturePostHogEvent('magic_link_requested');
+
+    assert.deepEqual(captured, []);
+  });
+
+  it('capturePostHogEvent forwards events to window.posthog after consent', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    setWindow({
+      posthog: {
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
+      },
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
+        setItem: () => {},
       },
     });
 
@@ -50,6 +85,14 @@ describe('posthogClient', () => {
   });
 
   it('capturePostHogEvent swallows client capture errors', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
+        setItem: () => {},
+      },
+    });
     setWindow({
       posthog: {
         capture: () => {

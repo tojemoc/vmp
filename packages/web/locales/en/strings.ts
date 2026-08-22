@@ -405,6 +405,11 @@ export const strings: StringsDefinition = {
     'We avoid non-essential cookies. Sign-in, checkout, and player preferences use strictly necessary storage so the service works.',
   personalDataLearnMore: 'Personal data notice',
   personalDataBannerAcknowledge: 'I understand',
+  posthogAnalyticsConsentTitle: 'Product analytics consent',
+  posthogAnalyticsConsentSummary:
+    'We use PostHog (EU) for product analytics. Until you choose, no analytics cookies or local storage are used. Accept to help us improve the service, or decline to opt out.',
+  posthogAnalyticsConsentAccept: 'Accept analytics',
+  posthogAnalyticsConsentDecline: 'Decline',
   personalDataContactTitle: 'Contact for privacy requests',
   personalDataContactIntro:
     'To request access, erasure, or other GDPR rights — including account deletion — email our support address:',

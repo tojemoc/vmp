@@ -16,7 +16,11 @@ import {
   verifyLegacyWebhookSignature,
 } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
-import { captureMappedPostHogEvent, posthogEventFromLegacyWebhook } from './posthog.js';
+import {
+  captureMappedPostHogEvent,
+  posthogEventFromLegacyWebhook,
+  type PostHogWaitUntilCtx,
+} from './posthog.js';
 import { getSetting } from './settingsStore.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -471,7 +475,7 @@ export async function handleLegacyWebhook(
   request: Request,
   env: any,
   corsHeaders: Record<string, string>,
-  ctx?: { waitUntil?: (promise: Promise<unknown>) => void },
+  ctx?: PostHogWaitUntilCtx,
 ) {
   const rawBody = await request.text();
   const signature =

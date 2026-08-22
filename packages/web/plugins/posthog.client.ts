@@ -4,9 +4,11 @@
  */
 import type { AuthUser } from '~/composables/useAuth';
 
+import { hasPostHogAnalyticsConsent } from '~/utils/posthogConsent';
+
 export default defineNuxtPlugin({
   name: 'posthog-identify',
-  dependsOn: ['posthog-client'],
+  dependsOn: ['posthog-client', 'posthog-consent'],
   setup() {
     const config = useRuntimeConfig();
     const publicKey = String(config.public.posthog?.publicKey ?? '').trim();
@@ -27,6 +29,8 @@ export default defineNuxtPlugin({
     let lastIdentifiedUserId: string | null = null;
 
     function syncIdentity(authUser: AuthUser | null | undefined): void {
+      if (!hasPostHogAnalyticsConsent()) return;
+
       if (!authUser) {
         if (lastIdentifiedUserId !== null) {
           reset();

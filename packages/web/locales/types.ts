@@ -351,6 +351,10 @@ export type StringsDefinition = {
   personalDataBannerSummary: string;
   personalDataLearnMore: string;
   personalDataBannerAcknowledge: string;
+  posthogAnalyticsConsentTitle: string;
+  posthogAnalyticsConsentSummary: string;
+  posthogAnalyticsConsentAccept: string;
+  posthogAnalyticsConsentDecline: string;
   playbackResumeRequiresSignIn: string;
   playbackResumeRequiresSubscription: string;
   playbackResumedAt: (time: string) => string;

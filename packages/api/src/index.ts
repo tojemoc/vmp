@@ -1098,15 +1098,17 @@ const workerHandler = {
         });
         return jsonResponse({ error: 'Not Found' }, 404, corsHeaders);
       } catch (err) {
-        capturePostHogException(env, err, {
-          request,
-          ctx,
-          properties: {
-            handler: 'fetch',
-            http_method: request.method,
-            http_path: redactPathForAnalytics(url.pathname),
-          },
-        });
+        if (!request.signal.aborted) {
+          capturePostHogException(env, err, {
+            request,
+            ctx,
+            properties: {
+              handler: 'fetch',
+              http_method: request.method,
+              http_path: redactPathForAnalytics(url.pathname),
+            },
+          });
+        }
         throw err;
       }
     });

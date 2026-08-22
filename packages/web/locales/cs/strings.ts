@@ -411,6 +411,11 @@ export const strings: StringsDefinition = {
     'Vyhýbáme se nepodstatným cookies. Přihlášení, platba a předvolby přehrávače používají nezbytné úložiště, aby služba fungovala.',
   personalDataLearnMore: 'Informace o osobních údajích',
   personalDataBannerAcknowledge: 'Rozumím',
+  posthogAnalyticsConsentTitle: 'Souhlas s produktovou analytikou',
+  posthogAnalyticsConsentSummary:
+    'Pro produktovou analytiku používáme PostHog (EU). Dokud nevyberete, nepoužíváme analytické cookies ani localStorage. Přijměte, chcete-li nám pomoci službu zlepšovat, nebo odmítněte.',
+  posthogAnalyticsConsentAccept: 'Přijmout analytiku',
+  posthogAnalyticsConsentDecline: 'Odmítnout',
   personalDataContactTitle: 'Kontakt pro žádosti o ochranu osobních údajů',
   personalDataContactIntro:
     'Pro žádost o přístup, výmaz nebo jiná práva podle GDPR — včetně smazání účtu — napište na naši adresu podpory:',

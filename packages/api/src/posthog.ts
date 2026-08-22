@@ -148,16 +148,12 @@ function runPostHogWork(
 export function capturePostHogEvent(
   env: Record<string, unknown> | undefined,
   input: PostHogCaptureInput,
-  options: { request?: Request; ctx?: PostHogWaitUntilCtx } | Request = {},
+  options: { request?: Request; ctx?: PostHogWaitUntilCtx } = {},
 ): Promise<void> | void {
-  // Back-compat: third arg used to be `request?: Request`.
-  const opts: { request?: Request; ctx?: PostHogWaitUntilCtx } =
-    options instanceof Request ? { request: options } : options;
-
   const distinctId = input.distinctId.trim();
   if (!distinctId) return;
 
-  const { sessionId } = posthogContextFromRequest(opts.request);
+  const { sessionId } = posthogContextFromRequest(options.request);
   const properties: Record<string, unknown> = {
     ...sessionProperties(sessionId),
     ...input.properties,
@@ -170,7 +166,7 @@ export function capturePostHogEvent(
 
   if (!resolvePostHogProjectToken(env)) return;
 
-  return runPostHogWork(opts.ctx, async () => {
+  return runPostHogWork(options.ctx, async () => {
     if (captureHandler) {
       await captureHandler(payload);
       return;

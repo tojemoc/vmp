@@ -33,6 +33,7 @@ import {
   captureMappedPostHogEvent,
   capturePostHogException,
   posthogEventFromStripeWebhook,
+  type PostHogWaitUntilCtx,
 } from './posthog.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
@@ -883,7 +884,7 @@ export async function handleWebhook(
   request: any,
   env: any,
   corsHeaders: any,
-  ctx?: { waitUntil?: (promise: Promise<unknown>) => void },
+  ctx?: PostHogWaitUntilCtx,
 ) {
   const rawBody = await request.text();
   const sigHeader = request.headers.get('Stripe-Signature') ?? '';

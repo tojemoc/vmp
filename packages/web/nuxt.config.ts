@@ -72,6 +72,8 @@ export default defineNuxtConfig({
     clientConfig: {
       person_profiles: 'identified_only',
       capture_exceptions: posthogEnabled,
+      opt_out_capturing_by_default: true,
+      persistence: 'memory',
       ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
     },
     serverConfig: {

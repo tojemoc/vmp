@@ -8,54 +8,90 @@
     leave-to-class="opacity-0 -translate-y-2"
   >
     <div
-      v-if="showBanner"
+      v-if="showPersonalDataBanner || showAnalyticsBanner"
       class="bg-slate-800 text-slate-100 border-b border-slate-700 px-4 py-3"
       role="region"
-      aria-label="Personal data notice"
+      :aria-label="showAnalyticsBanner ? strings.posthogAnalyticsConsentTitle : 'Personal data notice'"
     >
-      <div
-        class="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-      >
-        <p class="text-sm leading-relaxed text-slate-200">
-          {{ strings.personalDataBannerSummary }}
-          {{ ' ' }}
-          <NuxtLink
-            to="/personal-data"
-            class="font-semibold text-white underline underline-offset-2 hover:text-blue-200"
-            @click="onLearnMore"
-          >
-            {{ strings.personalDataLearnMore }}
-          </NuxtLink>
-        </p>
-        <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-          <button
-            type="button"
-            class="px-3 py-1.5 text-xs font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
-            @click="onAcknowledge"
-          >
-            {{ strings.personalDataBannerAcknowledge }}
-          </button>
-          <button
-            type="button"
-            class="p-1.5 rounded-md hover:bg-slate-700 transition-colors"
-            :aria-label="strings.dismiss"
-            @click="onAcknowledge"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
+      <div class="max-w-7xl mx-auto flex flex-col gap-3">
+        <div
+          v-if="showPersonalDataBanner"
+          class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
+          <p class="text-sm leading-relaxed text-slate-200">
+            {{ strings.personalDataBannerSummary }}
+            {{ ' ' }}
+            <NuxtLink
+              to="/personal-data"
+              class="font-semibold text-white underline underline-offset-2 hover:text-blue-200"
+              @click="onLearnMore"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+              {{ strings.personalDataLearnMore }}
+            </NuxtLink>
+          </p>
+          <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
+              @click="onAcknowledge"
+            >
+              {{ strings.personalDataBannerAcknowledge }}
+            </button>
+            <button
+              type="button"
+              class="p-1.5 rounded-md hover:bg-slate-700 transition-colors"
+              :aria-label="strings.dismiss"
+              @click="onAcknowledge"
+            >
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="showAnalyticsBanner"
+          class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          :class="{ 'border-t border-slate-700 pt-3': showPersonalDataBanner }"
+        >
+          <p class="text-sm leading-relaxed text-slate-200">
+            {{ strings.posthogAnalyticsConsentSummary }}
+            {{ ' ' }}
+            <NuxtLink
+              to="/personal-data"
+              class="font-semibold text-white underline underline-offset-2 hover:text-blue-200"
+            >
+              {{ strings.personalDataLearnMore }}
+            </NuxtLink>
+          </p>
+          <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
+              @click="onGrantAnalytics"
+            >
+              {{ strings.posthogAnalyticsConsentAccept }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold text-slate-100 border border-slate-500 rounded-md hover:bg-slate-700 transition-colors"
+              @click="onDenyAnalytics"
+            >
+              {{ strings.posthogAnalyticsConsentDecline }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -65,7 +101,19 @@
 <script setup lang="ts">
   import strings from '~/utils/strings';
 
-  const { showBanner, acknowledgeNotice } = usePersonalDataNotice();
+  const config = useRuntimeConfig();
+  const posthogEnabled = Boolean(String(config.public.posthog?.publicKey ?? '').trim());
+
+  const { showBanner: showPersonalDataBanner, acknowledgeNotice } = usePersonalDataNotice();
+  const {
+    showAnalyticsConsentPrompt,
+    grantAnalyticsConsent,
+    denyAnalyticsConsent,
+  } = usePostHogConsent();
+
+  const showAnalyticsBanner = computed(
+    () => posthogEnabled && showAnalyticsConsentPrompt.value,
+  );
 
   function onAcknowledge() {
     acknowledgeNotice();
@@ -73,5 +121,13 @@
 
   function onLearnMore() {
     acknowledgeNotice();
+  }
+
+  function onGrantAnalytics() {
+    grantAnalyticsConsent();
+  }
+
+  function onDenyAnalytics() {
+    denyAnalyticsConsent();
   }
 </script>
