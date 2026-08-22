@@ -41,6 +41,23 @@ function redactRecord(record: Record<string, unknown>): Record<string, unknown> 
   return redacted;
 }
 
+/** Vite/esbuild HMR noise when locale modules briefly fail to compile in dev. */
+export function isViteLocaleTransformNoise(message: string | undefined): boolean {
+  if (!message) return false;
+  return message.includes('Transform failed with') && message.includes('/locales/');
+}
+
+function getSentryErrorMessage(event: ErrorEvent): string | undefined {
+  const exceptionValue = event.exception?.values?.[0]?.value;
+  if (typeof exceptionValue === 'string' && exceptionValue.trim()) {
+    return exceptionValue;
+  }
+  if (typeof event.message === 'string' && event.message.trim()) {
+    return event.message;
+  }
+  return undefined;
+}
+
 export function buildSentryInitOptions(config: SentryPublicConfig) {
   if (!config.dsn) return null;
 
@@ -62,6 +79,10 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
   }
 
   options.beforeSend = (event) => {
+    if (isViteLocaleTransformNoise(getSentryErrorMessage(event))) {
+      return null;
+    }
+
     if (event.request?.headers) {
       event.request.headers = redactRecord(
         event.request.headers as Record<string, unknown>,
