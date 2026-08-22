@@ -64,8 +64,8 @@ function detachStorageListener(): void {
 }
 
 /**
- * Explicit GDPR consent for PostHog analytics (separate from the informational
- * personal-data notice banner).
+ * Explicit GDPR consent for PostHog product analytics.
+ * When PostHog is configured, this prompt replaces the informational personal-data notice banner.
  */
 export function usePostHogConsent() {
   onMounted(() => {
