@@ -1,5 +1,6 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
+import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
@@ -78,8 +79,22 @@ export default defineNuxtConfig({
             opt_out_capturing_by_default: true,
             persistence: 'memory',
             ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
-            loaded: (posthog: { register: (props: Record<string, unknown>) => void }) => {
+            loaded: (posthog: {
+              register: (props: Record<string, unknown>) => void;
+              opt_in_capturing?: () => void;
+              opt_out_capturing?: () => void;
+              set_config?: (config: {
+                persistence?:
+                  | 'memory'
+                  | 'localStorage'
+                  | 'sessionStorage'
+                  | 'localStorage+cookie'
+                  | 'cookie';
+              }) => void;
+            }) => {
               posthog.register({ $environment: buildInfo.deployTier || 'development' });
+              // Re-apply after __loaded — composable/plugin sync may have run too early.
+              applyStoredPostHogConsentToClient(posthog);
             },
           },
           serverConfig: {

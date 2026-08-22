@@ -5,12 +5,19 @@ export type PostHogConsentValue = 'granted' | 'denied';
 
 /** Synchronous consent read for capture helpers (no Vue lifecycle). */
 export function hasPostHogAnalyticsConsent(): boolean {
-  if (typeof window === 'undefined') return false;
+  return readPostHogAnalyticsConsent() === 'granted';
+}
+
+/** Read stored grant/deny without Vue (safe from PostHog `loaded` callback). */
+export function readPostHogAnalyticsConsent(): PostHogConsentValue | null {
+  if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(POSTHOG_ANALYTICS_CONSENT_KEY) === 'granted';
+    const raw = localStorage.getItem(POSTHOG_ANALYTICS_CONSENT_KEY);
+    if (raw === 'granted' || raw === 'denied') return raw;
   } catch {
-    return false;
+    // Treat unreadable storage as unset.
   }
+  return null;
 }
 
 type PostHogPersistence = 'memory' | 'localStorage' | 'sessionStorage' | 'localStorage+cookie' | 'cookie';
@@ -30,4 +37,18 @@ export function applyPostHogConsentToClient(client: PostHogPersistenceClient, gr
   }
   client.set_config?.({ persistence: 'memory' });
   client.opt_out_capturing?.();
+}
+
+/**
+ * Re-read localStorage and apply to the client. Call from PostHog `loaded` so a
+ * prior grant still gets opt_in_capturing after init (opt_out_capturing_by_default).
+ */
+export function applyStoredPostHogConsentToClient(client: PostHogPersistenceClient): void {
+  const stored = readPostHogAnalyticsConsent();
+  if (stored === null) {
+    // Undecided — stay opted out / memory (matches opt_out_capturing_by_default).
+    applyPostHogConsentToClient(client, false);
+    return;
+  }
+  applyPostHogConsentToClient(client, stored === 'granted');
 }

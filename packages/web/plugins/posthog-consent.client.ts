@@ -1,8 +1,10 @@
 /**
  * Applies stored PostHog analytics consent after `@posthog/nuxt` initializes the client.
+ * Prefer the PostHog `loaded` callback in nuxt.config for the __loaded race; this covers
+ * the case where the plugin runs after init is already complete.
  */
 import { getBrowserPostHog, isBrowserPostHogReady } from '~/utils/posthogBrowserClient';
-import { applyPostHogConsentToClient, hasPostHogAnalyticsConsent } from '~/utils/posthogConsent';
+import { applyStoredPostHogConsentToClient } from '~/utils/posthogConsent';
 import { isPostHogConfigured } from '~/utils/posthogPublicKey';
 
 export default defineNuxtPlugin({
@@ -16,7 +18,7 @@ export default defineNuxtPlugin({
     if (!posthog || !isBrowserPostHogReady(posthog)) return;
 
     try {
-      applyPostHogConsentToClient(posthog, hasPostHogAnalyticsConsent());
+      applyStoredPostHogConsentToClient(posthog);
     } catch (err) {
       console.error('[PostHog] consent sync failed', err);
     }

@@ -1,24 +1,15 @@
 import { getBrowserPostHog } from '~/utils/posthogBrowserClient';
 import {
   applyPostHogConsentToClient,
+  applyStoredPostHogConsentToClient,
   POSTHOG_ANALYTICS_CONSENT_KEY,
+  readPostHogAnalyticsConsent,
   type PostHogConsentValue,
 } from '~/utils/posthogConsent';
 
 const consent = ref<PostHogConsentValue | null>(null);
 const loaded = ref(false);
 let storageListenerCount = 0;
-
-function readConsent(): PostHogConsentValue | null {
-  if (!import.meta.client) return null;
-  try {
-    const raw = localStorage.getItem(POSTHOG_ANALYTICS_CONSENT_KEY);
-    if (raw === 'granted' || raw === 'denied') return raw;
-  } catch {
-    // Treat unreadable storage as unset.
-  }
-  return null;
-}
 
 function writeConsent(value: PostHogConsentValue): void {
   consent.value = value;
@@ -33,6 +24,7 @@ function writeConsent(value: PostHogConsentValue): void {
 function syncConsentToPostHogClient(granted: boolean): void {
   if (!import.meta.client) return;
   const posthog = getBrowserPostHog();
+  // If init is not finished yet, PostHog `loaded` (nuxt.config) reapplies from storage.
   if (!posthog?.__loaded) return;
   try {
     applyPostHogConsentToClient(posthog, granted);
@@ -42,8 +34,14 @@ function syncConsentToPostHogClient(granted: boolean): void {
 }
 
 function applyStoredConsent(): void {
-  consent.value = readConsent();
-  syncConsentToPostHogClient(consent.value === 'granted');
+  consent.value = readPostHogAnalyticsConsent();
+  const posthog = getBrowserPostHog();
+  if (!posthog?.__loaded) return;
+  try {
+    applyStoredPostHogConsentToClient(posthog);
+  } catch (err) {
+    console.error('[PostHog] stored consent apply failed', err);
+  }
 }
 
 function onStorage(event: StorageEvent): void {
@@ -70,6 +68,10 @@ function detachStorageListener(): void {
 /**
  * Explicit GDPR consent for PostHog product analytics.
  * When PostHog is configured, this prompt replaces the informational personal-data notice banner.
+ *
+ * Persistence: localStorage. Application to posthog-js: on grant/deny, on mount if
+ * already __loaded, and again from the PostHog `loaded` callback in nuxt.config
+ * (covers the race where consent was stored before init finished).
  */
 export function usePostHogConsent() {
   onMounted(() => {
