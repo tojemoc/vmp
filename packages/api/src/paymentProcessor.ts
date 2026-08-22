@@ -18,6 +18,10 @@ export { normalizeStripeStatus } from './stripeClient.js';
 
 import type { DbPaymentProvider, NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
 import { handlePaymentInvoicePaid } from './eInvoicing.js';
+import {
+  CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
+  looksLikePaymentConfigLeak,
+} from './customerSafePaymentErrors.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
@@ -173,6 +177,7 @@ async function upsertSubscriptionRow(
     provider: DbPaymentProvider;
     providerSubscriptionId: string | null;
     providerCustomerId: string | null;
+    purchaseId?: string | null;
     stripeSubscriptionId?: string | null;
     stripeCustomerId?: string | null;
     currentPeriodEnd?: string | null;
@@ -191,18 +196,20 @@ async function upsertSubscriptionRow(
         provider,
         provider_subscription_id,
         provider_customer_id,
+        purchase_id,
         stripe_subscription_id,
         stripe_customer_id,
         current_period_end,
         cancel_at_period_end,
         updated_at
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
       user_id                  = excluded.user_id,
       status                   = excluded.status,
       plan_type                = excluded.plan_type,
       provider_customer_id     = excluded.provider_customer_id,
+      purchase_id              = COALESCE(excluded.purchase_id, subscriptions.purchase_id),
       stripe_subscription_id   = excluded.stripe_subscription_id,
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
@@ -217,6 +224,7 @@ async function upsertSubscriptionRow(
       params.provider,
       params.providerSubscriptionId,
       params.providerCustomerId,
+      params.purchaseId ?? null,
       params.stripeSubscriptionId ?? null,
       params.stripeCustomerId ?? null,
       params.currentPeriodEnd ?? null,
@@ -241,9 +249,22 @@ async function upsertSubscriptionFromNormalizedEvent(
   let currentPeriodEnd = event.currentPeriodEnd ?? null;
   let providerSubscriptionId = event.subscriptionId?.trim() || null;
   let providerCustomerId = event.customerId?.trim() || null;
+  let purchaseId = event.purchaseId?.trim() || null;
   let stripeSubscriptionId: string | null = null;
   let stripeCustomerId: string | null = null;
   let cancelAtPeriodEnd = event.cancelAtPeriodEnd === true;
+
+  if (event.providerId === 'qerko') {
+    providerSubscriptionId =
+      event.providerOrderId?.trim() ||
+      event.subscriptionId?.trim() ||
+      event.purchaseId?.trim() ||
+      null;
+    purchaseId = event.purchaseId?.trim() || purchaseId;
+    if (!providerCustomerId && purchaseId) {
+      providerCustomerId = purchaseId;
+    }
+  }
 
   if (event.providerId === 'stripe') {
     stripeSubscriptionId = providerSubscriptionId;
@@ -297,7 +318,7 @@ async function upsertSubscriptionFromNormalizedEvent(
     }
   }
 
-  if (!providerSubscriptionId) return userId;
+  if (!providerSubscriptionId && !purchaseId) return userId;
 
   const dbStatus =
     event.providerId === 'stripe'
@@ -311,6 +332,7 @@ async function upsertSubscriptionFromNormalizedEvent(
     provider: providerIdToDbProvider(event.providerId),
     providerSubscriptionId,
     providerCustomerId,
+    purchaseId,
     stripeSubscriptionId,
     stripeCustomerId,
     currentPeriodEnd,
@@ -416,7 +438,10 @@ async function syncSubscriptionNewsletter(db: any, userId: string, status: strin
 
 async function updateSubscriptionStatusByProviderRef(
   db: any,
-  event: Pick<NormalizedPaymentEvent, 'providerId' | 'subscriptionId' | 'customerId'>,
+  event: Pick<
+    NormalizedPaymentEvent,
+    'providerId' | 'subscriptionId' | 'customerId' | 'purchaseId' | 'providerOrderId'
+  >,
   nextStatus: SubscriptionStatus,
 ) {
   const provider = providerIdToDbProvider(event.providerId);
@@ -430,7 +455,9 @@ async function updateSubscriptionStatusByProviderRef(
   };
 
   pushRef('provider_subscription_id', event.subscriptionId);
+  pushRef('provider_subscription_id', event.providerOrderId);
   pushRef('provider_customer_id', event.customerId);
+  pushRef('purchase_id', event.purchaseId);
   if (event.providerId === 'stripe') {
     pushRef('stripe_subscription_id', event.subscriptionId);
     pushRef('stripe_customer_id', event.customerId);
@@ -1083,17 +1110,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
     const rawMessage = err instanceof Error ? err.message : '';
-    const looksLikeConfigLeak =
-      /not configured|LEGACY_[A-Z0-9_]+|API[_ ]?URL|FRONTEND_URL|misconfigured/i.test(rawMessage);
+    const configLeak = looksLikePaymentConfigLeak(rawMessage);
     if (
       code === 'legacy_not_configured' ||
       code === 'provider_not_configured' ||
-      looksLikeConfigLeak
+      configLeak
     ) {
       return jsonResponse(
         {
-          error:
-            'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
+          error: CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
           code: code || 'provider_not_configured',
         },
         Number.isFinite(statusRaw) && statusRaw >= 400 ? statusRaw : 503,
@@ -1106,9 +1131,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     if (code && rawMessage && Number.isFinite(statusRaw) && statusRaw >= 500) {
       return jsonResponse(
         {
-          error: looksLikeConfigLeak
-            ? 'Bank payments are temporarily unavailable. Please choose another payment method or try again later.'
-            : rawMessage,
+          error: configLeak ? CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE : rawMessage,
           code,
         },
         statusRaw,
@@ -1224,11 +1247,9 @@ export async function handleWebhook(
             });
           }
           try {
-            await revokeOfflineLicensesForUser(
-              db,
-              userId,
-              nextStatus === 'cancelled' ? 'subscription_cancelled' : 'subscription_past_due',
-            );
+            if (nextStatus === 'cancelled') {
+              await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
+            }
           } catch (offlineErr) {
             console.error('[payments webhook] revokeOfflineLicensesForUser failed', {
               fn: 'revokeOfflineLicensesForUser',

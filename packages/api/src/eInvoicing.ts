@@ -542,7 +542,12 @@ export function extractBuyerFromStripeInvoice(
     String(stripeInvoice?.customer_name || stripeInvoice?.customer_shipping?.name || '').trim() ||
     null;
   const email = String(stripeInvoice?.customer_email || fallbackEmail || '').trim() || null;
-  const isBusiness = hasBusinessVatId(vatId) || Boolean(name && name !== email);
+  const taxExempt = String(
+    stripeInvoice?.customer_tax_exempt ?? stripeInvoice?.tax_exempt ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const isBusiness = hasBusinessVatId(vatId) || taxExempt === 'reverse';
 
   return {
     country,

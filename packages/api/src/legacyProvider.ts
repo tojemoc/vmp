@@ -4,6 +4,8 @@
  * API base URL from LEGACY_ESHOP_API_URL (production) or LEGACY_ESHOP_SANDBOX_API_URL (testing).
  */
 
+import { throwLegacyNotConfiguredError } from './customerSafePaymentErrors.js';
+
 export type LegacyEnv = {
   LEGACY_ESHOP_API_URL?: string;
   LEGACY_ESHOP_SANDBOX_API_URL?: string;
@@ -154,7 +156,7 @@ export async function legacyPostRaw<T = Record<string, unknown>>(
   body: Record<string, unknown>,
 ): Promise<LegacyPostResult<T>> {
   const apiBase = trimTrailingSlashes(base);
-  if (!apiBase) throw new Error('Bank payments are temporarily unavailable');
+  if (!apiBase) throwLegacyNotConfiguredError();
 
   const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
   const response = await legacyFetch(env, url, {
@@ -197,7 +199,7 @@ export async function legacyGet<T = Record<string, unknown>>(
   path: string,
 ): Promise<T> {
   const apiBase = trimTrailingSlashes(base);
-  if (!apiBase) throw new Error('Bank payments are temporarily unavailable');
+  if (!apiBase) throwLegacyNotConfiguredError();
 
   const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`;
   const response = await legacyFetch(env, url, {

@@ -16,6 +16,19 @@ function hasBusinessVatId(vatId: string | null): boolean {
   return /^(SK|CZ|AT|DE|PL|HU)\d/i.test(vatId.trim());
 }
 
+function isStripeBusinessCustomer(
+  stripeInvoice: Record<string, unknown>,
+  vatId: string | null,
+): boolean {
+  if (hasBusinessVatId(vatId)) return true;
+  const taxExempt = String(
+    stripeInvoice.customer_tax_exempt ?? stripeInvoice.tax_exempt ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  return taxExempt === 'reverse';
+}
+
 function centsFromStripeAmount(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n) : 0;
@@ -64,7 +77,7 @@ export function extractBuyerFromStripeInvoice(
   const name =
     String(stripeInvoice.customer_name || shipping?.name || '').trim() || null;
   const email = String(stripeInvoice.customer_email || fallbackEmail || '').trim() || null;
-  const isBusiness = hasBusinessVatId(vatId) || Boolean(name && name !== email);
+  const isBusiness = isStripeBusinessCustomer(stripeInvoice, vatId);
 
   return {
     country,
@@ -85,6 +98,30 @@ export function extractBuyerFromStripeInvoice(
   };
 }
 
+function applyInvoiceLevelDiscount(
+  lineItems: NormalizedInvoiceLineItem[],
+  stripeInvoice: Record<string, unknown>,
+): NormalizedInvoiceLineItem[] {
+  const invoiceNet = centsFromStripeAmount(stripeInvoice.total_excluding_tax);
+  const subtotal = centsFromStripeAmount(stripeInvoice.subtotal);
+  if (invoiceNet <= 0 || subtotal <= invoiceNet) return lineItems;
+
+  const lineSum = lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+  const basis = lineSum > 0 ? lineSum : subtotal;
+  const discountCents = basis - invoiceNet;
+  if (discountCents <= 0) return lineItems;
+
+  return [
+    ...lineItems,
+    {
+      description: 'Discount',
+      quantity: 1,
+      netAmountCents: -discountCents,
+      vatRatePercent: 0,
+    },
+  ];
+}
+
 export function buildLineItemsFromStripeInvoice(
   stripeInvoice: Record<string, unknown>,
   planType: string | null,
@@ -98,20 +135,23 @@ export function buildLineItemsFromStripeInvoice(
       : [];
   if (lines.length === 0) {
     const net = centsFromStripeAmount(
-      stripeInvoice.subtotal ?? stripeInvoice.total_excluding_tax,
+      stripeInvoice.total_excluding_tax ?? stripeInvoice.subtotal,
     );
     const tax = centsFromStripeAmount(stripeInvoice.tax ?? 0);
-    return [
-      {
-        description: planType ? `VMP subscription (${planType})` : 'VMP subscription',
-        quantity: 1,
-        netAmountCents: net,
-        vatRatePercent: deriveVatRatePercent(net, tax),
-      },
-    ];
+    return applyInvoiceLevelDiscount(
+      [
+        {
+          description: planType ? `VMP subscription (${planType})` : 'VMP subscription',
+          quantity: 1,
+          netAmountCents: net,
+          vatRatePercent: deriveVatRatePercent(net, tax),
+        },
+      ],
+      stripeInvoice,
+    );
   }
 
-  return lines.map((line) => {
+  const mapped = lines.map((line) => {
     const net = centsFromStripeAmount(line.amount_excluding_tax ?? line.amount);
     const taxAmounts = Array.isArray(line.tax_amounts) ? line.tax_amounts : [];
     const tax = taxAmounts.reduce(
@@ -136,6 +176,18 @@ export function buildLineItemsFromStripeInvoice(
       vatRatePercent: deriveVatRatePercent(net, tax),
     };
   });
+
+  return applyInvoiceLevelDiscount(mapped, stripeInvoice);
+}
+
+function resolveStripeInvoiceIssueDate(stripeInvoice: Record<string, unknown>): string {
+  const statusTransitions =
+    stripeInvoice.status_transitions && typeof stripeInvoice.status_transitions === 'object'
+      ? (stripeInvoice.status_transitions as { paid_at?: unknown; finalized_at?: unknown })
+      : null;
+  const issueTimestamp =
+    stripeInvoice.effective_at ?? statusTransitions?.finalized_at ?? stripeInvoice.created;
+  return isoDateFromUnixSeconds(issueTimestamp);
 }
 
 export function normalizeStripeInvoice(
@@ -145,12 +197,8 @@ export function normalizeStripeInvoice(
   const providerInvoiceId = String(stripeInvoice.id ?? '').trim();
   if (!providerInvoiceId) return null;
 
-  const statusTransitions =
-    stripeInvoice.status_transitions && typeof stripeInvoice.status_transitions === 'object'
-      ? (stripeInvoice.status_transitions as { paid_at?: unknown })
-      : null;
   const netAmountCents = centsFromStripeAmount(
-    stripeInvoice.subtotal ?? stripeInvoice.total_excluding_tax,
+    stripeInvoice.total_excluding_tax ?? stripeInvoice.subtotal,
   );
   const taxAmountCents = centsFromStripeAmount(stripeInvoice.tax ?? 0);
   const grossAmountCents = centsFromStripeAmount(
@@ -175,7 +223,7 @@ export function normalizeStripeInvoice(
             typeof (stripeInvoice.subscription as { id?: unknown }).id === 'string'
           ? String((stripeInvoice.subscription as { id: string }).id)
           : null,
-    issueDate: isoDateFromUnixSeconds(statusTransitions?.paid_at ?? stripeInvoice.created),
+    issueDate: resolveStripeInvoiceIssueDate(stripeInvoice),
     currency: String(stripeInvoice.currency || 'eur').toUpperCase(),
     netAmountCents,
     taxAmountCents,

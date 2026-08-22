@@ -91,6 +91,26 @@
               >⋮⋮</span
             >
             <span class="flex-1">{{ providerLabel(provider) }}</span>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="index === 0"
+                :aria-label="`Move ${providerLabel(provider)} up in checkout order`"
+                @click="moveProviderUp(index)"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="index === orderedEnabledProviders.length - 1"
+                :aria-label="`Move ${providerLabel(provider)} down in checkout order`"
+                @click="moveProviderDown(index)"
+              >
+                ↓
+              </button>
+            </div>
             <span class="text-xs text-gray-500 dark:text-gray-400">#{{ index + 1 }}</span>
           </li>
         </ul>
@@ -104,11 +124,11 @@
           Qerko subscriber management
         </h5>
         <p class="text-xs text-gray-600 dark:text-gray-400">
-          Customers with a Qerko subscription see a “Pay with Qerko” button that opens this URL (the
+          Customers with a Qerko subscription see a “Manage with Qerko” button that opens this URL (the
           Qerko manage / app link from the gateway docs). Leave empty to hide the button.
         </p>
         <label class="block text-sm text-gray-700 dark:text-gray-300">
-          Manage / “Pay with Qerko” URL
+          Manage with Qerko URL
           <input
             v-model="legacy.manageSubscriptionUrl"
             type="url"
@@ -539,6 +559,31 @@
     dragOverIndex.value = null;
   }
 
+  function moveProvider(fromIndex: number, toIndex: number) {
+    const list = [...orderedEnabledProviders.value];
+    if (
+      fromIndex < 0 ||
+      fromIndex >= list.length ||
+      toIndex < 0 ||
+      toIndex >= list.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const [moved] = list.splice(fromIndex, 1);
+    if (!moved) return;
+    list.splice(toIndex, 0, moved);
+    providerOrder.value = list;
+  }
+
+  function moveProviderUp(index: number) {
+    moveProvider(index, index - 1);
+  }
+
+  function moveProviderDown(index: number) {
+    moveProvider(index, index + 1);
+  }
+
   async function loadPaymentSettings() {
     const res = await fetch(`${config.public.apiUrl}/api/admin/payments/settings`, {
       headers: authHeader(),
@@ -609,11 +654,8 @@
   }
 
   async function reloadAll() {
-    await Promise.all([loadPlans(), loadPaymentSettings(), loadLegacyOrders()]);
-    if (!legacy.value.configured) {
-      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
-      syncProviderOrderFromEnabled();
-    }
+    await loadPlans();
+    await Promise.all([loadPaymentSettings(), loadLegacyOrders()]);
   }
 
   async function loadPlans() {

@@ -90,9 +90,12 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
         throw new Error('Direct Qerko subscription creation is not supported');
       },
       getManageUrl: async () => {
-        const url = String(
-          (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
-        ).trim();
+        const [urlRaw, showRaw] = await Promise.all([
+          getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' }),
+          getSetting(env, 'legacy_show_manage_button', { defaultValue: '0' }),
+        ]);
+        if (String(showRaw ?? '0') !== '1') return null;
+        const url = String(urlRaw ?? '').trim();
         return url || null;
       },
     },

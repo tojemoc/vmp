@@ -4,6 +4,10 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
+import {
+  customerSafeLegacyNotConfiguredResponse,
+  looksLikePaymentConfigLeak,
+} from './customerSafePaymentErrors.js';
 import { getDb } from './d1Session.js';
 import {
   createLegacyOrder,
@@ -230,11 +234,8 @@ export async function startLegacyCheckout(
     .trim()
     .replace(/\/$/, '');
   if (!frontendUrl) {
-    return jsonResponse(
-      { error: 'FRONTEND_URL is not configured', code: 'misconfigured' },
-      503,
-      corsHeaders,
-    );
+    const safe = customerSafeLegacyNotConfiguredResponse();
+    return jsonResponse({ error: safe.error, code: safe.code }, safe.status, corsHeaders);
   }
   const returnUrl = `${frontendUrl}${returnPath}?legacy_order=${encodeURIComponent(idOrder)}`;
 
@@ -295,16 +296,15 @@ export async function startLegacyCheckout(
     const message = err instanceof Error ? err.message : 'Legacy checkout failed';
     const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_checkout_failed';
     const status = isLegacyFetchTimeout(err) ? 504 : 502;
-    const looksLikeConfigLeak =
-      /not configured|LEGACY_[A-Z0-9_]+|API[_ ]?URL|FRONTEND_URL|misconfigured/i.test(message);
+    const safe = looksLikePaymentConfigLeak(message)
+      ? customerSafeLegacyNotConfiguredResponse()
+      : null;
     return jsonResponse(
       {
-        error: looksLikeConfigLeak
-          ? 'Bank payments are temporarily unavailable. Please choose another payment method or try again later.'
-          : message,
-        code: looksLikeConfigLeak ? 'legacy_not_configured' : code,
+        error: safe?.error ?? message,
+        code: safe?.code ?? code,
       },
-      looksLikeConfigLeak ? 503 : status,
+      safe?.status ?? status,
       corsHeaders,
     );
   }

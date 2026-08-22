@@ -562,7 +562,7 @@
     if (/not configured|LEGACY_|API[_ ]?URL|FRONTEND_URL/i.test(raw)) {
       return strings.checkoutProviderUnavailable;
     }
-    return raw || strings.checkoutStartFailed;
+    return strings.checkoutStartFailed;
   }
 
   async function goToLogin() {

@@ -259,7 +259,7 @@ export type StringsDefinition = {
   accountRelinkCheckoutIntro: string;
   accountRelinkCheckoutWorking: string;
   accountManagePaymentMethod: string;
-  /** CTA for legacy/Qerko manage link, e.g. "Pay with Qerko". */
+  /** CTA for legacy/Qerko manage link, e.g. "Manage with Qerko". */
   accountPayWithProvider: (provider: string) => string;
   offlineDownloadMenuLabel: string;
   offlineDownloadResume: string;

@@ -291,7 +291,7 @@ export const strings: StringsDefinition = {
     'Vyberte plán a pokračujte na naši zabezpečenou platební stránku pro propojení karty nebo bankovního účtu.',
   accountRelinkCheckoutWorking: 'Přesměrovávám…',
   accountManagePaymentMethod: 'Spravovat platební metodu',
-  accountPayWithProvider: (provider: string) => `Zaplatit přes ${provider}`,
+  accountPayWithProvider: (provider: string) => `Spravovat přes ${provider}`,
   offlineDownloadMenuLabel: 'Stáhnout offline',
   offlineDownloadResume: 'Pokračovat ve stahování',
   offlineDownloadPwaRequiredTitle: 'Pro stahování nainstalujte aplikaci',

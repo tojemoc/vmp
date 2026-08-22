@@ -293,7 +293,7 @@ export const strings: StringsDefinition = {
     'Vyberte plán a pokračujte na našu zabezpečenú platobnú stránku na prepojenie karty alebo bankového účtu.',
   accountRelinkCheckoutWorking: 'Presmerovávam…',
   accountManagePaymentMethod: 'Spravovať platobnú metódu',
-  accountPayWithProvider: (provider: string) => `Zaplatiť cez ${provider}`,
+  accountPayWithProvider: (provider: string) => `Spravovať cez ${provider}`,
   offlineDownloadMenuLabel: 'Stiahnuť na offline',
   offlineDownloadResume: 'Pokračovať v sťahovaní',
   offlineDownloadPwaRequiredTitle: 'Na sťahovanie nainštalujte aplikáciu',

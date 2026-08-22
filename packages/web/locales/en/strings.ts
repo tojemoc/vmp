@@ -285,7 +285,7 @@ export const strings: StringsDefinition = {
     'Choose your plan and continue to our secure payment page to link your card or bank account.',
   accountRelinkCheckoutWorking: 'Redirecting…',
   accountManagePaymentMethod: 'Manage payment method',
-  accountPayWithProvider: (provider: string) => `Pay with ${provider}`,
+  accountPayWithProvider: (provider: string) => `Manage with ${provider}`,
   offlineDownloadMenuLabel: 'Download for offline',
   offlineDownloadResume: 'Resume download',
   offlineDownloadPwaRequiredTitle: 'Install the app to download',
