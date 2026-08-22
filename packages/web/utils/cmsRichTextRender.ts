@@ -18,6 +18,8 @@ async function loadRenderer(): Promise<RichTextRenderer> {
       const richTextExtensions = [
         StarterKit.configure({
           heading: { levels: [2, 3, 4] },
+          // StarterKit v3 ships Link; configure separately for HTMLAttributes.
+          link: false,
         }),
         Link.configure({
           openOnClick: true,

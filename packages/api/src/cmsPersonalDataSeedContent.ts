@@ -27,167 +27,107 @@ export function tiptapRichTextBlock(...nodes: Record<string, unknown>[]): CmsBlo
   return { type: 'rich_text', content: tiptapDoc(...nodes) };
 }
 
-/** English personal-data page content for CMS seed (matches locales/en/personalData.ts). */
+/**
+ * Slovak personal-data page content for CMS seed / migration.
+ * Matches the short public notice (Čo / Na čo / Ako dlho table).
+ */
 export function buildPersonalDataCmsBlocks(): CmsBlock[] {
   return [
     tiptapRichTextBlock(
       tiptapParagraph(
-        'We built this platform for subscribers in the European Union, especially Czechia and Slovakia. We keep client-side storage to what is needed to run the service, and we describe everything below in plain language.',
+        'Túto službu prevádzkujeme pre predplatiteľov v EÚ, najmä v Česku a na Slovensku. Nižšie je stručný prehľad toho, aké dáta o vás ukladáme a prečo.',
       ),
       tiptapParagraph(
-        'This page is an information notice under the GDPR and the ePrivacy rules. It is not a marketing cookie wall. Strictly necessary storage does not require consent, but you have the right to be informed before it is used.',
-      ),
-    ),
-    tiptapRichTextBlock(
-      tiptapHeading(2, 'Browsing without signing in'),
-      tiptapParagraph(
-        'If you only read public pages and do not sign in, we do not set an authentication cookie. Anonymous video previews are served through our API; playback position is not saved between visits.',
-      ),
-      tiptapParagraph(
-        'We use privacy-oriented, cookieless pageview analytics (Umami Cloud, EU data region) to measure audience size. Umami does not set marketing cookies or cross-site identifiers in its default configuration. We rely on legitimate interest for this limited statistical purpose and you can object (see Your rights).',
+        'Táto stránka vás neblokuje ani nenúti k rozhodnutiu — je len informačná. Kým sa neprihlásite, nekúpite si predplatné, alebo nezmeníte nastavenia prehrávača (napríklad rýchlosť prehrávania), žiadne dáta nad rámec striktne potrebných o Vás neukladáme.',
       ),
     ),
     tiptapRichTextBlock(
-      tiptapHeading(2, 'When you interact with the site'),
+      tiptapHeading(2, 'Neprihlásení používatelia'),
       tiptapParagraph(
-        'Certain features only work if the browser stores a small amount of data. These are strictly necessary for the feature you request — not for advertising or profiling.',
-      ),
-      tiptapParagraph(
-        'By signing in, subscribing, enabling notifications, installing the web app, or changing playback speed, you use features that require the storage listed in the table below. You can avoid most of this storage by not using those features (for example, stay logged out and do not change player settings).',
-      ),
-      tiptapParagraph(
-        'We do not use your interaction as consent to unrelated marketing trackers. If we ever add optional analytics or marketing tools that are not strictly necessary, we will ask for consent first.',
+        'Bez prihlásenia si môžete prezerať verejné stránky a náhľady videí bez toho, aby sme čokoľvek ukladali vo vašom prehliadači. Návštevnosť meriame anonymne cez Umami (EÚ) — bez cookies, bez sledovania naprieč stránkami.',
       ),
     ),
     tiptapRichTextBlock(
-      tiptapHeading(2, 'Cookies and browser storage we use'),
+      tiptapHeading(2, 'Keď niečo aktívne použijete'),
       tiptapParagraph(
-        'The application code below is under our control. Third-party payment pages (Stripe) may set their own cookies when you start checkout on their surfaces.',
+        'Prihlásenie, predplatné, notifikácie, inštalácia webovej aplikácie (PWA) alebo zmena rýchlosti prehrávania vyžadujú uloženie malého množstva dát v prehliadači. Bez použitia týchto funkcií sa ich uloženiu viete úplne vyhnúť.',
       ),
     ),
     {
       type: 'table',
-      columns: ['Name / key', 'Mechanism', 'Purpose', 'Lifetime', 'Strictly necessary?'],
-      columnKeys: ['name', 'mechanism', 'purpose', 'lifetime', 'necessary'],
+      columns: ['Čo', 'Na čo', 'Ako dlho'],
+      columnKeys: ['what', 'purpose', 'lifetime'],
       rows: [
         {
-          name: 'refresh_token',
-          mechanism: 'HttpOnly cookie (first-party API)',
-          purpose: 'Keeps you signed in between visits; rotated on refresh',
-          lifetime: 'Up to 30 days, or until logout',
-          necessary: 'Yes — authentication',
+          what: 'refresh_token',
+          purpose: 'zapamätá si prihlásenie',
+          lifetime: 'max. 30 dní / do odhlásenia',
         },
         {
-          name: 'playbackRate',
-          mechanism: 'localStorage',
-          purpose: 'Remembers your chosen video playback speed',
-          lifetime: 'Until you clear site data',
-          necessary: 'Functional — only after you change speed',
+          what: 'playbackRate',
+          purpose: 'zapamätá si rýchlosť prehrávania',
+          lifetime: 'do vymazania dát stránky',
         },
         {
-          name: 'nuxt-color-mode',
-          mechanism: 'localStorage',
-          purpose: 'Applies light/dark display matching your system preference',
-          lifetime: 'Until you clear site data',
-          necessary: 'Functional — display preference',
+          what: 'nuxt-color-mode',
+          purpose: 'svetlý/tmavý režim',
+          lifetime: 'do vymazania dát stránky',
         },
         {
-          name: 'vmp_pwa_device_token',
-          mechanism: 'localStorage',
-          purpose: 'Links push-login handoff to your browser on installed iOS PWA',
-          lifetime: 'Persistent until cleared',
-          necessary: 'Yes — only when you use PWA push sign-in',
+          what: 'vmp_pwa_device_token, vmp_pwa_login_email, vmp-pwa-auth',
+          purpose: 'prihlásenie cez nainštalovanú iOS appku',
+          lifetime: 'do odhlásenia / vymazania',
         },
         {
-          name: 'vmp_pwa_login_email',
-          mechanism: 'localStorage',
-          purpose: 'Prefills email during PWA sign-in wizard',
-          lifetime: 'Until cleared or push disabled',
-          necessary: 'Functional — PWA login UX',
+          what: 'cache service workera',
+          purpose: 'rýchlejšie načítanie appky offline',
+          lifetime: 'kým je appka nainštalovaná',
         },
         {
-          name: 'vmp-pwa-auth (IndexedDB)',
-          mechanism: 'IndexedDB',
-          purpose: 'Temporary handoff code between Safari and installed PWA',
-          lifetime: 'Short-lived; cleared after redeem',
-          necessary: 'Yes — iOS PWA authentication',
+          what: 'dáta relácie (sessionStorage)',
+          purpose: 'bezpečnosť počas prihlasovania',
+          lifetime: 'do zatvorenia karty',
         },
         {
-          name: 'Service worker caches',
-          mechanism: 'Cache API (PWA)',
-          purpose: 'Offline shell and faster repeat loads for installed app',
-          lifetime: 'While PWA installed / until cache purge',
-          necessary: 'Yes — PWA functionality',
-        },
-        {
-          name: 'Session handoff keys',
-          mechanism: 'sessionStorage',
-          purpose: 'Short-lived auth and UI state during a single tab session',
-          lifetime: 'Until tab closes',
-          necessary: 'Yes — security during login flows',
-        },
-        {
-          name: 'vmp_personal_data_notice_ack',
-          mechanism: 'localStorage',
-          purpose: 'Remembers that you dismissed the personal data notice banner',
-          lifetime: 'Until you clear site data',
-          necessary: 'Functional — only after you acknowledge the notice',
+          what: 'vmp_personal_data_notice_ack',
+          purpose: 'aby sa vám tento banner nezobrazoval opakovane',
+          lifetime: 'do vymazania dát stránky',
         },
       ],
     },
+    tiptapRichTextBlock(tiptapParagraph('Nič z tohto nepoužívame na reklamu ani profilovanie.')),
     tiptapRichTextBlock(
-      tiptapHeading(2, 'Who processes data on our behalf'),
+      tiptapHeading(2, 'Kto s dátami pracuje'),
       tiptapParagraph(
-        'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
-      ),
-      tiptapParagraph('Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).'),
-      tiptapParagraph(
-        'Other processors include: Umami Cloud (EU) for anonymous statistics; Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
-      ),
-      tiptapBulletList([
-        'Cloudflare — hosting, CDN, security (global edge)',
-        'Umami Cloud (EU region) — cookieless pageview statistics',
-        'Stripe — payment processing when you subscribe',
-        'Brevo — magic-link and account email',
-        'Sentry — error and stability monitoring (technical logs)',
-        'Deno Deploy / Vercel — backup API and frontend deployments',
-      ]),
-    ),
-    tiptapRichTextBlock(
-      tiptapHeading(2, 'Server-side processing (no browser cookie)'),
-      tiptapParagraph(
-        'When video streams are delivered, our API logs anonymised technical events (for example hashed IP, country from network headers, and viewing session buckets) to operate the service, prevent abuse, and show aggregate statistics to administrators. These logs are not used to advertise to you and are not shared with ad networks.',
-      ),
-      tiptapParagraph(
-        'If you are signed in, we also store your last playback position per on-demand video (VOD) on our servers so we can resume where you left off. Positions are updated occasionally while you watch and when you leave the page — not on every scrub of the timeline. Anonymous visitors do not get server-side resume. You can remove a saved position for any currently available video from Continue watching on your account page. To request erasure of your account and related personal data — including all saved playback positions — email the support address shown at the bottom of this page.',
+        'Hosting beží na Cloudflare (prípadne záložne na Deno Deploy / Vercel). Platby rieši Stripe, e-maily Brevo, chyby aplikácie sledujeme cez Sentry, návštevnosť cez Umami (EÚ). Každý z nich vidí len dáta potrebné pre svoju úlohu.',
       ),
     ),
     tiptapRichTextBlock(
-      tiptapHeading(2, 'Your rights (EU / UK visitors)'),
+      tiptapHeading(2, 'Sledovanie prehrávania'),
       tiptapParagraph(
-        'Under the GDPR you may request access, rectification, erasure, restriction, portability, or object to processing based on legitimate interest. You may withdraw consent where processing is consent-based (we use little consent-based processing today).',
+        'Ak ste prihlásení, ukladáme si, kde ste video naposledy prestali sledovať, aby ste mohli pokračovať. Túto pozíciu môžete kedykoľvek zmazať v sekcii „Pokračovať v sledovaní“ vo svojom účte.',
       ),
-      tiptapParagraph(
-        'To exercise rights, email the support address shown at the bottom of this page. You may also lodge a complaint with your supervisory authority:',
-      ),
-      tiptapBulletList([
-        'Czechia — Úřad pro ochranu osobních údajů (ÚOOÚ), uoou.cz',
-        'Slovakia — Úrad na ochranu osobných údajov SR (ÚOO SR), dataprotection.gov.sk',
-      ]),
     ),
     tiptapRichTextBlock(
-      tiptapHeading(2, 'Updates'),
+      tiptapHeading(2, 'Vaše práva'),
       tiptapParagraph(
-        'We may update this notice when the service or law changes. The latest version is always published at this URL. Material changes will be reflected in the on-site notice banner when appropriate.',
+        'Máte právo na prístup k svojim údajom, ich opravu, vymazanie, obmedzenie spracúvania alebo prenos inde. Stačí napísať na vmp@tjm.sk — vrátane žiadosti o úplné zmazanie účtu.',
       ),
+      tiptapParagraph(
+        'Ak nie ste spokojní s tým, ako vašu žiadosť vybavíme, môžete sa obrátiť na:',
+      ),
+      tiptapBulletList(['Česko — ÚOOÚ (uoou.cz)', 'Slovensko — ÚOO SR (dataprotection.gov.sk)']),
+    ),
+    tiptapRichTextBlock(
+      tiptapParagraph('Túto stránku môžeme časom aktualizovať; aktuálna verzia je vždy tu.'),
     ),
   ];
 }
 
 export const PERSONAL_DATA_CMS_PAGE = {
   id: 'cms-page-personal-data',
-  title: 'Personal data processing',
+  title: 'Osobné údaje a súkromie',
   slug: 'personal-data',
   description:
-    'How VMP uses cookies, browser storage, and processors when you browse, sign in, and watch videos — written for visitors in the EU.',
+    'Stručný prehľad toho, aké dáta o vás ukladáme a prečo — pre predplatiteľov v EÚ, najmä v Česku a na Slovensku.',
 };

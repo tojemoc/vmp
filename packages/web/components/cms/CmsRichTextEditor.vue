@@ -72,7 +72,7 @@
   onMounted(() => {
     editor.value = new Editor({
       extensions: [
-        StarterKit.configure({ heading: { levels: [2, 3, 4] } }),
+        StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: false }),
         Placeholder.configure({ placeholder: 'Write content…' }),
         Link.configure({ openOnClick: false }),
       ],
