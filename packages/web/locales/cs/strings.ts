@@ -413,9 +413,10 @@ export const strings: StringsDefinition = {
   personalDataBannerAcknowledge: 'Rozumím',
   posthogAnalyticsConsentTitle: 'Souhlas s produktovou analytikou',
   posthogAnalyticsConsentSummary:
-    'Pro produktovou analytiku používáme PostHog (EU). Dokud nevyberete, nepoužíváme analytické cookies ani localStorage. Přijměte, chcete-li nám pomoci službu zlepšovat, nebo odmítněte.',
-  posthogAnalyticsConsentAccept: 'Přijmout analytiku',
-  posthogAnalyticsConsentDecline: 'Odmítnout',
+    'Používáme analytické cookies (PostHog, EU) ke zlepšování našich služeb — pouze pokud nám to dovolíte.',
+  posthogAnalyticsConsentLearnMore: 'Více o zpracování osobních údajů',
+  posthogAnalyticsConsentAccept: 'Dovolím',
+  posthogAnalyticsConsentDecline: 'Nedovolím',
   personalDataContactTitle: 'Kontakt pro žádosti o ochranu osobních údajů',
   personalDataContactIntro:
     'Pro žádost o přístup, výmaz nebo jiná práva podle GDPR — včetně smazání účtu — napište na naši adresu podpory:',

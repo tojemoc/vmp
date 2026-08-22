@@ -23,13 +23,14 @@
           <p class="text-sm leading-relaxed text-slate-200 dark:text-slate-300">
             {{ strings.personalDataBannerSummary }}
             {{ ' ' }}
-            <NuxtLink
-              to="/personal-data"
+            <!-- Native <a>: full navigation — NuxtLink client nav to CMS /personal-data can render blank. -->
+            <a
+              href="/personal-data"
               class="font-semibold text-white dark:text-white underline underline-offset-2 hover:text-blue-200 dark:hover:text-blue-300"
               @click="onLearnMore"
             >
               {{ strings.personalDataLearnMore }}
-            </NuxtLink>
+            </a>
           </p>
           <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
             <button
@@ -71,26 +72,29 @@
           <p class="text-sm leading-relaxed text-slate-200 dark:text-slate-300">
             {{ strings.posthogAnalyticsConsentSummary }}
             {{ ' ' }}
-            <NuxtLink
-              to="/personal-data"
+            <a
+              href="/personal-data"
               class="font-semibold text-white dark:text-white underline underline-offset-2 hover:text-blue-200 dark:hover:text-blue-300"
             >
-              {{ strings.personalDataLearnMore }}
-            </NuxtLink>
+              {{ strings.posthogAnalyticsConsentLearnMore }}
+            </a>
           </p>
           <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <!-- Identical styles on purpose — no accept/decline visual hierarchy (dark pattern). -->
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-900 bg-white dark:bg-white rounded-md hover:bg-slate-100 dark:hover:bg-slate-200 transition-colors"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-100 dark:text-slate-100 bg-transparent dark:bg-transparent border border-slate-400 dark:border-slate-400 rounded-md hover:bg-slate-700 dark:hover:bg-slate-700 transition-colors"
               @click="onGrantAnalytics"
             >
+              <span aria-hidden="true">✓</span>
               {{ strings.posthogAnalyticsConsentAccept }}
             </button>
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-semibold text-slate-100 dark:text-slate-200 bg-transparent dark:bg-transparent border border-slate-500 dark:border-slate-400 rounded-md hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-100 dark:text-slate-100 bg-transparent dark:bg-transparent border border-slate-400 dark:border-slate-400 rounded-md hover:bg-slate-700 dark:hover:bg-slate-700 transition-colors"
               @click="onDenyAnalytics"
             >
+              <span aria-hidden="true">✕</span>
               {{ strings.posthogAnalyticsConsentDecline }}
             </button>
           </div>
