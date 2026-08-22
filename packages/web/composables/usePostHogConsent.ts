@@ -5,7 +5,7 @@ import {
 } from '~/utils/posthogConsent';
 
 const consent = ref<PostHogConsentValue | null>(null);
-let loaded = false;
+const loaded = ref(false);
 
 function readConsent(): PostHogConsentValue | null {
   if (!import.meta.client) return null;
@@ -41,9 +41,9 @@ function syncConsentToPostHogClient(granted: boolean): void {
  */
 export function usePostHogConsent() {
   onMounted(() => {
-    if (loaded) return;
+    if (loaded.value) return;
     consent.value = readConsent();
-    loaded = true;
+    loaded.value = true;
     if (consent.value !== null) {
       syncConsentToPostHogClient(consent.value === 'granted');
     }
@@ -52,7 +52,7 @@ export function usePostHogConsent() {
   const hasAnalyticsConsent = computed(() => consent.value === 'granted');
   const analyticsConsentDecided = computed(() => consent.value !== null);
   const showAnalyticsConsentPrompt = computed(
-    () => import.meta.client && loaded && consent.value === null,
+    () => import.meta.client && loaded.value && consent.value === null,
   );
 
   function grantAnalyticsConsent(): void {

@@ -14,6 +14,7 @@ import {
   resetPostHogClientForTests,
   resolvePostHogHost,
   resolvePostHogProjectToken,
+  resolvePostHogEnvironment,
   setPostHogCaptureForTests,
   setPostHogExceptionForTests,
 } from '../src/posthog.js';
@@ -34,6 +35,13 @@ describe('PostHog API helper', () => {
       resolvePostHogHost({ POSTHOG_HOST: ' https://us.i.posthog.com ' }),
       'https://us.i.posthog.com',
     );
+  });
+
+  it('resolves deployment environment from Worker env', () => {
+    assert.equal(resolvePostHogEnvironment({}), 'development');
+    assert.equal(resolvePostHogEnvironment({ SENTRY_ENVIRONMENT: ' staging ' }), 'staging');
+    assert.equal(resolvePostHogEnvironment({ VMP_ENV: 'production' }), 'production');
+    assert.equal(resolvePostHogEnvironment({ DD_ENV: 'beta' }), 'beta');
   });
 
   it('does not construct a client without a project token', () => {
@@ -163,7 +171,11 @@ describe('PostHog API helper', () => {
     assert.deepEqual(captured, [
       {
         event: 'subscription_activated',
-        properties: { $session_id: 'sess_abc', provider: 'stripe' },
+        properties: {
+          $environment: 'development',
+          $session_id: 'sess_abc',
+          provider: 'stripe',
+        },
       },
     ]);
   });
@@ -210,5 +222,6 @@ describe('PostHog API helper', () => {
     assert.equal(seen.length, 1);
     assert.match(seen[0].distinctId, /^server_error:[0-9a-f-]{36}$/i);
     assert.equal(seen[0].properties?.anonymous_exception, true);
+    assert.equal(seen[0].properties?.$environment, 'development');
   });
 });

@@ -79,7 +79,11 @@ describe('posthogClient', () => {
     assert.deepEqual(captured, [
       {
         event: 'subscription_checkout_started',
-        properties: { plan_type: 'monthly', provider: 'stripe' },
+        properties: {
+          $environment: 'development',
+          plan_type: 'monthly',
+          provider: 'stripe',
+        },
       },
     ]);
   });

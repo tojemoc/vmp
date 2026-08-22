@@ -75,6 +75,9 @@ export default defineNuxtConfig({
       opt_out_capturing_by_default: true,
       persistence: 'memory',
       ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
+      loaded: (posthog) => {
+        posthog.register({ $environment: buildInfo.deployTier || 'development' });
+      },
     },
     serverConfig: {
       enableExceptionAutocapture: posthogEnabled,

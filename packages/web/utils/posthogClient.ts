@@ -4,6 +4,15 @@ type PostHogCaptureClient = {
   capture: (event: string, properties?: Record<string, unknown>) => unknown;
 };
 
+function posthogEnvironmentProperty(): Record<string, unknown> {
+  if (typeof window === 'undefined') return { $environment: 'development' };
+  const nuxtPublic = (
+    window as Window & { __NUXT__?: { config?: { public?: { deployTier?: string } } } }
+  ).__NUXT__?.config?.public;
+  const tier = String(nuxtPublic?.deployTier ?? 'development').trim();
+  return { $environment: tier || 'development' };
+}
+
 function getPostHogClient(): PostHogCaptureClient | undefined {
   if (typeof window === 'undefined') return undefined;
   const client = (window as Window & { posthog?: PostHogCaptureClient }).posthog;
@@ -16,7 +25,7 @@ export function capturePostHogEvent(event: string, properties: Record<string, un
   if (import.meta.server) return;
   if (!hasPostHogAnalyticsConsent()) return;
   try {
-    getPostHogClient()?.capture(event, properties);
+    getPostHogClient()?.capture(event, { ...posthogEnvironmentProperty(), ...properties });
   } catch {
     // Best-effort: analytics must not break product flows.
   }

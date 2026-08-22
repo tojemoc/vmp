@@ -131,6 +131,19 @@ function sessionProperties(sessionId: string | null): Record<string, unknown> {
   return sessionId ? { $session_id: sessionId } : {};
 }
 
+/** Deployment tier for PostHog filtering when staging/production share a project token. */
+export function resolvePostHogEnvironment(env: Record<string, unknown> | undefined): string {
+  for (const key of ['SENTRY_ENVIRONMENT', 'VMP_ENV', 'DD_ENV'] as const) {
+    const value = env?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return 'development';
+}
+
+function environmentProperties(env: Record<string, unknown> | undefined): Record<string, unknown> {
+  return { $environment: resolvePostHogEnvironment(env) };
+}
+
 function runPostHogWork(
   ctx: PostHogWaitUntilCtx | undefined,
   work: () => Promise<void>,
@@ -155,6 +168,7 @@ export function capturePostHogEvent(
 
   const { sessionId } = posthogContextFromRequest(options.request);
   const properties: Record<string, unknown> = {
+    ...environmentProperties(env),
     ...sessionProperties(sessionId),
     ...input.properties,
   };
@@ -196,6 +210,7 @@ export function capturePostHogException(
   const resolved = (options.distinctId ?? fromRequest.distinctId ?? '').trim();
   const distinctId = resolved || newAnonymousPostHogDistinctId();
   const properties = {
+    ...environmentProperties(env),
     ...sessionProperties(fromRequest.sessionId),
     ...(resolved ? {} : { anonymous_exception: true }),
     ...options.properties,
