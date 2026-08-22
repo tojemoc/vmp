@@ -9,21 +9,23 @@
   >
     <div
       v-if="showPersonalDataBanner || showAnalyticsBanner"
-      class="bg-slate-800 text-slate-100 border-b border-slate-700 px-4 py-3"
+      class="bg-slate-800 dark:bg-slate-900 text-slate-100 dark:text-slate-100 border-b border-slate-700 dark:border-slate-600 px-4 py-3"
       role="region"
-      :aria-label="showAnalyticsBanner ? strings.posthogAnalyticsConsentTitle : 'Personal data notice'"
+      :aria-label="
+        showAnalyticsBanner ? strings.posthogAnalyticsConsentTitle : strings.personalDataPageTitle
+      "
     >
       <div class="max-w-7xl mx-auto flex flex-col gap-3">
         <div
           v-if="showPersonalDataBanner"
           class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
         >
-          <p class="text-sm leading-relaxed text-slate-200">
+          <p class="text-sm leading-relaxed text-slate-200 dark:text-slate-300">
             {{ strings.personalDataBannerSummary }}
             {{ ' ' }}
             <NuxtLink
               to="/personal-data"
-              class="font-semibold text-white underline underline-offset-2 hover:text-blue-200"
+              class="font-semibold text-white dark:text-white underline underline-offset-2 hover:text-blue-200 dark:hover:text-blue-300"
               @click="onLearnMore"
             >
               {{ strings.personalDataLearnMore }}
@@ -32,19 +34,19 @@
           <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
+              class="px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-900 bg-white dark:bg-white rounded-md hover:bg-slate-100 dark:hover:bg-slate-200 transition-colors"
               @click="onAcknowledge"
             >
               {{ strings.personalDataBannerAcknowledge }}
             </button>
             <button
               type="button"
-              class="p-1.5 rounded-md hover:bg-slate-700 transition-colors"
+              class="p-1.5 rounded-md text-slate-200 dark:text-slate-200 hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
               :aria-label="strings.dismiss"
               @click="onAcknowledge"
             >
               <svg
-                class="w-4 h-4"
+                class="w-4 h-4 text-slate-200 dark:text-slate-200"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -64,14 +66,14 @@
         <div
           v-if="showAnalyticsBanner"
           class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-          :class="{ 'border-t border-slate-700 pt-3': showPersonalDataBanner }"
+          :class="{ 'border-t border-slate-700 dark:border-slate-600 pt-3': showPersonalDataBanner }"
         >
-          <p class="text-sm leading-relaxed text-slate-200">
+          <p class="text-sm leading-relaxed text-slate-200 dark:text-slate-300">
             {{ strings.posthogAnalyticsConsentSummary }}
             {{ ' ' }}
             <NuxtLink
               to="/personal-data"
-              class="font-semibold text-white underline underline-offset-2 hover:text-blue-200"
+              class="font-semibold text-white dark:text-white underline underline-offset-2 hover:text-blue-200 dark:hover:text-blue-300"
             >
               {{ strings.personalDataLearnMore }}
             </NuxtLink>
@@ -79,14 +81,14 @@
           <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors"
+              class="px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-900 bg-white dark:bg-white rounded-md hover:bg-slate-100 dark:hover:bg-slate-200 transition-colors"
               @click="onGrantAnalytics"
             >
               {{ strings.posthogAnalyticsConsentAccept }}
             </button>
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-semibold text-slate-100 border border-slate-500 rounded-md hover:bg-slate-700 transition-colors"
+              class="px-3 py-1.5 text-xs font-semibold text-slate-100 dark:text-slate-200 bg-transparent dark:bg-transparent border border-slate-500 dark:border-slate-400 rounded-md hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
               @click="onDenyAnalytics"
             >
               {{ strings.posthogAnalyticsConsentDecline }}

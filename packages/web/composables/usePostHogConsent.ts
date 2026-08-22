@@ -6,6 +6,7 @@ import {
 
 const consent = ref<PostHogConsentValue | null>(null);
 const loaded = ref(false);
+let storageListenerCount = 0;
 
 function readConsent(): PostHogConsentValue | null {
   if (!import.meta.client) return null;
@@ -35,18 +36,47 @@ function syncConsentToPostHogClient(granted: boolean): void {
   applyPostHogConsentToClient(posthog, granted);
 }
 
+function applyStoredConsent(): void {
+  consent.value = readConsent();
+  syncConsentToPostHogClient(consent.value === 'granted');
+}
+
+function onStorage(event: StorageEvent): void {
+  if (event.key !== POSTHOG_ANALYTICS_CONSENT_KEY) return;
+  applyStoredConsent();
+}
+
+function attachStorageListener(): void {
+  if (!import.meta.client) return;
+  if (storageListenerCount === 0) {
+    window.addEventListener('storage', onStorage);
+  }
+  storageListenerCount++;
+}
+
+function detachStorageListener(): void {
+  if (!import.meta.client || storageListenerCount === 0) return;
+  storageListenerCount--;
+  if (storageListenerCount === 0) {
+    window.removeEventListener('storage', onStorage);
+  }
+}
+
 /**
  * Explicit GDPR consent for PostHog analytics (separate from the informational
  * personal-data notice banner).
  */
 export function usePostHogConsent() {
   onMounted(() => {
-    if (loaded.value) return;
-    consent.value = readConsent();
-    loaded.value = true;
-    if (consent.value !== null) {
-      syncConsentToPostHogClient(consent.value === 'granted');
+    if (!loaded.value) {
+      applyStoredConsent();
+      loaded.value = true;
     }
+    attachStorageListener();
+  });
+
+  onUnmounted(() => {
+    detachStorageListener();
   });
 
   const hasAnalyticsConsent = computed(() => consent.value === 'granted');
