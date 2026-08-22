@@ -11,14 +11,20 @@ on:
     paths:
       - 'packages/media-pipeline/**'
       - 'packages/storage/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.dockerignore'
       - '.github/workflows/media-pipeline-docker.yml'
+      - '.github/scripts/media-pipeline-docker-should-build.sh'
   pull_request:
     paths:
       - 'packages/media-pipeline/**'
       - 'packages/storage/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.dockerignore'
       - '.github/workflows/media-pipeline-docker.yml'
+      - '.github/scripts/media-pipeline-docker-should-build.sh'
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +36,45 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/vmp-media-pipeline
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should-build: ${{ steps.detect.outputs.should-build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect media-pipeline Docker rebuild requirement
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should-build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+
+          SHOULD_BUILD="$(bash .github/scripts/media-pipeline-docker-should-build.sh "$BASE" "$HEAD")"
+          echo "should-build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+          if [ "$SHOULD_BUILD" = "true" ]; then
+            echo "Media-pipeline Docker image rebuild required."
+          else
+            echo "Skipping Docker build — lockfile/root changes do not affect media-pipeline or storage."
+          fi
+
   build:
+    needs: changes
+    if: needs.changes.outputs.should-build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
