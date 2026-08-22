@@ -10,9 +10,11 @@
  */
 import { PostHog } from 'posthog-node';
 
+/** Headers posthog-js injects when `tracing_headers` matches the API host. */
 export const POSTHOG_TRACING_REQUEST_HEADERS = [
   'X-POSTHOG-DISTINCT-ID',
   'X-POSTHOG-SESSION-ID',
+  'X-POSTHOG-WINDOW-ID',
 ] as const;
 
 export const DEFAULT_POSTHOG_HOST = 'https://eu.i.posthog.com';

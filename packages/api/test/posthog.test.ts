@@ -52,7 +52,7 @@ describe('PostHog API helper', () => {
   it('exports tracing headers required for CORS preflight', () => {
     assert.deepEqual(
       [...POSTHOG_TRACING_REQUEST_HEADERS],
-      ['X-POSTHOG-DISTINCT-ID', 'X-POSTHOG-SESSION-ID'],
+      ['X-POSTHOG-DISTINCT-ID', 'X-POSTHOG-SESSION-ID', 'X-POSTHOG-WINDOW-ID'],
     );
   });
 
