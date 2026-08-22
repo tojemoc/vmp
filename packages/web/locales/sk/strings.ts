@@ -291,6 +291,20 @@ export const strings: StringsDefinition = {
   offlineDownloadPwaRequiredMessage:
     'Offline sťahovanie je dostupné len v nainštalovanej aplikácii. Pridajte si VMP na domovskú obrazovku a video otvorte z aplikácie.',
   offlineDownloadPwaRequiredDismiss: 'Rozumiem',
+  offlineDownloadPwaUnsupportedTitle: 'Offline prehrávanie vyžaduje PWA',
+  offlineDownloadPwaUnsupportedMessage:
+    'Offline sťahovanie vyžaduje prehliadač, ktorý podporuje inštaláciu tejto stránky ako aplikácie. Otvorte toto video v Chrome, Edge alebo Safari, nainštalujte aplikáciu VMP a potom sa sem vráťte na stiahnutie.',
+  offlineDownloadPwaUnsupportedOpenChrome: 'Otvoriť v Chrome',
+  offlineDownloadIosInstallTitle: 'Pridajte si VMP na plochu smartfónu',
+  offlineDownloadIosInstallBenefit1: 'otvoríte jedným klikom',
+  offlineDownloadIosInstallBenefit2: 'nič neinštalujete, nezaberá miesto ako bežná aplikácia',
+  offlineDownloadIosInstallBenefit3: 'pohodlný prístup k videám offline kedykoľvek',
+  offlineDownloadIosInstallStep1: 'Kliknite na ikonu',
+  offlineDownloadIosInstallStep2: 'Vyberte',
+  offlineDownloadIosAddToHomeScreen: 'Pridať na plochu',
+  offlineDownloadSubRequiredTitle: 'Vyžaduje sa predplatné',
+  offlineDownloadSubRequiredMessage:
+    'Offline sťahovanie je dostupné pre prémiových predplatiteľov. Vyberte si plán nižšie a ukladajte videá na prehrávanie bez pripojenia.',
   offlineTapToUnmute: 'Klepnutím zapnete zvuk',
   networkError: 'Chyba siete. Skúste to prosím znova.',
 

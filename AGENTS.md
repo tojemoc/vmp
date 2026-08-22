@@ -174,6 +174,7 @@ Steps 1–7 are complete. Work continues from step 8.
 | 7 | Thumbnail Management | ✅ Done |
 | 8 | Brevo Newsletter Sync | Pending |
 | 9 | RSS / Podcast Feed | Pending |
+| — | Native / TV clients (multi-tier) | Phase 0 + Tier 1 scaffold — see [docs/native-clients-plan.md](docs/native-clients-plan.md) |
 
 ### Step 8 — Brevo Newsletter Sync
 
@@ -199,6 +200,18 @@ When touching **anything related to MoQ livestreams** (MoQ packages, livestream 
 **https://doc.moq.dev/setup/agent/prompt.md**
 
 That prompt installs the MoQ skill and covers architecture, packages, relay setup, and pitfalls. Also see `.cursor/rules/moq-livestreams.mdc` and the `agent.notes` entry in `.cursor/environment.json`.
+
+### iOS SideStore test distribution (`apps/mobile`)
+
+Manual workflow: `.github/workflows/mobile-artifacts.yml` (`workflow_dispatch` only — not on every push).
+
+- **SideStore / AltStore source URL:** `https://tojemoc.github.io/vmp/altstore-source.json`
+- **Install page:** `https://tojemoc.github.io/vmp/`
+- **Playbook:** [docs/ios-sidestore-distribution-playbook.md](docs/ios-sidestore-distribution-playbook.md)
+
+IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is generated from `docs/altstore-source.meta.json` and deployed to GitHub Pages via the official Pages deploy actions (never committed to `main`). Testers add the source URL in SideStore on iPhone — **no Mac required**. Publishing (GitHub Releases + Pages) is allowed from `main` only; feature branches may run artifact-only builds with `publish_release` disabled.
+
+Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags).
 
 ### Running services locally
 

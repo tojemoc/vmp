@@ -262,6 +262,18 @@ export type StringsDefinition = {
   offlineDownloadPwaRequiredTitle: string;
   offlineDownloadPwaRequiredMessage: string;
   offlineDownloadPwaRequiredDismiss: string;
+  offlineDownloadPwaUnsupportedTitle: string;
+  offlineDownloadPwaUnsupportedMessage: string;
+  offlineDownloadPwaUnsupportedOpenChrome: string;
+  offlineDownloadIosInstallTitle: string;
+  offlineDownloadIosInstallBenefit1: string;
+  offlineDownloadIosInstallBenefit2: string;
+  offlineDownloadIosInstallBenefit3: string;
+  offlineDownloadIosInstallStep1: string;
+  offlineDownloadIosInstallStep2: string;
+  offlineDownloadIosAddToHomeScreen: string;
+  offlineDownloadSubRequiredTitle: string;
+  offlineDownloadSubRequiredMessage: string;
   offlineTapToUnmute: string;
   networkError: string;
   podcastRssTitle: string;

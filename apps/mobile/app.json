@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "VMP",
+    "slug": "vmp-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "vmp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "sk.tjm.vmp",
+      "associatedDomains": ["applinks:REPLACE_WITH_FRONTEND_HOST"]
+    },
+    "android": {
+      "package": "sk.tjm.vmp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "REPLACE_WITH_FRONTEND_HOST",
+              "pathPrefix": "/auth/verify"
+            },
+            {
+              "scheme": "vmp",
+              "host": "auth",
+              "pathPrefix": "/verify"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    }
+  }
+}

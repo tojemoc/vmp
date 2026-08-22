@@ -1,0 +1,542 @@
+name: Mobile artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: API base URL baked into the mobile build
+        required: true
+        type: string
+      frontend_host:
+        description: Frontend host used for Universal Links / App Links
+        required: true
+        type: string
+      flavor:
+        description: Release channel label (used in GitHub Release tag). Publishing requires dispatch from main.
+        required: true
+        default: development
+        type: choice
+        options:
+          - release
+          - beta
+          - nightly
+          - development
+      build_number:
+        description: iOS build number (defaults to this workflow run number; must be unique per flavor+version)
+        required: false
+        type: string
+      native_push_enabled:
+        description: Enable native push registration UI in the build
+        required: true
+        default: false
+        type: boolean
+      enable_custom_scheme:
+        description: Enable the vmp:// deep-link fallback (dev-only)
+        required: true
+        default: false
+        type: boolean
+      publish_release:
+        description: Publish GitHub Release, AltStore source JSON, and GitHub Pages install files
+        required: true
+        default: true
+        type: boolean
+      build_android:
+        description: Also build and upload an Android test APK artifact
+        required: true
+        default: true
+        type: boolean
+
+# Write access is scoped to the publish job (GitHub Releases + Pages deploy). Other jobs stay read-only.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mobile-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPO_NO_TELEMETRY: 1
+  CI: 1
+
+jobs:
+  validate-mobile:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Guard publishing from main only
+        if: ${{ inputs.publish_release && github.ref != 'refs/heads/main' }}
+        working-directory: ${{ github.workspace }}
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF}). Disable publish_release for artifact-only builds from feature branches."
+          exit 1
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Lint mobile app
+        run: npm run lint
+
+      - name: Typecheck mobile app
+        run: npm run typecheck
+
+  build-android:
+    if: ${{ inputs.build_android }}
+    needs: validate-mobile
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      FRONTEND_HOST: ${{ inputs.frontend_host }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Inject CI frontend host
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'app.json';
+          const host = process.env.FRONTEND_HOST;
+          const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          app.expo.ios = app.expo.ios || {};
+          app.expo.ios.associatedDomains = [`applinks:${host}`];
+          app.expo.android = app.expo.android || {};
+          app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
+            ...filter,
+            data: (filter.data || []).map((entry) =>
+              entry.scheme === 'https' ? { ...entry, host } : entry,
+            ),
+          }));
+          fs.writeFileSync(path, `${JSON.stringify(app, null, 2)}\n`);
+          NODE
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Package Android artifact
+        run: |
+          mkdir -p dist
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/vmp-mobile-${SHORT_SHA}.apk"
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-android-apk
+          path: apps/mobile/dist/*.apk
+          if-no-files-found: error
+
+  build-ios:
+    needs: validate-mobile
+    runs-on: blacksmith-6vcpu-macos-26
+    defaults:
+      run:
+        working-directory: apps/mobile
+    outputs:
+      version_name: ${{ steps.version.outputs.name }}
+      build_number: ${{ steps.version.outputs.build }}
+      flavor_label: ${{ steps.flavor.outputs.label }}
+    env:
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      FRONTEND_HOST: ${{ inputs.frontend_host }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Determine release flavor label
+        id: flavor
+        env:
+          FLAVOR_LABEL: ${{ inputs.flavor }}
+        run: |
+          set -euo pipefail
+          case "${FLAVOR_LABEL}" in
+            release|beta|nightly|development) ;;
+            *)
+              echo "::error::Invalid flavor (must be release, beta, nightly, or development)."
+              exit 1
+              ;;
+          esac
+          printf 'label=%s\n' "${FLAVOR_LABEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Parse mobile version
+        id: version
+        env:
+          INPUT_BUILD: ${{ inputs.build_number }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(node -p "require('./app.json').expo.version")"
+          if [ -n "${INPUT_BUILD}" ]; then
+            BUILD_NUMBER="${INPUT_BUILD}"
+          else
+            # Unique per workflow run so two dispatches never reuse the same
+            # <flavor>-v<semver>-build<build> tag. app.json buildNumber is a
+            # local/dev default only and is not used as CI identity.
+            BUILD_NUMBER="${RUN_NUMBER}"
+          fi
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::iOS build number must be a positive integer. Found: $BUILD_NUMBER"
+            exit 1
+          fi
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Version name: $VERSION_NAME, build: $BUILD_NUMBER"
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Inject CI frontend host and build number
+        env:
+          BUILD_NUMBER: ${{ steps.version.outputs.build }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'app.json';
+          const host = process.env.FRONTEND_HOST;
+          const build = process.env.BUILD_NUMBER;
+          const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          app.expo.ios = app.expo.ios || {};
+          app.expo.ios.buildNumber = build;
+          app.expo.ios.associatedDomains = [`applinks:${host}`];
+          app.expo.android = app.expo.android || {};
+          app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
+            ...filter,
+            data: (filter.data || []).map((entry) =>
+              entry.scheme === 'https' ? { ...entry, host } : entry,
+            ),
+          }));
+          fs.writeFileSync(path, `${JSON.stringify(app, null, 2)}\n`);
+          NODE
+
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Build unsigned iOS app
+        run: |
+          if [ -d ios/VMP.xcworkspace ]; then
+            IOS_PROJECT_FLAG="-workspace ios/VMP.xcworkspace"
+          else
+            IOS_PROJECT_FLAG="-project ios/VMP.xcodeproj"
+          fi
+          xcodebuild \
+            $IOS_PROJECT_FLAG \
+            -scheme VMP \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination generic/platform=iOS \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package iOS IPA for SideStore
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          APP_PATH="ios/build/Build/Products/Release-iphoneos/VMP.app"
+          test -d "$APP_PATH"
+          mkdir -p "dist/$VERSION_NAME"
+          chmod +x ../../scripts/package-ios-ipa-for-sidestore.sh
+          ../../scripts/package-ios-ipa-for-sidestore.sh \
+            "$APP_PATH" \
+            "dist/$VERSION_NAME/vmp-${VERSION_NAME}-ios.ipa"
+          ls -la "dist/$VERSION_NAME/"
+
+      - name: Verify IPA archive layout
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          IPA="dist/$VERSION_NAME/vmp-${VERSION_NAME}-ios.ipa"
+          if unzip -l "$IPA" | awk 'NR>3 {print $4}' | grep -q '\.\./'; then
+            echo "::error::IPA zip entries must not contain parent-directory paths (../)"
+            exit 1
+          fi
+          if ! unzip -l "$IPA" | awk 'NR>3 && $4 != "" {print $4; exit}' | grep -q '^Payload/'; then
+            echo "::error::IPA must contain Payload/ at archive root"
+            unzip -l "$IPA" | head -10
+            exit 1
+          fi
+
+      - name: Upload iOS IPA artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-ipa
+          path: apps/mobile/dist/
+          if-no-files-found: error
+
+  publish-ios-release:
+    if: ${{ inputs.publish_release && needs.build-ios.result == 'success' && github.ref == 'refs/heads/main' }}
+    needs: build-ios
+    # Serialize publishes for the same release tag so a queued run re-checks after the leader finishes.
+    concurrency:
+      group: mobile-artifacts-publish-${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+      cancel-in-progress: false
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Guard publishing from main only
+        if: ${{ github.ref != 'refs/heads/main' }}
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF})."
+          exit 1
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Download iOS IPA artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ios-ipa
+          path: ./artifacts
+
+      - name: Stage release files
+        run: |
+          mkdir -p release/ios
+          find ./artifacts -name "*.ipa" -exec cp {} release/ios/ \;
+          ls -la release/ios/
+
+      - name: Reserve release tag (atomic)
+        id: reserve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+          TARGET_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          created=false
+          skip_release=false
+
+          resolve_tag_commit() {
+            local sha object_type
+            sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)" || return 1
+            object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.type)" || return 1
+            if [ "$object_type" = "tag" ]; then
+              sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" --jq .object.sha)" || return 1
+            fi
+            printf '%s' "$sha"
+          }
+
+          resolve_release_commit() {
+            local commitish body parsed
+            commitish="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq -r .target_commitish)" || return 1
+            if [[ "$commitish" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              printf '%s' "$commitish"
+              return 0
+            fi
+            body="$(gh release view "$TAG" --json body --jq -r .body)" || return 1
+            parsed="$(printf '%s\n' "$body" | sed -n 's/^- Commit: `\([0-9a-fA-F]\{40\}\)`/\1/p' | head -1)"
+            if [[ "$parsed" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              printf '%s' "$parsed"
+              return 0
+            fi
+            return 1
+          }
+
+          restore_tag() {
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" \
+              -f sha="${TARGET_SHA}" >/dev/null
+            echo "Restored tag ${TAG} @ ${TARGET_SHA}"
+          }
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if tag_sha="$(resolve_tag_commit 2>/dev/null)"; then
+              owner_sha="$tag_sha"
+            else
+              if ! owner_sha="$(resolve_release_commit)"; then
+                echo "::error::Release ${TAG} exists but its owning commit could not be verified. Re-run with a unique build_number."
+                exit 1
+              fi
+              restore_tag
+            fi
+            if [ "$owner_sha" != "$TARGET_SHA" ]; then
+              echo "::error::Release ${TAG} belongs to ${owner_sha}, not this commit (${TARGET_SHA}). Re-run with a unique build_number."
+              exit 1
+            fi
+            ipa_count="$(gh release view "$TAG" --json assets --jq '[.assets[].name | select(test("^vmp-.+-ios\\.ipa$"; "i"))] | length')"
+            if [ "$ipa_count" -gt 0 ]; then
+              echo "Release ${TAG} already has an IPA for this commit; skipping recreate so a retry can finish Pages."
+              skip_release=true
+            else
+              echo "Release ${TAG} exists for this commit but has no IPA; uploading the asset."
+            fi
+          elif out="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${TARGET_SHA}" 2>&1)"; then
+            echo "Reserved tag ${TAG} @ ${TARGET_SHA}"
+            created=true
+          elif echo "$out" | grep -q 'Reference already exists'; then
+            existing_sha="$(resolve_tag_commit)"
+            if [ "$existing_sha" != "$TARGET_SHA" ]; then
+              echo "::error::Release tag ${TAG} already exists at ${existing_sha}, not this commit. Re-run with a unique build_number."
+              exit 1
+            fi
+            echo "Reusing tag ${TAG} @ ${TARGET_SHA} (retry of incomplete publish)"
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
+          echo "created=${created}" >> "$GITHUB_OUTPUT"
+          echo "skip_release=${skip_release}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        id: release
+        if: ${{ steps.reserve.outputs.skip_release != 'true' }}
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: "${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}"
+          target_commitish: ${{ github.sha }}
+          overwrite_files: false
+          name: "${{ needs.build-ios.outputs.flavor_label }} v${{ needs.build-ios.outputs.version_name }} (build ${{ needs.build-ios.outputs.build_number }})"
+          body: |
+            ## ${{ needs.build-ios.outputs.flavor_label }} iOS build
+
+            - Version: `${{ needs.build-ios.outputs.version_name }}`
+            - Build: `${{ needs.build-ios.outputs.build_number }}`
+            - Branch: `${{ github.ref_name }}`
+            - Commit: `${{ github.sha }}`
+            - API URL: `${{ inputs.api_url }}`
+            - Frontend host: `${{ inputs.frontend_host }}`
+
+            Install on iPhone (OTA): https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+            **SideStore / AltStore:** Add source URL
+            `https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/altstore-source.json`
+          draft: false
+          prerelease: ${{ inputs.flavor != 'release' }}
+          files: release/ios/*
+
+      - name: Delete unused tag after failed release
+        if: ${{ failure() && steps.release.outcome == 'failure' && steps.reserve.outputs.created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+          TARGET_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} exists after a partial failure; leaving the tag in place."
+            if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                -f ref="refs/tags/${TAG}" \
+                -f sha="${TARGET_SHA}" >/dev/null
+              echo "Restored tag ${TAG} @ ${TARGET_SHA}"
+            fi
+            exit 0
+          fi
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}"
+          echo "Deleted unused tag ${TAG} (no GitHub Release was created)."
+
+      - name: Generate AltStore source from GitHub Releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ALTSTORE_WAIT_RELEASE_TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
+        run: python3 scripts/generate-altstore-source.py
+
+      - name: Publish GitHub Pages (Actions deploy, no git push)
+        id: pages
+        env:
+          VERSION_NAME: ${{ needs.build-ios.outputs.version_name }}
+          BUILD_NUMBER: ${{ needs.build-ios.outputs.build_number }}
+          FLAVOR_LABEL: ${{ needs.build-ios.outputs.flavor_label }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          TAG="${FLAVOR_LABEL}-v${VERSION_NAME}-build${BUILD_NUMBER}"
+          IPA_FILE="vmp-${VERSION_NAME}-ios.ipa"
+          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${IPA_FILE}"
+          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY_NAME}"
+          MANIFEST_URL="${PAGES_URL}/manifest.plist"
+          INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${MANIFEST_URL}', safe=''))")"
+          INSTALL_URL_HTML="${INSTALL_URL//&/&amp;}"
+          INSTALL_URL_SED="${INSTALL_URL_HTML//&/\\&}"
+
+          cp docs/manifest.plist.template docs/manifest.plist
+          sed -i "s|__IPA_URL__|${IPA_URL}|g" docs/manifest.plist
+          sed -i "s|__BUILD_NUMBER__|${BUILD_NUMBER}|g" docs/manifest.plist
+
+          cp docs/index.html.template docs/index.html
+          ALTSTORE_SOURCE_URL="${PAGES_URL}/altstore-source.json"
+          sed -i "s|__VERSION__|${VERSION_NAME}|g" docs/index.html
+          sed -i "s|__INSTALL_URL__|${INSTALL_URL_SED}|g" docs/index.html
+          sed -i "s|__ALTSTORE_SOURCE_URL__|${ALTSTORE_SOURCE_URL}|g" docs/index.html
+
+          mkdir -p site
+          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/.nojekyll site/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v4
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

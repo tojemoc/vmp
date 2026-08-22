@@ -3453,7 +3453,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         <div class="mt-4 flex justify-end">
           <button
             type="button"
-            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+            class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
             @click="closeScheduleModal"
           >
             Done
@@ -3584,7 +3584,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div class="flex justify-end gap-2 mt-5">
             <button
               type="button"
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="closeTransferSubscriptionModal"
             >
               Cancel
@@ -3617,7 +3617,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <div class="flex justify-end gap-2">
             <button
               type="button"
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="transferSubModal.step = 0"
             >
               Back
@@ -3757,7 +3757,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           </p>
           <div class="flex justify-end gap-2">
             <button
-              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-700 text-sm"
+              class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
               @click="swapModal.step = 0"
             >
               Back
