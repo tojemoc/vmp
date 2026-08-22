@@ -108,11 +108,12 @@ function applyInvoiceLevelDiscount(
 
   const positiveLines = lineItems.filter((line) => line.netAmountCents > 0);
   const lineSum = positiveLines.reduce((sum, line) => sum + line.netAmountCents, 0);
-  const basis = lineSum > 0 ? lineSum : subtotal;
-  const discountCents = basis - invoiceNet;
+  // Invoice-level discount is always subtotal − post-discount net (not lineSum − net).
+  const discountCents = subtotal - invoiceNet;
   if (discountCents <= 0) return lineItems;
 
-  // Allocate invoice-level discount across taxable lines so each keeps its VAT rate.
+  // Allocate across positive lines; lineSum is the proportional basis only.
+  const basis = lineSum > 0 ? lineSum : subtotal;
   let remainingDiscount = discountCents;
   let positiveSeen = 0;
   const positiveCount = positiveLines.length;

@@ -1254,6 +1254,8 @@ export async function handleWebhook(
             });
           }
           try {
+            // Intentional grace period: past_due keeps offline licenses through Stripe
+            // smart-retries / Qerko retry windows; revoke only on cancellation.
             if (nextStatus === 'cancelled') {
               await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
             }

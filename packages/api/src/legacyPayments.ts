@@ -559,13 +559,11 @@ export async function handleLegacyWebhook(
   }
 
   const userId = String((sub as any).user_id);
-  if (status === 'cancelled' || status === 'past_due') {
+  // Match Stripe webhook policy: revoke offline licenses only on cancellation,
+  // not on past_due (grace / retry window).
+  if (status === 'cancelled') {
     try {
-      await revokeOfflineLicensesForUser(
-        db,
-        userId,
-        status === 'cancelled' ? 'subscription_cancelled' : 'subscription_past_due',
-      );
+      await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
     } catch (offlineErr) {
       console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr);
     }

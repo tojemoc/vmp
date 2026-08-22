@@ -138,6 +138,47 @@ describe('normalizeStripeInvoice', () => {
     const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
     assert.equal(lineNetSum, 800);
   });
+
+  it('preserves invoice net when a negative line is present alongside an invoice discount', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_disc_neg',
+      currency: 'eur',
+      subtotal: 1000,
+      total_excluding_tax: 800,
+      tax: 0,
+      total: 800,
+      created: 1_700_000_000,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 1200,
+            tax_amounts: [],
+          },
+          {
+            description: 'Credit adjustment',
+            quantity: 1,
+            amount_excluding_tax: -200,
+            tax_amounts: [],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.netAmountCents, 800);
+    assert.equal(invoice.lineItems.length, 2);
+    const positive = invoice.lineItems.find((line) => line.description === 'Monthly plan');
+    const negative = invoice.lineItems.find((line) => line.description === 'Credit adjustment');
+    assert.ok(positive);
+    assert.ok(negative);
+    assert.equal(negative!.netAmountCents, -200);
+    // Discount is subtotal − invoiceNet = 200, allocated only onto positive lines.
+    assert.equal(positive!.netAmountCents, 1000);
+    const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+    assert.equal(lineNetSum, 800);
+  });
 });
 
 describe('extractBuyerFromStripeInvoice', () => {
