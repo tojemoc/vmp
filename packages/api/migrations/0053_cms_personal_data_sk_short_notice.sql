@@ -1,22 +1,17 @@
--- Rewrite personal-data CMS page to short Slovak notice (Čo / Na čo / Ako dlho).
--- Regenerated from packages/api/src/cmsPersonalDataSeedContent.ts
+-- Rewrite personal-data CMS page to short SK notice.
+-- Regenerated from packages/api/src/cmsPersonalDataSeedContent.ts (sk).
 --
--- SK-only guard (one language per D1 / deployment — see docs/i18n-prep.md):
--- Applies when admin_settings.ui_locale = 'sk', or when site_support_email is the
--- known tjm.sk ops address for this monorepo's SK instance. EN/CS white-label D1s
--- that set ui_locale to en/cs (and do not use @tjm.sk support email) are unchanged.
--- Renumbered to 0053: 0052 is already taken by 0052_einvoices_idempotency_backfill.sql.
+-- Locale guard (one language per D1 / deployment — see docs/i18n-prep.md):
+-- Applies only when admin_settings.ui_locale = 'sk', or when site_support_email is exactly vmp@tjm.sk (SK monorepo ops).
+-- Other locales leave this page unchanged. Safe to ship all three migrations together.
 
--- Bootstrap ui_locale for the SK (tjm.sk) deployment when support email is configured.
+-- Bootstrap ui_locale for the SK instance when the exact ops support email is set.
 INSERT OR IGNORE INTO admin_settings (key, value, updated_at)
 SELECT 'ui_locale', 'sk', CURRENT_TIMESTAMP
 WHERE EXISTS (
   SELECT 1 FROM admin_settings
   WHERE key = 'site_support_email'
-    AND (
-      LOWER(TRIM(value)) = 'vmp@tjm.sk'
-      OR LOWER(TRIM(value)) LIKE '%@tjm.sk'
-    )
+    AND LOWER(TRIM(value)) = 'vmp@tjm.sk'
 );
 
 UPDATE cms_pages
@@ -33,9 +28,6 @@ WHERE id = 'cms-page-personal-data'
     OR EXISTS (
       SELECT 1 FROM admin_settings
       WHERE key = 'site_support_email'
-        AND (
-          LOWER(TRIM(value)) = 'vmp@tjm.sk'
-          OR LOWER(TRIM(value)) LIKE '%@tjm.sk'
-        )
+        AND LOWER(TRIM(value)) = 'vmp@tjm.sk'
     )
   );
