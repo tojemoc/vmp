@@ -497,12 +497,18 @@ export function translateSqliteDdl(sql: string): string {
     /\bCREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
     (_, unique) => `CREATE ${unique ?? ''}INDEX IF NOT EXISTS `,
   );
+  // ADD COLUMN without IF NOT EXISTS fails with 42701 when the column already exists
+  // (e.g. migration applied the DDL then crashed before recording _migrations).
+  s = s.replace(
+    /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
+    'ADD COLUMN IF NOT EXISTS ',
+  );
   return s;
 }
 
-/** Postgres duplicate_object / duplicate_table (SQLSTATE 42P07, 42710). */
+/** Postgres duplicate_object / duplicate_table / duplicate_column (SQLSTATE 42P07, 42710, 42701). */
 export function isPostgresDuplicateObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const code = (err as { code?: string }).code;
-  return code === '42P07' || code === '42710';
+  return code === '42P07' || code === '42710' || code === '42701';
 }
