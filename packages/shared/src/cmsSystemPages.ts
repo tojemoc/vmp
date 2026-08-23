@@ -23,6 +23,10 @@ export function isCmsSystemSlug(slug: string): boolean {
 /**
  * True when a `/api/pages/:segment` path should be treated as a page id
  * (admin GET/PUT/DELETE, publish, revisions) rather than a public slug.
+ *
+ * Accepts any `cms-page-*` segment so future system pages route correctly.
+ * Delete/slug locks still require an entry in `CMS_SYSTEM_PAGE_IDS` via
+ * `isCmsSystemPageId` — register new system pages there explicitly.
  */
 export function isCmsPageIdPathSegment(segment: string): boolean {
   return CMS_PAGE_ID_PATH_RE.test(segment);
