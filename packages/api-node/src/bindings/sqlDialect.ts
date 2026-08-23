@@ -113,17 +113,22 @@ export function translateSqliteToPostgres(sql: string): string {
     return `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}'`;
   });
 
-  const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(s);
-
-  // DML compatibility
-  s = s.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
+  // DML compatibility — rewrite INSERT OR IGNORE per statement.
+  // Do NOT append ON CONFLICT to the whole migration file: multi-statement
+  // seeds (INSERT OR IGNORE …; UPDATE …;) would attach ON CONFLICT to UPDATE
+  // and fail on Postgres (cms personal-data migrations 0053–0055).
+  s = s.replace(
+    /\bINSERT\s+OR\s+IGNORE\s+INTO\b([\s\S]*?)(?=;|$)/gi,
+    (_m, body: string) => {
+      const trimmed = String(body).replace(/\s+$/, '');
+      if (/\bON\s+CONFLICT\b/i.test(trimmed)) {
+        return `INSERT INTO${trimmed}`;
+      }
+      return `INSERT INTO${trimmed} ON CONFLICT DO NOTHING`;
+    },
+  );
   s = s.replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO');
   s = s.replace(/\bREPLACE\s+INTO\b/gi, 'INSERT INTO');
-
-  // Postgres requires ON CONFLICT for ignore semantics (SQLite INSERT OR IGNORE).
-  if (hadInsertOrIgnore && /\bINSERT\s+INTO\b/i.test(s) && !/\bON\s+CONFLICT\b/i.test(s)) {
-    s = `${s.replace(/;\s*$/, '')} ON CONFLICT DO NOTHING`;
-  }
 
   // datetime('now', modifier) — SQLite modifier strings
   s = s.replace(
