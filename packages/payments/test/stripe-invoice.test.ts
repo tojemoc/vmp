@@ -1,0 +1,213 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import {
+  extractBuyerFromStripeInvoice,
+  normalizeStripeInvoice,
+} from '../src/providers/stripe/invoice.js';
+
+describe('normalizeStripeInvoice', () => {
+  it('maps Stripe invoice.paid payload to NormalizedInvoiceData', () => {
+    const invoice = normalizeStripeInvoice(
+      {
+        id: 'in_123',
+        currency: 'eur',
+        subtotal: 999,
+        tax: 0,
+        total: 999,
+        created: 1_700_000_000,
+        status_transitions: { paid_at: 1_700_000_100 },
+        payment_intent: 'pi_abc',
+        subscription: 'sub_xyz',
+        customer_email: 'buyer@example.com',
+        customer_name: 'Buyer s.r.o.',
+        lines: {
+          data: [
+            {
+              description: 'Monthly plan',
+              quantity: 1,
+              amount_excluding_tax: 999,
+              tax_amounts: [],
+            },
+          ],
+        },
+      },
+      { planType: 'monthly' },
+    );
+
+    assert.ok(invoice);
+    assert.equal(invoice.providerInvoiceId, 'in_123');
+    assert.equal(invoice.providerPaymentId, 'pi_abc');
+    assert.equal(invoice.providerSubscriptionId, 'sub_xyz');
+    assert.equal(invoice.currency, 'EUR');
+    assert.equal(invoice.netAmountCents, 999);
+    assert.equal(invoice.buyer.email, 'buyer@example.com');
+    assert.equal(invoice.lineItems.length, 1);
+    assert.match(invoice.lineItems[0]!.description, /Monthly plan/);
+  });
+
+  it('returns null when invoice id is missing', () => {
+    assert.equal(normalizeStripeInvoice({}), null);
+  });
+
+  it('uses effective_at for issueDate when paid_at is later (delayed payment)', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_delayed',
+      currency: 'eur',
+      effective_at: 1_700_000_000,
+      created: 1_699_999_000,
+      status_transitions: { finalized_at: 1_700_000_050, paid_at: 1_700_100_000 },
+      total_excluding_tax: 999,
+      tax: 0,
+      total: 999,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 999,
+            tax_amounts: [],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.issueDate, '2023-11-14');
+    assert.notEqual(invoice.issueDate, '2023-11-15');
+  });
+
+  it('reflects invoice-level discount in net totals and line items', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_disc',
+      currency: 'eur',
+      subtotal: 1000,
+      total_excluding_tax: 800,
+      tax: 0,
+      total: 800,
+      created: 1_700_000_000,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 1000,
+            tax_amounts: [],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.netAmountCents, 800);
+    assert.equal(invoice.lineItems.length, 1);
+    assert.equal(invoice.lineItems[0]!.netAmountCents, 800);
+    assert.equal(invoice.lineItems.find((line) => line.description === 'Discount'), undefined);
+    const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+    assert.equal(lineNetSum, 800);
+    assert.equal(invoice.grossAmountCents, 800);
+  });
+
+  it('allocates invoice-level discount across taxed lines preserving VAT rate', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_disc_tax',
+      currency: 'eur',
+      subtotal: 1000,
+      total_excluding_tax: 800,
+      tax: 160,
+      total: 960,
+      created: 1_700_000_000,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 600,
+            tax_amounts: [{ amount: 120 }],
+          },
+          {
+            description: 'Add-on',
+            quantity: 1,
+            amount_excluding_tax: 400,
+            tax_amounts: [{ amount: 80 }],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.netAmountCents, 800);
+    assert.equal(invoice.taxAmountCents, 160);
+    assert.equal(invoice.lineItems.length, 2);
+    const monthly = invoice.lineItems.find((line) => line.description === 'Monthly plan');
+    const addon = invoice.lineItems.find((line) => line.description === 'Add-on');
+    assert.ok(monthly);
+    assert.ok(addon);
+    // Discount 200 allocated 60%/40% → 120 and 80.
+    assert.equal(monthly!.netAmountCents, 480);
+    assert.equal(addon!.netAmountCents, 320);
+    assert.equal(monthly!.vatRatePercent, 20);
+    assert.equal(addon!.vatRatePercent, 20);
+    assert.equal(invoice.lineItems.find((line) => line.description === 'Discount'), undefined);
+    const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+    assert.equal(lineNetSum, 800);
+  });
+
+  it('preserves invoice net when a negative line is present alongside an invoice discount', () => {
+    const invoice = normalizeStripeInvoice({
+      id: 'in_disc_neg',
+      currency: 'eur',
+      subtotal: 1000,
+      total_excluding_tax: 800,
+      tax: 0,
+      total: 800,
+      created: 1_700_000_000,
+      lines: {
+        data: [
+          {
+            description: 'Monthly plan',
+            quantity: 1,
+            amount_excluding_tax: 1200,
+            tax_amounts: [],
+          },
+          {
+            description: 'Credit adjustment',
+            quantity: 1,
+            amount_excluding_tax: -200,
+            tax_amounts: [],
+          },
+        ],
+      },
+    });
+
+    assert.ok(invoice);
+    assert.equal(invoice.netAmountCents, 800);
+    assert.equal(invoice.lineItems.length, 2);
+    const positive = invoice.lineItems.find((line) => line.description === 'Monthly plan');
+    const negative = invoice.lineItems.find((line) => line.description === 'Credit adjustment');
+    assert.ok(positive);
+    assert.ok(negative);
+    assert.equal(negative!.netAmountCents, -200);
+    // Discount is subtotal − invoiceNet = 200, allocated only onto positive lines.
+    assert.equal(positive!.netAmountCents, 1000);
+    const lineNetSum = invoice.lineItems.reduce((sum, line) => sum + line.netAmountCents, 0);
+    assert.equal(lineNetSum, 800);
+  });
+});
+
+describe('extractBuyerFromStripeInvoice', () => {
+  it('does not treat consumer display name as business without VAT or reverse charge', () => {
+    const buyer = extractBuyerFromStripeInvoice({
+      customer_email: 'john@example.com',
+      customer_name: 'John Doe',
+    });
+    assert.equal(buyer.isBusiness, false);
+  });
+
+  it('treats reverse-charge tax exemption as a business indicator', () => {
+    const buyer = extractBuyerFromStripeInvoice({
+      customer_email: 'buyer@example.com',
+      customer_tax_exempt: 'reverse',
+    });
+    assert.equal(buyer.isBusiness, true);
+  });
+});

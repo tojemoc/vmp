@@ -6,6 +6,7 @@ import {
   createEnabledProviders,
   getRunnableProviderIds,
   normalizeProviderId,
+  parseQerkoWebhookPayload,
   type PaymentProviderId,
   type PaymentsConfig,
   type PlanType,
@@ -13,7 +14,7 @@ import {
   providerIdToDbProvider,
 } from '@vmp/payments';
 import { startLegacyCheckout } from './legacyPayments.js';
-import { isLegacyProviderConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
+import { isLegacyCheckoutConfigured, verifyLegacyWebhookSignature } from './legacyProvider.js';
 import { getSetting } from './settingsStore.js';
 
 /** All registry IDs (including stubs) that may appear in admin settings. */
@@ -38,7 +39,7 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       priceIdForPlan: (planType) => priceIdForPlan(env, planType),
     },
     qerko: {
-      isConfigured: () => isLegacyProviderConfigured(env),
+      isConfigured: () => isLegacyCheckoutConfigured(env),
       createCheckout: async (input) => {
         const corsHeaders: Record<string, string> = {};
         const response = await startLegacyCheckout(
@@ -65,20 +66,8 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       },
       verifyWebhook: (rawBody, signatureHeader) =>
         verifyLegacyWebhookSignature(env, rawBody, signatureHeader),
-      parseWebhook: async (rawBody) => {
-        const payload = rawBody ? JSON.parse(rawBody) : {};
-        const purchaseId = String(payload.purchaseId ?? payload.purchase_id ?? '').trim();
-        return {
-          type: 'subscription.updated',
-          providerId: 'qerko',
-          purchaseId,
-          providerOrderId: String(payload.idOrder ?? payload.orderId ?? purchaseId).trim(),
-          planType: String(payload.planType ?? 'monthly') as PlanType,
-          status: String(payload.status ?? payload.subscriptionStatus ?? ''),
-          currentPeriodEnd: payload.currentPeriodEnd ?? payload.current_period_end ?? null,
-          raw: payload,
-        };
-      },
+      parseWebhook: async (rawBody) =>
+        parseQerkoWebhookPayload(rawBody ? JSON.parse(rawBody) : {}),
       cancelSubscription: async () => {
         throw new Error('Qerko subscription cancellation is managed in the legacy eshop portal');
       },
@@ -88,6 +77,15 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       },
       createSubscription: async () => {
         throw new Error('Direct Qerko subscription creation is not supported');
+      },
+      getManageUrl: async () => {
+        const [urlRaw, showRaw] = await Promise.all([
+          getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' }),
+          getSetting(env, 'legacy_show_manage_button', { defaultValue: '0' }),
+        ]);
+        if (String(showRaw ?? '0') !== '1') return null;
+        const url = String(urlRaw ?? '').trim();
+        return url || null;
       },
     },
   };
@@ -150,6 +148,11 @@ export function resolvePublicEnabledProviders(
 
 export function fromApiProviderId(raw: string): PaymentProviderId | null {
   return normalizeProviderId(raw);
+}
+
+/** Map D1 `subscriptions.provider` values to registry provider IDs. */
+export function dbProviderToRegistryId(dbProvider: string): PaymentProviderId {
+  return normalizeProviderId(dbProvider) ?? 'stripe';
 }
 
 export { providerIdToDbProvider };

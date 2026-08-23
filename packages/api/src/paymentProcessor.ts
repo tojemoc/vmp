@@ -3,7 +3,7 @@
  */
 
 import { requireAuth, requireRole } from './auth.js';
-import { removeSubscriberFromNewsletter, syncNewsletterForStripeSubscription } from './brevo.js';
+import { removeSubscriberFromNewsletter, syncNewsletterForSubscription } from './brevo.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
@@ -11,30 +11,38 @@ import {
   normalizeStripeStatus,
   stripeCancelAtPeriodEnd,
   stripeGet,
-  stripePost,
   stripeSubscriptionPeriodEndIso,
 } from './stripeClient.js';
 
 export { normalizeStripeStatus } from './stripeClient.js';
 
-import type { PaymentProviderId } from '@vmp/payments';
-import { handleStripeInvoicePaid } from './eInvoicing.js';
-import { isLegacyProviderConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
-import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import type { DbPaymentProvider, NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
+import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import {
-  fromApiProviderId,
-  getPaymentProviderOrder,
-  getPaymentProviders,
-  resolvePublicEnabledProviders,
-  toApiProviderId,
-  toSupportedApiProviderIds,
-} from './paymentProviders.js';
+  CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
+  looksLikePaymentConfigLeak,
+} from './customerSafePaymentErrors.js';
+import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
+import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import { parseLocaleNumber } from './parseLocaleNumber.js';
 import {
   captureMappedPostHogEvent,
   capturePostHogException,
   posthogEventFromStripeWebhook,
   type PostHogWaitUntilCtx,
 } from './posthog.js';
+import {
+  dbProviderToRegistryId,
+  fromApiProviderId,
+  getPaymentProviderOrder,
+  getPaymentProviders,
+  providerIdToDbProvider,
+  resolvePublicEnabledProviders,
+  toApiProviderId,
+  toSupportedApiProviderIds,
+} from './paymentProviders.js';
+
+export { parseLocaleNumber } from './parseLocaleNumber.js';
 
 type PlanType = 'monthly' | 'yearly' | 'club';
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
@@ -104,9 +112,7 @@ async function buildAdminPlanList(env: any) {
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
 function parseConfiguredPrice(value: unknown): number | null {
-  if (value === '' || value == null) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+  return parseLocaleNumber(value);
 }
 
 async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
@@ -168,9 +174,10 @@ async function upsertSubscriptionRow(
     userId: string;
     planType: PlanType;
     status: SubscriptionStatus;
-    provider: 'stripe' | 'legacy';
+    provider: DbPaymentProvider;
     providerSubscriptionId: string | null;
     providerCustomerId: string | null;
+    purchaseId?: string | null;
     stripeSubscriptionId?: string | null;
     stripeCustomerId?: string | null;
     currentPeriodEnd?: string | null;
@@ -189,18 +196,20 @@ async function upsertSubscriptionRow(
         provider,
         provider_subscription_id,
         provider_customer_id,
+        purchase_id,
         stripe_subscription_id,
         stripe_customer_id,
         current_period_end,
         cancel_at_period_end,
         updated_at
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
       user_id                  = excluded.user_id,
       status                   = excluded.status,
       plan_type                = excluded.plan_type,
       provider_customer_id     = excluded.provider_customer_id,
+      purchase_id              = COALESCE(excluded.purchase_id, subscriptions.purchase_id),
       stripe_subscription_id   = excluded.stripe_subscription_id,
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
@@ -215,6 +224,7 @@ async function upsertSubscriptionRow(
       params.provider,
       params.providerSubscriptionId,
       params.providerCustomerId,
+      params.purchaseId ?? null,
       params.stripeSubscriptionId ?? null,
       params.stripeCustomerId ?? null,
       params.currentPeriodEnd ?? null,
@@ -223,25 +233,255 @@ async function upsertSubscriptionRow(
     .run();
 }
 
-async function upsertStripeSubscription(db: any, userId: string, stripeSub: any, env: any) {
-  const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null;
-  const planType = priceId ? await resolvePlanType(db, priceId, env ?? {}) : 'monthly';
-  const status = normalizeStripeStatus(stripeSub.status);
-  const currentPeriodEnd = stripeSubscriptionPeriodEndIso(stripeSub);
-  const cancelAtPeriodEnd = stripeCancelAtPeriodEnd(stripeSub);
+async function upsertSubscriptionFromNormalizedEvent(
+  db: any,
+  env: any,
+  event: NormalizedPaymentEvent,
+): Promise<string | null> {
+  const userId =
+    typeof event.userId === 'string' && event.userId.trim()
+      ? event.userId.trim()
+      : await findUserIdForPaymentEvent(db, event);
+  if (!userId) return null;
+
+  let planType = event.planType;
+  let status = event.status;
+  let currentPeriodEnd = event.currentPeriodEnd ?? null;
+  let providerSubscriptionId = event.subscriptionId?.trim() || null;
+  let providerCustomerId = event.customerId?.trim() || null;
+  let purchaseId = event.purchaseId?.trim() || null;
+  let stripeSubscriptionId: string | null = null;
+  let stripeCustomerId: string | null = null;
+  let cancelAtPeriodEnd = event.cancelAtPeriodEnd === true;
+
+  if (event.providerId === 'qerko') {
+    const raw =
+      event.raw && typeof event.raw === 'object' ? (event.raw as Record<string, unknown>) : {};
+    const subscription =
+      raw.subscription && typeof raw.subscription === 'object'
+        ? (raw.subscription as Record<string, unknown>)
+        : null;
+    const cardOnFile = String(
+      subscription?.cardOnFile ?? raw.cardOnFile ?? event.subscriptionId ?? event.purchaseId ?? '',
+    ).trim();
+
+    // Stable CardOnFile identity for ON CONFLICT(provider, provider_subscription_id).
+    providerSubscriptionId = cardOnFile || event.subscriptionId?.trim() || null;
+    purchaseId = event.purchaseId?.trim() || cardOnFile || purchaseId;
+    if (!providerCustomerId && purchaseId) {
+      providerCustomerId = purchaseId;
+    }
+  }
+
+  if (event.providerId === 'stripe') {
+    stripeSubscriptionId = providerSubscriptionId;
+    stripeCustomerId = providerCustomerId;
+
+    const rawSub =
+      event.type === 'subscription.created' || event.type === 'subscription.updated'
+        ? getNormalizedRawObject(event)
+        : null;
+
+    const needsStripeFetch =
+      Boolean(providerSubscriptionId) &&
+      (event.type === 'checkout.completed' ||
+        event.type === 'invoice.paid' ||
+        !planType ||
+        (!status && rawSub?.id));
+
+    if (needsStripeFetch && providerSubscriptionId) {
+      const stripeSub = await stripeGet(`/subscriptions/${providerSubscriptionId}`, env);
+      if (stripeSub?.id) {
+        const priceId = stripeSub.items?.data?.[0]?.price?.id ?? null;
+        if (!planType && priceId) {
+          planType = (await resolvePlanType(db, priceId, env)) as PlanType;
+        }
+        status = status || String(stripeSub.status ?? '');
+        currentPeriodEnd = currentPeriodEnd || stripeSubscriptionPeriodEndIso(stripeSub);
+        providerSubscriptionId = String(stripeSub.id);
+        providerCustomerId =
+          typeof stripeSub.customer === 'string' ? stripeSub.customer : providerCustomerId;
+        stripeSubscriptionId = providerSubscriptionId;
+        stripeCustomerId = providerCustomerId;
+        cancelAtPeriodEnd = stripeCancelAtPeriodEnd(stripeSub);
+      }
+    } else if (rawSub?.id) {
+      if (!planType) {
+        const priceId = (rawSub.items as { data?: Array<{ price?: { id?: string } }> })?.data?.[0]
+          ?.price?.id;
+        if (priceId) planType = (await resolvePlanType(db, priceId, env)) as PlanType;
+      }
+      if (!status && rawSub.status) status = String(rawSub.status);
+      if (!currentPeriodEnd) {
+        currentPeriodEnd = stripeSubscriptionPeriodEndIso(
+          rawSub as Parameters<typeof stripeSubscriptionPeriodEndIso>[0],
+        );
+      }
+      providerSubscriptionId = providerSubscriptionId || String(rawSub.id);
+      if (!providerCustomerId && typeof rawSub.customer === 'string') {
+        providerCustomerId = rawSub.customer;
+      }
+      cancelAtPeriodEnd = event.cancelAtPeriodEnd === true || stripeCancelAtPeriodEnd(rawSub);
+    }
+  }
+
+  if (!providerSubscriptionId && !purchaseId) return userId;
+
+  const dbStatus =
+    event.providerId === 'stripe'
+      ? normalizeStripeStatus(status ?? 'active')
+      : normalizeGenericSubscriptionStatus(status ?? 'active');
 
   await upsertSubscriptionRow(db, {
     userId,
-    planType: normalizePlanType(planType),
-    status,
-    provider: 'stripe',
-    providerSubscriptionId: stripeSub.id ?? null,
-    providerCustomerId: stripeSub.customer ?? null,
-    stripeSubscriptionId: stripeSub.id ?? null,
-    stripeCustomerId: stripeSub.customer ?? null,
+    planType: normalizePlanType(planType ?? 'monthly'),
+    status: dbStatus,
+    provider: providerIdToDbProvider(event.providerId),
+    providerSubscriptionId,
+    providerCustomerId,
+    purchaseId,
+    stripeSubscriptionId,
+    stripeCustomerId,
     currentPeriodEnd,
     cancelAtPeriodEnd,
   });
+  return userId;
+}
+
+function stripeWebhookTypeForPostHog(event: NormalizedPaymentEvent): string | null {
+  switch (event.type) {
+    case 'checkout.completed':
+      return 'checkout.session.completed';
+    case 'subscription.deleted':
+      return 'customer.subscription.deleted';
+    case 'invoice.paid':
+      return 'invoice.paid';
+    case 'subscription.past_due':
+      return 'invoice.payment_failed';
+    default:
+      return null;
+  }
+}
+
+function captureStripeWebhookPostHog(
+  env: any,
+  event: NormalizedPaymentEvent,
+  userId: string,
+  ctx?: PostHogWaitUntilCtx,
+) {
+  if (event.providerId !== 'stripe') return;
+  const stripeType = stripeWebhookTypeForPostHog(event);
+  if (!stripeType) return;
+  captureMappedPostHogEvent(
+    env,
+    posthogEventFromStripeWebhook(stripeType, getNormalizedRawObject(event), userId),
+    ctx,
+  );
+}
+
+function normalizeGenericSubscriptionStatus(raw: string): SubscriptionStatus {
+  const value = raw.trim().toLowerCase();
+  if (value === 'trialing') return 'trialing';
+  if (value === 'past_due' || value === 'past-due') return 'past_due';
+  if (value === 'cancelled' || value === 'canceled' || value === 'deleted') return 'cancelled';
+  return 'active';
+}
+
+function getNormalizedRawObject(event: NormalizedPaymentEvent): Record<string, unknown> {
+  if (!event.raw || typeof event.raw !== 'object') return {};
+  const raw = event.raw as { data?: { object?: Record<string, unknown> } };
+  return raw.data?.object ?? {};
+}
+
+async function findUserIdForPaymentEvent(
+  db: any,
+  event: Pick<
+    NormalizedPaymentEvent,
+    'providerId' | 'userId' | 'subscriptionId' | 'customerId' | 'purchaseId' | 'providerOrderId'
+  >,
+): Promise<string | null> {
+  if (typeof event.userId === 'string' && event.userId.trim()) return event.userId.trim();
+
+  const provider = providerIdToDbProvider(event.providerId);
+  const refs: Array<{ column: string; value: string }> = [];
+  const pushRef = (column: string, value: unknown) => {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) return;
+    if (!refs.some((ref) => ref.column === column && ref.value === normalized)) {
+      refs.push({ column, value: normalized });
+    }
+  };
+
+  pushRef('provider_subscription_id', event.subscriptionId);
+  pushRef('provider_customer_id', event.customerId);
+  pushRef('purchase_id', event.purchaseId);
+  pushRef('provider_subscription_id', event.providerOrderId);
+  if (event.providerId === 'stripe') {
+    pushRef('stripe_subscription_id', event.subscriptionId);
+    pushRef('stripe_customer_id', event.customerId);
+  }
+  if (refs.length === 0) return null;
+
+  const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
+  const row = await db
+    .prepare(`SELECT user_id FROM subscriptions WHERE provider = ? AND (${where}) LIMIT 1`)
+    .bind(provider, ...refs.map((ref) => ref.value))
+    .first();
+  return row?.user_id ? String(row.user_id) : null;
+}
+
+async function syncSubscriptionNewsletter(db: any, userId: string, status: string, env: any) {
+  try {
+    await syncNewsletterForSubscription(db, userId, status, env);
+  } catch (brevoErr) {
+    console.error('[payments webhook] syncNewsletterForSubscription failed', {
+      fn: 'syncNewsletterForSubscription',
+      userId,
+      status,
+      err: brevoErr,
+    });
+  }
+}
+
+async function updateSubscriptionStatusByProviderRef(
+  db: any,
+  event: Pick<
+    NormalizedPaymentEvent,
+    'providerId' | 'subscriptionId' | 'customerId' | 'purchaseId' | 'providerOrderId'
+  >,
+  nextStatus: SubscriptionStatus,
+) {
+  const provider = providerIdToDbProvider(event.providerId);
+  const refs: Array<{ column: string; value: string }> = [];
+  const pushRef = (column: string, value: unknown) => {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) return;
+    if (!refs.some((ref) => ref.column === column && ref.value === normalized)) {
+      refs.push({ column, value: normalized });
+    }
+  };
+
+  pushRef('provider_subscription_id', event.subscriptionId);
+  pushRef('provider_subscription_id', event.providerOrderId);
+  pushRef('provider_customer_id', event.customerId);
+  pushRef('purchase_id', event.purchaseId);
+  if (event.providerId === 'stripe') {
+    pushRef('stripe_subscription_id', event.subscriptionId);
+    pushRef('stripe_customer_id', event.customerId);
+  }
+  if (refs.length === 0) return;
+
+  const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
+  const cancelClause =
+    nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
+  await db
+    .prepare(
+      `UPDATE subscriptions
+       SET status = ?, updated_at = CURRENT_TIMESTAMP${cancelClause}
+       WHERE provider = ? AND (${where})`,
+    )
+    .bind(nextStatus, provider, ...refs.map((ref) => ref.value))
+    .run();
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
@@ -277,7 +517,7 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       // Empty when only stubs/unsupported providers remain — never invent Stripe.
       enabledProviders,
       providerOrder,
-      legacyConfigured: isLegacyProviderConfigured(env),
+      legacyConfigured: isLegacyCheckoutConfigured(env),
       ...(pricingNotConfigured || enabledProviders.length === 0
         ? { pricing_not_configured: true }
         : {}),
@@ -301,8 +541,8 @@ function parseCsvList(input: unknown, allowValues: string[]) {
 
 function parseOptionalPositiveNumber(input: unknown) {
   if (input === '' || input == null) return '';
-  const numeric = Number(input);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
+  const numeric = parseLocaleNumber(input);
+  if (numeric == null || numeric <= 0) {
     throw new Error('Prices must be positive numbers');
   }
   return String(numeric);
@@ -466,7 +706,7 @@ export async function handleAdminPaymentPlans(request: any, env: any, corsHeader
         getSetting(env, 'legacy_manage_subscription_url', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_provider_name', { ttlSeconds: 300 }),
         getSetting(env, 'legacy_show_manage_button', { ttlSeconds: 300 }),
-        Promise.resolve(isLegacyProviderConfigured(env)),
+        Promise.resolve(isLegacyCheckoutConfigured(env)),
       ]);
     return jsonResponse(
       {
@@ -758,7 +998,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       return jsonResponse(
         {
           error:
-            'This payment provider is enabled in settings but is not configured on the server (missing API credentials).',
+            'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
           code: 'provider_not_configured',
         },
         503,
@@ -865,10 +1105,43 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       err && typeof err === 'object' && 'code' in err
         ? String((err as { code?: string }).code)
         : '';
+    const statusRaw =
+      err && typeof err === 'object' && 'status' in err
+        ? Number((err as { status?: number }).status)
+        : NaN;
     if (code === 'stripe_timeout') {
       return jsonResponse(
         { error: 'Payment provider timed out. Please try again.', code },
         504,
+        corsHeaders,
+      );
+    }
+    const rawMessage = err instanceof Error ? err.message : '';
+    const configLeak = looksLikePaymentConfigLeak(rawMessage);
+    if (
+      code === 'legacy_not_configured' ||
+      code === 'provider_not_configured' ||
+      configLeak
+    ) {
+      return jsonResponse(
+        {
+          error: CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
+          code: code || 'provider_not_configured',
+        },
+        Number.isFinite(statusRaw) && statusRaw >= 400 ? statusRaw : 503,
+        corsHeaders,
+      );
+    }
+    if (code && rawMessage && Number.isFinite(statusRaw) && statusRaw >= 400 && statusRaw < 500) {
+      return jsonResponse({ error: rawMessage, code }, statusRaw, corsHeaders);
+    }
+    if (code && rawMessage && Number.isFinite(statusRaw) && statusRaw >= 500) {
+      return jsonResponse(
+        {
+          error: configLeak ? CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE : rawMessage,
+          code,
+        },
+        statusRaw,
         corsHeaders,
       );
     }
@@ -877,232 +1150,129 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 }
 
 /**
- * POST /api/payments/webhook — NO auth (Stripe calls this directly)
- * Verifies Stripe signature and handles subscription lifecycle events.
+ * POST /api/payments/webhook[/provider] — NO auth
+ * Verifies the provider signature, normalizes the provider event, and then
+ * handles subscription lifecycle changes through provider-agnostic event types.
  */
 export async function handleWebhook(
   request: any,
   env: any,
   corsHeaders: any,
+  providerId: PaymentProviderId = 'stripe',
   ctx?: PostHogWaitUntilCtx,
 ) {
   const rawBody = await request.text();
-  const sigHeader = request.headers.get('Stripe-Signature') ?? '';
   const { providers } = await getPaymentProviders(env);
-  const stripeProvider = providers.get('stripe');
-  if (!stripeProvider) {
-    return jsonResponse({ error: 'Stripe provider not configured' }, 503, corsHeaders);
+  const provider = providers.get(providerId);
+  if (!provider) {
+    return jsonResponse({ error: 'Payment provider not configured' }, 503, corsHeaders);
   }
-  const valid = await stripeProvider.verifyWebhookSignature(rawBody, sigHeader);
+  const sigHeader =
+    providerId === 'stripe'
+      ? (request.headers.get('Stripe-Signature') ?? '')
+      : providerId === 'qerko'
+        ? (request.headers.get('X-Legacy-Signature') ??
+          request.headers.get('X-Webhook-Signature') ??
+          request.headers.get('Authorization') ??
+          '')
+        : '';
+  const valid = await provider.verifyWebhookSignature(rawBody, sigHeader);
   if (!valid) {
     return jsonResponse({ error: 'Invalid webhook signature' }, 400, corsHeaders);
   }
 
-  let event;
+  let normalizedEvent: NormalizedPaymentEvent;
   try {
-    event = JSON.parse(rawBody);
+    normalizedEvent = await provider.handleWebhook(rawBody);
   } catch {
     return jsonResponse({ error: 'Invalid JSON' }, 400, corsHeaders);
   }
 
   try {
     const db = getDb(env);
+    switch (normalizedEvent.type) {
+      case 'checkout.completed':
+      case 'subscription.created':
+      case 'subscription.updated':
+      case 'invoice.paid': {
+        const userId = await upsertSubscriptionFromNormalizedEvent(db, env, normalizedEvent);
+        if (!userId) break;
 
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const userId = session.metadata?.userId;
-        if (!userId || !session.subscription) break;
+        const newsletterStatus =
+          normalizedEvent.providerId === 'stripe' &&
+          (normalizedEvent.type === 'subscription.created' ||
+            normalizedEvent.type === 'subscription.updated')
+            ? String(getNormalizedRawObject(normalizedEvent).status ?? normalizedEvent.status ?? '')
+            : String(normalizedEvent.status ?? 'active');
+        if (newsletterStatus) {
+          await syncSubscriptionNewsletter(db, userId, newsletterStatus, env);
+        }
 
-        // Fetch the full subscription object to get current_period_end and plan
-        const stripeSub = await stripeGet(`/subscriptions/${session.subscription}`, env);
-        if (stripeSub.id) {
-          await upsertStripeSubscription(db, userId, stripeSub, env);
-          const promoCodeId =
-            typeof session?.metadata?.promoCodeId === 'string'
-              ? session.metadata.promoCodeId.trim()
-              : '';
-          if (promoCodeId) {
+        if (
+          normalizedEvent.type === 'checkout.completed' &&
+          normalizedEvent.providerId === 'stripe' &&
+          normalizedEvent.promoCodeId?.trim() &&
+          normalizedEvent.userId &&
+          normalizedEvent.subscriptionId
+        ) {
+          const stripeSub = await stripeGet(
+            `/subscriptions/${normalizedEvent.subscriptionId}`,
+            env,
+          );
+          if (stripeSub.id) {
             await applyPromoRedemption(env, {
-              promoCodeId,
-              userId,
+              promoCodeId: normalizedEvent.promoCodeId.trim(),
+              userId: normalizedEvent.userId,
               provider: 'stripe',
-              planType: String(session?.metadata?.planType || 'monthly'),
-              providerSubscriptionId: stripeSub.id ?? null,
+              planType: String(normalizedEvent.planType || 'monthly'),
+              providerSubscriptionId: String(stripeSub.id),
               grantedUntil: stripeSubscriptionPeriodEndIso(stripeSub),
             });
           }
-          try {
-            await syncNewsletterForStripeSubscription(db, userId, stripeSub.status, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
-          }
-          captureMappedPostHogEvent(
-            env,
-            posthogEventFromStripeWebhook('checkout.session.completed', session, userId),
-            ctx,
-          );
         }
+
+        if (normalizedEvent.type === 'invoice.paid') {
+          await handlePaymentInvoicePaid(env, db, userId, normalizedEvent);
+        }
+        captureStripeWebhookPostHog(env, normalizedEvent, userId, ctx);
         break;
       }
-
-      case 'customer.subscription.updated': {
-        const stripeSub = event.data.object;
-        // Find our user_id via stripe_subscription_id
-        const existing = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
+      case 'subscription.deleted':
+      case 'subscription.past_due': {
+        const nextStatus: SubscriptionStatus =
+          normalizedEvent.type === 'subscription.deleted' ? 'cancelled' : 'past_due';
+        const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
+        await updateSubscriptionStatusByProviderRef(db, normalizedEvent, nextStatus);
+        if (userId) {
           try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
+            await removeSubscriberFromNewsletter(db, userId, env);
           } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId: existing.user_id,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
-          }
-        }
-        break;
-      }
-
-      case 'invoice.paid': {
-        const invoice = event.data.object;
-        if (!invoice.subscription) break;
-        const stripeSub = await stripeGet(`/subscriptions/${invoice.subscription}`, env);
-        if (!stripeSub.id) break;
-        const existing = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        if (existing) {
-          await upsertStripeSubscription(db, existing.user_id, stripeSub, env);
-          try {
-            await syncNewsletterForStripeSubscription(db, existing.user_id, stripeSub.status, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] syncNewsletterForStripeSubscription failed', {
-              fn: 'syncNewsletterForStripeSubscription',
-              userId: existing.user_id,
-              stripeStatus: stripeSub.status,
-              err: brevoErr,
-            });
-          }
-          await handleStripeInvoicePaid(env, db, invoice, String(existing.user_id));
-          captureMappedPostHogEvent(
-            env,
-            posthogEventFromStripeWebhook('invoice.paid', invoice, String(existing.user_id)),
-            ctx,
-          );
-        }
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const stripeSub = event.data.object;
-        const row = await db
-          .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-          .bind(stripeSub.id)
-          .first();
-        await db
-          .prepare(`
-          UPDATE subscriptions
-          SET status = 'cancelled', cancel_at_period_end = 0, updated_at = CURRENT_TIMESTAMP
-          WHERE stripe_subscription_id = ?
-        `)
-          .bind(stripeSub.id)
-          .run();
-        if (row?.user_id) {
-          try {
-            await removeSubscriberFromNewsletter(db, row.user_id, env);
-          } catch (brevoErr) {
-            console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
+            console.error('[payments webhook] removeSubscriberFromNewsletter failed', {
               fn: 'removeSubscriberFromNewsletter',
-              userId: row.user_id,
+              userId,
               err: brevoErr,
             });
           }
           try {
-            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
+            // Intentional grace period: past_due keeps offline licenses through Stripe
+            // smart-retries / Qerko retry windows; revoke only on cancellation.
+            if (nextStatus === 'cancelled') {
+              await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
+            }
           } catch (offlineErr) {
-            console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
+            console.error('[payments webhook] revokeOfflineLicensesForUser failed', {
               fn: 'revokeOfflineLicensesForUser',
-              userId: row.user_id,
+              userId,
               err: offlineErr,
             });
             throw offlineErr;
           }
-          captureMappedPostHogEvent(
-            env,
-            posthogEventFromStripeWebhook(
-              'customer.subscription.deleted',
-              stripeSub,
-              String(row.user_id),
-            ),
-            ctx,
-          );
+          captureStripeWebhookPostHog(env, normalizedEvent, userId, ctx);
         }
         break;
       }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        if (invoice.subscription) {
-          const existing = await db
-            .prepare('SELECT user_id FROM subscriptions WHERE stripe_subscription_id = ? LIMIT 1')
-            .bind(invoice.subscription)
-            .first();
-          await db
-            .prepare(`
-            UPDATE subscriptions
-            SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
-            WHERE stripe_subscription_id = ?
-          `)
-            .bind(invoice.subscription)
-            .run();
-          if (existing?.user_id) {
-            try {
-              await removeSubscriberFromNewsletter(db, existing.user_id, env);
-            } catch (brevoErr) {
-              console.error('[stripe webhook] removeSubscriberFromNewsletter failed', {
-                fn: 'removeSubscriberFromNewsletter',
-                userId: existing.user_id,
-                err: brevoErr,
-              });
-            }
-            try {
-              await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
-            } catch (offlineErr) {
-              console.error('[stripe webhook] revokeOfflineLicensesForUser failed', {
-                fn: 'revokeOfflineLicensesForUser',
-                userId: existing.user_id,
-                err: offlineErr,
-              });
-              throw offlineErr;
-            }
-            captureMappedPostHogEvent(
-              env,
-              posthogEventFromStripeWebhook(
-                'invoice.payment_failed',
-                invoice,
-                String(existing.user_id),
-              ),
-              ctx,
-            );
-          }
-        }
-        break;
-      }
-
       default:
-        // Unhandled event type — acknowledge receipt so Stripe doesn't retry
+        // Unhandled event type — acknowledge receipt so providers don't retry forever.
         break;
     }
 
@@ -1111,7 +1281,7 @@ export async function handleWebhook(
     console.error('handleWebhook error:', err);
     capturePostHogException(env, err, {
       ...(ctx ? { ctx } : {}),
-      properties: { handler: 'stripe_webhook' },
+      properties: { handler: 'payments_webhook', providerId },
     });
     // Return 500 so Stripe retries the event on transient failures
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
@@ -1234,9 +1404,16 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     const db = getDb(env);
     const sub = await db
       .prepare(`
-      SELECT provider, stripe_customer_id FROM subscriptions
+      SELECT provider, provider_customer_id, stripe_customer_id, provider_subscription_id
+      FROM subscriptions
       WHERE user_id = ?
-      ORDER BY created_at DESC LIMIT 1
+      ORDER BY
+        CASE
+          WHEN status IN ('active', 'trialing', 'past_due') THEN 0
+          ELSE 1
+        END,
+        created_at DESC
+      LIMIT 1
     `)
       .bind(user.sub)
       .first();
@@ -1244,40 +1421,46 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     if (!sub) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
-    if ((sub.provider ?? 'stripe') !== 'stripe') {
-      const manageUrl = String(
-        (await getSetting(env, 'legacy_manage_subscription_url', { defaultValue: '' })) ?? '',
-      ).trim();
-      if (manageUrl) return jsonResponse({ portalUrl: manageUrl }, 200, corsHeaders);
-      return jsonResponse(
-        {
-          error: 'Customer portal is not available for this payment provider.',
-          code: 'portal_not_supported',
-        },
-        409,
-        corsHeaders,
-      );
-    }
-    if (!sub?.stripe_customer_id) {
+
+    const dbProvider = String(sub.provider ?? 'stripe');
+    const registryId = dbProviderToRegistryId(dbProvider);
+    const { providers } = await getPaymentProviders(env);
+    const provider = providers.get(registryId);
+    const customerId = String(sub.provider_customer_id ?? sub.stripe_customer_id ?? '').trim();
+    const subscriptionId = String(sub.provider_subscription_id ?? '').trim();
+    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000';
+
+    // Stripe Billing Portal requires a customer id; missing id means the row is incomplete.
+    if (registryId === 'stripe' && !customerId) {
       return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
     }
 
-    const frontendUrl = env.FRONTEND_URL ?? 'http://localhost:3000';
-    const portalSession = await stripePost(
-      '/billing_portal/sessions',
-      {
-        customer: sub.stripe_customer_id,
-        return_url: `${frontendUrl}/account`,
-      },
-      env,
-    );
-
-    if (portalSession.error || !portalSession.url) {
-      console.error('Stripe portal session error:', portalSession.error);
-      return jsonResponse({ error: 'Failed to create portal session' }, 502, corsHeaders);
+    if (provider?.getManageUrl) {
+      const portalUrl = await provider.getManageUrl({
+        customerId: customerId || null,
+        subscriptionId: subscriptionId || null,
+        returnUrl: `${frontendUrl}/account`,
+      });
+      if (portalUrl) {
+        return jsonResponse({ portalUrl }, 200, corsHeaders);
+      }
     }
 
-    return jsonResponse({ portalUrl: portalSession.url }, 200, corsHeaders);
+    const providerName =
+      dbProvider === 'legacy'
+        ? String(
+            (await getSetting(env, 'legacy_provider_name', { defaultValue: 'Qerko' })) ?? 'Qerko',
+          ).trim() || 'Qerko'
+        : registryId;
+    return jsonResponse(
+      {
+        error: `Manage your subscription in the ${providerName} app or website.`,
+        code: 'portal_not_supported',
+        providerName,
+      },
+      409,
+      corsHeaders,
+    );
   } catch (err) {
     console.error('handlePortal error:', err);
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);

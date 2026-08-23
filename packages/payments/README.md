@@ -26,11 +26,11 @@ Admin settings still store `legacy` in CSV lists; the registry normalizes that t
 
 Each provider exposes `capabilities`:
 
-- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **false**)
-- `migrationOnly` — only for pre-existing platform subscribers (Qerko: **true**)
+- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **true** when enabled in tenant settings; uses the legacy eshop initial payment / CardOnFile create flow)
+- `migrationOnly` — only for pre-existing platform subscribers (Qerko: **false**; relink still works via `needs_relink` + purchaseId)
 - `recurringPayments`, `refunds`, `webhooks` — feature flags for future UI/guards
 
-Checkout must gate on `provider.capabilities.newSubscriptions` instead of hardcoded provider IDs.
+Checkout must gate on `provider.capabilities.newSubscriptions` instead of hardcoded provider IDs. Admins still control whether Qerko appears at checkout via `payments_enabled_providers`.
 
 ## Adding a provider
 

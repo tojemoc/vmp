@@ -164,7 +164,7 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.checkoutUrl) {
-        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        checkoutError.value = formatLegacyCheckoutError(data);
         return;
       }
       window.location.href = String(data.checkoutUrl);
@@ -173,6 +173,25 @@
     } finally {
       startingCheckout.value = false;
     }
+  }
+
+  function formatLegacyCheckoutError(data: { error?: string; code?: string }): string {
+    const code = String(data?.code ?? '');
+    if (
+      code === 'legacy_not_configured' ||
+      code === 'provider_not_configured' ||
+      code === 'provider_not_enabled'
+    ) {
+      return strings.checkoutProviderUnavailable;
+    }
+    if (code === 'prices_not_configured') {
+      return strings.checkoutPlanUnavailable;
+    }
+    const raw = String(data?.error ?? '');
+    if (/not configured|LEGACY_|API[_ ]?URL|FRONTEND_URL/i.test(raw)) {
+      return strings.checkoutProviderUnavailable;
+    }
+    return strings.checkoutStartFailed;
   }
 
   onMounted(() => {

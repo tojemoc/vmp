@@ -3,11 +3,16 @@
  */
 
 import { requireAuth, requireRole } from './auth.js';
-import { syncNewsletterForStripeSubscription } from './brevo.js';
+import { syncNewsletterForSubscription } from './brevo.js';
+import {
+  customerSafeLegacyNotConfiguredResponse,
+  looksLikePaymentConfigLeak,
+} from './customerSafePaymentErrors.js';
 import { getDb } from './d1Session.js';
 import {
   createLegacyOrder,
   getLegacyOrder,
+  isLegacyCheckoutConfigured,
   isLegacyFetchTimeout,
   isLegacyProviderConfigured,
   isLegacyWebhookConfigured,
@@ -16,6 +21,7 @@ import {
   verifyLegacyWebhookSignature,
 } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
+import { parseLocaleNumber } from './parseLocaleNumber.js';
 import {
   captureMappedPostHogEvent,
   posthogEventFromLegacyWebhook,
@@ -65,8 +71,8 @@ async function getPlanAmountMinor(env: any, planType: PlanType): Promise<number 
   const raw =
     (await getSetting(env, key, { ttlSeconds: 300 })) ??
     (await getSetting(env, fallbackKey, { ttlSeconds: 300 }));
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const numeric = parseLocaleNumber(raw);
+  if (numeric == null || numeric <= 0) return null;
   return Math.round(numeric * 100);
 }
 
@@ -144,9 +150,13 @@ export async function startLegacyCheckout(
   body: { planType?: unknown; returnPath?: unknown; purchaseId?: unknown },
   corsHeaders: Record<string, string>,
 ) {
-  if (!isLegacyProviderConfigured(env)) {
+  if (!isLegacyCheckoutConfigured(env)) {
     return jsonResponse(
-      { error: 'Legacy billing is not configured', code: 'legacy_not_configured' },
+      {
+        error:
+          'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
+        code: 'legacy_not_configured',
+      },
       503,
       corsHeaders,
     );
@@ -157,7 +167,10 @@ export async function startLegacyCheckout(
   const amountMinor = await getPlanAmountMinor(env, planType);
   if (amountMinor == null) {
     return jsonResponse(
-      { error: 'Legacy plan pricing is not configured', code: 'prices_not_configured' },
+      {
+        error: 'This plan is not available for bank payment right now. Please choose another plan.',
+        code: 'prices_not_configured',
+      },
       503,
       corsHeaders,
     );
@@ -221,11 +234,8 @@ export async function startLegacyCheckout(
     .trim()
     .replace(/\/$/, '');
   if (!frontendUrl) {
-    return jsonResponse(
-      { error: 'FRONTEND_URL is not configured', code: 'misconfigured' },
-      503,
-      corsHeaders,
-    );
+    const safe = customerSafeLegacyNotConfiguredResponse();
+    return jsonResponse({ error: safe.error, code: safe.code }, safe.status, corsHeaders);
   }
   const returnUrl = `${frontendUrl}${returnPath}?legacy_order=${encodeURIComponent(idOrder)}`;
 
@@ -286,7 +296,17 @@ export async function startLegacyCheckout(
     const message = err instanceof Error ? err.message : 'Legacy checkout failed';
     const code = isLegacyFetchTimeout(err) ? 'legacy_timeout' : 'legacy_checkout_failed';
     const status = isLegacyFetchTimeout(err) ? 504 : 502;
-    return jsonResponse({ error: message, code }, status, corsHeaders);
+    const safe = looksLikePaymentConfigLeak(message)
+      ? customerSafeLegacyNotConfiguredResponse()
+      : null;
+    return jsonResponse(
+      {
+        error: safe?.error ?? message,
+        code: safe?.code ?? code,
+      },
+      safe?.status ?? status,
+      corsHeaders,
+    );
   }
 }
 
@@ -395,9 +415,9 @@ export async function handleLegacyComplete(
       .run();
 
     try {
-      await syncNewsletterForStripeSubscription(db, user.sub, status, env);
+      await syncNewsletterForSubscription(db, user.sub, status, env);
     } catch (brevoErr) {
-      console.error('[legacy complete] syncNewsletterForStripeSubscription failed', brevoErr);
+      console.error('[legacy complete] syncNewsletterForSubscription failed', brevoErr);
     }
 
     return jsonResponse({ ok: true, status, purchaseId }, 200, corsHeaders);
@@ -533,21 +553,24 @@ export async function handleLegacyWebhook(
   });
 
   try {
-    await syncNewsletterForStripeSubscription(db, String((sub as any).user_id), status, env);
+    await syncNewsletterForSubscription(db, String((sub as any).user_id), status, env);
   } catch (brevoErr) {
-    console.error('[legacy webhook] syncNewsletterForStripeSubscription failed', brevoErr);
+    console.error('[legacy webhook] syncNewsletterForSubscription failed', brevoErr);
   }
 
   const userId = String((sub as any).user_id);
-  if (status === 'cancelled' || status === 'past_due') {
+  // Match Stripe webhook policy: revoke offline licenses only on cancellation,
+  // not on past_due (grace / retry window).
+  if (status === 'cancelled') {
     try {
-      await revokeOfflineLicensesForUser(
-        db,
-        userId,
-        status === 'cancelled' ? 'subscription_cancelled' : 'subscription_past_due',
-      );
+      await revokeOfflineLicensesForUser(db, userId, 'subscription_cancelled');
     } catch (offlineErr) {
       console.error('[legacy webhook] revokeOfflineLicensesForUser failed', offlineErr);
+      return jsonResponse(
+        { error: 'Internal server error', code: 'internal_error' },
+        500,
+        corsHeaders,
+      );
     }
   }
 
