@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import {
   bindQuestionMarks,
   expandPostgresOnlyStatements,
+  isPostgresDuplicateObjectError,
   splitExecutableSqlStatements,
   splitQuestionMarks,
   transformExecutableSql,
@@ -257,5 +258,31 @@ WHERE purchase_id IS NOT NULL
     assert.match(out, /\bctid\b/);
     assert.doesNotMatch(out, /\browid\b/i);
     assert.match(out, /MIN\(ctid\)/i);
+  });
+});
+
+describe('translateSqliteDdl ADD COLUMN idempotency', () => {
+  it('rewrites ADD COLUMN to ADD COLUMN IF NOT EXISTS (migration 0051)', () => {
+    const sql =
+      'ALTER TABLE subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0;';
+    const out = translateSqliteDdl(sql);
+    assert.match(out, /ADD COLUMN IF NOT EXISTS cancel_at_period_end/i);
+    assert.doesNotMatch(out, /ADD COLUMN cancel_at_period_end/i);
+  });
+
+  it('does not double-insert IF NOT EXISTS', () => {
+    const sql = 'ALTER TABLE t ADD COLUMN IF NOT EXISTS note TEXT;';
+    const out = translateSqliteDdl(sql);
+    assert.equal((out.match(/IF NOT EXISTS/gi) ?? []).length, 1);
+  });
+});
+
+describe('isPostgresDuplicateObjectError', () => {
+  it('treats duplicate_column (42701) like other duplicate DDL codes', () => {
+    assert.equal(isPostgresDuplicateObjectError({ code: '42701' }), true);
+    assert.equal(isPostgresDuplicateObjectError({ code: '42P07' }), true);
+    assert.equal(isPostgresDuplicateObjectError({ code: '42710' }), true);
+    assert.equal(isPostgresDuplicateObjectError({ code: '23505' }), false);
+    assert.equal(isPostgresDuplicateObjectError(null), false);
   });
 });
