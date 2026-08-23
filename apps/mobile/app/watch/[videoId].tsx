@@ -58,7 +58,12 @@ export default function WatchScreen() {
       {loading ? <ActivityIndicator color="#38bdf8" /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {playlistUrl ? (
-        <VideoView style={styles.video} player={player} allowsFullscreen allowsPictureInPicture />
+        <VideoView
+          style={styles.video}
+          player={player}
+          fullscreenOptions={{ enable: true }}
+          allowsPictureInPicture
+        />
       ) : null}
       <Text style={styles.hint}>
         PoC player uses expo-video against the existing HLS proxy. Swap to a native module later if
