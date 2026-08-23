@@ -487,7 +487,7 @@ describe('einvoiceDelivery stubs', () => {
     }
   });
 
-  it('ISDOC stub delivery marks sent when buyer email present', async () => {
+  it('ISDOC stub delivery marks stub_sent when buyer email present', async () => {
     resetSettingsCacheForTests();
     const outcome = await deliverIsdocInvoice(mockEnv({ einvoicing_delivery_mode: 'stub' }), {
       invoiceId: 'inv-2',
@@ -499,6 +499,7 @@ describe('einvoiceDelivery stubs', () => {
     assert.equal(outcome.ok, true);
     if (outcome.ok) {
       assert.equal(outcome.mode, 'stub');
+      assert.equal(outcome.status, 'stub_sent');
       assert.match(outcome.transmissionId, /^stub:isdoc:/);
     }
   });
