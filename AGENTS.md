@@ -216,23 +216,29 @@ Steps 1–7 are complete. Work continues from step 8.
 
 #### API (`@vmp/api`)
 
-- `POST /api/account/delete-request` — auth-required; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min).
-- `POST /api/account/delete-confirm` — validates token + requires user to submit a confirmation phrase (e.g. "I understand my subscription will be cancelled without refund").
-- On confirmation (ordered steps — do **not** rely on a bare `DELETE FROM users`):
-  1. Cancel active subscription immediately via the payment gateway adapter (no refund).
-  2. **Anonymize retained billing records**: `einvoices` currently has `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE` (`0044_einvoicing.sql`). That cascade would delete invoice rows, which conflicts with CZ/SK accounting law (zákon č. 563/1991 Sb. and its Slovak equivalent — multi-year retention of financial records). Requires a new migration: change FK to `ON DELETE SET NULL`, make `user_id` nullable, and in the deletion handler clear/anonymize buyer PII columns (`buyer_name`, `buyer_email`, `buyer_address_json`, `buyer_vat_id`, `buyer_peppol_*`) while keeping invoice amounts, dates, and R2 payloads for the statutory retention period. GDPR Art. 17(3)(b) permits this retention where required by law.
-  3. **Explicit cleanup of non-CASCADE FK tables** (D1 enforces FKs; these will block `DELETE FROM users` otherwise):
+- `POST /api/account/delete-request` — `requireAuth`; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min) bound to the authenticated user ID and purpose `account_deletion`.
+- `POST /api/account/delete-confirm` — `requireAuth`; validates the signed token is bound to the authenticated JWT subject (`sub`) and purpose `account_deletion`; atomically consumes the token (`used_at` / single-use, same pattern as `magic_link_tokens` in `auth.ts`) so it cannot be replayed before expiry; preserves confirmation-phrase validation (e.g. "I understand my subscription will be cancelled without refund").
+- On confirmation — **durable, retry-safe deletion job** (do **not** rely on a bare `DELETE FROM users` or a single fire-and-forget handler):
+  1. Persist deletion state (new `account_deletion_jobs` table or equivalent on the deletion token row): track per-step completion (`subscription_cancelled`, `einvoices_anonymized`, `db_cleaned`, `brevo_deleted`, `user_deleted`) so retries skip completed work and external effects are not duplicated.
+  2. **Subscription cancellation** — distinguish provider semantics:
+     - `PaymentProvider.cancelSubscription` today sets `cancel_at_period_end: true` (Stripe provider in `packages/payments/src/providers/stripe/index.ts`) — access continues until period end.
+     - Account deletion requires **immediate** access revocation. Extend the payment gateway adapter with an explicit immediate-cancellation capability (e.g. `cancelSubscriptionImmediately`) and call it here; document that remaining prepaid time is forfeited (no refund). If immediate cancel is unavailable for a provider, block deletion with a clear error rather than leaving access active.
+     - Make provider cancellation **idempotent** (safe to retry; persist `subscription_cancelled` before proceeding).
+  3. **Anonymize retained billing records** (inside a D1 `db.batch()` transaction together with step 4): `einvoices` currently has `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE` (`0044_einvoicing.sql`). That cascade would delete invoice rows, which conflicts with CZ/SK accounting law (zákon č. 563/1991 Sb. and its Slovak equivalent — multi-year retention of financial records). Requires a new migration: change FK to `ON DELETE SET NULL`, make `user_id` nullable, and in the deletion handler clear/anonymize buyer PII columns (`buyer_name`, `buyer_email`, `buyer_address_json`, `buyer_vat_id`, `buyer_peppol_*`) while keeping invoice amounts, dates, and R2 payloads for the statutory retention period. GDPR Art. 17(3)(b) permits this retention where required by law.
+  4. **Explicit cleanup of non-CASCADE FK tables** (same `db.batch()` as step 3):
      - `DELETE FROM offline_download_licenses WHERE user_id = ?` (must precede devices — FK to `offline_devices`)
      - `DELETE FROM offline_devices WHERE user_id = ?` (`0037_offline_downloads.sql` — no CASCADE)
      - `DELETE FROM pwa_handoffs WHERE user_id = ?` (`0018_pwa_handoffs.sql` — no CASCADE)
-  4. `DELETE FROM users WHERE id = ?` — remaining `ON DELETE CASCADE` / `ON DELETE SET NULL` FKs handle the rest (`playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions`, `subscriptions`, `native_push_tokens`, `device_pairing_sessions`, `admin_audit_logs` actor/target, etc.).
-  5. Revoke all sessions (refresh tokens deleted by cascade; invalidate any outstanding access JWTs client-side).
-  6. Optionally: Brevo contact removal.
-- New migration(s): deletion token table (or reuse `magic_link_tokens` with a type discriminator) **and** `einvoices` FK/retention fix described above.
+     - `DELETE FROM users WHERE id = ?` — remaining `ON DELETE CASCADE` / `ON DELETE SET NULL` FKs handle the rest (`playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions`, `subscriptions`, `native_push_tokens`, `device_pairing_sessions`, `admin_audit_logs` actor/target, etc.).
+  5. On batch failure, retain job state so the handler can resume from the last incomplete step without repeating completed external calls.
+  6. **Brevo contact deletion** (mandatory when `BREVO_API_KEY` is configured): capture the contact identifier (email) **before** local user data is removed; call `DELETE /contacts/{identifier}` (full contact removal, not just list membership — current `removeSubscriberFromNewsletter` only removes from a list). Persist queued retries with an explicit completion state (`brevo_deleted`); stale-contact sync remains a backstop only.
+  7. Revoke all sessions: refresh tokens deleted by cascade; `requireAuth` must reject access tokens for deleted users (see below).
+- **`requireAuth` hardening** (prerequisite): today `requireAuth` only verifies the JWT signature (`auth.ts`); it does not check whether the user row still exists or whether a server-side revocation/version stamp is valid. Extend it to reject tokens for deleted users (and optionally a `users.token_version` bump on deletion) consistently across all protected endpoints; add tests for deleted users and revoked/outdated tokens.
+- New migration(s): deletion token/job table (or reuse `magic_link_tokens` with a type discriminator + job state columns) **and** `einvoices` FK/retention fix described above.
 
 #### Web (`@vmp/web`)
 
-- Account page section: "Delete my account" with warning copy.
+- Account page section: "Delete my account" with warning copy (include that anonymized invoice records are retained for the statutory accounting period).
 - Confirmation flow: email sent → enter code/click link → type confirmation phrase → done.
 - Redirect to homepage post-deletion.
 
@@ -245,7 +251,16 @@ Steps 1–7 are complete. Work continues from step 8.
 
 #### Checkout integration
 
-The "all sales are final" / waiver-of-withdrawal consent should be captured **at checkout time**, not at deletion time. This means adding consent text to the checkout flow via the payment gateway adapter (e.g. Stripe `custom_text` on Checkout Session, or a pre-checkout step in the frontend).
+The "all sales are final" / waiver-of-withdrawal consent must be captured and **persisted at checkout time**, not at deletion time. Extend the provider-agnostic checkout and webhook contracts to carry immutable affirmative consent metadata:
+
+- Consent text or version ID (the exact wording shown to the user)
+- Timestamp
+- User ID
+- Checkout session ID
+- Provider session ID
+- Subscription ID (when available)
+
+Persist these fields via the payment gateway adapter and webhook handling (e.g. new `checkout_consents` table or columns on `subscriptions`). Display consent via provider checkout UI (e.g. Stripe `custom_text`) or a pre-checkout step in the frontend.
 
 ## Cursor Cloud-specific instructions
 
