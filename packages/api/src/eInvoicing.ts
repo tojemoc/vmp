@@ -25,7 +25,14 @@ export type InvoiceRouting =
   | 'email_pdf'
   | 'deferred'
   | 'not_required';
-export type InvoiceStatus = 'draft' | 'queued' | 'sent' | 'delivered' | 'failed' | 'not_required';
+export type InvoiceStatus =
+  | 'draft'
+  | 'queued'
+  | 'stub_sent'
+  | 'sent'
+  | 'delivered'
+  | 'failed'
+  | 'not_required';
 
 export interface BuyerProfile {
   country: string | null;
@@ -1267,9 +1274,10 @@ export async function handleAdminEInvoicingSettings(request: any, env: any, cors
           apiKeyConfigured: Boolean(String(env?.PEPPOL_AP_API_KEY ?? '').trim()),
         },
         stripeTaxIdCollection: {
-          checkoutEnabled: true,
+          checkoutEnabledWhenEinvoicingOn: true,
+          billingAddressCollection: 'auto',
           notes:
-            'Stripe Checkout collects customer tax IDs and billing address (tax_id_collection + billing_address_collection). Dashboard Tax settings should allow EU VAT IDs for SK/CZ B2B routing.',
+            'When einvoicing_enabled is on and seller_jurisdiction is SK or CZ, Stripe Checkout adds optional tax ID collection and billing address (auto). Disabled for all other deployments so B2C checkout is unchanged.',
         },
         legalTimeline: {
           skMandatoryB2bDate: '2027-01-01',

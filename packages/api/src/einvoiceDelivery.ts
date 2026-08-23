@@ -4,8 +4,8 @@
  * Real Peppol AP HTTP integration is gated on Worker secret `PEPPOL_AP_API_KEY`
  * plus admin settings (`peppol_access_point_api_url`, sender id). Until a
  * provider is contracted, `einvoicing_delivery_mode=stub` records a dry-run
- * transmission id so operators can exercise the queued → sent path without
- * claiming live Peppol delivery.
+ * transmission id with status `stub_sent` so operators can exercise the queued →
+ * delivered path without claiming live Peppol delivery.
  *
  * ISDOC B2B delivery in CZ is consent/email-based (no central network). The
  * stub marks XML as ready-for-email; live SMTP attachment send is deferred.
@@ -17,7 +17,7 @@ export type DeliveryOutcome =
   | {
       ok: true;
       mode: 'stub' | 'live';
-      status: 'sent';
+      status: 'sent' | 'stub_sent';
       transmissionId: string;
       messageId?: string | null;
       detail: string;
@@ -83,7 +83,7 @@ export async function transmitPeppolUbl(
     return {
       ok: true,
       mode: 'stub',
-      status: 'sent',
+      status: 'stub_sent',
       transmissionId,
       messageId: `stub-msg:${input.invoiceNumber}`,
       detail: `Dry-run Peppol transmission (${provider || 'unconfigured provider'}); no Access Point call made.`,
@@ -196,7 +196,7 @@ export async function deliverIsdocInvoice(
     return {
       ok: true,
       mode: 'stub',
-      status: 'sent',
+      status: 'stub_sent',
       transmissionId: `stub:isdoc:${input.invoiceId}`,
       messageId: input.buyerEmail ? `mailto:${input.buyerEmail}` : null,
       detail:

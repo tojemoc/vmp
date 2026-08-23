@@ -464,7 +464,7 @@ describe('einvoiceDelivery stubs', () => {
     assert.equal(outcome.ok, true);
     if (outcome.ok) {
       assert.equal(outcome.mode, 'stub');
-      assert.equal(outcome.status, 'sent');
+      assert.equal(outcome.status, 'stub_sent');
       assert.match(outcome.transmissionId, /^stub:peppol:/);
     }
   });

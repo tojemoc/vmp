@@ -211,14 +211,11 @@
       <section
         class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-300"
       >
-        <p class="font-semibold text-gray-900 dark:text-white">Stripe tax ID collection</p>
+        <p class="font-semibold text-gray-900 dark:text-white">Stripe checkout (SK/CZ e-invoicing)</p>
         <p class="mt-1">
-          Checkout sessions request customer VAT IDs and billing address (<code class="text-xs"
-            >tax_id_collection</code
-          >
-          +
-          <code class="text-xs">billing_address_collection</code>). Ensure Stripe Tax / Tax ID
-          settings allow EU VAT for SK and CZ.
+          When e-invoicing is enabled and seller jurisdiction is SK or CZ, checkout adds optional tax
+          ID collection and billing address (<code class="text-xs">auto</code> — not required for
+          all subscribers). Other deployments keep the standard checkout flow.
         </p>
         <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
           Legal timeline — SK mandatory B2B: {{ legalTimeline.skMandatoryB2bDate }}; CZ B2B mandate:
@@ -248,6 +245,7 @@
           >
             <option value="">All</option>
             <option value="queued">queued</option>
+            <option value="stub_sent">stub_sent</option>
             <option value="sent">sent</option>
             <option value="delivered">delivered</option>
             <option value="failed">failed</option>
@@ -329,6 +327,26 @@
               {{ selectedInvoice.invoice.status }}
               ·
               {{ selectedInvoice.invoice.peppolTransmissionId || 'no transmission id' }}
+            </p>
+            <p
+              v-if="selectedInvoice.invoice.peppolTransmissionId?.startsWith('stub:')"
+              class="mt-1 text-sm text-amber-800 dark:text-amber-200"
+            >
+              Stub transmission — not delivered to a Peppol AP or ISDOC recipient. Status
+              <code class="text-xs">stub_sent</code> is not legal proof of delivery.
+            </p>
+            <p
+              v-if="selectedInvoice.invoice.format === 'isdoc'"
+              class="mt-1 text-sm text-amber-800 dark:text-amber-200"
+            >
+              ISDOC skeleton — not XSD-validated or digitally signed. Not yet legally compliant for
+              CZ e-invoice delivery.
+            </p>
+            <p
+              v-else-if="selectedInvoice.invoice.format === 'peppol_ubl'"
+              class="mt-1 text-sm text-amber-800 dark:text-amber-200"
+            >
+              Peppol UBL skeleton — transmission may be stubbed until an Access Point is configured.
             </p>
             <p
               v-if="selectedInvoice.invoice.errorMessage"
