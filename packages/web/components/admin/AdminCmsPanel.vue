@@ -130,7 +130,7 @@
             >View</a
           >
           <button
-            v-if="page.status === 'draft' && page.id !== CMS_FOOTER_PAGE_ID"
+            v-if="page.status === 'draft' && !isSystemPageId(page.id)"
             type="button"
             class="text-emerald-600 dark:text-emerald-400 hover:underline"
             @click="publishPage(page.id)"
@@ -138,7 +138,7 @@
             Publish
           </button>
           <button
-            v-else-if="page.id !== CMS_FOOTER_PAGE_ID"
+            v-else-if="!isSystemPageId(page.id)"
             type="button"
             class="text-amber-600 dark:text-amber-400 hover:underline"
             @click="unpublishPage(page.id)"
@@ -146,7 +146,7 @@
             Unpublish
           </button>
           <button
-            v-if="page.id !== CMS_FOOTER_PAGE_ID"
+            v-if="!isSystemPageId(page.id)"
             type="button"
             class="text-red-600 dark:text-red-400 hover:underline"
             @click="deletePage(page.id)"
@@ -166,6 +166,12 @@
         >
           System page — site footer
         </p>
+        <p
+          v-else-if="isSystemPageEdit"
+          class="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200"
+        >
+          System page — slug is locked
+        </p>
 
         <label class="block text-sm font-medium text-gray-900 dark:text-white">
           Title
@@ -177,7 +183,10 @@
           >
         </label>
 
-        <label v-if="!isFooterEdit" class="block text-sm font-medium text-gray-900 dark:text-white">
+        <label
+          v-if="!isFooterEdit && !isSystemPageEdit"
+          class="block text-sm font-medium text-gray-900 dark:text-white"
+        >
           Slug
           <input
             v-model="form.slug"
@@ -187,9 +196,10 @@
             @blur="normalizeSlugField"
           >
         </label>
-        <p v-else class="text-xs text-gray-500 dark:text-gray-400">
+        <p v-else-if="isFooterEdit" class="text-xs text-gray-500 dark:text-gray-400">
           Footer content is rendered site-wide; it does not have a public URL.
         </p>
+        <p v-else class="text-xs text-gray-500 dark:text-gray-400 font-mono">/{{ form.slug }}</p>
 
         <label v-if="isFooterEdit && footerLinkCandidates.length" class="block space-y-2">
           <span class="text-sm font-medium text-gray-900 dark:text-white"
@@ -245,6 +255,13 @@
                 @click="addBlock('callout')"
               >
                 + Callout
+              </button>
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800"
+                @click="addBlock('table')"
+              >
+                + Table
               </button>
               <button
                 type="button"
@@ -333,12 +350,11 @@
               >
             </div>
 
-            <div
+            <CmsTableBlockEditor
               v-else-if="block.type === 'table'"
-              class="text-xs text-gray-500 dark:text-gray-400"
-            >
-              Table block (edit rows in JSON via API for now)
-            </div>
+              :model-value="block"
+              @update:model-value="(next) => replaceBlock(index, next)"
+            />
 
             <p
               v-else-if="block.type === 'divider'"
@@ -359,7 +375,7 @@
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
           <button
-            v-if="form.id && form.status === 'draft'"
+            v-if="form.id && form.status === 'draft' && !isSystemPageId(form.id)"
             type="button"
             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="saving"
@@ -437,8 +453,9 @@
     CmsPage,
     CmsPageRevision,
     CmsRichTextBlock,
+    CmsTableBlock,
   } from '@vmp/shared';
-  import { CMS_FOOTER_PAGE_ID } from '@vmp/shared';
+  import { CMS_FOOTER_PAGE_ID, isCmsSystemPageId } from '@vmp/shared';
   import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs';
   import { emptyTiptapDoc } from '~/utils/cmsRichText';
 
@@ -481,6 +498,14 @@
     pages.value.filter((page) => page.id !== CMS_FOOTER_PAGE_ID && page.status === 'published'),
   );
 
+  const isSystemPageEdit = computed(
+    () => !!form.id && isCmsSystemPageId(form.id) && !isFooterEdit.value,
+  );
+
+  function isSystemPageId(id: string) {
+    return isCmsSystemPageId(id);
+  }
+
   function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
     message.value = text;
     messageTone.value = tone;
@@ -505,6 +530,7 @@
   }
 
   function maybeAutoSlug() {
+    if (isSystemPageEdit.value || isFooterEdit.value) return;
     if (!slugTouched.value) form.slug = slugify(form.title);
   }
 
@@ -516,14 +542,28 @@
     return { type: 'callout', variant: 'info', content: emptyTiptapDoc() };
   }
 
+  function newTableBlock(): CmsTableBlock {
+    return {
+      type: 'table',
+      columns: ['Column 1', 'Column 2'],
+      columnKeys: ['col_1', 'col_2'],
+      rows: [{ col_1: '', col_2: '' }],
+    };
+  }
+
   function addBlock(type: CmsBlock['type']) {
     if (type === 'rich_text') form.content.push(newRichTextBlock());
     else if (type === 'callout') form.content.push(newCalloutBlock());
+    else if (type === 'table') form.content.push(newTableBlock());
     else if (type === 'divider') form.content.push({ type: 'divider' });
   }
 
   function removeBlock(index: number) {
     form.content.splice(index, 1);
+  }
+
+  function replaceBlock(index: number, next: CmsBlock) {
+    form.content[index] = next;
   }
 
   function moveBlock(index: number, delta: number) {
