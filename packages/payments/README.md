@@ -66,11 +66,33 @@ From [GoPay docs](https://doc.gopay.cz/#android-a-ios) (also tracked in [#442](h
 
 This draft therefore never promises native Apple/Google Pay; checkout always redirects to `gw_url`.
 
+## Comgate draft behaviour
+
+1. **Checkout** — `POST /api/payments/payment` creates a Comgate payment with `initRecurring=true` and returns a `redirect` URL. A pending row in `payment_checkout_sessions` (keyed by `refId` / `transId`) stores the user and plan until the webhook fires.
+2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field. The Worker verifies the secret, re-fetches status via `/v1.0/status`, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
+3. **Cancel** — `POST /v1.0/cancel` on the stored `provider_subscription_id` (Comgate `transId`).
+4. **Failed renewal** — maps to `past_due` (same grace-period policy as GoPay), not immediate cancellation.
+
+### Comgate admin_settings (no hardcoded prices)
+
+| Key | Purpose |
+|---|---|
+| `comgate_monthly_price` / `comgate_yearly_price` / `comgate_club_price` | Plan amounts in **major** units (e.g. `199` = 199 CZK) |
+| `comgate_currency` | ISO currency, default `CZK` |
+
+Worker secrets / vars:
+
+| Name | Purpose |
+|---|---|
+| `COMGATE_MERCHANT` / `COMGATE_SECRET` | Merchant credentials |
+| `COMGATE_API_BASE` | Optional; default `https://payments.comgate.cz` |
+| `COMGATE_COUNTRY` | Optional; default `CZ` |
+| `API_URL` | Used to build webhook URL → `{API_URL}/api/payments/webhook/comgate` |
+
 ## Adding a provider
 
 1. Add `src/providers/<id>/index.ts` exporting `createXProvider(config): PaymentProvider`.
 2. Register in `src/registry.ts` `PROVIDER_FACTORIES`.
 3. Wire config in the API composition root (`packages/api/src/paymentProviders.ts`).
 4. Add webhook route `/api/payments/webhook/<id>` or dispatch by path.
-
-Comgate remains a registered stub — enable in settings only after a real implementation lands.
+5. For redirect providers without embeddable user metadata (Comgate), persist a pending `payment_checkout_sessions` row at checkout creation so webhooks can resolve the paying user.

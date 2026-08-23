@@ -304,6 +304,9 @@ TOTP_ENCRYPTION_KEY     — AES-256-GCM encryption key for TOTP secrets
 VAPID_PRIVATE_KEY       — generated with web-push generate-vapid-keys
 GOPAY_CLIENT_ID / GOPAY_CLIENT_SECRET / GOPAY_GOID — GoPay OAuth + merchant goId (draft; see `packages/payments/README.md`)
 GOPAY_API_BASE          — optional; default sandbox `https://gw.sandbox.gopay.com/api` (prod `https://gate.gopay.cz/api`)
+COMGATE_MERCHANT / COMGATE_SECRET — Comgate merchant credentials (draft; see `packages/payments/README.md`)
+COMGATE_API_BASE        — optional; default `https://payments.comgate.cz`
+COMGATE_COUNTRY         — optional; default `CZ` (Comgate hosted gateway country)
 RSS_SECRET              — 32+ random chars used only to sign/tokenize personal account RSS URLs (`/api/feed/:userId/:token` and `/api/account/rss`); not required for the public feed endpoint (`/api/feed/public`)
 VMP_API_PIPELINE_SECRET — shared with media-pipeline for `POST /api/admin/videos/:id/pipeline-status` HLS availability callbacks
 REPLICATION_TARGET_URL — full URL to Deno ingest (`/api/internal/replication/ingest` on api-node)

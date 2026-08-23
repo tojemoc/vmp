@@ -1203,6 +1203,21 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
     if (session.checkoutUrl) {
+      if (apiProvider === 'comgate') {
+        const refId = String(session.metadata?.refId ?? '').trim();
+        const orderId = String(session.orderId ?? '').trim();
+        if (refId && orderId) {
+          await db
+            .prepare(
+              `INSERT INTO payment_checkout_sessions (
+                id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status,
+                created_at, updated_at
+              ) VALUES (?, ?, 'comgate', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            )
+            .bind(crypto.randomUUID(), user.sub, planType, refId, orderId)
+            .run();
+        }
+      }
       return jsonResponse(
         {
           checkoutUrl: session.checkoutUrl,
@@ -1654,7 +1669,6 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
         });
       }
-      // Look for existing subscription by transId or refId
       const existing = await db
         .prepare(
           `SELECT user_id, plan_type FROM subscriptions
@@ -1663,8 +1677,28 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         )
         .bind(subscriptionId, purchaseId || subscriptionId)
         .first();
-      const userId = String(existing?.user_id ?? '').trim();
-      const planType = normalizePlanType(String(existing?.plan_type ?? 'monthly'));
+
+      let userId = String(existing?.user_id ?? '').trim();
+      let planType = normalizePlanType(String(existing?.plan_type ?? 'monthly'));
+      let pendingSessionId: string | null = null;
+
+      if (!userId) {
+        const pending = await db
+          .prepare(
+            `SELECT id, user_id, plan_type FROM payment_checkout_sessions
+             WHERE provider = 'comgate' AND status = 'pending'
+               AND (checkout_token = ? OR provider_checkout_id = ?)
+             LIMIT 1`,
+          )
+          .bind(purchaseId || subscriptionId, subscriptionId)
+          .first();
+        if (pending?.user_id) {
+          userId = String(pending.user_id).trim();
+          planType = normalizePlanType(String(pending.plan_type ?? planType));
+          pendingSessionId = String(pending.id ?? '').trim() || null;
+        }
+      }
+
       if (userId) {
         await upsertSubscriptionRow(db, {
           userId,
@@ -1675,6 +1709,19 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
           providerCustomerId: userId,
           currentPeriodEnd: periodEndIsoForPlan(planType),
         });
+        if (pendingSessionId) {
+          await db
+            .prepare(
+              `UPDATE payment_checkout_sessions
+               SET status = 'completed',
+                   provider_subscription_id = ?,
+                   completed_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND status = 'pending'`,
+            )
+            .bind(subscriptionId, pendingSessionId)
+            .run();
+        }
         try {
           await syncSubscriptionNewsletter(db, userId, 'active', env);
         } catch (brevoErr) {
@@ -1695,7 +1742,7 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         await db
           .prepare(
             `UPDATE subscriptions
-             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
              WHERE provider = 'comgate' AND provider_subscription_id = ?`,
           )
           .bind(subscriptionId)
@@ -1710,7 +1757,7 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
             });
           }
           try {
-            await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_cancelled');
+            await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
           } catch (offlineErr) {
             console.error('[comgate webhook] offline revoke failed', {
               userId: existing.user_id,
