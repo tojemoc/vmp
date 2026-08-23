@@ -63,6 +63,15 @@ async function requireAdmin(request: Request, env: Env) {
   await requireRole(request, env, 'admin', 'super_admin');
 }
 
+/** Publish / unpublish / status restore on system pages is super_admin-only. */
+async function requireSystemPageStatusMutator(request: Request, env: Env, pageId: string) {
+  if (isCmsSystemPageId(pageId)) {
+    await requireRole(request, env, 'super_admin');
+  } else {
+    await requireAdmin(request, env);
+  }
+}
+
 async function getActorId(request: Request, env: Env): Promise<string | null> {
   try {
     const payload = (await requireAuth(request, env)) as { sub?: string; userId?: string };
@@ -143,6 +152,21 @@ export async function handleCmsPageById(
     if (!existing) return jsonResponse({ error: 'Page not found' }, 404, corsHeaders);
     if (isCmsSystemPageId(id)) {
       input.slug = existing.slug;
+      // Content edits stay admin-allowed; publish-status changes need super_admin.
+      if (input.status !== undefined && input.status !== existing.status) {
+        try {
+          await requireRole(request, env, 'super_admin');
+        } catch {
+          return jsonResponse(
+            {
+              error: 'Only super_admin can change system page publish status',
+              code: 'SYSTEM_PAGE',
+            },
+            403,
+            corsHeaders,
+          );
+        }
+      }
     } else if (isCmsSystemSlug(input.slug)) {
       return jsonResponse(
         { error: 'Slug is reserved for system pages', code: 'SLUG_RESERVED' },
@@ -216,7 +240,7 @@ export async function handleCmsPagePublish(
   id: string,
 ) {
   try {
-    await requireAdmin(request, env);
+    await requireSystemPageStatusMutator(request, env, id);
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
@@ -235,7 +259,7 @@ export async function handleCmsPageUnpublish(
   id: string,
 ) {
   try {
-    await requireAdmin(request, env);
+    await requireSystemPageStatusMutator(request, env, id);
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
@@ -272,7 +296,8 @@ export async function handleCmsPageRestoreRevision(
   revisionId: string,
 ) {
   try {
-    await requireAdmin(request, env);
+    // Restores revision status as well as content — system pages need super_admin.
+    await requireSystemPageStatusMutator(request, env, id);
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }

@@ -113,17 +113,12 @@ export function translateSqliteToPostgres(sql: string): string {
     return `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}'`;
   });
 
-  const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(s);
-
-  // DML compatibility
-  s = s.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
+  // DML compatibility — rewrite INSERT OR IGNORE per statement (literal-aware).
+  // Do NOT regex across the whole migration file: multi-statement seeds and
+  // quoted semicolons must stay intact; trailing -- POSTGRES: hints must remain.
+  s = rewriteInsertOrIgnoreStatements(s);
   s = s.replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO');
   s = s.replace(/\bREPLACE\s+INTO\b/gi, 'INSERT INTO');
-
-  // Postgres requires ON CONFLICT for ignore semantics (SQLite INSERT OR IGNORE).
-  if (hadInsertOrIgnore && /\bINSERT\s+INTO\b/i.test(s) && !/\bON\s+CONFLICT\b/i.test(s)) {
-    s = `${s.replace(/;\s*$/, '')} ON CONFLICT DO NOTHING`;
-  }
 
   // datetime('now', modifier) — SQLite modifier strings
   s = s.replace(
@@ -356,6 +351,57 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
   return out;
 }
 
+/**
+ * Rewrite SQLite `INSERT OR IGNORE` → Postgres `INSERT … ON CONFLICT DO NOTHING`
+ * one executable statement at a time so quoted `;` and `-- POSTGRES:` hints survive.
+ */
+function rewriteInsertOrIgnoreStatements(sql: string): string {
+  if (!/\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(sql)) return sql;
+
+  const statements = splitExecutableSqlStatements(sql);
+  if (statements.length === 0) return sql;
+
+  let changed = false;
+  const rewritten = statements.map((statement) => {
+    let matched = false;
+    let hasConflict = false;
+    const next = transformExecutableSql(statement, (code) => {
+      if (/\bON\s+CONFLICT\b/i.test(code)) hasConflict = true;
+      return code.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, () => {
+        matched = true;
+        return 'INSERT INTO';
+      });
+    });
+    if (!matched) return statement;
+    changed = true;
+    if (hasConflict) return next;
+    return appendOnConflictDoNothing(next);
+  });
+  if (!changed) return sql;
+
+  const endsWithSemi = /;\s*$/.test(sql.trimEnd());
+  const joined = rewritten.join(';\n\n');
+  return endsWithSemi ? `${joined};` : joined;
+}
+
+/** Insert ON CONFLICT before trailing `--` comment lines (e.g. `-- POSTGRES:` hints). */
+function appendOnConflictDoNothing(statement: string): string {
+  const lines = statement.split('\n');
+  let firstTrailingComment = lines.length;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const trimmed = lines[i]!.trim();
+    if (trimmed === '' || trimmed.startsWith('--')) {
+      firstTrailingComment = i;
+      continue;
+    }
+    break;
+  }
+  const head = lines.slice(0, firstTrailingComment).join('\n').replace(/\s+$/, '');
+  const tail = lines.slice(firstTrailingComment).join('\n');
+  if (!tail) return `${head} ON CONFLICT DO NOTHING`;
+  return `${head} ON CONFLICT DO NOTHING\n${tail}`;
+}
+
 /** Split SQL on semicolons that terminate executable statements. */
 export function splitExecutableSqlStatements(sql: string): string[] {
   const statements: string[] = [];
@@ -497,12 +543,18 @@ export function translateSqliteDdl(sql: string): string {
     /\bCREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
     (_, unique) => `CREATE ${unique ?? ''}INDEX IF NOT EXISTS `,
   );
+  // ADD COLUMN without IF NOT EXISTS fails with 42701 when the column already exists
+  // (e.g. migration applied the DDL then crashed before recording _migrations).
+  s = s.replace(
+    /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
+    'ADD COLUMN IF NOT EXISTS ',
+  );
   return s;
 }
 
-/** Postgres duplicate_object / duplicate_table (SQLSTATE 42P07, 42710). */
+/** Postgres duplicate_object / duplicate_table / duplicate_column (SQLSTATE 42P07, 42710, 42701). */
 export function isPostgresDuplicateObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const code = (err as { code?: string }).code;
-  return code === '42P07' || code === '42710';
+  return code === '42P07' || code === '42710' || code === '42701';
 }
