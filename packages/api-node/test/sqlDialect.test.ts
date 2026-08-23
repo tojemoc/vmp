@@ -277,6 +277,46 @@ describe('translateSqliteDdl ADD COLUMN idempotency', () => {
   });
 });
 
+describe('translateSqliteToPostgres INSERT OR IGNORE', () => {
+  it('appends ON CONFLICT DO NOTHING only to INSERT OR IGNORE statements', () => {
+    const sql = `INSERT OR IGNORE INTO cms_pages (id, slug) VALUES ('a', 'b');
+UPDATE cms_pages SET title = 'x' WHERE id = 'a';`;
+    const out = translateSqliteToPostgres(sql);
+    const stmts = splitExecutableSqlStatements(out);
+    assert.equal(stmts.length, 2);
+    assert.match(stmts[0]!, /INSERT INTO cms_pages/i);
+    assert.match(stmts[0]!, /ON CONFLICT DO NOTHING/i);
+    assert.match(stmts[1]!, /UPDATE cms_pages SET title/i);
+    assert.doesNotMatch(stmts[1]!, /ON CONFLICT/i);
+  });
+
+  it('does not double-append ON CONFLICT when already present', () => {
+    const sql = `INSERT OR IGNORE INTO t (id) VALUES ('1') ON CONFLICT DO NOTHING;`;
+    const out = translateSqliteToPostgres(sql);
+    assert.equal((out.match(/ON CONFLICT DO NOTHING/gi) ?? []).length, 1);
+  });
+
+  it('keeps personal-data seed UPDATE free of ON CONFLICT (0053 shape)', () => {
+    const sql = readFileSync(
+      join(import.meta.dirname, '../../api/migrations/0053_cms_personal_data_sk_short_notice.sql'),
+      'utf8',
+    );
+    const out = translateSqliteDdl(sql);
+    const stmts = splitExecutableSqlStatements(out);
+    // Leading migration comments keep INSERT from matching ^\s*INSERT.
+    const inserts = stmts.filter((s) => /\bINSERT\s+INTO\b/i.test(s));
+    const updates = stmts.filter((s) => /(^|\n)\s*UPDATE\b/i.test(s));
+    assert.ok(inserts.length >= 1, `expected INSERT statements, got ${stmts.length} stmts`);
+    assert.ok(updates.length >= 1, `expected UPDATE statements, got ${stmts.length} stmts`);
+    for (const insert of inserts) {
+      assert.match(insert, /ON CONFLICT DO NOTHING/i);
+    }
+    for (const update of updates) {
+      assert.doesNotMatch(update, /ON CONFLICT/i);
+    }
+  });
+});
+
 describe('isPostgresDuplicateObjectError', () => {
   it('treats duplicate_column (42701) like other duplicate DDL codes', () => {
     assert.equal(isPostgresDuplicateObjectError({ code: '42701' }), true);
