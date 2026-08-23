@@ -218,12 +218,17 @@ Steps 1–7 are complete. Work continues from step 8.
 
 - `POST /api/account/delete-request` — auth-required; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min).
 - `POST /api/account/delete-confirm` — validates token + requires user to submit a confirmation phrase (e.g. "I understand my subscription will be cancelled without refund").
-- On confirmation:
-  - Cancel active subscription immediately via the payment gateway adapter (no refund).
-  - `DELETE FROM users WHERE id = ?` — `ON DELETE CASCADE` foreign keys on `playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions` handle cleanup.
-  - Revoke all sessions (delete refresh tokens, invalidate JWT).
-  - Optionally: Brevo contact removal.
-- New migration: `deletion_confirmations` table or reuse `magic_link_tokens` with a type discriminator.
+- On confirmation (ordered steps — do **not** rely on a bare `DELETE FROM users`):
+  1. Cancel active subscription immediately via the payment gateway adapter (no refund).
+  2. **Anonymize retained billing records**: `einvoices` currently has `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE` (`0044_einvoicing.sql`). That cascade would delete invoice rows, which conflicts with CZ/SK accounting law (zákon č. 563/1991 Sb. and its Slovak equivalent — multi-year retention of financial records). Requires a new migration: change FK to `ON DELETE SET NULL`, make `user_id` nullable, and in the deletion handler clear/anonymize buyer PII columns (`buyer_name`, `buyer_email`, `buyer_address_json`, `buyer_vat_id`, `buyer_peppol_*`) while keeping invoice amounts, dates, and R2 payloads for the statutory retention period. GDPR Art. 17(3)(b) permits this retention where required by law.
+  3. **Explicit cleanup of non-CASCADE FK tables** (D1 enforces FKs; these will block `DELETE FROM users` otherwise):
+     - `DELETE FROM offline_download_licenses WHERE user_id = ?` (must precede devices — FK to `offline_devices`)
+     - `DELETE FROM offline_devices WHERE user_id = ?` (`0037_offline_downloads.sql` — no CASCADE)
+     - `DELETE FROM pwa_handoffs WHERE user_id = ?` (`0018_pwa_handoffs.sql` — no CASCADE)
+  4. `DELETE FROM users WHERE id = ?` — remaining `ON DELETE CASCADE` / `ON DELETE SET NULL` FKs handle the rest (`playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions`, `subscriptions`, `native_push_tokens`, `device_pairing_sessions`, `admin_audit_logs` actor/target, etc.).
+  5. Revoke all sessions (refresh tokens deleted by cascade; invalidate any outstanding access JWTs client-side).
+  6. Optionally: Brevo contact removal.
+- New migration(s): deletion token table (or reuse `magic_link_tokens` with a type discriminator) **and** `einvoices` FK/retention fix described above.
 
 #### Web (`@vmp/web`)
 
@@ -236,7 +241,7 @@ Steps 1–7 are complete. Work continues from step 8.
 - **Czech law**: Consumer Protection Act (zákon č. 634/1992 Sb.), Civil Code (zákon č. 89/2012 Sb.) — digital content contracts; EU Consumer Rights Directive implemented via § 1820+ of the Civil Code. For digital content/services delivered immediately (streaming access), the 14-day withdrawal right can be waived with prior express consent.
 - **Slovak law**: zákon č. 102/2014 Z.z. — same EU directive transposition, same waiver mechanism.
 - **Key wording**: pre-purchase consent checkbox or acknowledgment that (a) access begins immediately upon payment, (b) the consumer waives the 14-day withdrawal right, and (c) all sales are final with no refund for the remaining subscription period upon cancellation or deletion.
-- **GDPR Art. 17 (right to erasure)**: the self-service flow satisfies this; the support-channel fallback remains as backup.
+- **GDPR Art. 17 (right to erasure)**: the self-service flow satisfies this for personal/account data. **Exception — financial records**: invoice rows in `einvoices` must be retained (anonymized, not deleted) for the statutory accounting period under CZ/SK law; disclose this in the deletion UI copy.
 
 #### Checkout integration
 
