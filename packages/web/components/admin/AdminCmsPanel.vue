@@ -130,7 +130,7 @@
             >View</a
           >
           <button
-            v-if="page.status === 'draft' && canPublishPage(page.id)"
+            v-if="page.status === 'draft' && canChangePublishStatus(page.id)"
             type="button"
             class="text-emerald-600 dark:text-emerald-400 hover:underline"
             @click="publishPage(page.id)"
@@ -138,7 +138,7 @@
             Publish
           </button>
           <button
-            v-else-if="!isSystemPageId(page.id)"
+            v-else-if="page.status === 'published' && canChangePublishStatus(page.id)"
             type="button"
             class="text-amber-600 dark:text-amber-400 hover:underline"
             @click="unpublishPage(page.id)"
@@ -375,7 +375,7 @@
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
           <button
-            v-if="form.id && form.status === 'draft' && canPublishPage(form.id)"
+            v-if="form.id && form.status === 'draft' && canChangePublishStatus(form.id)"
             type="button"
             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="saving"
@@ -419,6 +419,7 @@
                 >{{ new Date(revision.createdAt).toLocaleString() }}</span
               >
               <button
+                v-if="canRestoreRevision"
                 type="button"
                 class="text-blue-600 dark:text-blue-400 hover:underline"
                 @click="restoreRevision(revision.id)"
@@ -507,12 +508,17 @@
     return isCmsSystemPageId(id);
   }
 
-  /** Regular pages: any admin. System pages: super_admin only (draft recovery). */
-  function canPublishPage(id: string | null | undefined) {
+  /** Regular pages: any admin. System pages: super_admin only (status / restore). */
+  function canChangePublishStatus(id: string | null | undefined) {
     if (!id) return false;
     if (!isSystemPageId(id)) return true;
     return isSuperAdmin.value;
   }
+
+  const canRestoreRevision = computed(() => {
+    if (!form.id) return false;
+    return canChangePublishStatus(form.id);
+  });
 
   function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {
     message.value = text;
