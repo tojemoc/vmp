@@ -1112,7 +1112,14 @@ const workerHandler = {
             },
           });
         }
-        throw err;
+        return jsonResponse(
+          {
+            error: getPublicErrorMessage('Internal server error'),
+            code: 'internal_error',
+          },
+          500,
+          corsHeaders,
+        );
       }
     });
   },

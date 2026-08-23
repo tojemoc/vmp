@@ -274,6 +274,9 @@
                 class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                 placeholder="optional override"
               >
+              <span class="mt-1 block text-[11px] text-gray-500 dark:text-gray-400 font-normal">
+                Subscribers see prices for all enabled payment methods at checkout.
+              </span>
             </label>
             <div class="md:col-span-3">
               <button

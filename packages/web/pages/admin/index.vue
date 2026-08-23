@@ -2751,6 +2751,13 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                           <option value="free_year">Free year</option>
                           <option value="discount_percent">Discount % (Stripe coupon)</option>
                         </select>
+                        <span
+                          v-if="promoCodeForm.rewardType === 'discount_percent'"
+                          class="mt-1 block text-[11px] text-amber-700 dark:text-amber-300 font-normal"
+                        >
+                          Percentage discounts apply at Stripe checkout only; Qerko checkout will
+                          reject this code.
+                        </span>
                       </label>
                       <label class="text-xs text-gray-600 dark:text-gray-300 block"
                         >Max uses per code

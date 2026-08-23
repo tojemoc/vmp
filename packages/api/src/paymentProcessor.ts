@@ -1407,7 +1407,13 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
       SELECT provider, provider_customer_id, stripe_customer_id, provider_subscription_id
       FROM subscriptions
       WHERE user_id = ?
-      ORDER BY created_at DESC LIMIT 1
+      ORDER BY
+        CASE
+          WHEN status IN ('active', 'trialing', 'past_due') THEN 0
+          ELSE 1
+        END,
+        created_at DESC
+      LIMIT 1
     `)
       .bind(user.sub)
       .first();
