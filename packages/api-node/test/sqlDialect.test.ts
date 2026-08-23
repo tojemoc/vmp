@@ -303,14 +303,14 @@ UPDATE cms_pages SET title = 'x' WHERE id = 'a';`;
     );
     const out = translateSqliteDdl(sql);
     const stmts = splitExecutableSqlStatements(out);
-    // Leading migration comments keep INSERT from matching ^\s*INSERT.
-    const inserts = stmts.filter((s) => /\bINSERT\s+INTO\b/i.test(s));
     const updates = stmts.filter((s) => /(^|\n)\s*UPDATE\b/i.test(s));
-    assert.ok(inserts.length >= 1, `expected INSERT statements, got ${stmts.length} stmts`);
     assert.ok(updates.length >= 1, `expected UPDATE statements, got ${stmts.length} stmts`);
-    for (const insert of inserts) {
-      assert.match(insert, /ON CONFLICT DO NOTHING/i);
-    }
+    // 0053 is UPDATE-only (ui_locale must be set out-of-band); no INSERT OR IGNORE rewrite.
+    assert.equal(
+      stmts.filter((s) => /\bINSERT\s+INTO\b/i.test(s)).length,
+      0,
+      '0053 must not contain executable INSERT after dialect translate',
+    );
     for (const update of updates) {
       assert.doesNotMatch(update, /ON CONFLICT/i);
     }

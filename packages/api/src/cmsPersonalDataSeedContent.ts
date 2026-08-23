@@ -257,8 +257,8 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
 
 /**
  * Short personal-data CMS notice for the given deployment locale.
- * Migrations apply each locale only when `admin_settings.ui_locale` matches
- * (SK also bootstraps from exact `site_support_email = vmp@tjm.sk`).
+ * Migrations apply each locale only when `admin_settings.ui_locale` matches.
+ * Operators must set that key explicitly before migrate (see docs/i18n-prep.md).
  * Not used at Worker runtime to upsert pages — content ships via SQL migrations.
  */
 export function buildPersonalDataCmsBlocks(locale: PersonalDataCmsLocale = 'en'): CmsBlock[] {

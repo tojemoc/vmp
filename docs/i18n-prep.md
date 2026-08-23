@@ -14,6 +14,20 @@ Viewer-facing UI copy lives in locale catalogs under [`packages/web/locales/`](.
 
 Each catalog exports `strings` (UI copy) and `personalData` (legacy GDPR copy used for banners / inventory; the public `/personal-data` **page body** is stored in CMS — see `cms-page-personal-data`).
 
+### CMS personal-data notice migrations (`ui_locale`)
+
+Migrations `0053` / `0054` / `0055` rewrite `cms-page-personal-data` **only** when D1 `admin_settings.ui_locale` matches `sk` / `en` / `cs`. There is no email-based bootstrap.
+
+Before applying those migrations on a locale-specific instance, set the key explicitly (local example):
+
+```bash
+cd packages/api
+npx wrangler d1 execute video-subscription-db --local \
+  --command="INSERT OR IGNORE INTO admin_settings (key, value, updated_at) VALUES ('ui_locale', 'sk', CURRENT_TIMESTAMP);"
+```
+
+Use `'en'` or `'cs'` instead of `'sk'` as needed. If `ui_locale` is unset, the short-notice migration is a no-op and any earlier seed content remains. Align `NUXT_PUBLIC_UI_LOCALE` with the same value for the web Worker build.
+
 Components import the active catalog via:
 
 ```ts

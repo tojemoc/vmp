@@ -52,12 +52,10 @@ describe('personal-data CMS seed', () => {
       const file = path.join(migrationsDir, MIGRATION_BY_LOCALE[locale]);
       const sql = fs.readFileSync(file, 'utf8');
       assert.match(sql, new RegExp(`ui_locale.*= '${locale}'`));
-      if (locale === 'sk') {
-        assert.match(sql, /LOWER\(TRIM\(value\)\) = 'vmp@tjm\.sk'/);
-        assert.doesNotMatch(sql, /LIKE '%@tjm\.sk'/);
-      } else {
-        assert.doesNotMatch(sql, /site_support_email/);
-      }
+      // Explicit ui_locale only — no email-based locale inference (Prelint).
+      assert.doesNotMatch(sql, /site_support_email/);
+      assert.match(sql, /no email-based bootstrap/i);
+      assert.doesNotMatch(sql, /(?:^|\n)INSERT\b/);
       const fromSql = extractMigrationContentJson(sql);
       const fromTs = buildPersonalDataCmsBlocks(locale);
       assert.deepEqual(fromSql, fromTs, `migration drift for locale ${locale}`);

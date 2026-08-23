@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   CMS_FOOTER_PAGE_ID,
@@ -35,6 +37,21 @@ describe('cms-page-* registry guard', () => {
       assert.equal(isCmsSystemPageId(id), true, `${id} must be in the system registry`);
     }
     assert.equal(isCmsSystemPageId(CMS_PERSONAL_DATA_PAGE_ID), true);
+  });
+
+  it('keeps every exported cms-page-* id constant in CMS_SYSTEM_CMS_PAGE_IDS', () => {
+    // Fail if someone adds `export const X = 'cms-page-…'` without registering it.
+    const src = readFileSync(join(import.meta.dirname, '../src/cmsSystemPages.ts'), 'utf8');
+    const exportedIds = [
+      ...src.matchAll(/export\s+const\s+\w+\s*=\s*'(cms-page-[a-z0-9-]+)'/gi),
+    ].map((m) => m[1]!);
+    assert.ok(exportedIds.length > 0);
+    for (const id of exportedIds) {
+      assert.ok(
+        (CMS_SYSTEM_CMS_PAGE_IDS as readonly string[]).includes(id),
+        `${id} must be listed in CMS_SYSTEM_CMS_PAGE_IDS for delete/slug locks`,
+      );
+    }
   });
 
   it('documents that routing is wider than the registry', () => {

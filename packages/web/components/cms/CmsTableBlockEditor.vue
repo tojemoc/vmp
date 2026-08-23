@@ -160,6 +160,14 @@
     if (props.modelValue.columns.length <= 1) return;
     const key = props.modelValue.columnKeys[colIndex];
     if (!key) return;
+    const header = props.modelValue.columns[colIndex]?.trim() || `column ${colIndex + 1}`;
+    if (
+      !confirm(
+        `Remove column "${header}"? All cell values in this column will be deleted. This cannot be undone until you restore a saved revision.`,
+      )
+    ) {
+      return;
+    }
     emitBlock({
       type: 'table',
       columns: props.modelValue.columns.filter((_, index) => index !== colIndex),
