@@ -375,7 +375,7 @@
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
           <button
-            v-if="form.id && form.status === 'draft'"
+            v-if="form.id && form.status === 'draft' && !isSystemPageId(form.id)"
             type="button"
             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="saving"

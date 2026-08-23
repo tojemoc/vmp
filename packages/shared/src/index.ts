@@ -17,6 +17,7 @@ export {
   CMS_FOOTER_PAGE_ID,
   CMS_FOOTER_SLUG,
   CMS_PERSONAL_DATA_PAGE_ID,
+  CMS_SYSTEM_CMS_PAGE_IDS,
   isCmsPageIdPathSegment,
   isCmsSystemPageId,
   isCmsSystemSlug,

@@ -6,7 +6,14 @@ export const CMS_FOOTER_SLUG = '_footer';
 
 export const CMS_PERSONAL_DATA_PAGE_ID = 'cms-page-personal-data';
 
-const CMS_SYSTEM_PAGE_IDS = new Set([CMS_FOOTER_PAGE_ID, CMS_PERSONAL_DATA_PAGE_ID]);
+/**
+ * System page ids that use the `cms-page-*` stable-string convention.
+ * Keep this list in sync when adding a new system CMS page — also add the
+ * constant to `CMS_SYSTEM_PAGE_IDS` via the spread below.
+ */
+export const CMS_SYSTEM_CMS_PAGE_IDS = [CMS_PERSONAL_DATA_PAGE_ID] as const;
+
+const CMS_SYSTEM_PAGE_IDS = new Set<string>([CMS_FOOTER_PAGE_ID, ...CMS_SYSTEM_CMS_PAGE_IDS]);
 
 /** UUID-shaped ids (created pages + footer) or stable system ids like `cms-page-personal-data`. */
 const CMS_PAGE_ID_PATH_RE =
