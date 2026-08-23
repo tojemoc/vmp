@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@vmp/shared": "file:../../packages/shared",
+    "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.14",
     "expo-constants": "~57.0.13",
     "expo-linking": "~57.0.7",
