@@ -1,6 +1,7 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
 import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
+import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
@@ -13,10 +14,7 @@ if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
   // Nuxt maps NUXT_PUBLIC_POSTHOG_PUBLIC_KEY → runtimeConfig.public.posthog.publicKey.
   process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY = posthogPublicKey;
 }
-const posthogHost = (
-  process.env.NUXT_PUBLIC_POSTHOG_HOST ||
-  'https://eu.i.posthog.com'
-).trim();
+const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com').trim();
 const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
 const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
 const posthogEnabled = Boolean(posthogPublicKey);
@@ -75,6 +73,8 @@ export default defineNuxtConfig({
           host: posthogHost,
           clientConfig: {
             person_profiles: 'identified_only',
+            capture_pageview: POSTHOG_CAPTURE_PAGEVIEW,
+            capture_pageleave: POSTHOG_CAPTURE_PAGELEAVE,
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
             persistence: 'memory',
@@ -94,6 +94,7 @@ export default defineNuxtConfig({
             }) => {
               posthog.register({ $environment: buildInfo.deployTier || 'development' });
               // Re-apply after __loaded — composable/plugin sync may have run too early.
+              // opt_in_capturing() also emits the initial $pageview when consent exists.
               applyStoredPostHogConsentToClient(posthog);
             },
           },

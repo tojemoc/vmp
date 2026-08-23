@@ -20,7 +20,12 @@ export function readPostHogAnalyticsConsent(): PostHogConsentValue | null {
   return null;
 }
 
-type PostHogPersistence = 'memory' | 'localStorage' | 'sessionStorage' | 'localStorage+cookie' | 'cookie';
+type PostHogPersistence =
+  | 'memory'
+  | 'localStorage'
+  | 'sessionStorage'
+  | 'localStorage+cookie'
+  | 'cookie';
 
 export type PostHogPersistenceClient = {
   opt_in_capturing?: () => void;
@@ -28,8 +33,15 @@ export type PostHogPersistenceClient = {
   set_config?: (config: { persistence?: PostHogPersistence }) => void;
 };
 
-/** Apply consent to an initialized PostHog client (memory-only until granted). */
-export function applyPostHogConsentToClient(client: PostHogPersistenceClient, granted: boolean): void {
+/**
+ * Apply consent to an initialized PostHog client (memory-only until granted).
+ * Granting consent calls `opt_in_capturing()`, which also emits the initial `$pageview`
+ * when `capture_pageview` is enabled (including `'history_change'` for Nuxt SPA nav).
+ */
+export function applyPostHogConsentToClient(
+  client: PostHogPersistenceClient,
+  granted: boolean,
+): void {
   if (granted) {
     client.set_config?.({ persistence: 'localStorage+cookie' });
     client.opt_in_capturing?.();
