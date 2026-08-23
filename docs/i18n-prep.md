@@ -16,7 +16,7 @@ Each catalog exports `strings` (UI copy) and `personalData` (legacy GDPR copy us
 
 ### CMS personal-data notice migrations (`ui_locale`)
 
-Migrations `0053` / `0054` / `0055` rewrite `cms-page-personal-data` **only** when D1 `admin_settings.ui_locale` matches `sk` / `en` / `cs`. There is no email-based bootstrap.
+Migrations `0053` / `0054` / `0055` rewrite `cms-page-personal-data` **only** when D1 `LOWER(TRIM(admin_settings.ui_locale))` matches `sk` / `en` / `cs`. There is no email-based bootstrap.
 
 Before applying those migrations on a locale-specific instance, set the key explicitly (local example):
 
@@ -26,7 +26,7 @@ npx wrangler d1 execute video-subscription-db --local \
   --command="INSERT OR IGNORE INTO admin_settings (key, value, updated_at) VALUES ('ui_locale', 'sk', CURRENT_TIMESTAMP);"
 ```
 
-Use `'en'` or `'cs'` instead of `'sk'` as needed. If `ui_locale` is unset, the short-notice migration is a no-op and any earlier seed content remains. Align `NUXT_PUBLIC_UI_LOCALE` with the same value for the web Worker build.
+Use `'en'` or `'cs'` instead of `'sk'` as needed (`EN` / `Sk` also match after `LOWER(TRIM(...))`). If `ui_locale` is unset, the short-notice migration is a no-op and any earlier seed content remains. Align `NUXT_PUBLIC_UI_LOCALE` with the same value for the web Worker build.
 
 Components import the active catalog via:
 

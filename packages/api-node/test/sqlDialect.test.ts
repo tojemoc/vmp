@@ -296,6 +296,26 @@ UPDATE cms_pages SET title = 'x' WHERE id = 'a';`;
     assert.equal((out.match(/ON CONFLICT DO NOTHING/gi) ?? []).length, 1);
   });
 
+  it('preserves quoted semicolons inside INSERT OR IGNORE values', () => {
+    const sql = `INSERT OR IGNORE INTO notes (body) VALUES ('hello; world');
+UPDATE notes SET body = 'x' WHERE body = 'hello; world';`;
+    const out = translateSqliteToPostgres(sql);
+    const stmts = splitExecutableSqlStatements(out);
+    assert.equal(stmts.length, 2);
+    assert.match(stmts[0]!, /VALUES \('hello; world'\)/i);
+    assert.match(stmts[0]!, /ON CONFLICT DO NOTHING/i);
+    assert.doesNotMatch(stmts[1]!, /ON CONFLICT/i);
+  });
+
+  it('preserves trailing -- POSTGRES hints without an extra semicolon on open SQL', () => {
+    const sql = `INSERT OR IGNORE INTO t (id) VALUES ('1')
+-- POSTGRES: ALTER TABLE t ADD COLUMN IF NOT EXISTS note TEXT`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /INSERT INTO t \(id\) VALUES \('1'\) ON CONFLICT DO NOTHING/i);
+    assert.match(out, /--\s*POSTGRES:\s*ALTER TABLE t ADD COLUMN IF NOT EXISTS note TEXT/);
+    assert.doesNotMatch(out.trimEnd(), /;\s*$/);
+  });
+
   it('keeps personal-data seed UPDATE free of ON CONFLICT (0053 shape)', () => {
     const sql = readFileSync(
       join(import.meta.dirname, '../../api/migrations/0053_cms_personal_data_sk_short_notice.sql'),

@@ -130,7 +130,7 @@
             >View</a
           >
           <button
-            v-if="page.status === 'draft' && !isSystemPageId(page.id)"
+            v-if="page.status === 'draft' && canPublishPage(page.id)"
             type="button"
             class="text-emerald-600 dark:text-emerald-400 hover:underline"
             @click="publishPage(page.id)"
@@ -375,7 +375,7 @@
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
           <button
-            v-if="form.id && form.status === 'draft' && !isSystemPageId(form.id)"
+            v-if="form.id && form.status === 'draft' && canPublishPage(form.id)"
             type="button"
             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
             :disabled="saving"
@@ -460,7 +460,8 @@
   import { emptyTiptapDoc } from '~/utils/cmsRichText';
 
   const config = useRuntimeConfig();
-  const { authHeader } = useAuth();
+  const { authHeader, user } = useAuth();
+  const isSuperAdmin = computed(() => user.value?.role === 'super_admin');
 
   const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '');
 
@@ -504,6 +505,13 @@
 
   function isSystemPageId(id: string) {
     return isCmsSystemPageId(id);
+  }
+
+  /** Regular pages: any admin. System pages: super_admin only (draft recovery). */
+  function canPublishPage(id: string | null | undefined) {
+    if (!id) return false;
+    if (!isSystemPageId(id)) return true;
+    return isSuperAdmin.value;
   }
 
   function setMessage(text: string, tone: 'ok' | 'error' = 'ok') {

@@ -17,7 +17,7 @@ function writeLocaleMigration(num: string, locale: PersonalDataCmsLocale) {
 -- Regenerated from packages/api/src/cmsPersonalDataSeedContent.ts (${locale}).
 --
 -- Locale guard (one language per D1 / deployment — see docs/i18n-prep.md):
--- Applies only when admin_settings.ui_locale = '${locale}'.
+-- Applies only when LOWER(TRIM(admin_settings.ui_locale)) = '${locale}'.
 -- Operators must set that key explicitly before migrate (documented setup step;
 -- no email-based bootstrap). Other locales leave this page unchanged.
 -- Safe to ship all three migrations together.
@@ -30,7 +30,7 @@ SET title = '${esc(meta.title)}',
 WHERE id = '${meta.id}'
   AND EXISTS (
     SELECT 1 FROM admin_settings
-    WHERE key = 'ui_locale' AND TRIM(value) = '${locale}'
+    WHERE key = 'ui_locale' AND LOWER(TRIM(value)) = '${locale}'
   );
 `;
 

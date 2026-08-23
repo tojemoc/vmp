@@ -40,8 +40,8 @@ type PersonalDataCopy = {
   signedOutBody: string;
   activeTitle: string;
   activeBody: string;
-  tableColumns: [string, string, string];
-  tableRows: Array<{ what: string; purpose: string; lifetime: string }>;
+  tableColumns: [string, string, string, string];
+  tableRows: Array<{ what: string; purpose: string; lifetime: string; necessary: string }>;
   noAds: string;
   processorsTitle: string;
   processorsBody: string;
@@ -65,46 +65,53 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
     ],
     signedOutTitle: 'Signed-out visitors',
     signedOutBody:
-      'Without signing in, you can browse public pages and video previews without us storing anything in your browser. We measure traffic anonymously via Umami (EU) — no cookies, no cross-site tracking.',
+      'Without signing in, you can browse public pages and video previews without us storing anything in your browser. We measure traffic anonymously via Umami (EU) — no cookies, no cross-site tracking. We rely on legitimate interest for this limited statistical purpose.',
     activeTitle: 'When you use active features',
     activeBody:
       'Signing in, subscribing, notifications, installing the web app (PWA), or changing playback speed require storing a small amount of data in your browser. You can avoid this entirely by not using these features.',
-    tableColumns: ['What', 'For', 'How long'],
+    tableColumns: ['What', 'For', 'How long', 'Strictly necessary?'],
     tableRows: [
       {
         what: 'refresh_token',
         purpose: 'keeps you signed in',
         lifetime: 'up to 30 days / until logout',
+        necessary: 'Yes — authentication (legitimate interest / contract)',
       },
       {
         what: 'playbackRate',
         purpose: 'remembers your playback speed',
         lifetime: 'until you clear site data',
+        necessary: 'Functional — only after you change speed',
       },
       {
         what: 'nuxt-color-mode',
         purpose: 'light/dark display mode',
         lifetime: 'until you clear site data',
+        necessary: 'Functional — display preference',
       },
       {
         what: 'vmp_pwa_device_token, vmp_pwa_login_email, vmp-pwa-auth',
         purpose: 'sign-in via installed iOS app',
         lifetime: 'until logout / cleared',
+        necessary: 'Yes — only when you use PWA push sign-in',
       },
       {
         what: 'service worker cache',
         purpose: 'faster offline app loading',
         lifetime: 'while the app is installed',
+        necessary: 'Yes — PWA functionality',
       },
       {
         what: 'session data (sessionStorage)',
         purpose: 'security during sign-in',
         lifetime: 'until tab is closed',
+        necessary: 'Yes — security during login flows',
       },
       {
         what: 'vmp_personal_data_notice_ack',
         purpose: 'stops this banner reappearing',
         lifetime: 'until you clear site data',
+        necessary: 'Functional — only after you acknowledge the notice',
       },
     ],
     noAds: "We don't use any of this for advertising or profiling.",
@@ -113,10 +120,10 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
       'Hosting runs on Cloudflare (with Deno Deploy / Vercel as backup). Payments go through Stripe, emails through Brevo, error tracking through Sentry, traffic stats through Umami (EU). Each one only sees the data needed for its job.',
     playbackTitle: 'Playback tracking',
     playbackBody:
-      'If you\'re signed in, we store where you last stopped watching a video so you can resume. You can delete this position anytime from "Continue watching" in your account.',
+      'If you\'re signed in, we store where you last stopped watching a video so you can resume (legitimate interest in operating the service). You can delete this position anytime from "Continue watching" in your account.',
     rightsTitle: 'Your rights',
     rightsBody:
-      'You have the right to access, correct, delete, restrict, or transfer your data. Just email vmp@tjm.sk — including requests to fully delete your account.',
+      'You have the right to access, correct, delete, restrict, or transfer your data; to object to processing based on legitimate interest; and to withdraw consent where processing is consent-based. Just email vmp@tjm.sk — including requests to fully delete your account.',
     rightsAppeal: "If you're not satisfied with how we handle your request, you can contact:",
     rightsBullets: ['Czechia — ÚOOÚ (uoou.cz)', 'Slovakia — ÚOO SR (dataprotection.gov.sk)'],
     updates: 'We may update this page over time; the current version is always here.',
@@ -131,46 +138,53 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
     ],
     signedOutTitle: 'Neprihlásení používatelia',
     signedOutBody:
-      'Bez prihlásenia si môžete prezerať verejné stránky a náhľady videí bez toho, aby sme čokoľvek ukladali vo vašom prehliadači. Návštevnosť meriame anonymne cez Umami (EÚ) — bez cookies, bez sledovania naprieč stránkami.',
+      'Bez prihlásenia si môžete prezerať verejné stránky a náhľady videí bez toho, aby sme čokoľvek ukladali vo vašom prehliadači. Návštevnosť meriame anonymne cez Umami (EÚ) — bez cookies, bez sledovania naprieč stránkami. Opierame sa o oprávnený záujem pre tento obmedzený štatistický účel.',
     activeTitle: 'Keď niečo aktívne použijete',
     activeBody:
       'Prihlásenie, predplatné, notifikácie, inštalácia webovej aplikácie (PWA) alebo zmena rýchlosti prehrávania vyžadujú uloženie malého množstva dát v prehliadači. Bez použitia týchto funkcií sa ich uloženiu viete úplne vyhnúť.',
-    tableColumns: ['Čo', 'Na čo', 'Ako dlho'],
+    tableColumns: ['Čo', 'Na čo', 'Ako dlho', 'Striktne potrebné?'],
     tableRows: [
       {
         what: 'refresh_token',
         purpose: 'zapamätá si prihlásenie',
         lifetime: 'max. 30 dní / do odhlásenia',
+        necessary: 'Áno — autentifikácia (oprávnený záujem / zmluva)',
       },
       {
         what: 'playbackRate',
         purpose: 'zapamätá si rýchlosť prehrávania',
         lifetime: 'do vymazania dát stránky',
+        necessary: 'Funkčné — až po zmene rýchlosti',
       },
       {
         what: 'nuxt-color-mode',
         purpose: 'svetlý/tmavý režim',
         lifetime: 'do vymazania dát stránky',
+        necessary: 'Funkčné — preferencia zobrazenia',
       },
       {
         what: 'vmp_pwa_device_token, vmp_pwa_login_email, vmp-pwa-auth',
         purpose: 'prihlásenie cez nainštalovanú iOS appku',
         lifetime: 'do odhlásenia / vymazania',
+        necessary: 'Áno — len pri PWA prihlásení',
       },
       {
         what: 'cache service workera',
         purpose: 'rýchlejšie načítanie appky offline',
         lifetime: 'kým je appka nainštalovaná',
+        necessary: 'Áno — funkcia PWA',
       },
       {
         what: 'dáta relácie (sessionStorage)',
         purpose: 'bezpečnosť počas prihlasovania',
         lifetime: 'do zatvorenia karty',
+        necessary: 'Áno — bezpečnosť prihlásenia',
       },
       {
         what: 'vmp_personal_data_notice_ack',
         purpose: 'aby sa vám tento banner nezobrazoval opakovane',
         lifetime: 'do vymazania dát stránky',
+        necessary: 'Funkčné — až po potvrdení oznámenia',
       },
     ],
     noAds: 'Nič z tohto nepoužívame na reklamu ani profilovanie.',
@@ -179,10 +193,10 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
       'Hosting beží na Cloudflare (prípadne záložne na Deno Deploy / Vercel). Platby rieši Stripe, e-maily Brevo, chyby aplikácie sledujeme cez Sentry, návštevnosť cez Umami (EÚ). Každý z nich vidí len dáta potrebné pre svoju úlohu.',
     playbackTitle: 'Sledovanie prehrávania',
     playbackBody:
-      'Ak ste prihlásení, ukladáme si, kde ste video naposledy prestali sledovať, aby ste mohli pokračovať. Túto pozíciu môžete kedykoľvek zmazať v sekcii „Pokračovať v sledovaní“ vo svojom účte.',
+      'Ak ste prihlásení, ukladáme si, kde ste video naposledy prestali sledovať, aby ste mohli pokračovať (oprávnený záujem na prevádzke služby). Túto pozíciu môžete kedykoľvek zmazať v sekcii „Pokračovať v sledovaní“ vo svojom účte.',
     rightsTitle: 'Vaše práva',
     rightsBody:
-      'Máte právo na prístup k svojim údajom, ich opravu, vymazanie, obmedzenie spracúvania alebo prenos inde. Stačí napísať na vmp@tjm.sk — vrátane žiadosti o úplné zmazanie účtu.',
+      'Máte právo na prístup k svojim údajom, ich opravu, vymazanie, obmedzenie spracúvania alebo prenos inde; namietnuť spracúvanie založené na oprávnenom záujme; a odvolať súhlas, ak je spracúvanie založené na súhlase. Stačí napísať na vmp@tjm.sk — vrátane žiadosti o úplné zmazanie účtu.',
     rightsAppeal: 'Ak nie ste spokojní s tým, ako vašu žiadosť vybavíme, môžete sa obrátiť na:',
     rightsBullets: ['Česko — ÚOOÚ (uoou.cz)', 'Slovensko — ÚOO SR (dataprotection.gov.sk)'],
     updates: 'Túto stránku môžeme časom aktualizovať; aktuálna verzia je vždy tu.',
@@ -197,46 +211,53 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
     ],
     signedOutTitle: 'Nepřihlášení uživatelé',
     signedOutBody:
-      'Bez přihlášení si můžete prohlížet veřejné stránky a náhledy videí, aniž bychom cokoliv ukládali ve vašem prohlížeči. Návštěvnost měříme anonymně přes Umami (EU) — bez cookies, bez sledování napříč weby.',
+      'Bez přihlášení si můžete prohlížet veřejné stránky a náhledy videí, aniž bychom cokoliv ukládali ve vašem prohlížeči. Návštěvnost měříme anonymně přes Umami (EU) — bez cookies, bez sledování napříč weby. Opíráme se o oprávněný zájem pro tento omezený statistický účel.',
     activeTitle: 'Aktivní funkce',
     activeBody:
       'Přihlášení, předplatné, notifikace, instalace webové aplikace (PWA) nebo změna rychlosti přehrávání vyžadují uložení malého množství dat v prohlížeči. Bez využití těchto funkcí se jejich ukládání zcela vyhnete.',
-    tableColumns: ['Co', 'K čemu', 'Jak dlouho'],
+    tableColumns: ['Co', 'K čemu', 'Jak dlouho', 'Striktně nutné?'],
     tableRows: [
       {
         what: 'refresh_token',
         purpose: 'udrží vás přihlášené',
         lifetime: 'max. 30 dní / do odhlášení',
+        necessary: 'Ano — autentizace (oprávněný zájem / smlouva)',
       },
       {
         what: 'playbackRate',
         purpose: 'zapamatuje si rychlost přehrávání',
         lifetime: 'do vymazání dat webu',
+        necessary: 'Funkční — až po změně rychlosti',
       },
       {
         what: 'nuxt-color-mode',
         purpose: 'světlý/tmavý režim',
         lifetime: 'do vymazání dat webu',
+        necessary: 'Funkční — preference zobrazení',
       },
       {
         what: 'vmp_pwa_device_token, vmp_pwa_login_email, vmp-pwa-auth',
         purpose: 'přihlášení přes nainstalovanou iOS appku',
         lifetime: 'do odhlášení / vymazání',
+        necessary: 'Ano — jen při PWA přihlášení',
       },
       {
         what: 'cache service workeru',
         purpose: 'rychlejší načítání appky offline',
         lifetime: 'dokud je appka nainstalovaná',
+        necessary: 'Ano — funkce PWA',
       },
       {
         what: 'data relace (sessionStorage)',
         purpose: 'bezpečnost během přihlašování',
         lifetime: 'do zavření karty',
+        necessary: 'Ano — bezpečnost přihlášení',
       },
       {
         what: 'vmp_personal_data_notice_ack',
         purpose: 'aby se vám tento banner nezobrazoval opakovaně',
         lifetime: 'do vymazání dat webu',
+        necessary: 'Funkční — až po potvrzení oznámení',
       },
     ],
     noAds: 'Nic z toho nepoužíváme na reklamu ani profilování.',
@@ -245,10 +266,10 @@ const COPY: Record<PersonalDataCmsLocale, PersonalDataCopy> = {
       'Hosting běží na Cloudflare (případně záložně na Deno Deploy / Vercel). Platby řeší Stripe, e-maily Brevo, chyby aplikace sledujeme přes Sentry, návštěvnost přes Umami (EU). Každý z nich vidí jen data potřebná pro svůj úkol.',
     playbackTitle: 'Sledování přehrávání',
     playbackBody:
-      'Pokud jste přihlášeni, ukládáme si, kde jste video naposledy přestali sledovat, abyste mohli pokračovat. Tuto pozici můžete kdykoliv smazat v sekci „Pokračovat ve sledování“ ve svém účtu.',
+      'Pokud jste přihlášeni, ukládáme si, kde jste video naposledy přestali sledovat, abyste mohli pokračovat (oprávněný zájem na provozu služby). Tuto pozici můžete kdykoliv smazat v sekci „Pokračovat ve sledování“ ve svém účtu.',
     rightsTitle: 'Vaše práva',
     rightsBody:
-      'Máte právo na přístup ke svým údajům, jejich opravu, výmaz, omezení zpracování nebo přenos jinam. Stačí napsat na vmp@tjm.sk — včetně žádosti o úplné smazání účtu.',
+      'Máte právo na přístup ke svým údajům, jejich opravu, výmaz, omezení zpracování nebo přenos jinam; namítnout zpracování založené na oprávněném zájmu; a odvolat souhlas, pokud je zpracování založené na souhlasu. Stačí napsat na vmp@tjm.sk — včetně žádosti o úplné smazání účtu.',
     rightsAppeal: 'Pokud nejste spokojeni s tím, jak vaši žádost vyřídíme, můžete se obrátit na:',
     rightsBullets: ['Česko — ÚOOÚ (uoou.cz)', 'Slovensko — ÚOO SR (dataprotection.gov.sk)'],
     updates: 'Tuto stránku můžeme časem aktualizovat; aktuální verze je vždy zde.',
@@ -270,7 +291,7 @@ export function buildPersonalDataCmsBlocks(locale: PersonalDataCmsLocale = 'en')
     {
       type: 'table',
       columns: [...c.tableColumns],
-      columnKeys: ['what', 'purpose', 'lifetime'],
+      columnKeys: ['what', 'purpose', 'lifetime', 'necessary'],
       rows: c.tableRows.map((row) => ({ ...row })),
     },
     tiptapRichTextBlock(tiptapParagraph(c.noAds)),
@@ -290,11 +311,11 @@ export function getPersonalDataCmsPageMeta(locale: PersonalDataCmsLocale = 'en')
   const c = COPY[locale];
   return {
     id: 'cms-page-personal-data' as const,
-    title: c.title,
     slug: 'personal-data' as const,
+    title: c.title,
     description: c.description,
   };
 }
 
-/** @deprecated Prefer `getPersonalDataCmsPageMeta(locale)` — defaults to English. */
+/** English metadata shortcut used by older tests / imports. */
 export const PERSONAL_DATA_CMS_PAGE = getPersonalDataCmsPageMeta('en');

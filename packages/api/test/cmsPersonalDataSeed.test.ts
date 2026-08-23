@@ -36,8 +36,14 @@ describe('personal-data CMS seed', () => {
       assert.equal(parsed.length, blocks.length);
       const table = parsed.find((block) => block.type === 'table');
       assert.ok(table && table.type === 'table');
-      assert.equal(table.columnKeys.length, 3);
+      assert.equal(table.columnKeys.length, 4);
       assert.equal(table.rows.length, 7);
+      assert.ok(table.columnKeys.includes('necessary'));
+      assert.match(
+        JSON.stringify(blocks),
+        /object to processing|namietnuť spracúvanie|namítnout zpracování/i,
+      );
+      assert.match(JSON.stringify(blocks), /withdraw consent|odvolať súhlas|odvolat souhlas/i);
     }
   });
 
@@ -51,7 +57,7 @@ describe('personal-data CMS seed', () => {
     for (const locale of PERSONAL_DATA_CMS_LOCALES) {
       const file = path.join(migrationsDir, MIGRATION_BY_LOCALE[locale]);
       const sql = fs.readFileSync(file, 'utf8');
-      assert.match(sql, new RegExp(`ui_locale.*= '${locale}'`));
+      assert.match(sql, new RegExp(`LOWER\\(TRIM\\(value\\)\\)\\s*=\\s*'${locale}'`));
       // Explicit ui_locale only — no email-based locale inference (Prelint).
       assert.doesNotMatch(sql, /site_support_email/);
       assert.match(sql, /no email-based bootstrap/i);

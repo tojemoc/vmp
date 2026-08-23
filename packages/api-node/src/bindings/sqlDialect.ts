@@ -113,20 +113,10 @@ export function translateSqliteToPostgres(sql: string): string {
     return `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}'`;
   });
 
-  // DML compatibility — rewrite INSERT OR IGNORE per statement.
-  // Do NOT append ON CONFLICT to the whole migration file: multi-statement
-  // seeds (INSERT OR IGNORE …; UPDATE …;) would attach ON CONFLICT to UPDATE
-  // and fail on Postgres (cms personal-data migrations 0053–0055).
-  s = s.replace(
-    /\bINSERT\s+OR\s+IGNORE\s+INTO\b([\s\S]*?)(?=;|$)/gi,
-    (_m, body: string) => {
-      const trimmed = String(body).replace(/\s+$/, '');
-      if (/\bON\s+CONFLICT\b/i.test(trimmed)) {
-        return `INSERT INTO${trimmed}`;
-      }
-      return `INSERT INTO${trimmed} ON CONFLICT DO NOTHING`;
-    },
-  );
+  // DML compatibility — rewrite INSERT OR IGNORE per statement (literal-aware).
+  // Do NOT regex across the whole migration file: multi-statement seeds and
+  // quoted semicolons must stay intact; trailing -- POSTGRES: hints must remain.
+  s = rewriteInsertOrIgnoreStatements(s);
   s = s.replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO');
   s = s.replace(/\bREPLACE\s+INTO\b/gi, 'INSERT INTO');
 
@@ -359,6 +349,57 @@ export function transformExecutableSql(sql: string, transform: (code: string) =>
     out += segment.kind === 'code' ? transform(segment.text) : segment.text;
   }
   return out;
+}
+
+/**
+ * Rewrite SQLite `INSERT OR IGNORE` → Postgres `INSERT … ON CONFLICT DO NOTHING`
+ * one executable statement at a time so quoted `;` and `-- POSTGRES:` hints survive.
+ */
+function rewriteInsertOrIgnoreStatements(sql: string): string {
+  if (!/\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(sql)) return sql;
+
+  const statements = splitExecutableSqlStatements(sql);
+  if (statements.length === 0) return sql;
+
+  let changed = false;
+  const rewritten = statements.map((statement) => {
+    let matched = false;
+    let hasConflict = false;
+    const next = transformExecutableSql(statement, (code) => {
+      if (/\bON\s+CONFLICT\b/i.test(code)) hasConflict = true;
+      return code.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, () => {
+        matched = true;
+        return 'INSERT INTO';
+      });
+    });
+    if (!matched) return statement;
+    changed = true;
+    if (hasConflict) return next;
+    return appendOnConflictDoNothing(next);
+  });
+  if (!changed) return sql;
+
+  const endsWithSemi = /;\s*$/.test(sql.trimEnd());
+  const joined = rewritten.join(';\n\n');
+  return endsWithSemi ? `${joined};` : joined;
+}
+
+/** Insert ON CONFLICT before trailing `--` comment lines (e.g. `-- POSTGRES:` hints). */
+function appendOnConflictDoNothing(statement: string): string {
+  const lines = statement.split('\n');
+  let firstTrailingComment = lines.length;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const trimmed = lines[i]!.trim();
+    if (trimmed === '' || trimmed.startsWith('--')) {
+      firstTrailingComment = i;
+      continue;
+    }
+    break;
+  }
+  const head = lines.slice(0, firstTrailingComment).join('\n').replace(/\s+$/, '');
+  const tail = lines.slice(firstTrailingComment).join('\n');
+  if (!tail) return `${head} ON CONFLICT DO NOTHING`;
+  return `${head} ON CONFLICT DO NOTHING\n${tail}`;
 }
 
 /** Split SQL on semicolons that terminate executable statements. */

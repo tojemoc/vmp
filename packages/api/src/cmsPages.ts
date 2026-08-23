@@ -216,7 +216,12 @@ export async function handleCmsPagePublish(
   id: string,
 ) {
   try {
-    await requireAdmin(request, env);
+    if (isCmsSystemPageId(id)) {
+      // Draft recovery for compliance pages — not available to regular admins.
+      await requireRole(request, env, 'super_admin');
+    } else {
+      await requireAdmin(request, env);
+    }
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }
