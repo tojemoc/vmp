@@ -98,6 +98,8 @@
   function slugifyKey(label: string, used: Set<string>): string {
     const base =
       label
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')

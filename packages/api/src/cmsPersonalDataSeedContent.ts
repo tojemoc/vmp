@@ -28,8 +28,10 @@ export function tiptapRichTextBlock(...nodes: Record<string, unknown>[]): CmsBlo
 }
 
 /**
- * Slovak personal-data page content for CMS seed / migration.
+ * Slovak personal-data page content for CMS seed / SK migration 0053.
  * Matches the short public notice (Čo / Na čo / Ako dlho table).
+ * Applied to D1 only when ui_locale=sk or site_support_email is @tjm.sk
+ * (see packages/api/migrations/0053_cms_personal_data_sk_short_notice.sql).
  */
 export function buildPersonalDataCmsBlocks(): CmsBlock[] {
   return [
