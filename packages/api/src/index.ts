@@ -11,7 +11,6 @@ import * as Sentry from '@sentry/cloudflare';
 import {
   canonicalWatchToken,
   compareVideosNewestFirst,
-  isCmsPageIdPathSegment,
   isValidVideoSlug,
   sanitizeVideoSlug,
 } from '@vmp/shared';
@@ -145,13 +144,6 @@ import {
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
 import {
-  handleAdminClearPlaybackPositions,
-  handleDeletePlaybackPosition,
-  handleGetPlaybackPosition,
-  handleListPlaybackPositions,
-  handlePutPlaybackPosition,
-} from './playbackPositions.js';
-import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   redactPathForAnalytics,
@@ -191,6 +183,13 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
+import {
+  handleAdminClearPlaybackPositions,
+  handleDeletePlaybackPosition,
+  handleGetPlaybackPosition,
+  handleListPlaybackPositions,
+  handlePutPlaybackPosition,
+} from './playbackPositions.js';
 import { handleGetAccountRss } from './rssAccount.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
@@ -666,10 +665,7 @@ const workerHandler = {
         ) {
           return handleAdminVideoNotify(request, env, ctx, corsHeaders);
         }
-        if (
-          url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname.match(/^\/api\/admin\/videos\/[^/]+\/swap$/) && request.method === 'POST') {
           return handleVideoSwap(request, env, corsHeaders);
         }
         if (
@@ -758,10 +754,7 @@ const workerHandler = {
         if (url.pathname === '/api/admin/replication/push' && request.method === 'POST') {
           return handleAdminReplicationPush(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/replication' &&
-          ['GET', 'PATCH'].includes(request.method)
-        ) {
+        if (url.pathname === '/api/admin/replication' && ['GET', 'PATCH'].includes(request.method)) {
           return handleAdminReplicationSettings(request, env, corsHeaders);
         }
         {
@@ -806,10 +799,7 @@ const workerHandler = {
         ) {
           return handleRssPodcastWebhookConfig(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/rss/podcast-preview-rebuild' &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname === '/api/admin/rss/podcast-preview-rebuild' && request.method === 'POST') {
           return handleRssPodcastPreviewRebuildNotify(request, env, corsHeaders);
         }
         if (url.pathname === '/api/homepage/content' && request.method === 'GET') {
@@ -830,10 +820,7 @@ const workerHandler = {
         if (url.pathname === '/api/admin/users/import-csv' && request.method === 'POST') {
           return handleAdminUserImportCsv(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/users/transfer-subscription' &&
-          request.method === 'POST'
-        ) {
+        if (url.pathname === '/api/admin/users/transfer-subscription' && request.method === 'POST') {
           return handleAdminTransferSubscription(request, env, corsHeaders);
         }
         if (
@@ -848,10 +835,7 @@ const workerHandler = {
         if (url.pathname === '/api/site-footer' && request.method === 'GET') {
           return handleSiteFooterPublic(request, env, corsHeaders);
         }
-        if (
-          url.pathname === '/api/admin/site-footer' &&
-          ['GET', 'PATCH'].includes(request.method)
-        ) {
+        if (url.pathname === '/api/admin/site-footer' && ['GET', 'PATCH'].includes(request.method)) {
           return handleSiteFooterAdmin(request, env, corsHeaders);
         }
         if (url.pathname === '/api/pages' && request.method === 'GET') {
@@ -860,19 +844,12 @@ const workerHandler = {
         if (url.pathname === '/api/pages' && request.method === 'POST') {
           return handleCmsPageCreate(request, env, corsHeaders);
         }
-        // Page ids may be UUIDs or stable system ids (e.g. cms-page-personal-data).
-        // Revision ids remain UUID-only. Slug GET uses any remaining non-id segment.
         const cmsPageRestore = url.pathname.match(
-          /^\/api\/pages\/([^/]+)\/revisions\/([0-9a-f-]{36})\/restore$/,
+          /^\/api\/pages\/([0-9a-f-]{36})\/revisions\/([0-9a-f-]{36})\/restore$/,
         );
         const cmsPageRestoreId = cmsPageRestore?.[1];
         const cmsPageRestoreRevisionId = cmsPageRestore?.[2];
-        if (
-          cmsPageRestoreId &&
-          isCmsPageIdPathSegment(cmsPageRestoreId) &&
-          cmsPageRestoreRevisionId &&
-          request.method === 'POST'
-        ) {
+        if (cmsPageRestoreId && cmsPageRestoreRevisionId && request.method === 'POST') {
           return handleCmsPageRestoreRevision(
             request,
             env,
@@ -881,40 +858,24 @@ const workerHandler = {
             cmsPageRestoreRevisionId,
           );
         }
-        const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([^/]+)\/revisions$/);
+        const cmsPageRevisions = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/revisions$/);
         const cmsPageRevisionsId = cmsPageRevisions?.[1];
-        if (
-          cmsPageRevisionsId &&
-          isCmsPageIdPathSegment(cmsPageRevisionsId) &&
-          request.method === 'GET'
-        ) {
+        if (cmsPageRevisionsId && request.method === 'GET') {
           return handleCmsPageRevisions(request, env, corsHeaders, cmsPageRevisionsId);
         }
-        const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([^/]+)\/publish$/);
+        const cmsPagePublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/publish$/);
         const cmsPagePublishId = cmsPagePublish?.[1];
-        if (
-          cmsPagePublishId &&
-          isCmsPageIdPathSegment(cmsPagePublishId) &&
-          request.method === 'POST'
-        ) {
+        if (cmsPagePublishId && request.method === 'POST') {
           return handleCmsPagePublish(request, env, corsHeaders, cmsPagePublishId);
         }
-        const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([^/]+)\/unpublish$/);
+        const cmsPageUnpublish = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})\/unpublish$/);
         const cmsPageUnpublishId = cmsPageUnpublish?.[1];
-        if (
-          cmsPageUnpublishId &&
-          isCmsPageIdPathSegment(cmsPageUnpublishId) &&
-          request.method === 'POST'
-        ) {
+        if (cmsPageUnpublishId && request.method === 'POST') {
           return handleCmsPageUnpublish(request, env, corsHeaders, cmsPageUnpublishId);
         }
-        const cmsPageById = url.pathname.match(/^\/api\/pages\/([^/]+)$/);
+        const cmsPageById = url.pathname.match(/^\/api\/pages\/([0-9a-f-]{36})$/);
         const cmsPageId = cmsPageById?.[1];
-        if (
-          cmsPageId &&
-          isCmsPageIdPathSegment(cmsPageId) &&
-          ['GET', 'PUT', 'DELETE'].includes(request.method)
-        ) {
+        if (cmsPageId && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
           return handleCmsPageById(request, env, corsHeaders, cmsPageId);
         }
         const cmsPageBySlug = url.pathname.match(/^\/api\/pages\/([^/]+)$/);
@@ -1035,9 +996,7 @@ const workerHandler = {
           return handleListDownloads(request, env, corsHeaders);
         }
         {
-          const downloadAssetMatch = url.pathname.match(
-            /^\/api\/downloads\/([^/]+)\/assets\/(.+)$/,
-          );
+          const downloadAssetMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/assets\/(.+)$/);
           const downloadVideoId = downloadAssetMatch?.[1];
           const downloadAssetPath = downloadAssetMatch?.[2];
           if (downloadVideoId && downloadAssetPath && request.method === 'GET') {
@@ -1047,19 +1006,11 @@ const workerHandler = {
             } catch {
               return jsonResponse({ error: 'Invalid asset path encoding' }, 400, corsHeaders);
             }
-            return handleDownloadAsset(
-              request,
-              env,
-              corsHeaders,
-              downloadVideoId,
-              decodedAssetPath,
-            );
+            return handleDownloadAsset(request, env, corsHeaders, downloadVideoId, decodedAssetPath);
           }
         }
         {
-          const downloadAuthorizeMatch = url.pathname.match(
-            /^\/api\/downloads\/([^/]+)\/authorize$/,
-          );
+          const downloadAuthorizeMatch = url.pathname.match(/^\/api\/downloads\/([^/]+)\/authorize$/);
           const authorizeVideoId = downloadAuthorizeMatch?.[1];
           if (authorizeVideoId && request.method === 'POST') {
             return handleAuthorizeDownload(request, env, corsHeaders, authorizeVideoId);

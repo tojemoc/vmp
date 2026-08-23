@@ -1,7 +1,5 @@
 /**
- * Locale-aware GDPR transparency copy (legacy catalog).
- * The public `/personal-data` page body is served from CMS (`cms-page-personal-data`);
- * prefer that for page content. Banner/contact strings live under `strings.*`.
+ * Locale-aware GDPR transparency copy for `/personal-data`.
  */
 import { getActiveLocaleCatalog, getBuildLocaleCatalog } from '~/utils/resolveUiLocale';
 
@@ -13,5 +11,5 @@ export function getPersonalDataPage() {
     : getBuildLocaleCatalog().personalData;
 }
 
-/** @deprecated Prefer CMS `/personal-data` or `useStrings().personalData` in dev. */
+/** @deprecated Prefer `useStrings().personalData` or `getPersonalDataPage()` in dev. */
 export const personalDataPage = getPersonalDataPage();

@@ -17,8 +17,6 @@ export {
   CMS_FOOTER_PAGE_ID,
   CMS_FOOTER_SLUG,
   CMS_PERSONAL_DATA_PAGE_ID,
-  CMS_SYSTEM_CMS_PAGE_IDS,
-  isCmsPageIdPathSegment,
   isCmsSystemPageId,
   isCmsSystemSlug,
 } from './cmsSystemPages.js';
@@ -26,6 +24,12 @@ export {
   compareVideosNewestFirst,
   placementTimestampMs,
 } from './homepagePlacementSort.js';
+export {
+  canonicalWatchToken,
+  isValidVideoSlug,
+  sanitizeVideoSlug,
+  transliterateToAscii,
+} from './videoSlug.js';
 export {
   getPlaybackEndClearThresholds,
   getPlaybackSaveIntervalMs,
@@ -41,12 +45,6 @@ export {
   PLAYBACK_POSITION_SHORT_FORM_MAX_SECONDS,
   shouldRejectStalePlaybackWrite,
 } from './playbackPosition.js';
-export {
-  canonicalWatchToken,
-  isValidVideoSlug,
-  sanitizeVideoSlug,
-  transliterateToAscii,
-} from './videoSlug.js';
 
 export interface User {
   id: string;
