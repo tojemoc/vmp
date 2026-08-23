@@ -12,7 +12,7 @@ Viewer-facing UI copy lives in locale catalogs under [`packages/web/locales/`](.
 | `sk` | `locales/sk/` | Slovak VMP instance |
 | `cs` | `locales/cs/` | Czech VMP instance |
 
-Each catalog exports `strings` (UI copy) and `personalData` (legacy GDPR copy used for banners / inventory; the public `/personal-data` **page body** is stored in CMS — see `cms-page-personal-data`).
+Each catalog exports `strings` (UI copy) and `personalData` (GDPR transparency page at `/personal-data`).
 
 Components import the active catalog via:
 

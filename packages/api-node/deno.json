@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "name": "@vmp/api-node",
   "version": "1.0.0",
+  "nodeModulesDir": "manual",
   "imports": {
     "@vmp/storage": "../storage/src/index.ts",
     "@vmp/storage/node": "../storage/src/node.ts",

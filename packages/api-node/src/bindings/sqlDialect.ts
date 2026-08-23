@@ -113,22 +113,17 @@ export function translateSqliteToPostgres(sql: string): string {
     return `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}'`;
   });
 
-  // DML compatibility — rewrite INSERT OR IGNORE per statement.
-  // Do NOT append ON CONFLICT to the whole migration file: multi-statement
-  // seeds (INSERT OR IGNORE …; UPDATE …;) would attach ON CONFLICT to UPDATE
-  // and fail on Postgres (cms personal-data migrations 0053–0055).
-  s = s.replace(
-    /\bINSERT\s+OR\s+IGNORE\s+INTO\b([\s\S]*?)(?=;|$)/gi,
-    (_m, body: string) => {
-      const trimmed = String(body).replace(/\s+$/, '');
-      if (/\bON\s+CONFLICT\b/i.test(trimmed)) {
-        return `INSERT INTO${trimmed}`;
-      }
-      return `INSERT INTO${trimmed} ON CONFLICT DO NOTHING`;
-    },
-  );
+  const hadInsertOrIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(s);
+
+  // DML compatibility
+  s = s.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO');
   s = s.replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO');
   s = s.replace(/\bREPLACE\s+INTO\b/gi, 'INSERT INTO');
+
+  // Postgres requires ON CONFLICT for ignore semantics (SQLite INSERT OR IGNORE).
+  if (hadInsertOrIgnore && /\bINSERT\s+INTO\b/i.test(s) && !/\bON\s+CONFLICT\b/i.test(s)) {
+    s = `${s.replace(/;\s*$/, '')} ON CONFLICT DO NOTHING`;
+  }
 
   // datetime('now', modifier) — SQLite modifier strings
   s = s.replace(
@@ -502,18 +497,12 @@ export function translateSqliteDdl(sql: string): string {
     /\bCREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
     (_, unique) => `CREATE ${unique ?? ''}INDEX IF NOT EXISTS `,
   );
-  // ADD COLUMN without IF NOT EXISTS fails with 42701 when the column already exists
-  // (e.g. migration applied the DDL then crashed before recording _migrations).
-  s = s.replace(
-    /\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\b)/gi,
-    'ADD COLUMN IF NOT EXISTS ',
-  );
   return s;
 }
 
-/** Postgres duplicate_object / duplicate_table / duplicate_column (SQLSTATE 42P07, 42710, 42701). */
+/** Postgres duplicate_object / duplicate_table (SQLSTATE 42P07, 42710). */
 export function isPostgresDuplicateObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const code = (err as { code?: string }).code;
-  return code === '42P07' || code === '42710' || code === '42701';
+  return code === '42P07' || code === '42710';
 }
