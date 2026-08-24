@@ -211,11 +211,13 @@
       <section
         class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-300"
       >
-        <p class="font-semibold text-gray-900 dark:text-white">Stripe checkout (SK/CZ e-invoicing)</p>
+        <p class="font-semibold text-gray-900 dark:text-white">
+          Stripe checkout (SK/CZ e-invoicing)
+        </p>
         <p class="mt-1">
-          When e-invoicing is enabled and seller jurisdiction is SK or CZ, checkout adds optional tax
-          ID collection and billing address (<code class="text-xs">auto</code> — not required for
-          all subscribers). Other deployments keep the standard checkout flow.
+          When e-invoicing is enabled and seller jurisdiction is SK or CZ, checkout adds optional
+          tax ID collection and billing address (<code class="text-xs">auto</code>
+          — not required for all subscribers). Other deployments keep the standard checkout flow.
         </p>
         <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
           Legal timeline — SK mandatory B2B: {{ legalTimeline.skMandatoryB2bDate }}; CZ B2B mandate:
@@ -333,7 +335,8 @@
               class="mt-1 text-sm text-amber-800 dark:text-amber-200"
             >
               Stub transmission — not delivered to a Peppol AP or ISDOC recipient. Status
-              <code class="text-xs">stub_sent</code> is not legal proof of delivery.
+              <code class="text-xs">stub_sent</code>
+              is not legal proof of delivery.
             </p>
             <p
               v-if="selectedInvoice.invoice.format === 'isdoc'"
@@ -492,13 +495,18 @@
   }
 
   async function loadInvoices() {
-    const qs = statusFilter.value ? `?status=${encodeURIComponent(statusFilter.value)}` : '';
-    const res = await fetch(`${apiUrl.value}/api/admin/einvoicing/invoices${qs}`, {
-      headers: { ...authHeader() },
-    });
-    if (!res.ok) throw new Error(`Invoices HTTP ${res.status}`);
-    const data = await res.json();
-    invoices.value = Array.isArray(data.invoices) ? data.invoices : [];
+    try {
+      const qs = statusFilter.value ? `?status=${encodeURIComponent(statusFilter.value)}` : '';
+      const res = await fetch(`${apiUrl.value}/api/admin/einvoicing/invoices${qs}`, {
+        headers: { ...authHeader() },
+      });
+      if (!res.ok) throw new Error(`Invoices HTTP ${res.status}`);
+      const data = await res.json();
+      invoices.value = Array.isArray(data.invoices) ? data.invoices : [];
+    } catch (err) {
+      message.value = `Failed to load invoices: ${err instanceof Error ? err.message : String(err)}`;
+      messageOk.value = false;
+    }
   }
 
   async function openInvoice(id: string) {

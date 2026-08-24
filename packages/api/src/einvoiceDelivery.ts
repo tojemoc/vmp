@@ -113,6 +113,8 @@ export async function transmitPeppolUbl(
 
   // Provider-agnostic placeholder: accredited APs differ. Keep payload minimal
   // and treat non-2xx as failure so Stripe-driven retries can re-queue later.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/documents`, {
       method: 'POST',
@@ -130,6 +132,7 @@ export async function transmitPeppolUbl(
         invoiceNumber: input.invoiceNumber,
         documentXml: input.xml,
       }),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -163,6 +166,15 @@ export async function transmitPeppolUbl(
       detail: 'Submitted to Peppol Access Point.',
     };
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        ok: false,
+        mode: 'live',
+        status: 'failed',
+        code: 'peppol_ap_timeout',
+        detail: 'Peppol Access Point request timed out after 10 seconds.',
+      };
+    }
     return {
       ok: false,
       mode: 'live',
@@ -170,6 +182,8 @@ export async function transmitPeppolUbl(
       code: 'peppol_ap_network_error',
       detail: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
