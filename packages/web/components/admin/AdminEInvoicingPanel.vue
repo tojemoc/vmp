@@ -503,6 +503,8 @@
       if (!res.ok) throw new Error(`Invoices HTTP ${res.status}`);
       const data = await res.json();
       invoices.value = Array.isArray(data.invoices) ? data.invoices : [];
+      message.value = '';
+      messageOk.value = true;
     } catch (err) {
       message.value = `Failed to load invoices: ${err instanceof Error ? err.message : String(err)}`;
       messageOk.value = false;
