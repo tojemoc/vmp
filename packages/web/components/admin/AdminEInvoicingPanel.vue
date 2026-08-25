@@ -426,6 +426,8 @@
   const messageOk = ref(true);
   const statusFilter = ref('');
   const invoices = ref<InvoiceRow[]>([]);
+  /** Only the latest loadInvoices() call may update invoice/message state. */
+  let invoicesLoadRequestId = 0;
   const selectedInvoice = ref<{ invoice: InvoiceRow; xmlPreview: string | null } | null>(null);
   const peppolApiKeyConfigured = ref(false);
   const legalTimeline = reactive({
@@ -495,17 +497,21 @@
   }
 
   async function loadInvoices() {
+    const reqId = ++invoicesLoadRequestId;
     try {
       const qs = statusFilter.value ? `?status=${encodeURIComponent(statusFilter.value)}` : '';
       const res = await fetch(`${apiUrl.value}/api/admin/einvoicing/invoices${qs}`, {
         headers: { ...authHeader() },
       });
+      if (reqId !== invoicesLoadRequestId) return;
       if (!res.ok) throw new Error(`Invoices HTTP ${res.status}`);
       const data = await res.json();
+      if (reqId !== invoicesLoadRequestId) return;
       invoices.value = Array.isArray(data.invoices) ? data.invoices : [];
       message.value = '';
       messageOk.value = true;
     } catch (err) {
+      if (reqId !== invoicesLoadRequestId) return;
       message.value = `Failed to load invoices: ${err instanceof Error ? err.message : String(err)}`;
       messageOk.value = false;
     }
