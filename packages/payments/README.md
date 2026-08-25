@@ -72,6 +72,7 @@ This draft therefore never promises native Apple/Google Pay; checkout always red
 2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field. The Worker verifies the secret, re-fetches status via `/v1.0/status`, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
 3. **Cancel** — `POST /v1.0/cancel` on the stored `provider_subscription_id` (Comgate `transId`).
 4. **Failed renewal** — maps to `past_due` (same grace-period policy as GoPay), not immediate cancellation.
+5. **Renewal** — Worker cron calls `/v1.0/recurring` with `initRecurringId` = original checkout `transId` (`subscriptions.provider_subscription_id`). That original ID is never overwritten; each renewal `transId` is stored in `last_provider_payment_id`.
 
 ### Comgate admin_settings (no hardcoded prices)
 
@@ -87,7 +88,8 @@ Worker secrets / vars:
 | `COMGATE_MERCHANT` / `COMGATE_SECRET` | Merchant credentials |
 | `COMGATE_API_BASE` | Optional; default `https://payments.comgate.cz` |
 | `COMGATE_COUNTRY` | Optional; default `CZ` |
-| `API_URL` | Used to build webhook URL → `{API_URL}/api/payments/webhook/comgate` |
+
+The Comgate webhook (`POST /api/payments/webhook/comgate`) is **not** registered via an `API_URL` env var. Configure that Worker URL as the merchant-server URL in **Client Portal → Integration → Store Settings → Store Linking**. The `url` parameter sent to `/v1.0/create` is only the **browser return URL** after the payer leaves the hosted gateway.
 
 ## Adding a provider
 

@@ -30,6 +30,8 @@ export interface Subscription {
   planType?: PlanType;
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
+  /** Most recent provider payment/transaction id (Comgate renewal transId). */
+  lastPaymentId?: string | null;
 }
 
 export interface CreateCheckoutSessionInput {
@@ -48,6 +50,9 @@ export interface CreateSubscriptionInput {
   userId: string;
   planType: PlanType;
   customerId?: string;
+  email?: string;
+  /** Original Comgate checkout transId (`initRecurringId`). */
+  initRecurringId?: string;
 }
 
 export interface RefundOptions {

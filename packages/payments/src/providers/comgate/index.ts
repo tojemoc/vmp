@@ -11,7 +11,6 @@
  * merchant's account. Card payments only via ČSOB or Česká spořitelna.
  */
 
-import { NotImplementedError } from '../../errors.js';
 import type {
   CheckoutSession,
   ComgatePaymentsConfig,
@@ -177,10 +176,51 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       };
     },
 
-    async createSubscription(_input: CreateSubscriptionInput): Promise<Subscription> {
-      throw new NotImplementedError(
-        'Comgate subscriptions must be started via createCheckoutSession (hosted gateway)',
-      );
+    async createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
+      const initRecurringId = String(input.initRecurringId ?? '').trim();
+      if (!initRecurringId) {
+        const err = new Error(
+          'Comgate renewals require initRecurringId (original checkout transId)',
+        );
+        Object.assign(err, { status: 400, code: 'comgate_init_recurring_id_required' });
+        throw err;
+      }
+      const amountMajor = await config.amountMajorForPlan(input.planType);
+      if (amountMajor == null || !(amountMajor > 0)) {
+        throw new Error('Comgate price not configured for plan');
+      }
+      const currency = String((await config.currency()) || 'CZK')
+        .trim()
+        .toUpperCase();
+      const priceMinor = Math.round(amountMajor * 100);
+      const label = `VMP ${input.planType}`.slice(0, 16);
+      const refId = `vmp-r-${input.userId.slice(0, 8)}-${Date.now()}`
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 50);
+
+      const result = await comgatePost('/v1.0/recurring', {
+        initRecurringId,
+        price: priceMinor,
+        curr: currency,
+        label,
+        refId,
+        ...(input.email ? { email: input.email } : {}),
+      });
+
+      const renewalTransId = String(result.transId ?? '').trim();
+      if (!renewalTransId) {
+        const err = new Error('Comgate recurring payment did not return transId');
+        Object.assign(err, { code: 'comgate_renewal_failed', details: result });
+        throw err;
+      }
+
+      return {
+        id: initRecurringId,
+        customerId: input.userId,
+        status: 'active',
+        planType: input.planType,
+        lastPaymentId: renewalTransId,
+      };
     },
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
@@ -224,7 +264,10 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
 
       const status = await getPaymentStatus(transId);
       const refId = String(status.refId ?? notification.refId ?? '').trim();
-      const isRecurring = Boolean(notification.initRecurringId || status.initRecurringId);
+      const initRecurringId = String(
+        notification.initRecurringId ?? status.initRecurringId ?? '',
+      ).trim();
+      const isRecurring = Boolean(initRecurringId);
       const eventType = mapComgateStatusToEvent(
         String(status.status ?? notification.status ?? ''),
         isRecurring,
@@ -233,7 +276,9 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       return {
         type: eventType,
         providerId: 'comgate',
-        subscriptionId: transId,
+        // Keep the original checkout transId as the subscription id; the current
+        // payment's transId is stored separately as providerOrderId.
+        subscriptionId: initRecurringId || transId,
         providerOrderId: transId,
         ...(refId ? { purchaseId: refId } : {}),
         status: String(status.status ?? ''),

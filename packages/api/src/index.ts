@@ -144,6 +144,7 @@ import {
   handlePortal,
   handleSessionStatus,
   handleWebhook,
+  runComgateRenewalJobs,
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
 import {
@@ -1187,6 +1188,11 @@ const workerHandler = {
       const runReplication = cron === '*/15 * * * *';
 
       if (!runReplication) {
+        try {
+          await runComgateRenewalJobs(env);
+        } catch (err) {
+          console.error('Comgate renewal sweep failed:', err);
+        }
         try {
           await runScheduledPublishJobs(env);
           await syncScheduledPublishHint(env);

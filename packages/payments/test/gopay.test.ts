@@ -51,9 +51,18 @@ describe('GoPay helpers', () => {
   });
 
   it('maps plan types to MONTH recurrence periods', () => {
-    assert.deepEqual(recurrenceForPlan('monthly').recurrence_period, 1);
-    assert.deepEqual(recurrenceForPlan('yearly').recurrence_period, 12);
-    assert.deepEqual(recurrenceForPlan('club').recurrence_period, 12);
+    assert.deepEqual(recurrenceForPlan('monthly'), {
+      recurrence_cycle: 'MONTH',
+      recurrence_period: 1,
+      recurrence_date_to: '2099-12-30',
+    });
+    assert.deepEqual(recurrenceForPlan('yearly'), {
+      recurrence_cycle: 'MONTH',
+      recurrence_period: 12,
+      recurrence_date_to: '2099-12-30',
+    });
+    assert.throws(() => recurrenceForPlan('club'), /club checkout is not supported/i);
+    assert.ok(recurrenceForPlan('yearly').recurrence_date_to < '2099-12-31');
   });
 });
 
@@ -63,6 +72,20 @@ describe('createGoPayProvider', () => {
     assert.equal(
       createGoPayProvider(baseConfig({ clientSecret: undefined })).isConfigured(),
       false,
+    );
+  });
+
+  it('createCheckoutSession rejects club until renewal rules are defined', async () => {
+    const provider = createGoPayProvider(baseConfig());
+    await assert.rejects(
+      () =>
+        provider.createCheckoutSession({
+          userId: 'user-1',
+          email: 'a@example.com',
+          planType: 'club',
+          returnPath: '/account',
+        }),
+      /club checkout is not supported/i,
     );
   });
 

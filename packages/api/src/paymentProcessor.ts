@@ -1493,10 +1493,6 @@ export async function handleWebhook(
 }
 
 /**
- * GET /api/account/subscription — protected
- * Returns the most recent subscription row for the authenticated user.
- */
-/**
  * GET /api/payments/webhook/gopay?id=&parent_id= — NO auth (GoPay calls this)
  * Notifications are unsigned; we re-fetch payment status with merchant credentials.
  */
@@ -1621,15 +1617,6 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
               err: brevoErr,
             });
           }
-          try {
-            await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
-          } catch (offlineErr) {
-            console.error('[gopay webhook] offline revoke failed', {
-              userId: existing.user_id,
-              err: offlineErr,
-            });
-            throw offlineErr;
-          }
         }
       }
       return jsonResponse({ ok: true }, 200, corsHeaders);
@@ -1682,10 +1669,25 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
   }
 }
 
+function comgateNotifyOk(corsHeaders: any) {
+  return new Response('code=0&message=OK', {
+    status: 200,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+  });
+}
+
+function comgateNotifyRetry(corsHeaders: any, message = 'processing error') {
+  return new Response(`code=1500&message=${encodeURIComponent(message)}`, {
+    status: 500,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+  });
+}
+
 /**
  * POST /api/payments/webhook/comgate — NO auth (Comgate calls this)
  * Notifications include `secret` for verification; status is re-verified via API.
- * Must reply `code=0&message=OK`.
+ * Reply `code=0&message=OK` only for successfully processed or intentionally ignored
+ * notifications so Comgate retries unresolved identities and internal errors.
  */
 export async function handleComgateWebhook(request: any, env: any, corsHeaders: any) {
   const rawBody = await request.text();
@@ -1694,19 +1696,13 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
   if (!comgateProvider) {
     const config = buildPaymentsConfig(env);
     if (!config.comgate) {
-      return new Response('code=0&message=OK', {
-        status: 200,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
-      });
+      return comgateNotifyOk(corsHeaders);
     }
     const forced = createEnabledProviders(['comgate'], config);
     comgateProvider = forced.get('comgate');
   }
   if (!comgateProvider || !comgateProvider.isConfigured()) {
-    return new Response('code=0&message=OK', {
-      status: 200,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
-    });
+    return comgateNotifyOk(corsHeaders);
   }
 
   const valid = await comgateProvider.verifyWebhookSignature(rawBody, '');
@@ -1722,13 +1718,11 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
     const db = getDb(env);
     const subscriptionId = String(event.subscriptionId ?? '').trim();
     const purchaseId = String(event.purchaseId ?? '').trim();
+    const renewalTransId = String(event.providerOrderId ?? '').trim();
 
     if (event.type === 'checkout.completed' || event.type === 'invoice.paid') {
       if (!subscriptionId) {
-        return new Response('code=0&message=OK', {
-          status: 200,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
-        });
+        return comgateNotifyOk(corsHeaders);
       }
 
       const identity = await resolveComgateCheckoutIdentity(db, {
@@ -1736,47 +1730,58 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         purchaseId,
       });
 
-      if (identity?.userId) {
-        await upsertSubscriptionRow(db, {
-          userId: identity.userId,
-          planType: identity.planType,
-          status: 'active',
-          provider: 'comgate',
-          providerSubscriptionId: subscriptionId,
-          providerCustomerId: identity.userId,
-          currentPeriodEnd: periodEndIsoForPlan(identity.planType),
-        });
-        if (identity.fromPendingSession && identity.pendingSessionId) {
-          await db
-            .prepare(
-              `UPDATE payment_checkout_sessions
-               SET status = 'completed',
-                   provider_subscription_id = ?,
-                   completed_at = CURRENT_TIMESTAMP,
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE id = ? AND status = 'pending'`,
-            )
-            .bind(subscriptionId, identity.pendingSessionId)
-            .run();
-        }
-        try {
-          await syncSubscriptionNewsletter(db, identity.userId, 'active', env);
-        } catch (brevoErr) {
-          console.error('[comgate webhook] newsletter sync failed', {
-            userId: identity.userId,
-            err: brevoErr,
-          });
-        }
-      } else {
+      if (!identity?.userId) {
         console.warn('[comgate webhook] checkout completed without resolvable user', {
           subscriptionId,
           purchaseId,
+        });
+        return comgateNotifyRetry(corsHeaders, 'unresolved user');
+      }
+
+      await upsertSubscriptionRow(db, {
+        userId: identity.userId,
+        planType: identity.planType,
+        status: 'active',
+        provider: 'comgate',
+        providerSubscriptionId: subscriptionId,
+        providerCustomerId: identity.userId,
+        currentPeriodEnd: periodEndIsoForPlan(identity.planType),
+      });
+      if (renewalTransId && renewalTransId !== subscriptionId) {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET last_provider_payment_id = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate' AND provider_subscription_id = ?`,
+          )
+          .bind(renewalTransId, subscriptionId)
+          .run();
+      }
+      if (identity.fromPendingSession && identity.pendingSessionId) {
+        await db
+          .prepare(
+            `UPDATE payment_checkout_sessions
+             SET status = 'completed',
+                 provider_subscription_id = ?,
+                 completed_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND status = 'pending'`,
+          )
+          .bind(subscriptionId, identity.pendingSessionId)
+          .run();
+      }
+      try {
+        await syncSubscriptionNewsletter(db, identity.userId, 'active', env);
+      } catch (brevoErr) {
+        console.error('[comgate webhook] newsletter sync failed', {
+          userId: identity.userId,
+          err: brevoErr,
         });
       }
     }
 
     // Match GoPay / Stripe: failed renewals enter a grace period (past_due), not
-    // immediate cancellation.
+    // immediate cancellation. Offline licenses stay valid until actual cancellation.
     if (event.type === 'payment.failed') {
       if (subscriptionId) {
         const existing = await db
@@ -1803,30 +1808,103 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
               err: brevoErr,
             });
           }
-          try {
-            await revokeOfflineLicensesForUser(db, existing.user_id, 'subscription_past_due');
-          } catch (offlineErr) {
-            console.error('[comgate webhook] offline revoke failed', {
-              userId: existing.user_id,
-              err: offlineErr,
-            });
-            throw offlineErr;
-          }
         }
       }
     }
 
-    return new Response('code=0&message=OK', {
-      status: 200,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
-    });
+    return comgateNotifyOk(corsHeaders);
   } catch (err) {
     console.error('handleComgateWebhook error:', err);
-    return new Response('code=0&message=OK', {
-      status: 200,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
-    });
+    return comgateNotifyRetry(corsHeaders);
   }
+}
+
+/**
+ * Merchant-driven Comgate renewals: charge `/v1.0/recurring` with the original
+ * checkout transId (`provider_subscription_id`) and store each new transId in
+ * `last_provider_payment_id` without overwriting the initRecurringId.
+ */
+export async function renewDueComgateSubscriptions(
+  db: {
+    prepare: (sql: string) => {
+      bind: (...args: unknown[]) => {
+        all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+        run?: () => Promise<unknown>;
+        first?: () => Promise<Record<string, unknown> | null>;
+      };
+      all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+    };
+  },
+  provider: {
+    createSubscription: (input: {
+      userId: string;
+      planType: PlanType;
+      initRecurringId?: string;
+      customerId?: string;
+      email?: string;
+    }) => Promise<{ lastPaymentId?: string | null }>;
+  },
+): Promise<{ attempted: number; renewed: number }> {
+  const due = await db
+    .prepare(
+      `SELECT s.id, s.user_id, s.plan_type, s.provider_subscription_id, u.email
+       FROM subscriptions s
+       LEFT JOIN users u ON u.id = s.user_id
+       WHERE s.provider = 'comgate'
+         AND s.status IN ('active', 'past_due')
+         AND IFNULL(s.cancel_at_period_end, 0) = 0
+         AND s.provider_subscription_id IS NOT NULL
+         AND datetime(s.current_period_end) <= datetime('now')
+       LIMIT 25`,
+    )
+    .all?.();
+  const rows = due?.results ?? [];
+  let renewed = 0;
+  for (const row of rows) {
+    const initRecurringId = String(row.provider_subscription_id ?? '').trim();
+    const userId = String(row.user_id ?? '').trim();
+    const email = String(row.email ?? '').trim();
+    if (!initRecurringId || !userId) continue;
+    const planType = normalizePlanType(String(row.plan_type ?? 'monthly'));
+    const created = await provider.createSubscription({
+      userId,
+      planType,
+      initRecurringId,
+      customerId: userId,
+      ...(email ? { email } : {}),
+    });
+    const lastPaymentId = String(created.lastPaymentId ?? '').trim();
+    await db
+      .prepare(
+        `UPDATE subscriptions
+         SET last_provider_payment_id = COALESCE(?, last_provider_payment_id),
+             current_period_end = ?,
+             status = 'active',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND provider = 'comgate'`,
+      )
+      .bind(lastPaymentId || null, periodEndIsoForPlan(planType), row.id)
+      .run?.();
+    renewed += 1;
+  }
+  return { attempted: rows.length, renewed };
+}
+
+export async function runComgateRenewalJobs(
+  env: any,
+): Promise<{ attempted: number; renewed: number }> {
+  const db = getDb(env);
+  const { providers } = await getPaymentProviders(env);
+  let comgateProvider = providers.get('comgate');
+  if (!comgateProvider) {
+    const config = buildPaymentsConfig(env);
+    if (!config.comgate) return { attempted: 0, renewed: 0 };
+    comgateProvider = createEnabledProviders(['comgate'], config).get('comgate');
+  }
+  if (!comgateProvider || !comgateProvider.isConfigured()) {
+    return { attempted: 0, renewed: 0 };
+  }
+  return renewDueComgateSubscriptions(db, comgateProvider);
 }
 
 /**

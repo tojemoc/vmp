@@ -106,6 +106,39 @@ describe('createComgateProvider', () => {
     assert.equal(event.subscriptionId, 'AB12-CD34-EF56');
   });
 
+  it('createSubscription calls /v1.0/recurring with original initRecurringId', async () => {
+    const calls = mockFetchSequence([{ body: 'code=0&message=OK&transId=RENEW-99-AA' }]);
+    const provider = createComgateProvider(baseConfig());
+    const sub = await provider.createSubscription({
+      userId: 'user-1',
+      planType: 'monthly',
+      initRecurringId: 'AB12-CD34-EF56',
+      email: 'a@example.com',
+    });
+    assert.equal(sub.id, 'AB12-CD34-EF56');
+    assert.equal(sub.lastPaymentId, 'RENEW-99-AA');
+    assert.equal(sub.status, 'active');
+    assert.match(calls[0]!.url, /\/v1\.0\/recurring$/);
+    const bodyStr = String(calls[0]!.init?.body ?? '');
+    assert.ok(bodyStr.includes('initRecurringId=AB12-CD34-EF56'));
+    assert.ok(bodyStr.includes('price=19900'));
+  });
+
+  it('handleWebhook keeps original transId as subscriptionId on renewals', async () => {
+    mockFetchSequence([
+      {
+        body: 'code=0&message=OK&merchant=123456&transId=RENEW-99-AA&status=PAID&refId=order-43&initRecurringId=AB12-CD34-EF56',
+      },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    const event = await provider.handleWebhook(
+      'merchant=123456&secret=test-secret&transId=RENEW-99-AA&status=PAID&initRecurringId=AB12-CD34-EF56',
+    );
+    assert.equal(event.type, 'invoice.paid');
+    assert.equal(event.subscriptionId, 'AB12-CD34-EF56');
+    assert.equal(event.providerOrderId, 'RENEW-99-AA');
+  });
+
   it('cancelSubscription calls /v1.0/cancel', async () => {
     const calls = mockFetchSequence([{ body: 'code=0&message=OK' }]);
     const provider = createComgateProvider(baseConfig());

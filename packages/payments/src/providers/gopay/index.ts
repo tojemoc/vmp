@@ -69,17 +69,26 @@ function toMinorUnits(major: number): number {
   return Math.round(major * 100);
 }
 
+/** GoPay rejects recurrence_date_to of 2099-12-31; must be strictly earlier. */
+const GOPAY_RECURRENCE_DATE_TO = '2099-12-30';
+
 function recurrenceForPlan(planType: PlanType): {
   recurrence_cycle: 'MONTH';
   recurrence_period: number;
   recurrence_date_to: string;
 } {
-  // yearly + club: charge every 12 months; monthly: every month
+  if (planType === 'club') {
+    const err = new Error(
+      'GoPay club checkout is not supported until club renewal and cancellation rules are defined',
+    );
+    Object.assign(err, { status: 400, code: 'gopay_club_unsupported' });
+    throw err;
+  }
   const period = planType === 'monthly' ? 1 : 12;
   return {
     recurrence_cycle: 'MONTH',
     recurrence_period: period,
-    recurrence_date_to: '2099-12-31',
+    recurrence_date_to: GOPAY_RECURRENCE_DATE_TO,
   };
 }
 

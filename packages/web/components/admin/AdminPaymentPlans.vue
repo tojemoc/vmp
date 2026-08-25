@@ -819,22 +819,8 @@
           showManageButton: Boolean(data.legacy.showManageButton),
         };
       }
-      if (data.gopay) {
-        gopay.value = { configured: Boolean(data.gopay.configured) };
-      }
-      if (data.comgate) {
-        comgate.value = { configured: Boolean(data.comgate.configured) };
-      }
       if (!legacy.value.configured) {
         enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
-        syncProviderOrderFromEnabled();
-      }
-      if (!gopay.value.configured) {
-        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'gopay');
-        syncProviderOrderFromEnabled();
-      }
-      if (!comgate.value.configured) {
-        enabledProviders.value = enabledProviders.value.filter((p) => p !== 'comgate');
         syncProviderOrderFromEnabled();
       }
     } catch (e: unknown) {

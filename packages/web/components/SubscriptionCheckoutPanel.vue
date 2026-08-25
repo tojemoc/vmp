@@ -184,14 +184,13 @@
         @click="startGoPayCheckout"
       >
         <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>Pay with GoPay ({{ formatGoPayPrice(gopayPlanPrice) }})</span>
+        <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
       </button>
       <p
         class="text-[11px] mt-1.5"
         :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
       >
-        Redirects to the GoPay web gateway. Apple Pay / Google Pay are gateway-only (no native
-        one-click; do not use WebView).
+        {{ strings.checkoutGoPayGatewayNote }}
       </p>
     </div>
 
@@ -207,7 +206,7 @@
         @click="startComgateCheckout"
       >
         <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>Pay with Comgate ({{ formatComgatePrice(comgatePlanPrice) }})</span>
+        <span v-else>{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span>
       </button>
     </div>
 
@@ -377,7 +376,9 @@
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
 
-  const showGoPayCheckout = computed(() => enabledProviders.value.includes('gopay'));
+  const showGoPayCheckout = computed(
+    () => enabledProviders.value.includes('gopay') && selectedPlan.value !== 'club',
+  );
 
   const showComgateCheckout = computed(() => enabledProviders.value.includes('comgate'));
 

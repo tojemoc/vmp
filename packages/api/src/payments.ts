@@ -16,5 +16,6 @@ export {
   handleGoPayWebhook,
   handlePortal,
   handleSessionStatus,
+  runComgateRenewalJobs,
 } from './paymentProcessor.js';
 export { handleWebhook, normalizeStripeStatus } from './stripe.js';
