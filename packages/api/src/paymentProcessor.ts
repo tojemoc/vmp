@@ -22,20 +22,14 @@ import {
   type NormalizedPaymentEvent,
   type PaymentProviderId,
 } from '@vmp/payments';
-import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import {
   CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
   looksLikePaymentConfigLeak,
 } from './customerSafePaymentErrors.js';
+import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
-import {
-  captureMappedPostHogEvent,
-  capturePostHogException,
-  posthogEventFromStripeWebhook,
-  type PostHogWaitUntilCtx,
-} from './posthog.js';
 import {
   buildPaymentsConfig,
   dbProviderToRegistryId,
@@ -49,6 +43,12 @@ import {
   toApiProviderId,
   toSupportedApiProviderIds,
 } from './paymentProviders.js';
+import {
+  captureMappedPostHogEvent,
+  capturePostHogException,
+  type PostHogWaitUntilCtx,
+  posthogEventFromStripeWebhook,
+} from './posthog.js';
 
 export { parseLocaleNumber } from './parseLocaleNumber.js';
 
@@ -123,10 +123,7 @@ function parseConfiguredPrice(value: unknown): number | null {
   return parseLocaleNumber(value);
 }
 
-async function getPricingSettings(
-  env: any,
-  provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate',
-) {
+async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate') {
   if (provider === 'gopay' || provider === 'comgate') {
     const [monthly, yearly, club] = await Promise.all([
       getSetting(env, `${provider}_monthly_price`, { ttlSeconds: 300 }),
@@ -573,8 +570,7 @@ async function updateSubscriptionStatusByProviderRef(
   if (refs.length === 0) return;
 
   const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
-  const cancelClause =
-    nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
+  const cancelClause = nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
   await db
     .prepare(
       `UPDATE subscriptions
@@ -1330,11 +1326,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     }
     const rawMessage = err instanceof Error ? err.message : '';
     const configLeak = looksLikePaymentConfigLeak(rawMessage);
-    if (
-      code === 'legacy_not_configured' ||
-      code === 'provider_not_configured' ||
-      configLeak
-    ) {
+    if (code === 'legacy_not_configured' || code === 'provider_not_configured' || configLeak) {
       return jsonResponse(
         {
           error: CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
