@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  isAmbiguousComgateChargeError,
   renewDueComgateSubscriptions,
   resolveComgateCheckoutIdentity,
 } from '../src/paymentProcessor.js';
@@ -176,7 +177,10 @@ describe('resolveComgateCheckoutIdentity', () => {
 });
 
 describe('renewDueComgateSubscriptions', () => {
-  function makeDb(due: Array<Record<string, unknown>>) {
+  function makeDb(opts: {
+    due?: Array<Record<string, unknown>>;
+    stale?: Array<Record<string, unknown>>;
+  }) {
     const updates: Array<{ sql: string; args: unknown[] }> = [];
     const db = {
       updates,
@@ -189,7 +193,10 @@ describe('renewDueComgateSubscriptions', () => {
             return stmt;
           },
           async all() {
-            return { results: due };
+            if (sql.includes("renewal_attempt_status IN ('pending', 'charged')")) {
+              return { results: opts.stale ?? [] };
+            }
+            return { results: opts.due ?? [] };
           },
           async run() {
             updates.push({ sql: stmt.sql, args: stmt.args });
@@ -212,7 +219,7 @@ describe('renewDueComgateSubscriptions', () => {
         email: 'a@example.com',
       },
     ];
-    const db = makeDb(due);
+    const db = makeDb({ due });
     const created: Array<Record<string, unknown>> = [];
     const result = await renewDueComgateSubscriptions(db, {
       createSubscription: async (input) => {
@@ -250,7 +257,7 @@ describe('renewDueComgateSubscriptions', () => {
         email: 'b@example.com',
       },
     ];
-    const db = makeDb(due);
+    const db = makeDb({ due });
     const result = await renewDueComgateSubscriptions(db, {
       createSubscription: async (input) => {
         if (input.initRecurringId === 'INIT-1') {
@@ -263,5 +270,76 @@ describe('renewDueComgateSubscriptions', () => {
     assert.equal(result.renewed, 1);
     assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'failed'")));
     assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'charged'")));
+  });
+
+  it('leaves pending on timeout / renewal_failed and marks failed only on definitive declines', async () => {
+    assert.equal(
+      isAmbiguousComgateChargeError(Object.assign(new Error('timeout'), { code: 'comgate_timeout' })),
+      true,
+    );
+    assert.equal(
+      isAmbiguousComgateChargeError(
+        Object.assign(new Error('no id'), { code: 'comgate_renewal_failed' }),
+      ),
+      true,
+    );
+    assert.equal(
+      isAmbiguousComgateChargeError(
+        Object.assign(new Error('api'), { code: 'comgate_api_error' }),
+      ),
+      false,
+    );
+
+    const due = [
+      {
+        id: 'sub-timeout',
+        user_id: 'user-1',
+        plan_type: 'monthly',
+        provider_subscription_id: 'INIT-T',
+        email: 'a@example.com',
+      },
+    ];
+    const db = makeDb({ due });
+    const result = await renewDueComgateSubscriptions(db, {
+      createSubscription: async () => {
+        throw Object.assign(new Error('Comgate request timed out'), { code: 'comgate_timeout' });
+      },
+    });
+    assert.equal(result.renewed, 0);
+    assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'pending'")));
+    assert.ok(!db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'failed'")));
+  });
+
+  it('reconciles stale charged attempts via /v1.0/status before new charges', async () => {
+    const stale = [
+      {
+        id: 'sub-stale',
+        plan_type: 'monthly',
+        renewal_attempt_payment_id: 'RENEW-OLD',
+        last_provider_payment_id: 'RENEW-OLD',
+      },
+    ];
+    const due = [
+      {
+        id: 'sub-new',
+        user_id: 'user-2',
+        plan_type: 'yearly',
+        provider_subscription_id: 'INIT-2',
+        email: 'b@example.com',
+      },
+    ];
+    const db = makeDb({ due, stale });
+    const statusCalls: string[] = [];
+    const result = await renewDueComgateSubscriptions(db, {
+      createSubscription: async () => ({ lastPaymentId: 'RENEW-NEW' }),
+      getPaymentStatus: async (transId) => {
+        statusCalls.push(transId);
+        return { status: 'PAID' };
+      },
+    });
+    assert.deepEqual(statusCalls, ['RENEW-OLD']);
+    assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'completed'")));
+    assert.ok(db.updates.some((u) => String(u.sql).includes('current_period_end')));
+    assert.equal(result.renewed, 1);
   });
 });

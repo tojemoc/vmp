@@ -376,25 +376,6 @@
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
 
-  const showGoPayCheckout = computed(
-    () => enabledProviders.value.includes('gopay') && selectedPlan.value !== 'club',
-  );
-
-  const showComgateCheckout = computed(() => enabledProviders.value.includes('comgate'));
-
-  const checkoutBlurb = computed(() => {
-    if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
-    if (showLegacyCheckout.value) return strings.checkoutBlurbDefault;
-    return strings.checkoutBlurbEmbedded;
-  });
-
-  const legacyButtonClass = computed(() => {
-    if (props.embedded) {
-      return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800';
-    }
-    return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
-  });
-
   const legacyPlanPrice = computed(() => {
     const plan = selectedPlan.value;
     const legacy = legacyPrices.value[plan];
@@ -410,6 +391,30 @@
   const comgatePlanPrice = computed(() => {
     const value = comgatePrices.value[selectedPlan.value];
     return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const showGoPayCheckout = computed(
+    () =>
+      enabledProviders.value.includes('gopay') &&
+      selectedPlan.value !== 'club' &&
+      gopayPlanPrice.value != null,
+  );
+
+  const showComgateCheckout = computed(
+    () => enabledProviders.value.includes('comgate') && comgatePlanPrice.value != null,
+  );
+
+  const checkoutBlurb = computed(() => {
+    if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
+    if (showLegacyCheckout.value) return strings.checkoutBlurbDefault;
+    return strings.checkoutBlurbEmbedded;
+  });
+
+  const legacyButtonClass = computed(() => {
+    if (props.embedded) {
+      return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800';
+    }
+    return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
   });
 
   /** Apple / Google Pay above the fold (mount express until detection finishes). */

@@ -72,7 +72,7 @@ This draft therefore never promises native Apple/Google Pay; checkout always red
 2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field. The Worker verifies the secret, re-fetches status via `/v1.0/status`, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
 3. **Cancel** — `POST /v1.0/cancel` on the stored `provider_subscription_id` (Comgate `transId`).
 4. **Failed renewal** — maps to `past_due` (same grace-period policy as GoPay), not immediate cancellation.
-5. **Renewal** — Worker cron claims a due subscription row, then calls `/v1.0/recurring` with `initRecurringId` = original checkout `transId` (`subscriptions.provider_subscription_id`). The original ID is never overwritten; each renewal `transId` is stored in `last_provider_payment_id` / `renewal_attempt_payment_id`. Access and `current_period_end` advance only after a successful Comgate notification completes the claim.
+5. **Renewal** — Worker cron first reconciles stale `pending`/`charged` attempts via `/v1.0/status`, then claims a due subscription row and calls `/v1.0/recurring` with `initRecurringId` = original checkout `transId` (`subscriptions.provider_subscription_id`). The original ID is never overwritten; each renewal `transId` is stored in `last_provider_payment_id` / `renewal_attempt_payment_id`. Access and `current_period_end` advance only after a successful Comgate notification (or status reconciliation) completes the claim. Ambiguous charge errors (`comgate_timeout`, `comgate_renewal_failed`) leave the claim pending; only definitive declines mark it failed.
 
 ### Comgate admin_settings (no hardcoded prices)
 

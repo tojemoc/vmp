@@ -125,6 +125,9 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
     },
     isConfigured: () => Boolean(config.merchant && config.secret && config.frontendUrl),
 
+    /** Used by Worker renewal reconciliation (not part of the public PaymentProvider surface). */
+    getPaymentStatus,
+
     async createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession> {
       const amountMajor = await config.amountMajorForPlan(input.planType);
       if (amountMajor == null || !(amountMajor > 0)) {
