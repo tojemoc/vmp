@@ -68,7 +68,7 @@ This draft therefore never promises native Apple/Google Pay; checkout always red
 
 ## Comgate draft behaviour
 
-1. **Checkout** — `POST /api/payments/payment` creates a Comgate payment with `initRecurring=true` and returns a `redirect` URL. A pending row in `payment_checkout_sessions` (keyed by `refId` / `transId`) stores the user and plan until the webhook fires.
+1. **Checkout** — `POST /api/payments/payment` creates a Comgate payment with `initRecurring=true` and returns a `redirect` URL. A pending row in `payment_checkout_sessions` (table from migration `0010_gocardless_payments.sql`; keyed by `refId` / `transId`) stores the user and plan until the webhook fires. Checkout fails closed if that row cannot be written.
 2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field. The Worker verifies the secret, re-fetches status via `/v1.0/status`, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
 3. **Cancel** — `POST /v1.0/cancel` on the stored `provider_subscription_id` (Comgate `transId`).
 4. **Failed renewal** — maps to `past_due` (same grace-period policy as GoPay), not immediate cancellation.

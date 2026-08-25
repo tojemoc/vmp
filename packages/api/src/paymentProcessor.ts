@@ -206,6 +206,69 @@ function normalizePlanType(planType: string): PlanType {
   return 'monthly';
 }
 
+/**
+ * Resolve the paying user for a Comgate webhook when no subscription row exists yet
+ * (first checkout). Relies on `payment_checkout_sessions` from migration
+ * `0010_gocardless_payments.sql` — written at checkout creation with
+ * `checkout_token = refId` and `provider_checkout_id = transId`.
+ */
+export async function resolveComgateCheckoutIdentity(
+  db: {
+    prepare: (sql: string) => {
+      bind: (...args: unknown[]) => {
+        first: () => Promise<{ id?: unknown; user_id?: unknown; plan_type?: unknown } | null>;
+      };
+    };
+  },
+  opts: { subscriptionId: string; purchaseId: string },
+): Promise<{
+  userId: string;
+  planType: PlanType;
+  pendingSessionId: string | null;
+  fromPendingSession: boolean;
+} | null> {
+  const subscriptionId = String(opts.subscriptionId ?? '').trim();
+  const purchaseId = String(opts.purchaseId ?? '').trim();
+  if (!subscriptionId && !purchaseId) return null;
+
+  const existing = await db
+    .prepare(
+      `SELECT user_id, plan_type FROM subscriptions
+       WHERE provider = 'comgate' AND (provider_subscription_id = ? OR purchase_id = ?)
+       LIMIT 1`,
+    )
+    .bind(subscriptionId, purchaseId || subscriptionId)
+    .first();
+
+  if (existing?.user_id) {
+    return {
+      userId: String(existing.user_id).trim(),
+      planType: normalizePlanType(String(existing.plan_type ?? 'monthly')),
+      pendingSessionId: null,
+      fromPendingSession: false,
+    };
+  }
+
+  const pending = await db
+    .prepare(
+      `SELECT id, user_id, plan_type FROM payment_checkout_sessions
+       WHERE provider = 'comgate' AND status = 'pending'
+         AND (checkout_token = ? OR provider_checkout_id = ?)
+       LIMIT 1`,
+    )
+    .bind(purchaseId || subscriptionId, subscriptionId || purchaseId)
+    .first();
+
+  if (!pending?.user_id) return null;
+
+  return {
+    userId: String(pending.user_id).trim(),
+    planType: normalizePlanType(String(pending.plan_type ?? 'monthly')),
+    pendingSessionId: String(pending.id ?? '').trim() || null,
+    fromPendingSession: true,
+  };
+}
+
 async function upsertSubscriptionRow(
   db: any,
   params: {
@@ -1204,19 +1267,30 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     }
     if (session.checkoutUrl) {
       if (apiProvider === 'comgate') {
+        // Comgate cannot carry free-form metadata on the payment object. Persist a
+        // pending payment_checkout_sessions row (table from migration 0010) so the
+        // webhook can resolve userId/planType on first purchase.
         const refId = String(session.metadata?.refId ?? '').trim();
         const orderId = String(session.orderId ?? '').trim();
-        if (refId && orderId) {
-          await db
-            .prepare(
-              `INSERT INTO payment_checkout_sessions (
-                id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status,
-                created_at, updated_at
-              ) VALUES (?, ?, 'comgate', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-            )
-            .bind(crypto.randomUUID(), user.sub, planType, refId, orderId)
-            .run();
+        if (!refId || !orderId) {
+          return jsonResponse(
+            {
+              error: 'Failed to create checkout session',
+              code: 'checkout_session_persist_failed',
+            },
+            502,
+            corsHeaders,
+          );
         }
+        await db
+          .prepare(
+            `INSERT INTO payment_checkout_sessions (
+              id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status,
+              created_at, updated_at
+            ) VALUES (?, ?, 'comgate', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          )
+          .bind(crypto.randomUUID(), user.sub, planType, refId, orderId)
+          .run();
       }
       return jsonResponse(
         {
@@ -1621,11 +1695,6 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
  * Notifications include `secret` for verification; status is re-verified via API.
  * Must reply `code=0&message=OK`.
  */
-/**
- * POST /api/payments/webhook/comgate — NO auth (Comgate calls this)
- * Notifications include `secret` for verification; status is re-verified via API.
- * Must reply `code=0&message=OK`.
- */
 export async function handleComgateWebhook(request: any, env: any, corsHeaders: any) {
   const rawBody = await request.text();
   const { providers } = await getPaymentProviders(env);
@@ -1669,47 +1738,23 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
         });
       }
-      const existing = await db
-        .prepare(
-          `SELECT user_id, plan_type FROM subscriptions
-           WHERE provider = 'comgate' AND (provider_subscription_id = ? OR purchase_id = ?)
-           LIMIT 1`,
-        )
-        .bind(subscriptionId, purchaseId || subscriptionId)
-        .first();
 
-      let userId = String(existing?.user_id ?? '').trim();
-      let planType = normalizePlanType(String(existing?.plan_type ?? 'monthly'));
-      let pendingSessionId: string | null = null;
+      const identity = await resolveComgateCheckoutIdentity(db, {
+        subscriptionId,
+        purchaseId,
+      });
 
-      if (!userId) {
-        const pending = await db
-          .prepare(
-            `SELECT id, user_id, plan_type FROM payment_checkout_sessions
-             WHERE provider = 'comgate' AND status = 'pending'
-               AND (checkout_token = ? OR provider_checkout_id = ?)
-             LIMIT 1`,
-          )
-          .bind(purchaseId || subscriptionId, subscriptionId)
-          .first();
-        if (pending?.user_id) {
-          userId = String(pending.user_id).trim();
-          planType = normalizePlanType(String(pending.plan_type ?? planType));
-          pendingSessionId = String(pending.id ?? '').trim() || null;
-        }
-      }
-
-      if (userId) {
+      if (identity?.userId) {
         await upsertSubscriptionRow(db, {
-          userId,
-          planType,
+          userId: identity.userId,
+          planType: identity.planType,
           status: 'active',
           provider: 'comgate',
           providerSubscriptionId: subscriptionId,
-          providerCustomerId: userId,
-          currentPeriodEnd: periodEndIsoForPlan(planType),
+          providerCustomerId: identity.userId,
+          currentPeriodEnd: periodEndIsoForPlan(identity.planType),
         });
-        if (pendingSessionId) {
+        if (identity.fromPendingSession && identity.pendingSessionId) {
           await db
             .prepare(
               `UPDATE payment_checkout_sessions
@@ -1719,17 +1764,27 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ? AND status = 'pending'`,
             )
-            .bind(subscriptionId, pendingSessionId)
+            .bind(subscriptionId, identity.pendingSessionId)
             .run();
         }
         try {
-          await syncSubscriptionNewsletter(db, userId, 'active', env);
+          await syncSubscriptionNewsletter(db, identity.userId, 'active', env);
         } catch (brevoErr) {
-          console.error('[comgate webhook] newsletter sync failed', { userId, err: brevoErr });
+          console.error('[comgate webhook] newsletter sync failed', {
+            userId: identity.userId,
+            err: brevoErr,
+          });
         }
+      } else {
+        console.warn('[comgate webhook] checkout completed without resolvable user', {
+          subscriptionId,
+          purchaseId,
+        });
       }
     }
 
+    // Match GoPay / Stripe: failed renewals enter a grace period (past_due), not
+    // immediate cancellation.
     if (event.type === 'payment.failed') {
       if (subscriptionId) {
         const existing = await db
