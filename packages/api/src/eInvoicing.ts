@@ -1,11 +1,17 @@
 /**
  * E-invoicing orchestration (Slovakia eFaktura / Czechia ISDOC).
  *
- * Skeleton: routing decisions, D1 ledger, UBL XML draft, admin settings.
- * Peppol AP transmission and ISDOC export are queued for a follow-up PR.
+ * Routing, D1 ledger, Peppol UBL + ISDOC XML generation, admin settings.
+ * Transmission uses `einvoiceDelivery.ts` (Peppol AP stub / ISDOC email stub).
+ * Live Peppol requires Worker secret `PEPPOL_AP_API_KEY` + AP URL settings.
+ *
+ * Stripe Checkout must collect customer tax IDs and billing address so
+ * `extractBuyerFromStripeInvoice` can classify B2B (see `@vmp/payments`
+ * Stripe `tax_id_collection` + `billing_address_collection`).
  */
 
 import { requireAuth, requireRole } from './auth.js';
+import { deliverIsdocInvoice, transmitPeppolUbl } from './einvoiceDelivery.js';
 import { getObjectStorage } from './objectStorage.js';
 import { getSetting, setSettings } from './settingsStore.js';
 import type { NormalizedInvoiceBuyer, NormalizedInvoiceData, PaymentProviderId } from '@vmp/payments';
@@ -19,7 +25,14 @@ export type InvoiceRouting =
   | 'email_pdf'
   | 'deferred'
   | 'not_required';
-export type InvoiceStatus = 'draft' | 'queued' | 'sent' | 'delivered' | 'failed' | 'not_required';
+export type InvoiceStatus =
+  | 'draft'
+  | 'queued'
+  | 'stub_sent'
+  | 'sent'
+  | 'delivered'
+  | 'failed'
+  | 'not_required';
 
 export interface BuyerProfile {
   country: string | null;
@@ -447,6 +460,229 @@ function buyerCountryCode(buyer: BuyerProfile): string | null {
   return normalizeCountryCode(buyer.address?.country || buyer.country);
 }
 
+/** Strip SK/CZ country prefix from VAT ID to get national company id (IČO / IČ DPH base). */
+export function nationalCompanyIdFromVat(
+  vatId: string | null | undefined,
+  country: string | null | undefined,
+): string {
+  const raw = String(vatId ?? '').trim();
+  if (!raw) return '';
+  const code = normalizeCountryCode(country);
+  if (code && raw.toUpperCase().startsWith(code)) {
+    return raw.slice(code.length).trim();
+  }
+  return raw;
+}
+
+function countryDisplayName(code: string | null): string {
+  if (code === 'CZ') return 'Česká republika';
+  if (code === 'SK') return 'Slovensko';
+  return code || '';
+}
+
+function splitStreetAndBuilding(line1: string | null | undefined): {
+  streetName: string;
+  buildingNumber: string;
+} {
+  const raw = String(line1 ?? '').trim();
+  if (!raw) return { streetName: 'n/a', buildingNumber: 'n/a' };
+  const match = raw.match(/^(.*\D)\s+(\d[\w/-]*)$/);
+  if (match?.[1] != null && match[2] != null) {
+    return { streetName: match[1].trim() || raw, buildingNumber: match[2] };
+  }
+  return { streetName: raw, buildingNumber: 'n/a' };
+}
+
+function amountFromCents(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+/**
+ * Build an ISDOC 6.0.2 tax invoice skeleton (CZ domestic B2B).
+ * Not a full XSD-validated export — enough structured XML to archive and
+ * hand off to email/portal delivery once live transport exists.
+ */
+export function buildIsdocSkeleton(input: {
+  invoiceId: string;
+  invoiceNumber: string;
+  issueDate: string;
+  currency: string;
+  seller: SellerProfile;
+  buyer: BuyerProfile;
+  lineItems: InvoiceLineItem[];
+  netAmountCents: number;
+  taxAmountCents: number;
+  grossAmountCents: number;
+  vatRatePercent: number | null;
+  electronicConsentReference: string;
+}): string {
+  if (hasMixedVatRates(input.lineItems)) {
+    throw new Error('mixed_vat_rates');
+  }
+
+  const vatApplicable = (input.vatRatePercent ?? 0) > 0 || input.taxAmountCents > 0;
+  const taxPercent = input.vatRatePercent ?? 0;
+  const currency = escapeXml(String(input.currency || 'CZK').toUpperCase());
+  const sellerCountry =
+    normalizeCountryCode(input.seller.addressCountry) || input.seller.jurisdiction;
+  const buyerCountry = buyerCountryCode(input.buyer) || 'CZ';
+  const sellerIco =
+    String(input.seller.companyId || '').trim() ||
+    nationalCompanyIdFromVat(input.seller.vatId, sellerCountry);
+  const buyerIco = nationalCompanyIdFromVat(input.buyer.vatId, buyerCountry);
+  const sellerStreet = splitStreetAndBuilding(input.seller.addressLine1);
+  const buyerStreet = splitStreetAndBuilding(input.buyer.address?.line1);
+  const buyerName = escapeXml(input.buyer.name || input.buyer.email || 'Customer');
+  const consentRef = escapeXml(
+    String(input.electronicConsentReference || 'VMP-CZ-B2B-ELECTRONIC-CONSENT').trim(),
+  );
+
+  const lines = input.lineItems
+    .map((line, index) => {
+      const quantity = Math.max(Number(line.quantity) || 1, 1);
+      const lineNetCents = line.netAmountCents;
+      const lineTaxCents =
+        line.vatRatePercent != null && line.vatRatePercent > 0
+          ? Math.round((lineNetCents * line.vatRatePercent) / 100)
+          : 0;
+      const lineGrossCents = lineNetCents + lineTaxCents;
+      const unitNet = amountFromCents(Math.round(lineNetCents / quantity));
+      const unitGross = amountFromCents(Math.round(lineGrossCents / quantity));
+      return `
+    <InvoiceLine>
+      <ID>${index + 1}</ID>
+      <InvoicedQuantity unitCode="C62">${quantity}</InvoicedQuantity>
+      <LineExtensionAmount>${amountFromCents(lineNetCents)}</LineExtensionAmount>
+      <LineExtensionAmountTaxInclusive>${amountFromCents(lineGrossCents)}</LineExtensionAmountTaxInclusive>
+      <LineExtensionTaxAmount>${amountFromCents(lineTaxCents)}</LineExtensionTaxAmount>
+      <UnitPrice>${unitNet}</UnitPrice>
+      <UnitPriceTaxInclusive>${unitGross}</UnitPriceTaxInclusive>
+      <ClassifiedTaxCategory>
+        <Percent>${line.vatRatePercent ?? 0}</Percent>
+        <VATCalculationMethod>0</VATCalculationMethod>
+        <VATApplicable>${(line.vatRatePercent ?? 0) > 0 ? 'true' : 'false'}</VATApplicable>
+      </ClassifiedTaxCategory>
+      <Item>
+        <Description>${escapeXml(line.description)}</Description>
+      </Item>
+    </InvoiceLine>`;
+    })
+    .join('');
+
+  const net = amountFromCents(input.netAmountCents);
+  const tax = amountFromCents(input.taxAmountCents);
+  const gross = amountFromCents(input.grossAmountCents);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.2">
+  <DocumentType>1</DocumentType>
+  <ID>${escapeXml(input.invoiceNumber)}</ID>
+  <UUID>${escapeXml(input.invoiceId)}</UUID>
+  <IssueDate>${escapeXml(input.issueDate)}</IssueDate>
+  <TaxPointDate>${escapeXml(input.issueDate)}</TaxPointDate>
+  <VATApplicable>${vatApplicable ? 'true' : 'false'}</VATApplicable>
+  <ElectronicPossibilityAgreementReference>${consentRef}</ElectronicPossibilityAgreementReference>
+  <Note>VMP subscription invoice (ISDOC skeleton)</Note>
+  <LocalCurrencyCode>${currency}</LocalCurrencyCode>
+  <CurrRate>1</CurrRate>
+  <RefCurrRate>1</RefCurrRate>
+  <AccountingSupplierParty>
+    <Party>
+      <PartyIdentification>
+        <ID>${escapeXml(sellerIco || input.seller.vatId || 'unknown')}</ID>
+      </PartyIdentification>
+      <PartyName>
+        <Name>${escapeXml(input.seller.legalName)}</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>${escapeXml(sellerStreet.streetName)}</StreetName>
+        <BuildingNumber>${escapeXml(sellerStreet.buildingNumber)}</BuildingNumber>
+        <CityName>${escapeXml(input.seller.addressCity || '')}</CityName>
+        <PostalZone>${escapeXml(input.seller.addressPostalCode || '')}</PostalZone>
+        <Country>
+          <IdentificationCode>${escapeXml(sellerCountry || 'CZ')}</IdentificationCode>
+          <Name>${escapeXml(countryDisplayName(sellerCountry))}</Name>
+        </Country>
+      </PostalAddress>
+      ${
+        input.seller.vatId
+          ? `<PartyTaxScheme>
+        <CompanyID>${escapeXml(input.seller.vatId)}</CompanyID>
+        <TaxScheme>VAT</TaxScheme>
+      </PartyTaxScheme>`
+          : ''
+      }
+    </Party>
+  </AccountingSupplierParty>
+  <AccountingCustomerParty>
+    <Party>
+      <PartyIdentification>
+        <ID>${escapeXml(buyerIco || input.buyer.vatId || 'unknown')}</ID>
+      </PartyIdentification>
+      <PartyName>
+        <Name>${buyerName}</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>${escapeXml(buyerStreet.streetName)}</StreetName>
+        <BuildingNumber>${escapeXml(buyerStreet.buildingNumber)}</BuildingNumber>
+        <CityName>${escapeXml(input.buyer.address?.city || '')}</CityName>
+        <PostalZone>${escapeXml(input.buyer.address?.postalCode || '')}</PostalZone>
+        <Country>
+          <IdentificationCode>${escapeXml(buyerCountry)}</IdentificationCode>
+          <Name>${escapeXml(countryDisplayName(buyerCountry))}</Name>
+        </Country>
+      </PostalAddress>
+      ${
+        input.buyer.vatId
+          ? `<PartyTaxScheme>
+        <CompanyID>${escapeXml(input.buyer.vatId)}</CompanyID>
+        <TaxScheme>VAT</TaxScheme>
+      </PartyTaxScheme>`
+          : ''
+      }
+      ${
+        input.buyer.email
+          ? `<Contact>
+        <ElectronicMail>${escapeXml(input.buyer.email)}</ElectronicMail>
+      </Contact>`
+          : ''
+      }
+    </Party>
+  </AccountingCustomerParty>
+  <InvoiceLines>${lines}
+  </InvoiceLines>
+  <TaxTotal>
+    <TaxSubTotal>
+      <TaxableAmount>${net}</TaxableAmount>
+      <TaxAmount>${tax}</TaxAmount>
+      <TaxInclusiveAmount>${gross}</TaxInclusiveAmount>
+      <AlreadyClaimedTaxableAmount>0</AlreadyClaimedTaxableAmount>
+      <AlreadyClaimedTaxAmount>0</AlreadyClaimedTaxAmount>
+      <AlreadyClaimedTaxInclusiveAmount>0</AlreadyClaimedTaxInclusiveAmount>
+      <DifferenceTaxableAmount>${net}</DifferenceTaxableAmount>
+      <DifferenceTaxAmount>${tax}</DifferenceTaxAmount>
+      <DifferenceTaxInclusiveAmount>${gross}</DifferenceTaxInclusiveAmount>
+      <TaxCategory>
+        <Percent>${taxPercent}</Percent>
+        <VATApplicable>${vatApplicable ? 'true' : 'false'}</VATApplicable>
+      </TaxCategory>
+    </TaxSubTotal>
+    <TaxAmount>${tax}</TaxAmount>
+  </TaxTotal>
+  <LegalMonetaryTotal>
+    <TaxExclusiveAmount>${net}</TaxExclusiveAmount>
+    <TaxInclusiveAmount>${gross}</TaxInclusiveAmount>
+    <AlreadyClaimedTaxExclusiveAmount>0</AlreadyClaimedTaxExclusiveAmount>
+    <AlreadyClaimedTaxInclusiveAmount>0</AlreadyClaimedTaxInclusiveAmount>
+    <DifferenceTaxExclusiveAmount>${net}</DifferenceTaxExclusiveAmount>
+    <DifferenceTaxInclusiveAmount>${gross}</DifferenceTaxInclusiveAmount>
+    <PayableRoundingAmount>0</PayableRoundingAmount>
+    <PaidDepositsAmount>0</PaidDepositsAmount>
+    <PayableAmount>${gross}</PayableAmount>
+  </LegalMonetaryTotal>
+</Invoice>`;
+}
+
 async function loadSellerProfile(env: any): Promise<SellerProfile> {
   const keys = [
     'seller_legal_name',
@@ -728,40 +964,107 @@ export async function createInvoiceFromPayment(
   let xmlPayload: string | null = null;
   let xmlR2Key: string | null = null;
   let invoiceErrorMessage: string | null = null;
-  if (routing.format === 'peppol_ubl') {
+  if (routing.format === 'peppol_ubl' || routing.format === 'isdoc') {
     if (hasMixedVatRates(lineItems)) {
-      invoiceErrorMessage = 'Mixed VAT rates are not supported for Peppol UBL invoices.';
+      invoiceErrorMessage = `Mixed VAT rates are not supported for ${
+        routing.format === 'isdoc' ? 'ISDOC' : 'Peppol UBL'
+      } invoices.`;
     } else {
-      xmlPayload = buildPeppolUblSkeleton({
-        invoiceNumber,
-        issueDate,
-        currency,
-        seller,
-        buyer,
-        lineItems,
-        netAmountCents,
-        taxAmountCents,
-        grossAmountCents,
-        vatRatePercent,
-      });
-      xmlR2Key = `einvoices/${invoiceId}/invoice.xml`;
-      const storage = getObjectStorage(env);
-      if (!storage) {
-        invoiceErrorMessage = 'Object storage not configured for invoice XML.';
+      try {
+        if (routing.format === 'peppol_ubl') {
+          xmlPayload = buildPeppolUblSkeleton({
+            invoiceNumber,
+            issueDate,
+            currency,
+            seller,
+            buyer,
+            lineItems,
+            netAmountCents,
+            taxAmountCents,
+            grossAmountCents,
+            vatRatePercent,
+          });
+        } else {
+          const consentRef = String(
+            (await getSetting(env, 'einvoicing_cz_electronic_consent_ref', {
+              defaultValue: 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+            })) ?? 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+          );
+          xmlPayload = buildIsdocSkeleton({
+            invoiceId,
+            invoiceNumber,
+            issueDate,
+            currency,
+            seller,
+            buyer,
+            lineItems,
+            netAmountCents,
+            taxAmountCents,
+            grossAmountCents,
+            vatRatePercent,
+            electronicConsentReference: consentRef,
+          });
+        }
+        xmlR2Key = `einvoices/${invoiceId}/invoice.xml`;
+        const storage = getObjectStorage(env);
+        if (!storage) {
+          invoiceErrorMessage = 'Object storage not configured for invoice XML.';
+          xmlR2Key = null;
+          xmlPayload = null;
+        } else if (xmlPayload) {
+          await storage.putObject(xmlR2Key, xmlPayload, { contentType: 'application/xml' });
+        }
+      } catch (err) {
+        invoiceErrorMessage = err instanceof Error ? err.message : String(err);
+        xmlPayload = null;
         xmlR2Key = null;
-      } else if (xmlPayload) {
-        await storage.putObject(xmlR2Key, xmlPayload, { contentType: 'application/xml' });
       }
     }
   }
 
-  const initialStatus: InvoiceStatus = invoiceErrorMessage
+  let initialStatus: InvoiceStatus = invoiceErrorMessage
     ? 'failed'
     : seller.legalName && seller.vatId
       ? routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery'
         ? 'queued'
         : 'draft'
       : 'draft';
+
+  let peppolMessageId: string | null = null;
+  let peppolTransmissionId: string | null = null;
+
+  if (!invoiceErrorMessage && xmlPayload && initialStatus === 'queued') {
+    const delivery =
+      routing.routing === 'peppol_ap'
+        ? await transmitPeppolUbl(env, {
+            invoiceId,
+            invoiceNumber,
+            xml: xmlPayload,
+            sellerParticipantId: seller.peppolParticipantId || seller.vatId,
+            sellerSchemeId: seller.peppolSchemeId || '9935',
+            buyerEndpointId: buyer.peppolEndpointId || buyer.vatId || '',
+            buyerSchemeId: buyer.peppolSchemeId || '9935',
+          })
+        : await deliverIsdocInvoice(env, {
+            invoiceId,
+            invoiceNumber,
+            xml: xmlPayload,
+            buyerEmail: buyer.email,
+            buyerName: buyer.name,
+          });
+
+    if (delivery.ok) {
+      initialStatus = delivery.status;
+      peppolTransmissionId = delivery.transmissionId;
+      peppolMessageId = delivery.messageId ?? null;
+    } else if (delivery.status === 'failed') {
+      initialStatus = 'failed';
+      invoiceErrorMessage = `${delivery.code}: ${delivery.detail}`;
+    } else {
+      // Stay queued when live transport is not configured.
+      invoiceErrorMessage = null;
+    }
+  }
 
   await db
     .prepare(`
@@ -771,14 +1074,16 @@ export async function createInvoiceFromPayment(
       buyer_country, buyer_vat_id, buyer_name, buyer_email, buyer_address_json,
       buyer_peppol_endpoint_id, buyer_peppol_scheme_id,
       seller_jurisdiction, format, routing, status, mandate_applies,
-      xml_payload_r2_key, idempotency_key, error_message, created_at, updated_at
+      xml_payload_r2_key, peppol_message_id, peppol_transmission_id,
+      idempotency_key, error_message, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?,
       ?, ?, ?, ?, ?,
-      ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      ?, ?, ?,
+      ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
   `)
     .bind(
@@ -808,6 +1113,8 @@ export async function createInvoiceFromPayment(
       initialStatus,
       routing.mandateApplies ? 1 : 0,
       xmlR2Key,
+      peppolMessageId,
+      peppolTransmissionId,
       idempotencyKey,
       invoiceErrorMessage,
     )
@@ -907,6 +1214,9 @@ const ADMIN_SETTING_KEYS = [
   'einvoicing_isdoc_enabled',
   'einvoicing_b2c_mode',
   'einvoicing_invoice_prefix',
+  'einvoicing_delivery_mode',
+  'einvoicing_cz_electronic_consent_ref',
+  'einvoicing_isdoc_delivery_method',
   'seller_legal_name',
   'seller_vat_id',
   'seller_company_id',
@@ -941,6 +1251,10 @@ export async function handleAdminEInvoicingSettings(request: any, env: any, cors
         isdocEnabled: byKey.einvoicing_isdoc_enabled === '1',
         b2cMode: byKey.einvoicing_b2c_mode || 'pdf_archive',
         invoicePrefix: byKey.einvoicing_invoice_prefix || 'VMP',
+        deliveryMode: byKey.einvoicing_delivery_mode === 'live' ? 'live' : 'stub',
+        czElectronicConsentRef:
+          byKey.einvoicing_cz_electronic_consent_ref || 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+        isdocDeliveryMethod: byKey.einvoicing_isdoc_delivery_method || 'email_stub',
         seller: {
           legalName: byKey.seller_legal_name,
           vatId: byKey.seller_vat_id,
@@ -957,6 +1271,13 @@ export async function handleAdminEInvoicingSettings(request: any, env: any, cors
           accessPointProvider: byKey.peppol_access_point_provider,
           accessPointApiUrl: byKey.peppol_access_point_api_url,
           accessPointSenderId: byKey.peppol_access_point_sender_id,
+          apiKeyConfigured: Boolean(String(env?.PEPPOL_AP_API_KEY ?? '').trim()),
+        },
+        stripeTaxIdCollection: {
+          checkoutEnabledWhenEinvoicingOn: true,
+          billingAddressCollection: 'auto',
+          notes:
+            'When einvoicing_enabled is on and seller_jurisdiction is SK or CZ, Stripe Checkout adds optional tax ID collection and billing address (auto). Disabled for all other deployments so B2C checkout is unchanged.',
         },
         legalTimeline: {
           skMandatoryB2bDate: '2027-01-01',
@@ -999,6 +1320,36 @@ export async function handleAdminEInvoicingSettings(request: any, env: any, cors
         .trim()
         .slice(0, 16),
     ]);
+  }
+  if ('deliveryMode' in body) {
+    const mode = String(body.deliveryMode ?? '')
+      .trim()
+      .toLowerCase();
+    if (!['stub', 'live'].includes(mode)) {
+      return jsonResponse({ error: 'deliveryMode must be stub or live' }, 400, corsHeaders);
+    }
+    updates.push(['einvoicing_delivery_mode', mode]);
+  }
+  if ('czElectronicConsentRef' in body) {
+    updates.push([
+      'einvoicing_cz_electronic_consent_ref',
+      String(body.czElectronicConsentRef ?? '')
+        .trim()
+        .slice(0, 256),
+    ]);
+  }
+  if ('isdocDeliveryMethod' in body) {
+    const method = String(body.isdocDeliveryMethod ?? '')
+      .trim()
+      .toLowerCase();
+    if (!['email_stub', 'email_live'].includes(method)) {
+      return jsonResponse(
+        { error: 'isdocDeliveryMethod must be email_stub or email_live' },
+        400,
+        corsHeaders,
+      );
+    }
+    updates.push(['einvoicing_isdoc_delivery_method', method]);
   }
 
   const seller = body.seller;
@@ -1084,6 +1435,8 @@ function mapInvoiceRow(row: any) {
     status: row.status,
     mandateApplies: Boolean(row.mandate_applies),
     xmlPayloadR2Key: row.xml_payload_r2_key,
+    peppolMessageId: row.peppol_message_id,
+    peppolTransmissionId: row.peppol_transmission_id,
     errorMessage: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
