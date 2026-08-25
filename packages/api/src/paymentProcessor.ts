@@ -1751,10 +1751,25 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         await db
           .prepare(
             `UPDATE subscriptions
-             SET last_provider_payment_id = ?, updated_at = CURRENT_TIMESTAMP
+             SET last_provider_payment_id = ?,
+                 renewal_attempt_status = 'completed',
+                 renewal_attempt_payment_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
              WHERE provider = 'comgate' AND provider_subscription_id = ?`,
           )
-          .bind(renewalTransId, subscriptionId)
+          .bind(renewalTransId, renewalTransId, subscriptionId)
+          .run();
+      } else {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET renewal_attempt_status = 'completed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate'
+               AND provider_subscription_id = ?
+               AND renewal_attempt_status IN ('pending', 'charged')`,
+          )
+          .bind(subscriptionId)
           .run();
       }
       if (identity.fromPendingSession && identity.pendingSessionId) {
@@ -1794,7 +1809,9 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         await db
           .prepare(
             `UPDATE subscriptions
-             SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
+             SET status = 'past_due',
+                 renewal_attempt_status = 'failed',
+                 updated_at = CURRENT_TIMESTAMP
              WHERE provider = 'comgate' AND provider_subscription_id = ?`,
           )
           .bind(subscriptionId)
@@ -1820,16 +1837,17 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
 }
 
 /**
- * Merchant-driven Comgate renewals: charge `/v1.0/recurring` with the original
- * checkout transId (`provider_subscription_id`) and store each new transId in
- * `last_provider_payment_id` without overwriting the initRecurringId.
+ * Merchant-driven Comgate renewals: claim a due row, charge `/v1.0/recurring`
+ * with the original checkout transId (`provider_subscription_id`), and store the
+ * renewal transId without advancing the period. Active status + period end are
+ * applied only after a successful Comgate notification.
  */
 export async function renewDueComgateSubscriptions(
   db: {
     prepare: (sql: string) => {
       bind: (...args: unknown[]) => {
         all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
-        run?: () => Promise<unknown>;
+        run?: () => Promise<{ meta?: { changes?: number }; changes?: number } | unknown>;
         first?: () => Promise<Record<string, unknown> | null>;
       };
       all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
@@ -1855,37 +1873,110 @@ export async function renewDueComgateSubscriptions(
          AND IFNULL(s.cancel_at_period_end, 0) = 0
          AND s.provider_subscription_id IS NOT NULL
          AND datetime(s.current_period_end) <= datetime('now')
+         AND (
+           s.renewal_attempt_status IS NULL
+           OR s.renewal_attempt_status IN ('failed', 'completed')
+         )
        LIMIT 25`,
     )
     .all?.();
   const rows = due?.results ?? [];
   let renewed = 0;
   for (const row of rows) {
+    const subscriptionRowId = String(row.id ?? '').trim();
     const initRecurringId = String(row.provider_subscription_id ?? '').trim();
     const userId = String(row.user_id ?? '').trim();
     const email = String(row.email ?? '').trim();
-    if (!initRecurringId || !userId) continue;
+    if (!subscriptionRowId || !initRecurringId || !userId) continue;
     const planType = normalizePlanType(String(row.plan_type ?? 'monthly'));
-    const created = await provider.createSubscription({
-      userId,
-      planType,
-      initRecurringId,
-      customerId: userId,
-      ...(email ? { email } : {}),
-    });
-    const lastPaymentId = String(created.lastPaymentId ?? '').trim();
-    await db
-      .prepare(
-        `UPDATE subscriptions
-         SET last_provider_payment_id = COALESCE(?, last_provider_payment_id),
-             current_period_end = ?,
-             status = 'active',
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND provider = 'comgate'`,
-      )
-      .bind(lastPaymentId || null, periodEndIsoForPlan(planType), row.id)
-      .run?.();
-    renewed += 1;
+
+    try {
+      const claim = await db
+        .prepare(
+          `UPDATE subscriptions
+           SET renewal_attempt_status = 'pending',
+               renewal_attempt_payment_id = NULL,
+               renewal_attempt_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?
+             AND provider = 'comgate'
+             AND datetime(current_period_end) <= datetime('now')
+             AND (
+               renewal_attempt_status IS NULL
+               OR renewal_attempt_status IN ('failed', 'completed')
+             )`,
+        )
+        .bind(subscriptionRowId)
+        .run?.();
+      const changes =
+        claim && typeof claim === 'object'
+          ? Number(
+              (claim as { meta?: { changes?: number }; changes?: number }).meta?.changes ??
+                (claim as { changes?: number }).changes ??
+                0,
+            )
+          : 0;
+      if (!(changes > 0)) {
+        continue;
+      }
+
+      let lastPaymentId = '';
+      try {
+        const created = await provider.createSubscription({
+          userId,
+          planType,
+          initRecurringId,
+          customerId: userId,
+          ...(email ? { email } : {}),
+        });
+        lastPaymentId = String(created.lastPaymentId ?? '').trim();
+      } catch (chargeErr) {
+        console.error('[comgate renewal] charge failed', {
+          subscriptionId: subscriptionRowId,
+          err: chargeErr,
+        });
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET renewal_attempt_status = 'failed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND provider = 'comgate'
+               AND renewal_attempt_status = 'pending'`,
+          )
+          .bind(subscriptionRowId)
+          .run?.();
+        continue;
+      }
+
+      // Persist the charge claim without activating access or advancing the period.
+      // If this write fails, leave renewal_attempt_status='pending' so the row stays
+      // excluded from due queries (prevents a duplicate charge on the next cron).
+      try {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET last_provider_payment_id = COALESCE(?, last_provider_payment_id),
+                 renewal_attempt_status = 'charged',
+                 renewal_attempt_payment_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND provider = 'comgate'`,
+          )
+          .bind(lastPaymentId || null, lastPaymentId || null, subscriptionRowId)
+          .run?.();
+        renewed += 1;
+      } catch (writeErr) {
+        console.error('[comgate renewal] post-charge claim update failed; leaving pending', {
+          subscriptionId: subscriptionRowId,
+          lastPaymentId,
+          err: writeErr,
+        });
+      }
+    } catch (err) {
+      console.error('[comgate renewal] row failed', {
+        subscriptionId: subscriptionRowId,
+        err,
+      });
+    }
   }
   return { attempted: rows.length, renewed };
 }

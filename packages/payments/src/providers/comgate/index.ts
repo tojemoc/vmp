@@ -265,7 +265,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       const status = await getPaymentStatus(transId);
       const refId = String(status.refId ?? notification.refId ?? '').trim();
       const initRecurringId = String(
-        notification.initRecurringId ?? status.initRecurringId ?? '',
+        notification.initRecurringId || status.initRecurringId || '',
       ).trim();
       const isRecurring = Boolean(initRecurringId);
       const eventType = mapComgateStatusToEvent(

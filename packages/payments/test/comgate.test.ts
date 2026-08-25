@@ -139,6 +139,21 @@ describe('createComgateProvider', () => {
     assert.equal(event.providerOrderId, 'RENEW-99-AA');
   });
 
+  it('handleWebhook falls back when notification initRecurringId is empty', async () => {
+    mockFetchSequence([
+      {
+        body: 'code=0&message=OK&merchant=123456&transId=RENEW-99-AA&status=PAID&refId=order-43&initRecurringId=AB12-CD34-EF56',
+      },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    const event = await provider.handleWebhook(
+      'merchant=123456&secret=test-secret&transId=RENEW-99-AA&status=PAID&initRecurringId=',
+    );
+    assert.equal(event.type, 'invoice.paid');
+    assert.equal(event.subscriptionId, 'AB12-CD34-EF56');
+    assert.equal(event.providerOrderId, 'RENEW-99-AA');
+  });
+
   it('cancelSubscription calls /v1.0/cancel', async () => {
     const calls = mockFetchSequence([{ body: 'code=0&message=OK' }]);
     const provider = createComgateProvider(baseConfig());

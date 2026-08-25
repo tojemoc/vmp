@@ -176,18 +176,10 @@ describe('resolveComgateCheckoutIdentity', () => {
 });
 
 describe('renewDueComgateSubscriptions', () => {
-  it('charges /v1.0/recurring with original transId and stores renewal id separately', async () => {
+  function makeDb(due: Array<Record<string, unknown>>) {
     const updates: Array<{ sql: string; args: unknown[] }> = [];
-    const due = [
-      {
-        id: 'sub-1',
-        user_id: 'user-1',
-        plan_type: 'monthly',
-        provider_subscription_id: 'AB12-CD34-EF56',
-        email: 'a@example.com',
-      },
-    ];
     const db = {
+      updates,
       prepare(sql: string) {
         const stmt = {
           sql,
@@ -201,12 +193,26 @@ describe('renewDueComgateSubscriptions', () => {
           },
           async run() {
             updates.push({ sql: stmt.sql, args: stmt.args });
-            return { success: true };
+            return { meta: { changes: 1 }, changes: 1 };
           },
         };
         return stmt;
       },
     };
+    return db;
+  }
+
+  it('claims before charge and does not advance period until notification', async () => {
+    const due = [
+      {
+        id: 'sub-1',
+        user_id: 'user-1',
+        plan_type: 'monthly',
+        provider_subscription_id: 'AB12-CD34-EF56',
+        email: 'a@example.com',
+      },
+    ];
+    const db = makeDb(due);
     const created: Array<Record<string, unknown>> = [];
     const result = await renewDueComgateSubscriptions(db, {
       createSubscription: async (input) => {
@@ -218,11 +224,44 @@ describe('renewDueComgateSubscriptions', () => {
     assert.equal(result.renewed, 1);
     assert.equal(created.length, 1);
     assert.equal(created[0]?.initRecurringId, 'AB12-CD34-EF56');
-    assert.equal(created[0]?.userId, 'user-1');
-    assert.equal(updates.length, 1);
-    assert.equal(updates[0]?.args[0], 'RENEW-99-AA');
-    assert.equal(updates[0]?.args[2], 'sub-1');
-    assert.match(String(updates[0]?.sql), /last_provider_payment_id/);
-    assert.doesNotMatch(String(updates[0]?.sql), /provider_subscription_id = \?/);
+    assert.equal(db.updates.length, 2);
+    assert.match(String(db.updates[0]?.sql), /renewal_attempt_status = 'pending'/);
+    assert.match(String(db.updates[1]?.sql), /renewal_attempt_status = 'charged'/);
+    assert.doesNotMatch(String(db.updates[1]?.sql), /current_period_end/);
+    assert.doesNotMatch(String(db.updates[1]?.sql), /status = 'active'/);
+    assert.equal(db.updates[1]?.args[0], 'RENEW-99-AA');
+    assert.equal(db.updates[1]?.args[2], 'sub-1');
+  });
+
+  it('continues later rows when one renewal throws', async () => {
+    const due = [
+      {
+        id: 'sub-fail',
+        user_id: 'user-1',
+        plan_type: 'monthly',
+        provider_subscription_id: 'INIT-1',
+        email: 'a@example.com',
+      },
+      {
+        id: 'sub-ok',
+        user_id: 'user-2',
+        plan_type: 'yearly',
+        provider_subscription_id: 'INIT-2',
+        email: 'b@example.com',
+      },
+    ];
+    const db = makeDb(due);
+    const result = await renewDueComgateSubscriptions(db, {
+      createSubscription: async (input) => {
+        if (input.initRecurringId === 'INIT-1') {
+          throw new Error('provider down');
+        }
+        return { lastPaymentId: 'RENEW-OK' };
+      },
+    });
+    assert.equal(result.attempted, 2);
+    assert.equal(result.renewed, 1);
+    assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'failed'")));
+    assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'charged'")));
   });
 });

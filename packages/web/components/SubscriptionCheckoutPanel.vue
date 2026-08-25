@@ -518,6 +518,7 @@
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
+        pendingComgateCheckoutIntent.value = false;
         return;
       }
 
