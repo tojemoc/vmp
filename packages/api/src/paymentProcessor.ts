@@ -2087,12 +2087,11 @@ export async function runComgateRenewalJobs(
   if (!comgateProvider || !comgateProvider.isConfigured()) {
     return { attempted: 0, renewed: 0 };
   }
-  const statusLookup = (
-    comgateProvider as { getPaymentStatus?: (transId: string) => Promise<Record<string, string>> }
-  ).getPaymentStatus;
   return renewDueComgateSubscriptions(db, {
     createSubscription: (input) => comgateProvider!.createSubscription(input),
-    ...(statusLookup ? { getPaymentStatus: (transId) => statusLookup(transId) } : {}),
+    ...(comgateProvider.getPaymentStatus
+      ? { getPaymentStatus: (transId) => comgateProvider!.getPaymentStatus!(transId) }
+      : {}),
   });
 }
 

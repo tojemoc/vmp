@@ -154,6 +154,12 @@ export interface PaymentProvider {
 
   /** Customer self-service URL (billing portal, bank app, etc.), or null if unsupported. */
   getManageUrl?(input: ManageSubscriptionInput): Promise<string | null>;
+
+  /**
+   * Optional provider payment status lookup (Comgate `/v1.0/status`).
+   * Used by Worker renewal reconciliation for stale pending/charged attempts.
+   */
+  getPaymentStatus?(transId: string): Promise<Record<string, string>>;
 }
 
 export interface StripePaymentsConfig {
