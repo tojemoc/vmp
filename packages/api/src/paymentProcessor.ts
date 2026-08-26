@@ -166,15 +166,22 @@ async function getEffectivePricingSettings(
   };
 }
 
-function periodEndIsoForPlan(planType: PlanType): string {
-  const end = new Date();
-  if (planType === 'yearly' || planType === 'club') {
-    end.setUTCMonth(end.getUTCMonth() + 12);
-  } else {
-    end.setUTCMonth(end.getUTCMonth() + 1);
-  }
+function periodEndIsoForPlan(planType: PlanType, from: Date = new Date()): string {
+  const end = new Date(from.getTime());
+  const day = end.getUTCDate();
+  // Set to day 1 before month arithmetic so Jan 31 + 1 month does not overflow to March.
+  end.setUTCDate(1);
+  const months = planType === 'yearly' || planType === 'club' ? 12 : 1;
+  end.setUTCMonth(end.getUTCMonth() + months);
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  end.setUTCDate(Math.min(day, lastDayOfTargetMonth));
   return end.toISOString();
 }
+
+/** Exported for unit tests of month-overflow-safe period ends. */
+export { periodEndIsoForPlan };
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
@@ -1862,20 +1869,18 @@ async function reconcileStaleComgateRenewalAttempts(
 ): Promise<void> {
   const stale = await db
     .prepare(
-      `SELECT id, plan_type, renewal_attempt_payment_id, last_provider_payment_id
+      `SELECT id, plan_type, renewal_attempt_payment_id
        FROM subscriptions
        WHERE provider = 'comgate'
          AND renewal_attempt_status IN ('pending', 'charged')
-         AND IFNULL(renewal_attempt_payment_id, last_provider_payment_id) IS NOT NULL
-         AND IFNULL(renewal_attempt_payment_id, last_provider_payment_id) != ''
+         AND renewal_attempt_payment_id IS NOT NULL
+         AND renewal_attempt_payment_id != ''
        LIMIT 25`,
     )
     .all?.();
   for (const row of stale?.results ?? []) {
     const subscriptionRowId = String(row.id ?? '').trim();
-    const paymentId = String(
-      row.renewal_attempt_payment_id || row.last_provider_payment_id || '',
-    ).trim();
+    const paymentId = String(row.renewal_attempt_payment_id ?? '').trim();
     if (!subscriptionRowId || !paymentId) continue;
     try {
       const status = await getPaymentStatus(paymentId);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   isAmbiguousComgateChargeError,
+  periodEndIsoForPlan,
   renewDueComgateSubscriptions,
   resolveComgateCheckoutIdentity,
 } from '../src/paymentProcessor.js';
@@ -316,7 +317,6 @@ describe('renewDueComgateSubscriptions', () => {
         id: 'sub-stale',
         plan_type: 'monthly',
         renewal_attempt_payment_id: 'RENEW-OLD',
-        last_provider_payment_id: 'RENEW-OLD',
       },
     ];
     const due = [
@@ -341,5 +341,37 @@ describe('renewDueComgateSubscriptions', () => {
     assert.ok(db.updates.some((u) => String(u.sql).includes("renewal_attempt_status = 'completed'")));
     assert.ok(db.updates.some((u) => String(u.sql).includes('current_period_end')));
     assert.equal(result.renewed, 1);
+  });
+
+  it('does not reconcile pending attempts that lack renewal_attempt_payment_id', async () => {
+    const stale = [
+      {
+        id: 'sub-no-id',
+        plan_type: 'monthly',
+        renewal_attempt_payment_id: '',
+        last_provider_payment_id: 'OLD-SHOULD-NOT-USE',
+      },
+    ];
+    const due: Array<Record<string, unknown>> = [];
+    const db = makeDb({ due, stale });
+    const statusCalls: string[] = [];
+    await renewDueComgateSubscriptions(db, {
+      createSubscription: async () => ({ lastPaymentId: 'X' }),
+      getPaymentStatus: async (transId) => {
+        statusCalls.push(transId);
+        return { status: 'PAID' };
+      },
+    });
+    // Empty renewal_attempt_payment_id is filtered in SQL; last_provider_payment_id is ignored.
+    assert.deepEqual(statusCalls, []);
+  });
+});
+
+describe('periodEndIsoForPlan', () => {
+  it('preserves day of month and caps overflow (e.g. Jan 31 + 1 month)', () => {
+    const from = new Date('2026-01-31T12:00:00.000Z');
+    assert.match(periodEndIsoForPlan('monthly', from), /^2026-02-28T/);
+    assert.match(periodEndIsoForPlan('yearly', from), /^2027-01-31T/);
+    assert.match(periodEndIsoForPlan('club', from), /^2027-01-31T/);
   });
 });

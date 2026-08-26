@@ -188,7 +188,7 @@
       </button>
       <p
         class="text-[11px] mt-1.5"
-        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400'"
       >
         {{ strings.checkoutGoPayGatewayNote }}
       </p>
@@ -332,6 +332,8 @@
   const gopayCurrency = ref('CZK');
   const comgatePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
   const comgateCurrency = ref('CZK');
+  /** Currency for the generic plan-card amounts (matches primary checkout provider). */
+  const planCardCurrency = ref('EUR');
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
@@ -487,7 +489,8 @@
 
   function formatPrice(amount: number | null | undefined): string {
     if (amount == null || !Number.isFinite(amount)) return '…';
-    return `€${amount.toFixed(2)}`;
+    if (planCardCurrency.value === 'EUR') return `€${amount.toFixed(2)}`;
+    return `${amount.toFixed(2)} ${planCardCurrency.value}`;
   }
 
   function formatGoPayPrice(amount: number | null | undefined): string {
@@ -502,7 +505,12 @@
 
   function planPrice(plan: PlanType): number | null {
     const value = prices.value[plan];
-    return Number.isFinite(value) ? Number(value) : null;
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  }
+
+  function parseProviderPrice(raw: unknown): number {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : Number.NaN;
   }
 
   function buildLoginRedirect(plan: PlanType): string {
@@ -528,39 +536,6 @@
       }
 
       const data = await res.json();
-      const fallback: Prices = {
-        monthly: Number(data.monthly ?? defaultPrices.monthly),
-        yearly: Number(data.yearly ?? defaultPrices.yearly),
-        club: Number(data.club ?? defaultPrices.club),
-      };
-
-      const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {};
-      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
-      const gopayRaw = data?.pricesByProvider?.gopay ?? {};
-      prices.value = {
-        monthly: Number(stripeRaw.monthly ?? fallback.monthly),
-        yearly: Number(stripeRaw.yearly ?? fallback.yearly),
-        club: Number(stripeRaw.club ?? fallback.club),
-      };
-      legacyPrices.value = {
-        monthly: Number(legacyRaw.monthly ?? fallback.monthly),
-        yearly: Number(legacyRaw.yearly ?? fallback.yearly),
-        club: Number(legacyRaw.club ?? fallback.club),
-      };
-      gopayPrices.value = {
-        monthly: Number(gopayRaw.monthly ?? 0),
-        yearly: Number(gopayRaw.yearly ?? 0),
-        club: Number(gopayRaw.club ?? 0),
-      };
-      gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
-      const comgateRaw = data?.pricesByProvider?.comgate ?? {};
-      comgatePrices.value = {
-        monthly: Number(comgateRaw.monthly ?? 0),
-        yearly: Number(comgateRaw.yearly ?? 0),
-        club: Number(comgateRaw.club ?? 0),
-      };
-      comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
-
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter(
             (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
@@ -568,6 +543,61 @@
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
       enabledProviders.value = providers as PaymentProvider[];
+
+      const stripeRaw = data?.pricesByProvider?.stripe ?? {};
+      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
+      const gopayRaw = data?.pricesByProvider?.gopay ?? {};
+      const comgateRaw = data?.pricesByProvider?.comgate ?? {};
+      gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+      comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
+
+      // Provider-specific button pricing — never invent EUR defaults.
+      legacyPrices.value = {
+        monthly: parseProviderPrice(legacyRaw.monthly),
+        yearly: parseProviderPrice(legacyRaw.yearly),
+        club: parseProviderPrice(legacyRaw.club),
+      };
+      gopayPrices.value = {
+        monthly: parseProviderPrice(gopayRaw.monthly),
+        yearly: parseProviderPrice(gopayRaw.yearly),
+        club: parseProviderPrice(gopayRaw.club),
+      };
+      comgatePrices.value = {
+        monthly: parseProviderPrice(comgateRaw.monthly),
+        yearly: parseProviderPrice(comgateRaw.yearly),
+        club: parseProviderPrice(comgateRaw.club),
+      };
+
+      // Plan cards use the API primary prices (stripe > gopay > comgate > legacy).
+      // Never fall back to hardcoded EUR defaults when the primary has no price.
+      const primaryProvider: PaymentProvider = providers.includes('stripe')
+        ? 'stripe'
+        : providers.includes('gopay')
+          ? 'gopay'
+          : providers.includes('comgate')
+            ? 'comgate'
+            : providers.includes('legacy')
+              ? 'legacy'
+              : 'stripe';
+      const primaryRaw =
+        primaryProvider === 'gopay'
+          ? gopayRaw
+          : primaryProvider === 'comgate'
+            ? comgateRaw
+            : primaryProvider === 'legacy'
+              ? legacyRaw
+              : stripeRaw;
+      prices.value = {
+        monthly: parseProviderPrice(data.monthly ?? primaryRaw.monthly),
+        yearly: parseProviderPrice(data.yearly ?? primaryRaw.yearly),
+        club: parseProviderPrice(data.club ?? primaryRaw.club),
+      };
+      planCardCurrency.value =
+        primaryProvider === 'gopay'
+          ? gopayCurrency.value
+          : primaryProvider === 'comgate'
+            ? comgateCurrency.value
+            : 'EUR';
 
       const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some(
         (plan) => planPrice(plan) != null,
