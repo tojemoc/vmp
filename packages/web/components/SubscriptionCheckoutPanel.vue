@@ -684,6 +684,8 @@
       return;
     }
 
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
     gopayCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -716,6 +718,8 @@
       return;
     }
 
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
     comgateCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {

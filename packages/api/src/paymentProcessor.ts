@@ -2043,19 +2043,31 @@ export async function renewDueComgateSubscriptions(
       // Persist the charge claim without activating access or advancing the period.
       // If this write fails, leave renewal_attempt_status='pending' so the row stays
       // excluded from due queries (prevents a duplicate charge on the next cron).
+      // Only overwrite attempts that are still pending — never terminal failed/completed.
       try {
-        await db
+        const charged = await db
           .prepare(
             `UPDATE subscriptions
              SET last_provider_payment_id = COALESCE(?, last_provider_payment_id),
                  renewal_attempt_status = 'charged',
                  renewal_attempt_payment_id = ?,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = ? AND provider = 'comgate'`,
+             WHERE id = ? AND provider = 'comgate'
+               AND renewal_attempt_status = 'pending'`,
           )
           .bind(lastPaymentId || null, lastPaymentId || null, subscriptionRowId)
           .run?.();
-        renewed += 1;
+        const chargedChanges =
+          charged && typeof charged === 'object'
+            ? Number(
+                (charged as { meta?: { changes?: number }; changes?: number }).meta?.changes ??
+                  (charged as { changes?: number }).changes ??
+                  0,
+              )
+            : 0;
+        if (chargedChanges === 1) {
+          renewed += 1;
+        }
       } catch (writeErr) {
         console.error('[comgate renewal] post-charge claim update failed; leaving pending', {
           subscriptionId: subscriptionRowId,

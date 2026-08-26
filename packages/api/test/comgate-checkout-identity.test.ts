@@ -181,6 +181,8 @@ describe('renewDueComgateSubscriptions', () => {
   function makeDb(opts: {
     due?: Array<Record<string, unknown>>;
     stale?: Array<Record<string, unknown>>;
+    /** Affected rows for post-charge pending→charged UPDATE (default 1). */
+    chargedChanges?: number;
   }) {
     const updates: Array<{ sql: string; args: unknown[] }> = [];
     const db = {
@@ -201,7 +203,11 @@ describe('renewDueComgateSubscriptions', () => {
           },
           async run() {
             updates.push({ sql: stmt.sql, args: stmt.args });
-            return { meta: { changes: 1 }, changes: 1 };
+            const isChargedClaim =
+              sql.includes("renewal_attempt_status = 'charged'") &&
+              sql.includes('renewal_attempt_payment_id');
+            const changes = isChargedClaim ? (opts.chargedChanges ?? 1) : 1;
+            return { meta: { changes }, changes };
           },
         };
         return stmt;
@@ -235,10 +241,36 @@ describe('renewDueComgateSubscriptions', () => {
     assert.equal(db.updates.length, 2);
     assert.match(String(db.updates[0]?.sql), /renewal_attempt_status = 'pending'/);
     assert.match(String(db.updates[1]?.sql), /renewal_attempt_status = 'charged'/);
+    assert.match(String(db.updates[1]?.sql), /AND renewal_attempt_status = 'pending'/);
     assert.doesNotMatch(String(db.updates[1]?.sql), /current_period_end/);
     assert.doesNotMatch(String(db.updates[1]?.sql), /status = 'active'/);
     assert.equal(db.updates[1]?.args[0], 'RENEW-99-AA');
     assert.equal(db.updates[1]?.args[2], 'sub-1');
+  });
+
+  it('does not increment renewed when charged claim updates 0 rows', async () => {
+    const due = [
+      {
+        id: 'sub-race',
+        user_id: 'user-1',
+        plan_type: 'monthly',
+        provider_subscription_id: 'INIT-RACE',
+        email: 'a@example.com',
+      },
+    ];
+    const db = makeDb({ due, chargedChanges: 0 });
+    const result = await renewDueComgateSubscriptions(db, {
+      createSubscription: async () => ({ lastPaymentId: 'RENEW-RACE' }),
+    });
+    assert.equal(result.attempted, 1);
+    assert.equal(result.renewed, 0);
+    assert.ok(
+      db.updates.some(
+        (u) =>
+          String(u.sql).includes("renewal_attempt_status = 'charged'") &&
+          String(u.sql).includes("AND renewal_attempt_status = 'pending'"),
+      ),
+    );
   });
 
   it('continues later rows when one renewal throws', async () => {
