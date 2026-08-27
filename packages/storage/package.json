@@ -29,8 +29,8 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
     "@aws-sdk/s3-request-presigner": "^3.1111.0",
-    "@smithy/fetch-http-handler": "^5.7.2",
-    "@smithy/core": "^3.33.2"
+    "@smithy/core": "^3.33.2",
+    "@smithy/fetch-http-handler": "^5.7.2"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "*"
@@ -41,9 +41,9 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260817.1",
+    "@cloudflare/workers-types": "^5.20260823.1",
     "@types/node": "^26.2.0",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.7",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
