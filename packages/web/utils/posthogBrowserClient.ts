@@ -5,6 +5,7 @@ export type PostHogIdentityClient = PostHogPersistenceClient & {
   reset?: () => void;
   identify?: (distinctId: string, properties?: Record<string, unknown>) => void;
   capture?: (event: string, properties?: Record<string, unknown>) => unknown;
+  captureException?: (error: unknown, properties?: Record<string, unknown>) => unknown;
 };
 
 /**
@@ -29,4 +30,25 @@ export function getBrowserPostHog(): PostHogIdentityClient | undefined {
 /** True when posthog-js has finished init (safe to call identify / opt-in). */
 export function isBrowserPostHogReady(client: PostHogIdentityClient | undefined): boolean {
   return Boolean(client && client.__loaded);
+}
+
+/**
+ * Report a handled error to error tracking.
+ *
+ * `@posthog/nuxt` only captures what reaches Vue's error handler, so an error a component
+ * catches itself is invisible — and during a client-side route change that is every
+ * failure. Call this whenever a caught error means the user lost a feature.
+ */
+export function captureBrowserException(
+  error: unknown,
+  properties: Record<string, unknown> = {},
+): void {
+  if (!import.meta.client) return;
+  try {
+    const client = getBrowserPostHog();
+    if (!isBrowserPostHogReady(client)) return;
+    client?.captureException?.(error, properties);
+  } catch {
+    // Never let telemetry break the surface it is reporting on.
+  }
 }

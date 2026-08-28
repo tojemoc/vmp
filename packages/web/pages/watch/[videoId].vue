@@ -813,6 +813,7 @@
     isPlaybackUnavailableError,
     PlaybackUnavailableError,
   } from '~/utils/playlistAvailability';
+  import { captureBrowserException } from '~/utils/posthogBrowserClient';
   import strings from '~/utils/strings';
   import { routeParamMatchesVideoMeta } from '~/utils/watchRouteMeta';
 
@@ -1687,6 +1688,31 @@
   let currentRouteRequestId = 0;
   let activeLoadAbortController: AbortController | null = null;
 
+  /**
+   * Drop every spinner the load path can raise. Each failure exit has to go through this
+   * — `buffering` in particular is set right before the player is handed its source, so
+   * missing it leaves the player spinning over a video that will never arrive.
+   */
+  const clearPlayerLoadingIndicators = () => {
+    loading.value = false;
+    isNavigatingToAnotherVideo.value = false;
+    buffering.value = false;
+  };
+
+  /**
+   * A failure inside a client-side route change never reaches Vue's error handler, so
+   * every retry after the first one was silently invisible in error tracking.
+   */
+  const reportPlayerLoadFailure = (failure: unknown, failedVideoId: string) => {
+    // Report the underlying fault, not the localized wrapper, so issues group by cause.
+    const reported =
+      failure instanceof Error && failure.cause instanceof Error ? failure.cause : failure;
+    captureBrowserException(reported, {
+      surface: 'watch_player_init',
+      video_id: failedVideoId,
+    });
+  };
+
   type FetchVideoAccessOptions = {
     videoId?: string;
     signal?: AbortSignal;
@@ -1984,16 +2010,25 @@
         );
       }
     } catch (e: any) {
-      if (e?.name === 'AbortError' || options.signal?.aborted || !guard()) return;
+      const superseded = e?.name === 'AbortError' || options.signal?.aborted || !guard();
+      if (superseded) {
+        // A stale invocation must not paint over a newer one that owns the UI. But if
+        // no load is in flight any more, these spinners are ours and nothing else will
+        // ever clear them — leaving them up is the stuck-forever spinner.
+        if (!activeLoadAbortController || activeLoadAbortController.signal === options.signal) {
+          clearPlayerLoadingIndicators();
+        }
+        return;
+      }
       if (isPlaybackUnavailableError(e)) {
         error.value = null;
         playbackUnavailable.value = true;
         await loadBrowseRecommendations(options.signal);
       } else {
         error.value = e.message;
+        reportPlayerLoadFailure(e, targetVideoId);
       }
-      loading.value = false;
-      isNavigatingToAnotherVideo.value = false;
+      clearPlayerLoadingIndicators();
     }
   };
 
@@ -2149,17 +2184,27 @@
     ensureActive();
 
     // Load the player bundle on demand (not on the homepage entry chunk).
-    const { ensureVideojsLoaded } = await import('~/lib/videojsBootstrap');
-    await ensureVideojsLoaded();
-    // Wait for the custom element to be fully upgraded before touching it.
-    // Setting src before this resolves causes "this.api is undefined" inside
-    // the videojs-video element because its internal Video.js instance isn't
-    // created until connectedCallback runs.
-    await customElements.whenDefined('videojs-video');
+    const { ensureVideojsElementReady } = await import('~/lib/videojsBootstrap');
     ensureActive();
 
     const video = videoElement.value;
     if (!video) throw new Error(strings.videoElementUnavailable);
+    ensureActive();
+
+    // Everything below reads the element's internals — the shadow <video> and, once we
+    // set src, its Video.js `api`. Registering the class is not enough: wait for this
+    // instance to be upgraded, connected, and to have built its player, or the load()
+    // that setting src triggers throws "this.api is undefined" and the player dies.
+    try {
+      await ensureVideojsElementReady(video, { signal });
+    } catch (readinessError) {
+      if (readinessError instanceof DOMException && readinessError.name === 'AbortError') {
+        throw readinessError;
+      }
+      // Readiness failures carry internal player-plumbing messages; show the user the
+      // same thing a missing element shows and keep the detail on `cause`.
+      throw new Error(strings.videoElementUnavailable, { cause: readinessError });
+    }
     ensureActive();
 
     teardownVideoListeners();
