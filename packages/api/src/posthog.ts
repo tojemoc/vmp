@@ -145,6 +145,18 @@ export function posthogContextFromRequest(request: Request | undefined): {
   return { distinctId, sessionId };
 }
 
+/** Worker log tracing: authenticated JWT sub wins over client distinct-id header. */
+export function resolvePostHogLogTracingContext(
+  request: Request,
+  authSub: string | null,
+): { distinctId: string | null; sessionId: string | null } {
+  const { distinctId: headerDistinctId, sessionId } = posthogContextFromRequest(request);
+  return {
+    distinctId: authSub ?? headerDistinctId,
+    sessionId,
+  };
+}
+
 /** Request-scoped id so unauthenticated exceptions do not pile onto one person. */
 export function newAnonymousPostHogDistinctId(): string {
   return `server_error:${crypto.randomUUID()}`;

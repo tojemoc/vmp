@@ -4,6 +4,7 @@ import { isBrowserPostHogReady } from '~/utils/posthogBrowserClient';
 
 export type PostHogIdentitySyncState = {
   supportUserId: string | null;
+  supportHash: string | null;
   analyticsUserId: string | null;
 };
 
@@ -29,19 +30,22 @@ export function syncPostHogIdentity(
     if (state.supportUserId !== null) {
       posthogClient.clearIdentity?.();
       state.supportUserId = null;
+      state.supportHash = null;
     }
     return;
   }
 
   const supportHash = authUser.posthogIdentityHash?.trim();
   if (supportHash) {
-    if (state.supportUserId !== authUser.id) {
+    if (state.supportUserId !== authUser.id || state.supportHash !== supportHash) {
       posthogClient.setIdentity?.(authUser.id, supportHash);
       state.supportUserId = authUser.id;
+      state.supportHash = supportHash;
     }
-  } else if (state.supportUserId !== null) {
+  } else if (state.supportUserId !== null || state.supportHash !== null) {
     posthogClient.clearIdentity?.();
     state.supportUserId = null;
+    state.supportHash = null;
   }
 
   if (!hasAnalyticsConsent) {
@@ -50,6 +54,7 @@ export function syncPostHogIdentity(
       state.analyticsUserId = null;
       if (supportHash && state.supportUserId === authUser.id) {
         posthogClient.setIdentity?.(authUser.id, supportHash);
+        state.supportHash = supportHash;
       }
     }
     return;
@@ -62,6 +67,7 @@ export function syncPostHogIdentity(
     if (supportHash) {
       posthogClient.setIdentity?.(authUser.id, supportHash);
       state.supportUserId = authUser.id;
+      state.supportHash = supportHash;
     }
   }
 

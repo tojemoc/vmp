@@ -85,8 +85,25 @@ export function isPostHogLogsEnabled(env: Record<string, unknown>): boolean {
   return true;
 }
 
-export function buildPostHogLogsUrl(env: Record<string, unknown>): string {
+function resolveSecurePostHogHost(env: Record<string, unknown>): string | null {
   const host = resolvePostHogHost(env).replace(/\/$/, '') || DEFAULT_POSTHOG_HOST;
+  let parsed: URL;
+  try {
+    parsed = new URL(host);
+  } catch {
+    console.error(`[posthog] invalid POSTHOG_HOST: ${host}`);
+    return null;
+  }
+  if (parsed.protocol !== 'https:') {
+    console.error(`[posthog] POSTHOG_HOST must use https: scheme (got ${parsed.protocol})`);
+    return null;
+  }
+  return host;
+}
+
+export function buildPostHogLogsUrl(env: Record<string, unknown>): string | null {
+  const host = resolveSecurePostHogHost(env);
+  if (!host) return null;
   return `${host}/i/v1/logs`;
 }
 
@@ -163,7 +180,10 @@ export async function flushPostHogLogs(
   const token = resolvePostHogProjectToken(env);
   if (!token || entries.length === 0) return;
 
-  const response = await fetch(buildPostHogLogsUrl(env), {
+  const url = buildPostHogLogsUrl(env);
+  if (!url) return;
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

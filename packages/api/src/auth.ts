@@ -957,6 +957,27 @@ export async function handleGetMe(request: any, env: any, corsHeaders: any) {
 //
 //   const editor = await requireRole(request, env, 'editor', 'admin', 'super_admin')
 
+/** Validated JWT `sub` for request correlation (e.g. Worker log tracing). */
+export async function resolveAuthSubFromRequest(
+  request: Request,
+  env: { JWT_SECRET?: string },
+): Promise<string | null> {
+  const header = request.headers.get('Authorization') || '';
+  if (!header.startsWith('Bearer ')) return null;
+
+  const token = header.slice(7).trim();
+  const secret = env.JWT_SECRET;
+  if (!token || !secret) return null;
+
+  try {
+    const payload = await verifyJwt(token, secret);
+    const sub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
+    return sub || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requireAuth(request: any, env: any) {
   const header = request.headers.get('Authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Missing Bearer token');

@@ -9,6 +9,7 @@ import {
   DEFAULT_POSTHOG_HOST,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
+  resolvePostHogLogTracingContext,
   posthogEventFromLegacyWebhook,
   posthogEventFromStripeWebhook,
   redactPathForAnalytics,
@@ -86,6 +87,24 @@ describe('PostHog API helper', () => {
     });
     assert.deepEqual(posthogContextFromRequest(request), {
       distinctId: 'user_1',
+      sessionId: 'sess_1',
+    });
+  });
+
+  it('prefers validated JWT sub over client distinct-id for worker log tracing', () => {
+    const request = new Request('https://vmp-api.tjm.sk/api/auth/me', {
+      headers: {
+        Authorization: 'Bearer ignored-in-this-unit-test',
+        'X-POSTHOG-DISTINCT-ID': 'spoofed_user',
+        'X-POSTHOG-SESSION-ID': 'sess_1',
+      },
+    });
+    assert.deepEqual(resolvePostHogLogTracingContext(request, 'user_jwt'), {
+      distinctId: 'user_jwt',
+      sessionId: 'sess_1',
+    });
+    assert.deepEqual(resolvePostHogLogTracingContext(request, null), {
+      distinctId: 'spoofed_user',
       sessionId: 'sess_1',
     });
   });

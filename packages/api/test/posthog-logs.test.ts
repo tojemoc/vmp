@@ -28,6 +28,10 @@ describe('PostHog worker log helpers', () => {
     );
   });
 
+  it('buildPostHogLogsUrl rejects non-https POSTHOG_HOST', () => {
+    assert.equal(buildPostHogLogsUrl({ POSTHOG_HOST: 'http://eu.i.posthog.com' }), null);
+  });
+
   it('formatPostHogLogBody mirrors structured worker summaries', () => {
     assert.equal(
       formatPostHogLogBody({

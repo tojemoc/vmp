@@ -26,6 +26,7 @@ export default defineNuxtPlugin({
     const { hasAnalyticsConsent } = usePostHogConsent();
     const identityState = {
       supportUserId: null as string | null,
+      supportHash: null as string | null,
       analyticsUserId: null as string | null,
     };
 

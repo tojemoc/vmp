@@ -48,6 +48,7 @@ import {
   handleVerifyMagicLink,
   requireAuth,
   requireRole,
+  resolveAuthSubFromRequest,
 } from './auth.js';
 import { B2PrimaryHealthDOBase } from './b2PrimaryHealth.js';
 import {
@@ -155,6 +156,7 @@ import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
+  resolvePostHogLogTracingContext,
   redactPathForAnalytics,
 } from './posthog.js';
 import {
@@ -489,7 +491,8 @@ const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     return runWithDatadogLogContext(env, ctx, async () => {
       const url = new URL(request.url);
-      setWorkerLogTracingContext(posthogContextFromRequest(request));
+      const authSub = await resolveAuthSubFromRequest(request, env);
+      setWorkerLogTracingContext(resolvePostHogLogTracingContext(request, authSub));
       ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env));
       await maybeSyncPillsApiKey(env);
 

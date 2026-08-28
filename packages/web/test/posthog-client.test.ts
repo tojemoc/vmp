@@ -91,7 +91,7 @@ describe('posthogClient', () => {
     ]);
   });
 
-  it('capturePostHogEvent forwards events in cookieless mode after deny', () => {
+  it('capturePostHogEvent does not forward product events when consent is denied', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
     setWindow({
       posthog: {
@@ -113,13 +113,25 @@ describe('posthogClient', () => {
 
     capturePostHogEvent('magic_link_requested');
 
-    assert.deepEqual(captured, [
-      {
-        event: 'magic_link_requested',
-        properties: { $environment: 'development' },
+    assert.deepEqual(captured, []);
+    assert.equal(canCapturePostHogAnalytics(), false);
+  });
+
+  it('capturePostHogEvent does not forward events when consent is undecided', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    setWindow({
+      posthog: {
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
+        is_capturing: () => true,
       },
-    ]);
-    assert.equal(canCapturePostHogAnalytics(), true);
+    });
+
+    capturePostHogEvent('magic_link_requested');
+
+    assert.deepEqual(captured, []);
+    assert.equal(canCapturePostHogAnalytics(), false);
   });
 
   it('capturePostHogEvent swallows client capture errors', () => {

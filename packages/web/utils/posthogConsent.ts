@@ -34,16 +34,9 @@ export type PostHogPersistenceClient = {
   set_config?: (config: { persistence?: PostHogPersistence }) => void;
 };
 
-/** True when product analytics events may be sent (full consent or cookieless-on-reject). */
+/** True when explicit product-analytics consent allows custom capture calls. */
 export function canCapturePostHogAnalytics(): boolean {
-  if (hasPostHogAnalyticsConsent()) return true;
-  if (typeof window === 'undefined') return false;
-  try {
-    const client = (window as Window & { posthog?: PostHogPersistenceClient }).posthog;
-    return client?.is_capturing?.() === true;
-  } catch {
-    return false;
-  }
+  return hasPostHogAnalyticsConsent();
 }
 
 /**

@@ -120,7 +120,7 @@ describe('canCapturePostHogAnalytics', () => {
     assert.equal(canCapturePostHogAnalytics(), true);
   });
 
-  it('allows capture in cookieless mode when PostHog is capturing after deny', () => {
+  it('does not allow custom capture when consent is denied even if PostHog is capturing', () => {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       writable: true,
@@ -136,7 +136,25 @@ describe('canCapturePostHogAnalytics', () => {
       value: { posthog: { is_capturing: () => true } },
     });
 
-    assert.equal(canCapturePostHogAnalytics(), true);
+    assert.equal(canCapturePostHogAnalytics(), false);
+  });
+
+  it('does not allow custom capture when consent is undecided even if PostHog is capturing', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      writable: true,
+      value: { posthog: { is_capturing: () => true } },
+    });
+
+    assert.equal(canCapturePostHogAnalytics(), false);
   });
 
   it('applyPostHogConsentToClient delegates to opt_in/opt_out only', () => {
