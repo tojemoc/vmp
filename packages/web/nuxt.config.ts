@@ -99,7 +99,11 @@ export default defineNuxtConfig({
             },
           },
           serverConfig: {
-            enableExceptionAutocapture: true,
+            // Autocapture reports every error Nitro sees, plain 404s included — bot
+            // probes for /.env & co. each opened their own error tracking issue (and
+            // Linear ticket) and buried the real errors. The module has no filter hook,
+            // so server/plugins/posthog-server-exceptions.ts owns capture and drops 4xx.
+            enableExceptionAutocapture: false,
           },
           sourcemaps: {
             enabled: posthogSourcemapsEnabled,
