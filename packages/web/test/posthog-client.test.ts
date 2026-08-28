@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
+import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 import { capturePostHogEvent } from '../utils/posthogClient';
 
 type WindowWithPostHog = {
@@ -86,6 +86,37 @@ describe('posthogClient', () => {
         },
       },
     ]);
+  });
+
+  it('capturePostHogEvent forwards events in cookieless mode after deny', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    setWindow({
+      posthog: {
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
+        is_capturing: () => true,
+      },
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (key: string) =>
+          key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'denied' : null,
+        setItem: () => {},
+      },
+    });
+
+    capturePostHogEvent('magic_link_requested');
+
+    assert.deepEqual(captured, [
+      {
+        event: 'magic_link_requested',
+        properties: { $environment: 'development' },
+      },
+    ]);
+    assert.equal(canCapturePostHogAnalytics(), true);
   });
 
   it('capturePostHogEvent swallows client capture errors', () => {

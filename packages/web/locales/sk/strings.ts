@@ -420,7 +420,7 @@ export const strings: StringsDefinition = {
   personalDataBannerAcknowledge: 'Rozumiem',
   posthogAnalyticsConsentTitle: 'Súhlas s produktovou analytikou',
   posthogAnalyticsConsentSummary:
-    'Používame analytické cookies (PostHog, EÚ) na zlepšovanie našich služieb — iba ak nám to dovolíte.',
+    'Používame PostHog (EÚ) na zlepšovanie služieb. Ak dovolíte, používame analytické cookies a pri prihlásení môžeme aktivitu prepojiť s účtom. Ak nedovolíte, stále počítame návštevy anonymným hashom — bez ukladania cookies.',
   posthogAnalyticsConsentLearnMore: 'Viac o spracúvaní osobných údajov',
   posthogAnalyticsConsentAccept: 'Dovolím',
   posthogAnalyticsConsentDecline: 'Nedovolím',

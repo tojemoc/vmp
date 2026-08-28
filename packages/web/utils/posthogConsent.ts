@@ -30,37 +30,45 @@ type PostHogPersistence =
 export type PostHogPersistenceClient = {
   opt_in_capturing?: () => void;
   opt_out_capturing?: () => void;
+  is_capturing?: () => boolean;
   set_config?: (config: { persistence?: PostHogPersistence }) => void;
 };
 
+/** True when product analytics events may be sent (full consent or cookieless-on-reject). */
+export function canCapturePostHogAnalytics(): boolean {
+  if (hasPostHogAnalyticsConsent()) return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    const client = (window as Window & { posthog?: PostHogPersistenceClient }).posthog;
+    return client?.is_capturing?.() === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Apply consent to an initialized PostHog client (memory-only until granted).
- * Granting consent calls `opt_in_capturing()`, which also emits the initial `$pageview`
- * when `capture_pageview` is enabled (including `'history_change'` for Nuxt SPA nav).
+ * Apply explicit consent with PostHog cookieless_mode: "on_reject".
+ * Grant → opt_in (cookies + identify). Deny → opt_out (cookieless hash counts).
+ * PostHog manages persistence; do not set persistence manually.
  */
 export function applyPostHogConsentToClient(
   client: PostHogPersistenceClient,
   granted: boolean,
 ): void {
   if (granted) {
-    client.set_config?.({ persistence: 'localStorage+cookie' });
     client.opt_in_capturing?.();
     return;
   }
-  client.set_config?.({ persistence: 'memory' });
   client.opt_out_capturing?.();
 }
 
 /**
  * Re-read localStorage and apply to the client. Call from PostHog `loaded` so a
- * prior grant still gets opt_in_capturing after init (opt_out_capturing_by_default).
+ * prior grant/deny is restored after init. When consent is still undecided, leave
+ * PostHog in pending state (no capture until the banner choice).
  */
 export function applyStoredPostHogConsentToClient(client: PostHogPersistenceClient): void {
   const stored = readPostHogAnalyticsConsent();
-  if (stored === null) {
-    // Undecided — stay opted out / memory (matches opt_out_capturing_by_default).
-    applyPostHogConsentToClient(client, false);
-    return;
-  }
+  if (stored === null) return;
   applyPostHogConsentToClient(client, stored === 'granted');
 }
