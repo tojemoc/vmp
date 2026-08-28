@@ -1241,11 +1241,21 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     }
 
     const returnPath = normalizeReturnPath(body?.returnPath);
+    const einvoicingEnabled =
+      String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1';
+    const sellerJurisdiction = String(
+      await getSetting(env, 'seller_jurisdiction', { defaultValue: 'SK' }),
+    )
+      .trim()
+      .toUpperCase();
+    const einvoicingCheckout =
+      einvoicingEnabled && (sellerJurisdiction === 'SK' || sellerJurisdiction === 'CZ');
     const session = await provider.createCheckoutSession({
       userId: user.sub,
       email: user.email,
       planType,
       returnPath,
+      einvoicingCheckout,
       ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
       ...(promoMeta
         ? {

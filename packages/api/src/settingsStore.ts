@@ -270,3 +270,10 @@ export async function setSettings(env: any, entries: any, options: SettingsOptio
     }
   }
 }
+
+/** Clears isolate settings cache — for unit tests only. */
+export function resetSettingsCacheForTests() {
+  inMemorySettingsCache.clear();
+  cachedSettingsVersion = '0';
+  cachedSettingsVersionExpiresAt = 0;
+}

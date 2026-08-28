@@ -189,6 +189,12 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         },
         return_url: `${frontendUrl}${input.returnPath}?session_id={CHECKOUT_SESSION_ID}`,
       };
+      if (input.einvoicingCheckout) {
+        // Required tax ID + address for SK/CZ B2B routing (invoice.paid → extractBuyerFromStripeInvoice).
+        // Gated by einvoicing_enabled + seller jurisdiction in the API checkout handler.
+        sessionPayload.tax_id_collection = { enabled: true, required: 'if_supported' };
+        sessionPayload.billing_address_collection = 'required';
+      }
       if (input.promo?.stripeCouponId) {
         sessionPayload.discounts = [{ coupon: input.promo.stripeCouponId }];
       }

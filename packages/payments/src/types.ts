@@ -44,6 +44,11 @@ export interface CreateCheckoutSessionInput {
     stripeCouponId?: string;
     metadata?: Record<string, string>;
   };
+  /**
+   * When true, Stripe Checkout collects optional tax IDs and billing address (`auto`)
+   * for SK/CZ e-invoicing. Omit/false for standard B2C checkout (no extra fields).
+   */
+  einvoicingCheckout?: boolean;
 }
 
 export interface CreateSubscriptionInput {
