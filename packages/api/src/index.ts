@@ -102,7 +102,7 @@ import {
   handleLegacyWebhook,
 } from './legacyPayments.js';
 import { normalizeLivestreamStatus } from './livestreams.js';
-import { log, runWithDatadogLogContext } from './logger.js';
+import { log, runWithDatadogLogContext, setWorkerLogTracingContext } from './logger.js';
 import {
   buildEntrypointCandidates,
   buildProxyPlaylistUrl,
@@ -154,6 +154,7 @@ import {
 import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
+  posthogContextFromRequest,
   redactPathForAnalytics,
 } from './posthog.js';
 import {
@@ -488,6 +489,7 @@ const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     return runWithDatadogLogContext(env, ctx, async () => {
       const url = new URL(request.url);
+      setWorkerLogTracingContext(posthogContextFromRequest(request));
       ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env));
       await maybeSyncPillsApiKey(env);
 

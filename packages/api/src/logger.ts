@@ -12,15 +12,27 @@
  *   DD_ENV=staging               — optional tag (env:staging)
  *   DD_VERSION=abc123            — optional tag (version:…); falls back to CF_VERSION_METADATA.id
  *
+ * Optional direct shipping to PostHog Logs (OTLP over HTTP) when configured:
+ *   POSTHOG_PROJECT_TOKEN=<secret or var>  — same public project token as analytics
+ *   POSTHOG_HOST=https://eu.i.posthog.com  — optional, default eu.i.posthog.com
+ *   POSTHOG_LOGS_ENABLED=false             — optional opt-out (enabled by default when token set)
+ *
  * Wrap each Worker entry point (fetch / scheduled / queue) in
  * `runWithDatadogLogContext(env, ctx, fn)` so batched uploads use `ctx.waitUntil`.
+ * Call `setWorkerLogTracingContext()` early in fetch handlers to attach PostHog
+ * distinct_id / session_id from X-POSTHOG-* request headers.
  *
  * In Datadog Logs Explorer, search: `source:cloudflare-worker service:vmp-api`
- * Filter by attributes: `@event:route_not_found`, `@component:worker`, `@http_status:404`.
+ * In PostHog Logs, filter by service.name = vmp-api.
  */
 
 /// <reference types="node" />
 import { AsyncLocalStorage } from 'node:async_hooks';
+import {
+  flushPostHogLogs,
+  isPostHogLogsEnabled,
+  type PostHogLogTracingContext,
+} from './posthogLogs.js';
 
 type LogLevel = 'info' | 'warn' | 'error';
 
@@ -44,17 +56,32 @@ type LogEntry = LogFields & {
   ts: string;
 };
 
-type DatadogLogContext = {
+type WorkerLogContext = {
   env: Record<string, unknown>;
   ctx: ExecutionContext;
   buffer: LogEntry[];
+  posthogTracing: PostHogLogTracingContext;
 };
 
-const datadogLogContextStorage = new AsyncLocalStorage<DatadogLogContext>();
+const workerLogContextStorage = new AsyncLocalStorage<WorkerLogContext>();
 
 type DatadogFlushHandler = (env: Record<string, unknown>, entries: LogEntry[]) => Promise<void>;
+type PostHogFlushHandler = (
+  env: Record<string, unknown>,
+  entries: LogEntry[],
+  tracing: PostHogLogTracingContext,
+) => Promise<void>;
 
 let datadogFlushHandler: DatadogFlushHandler = flushDatadogLogs;
+let posthogFlushHandler: PostHogFlushHandler = flushPostHogLogs;
+
+/** Attach PostHog tracing headers from the current request (call once per fetch). */
+export function setWorkerLogTracingContext(tracing: PostHogLogTracingContext): void {
+  const context = workerLogContextStorage.getStore();
+  if (!context) return;
+  if (tracing.distinctId !== undefined) context.posthogTracing.distinctId = tracing.distinctId;
+  if (tracing.sessionId !== undefined) context.posthogTracing.sessionId = tracing.sessionId;
+}
 
 export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
   const flag = String(env.DD_LOGS_ENABLED ?? '')
@@ -180,8 +207,13 @@ export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | nu
   datadogFlushHandler = handler ?? flushDatadogLogs;
 }
 
+/** @internal Test hook — pass null to restore the default HTTP flush handler. */
+export function setPostHogFlushHandlerForTests(handler: PostHogFlushHandler | null): void {
+  posthogFlushHandler = handler ?? flushPostHogLogs;
+}
+
 /**
- * Flushes the buffered logs to Datadog.
+ * Flushes the buffered logs to configured backends (Datadog, PostHog).
  *
  * LIMITATION: Only logs emitted during the main handler execution (before `fn`
  * resolves in `runWithDatadogLogContext`) are flushed. Logs from background work
@@ -191,28 +223,48 @@ export function setDatadogFlushHandlerForTests(handler: DatadogFlushHandler | nu
  * `scheduleDatadogFlush` before those tasks complete, or emit logs before the
  * main handler returns.
  */
-function scheduleDatadogFlush(context: DatadogLogContext): void {
-  if (context.buffer.length === 0 || !isDatadogLogsEnabled(context.env)) return;
+function scheduleWorkerLogFlush(context: WorkerLogContext): void {
+  if (context.buffer.length === 0) return;
+
+  const datadogEnabled = isDatadogLogsEnabled(context.env);
+  const posthogEnabled = isPostHogLogsEnabled(context.env);
+  if (!datadogEnabled && !posthogEnabled) return;
 
   const batch = context.buffer.splice(0, context.buffer.length);
+  const tracing = { ...context.posthogTracing };
+
   context.ctx.waitUntil(
-    datadogFlushHandler(context.env, batch).catch((err) => {
-      console.error('[datadog] log upload error:', err);
-    }),
+    Promise.all([
+      datadogEnabled
+        ? datadogFlushHandler(context.env, batch).catch((err) => {
+            console.error('[datadog] log upload error:', err);
+          })
+        : Promise.resolve(),
+      posthogEnabled
+        ? posthogFlushHandler(context.env, batch, tracing).catch((err) => {
+            console.error('[posthog] log upload error:', err);
+          })
+        : Promise.resolve(),
+    ]),
   );
 }
 
-/** Run a Worker handler with isolated Datadog log buffering for this invocation. */
+/** Run a Worker handler with isolated log buffering for this invocation. */
 export async function runWithDatadogLogContext<T>(
   env: Record<string, unknown>,
   ctx: ExecutionContext,
   fn: () => T | Promise<T>,
 ): Promise<T> {
-  const ddContext: DatadogLogContext = { env, ctx, buffer: [] };
+  const logContext: WorkerLogContext = {
+    env,
+    ctx,
+    buffer: [],
+    posthogTracing: {},
+  };
   try {
-    return await datadogLogContextStorage.run(ddContext, fn);
+    return await workerLogContextStorage.run(logContext, fn);
   } finally {
-    scheduleDatadogFlush(ddContext);
+    scheduleWorkerLogFlush(logContext);
   }
 }
 
@@ -226,9 +278,10 @@ export function log(fields: LogFields): void {
 
   console.log(JSON.stringify(entry));
 
-  const ddContext = datadogLogContextStorage.getStore();
-  if (ddContext && isDatadogLogsEnabled(ddContext.env)) {
-    ddContext.buffer.push(entry);
+  const logContext = workerLogContextStorage.getStore();
+  if (!logContext) return;
+  if (isDatadogLogsEnabled(logContext.env) || isPostHogLogsEnabled(logContext.env)) {
+    logContext.buffer.push(entry);
   }
 }
 
