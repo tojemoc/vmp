@@ -971,6 +971,7 @@ export async function resolveAuthSubFromRequest(
 
   try {
     const payload = await verifyJwt(token, secret);
+    if (payload.pending) return null;
     const sub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
     return sub || null;
   } catch {

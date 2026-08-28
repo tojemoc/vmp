@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
+import { createAccessToken, resolveAuthSubFromRequest, signJwt } from '../src/auth.js';
 import {
   captureMappedPostHogEvent,
   capturePostHogEvent,
@@ -107,6 +108,30 @@ describe('PostHog API helper', () => {
       distinctId: 'spoofed_user',
       sessionId: 'sess_1',
     });
+  });
+
+  it('resolveAuthSubFromRequest returns sub for full tokens and null for pending 2FA', async () => {
+    const secret = 'test_secret_for_jwt_sub_resolution';
+    const user = { id: 'user_full', email: 'u@example.com', role: 'viewer' };
+    const fullToken = await createAccessToken(user, secret);
+    const pendingToken = await signJwt(
+      {
+        sub: user.id,
+        pending: true,
+        exp: Math.floor(Date.now() / 1000) + 300,
+      },
+      secret,
+    );
+
+    const fullRequest = new Request('https://example.test/api/auth/me', {
+      headers: { Authorization: `Bearer ${fullToken}` },
+    });
+    const pendingRequest = new Request('https://example.test/api/auth/2fa/verify', {
+      headers: { Authorization: `Bearer ${pendingToken}` },
+    });
+
+    assert.equal(await resolveAuthSubFromRequest(fullRequest, { JWT_SECRET: secret }), 'user_full');
+    assert.equal(await resolveAuthSubFromRequest(pendingRequest, { JWT_SECRET: secret }), null);
   });
 
   it('redacts path identifiers for analytics properties', () => {
