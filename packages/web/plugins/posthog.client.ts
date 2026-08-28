@@ -2,52 +2,11 @@
  * App-specific PostHog identity sync. Initialization, Vue error capture, and
  * source maps come from `@posthog/nuxt` (which wraps posthog-js).
  *
- * Never destructure `identify` / `reset` off the client — they need `this`.
+ * Never destructure `identify` / `reset` / `setIdentity` off the client — they need `this`.
  */
-import type { AuthUser } from '~/composables/useAuth';
-import {
-  getBrowserPostHog,
-  isBrowserPostHogReady,
-  type PostHogIdentityClient,
-} from '~/utils/posthogBrowserClient';
+import { getBrowserPostHog } from '~/utils/posthogBrowserClient';
+import { syncPostHogIdentity } from '~/utils/posthogIdentity';
 import { isPostHogConfigured } from '~/utils/posthogPublicKey';
-
-function syncPostHogIdentity(
-  posthogClient: PostHogIdentityClient,
-  authUser: AuthUser | null | undefined,
-  hasAnalyticsConsent: boolean,
-  lastIdentifiedUserId: { current: string | null },
-): void {
-  if (!isBrowserPostHogReady(posthogClient)) return;
-
-  if (!hasAnalyticsConsent) {
-    if (lastIdentifiedUserId.current !== null) {
-      posthogClient.reset?.();
-      lastIdentifiedUserId.current = null;
-    }
-    return;
-  }
-
-  if (!authUser) {
-    if (lastIdentifiedUserId.current !== null) {
-      posthogClient.reset?.();
-      lastIdentifiedUserId.current = null;
-    }
-    return;
-  }
-
-  if (lastIdentifiedUserId.current === authUser.id) return;
-
-  if (lastIdentifiedUserId.current !== null) {
-    posthogClient.reset?.();
-  }
-
-  // GDPR: identify by internal user id only — never email or other PII.
-  posthogClient.identify?.(authUser.id, {
-    role: authUser.role,
-  });
-  lastIdentifiedUserId.current = authUser.id;
-}
 
 export default defineNuxtPlugin({
   name: 'posthog-identify',
@@ -65,7 +24,10 @@ export default defineNuxtPlugin({
 
     const { user, initialised } = useAuth();
     const { hasAnalyticsConsent } = usePostHogConsent();
-    const lastIdentifiedUserId = { current: null as string | null };
+    const identityState = {
+      supportUserId: null as string | null,
+      analyticsUserId: null as string | null,
+    };
 
     watch(
       [initialised, user, hasAnalyticsConsent],
@@ -75,7 +37,7 @@ export default defineNuxtPlugin({
         const posthogClient = getBrowserPostHog();
         if (!posthogClient) return;
         try {
-          syncPostHogIdentity(posthogClient, authUser, consentGranted, lastIdentifiedUserId);
+          syncPostHogIdentity(posthogClient, authUser, consentGranted, identityState);
         } catch (err) {
           console.error('[PostHog] identity sync failed', err);
         }

@@ -31,6 +31,8 @@ export interface AuthUser {
   role: Role;
   totpEnabled: boolean;
   totpRequired?: boolean;
+  /** HMAC-SHA256 of id for PostHog Support identity verification (server-signed). */
+  posthogIdentityHash?: string;
 }
 
 export type MagicPwaHandoffResult =

@@ -40,6 +40,7 @@
  */
 
 import { log } from './logger.js';
+import { resolvePostHogIdentityHashForUser } from './posthog.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -553,13 +554,25 @@ export async function consumeMagicLinkForUser(
 
 async function buildSessionUserPayload(user: any, env: any) {
   const totpRequired = shouldRequireTotpEnrollment(user, env);
-  return {
+  const payload: {
+    id: string;
+    email: string;
+    role: string;
+    totpEnabled: boolean;
+    totpRequired: boolean;
+    posthogIdentityHash?: string;
+  } = {
     id: user.id,
     email: user.email,
     role: user.role,
     totpEnabled: !!user.totp_enabled,
     totpRequired,
   };
+  const posthogIdentityHash = await resolvePostHogIdentityHashForUser(env, user.id);
+  if (posthogIdentityHash) {
+    payload.posthogIdentityHash = posthogIdentityHash;
+  }
+  return payload;
 }
 
 /**
