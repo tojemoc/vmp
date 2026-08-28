@@ -48,7 +48,15 @@ Deep link targets:
 | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
 | `vmp://auth/verify?token=…` | **Local PoC / dev only** | **Off by default (fail-closed).** Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `true`). Kill switch: `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` (or `true`) always wins, including when both flags are set. `DISABLE=0` is not an opt-in. Token redemption is gated in `apps/mobile/src/auth/session.ts` via `customSchemeDeepLinksAllowed`. Non-exclusive — any app could register `vmp://`. Store builds must omit ENABLE (and may set DISABLE=1) (checklist **S6**). |
 
-**AASA / Digital Asset Links status:** **Not published yet.** `apps/mobile/app.json` still uses `REPLACE_WITH_FRONTEND_HOST`. Publishing verified association files on the real frontend host is open issue **#5** below and checklist item **S5**.
+**AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
+
+| Env var | Contents |
+| --- | --- |
+| `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` | Upper-case colon-form SHA-256 signing fingerprints (space/comma separated) for `/.well-known/assetlinks.json` |
+| `MOBILE_APPLE_APP_IDS` | `<AppleTeamId>.<bundleId>` entries (space/comma separated) for `/.well-known/apple-app-site-association` |
+| `MOBILE_ANDROID_PACKAGE` | Optional override; defaults to `sk.tjm.vmp` |
+
+CI passes these from `vars.MOBILE_*_STAGING` / `vars.MOBILE_*_PROD` (see `.github/actions/deploy-cloudflare/action.yml`). While unset, both routes answer 404 and App Links verification cannot succeed — supplying the values is what remains of open issue **#5** below and checklist item **S5**. `apps/mobile/app.json` keeps `REPLACE_WITH_FRONTEND_HOST`: the mobile build workflow substitutes the real host per flavour, so it must **not** be hardcoded.
 
 Production note: prefer exchanging a one-time handoff code (bound to app install) over passing raw magic-link tokens via custom schemes if a non-HTTPS fallback is ever required post-launch.
 

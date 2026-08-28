@@ -378,6 +378,18 @@ Frontend PostHog token is **baked at Nuxt build time** (GitHub repo vars → dep
 
 Do **not** put `POSTHOG_PERSONAL_API_KEY` on the API Worker. That key is GitHub-only for web source-map upload.
 
+**Web SSR error tracking.** `@posthog/nuxt`'s `enableExceptionAutocapture` is deliberately **off**: it hooks Nitro's `error` hook and reports every error, including the 404 Nitro raises for unmatched routes, and it exposes no filter (`serverConfig` travels through `runtimeConfig`, which is JSON, so a `before_send` function cannot be passed). `packages/web/server/plugins/posthog-server-errors.ts` owns SSR capture instead and reports 5xx only — a 4xx describes the request, not a defect. When a page needs to answer 4xx, throw `createError({ statusCode })`; when an upstream call fails in a way the visitor cannot cause, throw 5xx so it stays visible.
+
+Optional **web build vars** (GitHub repo vars → deploy action) for native deep-link association files:
+
+```text
+MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS — Android signing fingerprints served at /.well-known/assetlinks.json
+MOBILE_APPLE_APP_IDS                    — <AppleTeamId>.<bundleId> served at /.well-known/apple-app-site-association
+MOBILE_ANDROID_PACKAGE                  — optional override; defaults to sk.tjm.vmp
+```
+
+Unset means both routes 404, which is the pre-existing behaviour. See `docs/native-clients-promotion-checklist.md` item **S5**.
+
 Queue bindings (Worker `env` keys, from `packages/api/wrangler.json`): `vmp_replication_events`, `vmp_push_delivery`. Queue resource names: `vmp-replication-events`, `vmp-push-delivery`.
 
 
