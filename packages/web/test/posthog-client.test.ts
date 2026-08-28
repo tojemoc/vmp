@@ -5,7 +5,10 @@ import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../ut
 import { capturePostHogEvent } from '../utils/posthogClient';
 
 type WindowWithPostHog = {
-  posthog?: { capture: (event: string, properties?: Record<string, unknown>) => unknown };
+  posthog?: {
+    capture: (event: string, properties?: Record<string, unknown>) => unknown;
+    is_capturing?: () => boolean;
+  };
 };
 
 function setWindow(next: WindowWithPostHog | undefined): void {
