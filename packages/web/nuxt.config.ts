@@ -94,8 +94,10 @@ export default defineNuxtConfig({
           serverConfig: {
             // Autocapture reports every error Nitro sees, plain 404s included — bot
             // probes for /.env & co. each opened their own error tracking issue (and
-            // Linear ticket) and buried the real errors. The module has no filter hook,
-            // so server/plugins/posthog-server-exceptions.ts owns capture and drops 4xx.
+            // Linear ticket) and buried the real errors. The module has no filter hook
+            // (`serverConfig` travels through runtimeConfig, which is JSON, so a
+            // `before_send` function cannot survive the build), so
+            // server/plugins/posthog-server-exceptions.ts owns capture and drops 4xx.
             enableExceptionAutocapture: false,
           },
           sourcemaps: {
@@ -143,6 +145,19 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    /**
+     * Native deep-link association documents served from `/.well-known/`.
+     * Signing-specific, so they come from deploy env — see
+     * `docs/native-clients-promotion-checklist.md` item S5. Unset means the
+     * two routes 404, which is the behaviour before they existed.
+     */
+    appLinks: {
+      androidPackageName: process.env.MOBILE_ANDROID_PACKAGE || 'sk.tjm.vmp',
+      /** Space/comma-separated upper-case SHA-256 signing fingerprints. */
+      androidCertFingerprints: process.env.MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS || '',
+      /** Space/comma-separated `<AppleTeamId>.<bundleId>` entries. */
+      appleAppIds: process.env.MOBILE_APPLE_APP_IDS || '',
+    },
     public: {
       apiUrl,
       /** Canonical site origin for og:url and absolute og:image (defaults to request origin). */

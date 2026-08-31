@@ -58,6 +58,7 @@
   import type { CmsBlock, CmsPage, CmsRichTextBlock, CmsRichTextDocument } from '@vmp/shared';
   import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs';
   import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls';
+  import { httpStatusFromError } from '~/utils/httpErrorStatus';
 
   const route = useRoute();
   const config = useRuntimeConfig();
@@ -72,8 +73,15 @@
     supportEmail.value ? `mailto:${supportEmail.value}` : '',
   );
 
-  if (isCmsReservedSlug(slug.value)) {
+  function throwPageNotFound(): never {
+    if (import.meta.server) {
+      setResponseStatus(404);
+    }
     throw createError({ statusCode: 404, statusMessage: 'Page not found' });
+  }
+
+  if (isCmsReservedSlug(slug.value)) {
+    throwPageNotFound();
   }
 
   const apiUrl = String(config.public.apiUrl || '').replace(/\/$/, '');
@@ -83,8 +91,27 @@
     { key: `cms-page-${slug.value}` },
   );
 
-  if (error.value || !data.value?.page) {
-    throw createError({ statusCode: 404, statusMessage: 'Page not found' });
+  // A failed CMS fetch is not the same thing as a missing page. Only the API
+  // answering 4xx means this slug cannot resolve to a page; a timeout or a 5xx
+  // means the API is unhealthy, and replying 404 there tells visitors the
+  // content was deleted and invites search engines to drop a valid URL.
+  if (error.value) {
+    const status = httpStatusFromError(error.value);
+    if (status !== null && status >= 400 && status < 500) {
+      throwPageNotFound();
+    }
+    if (import.meta.server) {
+      setResponseStatus(503);
+    }
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Page temporarily unavailable',
+      cause: error.value,
+    });
+  }
+
+  if (!data.value?.page) {
+    throwPageNotFound();
   }
 
   const page = computed(() => data.value!.page);

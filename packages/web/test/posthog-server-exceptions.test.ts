@@ -4,9 +4,11 @@ import { describe, it } from 'node:test';
 import {
   httpStatusFromError,
   newServerExceptionDistinctId,
+  redactErrorPath,
   serverExceptionProperties,
   shouldCaptureServerException,
 } from '../utils/posthogServerExceptions';
+import { isNotFoundError } from '../utils/httpErrorStatus';
 
 /** Shape Nitro hands the `error` hook for an unmatched route. */
 function h3Error(statusCode: number, statusMessage: string): Error {
@@ -47,12 +49,19 @@ describe('PostHog server exception filter', () => {
   it('reads the status off H3 and $fetch errors', () => {
     assert.equal(httpStatusFromError(h3Error(503, 'Service Unavailable')), 503);
     assert.equal(httpStatusFromError({ status: 500 }), 500);
-    assert.equal(httpStatusFromError(new Error('no status')), undefined);
+    assert.equal(httpStatusFromError({ response: { status: 503 } }), 503);
+    assert.equal(httpStatusFromError(new Error('no status')), null);
+  });
+
+  it('reports 5xx including CMS-unavailable 503', () => {
+    for (const status of [500, 502, 503, 504]) {
+      assert.equal(shouldCaptureServerException(h3Error(status, 'fault')), true, `status ${status}`);
+    }
   });
 });
 
 describe('PostHog server exception properties', () => {
-  it('keeps the route but strips query params that may carry tokens', () => {
+  it('keeps the route but strips query params and masks identifier segments', () => {
     const properties = serverExceptionProperties({
       path: '/auth/verify?token=secret#frag',
       method: 'GET',
@@ -63,6 +72,7 @@ describe('PostHog server exception properties', () => {
     assert.equal(properties.method, 'GET');
     assert.equal(properties.status_code, 500);
     assert.equal(properties.$environment, 'production');
+    assert.equal(JSON.stringify(properties).includes('secret'), false);
   });
 
   it('never creates a person profile for a server throw', () => {
@@ -77,5 +87,33 @@ describe('PostHog server exception properties', () => {
     const first = newServerExceptionDistinctId();
     assert.match(first, /^web_server_error:/);
     assert.notEqual(first, newServerExceptionDistinctId());
+  });
+});
+
+describe('httpErrorStatus (CMS and fetch errors)', () => {
+  it('only treats an explicit 404 as a missing resource', () => {
+    assert.equal(isNotFoundError({ statusCode: 404 }), true);
+    assert.equal(isNotFoundError({ statusCode: 500 }), false);
+    // A CMS timeout must not be read as "this page does not exist".
+    assert.equal(isNotFoundError(new Error('fetch failed')), false);
+  });
+});
+
+describe('redactErrorPath', () => {
+  it('drops the query string, which can hold a live magic-link token', () => {
+    assert.equal(redactErrorPath('/auth/verify?token=abc123'), '/auth/verify');
+    assert.equal(redactErrorPath('/auth/verify#token=abc123'), '/auth/verify');
+  });
+
+  it('masks identifier-looking segments', () => {
+    assert.equal(redactErrorPath('/watch/1b4e28ba-2fa1-11d2-883f-0016d3cca427'), '/watch/:id');
+    assert.equal(redactErrorPath('/download/0123456789abcdef0123'), '/download/:token');
+    assert.equal(redactErrorPath('/account/1234567'), '/account/:id');
+    assert.equal(redactErrorPath(`/x/${'a'.repeat(41)}`), '/x/:token');
+  });
+
+  it('leaves route shape intact', () => {
+    assert.equal(redactErrorPath('/videos/my-video-slug'), '/videos/my-video-slug');
+    assert.equal(redactErrorPath('/'), '/');
   });
 });

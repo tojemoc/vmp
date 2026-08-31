@@ -23,7 +23,7 @@ Linked plan: [`native-clients-plan.md`](native-clients-plan.md).
 | S2 | **Landscape watch** | `app.json` no longer portrait-only, or waiver with UX sign-off | Maintainer |
 | S3 | **Background audio policy** | Intentional setting documented; matches product expectation for long-form | Maintainer |
 | S4 | **Approve TV placement** | Under Settings/profile — **not** a home-header primary action | Maintainer |
-| S5 | **Universal Links / App Links** | AASA + Digital Asset Links live on production `FRONTEND_HOST`; verified with Apple/Google tools. **Owner:** repository maintainer (Cloudflare web Worker host) | Maintainer |
+| S5 | **Universal Links / App Links** | Set `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` + `MOBILE_APPLE_APP_IDS` repo vars so `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` return 200 on production `FRONTEND_HOST` (routes ship in the web Worker; unset ⇒ 404); verified with Apple/Google tools. **Owner:** repository maintainer (Cloudflare web Worker host) | Maintainer |
 | S6 | **`vmp://` not primary** | Custom scheme stays **off** unless `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (dev) **and** `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not `1`/`true`. Store build must omit ENABLE (DISABLE=1 allowed); HTTPS Universal/App Links only | Maintainer |
 | S7 | **Cross-device magic link** | Login/error copy explains single-use + same-device. First store build: **copy-only** unless maintainer waives to explore token-binding | Maintainer |
 | S8 | **TV pairing labels** | UI shows “Label set by the device”. Unverified labels accepted with that warning, or attestation added | Maintainer |

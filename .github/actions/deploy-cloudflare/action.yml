@@ -66,6 +66,22 @@ inputs:
     required: false
     default: ''
     description: Optional Sentry auth token for sourcemap upload.
+  mobile-android-cert-fingerprints:
+    required: false
+    default: ''
+    description: >
+      Optional SHA-256 signing fingerprints (space/comma separated, upper-case colon form)
+      published at /.well-known/assetlinks.json for Android App Links. Empty means the route 404s.
+  mobile-apple-app-ids:
+    required: false
+    default: ''
+    description: >
+      Optional `<AppleTeamId>.<bundleId>` entries (space/comma separated) published at
+      /.well-known/apple-app-site-association for iOS Universal Links. Empty means the route 404s.
+  mobile-android-package:
+    required: false
+    default: ''
+    description: Optional Android applicationId override for assetlinks.json (defaults to sk.tjm.vmp).
 runs:
   using: composite
   steps:
@@ -114,6 +130,10 @@ runs:
         POSTHOG_PROJECT_ID: ${{ inputs.posthog-project-id }}
         POSTHOG_PERSONAL_API_KEY: ${{ inputs.posthog-personal-api-key }}
         SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        # Native deep-link association files (checklist S5); unset → both routes 404.
+        MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS: ${{ inputs.mobile-android-cert-fingerprints }}
+        MOBILE_APPLE_APP_IDS: ${{ inputs.mobile-apple-app-ids }}
+        MOBILE_ANDROID_PACKAGE: ${{ inputs.mobile-android-package }}
         NODE_ENV: production
       run: npm run build
 

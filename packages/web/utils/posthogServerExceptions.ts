@@ -8,34 +8,43 @@
  * firing the new-issue alert and a Linear ticket — and bury the genuine app errors.
  * A 4xx says the request was wrong, not the server, so only faults are signal.
  */
+import { httpStatusFromError } from './httpErrorStatus';
 
-function toStatusNumber(value: unknown): number | undefined {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-/** HTTP status carried by an H3Error or `$fetch` error, when it has one. */
-export function httpStatusFromError(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') return undefined;
-  const candidate = error as { statusCode?: unknown; status?: unknown };
-  return toStatusNumber(candidate.statusCode) ?? toStatusNumber(candidate.status);
-}
+export { httpStatusFromError } from './httpErrorStatus';
 
 /** A throw without a status (a real crash) still counts as signal. */
 export function shouldCaptureServerException(error: unknown): boolean {
   const status = httpStatusFromError(error);
-  return status === undefined || status < 400 || status > 499;
+  if (status === null) return true;
+  return status < 400 || status > 499;
 }
 
-/** Nitro's `event.path` carries the query string — keep the route, drop the params. */
-function pathnameOf(path: string | undefined): string {
-  if (!path) return '';
-  const cut = path.search(/[?#]/);
-  return cut === -1 ? path : path.slice(0, cut);
+/**
+ * Reduce a request target to route shape before it leaves the Worker.
+ *
+ * Nitro hands the error hook `event.path`, which is the raw request URL —
+ * query string included. `/auth/verify?token=…` carries a live single-use
+ * magic-link token, so the query is dropped outright and identifier-looking
+ * segments are masked. Mirrors `redactPathForAnalytics` in
+ * `packages/api/src/posthog.ts`; keep the two in step.
+ */
+export function redactErrorPath(path: string): string {
+  const [pathname = ''] = path.split(/[?#]/);
+  return pathname
+    .split('/')
+    .map((segment) => {
+      if (!segment) return segment;
+      if (
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(segment)
+      ) {
+        return ':id';
+      }
+      if (/^[0-9a-f]{16,}$/i.test(segment)) return ':token';
+      if (/^\d{6,}$/.test(segment)) return ':id';
+      if (segment.length > 40) return ':token';
+      return segment;
+    })
+    .join('/');
 }
 
 /** One id per fault: server throws have no person, and a shared id would fake a user. */
@@ -46,17 +55,19 @@ export function newServerExceptionDistinctId(): string {
 export function serverExceptionProperties(context: {
   path?: string;
   method?: string;
-  status?: number;
+  status?: number | null;
   environment?: string;
 }): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     // Anonymous per fault — never create a person profile from a server throw.
     $process_person_profile: false,
   };
-  const path = pathnameOf(context.path);
+  const path = context.path ? redactErrorPath(context.path) : '';
   if (path) properties.path = path;
   if (context.method) properties.method = context.method;
-  if (context.status !== undefined) properties.status_code = context.status;
+  if (context.status !== null && context.status !== undefined) {
+    properties.status_code = context.status;
+  }
   if (context.environment) properties.$environment = context.environment;
   return properties;
 }

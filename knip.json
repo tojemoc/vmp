@@ -11,7 +11,8 @@
         "app.vue",
         "pages/**/*.{vue,ts}",
         "plugins/**/*.{ts,vue}",
-        "middleware/**/*.ts"
+        "middleware/**/*.ts",
+        "server/**/*.ts"
       ],
       "project": [
         "components/**/*.vue",
@@ -20,6 +21,7 @@
         "scripts/**/*.ts",
         "middleware/**/*.ts",
         "plugins/**/*.ts",
+        "server/**/*.ts",
         "pages/**/*.{vue,ts}",
         "nuxt.config.ts",
         "app.vue",
