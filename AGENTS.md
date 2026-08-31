@@ -24,6 +24,15 @@
 
 If you are unsure which branch you are on, run `git branch --show-current` before `git push`.
 
+## Roadmap workflow (agents)
+
+The **living implementation checklist** is **[ROADMAP.md](ROADMAP.md)**. Detailed specs live under **[docs/plans/](docs/plans/)**.
+
+1. **Before feature work** — Read `ROADMAP.md` and the linked plan for your task. If the work is not listed, add a roadmap entry and a plan doc first (or in the same PR if trivial).
+2. **One PR per item** — Align with [Git workflow](#git-workflow-mandatory--read-first); cite roadmap IDs (e.g. `club-concurrent-playback`, `step-08`) in the PR description.
+3. **Check off on merge** — Update `ROADMAP.md`: `[ ]` → `[x]` and link the merged PR. Partial delivery is only marked done when the plan explicitly splits milestones.
+4. **Architecture rules** — This file (`AGENTS.md`) remains canonical for auth, schema, secrets, and coding conventions; do not duplicate long specs here—link to `docs/plans/` instead.
+
 ## When deploy looks broken but CI is green
 
 Agents implement what the repo and workflows say. **Stale or split traffic is often a Cloudflare / GitHub configuration issue on the maintainer side**, not a bad merge or a “missed” code deploy.
@@ -161,111 +170,16 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
 
 ## Implementation roadmap
 
-Steps 1–7 are complete. Work continues from step 8.
+**Moved to [ROADMAP.md](ROADMAP.md)** (checklist + status) and **[docs/plans/](docs/plans/)** (detailed specs).
 
-| Step | Title | Status |
-|---|---|---|
-| 1 | Video Draft/Publish Flow | ✅ Done |
-| 2 | Rate Limiting for Anonymous Users | ✅ Done |
-| 3 | Stripe Payments | ✅ Done |
-| 4 | Signed Segment URLs + yt-dlp Throttling | ✅ Done |
-| 5 | 2FA for Editor+ Roles | ✅ Done |
-| 6 | PWA + Push Notifications | ✅ Done (push has known issues) |
-| 7 | Thumbnail Management | ✅ Done |
-| 8 | Brevo Newsletter Sync | Pending |
-| 9 | RSS / Podcast Feed | Pending |
-| — | Native / TV clients (multi-tier) | Phase 0 + Tier 1 scaffold — see [docs/native-clients-plan.md](docs/native-clients-plan.md) |
-| 10 | Self-Service Account Deletion | Pending (blocked on payment gateway adapter) |
+| Area | Plan |
+|------|------|
+| Steps 8–10 (Brevo, RSS, account deletion) | [docs/plans/README.md](docs/plans/README.md) |
+| Club entitlements (concurrent playback, IRL, ad-free) | [docs/plans/club-plan-entitlements.md](docs/plans/club-plan-entitlements.md) |
+| Native / TV clients | [docs/native-clients-plan.md](docs/native-clients-plan.md) |
+| Offline downloads (shipped) | [docs/archive/offline-downloads-roadmap.md](docs/archive/offline-downloads-roadmap.md) |
 
-### Step 8 — Brevo Newsletter Sync
-
-- `packages/api/src/brevo.js` — sync paying subscribers to a Brevo contact list; remove on cancellation.
-- Call sync from Stripe webhook on `checkout.session.completed` and renewal; call remove on `customer.subscription.deleted`.
-- Admin Newsletter tab: compose subject + body, preview as HTML, send via Brevo campaign API. Requires `admin` or `super_admin` role (NOT editor).
-- Store `brevo_subscriber_list_id` in `admin_settings`.
-
-### Step 9 — RSS / Podcast Feed
-
-- Per-user stable RSS token: `HMAC-SHA256(RSS_SECRET, 'rss:' + userId)`.
-- `GET /api/feed/:userId/:token` — validates token + active subscription, returns RSS 2.0 with iTunes podcast tags for all published videos.
-- Account page section with copyable RSS URL and instructions.
-- Public listing feed: `GET /api/feed/public` — stable URL for directory submission; always serves **preview-only** enclosures.
-- Account helper: `GET /api/account/rss` (auth required) — returns `{ publicUrl, personalUrl }` for copy/paste into podcast apps.
-
-### Playback position resume (#488)
-
-- D1 table `playback_positions` stores last VOD position per signed-in user/video.
-- API: `GET/PUT/DELETE /api/account/playback-positions/:videoId`, list at `GET /api/account/playback-positions`.
-- Resume requires sign-in **and** active subscription with full access (not preview-only).
-- Near-end clear uses **duration-tiered** thresholds from `@vmp/shared` (`playbackPosition.ts`): short-form (≤5 min) uses a proportional 15% tail; long-form keeps 30s absolute + 95% fraction.
-- Periodic save interval scales with duration (~10% of clip length, clamped 5–30s).
-- Positions for all users on a video are cleared when the pipeline reports `fully_processed` (re-encode under same ID). Admins can also call `DELETE /api/admin/videos/:id/playback-positions` (requires `admin` or `super_admin`; editors cannot).
-- Account page **Continue watching** lists in-progress VOD; users can remove individual saved positions.
-- Client `capturedAtMs` writes are clamped if >5 min ahead of server time; stale rejection is skipped when stored timestamp is skewed into the future (clock recovery).
-- Catalog short-form share is still unknown — if most content is under 5 minutes, revisit thresholds in `@vmp/shared`.
-
-#### Known limitations and future improvements
-
-- **Re-encode clears all positions:** The `fully_processed` pipeline callback clears every user's saved position, including quality-only re-encodes where the timeline is unchanged. To preserve resume on quality upgrades, the pipeline callback would need a `contentChanged` flag — this requires a media-pipeline contract change. The admin endpoint `DELETE /api/admin/videos/:id/playback-positions` is available as a manual alternative.
-- **Postgres (api-node) migration compatibility:** Migration files use D1/SQLite SQL. The `translateSqliteDdl` function in `packages/api-node/src/bindings/sqlDialect.ts` handles most translations. SQLite-only functions (`json_insert`, `json_valid`, `json_type`, `json()`) are not translatable — statements using them are stripped. `instr()` is translated to `strpos()`. When writing new migrations that use SQLite-specific JSON functions, add a comment explaining the Postgres fallback and ensure the REPLACE-based paths cover the common case.
-- **Client clock skew:** A device whose clock is ahead by up to 5 minutes can suppress writes from other devices for that duration. This is acceptable for a resume feature; server-side timestamp arbitration would require a more complex API contract.
-
-### Step 10 — Self-Service Account Deletion
-
-**Blocked on**: payment gateway adapter completion (all Stripe-touching work is on hold until the adapter is provider-agnostic).
-
-#### API (`@vmp/api`)
-
-- `POST /api/account/delete-request` — `requireAuth`; sends a one-time verification email (via Brevo) with a signed HMAC token (short TTL ~15 min) bound to the authenticated user ID and purpose `account_deletion`.
-- `POST /api/account/delete-confirm` — `requireAuth`; validates the signed token is bound to the authenticated JWT subject (`sub`) and purpose `account_deletion`; validates confirmation phrase; **before** committing the deletion job or setting `deletion_pending`, verify the user's active subscription provider supports immediate cancellation (see step 2). If unsupported, reject with a clear error **without** consuming the token or locking the account; alternatively persist a recoverable terminal `blocked` job state with an explicit retry path once the provider gains support. When supported, **atomically** in one `db.batch()`: consume the deletion token (`used_at` / single-use) **and** idempotently create or upsert the durable deletion job — a crash must not leave `used_at` set without a corresponding job row. Job state lives in `account_deletion_jobs` (or equivalent **not** cascaded by user deletion — do **not** store retry state on `magic_link_tokens`, which is deleted with the user). The deletion-token table’s `user_id` FK must be `ON DELETE CASCADE` or `ON DELETE SET NULL` (and if `SET NULL`, `user_id` **must be nullable** — SQLite/D1 will reject `SET NULL` on a `NOT NULL` column), or token rows must be deleted in the same cleanup transaction as the user (step 4); a default `NO ACTION` FK would make `DELETE FROM users` fail. Unused tokens expire at TTL and may be garbage-collected independently. Consumed tokens need no long-term retention: cascade/explicit delete with the user is enough; if kept for a short audit window, nullable `user_id` + `ON DELETE SET NULL` and purge after the job completes.
-- On confirmation — **durable, retry-safe deletion job** (do **not** rely on a bare `DELETE FROM users` or a single fire-and-forget handler):
-  1. Persist deletion state in `account_deletion_jobs` (FK to `users` with `ON DELETE SET NULL` or no FK — job must survive until explicitly completed): track per-step completion (`subscription_cancelled`, `einvoices_anonymized`, `r2_sanitized`, `db_cleaned`, `brevo_deleted`, `user_deleted`) so retries skip completed work and external effects are not duplicated. **Before** the step 3–4 cleanup batch (user deletion and `einvoices.user_id` SET NULL), persist every non-null `xml_payload_r2_key` and `pdf_payload_r2_key` for that user’s invoices into `account_deletion_r2_objects`. Rows must reference the deletion job via a durable `job_id` FK to `account_deletion_jobs` (not user or invoice ownership) so inventory survives cleanup. Unique constraint on `(job_id, object_key)` so retries cannot insert duplicate object records. Track **each object key independently** (`object_key`, `outcome`: `sanitized` | `retained_under_policy`): on retry, skip only objects with recorded outcomes and process unresolved ones; set aggregate `r2_sanitized` only after every inventoried object has a recorded outcome.
-  2. **Subscription cancellation** — distinguish provider semantics:
-     - `PaymentProvider.cancelSubscription` today sets `cancel_at_period_end: true` (Stripe provider in `packages/payments/src/providers/stripe/index.ts`) — access continues until period end.
-     - Account deletion requires **immediate** access revocation. Extend the payment gateway adapter with an explicit immediate-cancellation capability (e.g. `cancelSubscriptionImmediately`) and call it here; UI copy should state that remaining prepaid access ends immediately (refund eligibility per applicable consumer law — see legal section). If immediate cancel is unavailable for a provider, block deletion with a clear error rather than leaving access active.
-     - Make provider cancellation **idempotent** (safe to retry; persist `subscription_cancelled` before proceeding).
-  3. **Anonymize retained billing records** (inside a D1 `db.batch()` transaction together with step 4): `einvoices` currently has `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE` (`0044_einvoicing.sql`). That cascade would delete invoice rows, which conflicts with CZ/SK accounting law (zákon č. 563/1991 Sb. and its Slovak equivalent — multi-year retention of financial records). Requires a new migration: change FK to `ON DELETE SET NULL`, make `user_id` nullable, and in the deletion handler clear/anonymize buyer PII columns (`buyer_name`, `buyer_email`, `buyer_address_json`, `buyer_vat_id`, `buyer_peppol_*`) while keeping invoice amounts, dates, and retention metadata. **R2 payloads** (`xml_payload_r2_key`, `pdf_payload_r2_key`): ISDOC/UBL XML embeds buyer name, email, address, and VAT ID (`eInvoicing.ts`). Either replace each object with a sanitized archival version stripping buyer PII, or document a lawful-retention policy with access controls on the original object. Preserve amounts, dates, and statutory retention either way. GDPR Art. 17(3)(b) permits this retention where required by law.
-  4. **Explicit cleanup of non-CASCADE FK tables** (same `db.batch()` as step 3):
-     - `DELETE FROM offline_download_licenses WHERE user_id = ?` (must precede devices — FK to `offline_devices`)
-     - `DELETE FROM offline_devices WHERE user_id = ?` (`0037_offline_downloads.sql` — no CASCADE)
-     - `DELETE FROM pwa_handoffs WHERE user_id = ?` (`0018_pwa_handoffs.sql` — no CASCADE)
-     - Deletion-token rows: omit if the table uses `ON DELETE CASCADE`; otherwise `DELETE FROM <deletion_tokens> WHERE user_id = ?` in this same batch (required unless `user_id` is nullable with `ON DELETE SET NULL` plus post-job purge)
-     - `DELETE FROM users WHERE id = ?` — remaining `ON DELETE CASCADE` / `ON DELETE SET NULL` FKs handle the rest (`playback_positions`, `refresh_tokens`, `magic_link_tokens`, `push_subscriptions`, `subscriptions`, `native_push_tokens`, `device_pairing_sessions`, `admin_audit_logs` actor/target, etc.).
-  5. On batch failure, retain job state so the handler can resume from the last incomplete step without repeating completed external calls.
-  6. **Brevo contact deletion** (mandatory when `BREVO_API_KEY` is configured): capture the contact identifier (email) **before** local user data is removed; call `DELETE /contacts/{identifier}` via a dedicated deletion worker/adapter (not `removeSubscriberFromNewsletter`, which only removes list membership). Treat **2xx and 404** as successful completion and persist `brevo_deleted`; retry only transient failures (5xx, timeouts). Permanent client/auth errors (e.g. 400, 401, 403) must not retry forever: persist a durable terminal job state (`brevo_failed` or `blocked`) with response details and expose an operator retry/remediation path. Stale-contact sync is a backstop only, never the primary deletion path.
-  7. Revoke all sessions: refresh tokens deleted by cascade; `requireAuth` must reject access tokens for deleted or deletion-pending users (see below).
-- **Deletion-pending gate** (set atomically when `delete-confirm` creates the job): mark the account `deletion_pending` (column on `users` or job status). Reject deletion-pending accounts in `requireAuth`, `handleRefreshToken`, and magic-link redemption **before** issuing or rotating sessions. Preserve existing behavior for accounts not pending. Add tests covering all three auth paths.
-- **`requireAuth` hardening** (prerequisite): today `requireAuth` only verifies the JWT signature (`auth.ts`); it does not check whether the user row still exists, is deletion-pending, or whether a server-side revocation/version stamp is valid. Extend it to reject tokens for deleted or deletion-pending users (and optionally a `users.token_version` bump on deletion) consistently across all protected endpoints; add tests for deleted users and revoked/outdated tokens.
-- New migration(s): `account_deletion_jobs` + `account_deletion_r2_objects` (`job_id` FK to the job, unique `(job_id, object_key)`) + deletion token table (separate from `magic_link_tokens`; `user_id` `ON DELETE CASCADE`, or nullable `user_id` with `ON DELETE SET NULL`) **and** `einvoices` FK/retention fix described above.
-
-#### Web (`@vmp/web`)
-
-- Account page section: "Delete my account" with warning copy (include that anonymized invoice records are retained for the statutory accounting period).
-- Confirmation flow: email sent → user must be **signed in** (or complete a secure handoff authenticated and bound to the same JWT `sub` as `delete-confirm`'s `requireAuth`) → type confirmation phrase → done. An email link alone must not submit the phrase without an authenticated session matching the deletion token subject.
-- Redirect to homepage post-deletion.
-
-#### Legal / regulatory (CZ + SK)
-
-- **Czech law**: Consumer Protection Act (zákon č. 634/1992 Sb.), Civil Code (zákon č. 89/2012 Sb.) — digital content contracts; EU Consumer Rights Directive implemented via § 1820+ of the Civil Code. For digital content/services delivered immediately (streaming access), the 14-day withdrawal right can be waived with prior express consent.
-- **Slovak law**: zákon č. 108/2024 Z. z. (Consumer Protection Act, effective 1 July 2024; replaces zákon č. 102/2014 Z.z.) — same EU directive transposition, same waiver mechanism for immediate digital content delivery.
-- **Key wording**: pre-purchase consent checkbox or acknowledgment covering applicable statutory conditions only — e.g. (a) access begins immediately upon payment, (b) the consumer waives the 14-day withdrawal right **where the law permits** for immediately delivered digital content. Do **not** use blanket "all sales are final" or "no refund for remaining subscription period" language that overrides mandatory remedies for ongoing streaming services, partial performance, or non-conforming delivery. Deletion/cancellation copy should reference forfeiture of remaining prepaid access only where legally defensible, not as a universal waiver.
-- **GDPR Art. 17 (right to erasure)**: the self-service flow satisfies this for personal/account data. **Exception — financial records**: invoice rows in `einvoices` must be retained (anonymized, not deleted) for the statutory accounting period under CZ/SK law; disclose this in the deletion UI copy.
-
-#### Checkout integration
-
-Require **affirmative terms acceptance in every checkout flow**. Persist consent at checkout time, not at deletion.
-
-- **Stripe Checkout** (when used): set `consent_collection.terms_of_service` to `required` with a valid terms URL for supported embedded/hosted UI modes.
-- **Other providers / UI modes**: gate payment confirmation behind a first-party checkbox acknowledging the same terms.
-- Extend the provider-agnostic checkout and webhook normalization to persist immutable metadata:
-  - Accepted wording or version ID
-  - Timestamp
-  - User ID
-  - Checkout session ID
-  - Provider session ID
-  - Subscription ID (when available)
-
-Store in a dedicated table (e.g. `checkout_consents`) via the payment gateway adapter and webhook handling. Limit stored consent text to applicable statutory withdrawal conditions — do not record blanket no-refund waivers beyond what the law allows.
+Agents: follow [Roadmap workflow](#roadmap-workflow-agents) before implementing any backlog item.
 
 ## Cursor Cloud-specific instructions
 
