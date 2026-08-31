@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import {
   buildPostHogLogsUrl,
   buildPostHogOtlpPayload,
+  flushPostHogLogs,
   formatPostHogLogBody,
   isPostHogLogsEnabled,
 } from '../src/posthogLogs.js';
@@ -88,5 +89,37 @@ describe('PostHog worker log helpers', () => {
     assert.ok(keys.includes('component'));
     const distinctId = attributes.find((attr) => attr.key === 'posthogDistinctId');
     assert.equal(distinctId?.value.stringValue, 'user_1');
+  });
+
+  it('flushPostHogLogs rejects redirects without following', async () => {
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock.fn(async (_input, init) => {
+      calls += 1;
+      assert.equal(init?.redirect, 'error');
+      // Worker fetch with redirect: "error" rejects before following Location.
+      throw new TypeError('redirect mode is "error"');
+    });
+
+    try {
+      await assert.rejects(
+        () =>
+          flushPostHogLogs(
+            { POSTHOG_PROJECT_TOKEN: 'phc_test', POSTHOG_HOST: 'https://eu.i.posthog.com' },
+            [
+              {
+                service: 'worker',
+                event: 'request',
+                level: 'info',
+                ts: '2026-06-25T08:40:05.704Z',
+              },
+            ],
+          ),
+        (err: unknown) => err instanceof TypeError,
+      );
+      assert.equal(calls, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

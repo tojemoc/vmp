@@ -185,6 +185,7 @@ export async function flushPostHogLogs(
 
   const response = await fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
