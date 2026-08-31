@@ -61,7 +61,11 @@ describe('GoPay helpers', () => {
       recurrence_period: 12,
       recurrence_date_to: '2099-12-30',
     });
-    assert.throws(() => recurrenceForPlan('club'), /club checkout is not supported/i);
+    assert.deepEqual(recurrenceForPlan('club'), {
+      recurrence_cycle: 'MONTH',
+      recurrence_period: 12,
+      recurrence_date_to: '2099-12-30',
+    });
     assert.ok(recurrenceForPlan('yearly').recurrence_date_to < '2099-12-31');
   });
 });
@@ -75,17 +79,41 @@ describe('createGoPayProvider', () => {
     );
   });
 
-  it('createCheckoutSession rejects club until renewal rules are defined', async () => {
-    const provider = createGoPayProvider(baseConfig());
-    await assert.rejects(
-      () =>
-        provider.createCheckoutSession({
-          userId: 'user-1',
-          email: 'a@example.com',
-          planType: 'club',
-          returnPath: '/account',
-        }),
-      /club checkout is not supported/i,
+  it('createCheckoutSession uses yearly recurrence for club', async () => {
+    const calls = mockFetchSequence([
+      {
+        body: { access_token: 'tok', expires_in: 1800, token_type: 'bearer' },
+      },
+      {
+        body: {
+          id: 3123456790,
+          gw_url: 'https://gw.sandbox.gopay.com/gw/v3/club',
+          state: 'CREATED',
+        },
+      },
+    ]);
+    const provider = createGoPayProvider(
+      baseConfig({
+        amountMajorForPlan: async (plan) =>
+          plan === 'club' ? 1499 : plan === 'yearly' ? 999 : 199,
+      }),
+    );
+    const session = await provider.createCheckoutSession({
+      userId: 'user-1',
+      email: 'a@example.com',
+      planType: 'club',
+      returnPath: '/account',
+    });
+    assert.equal(session.checkoutUrl, 'https://gw.sandbox.gopay.com/gw/v3/club');
+    const paymentBody = JSON.parse(String(calls[1]!.init?.body ?? '{}')) as {
+      amount: number;
+      recurrence: { recurrence_period: number };
+      additional_params: Array<{ name: string; value: string }>;
+    };
+    assert.equal(paymentBody.amount, 149900);
+    assert.equal(paymentBody.recurrence.recurrence_period, 12);
+    assert.ok(
+      paymentBody.additional_params.some((p) => p.name === 'planType' && p.value === 'club'),
     );
   });
 

@@ -406,9 +406,7 @@
 
   const showGoPayCheckout = computed(
     () =>
-      enabledProviders.value.includes('gopay') &&
-      selectedPlan.value !== 'club' &&
-      gopayPlanPrice.value != null,
+      enabledProviders.value.includes('gopay') && gopayPlanPrice.value != null,
   );
 
   const showComgateCheckout = computed(
@@ -537,7 +535,6 @@
     }
     if (
       providers.includes('gopay') &&
-      plan !== 'club' &&
       hasConfiguredProviderPrice(gopayPrices.value[plan])
     ) {
       return true;

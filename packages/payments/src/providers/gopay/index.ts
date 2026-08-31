@@ -77,13 +77,7 @@ function recurrenceForPlan(planType: PlanType): {
   recurrence_period: number;
   recurrence_date_to: string;
 } {
-  if (planType === 'club') {
-    const err = new Error(
-      'GoPay club checkout is not supported until club renewal and cancellation rules are defined',
-    );
-    Object.assign(err, { status: 400, code: 'gopay_club_unsupported' });
-    throw err;
-  }
+  // Club is yearly billing (12-month cycle) with higher price and extra VMP entitlements.
   const period = planType === 'monthly' ? 1 : 12;
   return {
     recurrence_cycle: 'MONTH',
