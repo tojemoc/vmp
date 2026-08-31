@@ -1,20 +1,25 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
+import { createAccessToken, resolveAuthSubFromRequest, signJwt } from '../src/auth.js';
 import {
   captureMappedPostHogEvent,
   capturePostHogEvent,
   capturePostHogException,
+  computePostHogIdentityHash,
   createPostHogClient,
   DEFAULT_POSTHOG_HOST,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
+  resolvePostHogLogTracingContext,
   posthogEventFromLegacyWebhook,
   posthogEventFromStripeWebhook,
   redactPathForAnalytics,
   resetPostHogClientForTests,
-  resolvePostHogHost,
-  resolvePostHogProjectToken,
   resolvePostHogEnvironment,
+  resolvePostHogHost,
+  resolvePostHogIdentityHashForUser,
+  resolvePostHogProjectToken,
+  resolvePostHogSecretApiToken,
   setPostHogCaptureForTests,
   setPostHogExceptionForTests,
 } from '../src/posthog.js';
@@ -30,11 +35,29 @@ describe('PostHog API helper', () => {
     assert.equal(resolvePostHogProjectToken({}), '');
     assert.equal(resolvePostHogProjectToken({ POSTHOG_PROJECT_TOKEN: ' phc_abc ' }), 'phc_abc');
     assert.equal(resolvePostHogProjectToken({ POSTHOG_KEY: 'phc_alt' }), 'phc_alt');
+    assert.equal(resolvePostHogSecretApiToken({}), '');
+    assert.equal(resolvePostHogSecretApiToken({ POSTHOG_SECRET_API_TOKEN: ' secret ' }), 'secret');
     assert.equal(resolvePostHogHost({}), DEFAULT_POSTHOG_HOST);
     assert.equal(
       resolvePostHogHost({ POSTHOG_HOST: ' https://us.i.posthog.com ' }),
       'https://us.i.posthog.com',
     );
+  });
+
+  it('computes Support identity hash as HMAC-SHA256 hex', async () => {
+    const hash = await computePostHogIdentityHash('user_123', 'test_secret');
+    assert.equal(hash, '4ba48d33a76c8170b37c91fe545c891089577efbffe0c2cfd5ab5fa6cc8e8e01');
+    assert.equal(await computePostHogIdentityHash('  ', 'secret'), '');
+    assert.equal(await computePostHogIdentityHash('user', '  '), '');
+  });
+
+  it('resolvePostHogIdentityHashForUser returns undefined without secret', async () => {
+    assert.equal(await resolvePostHogIdentityHashForUser({}, 'user_1'), undefined);
+    const hash = await resolvePostHogIdentityHashForUser(
+      { POSTHOG_SECRET_API_TOKEN: 'test_secret' },
+      'user_123',
+    );
+    assert.equal(hash, '4ba48d33a76c8170b37c91fe545c891089577efbffe0c2cfd5ab5fa6cc8e8e01');
   });
 
   it('resolves deployment environment from Worker env', () => {
@@ -67,6 +90,48 @@ describe('PostHog API helper', () => {
       distinctId: 'user_1',
       sessionId: 'sess_1',
     });
+  });
+
+  it('prefers validated JWT sub over client distinct-id for worker log tracing', () => {
+    const request = new Request('https://vmp-api.tjm.sk/api/auth/me', {
+      headers: {
+        Authorization: 'Bearer ignored-in-this-unit-test',
+        'X-POSTHOG-DISTINCT-ID': 'spoofed_user',
+        'X-POSTHOG-SESSION-ID': 'sess_1',
+      },
+    });
+    assert.deepEqual(resolvePostHogLogTracingContext(request, 'user_jwt'), {
+      distinctId: 'user_jwt',
+      sessionId: 'sess_1',
+    });
+    assert.deepEqual(resolvePostHogLogTracingContext(request, null), {
+      distinctId: 'spoofed_user',
+      sessionId: 'sess_1',
+    });
+  });
+
+  it('resolveAuthSubFromRequest returns sub for full tokens and null for pending 2FA', async () => {
+    const secret = 'test_secret_for_jwt_sub_resolution';
+    const user = { id: 'user_full', email: 'u@example.com', role: 'viewer' };
+    const fullToken = await createAccessToken(user, secret);
+    const pendingToken = await signJwt(
+      {
+        sub: user.id,
+        pending: true,
+        exp: Math.floor(Date.now() / 1000) + 300,
+      },
+      secret,
+    );
+
+    const fullRequest = new Request('https://example.test/api/auth/me', {
+      headers: { Authorization: `Bearer ${fullToken}` },
+    });
+    const pendingRequest = new Request('https://example.test/api/auth/2fa/verify', {
+      headers: { Authorization: `Bearer ${pendingToken}` },
+    });
+
+    assert.equal(await resolveAuthSubFromRequest(fullRequest, { JWT_SECRET: secret }), 'user_full');
+    assert.equal(await resolveAuthSubFromRequest(pendingRequest, { JWT_SECRET: secret }), null);
   });
 
   it('redacts path identifiers for analytics properties', () => {

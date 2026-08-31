@@ -5,8 +5,9 @@
  * `ctx` so capture is scheduled via `waitUntil` and does not block webhooks.
  *
  * Runtime env (Cloudflare Worker vars / packages/api/.dev.vars), not GitHub build vars:
- *   POSTHOG_PROJECT_TOKEN — public project token (same value as NUXT_PUBLIC_POSTHOG_KEY)
- *   POSTHOG_HOST          — ingest host, default https://eu.i.posthog.com
+ *   POSTHOG_PROJECT_TOKEN    — public project token (same value as NUXT_PUBLIC_POSTHOG_KEY)
+ *   POSTHOG_HOST             — ingest host, default https://eu.i.posthog.com
+ *   POSTHOG_SECRET_API_TOKEN — team secret for Support identity verification (HMAC distinct_id)
  */
 import { PostHog } from 'posthog-node';
 
@@ -63,6 +64,50 @@ export function resolvePostHogProjectToken(env: Record<string, unknown> | undefi
   return typeof token === 'string' ? token.trim() : '';
 }
 
+/** Team secret API token — used only server-side for Support identity HMAC. */
+export function resolvePostHogSecretApiToken(env: Record<string, unknown> | undefined): string {
+  const token = env?.POSTHOG_SECRET_API_TOKEN;
+  return typeof token === 'string' ? token.trim() : '';
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * HMAC-SHA256(distinct_id, secret) as lowercase hex — PostHog Support identity verification.
+ * @see https://posthog.com/docs/support/javascript-api#user-identification
+ */
+export async function computePostHogIdentityHash(
+  distinctId: string,
+  secret: string,
+): Promise<string> {
+  const id = distinctId.trim();
+  const keyMaterial = secret.trim();
+  if (!id || !keyMaterial) return '';
+
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(keyMaterial),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(id));
+  return bytesToHex(new Uint8Array(signature));
+}
+
+export async function resolvePostHogIdentityHashForUser(
+  env: Record<string, unknown> | undefined,
+  distinctId: string,
+): Promise<string | undefined> {
+  const secret = resolvePostHogSecretApiToken(env);
+  if (!secret) return undefined;
+  const hash = await computePostHogIdentityHash(distinctId, secret);
+  return hash || undefined;
+}
+
 export function resolvePostHogHost(env: Record<string, unknown> | undefined): string {
   const host = env?.POSTHOG_HOST;
   const trimmed = typeof host === 'string' ? host.trim() : '';
@@ -100,6 +145,18 @@ export function posthogContextFromRequest(request: Request | undefined): {
   return { distinctId, sessionId };
 }
 
+/** Worker log tracing: authenticated JWT sub wins over client distinct-id header. */
+export function resolvePostHogLogTracingContext(
+  request: Request,
+  authSub: string | null,
+): { distinctId: string | null; sessionId: string | null } {
+  const { distinctId: headerDistinctId, sessionId } = posthogContextFromRequest(request);
+  return {
+    distinctId: authSub ?? headerDistinctId,
+    sessionId,
+  };
+}
+
 /** Request-scoped id so unauthenticated exceptions do not pile onto one person. */
 export function newAnonymousPostHogDistinctId(): string {
   return `server_error:${crypto.randomUUID()}`;
@@ -115,9 +172,7 @@ export function redactPathForAnalytics(pathname: string): string {
     .map((segment) => {
       if (!segment) return segment;
       if (
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          segment,
-        )
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(segment)
       ) {
         return ':id';
       }

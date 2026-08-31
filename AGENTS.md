@@ -293,9 +293,13 @@ POSTHOG_PROJECT_TOKEN — public PostHog project token (same value as NUXT_PUBLI
 POSTHOG_HOST          — ingest host; defaults to https://eu.i.posthog.com (also in wrangler.json vars)
 ```
 
+Set `POSTHOG_SECRET_API_TOKEN` via `wrangler secret put` (team secret API token from PostHog project settings). The API signs each authenticated session user's `distinct_id` with HMAC-SHA256 and returns `posthogIdentityHash` in auth responses; the web client calls `posthog.setIdentity()` so PostHog Support tickets persist across browsers/devices.
+
+Worker structured logs (`packages/api/src/logger.ts`) ship to PostHog Logs via OTLP when `POSTHOG_PROJECT_TOKEN` is set (opt out with `POSTHOG_LOGS_ENABLED=false`). Pass `X-POSTHOG-DISTINCT-ID` / `X-POSTHOG-SESSION-ID` from the frontend so logs link to persons and session replay.
+
 Frontend PostHog token is **baked at Nuxt build time** (GitHub repo vars → deploy action). Use any of `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, or `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` (maps to `runtimeConfig.public.posthog.publicKey`). CI coalesces all three from the repo vars.
 
-Do **not** put `POSTHOG_PERSONAL_API_KEY` on the API Worker. That key is GitHub-only for web source-map upload.
+Do **not** put `POSTHOG_PERSONAL_API_KEY` or `POSTHOG_SECRET_API_TOKEN` on the frontend or in GitHub build vars. `POSTHOG_PERSONAL_API_KEY` is GitHub-only for web source-map upload; `POSTHOG_SECRET_API_TOKEN` is API Worker–only for Support identity signing.
 
 Queue bindings (Worker `env` keys, from `packages/api/wrangler.json`): `vmp_replication_events`, `vmp_push_delivery`. Queue resource names: `vmp-replication-events`, `vmp-push-delivery`.
 

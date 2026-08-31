@@ -4,6 +4,8 @@ export type PostHogIdentityClient = PostHogPersistenceClient & {
   __loaded?: boolean;
   reset?: () => void;
   identify?: (distinctId: string, properties?: Record<string, unknown>) => void;
+  setIdentity?: (distinctId: string, hash: string) => void;
+  clearIdentity?: () => void;
   capture?: (event: string, properties?: Record<string, unknown>) => unknown;
 };
 

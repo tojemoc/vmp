@@ -412,7 +412,7 @@ export const strings: StringsDefinition = {
   personalDataBannerAcknowledge: 'I understand',
   posthogAnalyticsConsentTitle: 'Product analytics consent',
   posthogAnalyticsConsentSummary:
-    'We use analytics cookies (PostHog, EU) to improve our services — only if you allow it.',
+    'We use PostHog (EU) to improve our services. If you allow, we use analytics cookies and may link activity to your account when signed in. If you decline, we still count visits with a privacy-preserving hash — no cookies stored.',
   posthogAnalyticsConsentLearnMore: 'More about personal data processing',
   posthogAnalyticsConsentAccept: 'I allow',
   posthogAnalyticsConsentDecline: "I don't allow",
