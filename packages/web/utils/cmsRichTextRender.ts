@@ -9,11 +9,21 @@ let rendererPromise: Promise<RichTextRenderer> | null = null;
 async function loadRenderer(): Promise<RichTextRenderer> {
   if (!rendererPromise) {
     rendererPromise = (async () => {
-      const [{ generateHTML }, { default: StarterKit }, { default: Link }] = await Promise.all([
+      const [htmlModule, starterKitModule, linkModule] = await Promise.all([
         import('@tiptap/html'),
         import('@tiptap/starter-kit'),
         import('@tiptap/extension-link'),
       ]);
+
+      // The chunk-load-recovery plugin calls preventDefault on vite:preloadError,
+      // so a failed chunk load resolves the import to undefined instead of
+      // rejecting. Guard the fields so the destructure never throws.
+      const generateHTML = htmlModule?.generateHTML;
+      const StarterKit = starterKitModule?.default;
+      const Link = linkModule?.default;
+      if (!generateHTML || !StarterKit || !Link) {
+        throw new Error('CMS rich text renderer chunk failed to load');
+      }
 
       const richTextExtensions = [
         StarterKit.configure({
@@ -51,6 +61,13 @@ async function loadRenderer(): Promise<RichTextRenderer> {
 
 /** Renders TipTap JSON to sanitized HTML. Loads TipTap in a separate chunk on first use. */
 export async function renderCmsRichTextHtml(content: CmsRichTextDocument): Promise<string> {
-  const render = await loadRenderer();
+  let render: RichTextRenderer;
+  try {
+    render = await loadRenderer();
+  } catch {
+    // A failed chunk load leaves the renderer unavailable. Degrade to empty HTML;
+    // the chunk-load-recovery plugin reloads the page for fresh assets.
+    return '';
+  }
   return render(content);
 }

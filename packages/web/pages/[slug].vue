@@ -57,6 +57,7 @@
 <script setup lang="ts">
   import type { CmsBlock, CmsPage, CmsRichTextBlock, CmsRichTextDocument } from '@vmp/shared';
   import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs';
+  import { renderCmsRichTextHtml } from '~/utils/cmsRichTextRender';
   import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls';
   import { httpStatusFromError } from '~/utils/httpErrorStatus';
 
@@ -139,7 +140,6 @@
       introHtml.value = '';
       return;
     }
-    const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender');
     introHtml.value = await renderCmsRichTextHtml(block.content as CmsRichTextDocument);
   }
 
