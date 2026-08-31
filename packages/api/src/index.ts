@@ -136,12 +136,15 @@ import {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
   handleCheckout,
+  handleComgateWebhook,
   handleGetPricing,
   handleGetStripeConfig,
   handleGetSubscription,
+  handleGoPayWebhook,
   handlePortal,
   handleSessionStatus,
   handleWebhook,
+  runComgateRenewalJobs,
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
 import {
@@ -978,6 +981,12 @@ const workerHandler = {
         if (url.pathname === '/api/payments/webhook/stripe' && request.method === 'POST') {
           return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
         }
+        if (url.pathname === '/api/payments/webhook/gopay' && request.method === 'GET') {
+          return handleGoPayWebhook(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/webhook/comgate' && request.method === 'POST') {
+          return handleComgateWebhook(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
           return handleLegacyWebhook(request, env, corsHeaders, ctx);
         }
@@ -1179,6 +1188,11 @@ const workerHandler = {
       const runReplication = cron === '*/15 * * * *';
 
       if (!runReplication) {
+        try {
+          await runComgateRenewalJobs(env);
+        } catch (err) {
+          console.error('Comgate renewal sweep failed:', err);
+        }
         try {
           await runScheduledPublishJobs(env);
           await syncScheduledPublishHint(env);

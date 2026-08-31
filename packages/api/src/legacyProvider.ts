@@ -225,11 +225,12 @@ export async function legacyGet<T = Record<string, unknown>>(
   return parsed;
 }
 
-export function mapPlanTypeToSubscriptionType(planType: string): 'monthly' | 'yearly' {
+export function mapPlanTypeToSubscriptionType(planType: string): 'monthly' | 'yearly' | 'club' {
   const plan = String(planType ?? '')
     .trim()
     .toLowerCase();
-  if (plan === 'yearly' || plan === 'club') return 'yearly';
+  if (plan === 'club') return 'club';
+  if (plan === 'yearly') return 'yearly';
   return 'monthly';
 }
 

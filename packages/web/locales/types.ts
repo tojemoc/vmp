@@ -460,6 +460,9 @@ export type Strings = StringsDefinition & {
   planDisplayName(planType: string): string;
   paymentProviderLabel(provider: string): string;
   roleLabel(role: string | undefined): string;
+  checkoutPayWithGoPay(price: string): string;
+  checkoutPayWithComgate(price: string): string;
+  checkoutGoPayGatewayNote: string;
 };
 
 export type LocaleCatalog = {

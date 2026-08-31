@@ -1,6 +1,16 @@
 # Documentation index
 
-Start with the [repository README](../README.md) and [AGENTS.md](../AGENTS.md). This folder holds API notes and historical design write-ups.
+Start with the [repository README](../README.md), [AGENTS.md](../AGENTS.md), and [ROADMAP.md](../ROADMAP.md). This folder holds API notes and historical design write-ups.
+
+## Implementation plans
+
+| Document | Description |
+| --- | --- |
+| [plans/README.md](plans/README.md) | Index of detailed specs linked from the roadmap |
+| [plans/club-plan-entitlements.md](plans/club-plan-entitlements.md) | Club plan — concurrent playback, IRL events, ad-free |
+| [plans/step-08-brevo-newsletter.md](plans/step-08-brevo-newsletter.md) | Brevo newsletter sync |
+| [plans/step-09-rss-podcast-feed.md](plans/step-09-rss-podcast-feed.md) | RSS / podcast feeds |
+| [plans/step-10-account-deletion.md](plans/step-10-account-deletion.md) | Self-service account deletion |
 
 ## Current
 
