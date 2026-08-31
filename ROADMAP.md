@@ -42,11 +42,13 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 ### `payments-gopay-comgate` sub-items
 
-- [x] Provider registry + admin pricing
-- [x] Comgate first-checkout identity + renewals
-- [x] GoPay redirect checkout + recurrence
-- [x] Qerko legacy club → `subscriptionType: club` (not yearly)
+- [ ] Provider registry + admin pricing
+- [ ] Comgate first-checkout identity + renewals
+- [ ] GoPay redirect checkout + recurrence
+- [ ] Qerko legacy club → `subscriptionType: club` (not yearly)
 - [ ] Production hardening + maintainer sign-off
+
+*Check off sub-items and add the merged PR link when [PR #499](https://github.com/tojemoc/vmp/pull/499) lands on `main`.*
 
 ---
 

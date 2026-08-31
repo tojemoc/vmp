@@ -380,10 +380,18 @@
   const pendingLegacyCheckoutIntent = ref(false);
   const pendingGoPayCheckoutIntent = ref(false);
   const pendingComgateCheckoutIntent = ref(false);
+  const pendingCheckoutPlan = ref<PlanType | null>(null);
 
   const stripeCheckoutMounted = computed(() => true);
 
-  const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'));
+  const stripePlanPrice = computed(() => {
+    const value = stripePrices.value[selectedPlan.value];
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const showStripeCheckout = computed(
+    () => enabledProviders.value.includes('stripe') && stripePlanPrice.value != null,
+  );
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
 
@@ -555,13 +563,38 @@
     if (fallback) selectedPlan.value = fallback;
   }
 
-  function buildLoginRedirect(plan: PlanType): string {
+  function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
     const params = new URLSearchParams();
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
-    params.set('checkout_provider', 'stripe');
+    params.set('checkout_provider', provider);
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
+  }
+
+  function checkoutProviderForRedirect(): PaymentProvider {
+    const fromRoute = route.query.checkout_provider;
+    if (
+      fromRoute === 'stripe' ||
+      fromRoute === 'legacy' ||
+      fromRoute === 'gopay' ||
+      fromRoute === 'comgate'
+    ) {
+      return fromRoute;
+    }
+    if (showGoPayCheckout.value) return 'gopay';
+    if (showComgateCheckout.value) return 'comgate';
+    if (showLegacyCheckout.value) return 'legacy';
+    return 'stripe';
+  }
+
+  function applyPendingCheckoutPlan() {
+    const plan = pendingCheckoutPlan.value;
+    if (!plan) return;
+    pendingCheckoutPlan.value = null;
+    if (isPlanAvailable(plan)) {
+      selectedPlan.value = plan;
+    }
   }
 
   async function loadPrices() {
@@ -574,6 +607,7 @@
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
+        pendingCheckoutPlan.value = null;
         return;
       }
 
@@ -669,13 +703,16 @@
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
+        pendingCheckoutPlan.value = null;
       }
+      applyPendingCheckoutPlan();
       ensureSelectedPlanAvailable();
     } catch {
       priceError.value = true;
       pendingLegacyCheckoutIntent.value = false;
       pendingGoPayCheckoutIntent.value = false;
       pendingComgateCheckoutIntent.value = false;
+      pendingCheckoutPlan.value = null;
     } finally {
       loadingPrices.value = false;
       if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
@@ -696,7 +733,7 @@
   async function startLegacyCheckout() {
     checkoutError.value = null;
     if (!isLoggedIn.value) {
-      await startLoginFlow(props.returnPath);
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'legacy'));
       return;
     }
 
@@ -728,7 +765,7 @@
   async function startGoPayCheckout() {
     checkoutError.value = null;
     if (!isLoggedIn.value) {
-      await startLoginFlow(props.returnPath);
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'gopay'));
       return;
     }
 
@@ -762,7 +799,7 @@
   async function startComgateCheckout() {
     checkoutError.value = null;
     if (!isLoggedIn.value) {
-      await startLoginFlow(props.returnPath);
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'comgate'));
       return;
     }
 
@@ -794,7 +831,9 @@
   }
 
   async function goToLogin() {
-    await startLoginFlow(props.returnPath);
+    await startLoginFlow(
+      buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()),
+    );
   }
 
   function isStalePromoValidation(
@@ -861,11 +900,7 @@
     const q = route.query;
     const plan = q.checkout_plan;
     if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
-      if (isPlanAvailable(plan)) {
-        selectedPlan.value = plan;
-      } else {
-        ensureSelectedPlanAvailable();
-      }
+      pendingCheckoutPlan.value = plan;
     }
     const provider = q.checkout_provider;
     if (provider === 'legacy') {
@@ -926,7 +961,12 @@
   watch(
     () => route.fullPath,
     () => {
-      if (props.active) applyCheckoutIntentFromRoute();
+      if (!props.active) return;
+      applyCheckoutIntentFromRoute();
+      if (!loadingPrices.value && !priceError.value) {
+        applyPendingCheckoutPlan();
+        ensureSelectedPlanAvailable();
+      }
     },
   );
 </script>

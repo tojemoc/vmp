@@ -59,7 +59,7 @@ Client (player)                    API Worker
      |<-- 409 concurrent_limit ---------|      reject new stream OR steal oldest
 ```
 
-**Session identity:** client-generated `sessionId` (UUID) stored in `sessionStorage`; sent on `video-access` and segment/manifest requests (header e.g. `X-VMP-Playback-Session` or signed query param on proxy URLs).
+**Session identity:** client-generated `sessionId` (UUID) stored in `sessionStorage`; sent on `video-access` and segment/manifest requests (header e.g. `X-VMP-Playback-Session` or signed query param on proxy URLs). All session register/heartbeat/release endpoints require a valid Bearer JWT. **`playback_sessions` lookups must match both `sessionId` and `JWT.sub`** — never trust a `userId` embedded only in a signed proxy URL without verifying it equals the authenticated subject. Proxy enforcement must bind the session (and/or `JWT.sub`) into the signed URL payload or re-validate the bearer on authenticated proxy requests so a leaked playlist URL cannot play under another account.
 
 **Active definition:** row in `playback_sessions` with `last_seen_at` within **90s** (configurable `concurrent_playback_stale_seconds`). Player sends heartbeat every **30s** while playing (pause/stop → DELETE or let stale expire).
 
@@ -109,6 +109,7 @@ CREATE INDEX idx_playback_sessions_user_active ON playback_sessions(user_id, las
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `concurrent_playback_enforced` | `0` | When `1`, enforce concurrent playback limits; `0` ships schema/API disabled (safe rollout) |
 | `concurrent_playback_limit_default` | `1` | monthly + yearly |
 | `concurrent_playback_limit_club` | `3` | club plan |
 | `concurrent_playback_stale_seconds` | `90` | session TTL without heartbeat |
