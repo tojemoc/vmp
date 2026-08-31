@@ -588,12 +588,77 @@
     return 'stripe';
   }
 
-  function applyPendingCheckoutPlan() {
+  /** True when the given provider can sell this plan at a configured price. */
+  function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
+    if (!enabledProviders.value.includes(provider)) return false;
+    switch (provider) {
+      case 'stripe':
+        return hasConfiguredProviderPrice(stripePrices.value[plan]);
+      case 'legacy':
+        return hasConfiguredProviderPrice(legacyPrices.value[plan]);
+      case 'gopay':
+        return hasConfiguredProviderPrice(gopayPrices.value[plan]);
+      case 'comgate':
+        return hasConfiguredProviderPrice(comgatePrices.value[plan]);
+    }
+  }
+
+  /**
+   * Applies a route-requested plan after pricing loads.
+   * When requiredProvider is set, succeeds only if that provider has a positive price for the plan.
+   */
+  function applyPendingCheckoutPlan(requiredProvider?: PaymentProvider): boolean {
     const plan = pendingCheckoutPlan.value;
-    if (!plan) return;
+    if (!plan) return true;
+
+    const available = requiredProvider
+      ? isPlanAvailableForProvider(plan, requiredProvider)
+      : isPlanAvailable(plan);
+
     pendingCheckoutPlan.value = null;
-    if (isPlanAvailable(plan)) {
-      selectedPlan.value = plan;
+
+    if (!available) return false;
+
+    selectedPlan.value = plan;
+    return true;
+  }
+
+  function hasDeferredCheckoutIntent(): boolean {
+    return (
+      pendingLegacyCheckoutIntent.value ||
+      pendingGoPayCheckoutIntent.value ||
+      pendingComgateCheckoutIntent.value
+    );
+  }
+
+  function tryCompleteDeferredCheckout() {
+    if (pendingLegacyCheckoutIntent.value) {
+      pendingLegacyCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('legacy') && showLegacyCheckout.value) {
+        void startLegacyCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
+      return;
+    }
+
+    if (pendingGoPayCheckoutIntent.value) {
+      pendingGoPayCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('gopay') && showGoPayCheckout.value) {
+        void startGoPayCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
+      return;
+    }
+
+    if (pendingComgateCheckoutIntent.value) {
+      pendingComgateCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('comgate') && showComgateCheckout.value) {
+        void startComgateCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
     }
   }
 
@@ -704,9 +769,10 @@
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
         pendingCheckoutPlan.value = null;
+      } else if (!hasDeferredCheckoutIntent()) {
+        applyPendingCheckoutPlan();
+        ensureSelectedPlanAvailable();
       }
-      applyPendingCheckoutPlan();
-      ensureSelectedPlanAvailable();
     } catch {
       priceError.value = true;
       pendingLegacyCheckoutIntent.value = false;
@@ -715,17 +781,8 @@
       pendingCheckoutPlan.value = null;
     } finally {
       loadingPrices.value = false;
-      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
-        pendingLegacyCheckoutIntent.value = false;
-        void startLegacyCheckout();
-      }
-      if (pendingGoPayCheckoutIntent.value && showGoPayCheckout.value && !priceError.value) {
-        pendingGoPayCheckoutIntent.value = false;
-        void startGoPayCheckout();
-      }
-      if (pendingComgateCheckoutIntent.value && showComgateCheckout.value && !priceError.value) {
-        pendingComgateCheckoutIntent.value = false;
-        void startComgateCheckout();
+      if (!priceError.value && hasDeferredCheckoutIntent()) {
+        tryCompleteDeferredCheckout();
       }
     }
   }
@@ -899,26 +956,28 @@
   function applyCheckoutIntentFromRoute() {
     const q = route.query;
     const plan = q.checkout_plan;
-    if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
+    const hasRoutePlan = plan === 'monthly' || plan === 'yearly' || plan === 'club';
+    if (hasRoutePlan) {
       pendingCheckoutPlan.value = plan;
     }
     const provider = q.checkout_provider;
+    const deferProviderStart = hasRoutePlan || loadingPrices.value;
     if (provider === 'legacy') {
-      if (showLegacyCheckout.value) {
+      if (!deferProviderStart && showLegacyCheckout.value) {
         void startLegacyCheckout();
       } else {
         pendingLegacyCheckoutIntent.value = true;
       }
     }
     if (provider === 'gopay') {
-      if (showGoPayCheckout.value) {
+      if (!deferProviderStart && showGoPayCheckout.value) {
         void startGoPayCheckout();
       } else {
         pendingGoPayCheckoutIntent.value = true;
       }
     }
     if (provider === 'comgate') {
-      if (showComgateCheckout.value) {
+      if (!deferProviderStart && showComgateCheckout.value) {
         void startComgateCheckout();
       } else {
         pendingComgateCheckoutIntent.value = true;
@@ -964,8 +1023,12 @@
       if (!props.active) return;
       applyCheckoutIntentFromRoute();
       if (!loadingPrices.value && !priceError.value) {
-        applyPendingCheckoutPlan();
-        ensureSelectedPlanAvailable();
+        if (hasDeferredCheckoutIntent()) {
+          tryCompleteDeferredCheckout();
+        } else {
+          applyPendingCheckoutPlan();
+          ensureSelectedPlanAvailable();
+        }
       }
     },
   );
