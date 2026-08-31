@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
+import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 import { capturePostHogEvent } from '../utils/posthogClient';
 
 type WindowWithPostHog = {
-  posthog?: { capture: (event: string, properties?: Record<string, unknown>) => unknown };
+  posthog?: {
+    capture: (event: string, properties?: Record<string, unknown>) => unknown;
+    is_capturing?: () => boolean;
+  };
 };
 
 function setWindow(next: WindowWithPostHog | undefined): void {
@@ -86,6 +89,35 @@ describe('posthogClient', () => {
         },
       },
     ]);
+  });
+
+  it('capturePostHogEvent does not forward events without granted consent', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const posthog = {
+      capture: (event: string, properties?: Record<string, unknown>) => {
+        captured.push({ event, properties: properties ?? {} });
+      },
+      is_capturing: () => true,
+    };
+
+    for (const consent of ['denied', null] as const) {
+      captured.length = 0;
+      setWindow({ posthog });
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        writable: true,
+        value: {
+          getItem: (key: string) =>
+            consent !== null && key === POSTHOG_ANALYTICS_CONSENT_KEY ? consent : null,
+          setItem: () => {},
+        },
+      });
+
+      capturePostHogEvent('magic_link_requested');
+
+      assert.deepEqual(captured, [], `expected no capture when consent is ${String(consent)}`);
+      assert.equal(canCapturePostHogAnalytics(), false);
+    }
   });
 
   it('capturePostHogEvent swallows client capture errors', () => {

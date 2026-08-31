@@ -50,6 +50,7 @@
 
     <div v-else-if="!priceError" class="grid gap-2 mb-4" :class="planGridClass">
       <button
+        v-if="isPlanAvailable('monthly')"
         type="button"
         class="relative min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="[planButtonClass('monthly'), compact ? 'pt-3.5' : 'pt-4']"
@@ -72,6 +73,7 @@
       </button>
 
       <button
+        v-if="isPlanAvailable('yearly')"
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('yearly')"
@@ -89,6 +91,7 @@
       </button>
 
       <button
+        v-if="isPlanAvailable('club')"
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('club')"
@@ -172,6 +175,44 @@
       </button>
     </div>
 
+    <div
+      v-if="!loadingPrices && !priceError && isLoggedIn && showGoPayCheckout"
+      class="mb-4 text-left"
+    >
+      <button
+        type="button"
+        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+        :class="legacyButtonClass"
+        :disabled="gopayCheckoutStarting"
+        @click="startGoPayCheckout"
+      >
+        <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+        <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
+      </button>
+      <p
+        class="text-[11px] mt-1.5"
+        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400'"
+      >
+        {{ strings.checkoutGoPayGatewayNote }}
+      </p>
+    </div>
+
+    <div
+      v-if="!loadingPrices && !priceError && isLoggedIn && showComgateCheckout"
+      class="mb-4 text-left"
+    >
+      <button
+        type="button"
+        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+        :class="legacyButtonClass"
+        :disabled="comgateCheckoutStarting"
+        @click="startComgateCheckout"
+      >
+        <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+        <span v-else>{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span>
+      </button>
+    </div>
+
     <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
       <StripeEmbeddedCheckout
         v-if="stripeCheckoutMounted && showStripeCheckout"
@@ -249,7 +290,6 @@
 </template>
 
 <script setup lang="ts">
-  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   const props = withDefaults(
@@ -258,8 +298,6 @@
       returnPath: string;
       /** When true, append `showPremium=1` to login redirect (watch page). */
       reopenPremiumOnReturn?: boolean;
-      /** When true, resume the offline-download menu after login/checkout instead of the premium overlay. */
-      reopenDownloadOnReturn?: boolean;
       /** Load pricing immediately (account page). When false, parent controls via `active`. */
       active?: boolean;
       /** Use account-page styling instead of dark modal styling. */
@@ -269,7 +307,6 @@
     }>(),
     {
       reopenPremiumOnReturn: false,
-      reopenDownloadOnReturn: false,
       active: true,
       embedded: false,
       compact: false,
@@ -283,7 +320,7 @@
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
-  type PaymentProvider = 'stripe' | 'legacy';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
 
   interface Prices {
     monthly: number;
@@ -294,11 +331,20 @@
   const defaultPrices: Prices = { monthly: 6.9, yearly: 74.9, club: 109.0 };
   const prices = ref<Prices>({ ...defaultPrices });
   const legacyPrices = ref<Prices>({ ...defaultPrices });
+  const stripePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
+  const gopayPrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
+  const gopayCurrency = ref('CZK');
+  const comgatePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
+  const comgateCurrency = ref('CZK');
+  /** Currency for the generic plan-card amounts (matches primary checkout provider). */
+  const planCardCurrency = ref('EUR');
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
   const selectedPlan = ref<PlanType>('monthly');
   const legacyCheckoutStarting = ref(false);
+  const gopayCheckoutStarting = ref(false);
+  const comgateCheckoutStarting = ref(false);
   const walletAvailable = ref(false);
   /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
   const walletDetectionDone = ref(false);
@@ -323,16 +369,57 @@
   );
 
   /** Three columns by default; stack only on very narrow viewports where columns would crowd. */
-  const planGridClass = computed(() => 'grid-cols-3 max-[22rem]:grid-cols-1');
+  const planGridClass = computed(() => {
+    const count = availablePlans.value.length;
+    if (count <= 1) return 'grid-cols-1 max-[22rem]:grid-cols-1';
+    if (count === 2) return 'grid-cols-2 max-[22rem]:grid-cols-1';
+    return 'grid-cols-3 max-[22rem]:grid-cols-1';
+  });
 
   /** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
   const pendingLegacyCheckoutIntent = ref(false);
+  const pendingGoPayCheckoutIntent = ref(false);
+  const pendingComgateCheckoutIntent = ref(false);
+  const pendingCheckoutPlan = ref<PlanType | null>(null);
 
   const stripeCheckoutMounted = computed(() => true);
 
-  const showStripeCheckout = computed(() => enabledProviders.value.includes('stripe'));
+  const stripePlanPrice = computed(() => {
+    const value = stripePrices.value[selectedPlan.value];
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const showStripeCheckout = computed(
+    () => enabledProviders.value.includes('stripe') && stripePlanPrice.value != null,
+  );
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
+
+  const legacyPlanPrice = computed(() => {
+    const plan = selectedPlan.value;
+    const legacy = legacyPrices.value[plan];
+    if (Number.isFinite(legacy)) return Number(legacy);
+    return planPrice(plan);
+  });
+
+  const gopayPlanPrice = computed(() => {
+    const value = gopayPrices.value[selectedPlan.value];
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const comgatePlanPrice = computed(() => {
+    const value = comgatePrices.value[selectedPlan.value];
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
+  });
+
+  const showGoPayCheckout = computed(
+    () =>
+      enabledProviders.value.includes('gopay') && gopayPlanPrice.value != null,
+  );
+
+  const showComgateCheckout = computed(
+    () => enabledProviders.value.includes('comgate') && comgatePlanPrice.value != null,
+  );
 
   const checkoutBlurb = computed(() => {
     if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
@@ -345,13 +432,6 @@
       return 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800';
     }
     return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
-  });
-
-  const legacyPlanPrice = computed(() => {
-    const plan = selectedPlan.value;
-    const legacy = legacyPrices.value[plan];
-    if (Number.isFinite(legacy)) return Number(legacy);
-    return planPrice(plan);
   });
 
   /** Apple / Google Pay above the fold (mount express until detection finishes). */
@@ -424,29 +504,162 @@
 
   function formatPrice(amount: number | null | undefined): string {
     if (amount == null || !Number.isFinite(amount)) return '…';
-    return `€${amount.toFixed(2)}`;
+    if (planCardCurrency.value === 'EUR') return `€${amount.toFixed(2)}`;
+    return `${amount.toFixed(2)} ${planCardCurrency.value}`;
+  }
+
+  function formatGoPayPrice(amount: number | null | undefined): string {
+    if (amount == null || !Number.isFinite(amount)) return '…';
+    return `${amount.toFixed(2)} ${gopayCurrency.value}`;
+  }
+
+  function formatComgatePrice(amount: number | null | undefined): string {
+    if (amount == null || !Number.isFinite(amount)) return '…';
+    return `${amount.toFixed(2)} ${comgateCurrency.value}`;
   }
 
   function planPrice(plan: PlanType): number | null {
     const value = prices.value[plan];
-    return Number.isFinite(value) ? Number(value) : null;
+    return Number.isFinite(value) && value > 0 ? Number(value) : null;
   }
 
-  function buildLoginRedirect(plan: PlanType): string {
+  function parseProviderPrice(raw: unknown): number {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : Number.NaN;
+  }
+
+  function hasConfiguredProviderPrice(value: number): boolean {
+    return Number.isFinite(value) && value > 0;
+  }
+
+  /** True when at least one enabled provider can sell this plan. */
+  function isPlanAvailable(plan: PlanType): boolean {
+    const providers = enabledProviders.value;
+    if (providers.includes('stripe') && hasConfiguredProviderPrice(stripePrices.value[plan])) {
+      return true;
+    }
+    if (providers.includes('legacy') && hasConfiguredProviderPrice(legacyPrices.value[plan])) {
+      return true;
+    }
+    if (
+      providers.includes('gopay') &&
+      hasConfiguredProviderPrice(gopayPrices.value[plan])
+    ) {
+      return true;
+    }
+    if (providers.includes('comgate') && hasConfiguredProviderPrice(comgatePrices.value[plan])) {
+      return true;
+    }
+    return false;
+  }
+
+  const availablePlans = computed(() =>
+    (['monthly', 'yearly', 'club'] as PlanType[]).filter((plan) => isPlanAvailable(plan)),
+  );
+
+  function ensureSelectedPlanAvailable() {
+    if (isPlanAvailable(selectedPlan.value)) return;
+    const fallback = availablePlans.value[0];
+    if (fallback) selectedPlan.value = fallback;
+  }
+
+  function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
     const params = new URLSearchParams();
-    if (props.reopenDownloadOnReturn) params.set('showDownload', '1');
-    else if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
+    if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
-    params.set('checkout_provider', 'stripe');
+    params.set('checkout_provider', provider);
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
   }
 
-  function loginReturnPath(): string {
-    if (props.reopenDownloadOnReturn || props.reopenPremiumOnReturn) {
-      return buildLoginRedirect(selectedPlan.value);
+  function checkoutProviderForRedirect(): PaymentProvider {
+    const fromRoute = route.query.checkout_provider;
+    if (
+      fromRoute === 'stripe' ||
+      fromRoute === 'legacy' ||
+      fromRoute === 'gopay' ||
+      fromRoute === 'comgate'
+    ) {
+      return fromRoute;
     }
-    return props.returnPath;
+    if (showGoPayCheckout.value) return 'gopay';
+    if (showComgateCheckout.value) return 'comgate';
+    if (showLegacyCheckout.value) return 'legacy';
+    return 'stripe';
+  }
+
+  /** True when the given provider can sell this plan at a configured price. */
+  function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
+    if (!enabledProviders.value.includes(provider)) return false;
+    switch (provider) {
+      case 'stripe':
+        return hasConfiguredProviderPrice(stripePrices.value[plan]);
+      case 'legacy':
+        return hasConfiguredProviderPrice(legacyPrices.value[plan]);
+      case 'gopay':
+        return hasConfiguredProviderPrice(gopayPrices.value[plan]);
+      case 'comgate':
+        return hasConfiguredProviderPrice(comgatePrices.value[plan]);
+    }
+  }
+
+  /**
+   * Applies a route-requested plan after pricing loads.
+   * When requiredProvider is set, succeeds only if that provider has a positive price for the plan.
+   */
+  function applyPendingCheckoutPlan(requiredProvider?: PaymentProvider): boolean {
+    const plan = pendingCheckoutPlan.value;
+    if (!plan) return true;
+
+    const available = requiredProvider
+      ? isPlanAvailableForProvider(plan, requiredProvider)
+      : isPlanAvailable(plan);
+
+    pendingCheckoutPlan.value = null;
+
+    if (!available) return false;
+
+    selectedPlan.value = plan;
+    return true;
+  }
+
+  function hasDeferredCheckoutIntent(): boolean {
+    return (
+      pendingLegacyCheckoutIntent.value ||
+      pendingGoPayCheckoutIntent.value ||
+      pendingComgateCheckoutIntent.value
+    );
+  }
+
+  function tryCompleteDeferredCheckout() {
+    if (pendingLegacyCheckoutIntent.value) {
+      pendingLegacyCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('legacy') && showLegacyCheckout.value) {
+        void startLegacyCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
+      return;
+    }
+
+    if (pendingGoPayCheckoutIntent.value) {
+      pendingGoPayCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('gopay') && showGoPayCheckout.value) {
+        void startGoPayCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
+      return;
+    }
+
+    if (pendingComgateCheckoutIntent.value) {
+      pendingComgateCheckoutIntent.value = false;
+      if (applyPendingCheckoutPlan('comgate') && showComgateCheckout.value) {
+        void startComgateCheckout();
+        return;
+      }
+      checkoutError.value = strings.checkoutPlanUnavailable;
+    }
   }
 
   async function loadPrices() {
@@ -457,53 +670,119 @@
       if (!res.ok) {
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
+        pendingGoPayCheckoutIntent.value = false;
+        pendingComgateCheckoutIntent.value = false;
+        pendingCheckoutPlan.value = null;
         return;
       }
 
       const data = await res.json();
-      const fallback: Prices = {
-        monthly: Number(data.monthly ?? defaultPrices.monthly),
-        yearly: Number(data.yearly ?? defaultPrices.yearly),
-        club: Number(data.club ?? defaultPrices.club),
-      };
-
-      const stripeRaw = data?.pricesByProvider?.stripe ?? data ?? {};
-      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
-      prices.value = {
-        monthly: Number(stripeRaw.monthly ?? fallback.monthly),
-        yearly: Number(stripeRaw.yearly ?? fallback.yearly),
-        club: Number(stripeRaw.club ?? fallback.club),
-      };
-      legacyPrices.value = {
-        monthly: Number(legacyRaw.monthly ?? fallback.monthly),
-        yearly: Number(legacyRaw.yearly ?? fallback.yearly),
-        club: Number(legacyRaw.club ?? fallback.club),
-      };
-
       const providers = Array.isArray(data.enabledProviders)
-        ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+        ? data.enabledProviders.filter(
+            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+          )
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
       enabledProviders.value = providers as PaymentProvider[];
 
+      const stripeRaw = data?.pricesByProvider?.stripe ?? {};
+      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
+      const gopayRaw = data?.pricesByProvider?.gopay ?? {};
+      const comgateRaw = data?.pricesByProvider?.comgate ?? {};
+      gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+      comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
+
+      // Provider-specific button pricing — never invent EUR defaults.
+      stripePrices.value = {
+        monthly: parseProviderPrice(stripeRaw.monthly),
+        yearly: parseProviderPrice(stripeRaw.yearly),
+        club: parseProviderPrice(stripeRaw.club),
+      };
+      legacyPrices.value = {
+        monthly: parseProviderPrice(legacyRaw.monthly),
+        yearly: parseProviderPrice(legacyRaw.yearly),
+        club: parseProviderPrice(legacyRaw.club),
+      };
+      gopayPrices.value = {
+        monthly: parseProviderPrice(gopayRaw.monthly),
+        yearly: parseProviderPrice(gopayRaw.yearly),
+        club: parseProviderPrice(gopayRaw.club),
+      };
+      comgatePrices.value = {
+        monthly: parseProviderPrice(comgateRaw.monthly),
+        yearly: parseProviderPrice(comgateRaw.yearly),
+        club: parseProviderPrice(comgateRaw.club),
+      };
+
+      // Plan cards use the API primary prices (stripe > gopay > comgate > legacy).
+      // Never fall back to hardcoded EUR defaults when the primary has no price.
+      const primaryProvider: PaymentProvider = providers.includes('stripe')
+        ? 'stripe'
+        : providers.includes('gopay')
+          ? 'gopay'
+          : providers.includes('comgate')
+            ? 'comgate'
+            : providers.includes('legacy')
+              ? 'legacy'
+              : 'stripe';
+      const primaryRaw =
+        primaryProvider === 'gopay'
+          ? gopayRaw
+          : primaryProvider === 'comgate'
+            ? comgateRaw
+            : primaryProvider === 'legacy'
+              ? legacyRaw
+              : stripeRaw;
+      prices.value = {
+        monthly: parseProviderPrice(data.monthly ?? primaryRaw.monthly),
+        yearly: parseProviderPrice(data.yearly ?? primaryRaw.yearly),
+        club: parseProviderPrice(data.club ?? primaryRaw.club),
+      };
+      planCardCurrency.value =
+        primaryProvider === 'gopay'
+          ? gopayCurrency.value
+          : primaryProvider === 'comgate'
+            ? comgateCurrency.value
+            : 'EUR';
+
       const hasVisiblePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some(
         (plan) => planPrice(plan) != null,
       );
+      const hasGoPayPrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => {
+        const v = gopayPrices.value[plan];
+        return Number.isFinite(v) && v > 0;
+      });
       // Backend sets pricing_not_configured when prices are missing OR no supported
-      // providers remain (e.g. stub-only gopay/comgate). Surface that as priceError
+      // providers remain (e.g. stub-only comgate). Surface that as priceError
       // so we do not show plan buttons with no checkout path.
-      if (!hasVisiblePrice || providers.length === 0 || data.pricing_not_configured === true) {
+      const hasComgatePrice = (['monthly', 'yearly', 'club'] as PlanType[]).some((plan) => {
+        const v = comgatePrices.value[plan];
+        return Number.isFinite(v) && v > 0;
+      });
+      if (
+        (!hasVisiblePrice && !hasGoPayPrice && !hasComgatePrice) ||
+        providers.length === 0 ||
+        data.pricing_not_configured === true
+      ) {
         priceError.value = true;
         pendingLegacyCheckoutIntent.value = false;
+        pendingGoPayCheckoutIntent.value = false;
+        pendingComgateCheckoutIntent.value = false;
+        pendingCheckoutPlan.value = null;
+      } else if (!hasDeferredCheckoutIntent()) {
+        applyPendingCheckoutPlan();
+        ensureSelectedPlanAvailable();
       }
     } catch {
       priceError.value = true;
       pendingLegacyCheckoutIntent.value = false;
+      pendingGoPayCheckoutIntent.value = false;
+      pendingComgateCheckoutIntent.value = false;
+      pendingCheckoutPlan.value = null;
     } finally {
       loadingPrices.value = false;
-      if (pendingLegacyCheckoutIntent.value && showLegacyCheckout.value && !priceError.value) {
-        pendingLegacyCheckoutIntent.value = false;
-        void startLegacyCheckout();
+      if (!priceError.value && hasDeferredCheckoutIntent()) {
+        tryCompleteDeferredCheckout();
       }
     }
   }
@@ -511,7 +790,7 @@
   async function startLegacyCheckout() {
     checkoutError.value = null;
     if (!isLoggedIn.value) {
-      await startLoginFlow(loginReturnPath());
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'legacy'));
       return;
     }
 
@@ -529,15 +808,9 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.checkoutUrl) {
-        checkoutError.value = formatLegacyCheckoutError(data);
+        checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
-      // Legacy: fires immediately before redirect — earlier in the funnel than Stripe
-      // subscription_checkout_started (embedded form ready). Do not compare rates directly.
-      capturePostHogEvent('subscription_checkout_started', {
-        plan_type: selectedPlan.value,
-        provider: 'legacy',
-      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;
@@ -546,27 +819,78 @@
     }
   }
 
-  function formatLegacyCheckoutError(data: { error?: string; code?: string }): string {
-    const code = String(data?.code ?? '');
-    if (
-      code === 'legacy_not_configured' ||
-      code === 'provider_not_configured' ||
-      code === 'provider_not_enabled'
-    ) {
-      return strings.checkoutProviderUnavailable;
+  async function startGoPayCheckout() {
+    checkoutError.value = null;
+    if (!isLoggedIn.value) {
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'gopay'));
+      return;
     }
-    if (code === 'prices_not_configured') {
-      return strings.checkoutPlanUnavailable;
+
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
+    gopayCheckoutStarting.value = true;
+    try {
+      const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          planType: selectedPlan.value,
+          provider: 'gopay',
+          returnPath: props.returnPath,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkoutUrl) {
+        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        return;
+      }
+      window.location.href = String(data.checkoutUrl);
+    } catch {
+      checkoutError.value = strings.networkError;
+    } finally {
+      gopayCheckoutStarting.value = false;
     }
-    const raw = String(data?.error ?? '');
-    if (/not configured|LEGACY_|API[_ ]?URL|FRONTEND_URL/i.test(raw)) {
-      return strings.checkoutProviderUnavailable;
+  }
+
+  async function startComgateCheckout() {
+    checkoutError.value = null;
+    if (!isLoggedIn.value) {
+      await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'comgate'));
+      return;
     }
-    return strings.checkoutStartFailed;
+
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
+    comgateCheckoutStarting.value = true;
+    try {
+      const res = await fetch(`${apiUrl}/api/payments/checkout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({
+          planType: selectedPlan.value,
+          provider: 'comgate',
+          returnPath: props.returnPath,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkoutUrl) {
+        checkoutError.value = data.error ?? strings.checkoutStartFailed;
+        return;
+      }
+      window.location.href = String(data.checkoutUrl);
+    } catch {
+      checkoutError.value = strings.networkError;
+    } finally {
+      comgateCheckoutStarting.value = false;
+    }
   }
 
   async function goToLogin() {
-    await startLoginFlow(loginReturnPath());
+    await startLoginFlow(
+      buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()),
+    );
   }
 
   function isStalePromoValidation(
@@ -632,15 +956,31 @@
   function applyCheckoutIntentFromRoute() {
     const q = route.query;
     const plan = q.checkout_plan;
-    if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
-      selectedPlan.value = plan;
+    const hasRoutePlan = plan === 'monthly' || plan === 'yearly' || plan === 'club';
+    if (hasRoutePlan) {
+      pendingCheckoutPlan.value = plan;
     }
     const provider = q.checkout_provider;
+    const deferProviderStart = hasRoutePlan || loadingPrices.value;
     if (provider === 'legacy') {
-      if (showLegacyCheckout.value) {
+      if (!deferProviderStart && showLegacyCheckout.value) {
         void startLegacyCheckout();
       } else {
         pendingLegacyCheckoutIntent.value = true;
+      }
+    }
+    if (provider === 'gopay') {
+      if (!deferProviderStart && showGoPayCheckout.value) {
+        void startGoPayCheckout();
+      } else {
+        pendingGoPayCheckoutIntent.value = true;
+      }
+    }
+    if (provider === 'comgate') {
+      if (!deferProviderStart && showComgateCheckout.value) {
+        void startComgateCheckout();
+      } else {
+        pendingComgateCheckoutIntent.value = true;
       }
     }
   }
@@ -680,7 +1020,16 @@
   watch(
     () => route.fullPath,
     () => {
-      if (props.active) applyCheckoutIntentFromRoute();
+      if (!props.active) return;
+      applyCheckoutIntentFromRoute();
+      if (!loadingPrices.value && !priceError.value) {
+        if (hasDeferredCheckoutIntent()) {
+          tryCompleteDeferredCheckout();
+        } else {
+          applyPendingCheckoutPlan();
+          ensureSelectedPlanAvailable();
+        }
+      }
     },
   );
 </script>

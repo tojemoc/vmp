@@ -10,7 +10,7 @@ import {
   getRelinkCandidates as getRelinkCandidatesFromModule,
   validateLegacyBatch as validateLegacyBatchFromModule,
 } from '../src/legacyMigration.js';
-import { interpretLegacyValidationResponse } from '../src/legacyProvider.js';
+import { interpretLegacyValidationResponse, mapPlanTypeToSubscriptionType, buildLegacyOrderBody } from '../src/legacyProvider.js';
 
 function createMockDb(rows: Record<string, unknown>[]) {
   return {
@@ -374,5 +374,33 @@ describe('getRelinkCandidates', () => {
     assert.equal(result.total, 1);
     assert.equal(result.users.length, 1);
     assert.equal(result.users[0]?.userId, 'u2');
+  });
+});
+
+describe('mapPlanTypeToSubscriptionType', () => {
+  it('maps club to club for Qerko legacy checkout (not yearly)', () => {
+    assert.equal(mapPlanTypeToSubscriptionType('club'), 'club');
+    assert.equal(mapPlanTypeToSubscriptionType('yearly'), 'yearly');
+    assert.equal(mapPlanTypeToSubscriptionType('monthly'), 'monthly');
+  });
+
+  it('buildLegacyOrderBody preserves club subscriptionType', () => {
+    const body = buildLegacyOrderBody(
+      {
+        LEGACY_ESHOP_MERCHANT_ID: 'm1',
+        LEGACY_ESHOP_API_KEY: 'k1',
+        API_URL: 'https://api.example',
+      },
+      {
+        idOrder: 'ord-club',
+        purchaseId: 'cof-1',
+        email: 'a@example.com',
+        planType: 'club',
+        amountMinor: 10900,
+        currency: 'EUR',
+        returnUrl: 'https://app.example/account',
+      },
+    );
+    assert.equal((body.bill as { subscriptionType?: string }).subscriptionType, 'club');
   });
 });

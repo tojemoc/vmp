@@ -17,20 +17,34 @@ describe('resolvePublicEnabledProviders', () => {
     ]);
   });
 
-  it('does not invent stripe when only stub providers remain after filtering', () => {
-    const configured = parseProviderIdList('gopay,comgate', KNOWN);
-    assert.deepEqual(configured, ['gopay', 'comgate']);
-    assert.deepEqual(toSupportedApiProviderIds(configured), []);
-    // Stubs are never runnable (isConfigured=false), so public list stays empty.
-    assert.deepEqual(resolvePublicEnabledProviders(configured, []), []);
+  it('exposes gopay when configured and runnable', () => {
+    assert.deepEqual(resolvePublicEnabledProviders(['stripe', 'gopay'], ['stripe', 'gopay']), [
+      'stripe',
+      'gopay',
+    ]);
   });
 
-  it('maps stub IDs to null instead of throwing', () => {
-    assert.equal(toApiProviderId('gopay'), null);
-    assert.equal(toApiProviderId('comgate'), null);
+  it('exposes comgate when configured and runnable', () => {
+    assert.deepEqual(
+      resolvePublicEnabledProviders(['stripe', 'comgate'], ['stripe', 'comgate']),
+      ['stripe', 'comgate'],
+    );
+  });
+
+  it('does not invent stripe when no supported providers remain', () => {
+    assert.deepEqual(resolvePublicEnabledProviders([], []), []);
+  });
+
+  it('maps all provider IDs correctly', () => {
+    assert.equal(toApiProviderId('gopay'), 'gopay');
+    assert.equal(toApiProviderId('comgate'), 'comgate');
+    assert.equal(toApiProviderId('stripe'), 'stripe');
+    assert.equal(toApiProviderId('qerko'), 'legacy');
   });
 
   it('excludes configured-but-not-runnable providers from public pricing', () => {
     assert.deepEqual(resolvePublicEnabledProviders(['stripe', 'qerko'], ['stripe']), ['stripe']);
+    assert.deepEqual(resolvePublicEnabledProviders(['gopay'], []), []);
+    assert.deepEqual(resolvePublicEnabledProviders(['comgate'], []), []);
   });
 });

@@ -56,7 +56,49 @@
             >(not configured on server)</span
           >
         </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="enabledProviders"
+            type="checkbox"
+            value="gopay"
+            class="rounded border-gray-300 dark:border-gray-600"
+            :disabled="!gopay.configured"
+            @change="syncProviderOrderFromEnabled"
+          >
+          GoPay (draft redirect)
+          <span v-if="!gopay.configured" class="text-xs text-amber-700 dark:text-amber-300"
+            >(not configured on server)</span
+          >
+        </label>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            v-model="enabledProviders"
+            type="checkbox"
+            value="comgate"
+            class="rounded border-gray-300 dark:border-gray-600"
+            :disabled="!comgate.configured"
+            @change="syncProviderOrderFromEnabled"
+          >
+          Comgate (draft redirect)
+          <span v-if="!comgate.configured" class="text-xs text-amber-700 dark:text-amber-300"
+            >(not configured on server)</span
+          >
+        </label>
       </div>
+
+      <p
+        v-if="gopay.configured"
+        class="text-xs text-gray-600 dark:text-gray-400"
+      >
+        GoPay is web-gateway only: Apple Pay / Google Pay work inside the hosted gateway (no native
+        one-click / WebView).
+      </p>
+      <p
+        v-if="comgate.configured"
+        class="text-xs text-gray-600 dark:text-gray-400"
+      >
+        Comgate recurring requires activation by Comgate support for the merchant account.
+      </p>
 
       <p
         v-if="legacy.configured && !legacy.hasWebhookSecret"
@@ -153,6 +195,65 @@
           >
           Show “Manage with {{ legacy.providerName.trim() || 'Qerko' }}” to Qerko subscribers
         </label>
+      </div>
+
+      <div class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3">
+        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">
+          GoPay / Comgate amounts
+        </h5>
+        <p class="text-xs text-gray-600 dark:text-gray-400">
+          Major-unit amounts (no hardcoded prices). Currency defaults to CZK.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label class="text-xs text-gray-600 dark:text-gray-300 block">
+            GoPay currency
+            <input
+              v-model="gopayCurrency"
+              type="text"
+              maxlength="3"
+              class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono uppercase"
+              placeholder="CZK"
+            >
+          </label>
+          <label
+            v-for="plan in ['monthly', 'yearly', 'club']"
+            :key="`gopay-price-${plan}`"
+            class="text-xs text-gray-600 dark:text-gray-300 block"
+          >
+            GoPay {{ plan }}
+            <input
+              v-model="gopayPrices[plan as LegacyPlanKey]"
+              type="text"
+              inputmode="decimal"
+              class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
+          </label>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label class="text-xs text-gray-600 dark:text-gray-300 block">
+            Comgate currency
+            <input
+              v-model="comgateCurrency"
+              type="text"
+              maxlength="3"
+              class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono uppercase"
+              placeholder="CZK"
+            >
+          </label>
+          <label
+            v-for="plan in ['monthly', 'yearly', 'club']"
+            :key="`comgate-price-${plan}`"
+            class="text-xs text-gray-600 dark:text-gray-300 block"
+          >
+            Comgate {{ plan }}
+            <input
+              v-model="comgatePrices[plan as LegacyPlanKey]"
+              type="text"
+              inputmode="decimal"
+              class="mt-1 w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            >
+          </label>
+        </div>
       </div>
 
       <button
@@ -451,7 +552,7 @@
   }
 
   type LegacyPlanKey = 'monthly' | 'yearly' | 'club';
-  type PaymentProvider = 'stripe' | 'legacy';
+  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
 
   const CORE_PLANS: LegacyPlanKey[] = ['monthly', 'yearly', 'club'];
 
@@ -468,6 +569,20 @@
   });
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const providerOrder = ref<PaymentProvider[]>(['stripe', 'legacy']);
+  const gopay = ref({ configured: false });
+  const comgate = ref({ configured: false });
+  const gopayPrices = ref<Record<LegacyPlanKey, string>>({
+    monthly: '',
+    yearly: '',
+    club: '',
+  });
+  const gopayCurrency = ref('CZK');
+  const comgatePrices = ref<Record<LegacyPlanKey, string>>({
+    monthly: '',
+    yearly: '',
+    club: '',
+  });
+  const comgateCurrency = ref('CZK');
   const legacyPrices = ref<Record<LegacyPlanKey, string>>({
     monthly: '',
     yearly: '',
@@ -519,6 +634,8 @@
 
   function providerLabel(provider: PaymentProvider): string {
     if (provider === 'stripe') return 'Stripe (card, PayPal, SEPA)';
+    if (provider === 'gopay') return 'GoPay';
+    if (provider === 'comgate') return 'Comgate';
     return `Qerko (${legacy.value.providerName.trim() || 'bank / legacy'})`;
   }
 
@@ -594,14 +711,36 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     const enabled = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy')
+      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate')
       : ['stripe'];
     enabledProviders.value = enabled.length ? enabled : ['stripe'];
+    const gopayProviderPrices = data.providerPrices?.gopay ?? {};
+    gopayPrices.value = {
+      monthly: String(gopayProviderPrices.monthly ?? ''),
+      yearly: String(gopayProviderPrices.yearly ?? ''),
+      club: String(gopayProviderPrices.club ?? ''),
+    };
+    gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
+    const comgateProviderPrices = data.providerPrices?.comgate ?? {};
+    comgatePrices.value = {
+      monthly: String(comgateProviderPrices.monthly ?? ''),
+      yearly: String(comgateProviderPrices.yearly ?? ''),
+      club: String(comgateProviderPrices.club ?? ''),
+    };
+    comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
+    gopay.value = { configured: Boolean(data.gopayConfigured) };
+    comgate.value = { configured: Boolean(data.comgateConfigured) };
+    if (!gopay.value.configured) {
+      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'gopay');
+    }
+    if (!comgate.value.configured) {
+      enabledProviders.value = enabledProviders.value.filter((p) => p !== 'comgate');
+    }
     if (!legacy.value.configured) {
       enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
     }
     const order = Array.isArray(data.providerOrder)
-      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy')
+      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate')
       : ['stripe', 'legacy'];
     providerOrder.value = order.length ? order : ['stripe', 'legacy'];
     syncProviderOrderFromEnabled();
@@ -794,7 +933,19 @@
             yearly: legacyPrices.value.yearly,
             club: legacyPrices.value.club,
           },
+          gopay: {
+            monthly: gopayPrices.value.monthly,
+            yearly: gopayPrices.value.yearly,
+            club: gopayPrices.value.club,
+          },
+          comgate: {
+            monthly: comgatePrices.value.monthly,
+            yearly: comgatePrices.value.yearly,
+            club: comgatePrices.value.club,
+          },
         },
+        gopayCurrency: gopayCurrency.value,
+        comgateCurrency: comgateCurrency.value,
         stripePriceIds: stripePriceIds.value,
       }),
     });

@@ -48,6 +48,7 @@ import {
   handleVerifyMagicLink,
   requireAuth,
   requireRole,
+  resolveAuthSubFromRequest,
 } from './auth.js';
 import { B2PrimaryHealthDOBase } from './b2PrimaryHealth.js';
 import {
@@ -102,7 +103,7 @@ import {
   handleLegacyWebhook,
 } from './legacyPayments.js';
 import { normalizeLivestreamStatus } from './livestreams.js';
-import { log, runWithDatadogLogContext } from './logger.js';
+import { log, runWithDatadogLogContext, setWorkerLogTracingContext } from './logger.js';
 import {
   buildEntrypointCandidates,
   buildProxyPlaylistUrl,
@@ -136,12 +137,15 @@ import {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
   handleCheckout,
+  handleComgateWebhook,
   handleGetPricing,
   handleGetStripeConfig,
   handleGetSubscription,
+  handleGoPayWebhook,
   handlePortal,
   handleSessionStatus,
   handleWebhook,
+  runComgateRenewalJobs,
 } from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
 import {
@@ -154,6 +158,8 @@ import {
 import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
+  posthogContextFromRequest,
+  resolvePostHogLogTracingContext,
   redactPathForAnalytics,
 } from './posthog.js';
 import {
@@ -488,6 +494,8 @@ const workerHandler = {
   async fetch(request: Request, env: any, ctx: ExecutionContext) {
     return runWithDatadogLogContext(env, ctx, async () => {
       const url = new URL(request.url);
+      const authSub = await resolveAuthSubFromRequest(request, env);
+      setWorkerLogTracingContext(resolvePostHogLogTracingContext(request, authSub));
       ctx.waitUntil(maybeRunScheduledPublishJobsInRequest(env));
       await maybeSyncPillsApiKey(env);
 
@@ -978,6 +986,12 @@ const workerHandler = {
         if (url.pathname === '/api/payments/webhook/stripe' && request.method === 'POST') {
           return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
         }
+        if (url.pathname === '/api/payments/webhook/gopay' && request.method === 'GET') {
+          return handleGoPayWebhook(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/webhook/comgate' && request.method === 'POST') {
+          return handleComgateWebhook(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
           return handleLegacyWebhook(request, env, corsHeaders, ctx);
         }
@@ -1179,6 +1193,11 @@ const workerHandler = {
       const runReplication = cron === '*/15 * * * *';
 
       if (!runReplication) {
+        try {
+          await runComgateRenewalJobs(env);
+        } catch (err) {
+          console.error('Comgate renewal sweep failed:', err);
+        }
         try {
           await runScheduledPublishJobs(env);
           await syncScheduledPublishHint(env);

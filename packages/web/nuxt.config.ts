@@ -73,38 +73,31 @@ export default defineNuxtConfig({
           host: posthogHost,
           clientConfig: {
             person_profiles: 'identified_only',
+            cookieless_mode: 'on_reject',
+            defaults: '2026-05-30',
             capture_pageview: POSTHOG_CAPTURE_PAGEVIEW,
             capture_pageleave: POSTHOG_CAPTURE_PAGELEAVE,
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
-            persistence: 'memory',
             ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
             loaded: (posthog: {
               register: (props: Record<string, unknown>) => void;
               opt_in_capturing?: () => void;
               opt_out_capturing?: () => void;
-              set_config?: (config: {
-                persistence?:
-                  | 'memory'
-                  | 'localStorage'
-                  | 'sessionStorage'
-                  | 'localStorage+cookie'
-                  | 'cookie';
-              }) => void;
             }) => {
               posthog.register({ $environment: buildInfo.deployTier || 'development' });
               // Re-apply after __loaded — composable/plugin sync may have run too early.
-              // opt_in_capturing() also emits the initial $pageview when consent exists.
+              // opt_in_capturing() / opt_out_capturing() also wire cookieless_mode.
               applyStoredPostHogConsentToClient(posthog);
             },
           },
           serverConfig: {
-            // Off on purpose. The module's autocapture hooks Nitro's `error`
-            // hook and reports *every* error, including the 404 Nitro raises
-            // for unmatched routes — and since `serverConfig` travels through
-            // runtimeConfig (JSON), no `before_send` function can be passed
-            // here to filter them. `server/plugins/posthog-server-errors.ts`
-            // owns SSR capture instead and keeps 5xx while dropping 4xx.
+            // Autocapture reports every error Nitro sees, plain 404s included — bot
+            // probes for /.env & co. each opened their own error tracking issue (and
+            // Linear ticket) and buried the real errors. The module has no filter hook
+            // (`serverConfig` travels through runtimeConfig, which is JSON, so a
+            // `before_send` function cannot survive the build), so
+            // server/plugins/posthog-server-exceptions.ts owns capture and drops 4xx.
             enableExceptionAutocapture: false,
           },
           sourcemaps: {

@@ -11,6 +11,8 @@ import {
   resolveDatadogVersion,
   runWithDatadogLogContext,
   setDatadogFlushHandlerForTests,
+  setPostHogFlushHandlerForTests,
+  setWorkerLogTracingContext,
 } from '../src/logger.js';
 
 function makeExecutionContext() {
@@ -32,6 +34,7 @@ const datadogEnv = {
 describe('Datadog worker log helpers', () => {
   afterEach(() => {
     setDatadogFlushHandlerForTests(null);
+    setPostHogFlushHandlerForTests(null);
   });
 
   it('isDatadogLogsEnabled requires explicit opt-in and API key', () => {
@@ -229,5 +232,26 @@ describe('Datadog worker log helpers', () => {
     assert.ok(batchA);
     assert.deepEqual(batchB.events, ['b-only']);
     assert.deepEqual(batchA.events, ['a-before', 'a-after']);
+  });
+
+  it('buffers logs for PostHog when project token is configured', async () => {
+    const flushed: Array<{ events: string[]; tracing: { distinctId?: string | null } }> = [];
+    setPostHogFlushHandlerForTests(async (_env, entries, tracing) => {
+      flushed.push({
+        events: entries.map((entry) => String(entry.event)),
+        tracing,
+      });
+    });
+
+    const { ctx, waitUntilTasks } = makeExecutionContext();
+    await runWithDatadogLogContext({ POSTHOG_PROJECT_TOKEN: 'phc_test' }, ctx, async () => {
+      setWorkerLogTracingContext({ distinctId: 'user_9', sessionId: 'sess_1' });
+      log({ service: 'worker', event: 'request', http_method: 'GET', http_path: '/' });
+    });
+    await Promise.all(waitUntilTasks);
+
+    assert.equal(flushed.length, 1);
+    assert.deepEqual(flushed[0].events, ['request']);
+    assert.equal(flushed[0].tracing.distinctId, 'user_9');
   });
 });

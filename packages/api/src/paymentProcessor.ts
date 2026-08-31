@@ -16,31 +16,39 @@ import {
 
 export { normalizeStripeStatus } from './stripeClient.js';
 
-import type { DbPaymentProvider, NormalizedPaymentEvent, PaymentProviderId } from '@vmp/payments';
-import { handlePaymentInvoicePaid } from './eInvoicing.js';
+import {
+  createEnabledProviders,
+  type DbPaymentProvider,
+  type NormalizedPaymentEvent,
+  type PaymentProviderId,
+} from '@vmp/payments';
 import {
   CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
   looksLikePaymentConfigLeak,
 } from './customerSafePaymentErrors.js';
+import { handlePaymentInvoicePaid } from './eInvoicing.js';
 import { isLegacyCheckoutConfigured, isLegacyWebhookConfigured } from './legacyProvider.js';
 import { revokeOfflineLicensesForUser } from './offlineDownloads.js';
 import { parseLocaleNumber } from './parseLocaleNumber.js';
 import {
-  captureMappedPostHogEvent,
-  capturePostHogException,
-  posthogEventFromStripeWebhook,
-  type PostHogWaitUntilCtx,
-} from './posthog.js';
-import {
+  buildPaymentsConfig,
   dbProviderToRegistryId,
   fromApiProviderId,
   getPaymentProviderOrder,
   getPaymentProviders,
+  isComgateConfigured,
+  isGoPayConfigured,
   providerIdToDbProvider,
   resolvePublicEnabledProviders,
   toApiProviderId,
   toSupportedApiProviderIds,
 } from './paymentProviders.js';
+import {
+  captureMappedPostHogEvent,
+  capturePostHogException,
+  type PostHogWaitUntilCtx,
+  posthogEventFromStripeWebhook,
+} from './posthog.js';
 
 export { parseLocaleNumber } from './parseLocaleNumber.js';
 
@@ -115,7 +123,19 @@ function parseConfiguredPrice(value: unknown): number | null {
   return parseLocaleNumber(value);
 }
 
-async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
+async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate') {
+  if (provider === 'gopay' || provider === 'comgate') {
+    const [monthly, yearly, club] = await Promise.all([
+      getSetting(env, `${provider}_monthly_price`, { ttlSeconds: 300 }),
+      getSetting(env, `${provider}_yearly_price`, { ttlSeconds: 300 }),
+      getSetting(env, `${provider}_club_price`, { ttlSeconds: 300 }),
+    ]);
+    return {
+      monthly: parseConfiguredPrice(monthly),
+      yearly: parseConfiguredPrice(yearly),
+      club: parseConfiguredPrice(club),
+    };
+  }
   const prefix = provider ? `${provider}_` : '';
   const [monthly, yearly, club] = await Promise.all([
     getSetting(env, `${prefix}monthly_price_eur`, { ttlSeconds: 300 }),
@@ -129,10 +149,15 @@ async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy') {
   };
 }
 
-async function getEffectivePricingSettings(env: any, provider: 'stripe' | 'legacy') {
+async function getEffectivePricingSettings(
+  env: any,
+  provider: 'stripe' | 'legacy' | 'gopay' | 'comgate',
+) {
   const [providerPricing, fallbackPricing] = await Promise.all([
     getPricingSettings(env, provider),
-    getPricingSettings(env),
+    provider === 'gopay' || provider === 'comgate'
+      ? Promise.resolve({ monthly: null, yearly: null, club: null })
+      : getPricingSettings(env),
   ]);
   return {
     monthly: providerPricing.monthly ?? fallbackPricing.monthly,
@@ -140,6 +165,23 @@ async function getEffectivePricingSettings(env: any, provider: 'stripe' | 'legac
     club: providerPricing.club ?? fallbackPricing.club,
   };
 }
+
+function periodEndIsoForPlan(planType: PlanType, from: Date = new Date()): string {
+  const end = new Date(from.getTime());
+  const day = end.getUTCDate();
+  // Set to day 1 before month arithmetic so Jan 31 + 1 month does not overflow to March.
+  end.setUTCDate(1);
+  const months = planType === 'yearly' || planType === 'club' ? 12 : 1;
+  end.setUTCMonth(end.getUTCMonth() + months);
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  end.setUTCDate(Math.min(day, lastDayOfTargetMonth));
+  return end.toISOString();
+}
+
+/** Exported for unit tests of month-overflow-safe period ends. */
+export { periodEndIsoForPlan };
 
 // ─── D1 / admin_settings helpers ─────────────────────────────────────────────
 
@@ -166,6 +208,69 @@ async function resolvePlanType(db: any, stripePriceId: any, env: any): Promise<P
 function normalizePlanType(planType: string): PlanType {
   if (planType === 'yearly' || planType === 'club') return planType;
   return 'monthly';
+}
+
+/**
+ * Resolve the paying user for a Comgate webhook when no subscription row exists yet
+ * (first checkout). Relies on `payment_checkout_sessions` from migration
+ * `0010_gocardless_payments.sql` — written at checkout creation with
+ * `checkout_token = refId` and `provider_checkout_id = transId`.
+ */
+export async function resolveComgateCheckoutIdentity(
+  db: {
+    prepare: (sql: string) => {
+      bind: (...args: unknown[]) => {
+        first: () => Promise<{ id?: unknown; user_id?: unknown; plan_type?: unknown } | null>;
+      };
+    };
+  },
+  opts: { subscriptionId: string; purchaseId: string },
+): Promise<{
+  userId: string;
+  planType: PlanType;
+  pendingSessionId: string | null;
+  fromPendingSession: boolean;
+} | null> {
+  const subscriptionId = String(opts.subscriptionId ?? '').trim();
+  const purchaseId = String(opts.purchaseId ?? '').trim();
+  if (!subscriptionId && !purchaseId) return null;
+
+  const existing = await db
+    .prepare(
+      `SELECT user_id, plan_type FROM subscriptions
+       WHERE provider = 'comgate' AND (provider_subscription_id = ? OR purchase_id = ?)
+       LIMIT 1`,
+    )
+    .bind(subscriptionId, purchaseId || subscriptionId)
+    .first();
+
+  if (existing?.user_id) {
+    return {
+      userId: String(existing.user_id).trim(),
+      planType: normalizePlanType(String(existing.plan_type ?? 'monthly')),
+      pendingSessionId: null,
+      fromPendingSession: false,
+    };
+  }
+
+  const pending = await db
+    .prepare(
+      `SELECT id, user_id, plan_type FROM payment_checkout_sessions
+       WHERE provider = 'comgate' AND status = 'pending'
+         AND (checkout_token = ? OR provider_checkout_id = ?)
+       LIMIT 1`,
+    )
+    .bind(purchaseId || subscriptionId, subscriptionId || purchaseId)
+    .first();
+
+  if (!pending?.user_id) return null;
+
+  return {
+    userId: String(pending.user_id).trim(),
+    planType: normalizePlanType(String(pending.plan_type ?? 'monthly')),
+    pendingSessionId: String(pending.id ?? '').trim() || null,
+    fromPendingSession: true,
+  };
 }
 
 async function upsertSubscriptionRow(
@@ -472,8 +577,7 @@ async function updateSubscriptionStatusByProviderRef(
   if (refs.length === 0) return;
 
   const where = refs.map((ref) => `${ref.column} = ?`).join(' OR ');
-  const cancelClause =
-    nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
+  const cancelClause = nextStatus === 'cancelled' ? ', cancel_at_period_end = 0' : '';
   await db
     .prepare(
       `UPDATE subscriptions
@@ -492,32 +596,66 @@ async function updateSubscriptionStatusByProviderRef(
  */
 export async function handleGetPricing(request: any, env: any, corsHeaders: any) {
   try {
-    const [stripePricing, legacyPricing, allowedPlans, { enabled, runnable }, providerOrder] =
-      await Promise.all([
-        getEffectivePricingSettings(env, 'stripe'),
-        getEffectivePricingSettings(env, 'legacy'),
-        getAllowedPlans(env),
-        getPaymentProviders(env),
-        getPaymentProviderOrder(env).then((ids) => toSupportedApiProviderIds(ids)),
-      ]);
+    const [
+      stripePricing,
+      legacyPricing,
+      gopayPricing,
+      comgatePricing,
+      gopayCurrency,
+      comgateCurrency,
+      allowedPlans,
+      { enabled, runnable },
+      providerOrder,
+    ] = await Promise.all([
+      getEffectivePricingSettings(env, 'stripe'),
+      getEffectivePricingSettings(env, 'legacy'),
+      getEffectivePricingSettings(env, 'gopay'),
+      getEffectivePricingSettings(env, 'comgate'),
+      getSetting(env, 'gopay_currency', { defaultValue: 'CZK', ttlSeconds: 300 }),
+      getSetting(env, 'comgate_currency', { defaultValue: 'CZK', ttlSeconds: 300 }),
+      getAllowedPlans(env),
+      getPaymentProviders(env),
+      getPaymentProviderOrder(env).then((ids) => toSupportedApiProviderIds(ids)),
+    ]);
     const enabledProviders = resolvePublicEnabledProviders(enabled, runnable);
+    const primaryPricing = enabledProviders.includes('stripe')
+      ? stripePricing
+      : enabledProviders.includes('gopay')
+        ? gopayPricing
+        : enabledProviders.includes('comgate')
+          ? comgatePricing
+          : enabledProviders.includes('legacy')
+            ? legacyPricing
+            : stripePricing;
     const pricingNotConfigured =
-      (allowedPlans.includes('monthly') && stripePricing.monthly == null) ||
-      (allowedPlans.includes('yearly') && stripePricing.yearly == null) ||
-      (allowedPlans.includes('club') && stripePricing.club == null);
+      (allowedPlans.includes('monthly') && primaryPricing.monthly == null) ||
+      (allowedPlans.includes('yearly') && primaryPricing.yearly == null) ||
+      (allowedPlans.includes('club') && primaryPricing.club == null);
     const payload = {
-      monthly: allowedPlans.includes('monthly') ? stripePricing.monthly : null,
-      yearly: allowedPlans.includes('yearly') ? stripePricing.yearly : null,
-      club: allowedPlans.includes('club') ? stripePricing.club : null,
+      monthly: allowedPlans.includes('monthly') ? primaryPricing.monthly : null,
+      yearly: allowedPlans.includes('yearly') ? primaryPricing.yearly : null,
+      club: allowedPlans.includes('club') ? primaryPricing.club : null,
       allowedPlans,
       pricesByProvider: {
         stripe: stripePricing,
         legacy: legacyPricing,
+        gopay: gopayPricing,
+        comgate: comgatePricing,
       },
+      gopayCurrency:
+        String(gopayCurrency ?? 'CZK')
+          .trim()
+          .toUpperCase() || 'CZK',
+      comgateCurrency:
+        String(comgateCurrency ?? 'CZK')
+          .trim()
+          .toUpperCase() || 'CZK',
       // Empty when only stubs/unsupported providers remain — never invent Stripe.
       enabledProviders,
       providerOrder,
       legacyConfigured: isLegacyCheckoutConfigured(env),
+      gopayConfigured: isGoPayConfigured(env),
+      comgateConfigured: isComgateConfigured(env),
       ...(pricingNotConfigured || enabledProviders.length === 0
         ? { pricing_not_configured: true }
         : {}),
@@ -569,6 +707,14 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       'legacy_monthly_price_eur',
       'legacy_yearly_price_eur',
       'legacy_club_price_eur',
+      'gopay_monthly_price',
+      'gopay_yearly_price',
+      'gopay_club_price',
+      'gopay_currency',
+      'comgate_monthly_price',
+      'comgate_yearly_price',
+      'comgate_club_price',
+      'comgate_currency',
       'stripe_price_monthly',
       'stripe_price_yearly',
       'stripe_price_club',
@@ -580,10 +726,14 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
         enabledProviders: parseCsvList(valueByKey.payments_enabled_providers ?? 'stripe', [
           'stripe',
           'legacy',
+          'gopay',
+          'comgate',
         ]),
         providerOrder: parseCsvList(valueByKey.payment_provider_order ?? 'stripe,legacy', [
           'stripe',
           'legacy',
+          'gopay',
+          'comgate',
         ]),
         allowedPlans: parseCsvList(valueByKey.allowed_plans ?? 'monthly,yearly,club', [
           'monthly',
@@ -606,7 +756,21 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
             yearly: valueByKey.legacy_yearly_price_eur ?? '',
             club: valueByKey.legacy_club_price_eur ?? '',
           },
+          gopay: {
+            monthly: valueByKey.gopay_monthly_price ?? '',
+            yearly: valueByKey.gopay_yearly_price ?? '',
+            club: valueByKey.gopay_club_price ?? '',
+          },
+          comgate: {
+            monthly: valueByKey.comgate_monthly_price ?? '',
+            yearly: valueByKey.comgate_yearly_price ?? '',
+            club: valueByKey.comgate_club_price ?? '',
+          },
         },
+        gopayCurrency: valueByKey.gopay_currency ?? 'CZK',
+        comgateCurrency: valueByKey.comgate_currency ?? 'CZK',
+        gopayConfigured: isGoPayConfigured(env),
+        comgateConfigured: isComgateConfigured(env),
         stripePriceIds: {
           monthly: valueByKey.stripe_price_monthly ?? '',
           yearly: valueByKey.stripe_price_yearly ?? '',
@@ -628,7 +792,12 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
   }
 
   try {
-    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', ['stripe', 'legacy']);
+    const enabledProviders = parseCsvList(body.enabledProviders ?? 'stripe', [
+      'stripe',
+      'legacy',
+      'gopay',
+      'comgate',
+    ]);
     if (!enabledProviders.length) {
       return jsonResponse(
         { error: 'At least one payment provider must be enabled' },
@@ -639,6 +808,8 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
     const providerOrder = parseCsvList(body.providerOrder ?? enabledProviders, [
       'stripe',
       'legacy',
+      'gopay',
+      'comgate',
     ]);
     const allowedPlans = parseCsvList(body.allowedPlans ?? 'monthly,yearly,club', [
       'monthly',
@@ -665,6 +836,24 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
       ['legacy_monthly_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.monthly)],
       ['legacy_yearly_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.yearly)],
       ['legacy_club_price_eur', parseOptionalPositiveNumber(providerPrices?.legacy?.club)],
+      ['gopay_monthly_price', parseOptionalPositiveNumber(providerPrices?.gopay?.monthly)],
+      ['gopay_yearly_price', parseOptionalPositiveNumber(providerPrices?.gopay?.yearly)],
+      ['gopay_club_price', parseOptionalPositiveNumber(providerPrices?.gopay?.club)],
+      [
+        'gopay_currency',
+        String(body.gopayCurrency ?? 'CZK')
+          .trim()
+          .toUpperCase() || 'CZK',
+      ],
+      ['comgate_monthly_price', parseOptionalPositiveNumber(providerPrices?.comgate?.monthly)],
+      ['comgate_yearly_price', parseOptionalPositiveNumber(providerPrices?.comgate?.yearly)],
+      ['comgate_club_price', parseOptionalPositiveNumber(providerPrices?.comgate?.club)],
+      [
+        'comgate_currency',
+        String(body.comgateCurrency ?? 'CZK')
+          .trim()
+          .toUpperCase() || 'CZK',
+      ],
       ['stripe_price_monthly', String(stripePriceIds.monthly ?? '').trim()],
       ['stripe_price_yearly', String(stripePriceIds.yearly ?? '').trim()],
       ['stripe_price_club', String(stripePriceIds.club ?? '').trim()],
@@ -1090,6 +1279,32 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
     if (session.checkoutUrl) {
+      if (apiProvider === 'comgate') {
+        // Comgate cannot carry free-form metadata on the payment object. Persist a
+        // pending payment_checkout_sessions row (table from migration 0010) so the
+        // webhook can resolve userId/planType on first purchase.
+        const refId = String(session.metadata?.refId ?? '').trim();
+        const orderId = String(session.orderId ?? '').trim();
+        if (!refId || !orderId) {
+          return jsonResponse(
+            {
+              error: 'Failed to create checkout session',
+              code: 'checkout_session_persist_failed',
+            },
+            502,
+            corsHeaders,
+          );
+        }
+        await db
+          .prepare(
+            `INSERT INTO payment_checkout_sessions (
+              id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status,
+              created_at, updated_at
+            ) VALUES (?, ?, 'comgate', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          )
+          .bind(crypto.randomUUID(), user.sub, planType, refId, orderId)
+          .run();
+      }
       return jsonResponse(
         {
           checkoutUrl: session.checkoutUrl,
@@ -1119,7 +1334,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       err && typeof err === 'object' && 'status' in err
         ? Number((err as { status?: number }).status)
         : NaN;
-    if (code === 'stripe_timeout') {
+    if (code === 'stripe_timeout' || code === 'gopay_timeout' || code === 'comgate_timeout') {
       return jsonResponse(
         { error: 'Payment provider timed out. Please try again.', code },
         504,
@@ -1128,11 +1343,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     }
     const rawMessage = err instanceof Error ? err.message : '';
     const configLeak = looksLikePaymentConfigLeak(rawMessage);
-    if (
-      code === 'legacy_not_configured' ||
-      code === 'provider_not_configured' ||
-      configLeak
-    ) {
+    if (code === 'legacy_not_configured' || code === 'provider_not_configured' || configLeak) {
       return jsonResponse(
         {
           error: CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
@@ -1296,6 +1507,614 @@ export async function handleWebhook(
     // Return 500 so Stripe retries the event on transient failures
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
+}
+
+/**
+ * GET /api/payments/webhook/gopay?id=&parent_id= — NO auth (GoPay calls this)
+ * Notifications are unsigned; we re-fetch payment status with merchant credentials.
+ */
+export async function handleGoPayWebhook(request: any, env: any, corsHeaders: any) {
+  const url = new URL(request.url);
+  const paymentId = String(url.searchParams.get('id') ?? '').trim();
+  const parentId = String(url.searchParams.get('parent_id') ?? '').trim();
+  if (!paymentId) {
+    return jsonResponse({ error: 'Missing payment id' }, 400, corsHeaders);
+  }
+
+  const { providers } = await getPaymentProviders(env);
+  let gopayProvider = providers.get('gopay');
+  if (!gopayProvider) {
+    // Notification may arrive even if gopay is temporarily disabled in settings —
+    // still process when credentials exist.
+    const config = buildPaymentsConfig(env);
+    if (!config.gopay) {
+      return jsonResponse({ error: 'GoPay provider not configured' }, 503, corsHeaders);
+    }
+    const forced = createEnabledProviders(['gopay'], config);
+    gopayProvider = forced.get('gopay');
+  }
+  if (!gopayProvider || !gopayProvider.isConfigured()) {
+    return jsonResponse({ error: 'GoPay provider not configured' }, 503, corsHeaders);
+  }
+
+  const rawBody = JSON.stringify({
+    id: paymentId,
+    ...(parentId ? { parent_id: parentId } : {}),
+  });
+  const valid = await gopayProvider.verifyWebhookSignature(rawBody, '');
+  if (!valid) {
+    return jsonResponse({ error: 'GoPay credentials missing' }, 400, corsHeaders);
+  }
+
+  try {
+    const event = await gopayProvider.handleWebhook(rawBody);
+    const db = getDb(env);
+    const planType = normalizePlanType(String(event.planType ?? 'monthly'));
+    const subscriptionId = String(event.subscriptionId ?? '').trim();
+    const userId = String(event.userId ?? '').trim();
+
+    if (event.type === 'checkout.completed' || event.type === 'subscription.created') {
+      if (!userId || !subscriptionId) {
+        return jsonResponse({ ok: true, ignored: true }, 200, corsHeaders);
+      }
+      await upsertSubscriptionRow(db, {
+        userId,
+        planType,
+        status: 'active',
+        provider: 'gopay',
+        providerSubscriptionId: subscriptionId,
+        providerCustomerId: userId,
+        currentPeriodEnd: periodEndIsoForPlan(planType),
+      });
+      try {
+        await syncSubscriptionNewsletter(db, userId, 'active', env);
+      } catch (brevoErr) {
+        console.error('[gopay webhook] newsletter sync failed', { userId, err: brevoErr });
+      }
+      return jsonResponse({ ok: true }, 200, corsHeaders);
+    }
+
+    if (event.type === 'invoice.paid' || event.type === 'payment.succeeded') {
+      if (!subscriptionId) {
+        return jsonResponse({ ok: true, ignored: true }, 200, corsHeaders);
+      }
+      const existing = await db
+        .prepare(
+          `SELECT user_id, plan_type FROM subscriptions
+           WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
+        )
+        .bind(subscriptionId)
+        .first();
+      if (existing?.user_id) {
+        const existingPlan = normalizePlanType(String(existing.plan_type ?? planType));
+        await upsertSubscriptionRow(db, {
+          userId: String(existing.user_id),
+          planType: existingPlan,
+          status: 'active',
+          provider: 'gopay',
+          providerSubscriptionId: subscriptionId,
+          providerCustomerId: String(existing.user_id),
+          currentPeriodEnd: periodEndIsoForPlan(existingPlan),
+        });
+        try {
+          await syncSubscriptionNewsletter(db, String(existing.user_id), 'active', env);
+        } catch (brevoErr) {
+          console.error('[gopay webhook] newsletter sync failed', {
+            userId: existing.user_id,
+            err: brevoErr,
+          });
+        }
+      }
+      return jsonResponse({ ok: true }, 200, corsHeaders);
+    }
+
+    if (event.type === 'payment.failed' || event.type === 'subscription.past_due') {
+      if (subscriptionId) {
+        const existing = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'gopay' AND provider_subscription_id = ?`,
+          )
+          .bind(subscriptionId)
+          .run();
+        if (existing?.user_id) {
+          try {
+            await removeSubscriberFromNewsletter(db, existing.user_id, env);
+          } catch (brevoErr) {
+            console.error('[gopay webhook] newsletter remove failed', {
+              userId: existing.user_id,
+              err: brevoErr,
+            });
+          }
+        }
+      }
+      return jsonResponse({ ok: true }, 200, corsHeaders);
+    }
+
+    if (event.type === 'subscription.deleted') {
+      if (subscriptionId) {
+        const row = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'gopay' AND provider_subscription_id = ?`,
+          )
+          .bind(subscriptionId)
+          .run();
+        if (row?.user_id) {
+          try {
+            await removeSubscriberFromNewsletter(db, row.user_id, env);
+          } catch (brevoErr) {
+            console.error('[gopay webhook] newsletter remove failed', {
+              userId: row.user_id,
+              err: brevoErr,
+            });
+          }
+          try {
+            await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
+          } catch (offlineErr) {
+            console.error('[gopay webhook] offline revoke failed', {
+              userId: row.user_id,
+              err: offlineErr,
+            });
+            throw offlineErr;
+          }
+        }
+      }
+      return jsonResponse({ ok: true }, 200, corsHeaders);
+    }
+
+    return jsonResponse({ ok: true, ignored: true }, 200, corsHeaders);
+  } catch (err) {
+    console.error('handleGoPayWebhook error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
+  }
+}
+
+function comgateNotifyOk(corsHeaders: any) {
+  return new Response('code=0&message=OK', {
+    status: 200,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+  });
+}
+
+function comgateNotifyRetry(corsHeaders: any, message = 'processing error') {
+  return new Response(`code=1500&message=${encodeURIComponent(message)}`, {
+    status: 500,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+  });
+}
+
+/**
+ * POST /api/payments/webhook/comgate — NO auth (Comgate calls this)
+ * Notifications include `secret` for verification; status is re-verified via API.
+ * Reply `code=0&message=OK` only for successfully processed or intentionally ignored
+ * notifications so Comgate retries unresolved identities and internal errors.
+ */
+export async function handleComgateWebhook(request: any, env: any, corsHeaders: any) {
+  const rawBody = await request.text();
+  const { providers } = await getPaymentProviders(env);
+  let comgateProvider = providers.get('comgate');
+  if (!comgateProvider) {
+    const config = buildPaymentsConfig(env);
+    if (!config.comgate) {
+      return comgateNotifyOk(corsHeaders);
+    }
+    const forced = createEnabledProviders(['comgate'], config);
+    comgateProvider = forced.get('comgate');
+  }
+  if (!comgateProvider || !comgateProvider.isConfigured()) {
+    return comgateNotifyOk(corsHeaders);
+  }
+
+  const valid = await comgateProvider.verifyWebhookSignature(rawBody, '');
+  if (!valid) {
+    return new Response('code=1400&message=invalid secret', {
+      status: 400,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+    });
+  }
+
+  try {
+    const event = await comgateProvider.handleWebhook(rawBody);
+    const db = getDb(env);
+    const subscriptionId = String(event.subscriptionId ?? '').trim();
+    const purchaseId = String(event.purchaseId ?? '').trim();
+    const renewalTransId = String(event.providerOrderId ?? '').trim();
+
+    if (event.type === 'checkout.completed' || event.type === 'invoice.paid') {
+      if (!subscriptionId) {
+        return comgateNotifyOk(corsHeaders);
+      }
+
+      const identity = await resolveComgateCheckoutIdentity(db, {
+        subscriptionId,
+        purchaseId,
+      });
+
+      if (!identity?.userId) {
+        console.warn('[comgate webhook] checkout completed without resolvable user', {
+          subscriptionId,
+          purchaseId,
+        });
+        return comgateNotifyRetry(corsHeaders, 'unresolved user');
+      }
+
+      await upsertSubscriptionRow(db, {
+        userId: identity.userId,
+        planType: identity.planType,
+        status: 'active',
+        provider: 'comgate',
+        providerSubscriptionId: subscriptionId,
+        providerCustomerId: identity.userId,
+        currentPeriodEnd: periodEndIsoForPlan(identity.planType),
+      });
+      if (renewalTransId && renewalTransId !== subscriptionId) {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET last_provider_payment_id = ?,
+                 renewal_attempt_status = 'completed',
+                 renewal_attempt_payment_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate' AND provider_subscription_id = ?`,
+          )
+          .bind(renewalTransId, renewalTransId, subscriptionId)
+          .run();
+      } else {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET renewal_attempt_status = 'completed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate'
+               AND provider_subscription_id = ?
+               AND renewal_attempt_status IN ('pending', 'charged')`,
+          )
+          .bind(subscriptionId)
+          .run();
+      }
+      if (identity.fromPendingSession && identity.pendingSessionId) {
+        await db
+          .prepare(
+            `UPDATE payment_checkout_sessions
+             SET status = 'completed',
+                 provider_subscription_id = ?,
+                 completed_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND status = 'pending'`,
+          )
+          .bind(subscriptionId, identity.pendingSessionId)
+          .run();
+      }
+      try {
+        await syncSubscriptionNewsletter(db, identity.userId, 'active', env);
+      } catch (brevoErr) {
+        console.error('[comgate webhook] newsletter sync failed', {
+          userId: identity.userId,
+          err: brevoErr,
+        });
+      }
+    }
+
+    // Match GoPay / Stripe: failed renewals enter a grace period (past_due), not
+    // immediate cancellation. Offline licenses stay valid until actual cancellation.
+    if (event.type === 'payment.failed') {
+      if (subscriptionId) {
+        const existing = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'comgate' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'past_due',
+                 renewal_attempt_status = 'failed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE provider = 'comgate' AND provider_subscription_id = ?`,
+          )
+          .bind(subscriptionId)
+          .run();
+        if (existing?.user_id) {
+          try {
+            await removeSubscriberFromNewsletter(db, existing.user_id, env);
+          } catch (brevoErr) {
+            console.error('[comgate webhook] newsletter remove failed', {
+              userId: existing.user_id,
+              err: brevoErr,
+            });
+          }
+        }
+      }
+    }
+
+    return comgateNotifyOk(corsHeaders);
+  } catch (err) {
+    console.error('handleComgateWebhook error:', err);
+    return comgateNotifyRetry(corsHeaders);
+  }
+}
+
+/**
+ * Merchant-driven Comgate renewals: claim a due row, charge `/v1.0/recurring`
+ * with the original checkout transId (`provider_subscription_id`), and store the
+ * renewal transId without advancing the period. Active status + period end are
+ * applied only after a successful Comgate notification (or status reconciliation).
+ */
+export function isAmbiguousComgateChargeError(err: unknown): boolean {
+  const code =
+    err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
+  return code === 'comgate_timeout' || code === 'comgate_renewal_failed';
+}
+
+async function reconcileStaleComgateRenewalAttempts(
+  db: {
+    prepare: (sql: string) => {
+      bind: (...args: unknown[]) => {
+        all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+        run?: () => Promise<unknown>;
+      };
+      all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+    };
+  },
+  getPaymentStatus: (transId: string) => Promise<Record<string, string>>,
+): Promise<void> {
+  const stale = await db
+    .prepare(
+      `SELECT id, plan_type, renewal_attempt_payment_id
+       FROM subscriptions
+       WHERE provider = 'comgate'
+         AND renewal_attempt_status IN ('pending', 'charged')
+         AND renewal_attempt_payment_id IS NOT NULL
+         AND renewal_attempt_payment_id != ''
+       LIMIT 25`,
+    )
+    .all?.();
+  for (const row of stale?.results ?? []) {
+    const subscriptionRowId = String(row.id ?? '').trim();
+    const paymentId = String(row.renewal_attempt_payment_id ?? '').trim();
+    if (!subscriptionRowId || !paymentId) continue;
+    try {
+      const status = await getPaymentStatus(paymentId);
+      const state = String(status.status ?? '').toUpperCase();
+      if (state === 'PAID' || state === 'AUTHORIZED') {
+        const planType = normalizePlanType(String(row.plan_type ?? 'monthly'));
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'active',
+                 current_period_end = ?,
+                 last_provider_payment_id = COALESCE(?, last_provider_payment_id),
+                 renewal_attempt_status = 'completed',
+                 renewal_attempt_payment_id = COALESCE(?, renewal_attempt_payment_id),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND provider = 'comgate'
+               AND renewal_attempt_status IN ('pending', 'charged')`,
+          )
+          .bind(periodEndIsoForPlan(planType), paymentId, paymentId, subscriptionRowId)
+          .run?.();
+      } else if (state === 'CANCELLED') {
+        await db
+          .prepare(
+            `UPDATE subscriptions
+             SET status = 'past_due',
+                 renewal_attempt_status = 'failed',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND provider = 'comgate'
+               AND renewal_attempt_status IN ('pending', 'charged')`,
+          )
+          .bind(subscriptionRowId)
+          .run?.();
+      }
+      // PENDING / other: leave claim in place; do not allow another charge yet.
+    } catch (err) {
+      console.error('[comgate renewal] status reconcile failed', {
+        subscriptionId: subscriptionRowId,
+        paymentId,
+        err,
+      });
+    }
+  }
+}
+
+export async function renewDueComgateSubscriptions(
+  db: {
+    prepare: (sql: string) => {
+      bind: (...args: unknown[]) => {
+        all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+        run?: () => Promise<{ meta?: { changes?: number }; changes?: number } | unknown>;
+        first?: () => Promise<Record<string, unknown> | null>;
+      };
+      all?: () => Promise<{ results?: Array<Record<string, unknown>> }>;
+    };
+  },
+  provider: {
+    createSubscription: (input: {
+      userId: string;
+      planType: PlanType;
+      initRecurringId?: string;
+      customerId?: string;
+      email?: string;
+    }) => Promise<{ lastPaymentId?: string | null }>;
+    getPaymentStatus?: (transId: string) => Promise<Record<string, string>>;
+  },
+): Promise<{ attempted: number; renewed: number }> {
+  if (provider.getPaymentStatus) {
+    await reconcileStaleComgateRenewalAttempts(db, provider.getPaymentStatus);
+  }
+
+  const due = await db
+    .prepare(
+      `SELECT s.id, s.user_id, s.plan_type, s.provider_subscription_id, u.email
+       FROM subscriptions s
+       LEFT JOIN users u ON u.id = s.user_id
+       WHERE s.provider = 'comgate'
+         AND s.status IN ('active', 'past_due')
+         AND IFNULL(s.cancel_at_period_end, 0) = 0
+         AND s.provider_subscription_id IS NOT NULL
+         AND datetime(s.current_period_end) <= datetime('now')
+         AND (
+           s.renewal_attempt_status IS NULL
+           OR s.renewal_attempt_status IN ('failed', 'completed')
+         )
+       LIMIT 25`,
+    )
+    .all?.();
+  const rows = due?.results ?? [];
+  let renewed = 0;
+  for (const row of rows) {
+    const subscriptionRowId = String(row.id ?? '').trim();
+    const initRecurringId = String(row.provider_subscription_id ?? '').trim();
+    const userId = String(row.user_id ?? '').trim();
+    const email = String(row.email ?? '').trim();
+    if (!subscriptionRowId || !initRecurringId || !userId) continue;
+    const planType = normalizePlanType(String(row.plan_type ?? 'monthly'));
+
+    try {
+      const claim = await db
+        .prepare(
+          `UPDATE subscriptions
+           SET renewal_attempt_status = 'pending',
+               renewal_attempt_payment_id = NULL,
+               renewal_attempt_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?
+             AND provider = 'comgate'
+             AND datetime(current_period_end) <= datetime('now')
+             AND (
+               renewal_attempt_status IS NULL
+               OR renewal_attempt_status IN ('failed', 'completed')
+             )`,
+        )
+        .bind(subscriptionRowId)
+        .run?.();
+      const changes =
+        claim && typeof claim === 'object'
+          ? Number(
+              (claim as { meta?: { changes?: number }; changes?: number }).meta?.changes ??
+                (claim as { changes?: number }).changes ??
+                0,
+            )
+          : 0;
+      if (!(changes > 0)) {
+        continue;
+      }
+
+      let lastPaymentId = '';
+      try {
+        const created = await provider.createSubscription({
+          userId,
+          planType,
+          initRecurringId,
+          customerId: userId,
+          ...(email ? { email } : {}),
+        });
+        lastPaymentId = String(created.lastPaymentId ?? '').trim();
+      } catch (chargeErr) {
+        console.error('[comgate renewal] charge failed', {
+          subscriptionId: subscriptionRowId,
+          err: chargeErr,
+        });
+        // Timeouts / missing transId are ambiguous — leave pending and reconcile via
+        // /v1.0/status later. Only definitive declines release the claim for retry.
+        if (!isAmbiguousComgateChargeError(chargeErr)) {
+          await db
+            .prepare(
+              `UPDATE subscriptions
+               SET renewal_attempt_status = 'failed',
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND provider = 'comgate'
+                 AND renewal_attempt_status = 'pending'`,
+            )
+            .bind(subscriptionRowId)
+            .run?.();
+        }
+        continue;
+      }
+
+      // Persist the charge claim without activating access or advancing the period.
+      // If this write fails, leave renewal_attempt_status='pending' so the row stays
+      // excluded from due queries (prevents a duplicate charge on the next cron).
+      // Only overwrite attempts that are still pending — never terminal failed/completed.
+      try {
+        const charged = await db
+          .prepare(
+            `UPDATE subscriptions
+             SET last_provider_payment_id = COALESCE(?, last_provider_payment_id),
+                 renewal_attempt_status = 'charged',
+                 renewal_attempt_payment_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND provider = 'comgate'
+               AND renewal_attempt_status = 'pending'`,
+          )
+          .bind(lastPaymentId || null, lastPaymentId || null, subscriptionRowId)
+          .run?.();
+        const chargedChanges =
+          charged && typeof charged === 'object'
+            ? Number(
+                (charged as { meta?: { changes?: number }; changes?: number }).meta?.changes ??
+                  (charged as { changes?: number }).changes ??
+                  0,
+              )
+            : 0;
+        if (chargedChanges === 1) {
+          renewed += 1;
+        }
+      } catch (writeErr) {
+        console.error('[comgate renewal] post-charge claim update failed; leaving pending', {
+          subscriptionId: subscriptionRowId,
+          lastPaymentId,
+          err: writeErr,
+        });
+      }
+    } catch (err) {
+      console.error('[comgate renewal] row failed', {
+        subscriptionId: subscriptionRowId,
+        err,
+      });
+    }
+  }
+  return { attempted: rows.length, renewed };
+}
+
+export async function runComgateRenewalJobs(
+  env: any,
+): Promise<{ attempted: number; renewed: number }> {
+  const db = getDb(env);
+  const { providers } = await getPaymentProviders(env);
+  let comgateProvider = providers.get('comgate');
+  if (!comgateProvider) {
+    const config = buildPaymentsConfig(env);
+    if (!config.comgate) return { attempted: 0, renewed: 0 };
+    comgateProvider = createEnabledProviders(['comgate'], config).get('comgate');
+  }
+  if (!comgateProvider || !comgateProvider.isConfigured()) {
+    return { attempted: 0, renewed: 0 };
+  }
+  return renewDueComgateSubscriptions(db, {
+    createSubscription: (input) => comgateProvider!.createSubscription(input),
+    ...(comgateProvider.getPaymentStatus
+      ? { getPaymentStatus: (transId) => comgateProvider!.getPaymentStatus!(transId) }
+      : {}),
+  });
 }
 
 /**
