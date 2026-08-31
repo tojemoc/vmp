@@ -47,6 +47,16 @@ export function isViteLocaleTransformNoise(message: string | undefined): boolean
   return message.includes('Transform failed with') && message.includes('/locales/');
 }
 
+/**
+ * Runtime ReferenceError from ephemeral dev edits. esbuild emits bare identifiers
+ * like `INVALID` that TypeScript would reject in CI, so this cannot ship in
+ * production bundles from committed source.
+ */
+export function isDevEphemeralReferenceNoise(message: string | undefined): boolean {
+  if (!message) return false;
+  return message.includes('INVALID is not defined');
+}
+
 function getSentryErrorMessage(event: ErrorEvent): string | undefined {
   const exceptionValue = event.exception?.values?.[0]?.value;
   if (typeof exceptionValue === 'string' && exceptionValue.trim()) {
@@ -79,7 +89,8 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
   }
 
   options.beforeSend = (event) => {
-    if (isViteLocaleTransformNoise(getSentryErrorMessage(event))) {
+    const message = getSentryErrorMessage(event);
+    if (isViteLocaleTransformNoise(message) || isDevEphemeralReferenceNoise(message)) {
       return null;
     }
 
