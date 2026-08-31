@@ -50,6 +50,7 @@
 
     <div v-else-if="!priceError" class="grid gap-2 mb-4" :class="planGridClass">
       <button
+        v-if="isPlanAvailable('monthly')"
         type="button"
         class="relative min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="[planButtonClass('monthly'), compact ? 'pt-3.5' : 'pt-4']"
@@ -72,6 +73,7 @@
       </button>
 
       <button
+        v-if="isPlanAvailable('yearly')"
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('yearly')"
@@ -89,6 +91,7 @@
       </button>
 
       <button
+        v-if="isPlanAvailable('club')"
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('club')"
@@ -328,6 +331,7 @@
   const defaultPrices: Prices = { monthly: 6.9, yearly: 74.9, club: 109.0 };
   const prices = ref<Prices>({ ...defaultPrices });
   const legacyPrices = ref<Prices>({ ...defaultPrices });
+  const stripePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
   const gopayPrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
   const gopayCurrency = ref('CZK');
   const comgatePrices = ref<Prices>({ monthly: 0, yearly: 0, club: 0 });
@@ -365,7 +369,12 @@
   );
 
   /** Three columns by default; stack only on very narrow viewports where columns would crowd. */
-  const planGridClass = computed(() => 'grid-cols-3 max-[22rem]:grid-cols-1');
+  const planGridClass = computed(() => {
+    const count = availablePlans.value.length;
+    if (count <= 1) return 'grid-cols-1 max-[22rem]:grid-cols-1';
+    if (count === 2) return 'grid-cols-2 max-[22rem]:grid-cols-1';
+    return 'grid-cols-3 max-[22rem]:grid-cols-1';
+  });
 
   /** Set when checkout_provider=legacy is present before pricing/enabledProviders load. */
   const pendingLegacyCheckoutIntent = ref(false);
@@ -513,6 +522,42 @@
     return Number.isFinite(n) && n > 0 ? n : Number.NaN;
   }
 
+  function hasConfiguredProviderPrice(value: number): boolean {
+    return Number.isFinite(value) && value > 0;
+  }
+
+  /** True when at least one enabled provider can sell this plan. */
+  function isPlanAvailable(plan: PlanType): boolean {
+    const providers = enabledProviders.value;
+    if (providers.includes('stripe') && hasConfiguredProviderPrice(stripePrices.value[plan])) {
+      return true;
+    }
+    if (providers.includes('legacy') && hasConfiguredProviderPrice(legacyPrices.value[plan])) {
+      return true;
+    }
+    if (
+      providers.includes('gopay') &&
+      plan !== 'club' &&
+      hasConfiguredProviderPrice(gopayPrices.value[plan])
+    ) {
+      return true;
+    }
+    if (providers.includes('comgate') && hasConfiguredProviderPrice(comgatePrices.value[plan])) {
+      return true;
+    }
+    return false;
+  }
+
+  const availablePlans = computed(() =>
+    (['monthly', 'yearly', 'club'] as PlanType[]).filter((plan) => isPlanAvailable(plan)),
+  );
+
+  function ensureSelectedPlanAvailable() {
+    if (isPlanAvailable(selectedPlan.value)) return;
+    const fallback = availablePlans.value[0];
+    if (fallback) selectedPlan.value = fallback;
+  }
+
   function buildLoginRedirect(plan: PlanType): string {
     const params = new URLSearchParams();
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
@@ -552,6 +597,11 @@
       comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
 
       // Provider-specific button pricing — never invent EUR defaults.
+      stripePrices.value = {
+        monthly: parseProviderPrice(stripeRaw.monthly),
+        yearly: parseProviderPrice(stripeRaw.yearly),
+        club: parseProviderPrice(stripeRaw.club),
+      };
       legacyPrices.value = {
         monthly: parseProviderPrice(legacyRaw.monthly),
         yearly: parseProviderPrice(legacyRaw.yearly),
@@ -623,6 +673,7 @@
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
       }
+      ensureSelectedPlanAvailable();
     } catch {
       priceError.value = true;
       pendingLegacyCheckoutIntent.value = false;
@@ -813,7 +864,11 @@
     const q = route.query;
     const plan = q.checkout_plan;
     if (plan === 'monthly' || plan === 'yearly' || plan === 'club') {
-      selectedPlan.value = plan;
+      if (isPlanAvailable(plan)) {
+        selectedPlan.value = plan;
+      } else {
+        ensureSelectedPlanAvailable();
+      }
     }
     const provider = q.checkout_provider;
     if (provider === 'legacy') {
