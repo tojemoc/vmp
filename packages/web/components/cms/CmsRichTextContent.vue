@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
   import type { CmsRichTextDocument } from '@vmp/shared';
+  import { renderCmsRichTextHtml } from '~/utils/cmsRichTextRender';
 
   const props = defineProps<{
     content: CmsRichTextDocument;
@@ -12,7 +13,6 @@
   const html = ref('');
 
   async function loadHtml() {
-    const { renderCmsRichTextHtml } = await import('~/utils/cmsRichTextRender');
     html.value = await renderCmsRichTextHtml(props.content);
   }
 
