@@ -19,8 +19,17 @@ export function isInstalledPwa(): boolean {
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
   const displayModeStandalone = window.matchMedia?.('(display-mode: standalone)').matches === true;
   const displayModeFullscreen = window.matchMedia?.('(display-mode: fullscreen)').matches === true;
+  const displayModeMinimalUi = window.matchMedia?.('(display-mode: minimal-ui)').matches === true;
+  const displayModeWco =
+    window.matchMedia?.('(display-mode: window-controls-overlay)').matches === true;
 
-  return iosStandalone || displayModeStandalone || displayModeFullscreen;
+  return (
+    iosStandalone ||
+    displayModeStandalone ||
+    displayModeFullscreen ||
+    displayModeMinimalUi ||
+    displayModeWco
+  );
 }
 
 /**

@@ -1,5 +1,6 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
+import { shouldDropPostHogExceptionEvent } from './utils/analytics/noiseFilter';
 import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
@@ -80,6 +81,10 @@ export default defineNuxtConfig({
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
             ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
+            before_send: (event: { event?: string; properties?: Record<string, unknown> }) => {
+              if (shouldDropPostHogExceptionEvent(event)) return null;
+              return event;
+            },
             loaded: (posthog: {
               register: (props: Record<string, unknown>) => void;
               opt_in_capturing?: () => void;

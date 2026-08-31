@@ -348,6 +348,7 @@ export const strings: StringsDefinition = {
   offlineDownloadPlay: 'Přehrát',
   offlineDownloadFailed: 'Stahování selhalo. Zkuste to znovu.',
   offlineDownloadProgress: (percent: number) => `Stahuji… ${percent}%`,
+  offlineDownloadFinalizing: 'Dokončuji stahování…',
   offlineDownloadRemoveConfirm: (title: string) => `Odstranit offline kopii „${title}“?`,
   offlineDownloadStatusDownloaded: 'Staženo',
   offlineDownloadStatusDownloading: 'Stahuje se',

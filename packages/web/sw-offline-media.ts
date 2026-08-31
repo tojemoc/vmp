@@ -3,6 +3,8 @@ const sw = globalThis as unknown as ServiceWorkerGlobalScope & typeof globalThis
 
 const OFFLINE_MEDIA_URL_PREFIX = '/__vmp/offline-media/';
 const OFFLINE_OPFS_ROOT = 'vmp-offline';
+const IDB_BLOB_DB = 'vmp-offline-blobs';
+const IDB_BLOB_STORE = 'chunks';
 
 function contentTypeForPath(path: string): string {
   if (path.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
@@ -10,6 +12,65 @@ function contentTypeForPath(path: string): string {
   if (path.endsWith('.mp4')) return 'video/mp4';
   if (path.endsWith('.vtt')) return 'text/vtt';
   return 'application/octet-stream';
+}
+
+function blobKey(videoId: string, relativePath: string): string {
+  return `${videoId}/${relativePath}`;
+}
+
+function openBlobIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_BLOB_DB, 1);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_BLOB_STORE)) {
+        db.createObjectStore(IDB_BLOB_STORE);
+      }
+    };
+  });
+}
+
+async function readFromIdb(videoId: string, relativePath: string): Promise<Uint8Array | null> {
+  try {
+    const db = await openBlobIdb();
+    const key = blobKey(videoId, relativePath);
+    const meta = await new Promise<{ byteLength: number; chunkCount: number } | undefined>(
+      (resolve, reject) => {
+        const tx = db.transaction(IDB_BLOB_STORE, 'readonly');
+        tx.onerror = () => reject(tx.error);
+        const req = tx.objectStore(IDB_BLOB_STORE).get(`${key}:meta`);
+        req.onsuccess = () =>
+          resolve(req.result as { byteLength: number; chunkCount: number } | undefined);
+        req.onerror = () => reject(req.error);
+      },
+    );
+    if (!meta) return null;
+
+    const parts: Uint8Array[] = [];
+    for (let i = 0; i < meta.chunkCount; i++) {
+      const chunk = await new Promise<Uint8Array | undefined>((resolve, reject) => {
+        const tx = db.transaction(IDB_BLOB_STORE, 'readonly');
+        tx.onerror = () => reject(tx.error);
+        const req = tx.objectStore(IDB_BLOB_STORE).get(`${key}:chunk:${i}`);
+        req.onsuccess = () => resolve(req.result as Uint8Array | undefined);
+        req.onerror = () => reject(req.error);
+      });
+      if (!chunk) return null;
+      parts.push(chunk);
+    }
+
+    const merged = new Uint8Array(meta.byteLength);
+    let offset = 0;
+    for (const part of parts) {
+      merged.set(part, offset);
+      offset += part.byteLength;
+    }
+    return merged;
+  } catch {
+    return null;
+  }
 }
 
 async function readFromOpfs(videoId: string, relativePath: string): Promise<Uint8Array | null> {
@@ -31,6 +92,12 @@ async function readFromOpfs(videoId: string, relativePath: string): Promise<Uint
   } catch {
     return null;
   }
+}
+
+async function readOfflineAsset(videoId: string, relativePath: string): Promise<Uint8Array | null> {
+  const fromOpfs = await readFromOpfs(videoId, relativePath);
+  if (fromOpfs) return fromOpfs;
+  return readFromIdb(videoId, relativePath);
 }
 
 async function serveOfflineMedia(request: Request): Promise<Response> {
@@ -55,7 +122,7 @@ async function serveOfflineMedia(request: Request): Promise<Response> {
     return new Response('Invalid path', { status: 400 });
   }
 
-  const bytes = await readFromOpfs(videoId, assetPath);
+  const bytes = await readOfflineAsset(videoId, assetPath);
   if (!bytes) return new Response('Not found', { status: 404 });
 
   const headers = new Headers({

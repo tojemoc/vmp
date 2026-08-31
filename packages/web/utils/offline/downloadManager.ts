@@ -269,7 +269,7 @@ export async function startOfflineDownload({
     });
 
     let bytesDownloaded = isResume ? (existingRecord?.bytesDownloaded ?? 0) : 0;
-    let filesCompleted = 0;
+    let filesCompleted = isResume ? (existingRecord?.filesCompleted ?? 0) : 0;
 
     for (const file of downloadableFiles) {
       controller.signal.throwIfAborted();
@@ -293,6 +293,11 @@ export async function startOfflineDownload({
         filesCompleted,
       });
     }
+
+    await patchDownload(videoId, {
+      bytesDownloaded,
+      filesCompleted: downloadableFiles.length,
+    });
 
     const generated = await buildGeneratedManifests(videoId, rendition, data.manifest.files);
     const renditionPlaylistPath = `${rendition}/offline-playlist.m3u8`;

@@ -54,6 +54,14 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 ## Backlog
 
+### Analytics & observability dedupe (`analytics-observability`)
+
+**Plan:** [docs/plans/analytics-observability.md](docs/plans/analytics-observability.md) — [#452](https://github.com/tojemoc/vmp/issues/452), [#509](https://github.com/tojemoc/vmp/issues/509), [#512](https://github.com/tojemoc/vmp/issues/512), [#611](https://github.com/tojemoc/vmp/issues/611)
+
+- [ ] Canonical tool roles (PostHog / Sentry / GTM) + privacy copy aligned
+- [ ] AbortError noise filtered from error tracking
+- [ ] CMS admin analytics expansion (views, referrer, country)
+
 ### Step 8 — Brevo newsletter sync (`step-08`)
 
 **Plan:** [docs/plans/step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md)

@@ -19,10 +19,10 @@ export const personalData: PersonalDataPage = {
       title: 'Browsing without signing in',
       paragraphs: [
         'If you only read public pages and do not sign in, we do not set an authentication cookie. Anonymous video previews are served through our API; playback position is not saved between visits.',
-        'We use privacy-oriented, cookieless pageview analytics (Umami Cloud, EU data region) to measure audience size. Umami does not set marketing cookies or cross-site identifiers in its default configuration. We rely on legitimate interest for this limited statistical purpose and you can object (see Your rights).',
-        'We also use PostHog (EU cloud) for product analytics. Until you choose in the on-site banner, PostHog does not capture events. If you accept, we use analytics cookies and may link activity to your internal account ID when signed in — we do not send your email address to PostHog. Person profiles are created only for signed-in users. If you decline, PostHog still counts visits with a privacy-preserving hash on PostHog’s servers — no analytics cookies or localStorage are stored in your browser.',
+        'We use PostHog (EU cloud) for product analytics. Until you choose in the on-site banner, PostHog does not capture events. If you accept, we use analytics cookies and may link activity to your internal account ID when signed in — we do not send your email address to PostHog. Person profiles are created only for signed-in users. If you decline, PostHog still counts visits with a privacy-preserving hash on PostHog’s servers — no analytics cookies or localStorage are stored in your browser.',
         'Our API may send technical exception events to PostHog for reliability analysis. Unauthenticated errors use a short-lived random id (not your account). Event retention follows our PostHog EU project retention settings.',
         'Separately from consent-based browser analytics, our API sends subscription lifecycle events to PostHog from payment webhooks (activation, renewal, cancellation, payment failure), keyed by your account ID only — based on our legitimate interest in operating billing reliably; declining browser analytics does not stop these server-side events.',
+        'When enabled in Admin → System, Google Tag Manager may load additional marketing or measurement tags you configure there. GTM is off by default.',
       ],
     },
     {
@@ -31,7 +31,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Certain features only work if the browser stores a small amount of data. These are strictly necessary for the feature you request — not for advertising or profiling.',
         'By signing in, subscribing, enabling notifications, installing the web app, or changing playback speed, you use features that require the storage listed in the table below. You can avoid most of this storage by not using those features (for example, stay logged out and do not change player settings).',
-        'We do not use your interaction as consent to unrelated marketing trackers. Optional advertising tools that are not strictly necessary would require consent first. Full PostHog product analytics (cookies, account linking) requires your explicit consent in the banner. If you decline, only privacy-preserving visit counts without browser storage are collected.',
+        'We do not use your interaction as consent to unrelated marketing trackers. Optional advertising tools that are not strictly necessary require consent first — including tags loaded through Google Tag Manager when an administrator enables it. Full PostHog product analytics (cookies, account linking) requires your explicit consent in the banner. If you decline, only privacy-preserving visit counts without browser storage are collected.',
       ],
     },
     {
@@ -47,12 +47,12 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
         'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
-        'Other processors include: Umami Cloud (EU) for anonymous statistics; PostHog (EU) for product analytics (full tracking after consent, or cookieless visit counts if you decline; signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API. Payment and email processing happen only when you use those features.',
+        'Other processors include: PostHog (EU) for product analytics (full tracking after consent, or cookieless visit counts if you decline; signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API; Google Tag Manager when enabled by administrators (may load additional tags configured in the container). Payment and email processing happen only when you use those features.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, security (global edge)',
-        'Umami Cloud (EU region) — cookieless pageview statistics',
         'PostHog (EU cloud) — product analytics (full after consent, or cookieless counts if declined)',
+        'Google Tag Manager — optional marketing/measurement tags when enabled in Admin',
         'Stripe — payment processing when you subscribe',
         'Brevo — magic-link and account email',
         'Sentry — error and stability monitoring (technical logs)',

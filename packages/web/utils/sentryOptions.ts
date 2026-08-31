@@ -1,5 +1,7 @@
 import type { ErrorEvent, Log } from '@sentry/core';
 
+import { isBenignAbortError } from '~/utils/analytics/noiseFilter';
+
 const SENSITIVE_KEYS = new Set([
   'authorization',
   'cookie',
@@ -76,7 +78,7 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
     tracesSampleRate: number;
     environment?: string;
     enableLogs: boolean;
-    beforeSend?: (event: ErrorEvent) => ErrorEvent | null;
+    beforeSend?: (event: ErrorEvent, hint?: { originalException?: unknown }) => ErrorEvent | null;
     beforeSendLog?: (log: Log) => Log | null;
   } = {
     dsn: config.dsn,
@@ -88,7 +90,10 @@ export function buildSentryInitOptions(config: SentryPublicConfig) {
     options.environment = config.environment;
   }
 
-  options.beforeSend = (event) => {
+  options.beforeSend = (event, hint) => {
+    if (isBenignAbortError(hint?.originalException)) {
+      return null;
+    }
     const message = getSentryErrorMessage(event);
     if (isViteLocaleTransformNoise(message) || isDevEphemeralReferenceNoise(message)) {
       return null;
