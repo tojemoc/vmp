@@ -97,7 +97,7 @@
   // content was deleted and invites search engines to drop a valid URL.
   if (error.value) {
     const status = httpStatusFromError(error.value);
-    if (status !== null && status < 500) {
+    if (status !== null && status >= 400 && status < 500) {
       throwPageNotFound();
     }
     if (import.meta.server) {
