@@ -77,7 +77,7 @@ function recurrenceForPlan(planType: PlanType): {
   recurrence_period: number;
   recurrence_date_to: string;
 } {
-  // Club is yearly billing (12-month cycle) with higher price and extra VMP entitlements.
+  // Club bills yearly on GoPay (12-month recurrence) but keeps planType=club for VMP entitlements.
   const period = planType === 'monthly' ? 1 : 12;
   return {
     recurrence_cycle: 'MONTH',
