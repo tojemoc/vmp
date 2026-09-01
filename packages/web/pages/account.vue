@@ -671,6 +671,18 @@
   const stripeCompletionError = ref<string | null>(null);
   const legacyCompletionError = ref<string | null>(null);
 
+  // GoPay and Comgate redirect back with a marker query param; activation is
+  // webhook-driven, so the return handler only records the visit and polls.
+  const returningFromGoPay = computed(() => route.query.gopay === 'return');
+  const returningFromComgate = computed(() => route.query.comgate === 'return');
+
+  async function clearRedirectReturnQuery(keys: string[]) {
+    const extraQuery: Record<string, string> = { subscribed: '1' };
+    const nextQuery = { ...route.query, ...extraQuery };
+    for (const key of keys) delete nextQuery[key];
+    await navigateTo({ path: route.path, query: nextQuery }, { replace: true });
+  }
+
   const showTotpDisable = ref(false);
   const totpDisableCode = ref('');
   const totpDisabling = ref(false);
@@ -757,9 +769,25 @@
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;
       }
+    } else if (returningFromGoPay.value) {
+      showWelcomeBanner.value = true;
+      // Return-URL visit only — conversion SoT is API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'gopay' });
+      await clearRedirectReturnQuery(['gopay']);
+    } else if (returningFromComgate.value) {
+      showWelcomeBanner.value = true;
+      // Return-URL visit only — conversion SoT is API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'comgate' });
+      await clearRedirectReturnQuery(['comgate', 'refId', 'transId']);
     }
 
-    if (showWelcomeBanner.value || returningFromStripe.value || returningFromLegacy.value) {
+    if (
+      showWelcomeBanner.value ||
+      returningFromStripe.value ||
+      returningFromLegacy.value ||
+      returningFromGoPay.value ||
+      returningFromComgate.value
+    ) {
       // After checkout redirect the webhook may not have fired yet.
       // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
       const MAX_ATTEMPTS = 5;

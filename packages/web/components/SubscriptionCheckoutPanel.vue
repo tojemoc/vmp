@@ -290,6 +290,7 @@
 </template>
 
 <script setup lang="ts">
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   const props = withDefaults(
@@ -845,6 +846,10 @@
         checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: selectedPlan.value,
+        provider: 'gopay',
+      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;
@@ -879,6 +884,10 @@
         checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: selectedPlan.value,
+        provider: 'comgate',
+      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;

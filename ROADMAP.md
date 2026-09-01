@@ -39,23 +39,21 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 ## In progress
 
-| ID | Item | PR / branch |
-|----|------|-------------|
-| `payments-gopay-comgate` | GoPay + Comgate draft providers ([#648](https://github.com/tojemoc/vmp/issues/648)) | [PR #499](https://github.com/tojemoc/vmp/pull/499) (supersedes closed #442) |
-
-### `payments-gopay-comgate` sub-items
-
-- [ ] Provider registry + admin pricing
-- [ ] Comgate first-checkout identity + renewals
-- [ ] GoPay redirect checkout + recurrence
-- [ ] Qerko legacy club → `subscriptionType: club` (not yearly)
-- [ ] Production hardening + maintainer sign-off
-
-*Check off sub-items and add the merged PR link when [PR #499](https://github.com/tojemoc/vmp/pull/499) lands on `main`.*
+_Nothing in progress._
 
 ---
 
 ## Backlog
+
+### GoPay + Comgate production hardening (`payments-gopay-comgate`)
+
+GoPay and Comgate providers shipped in [PR #499](https://github.com/tojemoc/vmp/pull/499) ([#648](https://github.com/tojemoc/vmp/issues/648)). Checkout analytics now cover both redirect paths. Production hardening and maintainer sign-off remain.
+
+- [x] Provider registry + admin pricing ([#499](https://github.com/tojemoc/vmp/pull/499))
+- [x] Comgate first-checkout identity + renewals ([#499](https://github.com/tojemoc/vmp/pull/499))
+- [x] GoPay redirect checkout + recurrence ([#499](https://github.com/tojemoc/vmp/pull/499))
+- [x] Qerko legacy club → `subscriptionType: club` (not yearly) ([#499](https://github.com/tojemoc/vmp/pull/499))
+- [ ] Production hardening + maintainer sign-off
 
 ### CMS admin analytics (`analytics-observability-cms`)
 
