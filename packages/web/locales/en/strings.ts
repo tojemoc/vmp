@@ -313,6 +313,13 @@ export const strings: StringsDefinition = {
   podcastRssTitle: 'Podcast RSS',
   podcastRssIntro: 'Use your personal URL in your podcast app for full episodes while subscribed.',
   podcastRssPersonalLabel: 'Your personal URL',
+  marketingConsentTitle: 'Newsletter',
+  marketingConsentIntro:
+    'We only send marketing email to people who ask for it. A paid subscription does not add you to our newsletter.',
+  marketingConsentLabel: 'Send me the newsletter and product news by email.',
+  marketingConsentSaved: 'Your preference is saved.',
+  marketingConsentLoadFailed: 'Could not load your newsletter preference.',
+  marketingConsentSaveFailed: 'Could not save your newsletter preference.',
   continueWatchingTitle: 'Continue watching',
   continueWatchingIntro:
     'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',

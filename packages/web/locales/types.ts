@@ -283,6 +283,12 @@ export type StringsDefinition = {
   podcastRssTitle: string;
   podcastRssIntro: string;
   podcastRssPersonalLabel: string;
+  marketingConsentTitle: string;
+  marketingConsentIntro: string;
+  marketingConsentLabel: string;
+  marketingConsentSaved: string;
+  marketingConsentLoadFailed: string;
+  marketingConsentSaveFailed: string;
   copy: string;
   copied: string;
   rssLoadFailed: string;

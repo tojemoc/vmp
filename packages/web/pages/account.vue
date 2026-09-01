@@ -185,11 +185,9 @@
               class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
               :class="statusBadgeClass(subscription.status, subscription.cancelAtPeriodEnd)"
             >
-              {{
-                subscription.cancelAtPeriodEnd
+              {{ subscription.cancelAtPeriodEnd
                   ? strings.subscriptionCanceling
-                  : subscription.status
-              }}
+                  : subscription.status }}
             </span>
           </div>
 
@@ -223,11 +221,11 @@
               @click="openPortal"
             >
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
-              <span v-else>{{
-                subscription.cancelAtPeriodEnd
+              <span v-else
+                >{{ subscription.cancelAtPeriodEnd
                   ? strings.resumeSubscription
-                  : strings.manageSubscription
-              }}</span>
+                  : strings.manageSubscription }}</span
+              >
             </button>
             <a
               v-if="showLegacyManageButton && legacyManageUrl"
@@ -261,11 +259,9 @@
             {{ strings.continueWatchingTitle }}
           </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {{
-              continueWatchingDeletionOnly
+            {{ continueWatchingDeletionOnly
                 ? strings.continueWatchingIntroLapsed
-                : strings.continueWatchingIntro
-            }}
+                : strings.continueWatchingIntro }}
           </p>
         </div>
 
@@ -346,18 +342,13 @@
               :disabled="removingVideoId != null"
               @click="removeContinueWatchingItem(item.videoId)"
             >
-              {{
-                removingVideoId === item.videoId
+              {{ removingVideoId === item.videoId
                   ? strings.continueWatchingRemoving
-                  : strings.continueWatchingRemove
-              }}
+                  : strings.continueWatchingRemove }}
             </button>
           </li>
         </ul>
-        <p
-          v-if="continueWatchingHasMore"
-          class="text-xs text-gray-500 dark:text-gray-400"
-        >
+        <p v-if="continueWatchingHasMore" class="text-xs text-gray-500 dark:text-gray-400">
           {{ strings.continueWatchingTruncated }}
         </p>
       </div>
@@ -405,6 +396,45 @@
             </div>
             <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
           </div>
+        </template>
+      </div>
+
+      <!-- Marketing consent card (opt-in to the newsletter) -->
+      <div
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.marketingConsentTitle }}
+          </h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ strings.marketingConsentIntro }}
+          </p>
+        </div>
+
+        <div v-if="loadingConsent" class="space-y-2">
+          <div class="h-4 w-3/4 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
+        </div>
+        <template v-else>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+              :checked="marketingConsent"
+              :disabled="savingConsent"
+              @change="onToggleMarketingConsent(($event.target as HTMLInputElement).checked)"
+            >
+            <span class="text-sm text-gray-700 dark:text-gray-200">
+              {{ strings.marketingConsentLabel }}
+            </span>
+          </label>
+          <p v-if="consentError" class="text-sm text-red-600 dark:text-red-400">
+            {{ consentError }}
+          </p>
+          <p v-else-if="consentSaved" class="text-xs text-green-600 dark:text-green-400">
+            {{ strings.marketingConsentSaved }}
+          </p>
         </template>
       </div>
 
@@ -711,6 +741,12 @@
   const rssPersonalUrl = ref('');
   const copiedWhich = ref<'personal' | null>(null);
 
+  const loadingConsent = ref(true);
+  const savingConsent = ref(false);
+  const consentError = ref<string | null>(null);
+  const consentSaved = ref(false);
+  const marketingConsent = ref(false);
+
   type ContinueWatchingItem = {
     videoId: string;
     title: string;
@@ -776,8 +812,10 @@
 
     await fetchRssUrls();
     if (isLoggedIn.value) {
+      await fetchMarketingConsent();
       await fetchContinueWatching();
     } else {
+      loadingConsent.value = false;
       loadingContinueWatching.value = false;
     }
   });
@@ -850,6 +888,53 @@
       rssError.value = strings.rssLoadNetworkError;
     } finally {
       loadingRss.value = false;
+    }
+  }
+
+  async function fetchMarketingConsent() {
+    loadingConsent.value = true;
+    consentError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/marketing-consent`, {
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        consentError.value = data.error ?? strings.marketingConsentLoadFailed;
+        return;
+      }
+      marketingConsent.value = data.consented === true;
+    } catch {
+      consentError.value = strings.marketingConsentLoadFailed;
+    } finally {
+      loadingConsent.value = false;
+    }
+  }
+
+  async function onToggleMarketingConsent(next: boolean) {
+    savingConsent.value = true;
+    consentError.value = null;
+    consentSaved.value = false;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/marketing-consent`, {
+        method: 'PUT',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ consent: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        consentError.value = data.error ?? strings.marketingConsentSaveFailed;
+        return;
+      }
+      marketingConsent.value = data.consented === true;
+      consentSaved.value = true;
+      capturePostHogEvent('marketing_consent_changed', { consent: marketingConsent.value });
+    } catch {
+      consentError.value = strings.marketingConsentSaveFailed;
+    } finally {
+      savingConsent.value = false;
     }
   }
 

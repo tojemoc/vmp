@@ -141,7 +141,14 @@ async function brevoFetch(path: any, options = {}, env: any) {
 }
 
 /**
- * Sync newsletter membership from a subscription status (any payment provider).
+ * React to a subscription status change (any payment provider).
+ *
+ * Newsletter membership is driven only by explicit marketing consent, not by
+ * billing status. A billing transition never adds an un-consented user and never
+ * removes a consented one, so cancellation is a billing event, not a list
+ * removal. This only refreshes the contact for a consented, active subscriber;
+ * syncPayingSubscriberToNewsletter itself no-ops when consent is absent.
+ * Removal happens only when the user withdraws consent.
  */
 export async function syncNewsletterForSubscription(
   db: any,
@@ -152,8 +159,6 @@ export async function syncNewsletterForSubscription(
   const paying = ['active', 'trialing'].includes(subscriptionStatus);
   if (paying) {
     await syncPayingSubscriberToNewsletter(db, userId, env);
-  } else {
-    await removeSubscriberFromNewsletter(db, userId, env);
   }
 }
 
@@ -168,8 +173,35 @@ export async function syncNewsletterForStripeSubscription(
 }
 
 /**
- * Add or update a user in the Brevo subscriber list (paying subscribers).
- * Returns true if the remote API call succeeded, false otherwise.
+ * Whether a contact may be added to the marketing list without overriding a
+ * Brevo-side opt-out. Returns false only when Brevo confirms the contact is
+ * blacklisted (unsubscribed). A 404 means the contact is unknown, so adding is
+ * safe. Any other non-ok response fails closed (returns false), so a transient
+ * Brevo error can never silently re-add a contact that opted out.
+ */
+async function brevoContactAllowsAdd(email: any, env: any): Promise<boolean> {
+  const res = await brevoFetch(`/contacts/${encodeURIComponent(email)}`, { method: 'GET' }, env);
+  if (res.status === 404) return true;
+  if (!res.ok) {
+    const err = asRecord(await res.json().catch(() => null));
+    newsletterLog('suppression_check_failed', {
+      status: res.status,
+      code: recordString(err, 'code'),
+    });
+    return false;
+  }
+  const data = asRecord(await res.json().catch(() => null));
+  return data.emailBlacklisted !== true;
+}
+
+/**
+ * Add or update a consented subscriber in the Brevo marketing list.
+ *
+ * No-ops (returns false) unless the user has recorded explicit marketing
+ * consent, and honors Brevo's suppression state instead of overriding it, so a
+ * paid subscription never lands a user on the marketing list and a Brevo
+ * unsubscribe is never silently overwritten. Returns true only when the remote
+ * add succeeds.
  */
 export async function syncPayingSubscriberToNewsletter(
   db: any,
@@ -185,9 +217,21 @@ export async function syncPayingSubscriberToNewsletter(
       : NaN;
   if (!Number.isFinite(listId) || listId <= 0) return false;
 
-  const row = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first();
+  // One round-trip for both gates: GDPR consent (a paid subscription is not
+  // consent) and the email to sync.
+  const row = await db
+    .prepare('SELECT email, marketing_consent_at FROM users WHERE id = ? LIMIT 1')
+    .bind(userId)
+    .first();
+  if (!row?.marketing_consent_at) return false;
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
   if (!email || !EMAIL_RE.test(email)) return false;
+
+  if (!(await brevoContactAllowsAdd(email, env))) {
+    const userIdHash = await hashUserId(userId);
+    newsletterLog('sync_skipped_suppressed', { userIdHash });
+    return false;
+  }
 
   const body = {
     email,
@@ -223,29 +267,28 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
     throw new Error('Brevo subscriber list ID is not configured or invalid');
   }
 
-  const payingSubscriberRows = await db
+  // Consent, not billing status, decides list membership. Reconciling on consent
+  // also removes anyone a previous billing-driven sync wrongly added.
+  const consentedRows = await db
     .prepare(`
-    SELECT DISTINCT s.user_id AS id
-    FROM subscriptions s
-    WHERE s.status IN ('active', 'trialing')
-      AND (s.current_period_end IS NULL OR datetime(s.current_period_end) > CURRENT_TIMESTAMP)
+    SELECT id
+    FROM users
+    WHERE marketing_consent_at IS NOT NULL
   `)
     .all();
 
-  const payingSubscriberIds = (payingSubscriberRows?.results ?? [])
-    .map((r: any) => r.id)
-    .filter(Boolean);
+  const consentedUserIds = (consentedRows?.results ?? []).map((r: any) => r.id).filter(Boolean);
   let synced = 0;
-  for (const userId of payingSubscriberIds) {
+  for (const userId of consentedUserIds) {
     const success = await syncPayingSubscriberToNewsletter(db, userId, env);
     if (success) synced += 1;
   }
 
   const eligibleEmails = new Set<string>();
-  if (payingSubscriberIds.length) {
+  if (consentedUserIds.length) {
     const BATCH_SIZE = 500;
-    for (let i = 0; i < payingSubscriberIds.length; i += BATCH_SIZE) {
-      const chunk = payingSubscriberIds.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < consentedUserIds.length; i += BATCH_SIZE) {
+      const chunk = consentedUserIds.slice(i, i + BATCH_SIZE);
       const placeholders = chunk.map(() => '?').join(',');
       const eligibleRows = await db
         .prepare(`SELECT email FROM users WHERE id IN (${placeholders})`)

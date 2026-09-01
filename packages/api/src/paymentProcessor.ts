@@ -3,7 +3,7 @@
  */
 
 import { requireAuth, requireRole } from './auth.js';
-import { removeSubscriberFromNewsletter, syncNewsletterForSubscription } from './brevo.js';
+import { syncNewsletterForSubscription } from './brevo.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
@@ -1465,15 +1465,9 @@ export async function handleWebhook(
         const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
         await updateSubscriptionStatusByProviderRef(db, normalizedEvent, nextStatus);
         if (userId) {
-          try {
-            await removeSubscriberFromNewsletter(db, userId, env);
-          } catch (brevoErr) {
-            console.error('[payments webhook] removeSubscriberFromNewsletter failed', {
-              fn: 'removeSubscriberFromNewsletter',
-              userId,
-              err: brevoErr,
-            });
-          }
+          // Marketing list membership is consent-driven, so cancellation is a
+          // billing transition, not a list removal. The user stays on the list
+          // until they withdraw consent.
           try {
             // Intentional grace period: past_due keeps offline licenses through Stripe
             // smart-retries / Qerko retry windows; revoke only on cancellation.
@@ -1610,13 +1604,6 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
 
     if (event.type === 'payment.failed' || event.type === 'subscription.past_due') {
       if (subscriptionId) {
-        const existing = await db
-          .prepare(
-            `SELECT user_id FROM subscriptions
-             WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
-          )
-          .bind(subscriptionId)
-          .first();
         await db
           .prepare(
             `UPDATE subscriptions
@@ -1625,16 +1612,8 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           )
           .bind(subscriptionId)
           .run();
-        if (existing?.user_id) {
-          try {
-            await removeSubscriberFromNewsletter(db, existing.user_id, env);
-          } catch (brevoErr) {
-            console.error('[gopay webhook] newsletter remove failed', {
-              userId: existing.user_id,
-              err: brevoErr,
-            });
-          }
-        }
+        // Marketing list membership is consent-driven; a past_due transition
+        // never removes the user from the list.
       }
       return jsonResponse({ ok: true }, 200, corsHeaders);
     }
@@ -1657,14 +1636,8 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           .bind(subscriptionId)
           .run();
         if (row?.user_id) {
-          try {
-            await removeSubscriberFromNewsletter(db, row.user_id, env);
-          } catch (brevoErr) {
-            console.error('[gopay webhook] newsletter remove failed', {
-              userId: row.user_id,
-              err: brevoErr,
-            });
-          }
+          // Marketing list membership is consent-driven; cancellation does not
+          // remove the user from the list.
           try {
             await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
           } catch (offlineErr) {
@@ -1816,13 +1789,6 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
     // immediate cancellation. Offline licenses stay valid until actual cancellation.
     if (event.type === 'payment.failed') {
       if (subscriptionId) {
-        const existing = await db
-          .prepare(
-            `SELECT user_id FROM subscriptions
-             WHERE provider = 'comgate' AND provider_subscription_id = ? LIMIT 1`,
-          )
-          .bind(subscriptionId)
-          .first();
         await db
           .prepare(
             `UPDATE subscriptions
@@ -1833,16 +1799,8 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
           )
           .bind(subscriptionId)
           .run();
-        if (existing?.user_id) {
-          try {
-            await removeSubscriberFromNewsletter(db, existing.user_id, env);
-          } catch (brevoErr) {
-            console.error('[comgate webhook] newsletter remove failed', {
-              userId: existing.user_id,
-              err: brevoErr,
-            });
-          }
-        }
+        // Marketing list membership is consent-driven; a past_due transition
+        // never removes the user from the list.
       }
     }
 

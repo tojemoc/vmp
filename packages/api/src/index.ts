@@ -17,6 +17,10 @@ import {
 } from '@vmp/shared';
 import type { ObjectStorageProvider } from '@vmp/storage/worker';
 import {
+  handleGetAccountMarketingConsent,
+  handlePutAccountMarketingConsent,
+} from './accountMarketingConsent.js';
+import {
   ensurePillsApiKeySetting,
   handleAdminAnalytics,
   handleAdminPillImageUpload,
@@ -159,8 +163,8 @@ import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
-  resolvePostHogLogTracingContext,
   redactPathForAnalytics,
+  resolvePostHogLogTracingContext,
 } from './posthog.js';
 import {
   handleAdminIsicCampaigns,
@@ -1101,6 +1105,12 @@ const workerHandler = {
         }
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/marketing-consent' && request.method === 'GET') {
+          return handleGetAccountMarketingConsent(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/marketing-consent' && request.method === 'PUT') {
+          return handlePutAccountMarketingConsent(request, env, corsHeaders);
         }
         if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
           return handleListPlaybackPositions(request, env, corsHeaders);
