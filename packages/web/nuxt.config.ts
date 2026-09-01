@@ -203,9 +203,9 @@ export default defineNuxtConfig({
       /** Full git SHA baked in at build time (staging footer shows short form). */
       gitCommit: buildInfo.gitCommit,
       gitRepoUrl: buildInfo.gitRepoUrl,
-      /** Baked PostHog project token — override via NUXT_PUBLIC_POSTHOG_PUBLIC_KEY (or KEY / PROJECT_TOKEN aliases). */
+      /** Baked PostHog project token — only when `posthog` is in VMP_FEATURES. */
       posthog: {
-        publicKey: posthogPublicKey,
+        publicKey: posthogEnabled ? posthogPublicKey : '',
         host: posthogHost,
       },
       /** Compile-time feature module allowlist (`VMP_FEATURES`). See docs/plans/deployment-feature-modules.md */

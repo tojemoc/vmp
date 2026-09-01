@@ -21,9 +21,14 @@ type RuntimePostHogConfig = {
   publicKey?: string;
 };
 
+type DeploymentFeatureRuntimeState = {
+  compiled?: boolean;
+};
+
 type RuntimeConfigLike = {
   public?: {
     posthog?: RuntimePostHogConfig;
+    deploymentFeatures?: Record<string, DeploymentFeatureRuntimeState>;
   };
 };
 
@@ -35,6 +40,18 @@ export function resolvePostHogPublicKeyFromRuntimeConfig(
   return typeof fromRuntime === 'string' ? fromRuntime.trim() : '';
 }
 
+/** True when the `posthog` module is in this deployment's VMP_FEATURES allowlist. */
+export function isPostHogDeploymentFeatureCompiled(config: RuntimeConfigLike): boolean {
+  const features = config.public?.deploymentFeatures;
+  if (!features) return true;
+  return features.posthog?.compiled === true;
+}
+
+/**
+ * PostHog is active for this deployment: project token is baked **and** the
+ * `posthog` feature module is compiled into the build (`VMP_FEATURES`).
+ */
 export function isPostHogConfigured(config: RuntimeConfigLike): boolean {
+  if (!isPostHogDeploymentFeatureCompiled(config)) return false;
   return resolvePostHogPublicKeyFromRuntimeConfig(config).length > 0;
 }
