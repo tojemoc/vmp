@@ -263,7 +263,7 @@ jobs:
         run: npx expo prebuild --platform ios --clean --no-install
 
       - name: Install CocoaPods dependencies
-        run: npx pod-install
+        run: npx --no-install pod-install
 
       - name: Build unsigned iOS app
         run: |
