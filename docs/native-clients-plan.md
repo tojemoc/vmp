@@ -2,6 +2,9 @@
 
 Living plan for store apps that sit beside the existing Nuxt PWA (`@vmp/web`). The PWA remains the web product; native clients solve iOS protocol handoff, reliable push, offline downloads, and TV surfaces.
 
+**Roadmap:** [ROADMAP.md](../ROADMAP.md) → *Native / TV clients* (`native-clients`)  
+**Issue:** [#647](https://github.com/tojemoc/vmp/issues/647)
+
 ## Goals
 
 1. **Working protocol handoff on phone/tablet** — magic-link email opens the installed app and establishes a session. No iOS PWA “notification login” (`pwa-push-login`).

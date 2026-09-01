@@ -1,6 +1,7 @@
 # Club plan entitlements
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Club plan entitlements*  
+**Issue:** [#649](https://github.com/tojemoc/vmp/issues/649)  
 **Status:** Not started (product spec; partial billing support exists)
 
 ## Product definition (360tka.sk / Stargaze heritage)
