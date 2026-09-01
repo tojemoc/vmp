@@ -6,19 +6,26 @@
  *
  * Token format:
  *   base64url(payload) + "." + hex(HMAC-SHA256(base64url(payload)))
- * where payload = "<userId>:<videoId>:<unixExpires>:<previewUntilSecondsOrEmpty>"
+ * where payload = "<userId>:<videoId>:<unixExpires>:<previewUntilSecondsOrEmpty>[:<rssTokenVersion>]"
+ * The optional rssTokenVersion suffix binds RSS-issued tokens to the user's current
+ * rss_token_version so rotation invalidates outstanding podcast enclosure URLs.
  */
 
+import { normalizeRssTokenVersion, type RssTokenVersionLookup } from './rssToken.js';
+
+/** Encode a string as base64url (no padding). */
 function b64urlEncode(str: string): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+/** Decode a base64url string (restores padding if omitted). */
 function b64urlDecode(b64url: string): string {
   const padded =
     b64url.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice(0, (4 - (b64url.length % 4)) % 4);
   return atob(padded);
 }
 
+/** Import the video token secret as an HMAC-SHA256 key for signing and verification. */
 async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
@@ -31,8 +38,49 @@ async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
 
 interface SignVideoTokenOptions {
   ttlSeconds?: number;
+  rssTokenVersion?: number;
 }
 
+/** Default web playback token TTL; RSS enclosures use a much longer TTL. */
+export const WEB_VIDEO_TOKEN_MAX_TTL_SECONDS = 7200;
+
+export interface VideoTokenClaims {
+  userId: string;
+  videoId: string;
+  expires: number;
+  previewUntil: number | null;
+  rssTokenVersion: number | null;
+}
+
+export type VideoTokenRssVersionCheck = 'ok' | 'forbidden' | 'unavailable';
+
+/** True when a signed token lacks rss_token_version but has RSS-length TTL. */
+export function isLegacyRssVideoTokenWithoutVersion(claims: VideoTokenClaims): boolean {
+  if (claims.userId === 'anonymous' || claims.rssTokenVersion !== null) return false;
+  const ttlRemaining = claims.expires - Math.floor(Date.now() / 1000);
+  return ttlRemaining > WEB_VIDEO_TOKEN_MAX_TTL_SECONDS;
+}
+
+/**
+ * Check if a video token's RSS version matches the user's current version.
+ * Returns 'forbidden' if the token is stale or a legacy long-TTL token without version binding.
+ */
+export function checkVideoTokenRssVersion(
+  claims: VideoTokenClaims,
+  lookup: RssTokenVersionLookup,
+): VideoTokenRssVersionCheck {
+  if (claims.userId === 'anonymous') return 'ok';
+  if (!lookup.ok) return 'unavailable';
+  if (claims.rssTokenVersion !== null) {
+    return lookup.version === claims.rssTokenVersion ? 'ok' : 'forbidden';
+  }
+  return isLegacyRssVideoTokenWithoutVersion(claims) ? 'forbidden' : 'ok';
+}
+
+/**
+ * Sign a video access token with optional preview cap and RSS version binding.
+ * Returns a base64url payload and hex HMAC signature joined by a dot.
+ */
 export async function signVideoToken(
   userId: string,
   videoId: string,
@@ -46,13 +94,21 @@ export async function signVideoToken(
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds;
   const previewUntilStr =
     previewUntil !== null && Number.isFinite(previewUntil) ? String(previewUntil) : '';
-  const payload = b64urlEncode(`${userId}:${videoId}:${expires}:${previewUntilStr}`);
+  let payloadPlain = `${userId}:${videoId}:${expires}:${previewUntilStr}`;
+  if (opts.rssTokenVersion !== undefined) {
+    payloadPlain += `:${normalizeRssTokenVersion(opts.rssTokenVersion)}`;
+  }
+  const payload = b64urlEncode(payloadPlain);
   const key = await importVideoHmacKey(secret);
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
   const sigHex = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
   return `${payload}.${sigHex}`;
 }
 
+/**
+ * Verify a video token's HMAC signature and parse its claims.
+ * Throws on malformed tokens, invalid signatures, or expiration.
+ */
 export async function verifyVideoToken(token: string, secret: string) {
   if (!token || typeof token !== 'string') throw new Error('Missing video token');
   const dotIndex = token.lastIndexOf('.');
@@ -100,7 +156,14 @@ export async function verifyVideoToken(token: string, secret: string) {
   const previewUntil =
     previewUntilRaw !== null && Number.isFinite(previewUntilRaw) ? previewUntilRaw : null;
 
+  let rssTokenVersion: number | null = null;
+  if (parts.length >= 5 && parts[4] !== undefined && parts[4] !== '') {
+    const parsedVersion = parseInt(parts[4], 10);
+    if (!Number.isFinite(parsedVersion)) throw new Error('Malformed video token payload');
+    rssTokenVersion = normalizeRssTokenVersion(parsedVersion);
+  }
+
   if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired');
 
-  return { userId, videoId, expires, previewUntil };
+  return { userId, videoId, expires, previewUntil, rssTokenVersion } satisfies VideoTokenClaims;
 }

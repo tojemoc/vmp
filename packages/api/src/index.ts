@@ -76,7 +76,7 @@ import {
   handleCmsPagesList,
   handleCmsPageUnpublish,
 } from './cmsPages.js';
-import { applySessionBookmark, getReadSession } from './d1Session.js';
+import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
 import {
   handleAccountInvoices,
   handleAdminEInvoiceById,
@@ -199,7 +199,8 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
-import { handleGetAccountRss } from './rssAccount.js';
+import { handleGetAccountRss, handleRotateAccountRss } from './rssAccount.js';
+import { readRssTokenVersion } from './rssToken.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
   handleRssPodcastPreviewRebuildNotify,
@@ -217,7 +218,7 @@ import {
   handleThumbnailUpload,
   THUMBNAIL_CACHE_CONTROL,
 } from './thumbnails.js';
-import { signVideoToken, verifyVideoToken } from './videoTokens.js';
+import { checkVideoTokenRssVersion, signVideoToken, verifyVideoToken } from './videoTokens.js';
 import { sendPushNotification } from './webpush.js';
 
 type CorsHeaders = Record<string, string>;
@@ -1113,6 +1114,9 @@ const workerHandler = {
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
+          return handleRotateAccountRss(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
           return handleListPlaybackPositions(request, env, corsHeaders);
         }
@@ -1908,6 +1912,26 @@ async function handleVideoProxy(
       status: 403,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
+  }
+
+  // RSS-issued tokens carry rss_token_version; reject stale or legacy unbound tokens.
+  if (tokenClaims && tokenClaims.userId !== 'anonymous') {
+    const versionLookup = await readRssTokenVersion(getDb(env), tokenClaims.userId);
+    const versionCheck = checkVideoTokenRssVersion(tokenClaims, versionLookup);
+    if (versionCheck === 'unavailable') {
+      return jsonResponse(
+        { error: 'Video playback temporarily unavailable', code: 'video_auth_unavailable' },
+        503,
+        corsHeaders,
+      );
+    }
+    if (versionCheck === 'forbidden') {
+      return jsonResponse(
+        { error: 'Invalid or expired video token', code: 'video_token_invalid' },
+        403,
+        corsHeaders,
+      );
+    }
   }
 
   // Enforce previewUntil from token claims

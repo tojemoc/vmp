@@ -7,6 +7,7 @@ const KNOWN_ABORT_MESSAGES = new Set([
   'The user aborted a request.',
 ]);
 
+/** Check if a message matches a known browser/runtime abort message. */
 function isExplicitAbortMessage(message: unknown): boolean {
   return typeof message === 'string' && KNOWN_ABORT_MESSAGES.has(message);
 }
@@ -23,6 +24,7 @@ export function isBenignAbortError(error: unknown): boolean {
   return false;
 }
 
+/** Check if a PostHog exception list item represents an abort error. */
 function isPostHogAbortExceptionItem(record: Record<string, unknown>): boolean {
   const type = String(record.type ?? '');
   const value = String(record.value ?? '');

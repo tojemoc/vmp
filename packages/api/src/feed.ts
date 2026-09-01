@@ -13,10 +13,11 @@ import { buildProxyPlaylistUrl, resolveMediaEntrypointUrl } from './mediaEntrypo
 import { needsPodcastPreviewMp3 } from './podcastPreview.js';
 import { getRequestPublicOrigin } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
-import { computeRssTokenHex } from './rssToken.js';
+import { computeRssTokenHex, normalizeRssTokenVersion } from './rssToken.js';
 import { getSetting } from './settingsStore.js';
 import { signVideoToken } from './videoTokens.js';
 
+/** Escape text for safe inclusion in XML attributes and elements. */
 function xmlEscape(text: any) {
   if (text == null) return '';
   return String(text)
@@ -27,6 +28,7 @@ function xmlEscape(text: any) {
     .replace(/'/g, '&apos;');
 }
 
+/** Convert an ISO-like date to RFC-2822 format for RSS pubDate. */
 function toRfc2822Date(isoLike: any) {
   try {
     const d = isoLike ? new Date(isoLike) : new Date();
@@ -37,6 +39,7 @@ function toRfc2822Date(isoLike: any) {
   }
 }
 
+/** Format duration in seconds as an iTunes duration string (H:MM:SS or M:SS). */
 function secondsToItunesDuration(seconds: any) {
   const s = Number.parseInt(String(seconds ?? 0), 10);
   if (!Number.isFinite(s) || s <= 0) return '0:00';
@@ -47,14 +50,17 @@ function secondsToItunesDuration(seconds: any) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+/** Extract a string error message from any thrown value. */
 function getErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Escape CDATA end markers so text can be safely wrapped in CDATA sections. */
 function cdataSafe(text: unknown): string {
   return String(text ?? '').replaceAll(']]>', ']]]]><![CDATA[>');
 }
 
+/** Infer the MIME type of an enclosure from its URL file extension. */
 function inferEnclosureContentType(enclosureUrl: unknown) {
   const pathname = (() => {
     const normalizedUrl = String(enclosureUrl ?? '');
@@ -69,6 +75,7 @@ function inferEnclosureContentType(enclosureUrl: unknown) {
   return 'application/octet-stream';
 }
 
+/** Transform an image URL to a 1400x1400 square via Cloudflare Image Resizing. */
 function buildSquareCoverImageUrl(imageUrl: unknown) {
   const normalized = String(imageUrl ?? '').trim();
   if (!normalized) return null;
@@ -82,6 +89,7 @@ function buildSquareCoverImageUrl(imageUrl: unknown) {
   }
 }
 
+/** Build the frontend favicon URL as a fallback channel image. */
 function buildFeedFaviconUrl(request: any, env: any) {
   const requestOrigin = getRequestPublicOrigin(request, env);
   const rawOrigin = String(env.FRONTEND_URL || requestOrigin);
@@ -93,6 +101,7 @@ function buildFeedFaviconUrl(request: any, env: any) {
   return `${frontendOrigin}/favicon.ico`;
 }
 
+/** Build a complete RSS 2.0 XML document with iTunes podcast extensions. */
 function buildRssXml({ channel, items }: any) {
   const itunesNs = 'http://www.itunes.com/dtds/podcast-1.0.dtd';
   return [
@@ -127,6 +136,7 @@ function buildRssXml({ channel, items }: any) {
     .join('\n');
 }
 
+/** Query all published videos, falling back to legacy visibility column if publish_status is unavailable. */
 async function listPublishedVideos(db: any) {
   // Support both old (visibility-based) and new (publish_status-based) schemas.
   // Some local dev D1 states may not have the newer publish_status column yet.
@@ -154,6 +164,7 @@ async function listPublishedVideos(db: any) {
   return rows.results || [];
 }
 
+/** Compute the SHA-256 hash of a string and return it as lowercase hex. */
 async function sha256HexOfString(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -171,6 +182,7 @@ async function rssFeedVersionFingerprint(rows: any[]): Promise<string> {
   return sha256HexOfString(parts.join('|'));
 }
 
+/** Extract the pathname from a URL and convert it to lowercase. */
 function entrypointPathnameLower(entrypointUrl: unknown): string {
   try {
     return new URL(String(entrypointUrl ?? '')).pathname.toLowerCase();
@@ -179,6 +191,7 @@ function entrypointPathnameLower(entrypointUrl: unknown): string {
   }
 }
 
+/** Fetch the measured duration from a preview .meta.json file, with a 1200ms timeout. */
 async function fetchPreviewMetaDurationSeconds(metaUrl: string): Promise<number | null> {
   try {
     const controller = new AbortController();
@@ -197,12 +210,17 @@ async function fetchPreviewMetaDurationSeconds(metaUrl: string): Promise<number 
   }
 }
 
+/**
+ * Build a podcast enclosure item for a video, choosing between HLS, preview MP3, or full MP3.
+ * Signs the enclosure URL with a video token that includes optional preview cap and RSS version binding.
+ */
 async function buildRssEnclosureForVideo({
   request,
   env,
   videoId,
   vtUserId,
   previewUntilSeconds,
+  rssTokenVersion,
   v,
 }: {
   request: any;
@@ -210,6 +228,7 @@ async function buildRssEnclosureForVideo({
   videoId: string;
   vtUserId: string;
   previewUntilSeconds: number | null;
+  rssTokenVersion?: number;
   v: any;
 }) {
   const hasPreviewCap =
@@ -235,12 +254,18 @@ async function buildRssEnclosureForVideo({
 
   let enclosureUrl = basePlaylistUrl;
   if (env.JWT_SECRET) {
+    const signOpts: { ttlSeconds: number; rssTokenVersion?: number } = {
+      ttlSeconds: 60 * 60 * 24 * 30,
+    };
+    if (rssTokenVersion !== undefined) {
+      signOpts.rssTokenVersion = rssTokenVersion;
+    }
     const vt = await signVideoToken(
       vtUserId,
       videoId,
       env.JWT_SECRET,
       hasPreviewCap ? previewUntilSeconds : null,
-      { ttlSeconds: 60 * 60 * 24 * 30 },
+      signOpts,
     );
     enclosureUrl = basePlaylistUrl.includes('?')
       ? `${basePlaylistUrl}&vt=${vt}`
@@ -322,6 +347,7 @@ async function buildRssEnclosureForVideo({
   };
 }
 
+/** Build an RSS XML response with the given cache control and CORS headers. */
 function feedResponse(xml: any, corsHeaders: any, cacheControl: any) {
   return new Response(xml, {
     status: 200,
@@ -333,6 +359,7 @@ function feedResponse(xml: any, corsHeaders: any, cacheControl: any) {
   });
 }
 
+/** Build a cache key Request from the feed URL pathname and extra params (without raw tokens). */
 function feedCacheKey(request: any, extraParams = {}) {
   const u = new URL(request.url);
   // Never include raw tokens in cache keys.
@@ -346,11 +373,13 @@ function feedCacheKey(request: any, extraParams = {}) {
   return new Request(suffix ? `${base}?${suffix}` : base, { method: 'GET' });
 }
 
+/** Get the default Cloudflare Workers cache instance if available. */
 function getDefaultCache(): Cache | null {
   const maybeDefault = (caches as unknown as { default?: Cache }).default;
   return maybeDefault ?? null;
 }
 
+/** Record a feed poll event in the analytics table (best-effort, never throws). */
 async function recordFeedPoll(db: any, { endpoint, userId }: any) {
   try {
     await db
@@ -369,6 +398,7 @@ async function recordFeedPoll(db: any, { endpoint, userId }: any) {
   }
 }
 
+/** Compare two strings in constant time to prevent timing attacks. */
 function constantTimeEqual(a: any, b: any) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   if (a.length !== b.length) return false;
@@ -377,10 +407,23 @@ function constantTimeEqual(a: any, b: any) {
   return diff === 0;
 }
 
+/** Query a user by ID, falling back to legacy schema if rss_token_version is unavailable. */
 async function getUserById(db: any, userId: any) {
-  return db.prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1').bind(userId).first();
+  try {
+    return await db
+      .prepare('SELECT id, email, role, rss_token_version FROM users WHERE id = ? LIMIT 1')
+      .bind(userId)
+      .first();
+  } catch {
+    // Tolerate a D1 state where the rss_token_version column has not been migrated yet.
+    return db
+      .prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1')
+      .bind(userId)
+      .first();
+  }
 }
 
+/** Query the user's most recent active or trialing subscription. */
 async function getActiveSubscriptionRow(db: any, userId: any) {
   return db
     .prepare(`
@@ -395,6 +438,7 @@ async function getActiveSubscriptionRow(db: any, userId: any) {
     .first();
 }
 
+/** GET /api/feed/public — serve the public preview podcast feed. */
 export async function handlePublicFeed(request: any, env: any, corsHeaders: any) {
   try {
     const freePreviewEnabled =
@@ -487,6 +531,7 @@ export async function handlePublicFeed(request: any, env: any, corsHeaders: any)
   }
 }
 
+/** GET /api/feed/:userId/:token — serve a user's personal podcast feed after validating the RSS token. */
 export async function handlePersonalFeed(request: any, env: any, corsHeaders: any) {
   try {
     if (request.method !== 'GET') {
@@ -526,19 +571,17 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
     }
 
     const cache = getDefaultCache();
-    const expectedToken = await computeRssTokenHex(rssSecret, userId);
-    if (!constantTimeEqual(expectedToken, token)) {
-      // 404 to avoid leaking valid user IDs.
-      return new Response(JSON.stringify({ error: 'Not Found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
-    }
-
     const { session } = getReadSession(env, request);
     const db = getDb(env);
-    const user = await getUserById(session, userId);
-    if (!user) {
+
+    // Read the token version from the primary DB so a rotated URL invalidates the
+    // old token immediately and the freshly issued URL works on first poll.
+    const user = await getUserById(db, userId);
+    const expectedToken = user
+      ? await computeRssTokenHex(rssSecret, userId, user.rss_token_version)
+      : null;
+    if (!user || expectedToken == null || !constantTimeEqual(expectedToken, token)) {
+      // 404 for both unknown users and bad tokens, to avoid leaking valid user IDs.
       return new Response(JSON.stringify({ error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -611,6 +654,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
           videoId,
           vtUserId: userId,
           previewUntilSeconds,
+          rssTokenVersion: normalizeRssTokenVersion(user.rss_token_version),
           v,
         });
       }),
