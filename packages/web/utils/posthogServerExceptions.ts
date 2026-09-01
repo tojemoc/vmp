@@ -52,6 +52,7 @@ export function newServerExceptionDistinctId(): string {
   return `web_server_error:${crypto.randomUUID()}`;
 }
 
+/** Build PostHog exception properties for a server error with redacted path and anonymous profile flag. */
 export function serverExceptionProperties(context: {
   path?: string;
   method?: string;

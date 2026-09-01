@@ -112,9 +112,10 @@
 
 <script setup lang="ts">
   import strings from '~/utils/strings';
+  import { isPostHogConfigured } from '~/utils/posthogPublicKey';
 
   const config = useRuntimeConfig();
-  const posthogEnabled = Boolean(String(config.public.posthog?.publicKey ?? '').trim());
+  const posthogEnabled = computed(() => isPostHogConfigured(config));
 
   const { showBanner: showPersonalDataBanner, acknowledgeNotice } = usePersonalDataNotice();
   const {
@@ -125,11 +126,11 @@
 
   /** Analytics consent replaces the informational notice when PostHog is configured. */
   const showAnalyticsBanner = computed(
-    () => posthogEnabled && showAnalyticsConsentPrompt.value,
+    () => posthogEnabled.value && showAnalyticsConsentPrompt.value,
   );
 
   const showBanner = computed(() =>
-    posthogEnabled ? showAnalyticsBanner.value : showPersonalDataBanner.value,
+    posthogEnabled.value ? showAnalyticsBanner.value : showPersonalDataBanner.value,
   );
 
   function onAcknowledge() {

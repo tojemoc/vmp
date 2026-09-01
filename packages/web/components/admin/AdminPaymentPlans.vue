@@ -1,5 +1,12 @@
 <template>
-  <div class="space-y-6">
+  <div
+    v-if="!paymentsCompiled"
+    class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-600 dark:text-gray-400"
+  >
+    Payment gateways are not available in this deployment.
+    {{ paymentsUnavailableReason }}
+  </div>
+  <div v-else class="space-y-6">
     <div class="flex items-center justify-between gap-3">
       <div>
         <h3 class="font-semibold text-gray-900 dark:text-white">Payment gateways &amp; plans</h3>
@@ -161,7 +168,10 @@
         Enable at least one gateway above.
       </p>
 
-      <div class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3">
+      <div
+        v-if="enabledProviders.includes('legacy')"
+        class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3"
+      >
         <h5 class="text-sm font-semibold text-gray-900 dark:text-white">
           Qerko subscriber management
         </h5>
@@ -197,14 +207,18 @@
         </label>
       </div>
 
-      <div class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3">
+      <div
+        v-if="enabledProviders.includes('gopay') || enabledProviders.includes('comgate')"
+        class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3"
+      >
         <h5 class="text-sm font-semibold text-gray-900 dark:text-white">
           GoPay / Comgate amounts
         </h5>
         <p class="text-xs text-gray-600 dark:text-gray-400">
-          Major-unit amounts (no hardcoded prices). Currency defaults to CZK.
+          Major-unit amounts in gateway currency (defaults to CZK). Leave empty to use the plan
+          price from Plans below.
         </p>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div v-if="enabledProviders.includes('gopay')" class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <label class="text-xs text-gray-600 dark:text-gray-300 block">
             GoPay currency
             <input
@@ -229,7 +243,7 @@
             >
           </label>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div v-if="enabledProviders.includes('comgate')" class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <label class="text-xs text-gray-600 dark:text-gray-300 block">
             Comgate currency
             <input
@@ -558,6 +572,9 @@
 
   const config = useRuntimeConfig();
   const { authHeader } = useAuth();
+  const { isCompiled, unavailableReason } = useDeploymentFeatures();
+  const paymentsCompiled = computed(() => isCompiled('payments'));
+  const paymentsUnavailableReason = computed(() => unavailableReason('payments'));
 
   const plans = ref<PaymentPlan[]>([]);
   const legacy = ref<LegacySettings>({

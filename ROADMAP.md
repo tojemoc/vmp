@@ -103,6 +103,15 @@ GoPay and Comgate providers shipped in [PR #499](https://github.com/tojemoc/vmp/
 
 - [ ] (Track milestones in native-clients plan; add sub-items here when scheduling)
 
+### Deployment feature modules (`deployment-feature-modules`)
+
+**Plan:** [docs/plans/deployment-feature-modules.md](docs/plans/deployment-feature-modules.md) — compile-time `VMP_FEATURES` allowlist, modular `packages/web/features/*`, tenant toggles, rollout flags.
+
+- [x] Phase 1 — shared catalog, GTM modular plugin, PostHog allowlist gate
+- [x] Phase 2 — admin tab visibility + API `VMP_FEATURES` parity
+- [x] Phase 3 — payment gateway sub-toggles, RSS parent/child rename
+- [x] Phase 4 — `packages/features` slim-build docs + modular web plugins
+
 ---
 
 ## Adding new work

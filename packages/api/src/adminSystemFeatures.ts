@@ -13,6 +13,19 @@ function toBoolSetting(value: unknown, fallback: boolean) {
   return String(value).trim() === '1';
 }
 
+/** Resolve rss_free_preview_enabled from a PATCH body; null when neither field is present. */
+export function resolveRssFreePreviewEnabledFromPatch(
+  body: Record<string, unknown>,
+): boolean | null {
+  if (!Object.hasOwn(body, 'rssPodcastEnabled') && !Object.hasOwn(body, 'freePodcastPreviewEnabled')) {
+    return null;
+  }
+  if (Object.hasOwn(body, 'rssPodcastEnabled')) {
+    return body.rssPodcastEnabled === true;
+  }
+  return body.freePodcastPreviewEnabled === true;
+}
+
 export async function handleAdminSystemFeatures(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
@@ -21,16 +34,26 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
   }
 
   if (request.method === 'GET') {
-    const [promotionsEnabled, isicEnabled, freePodcastPreviewEnabled] = await Promise.all([
+    const [
+      promotionsEnabled,
+      isicEnabled,
+      rssPodcastEnabled,
+      rssPodcastPreviewMp3Enabled,
+    ] = await Promise.all([
       getSetting(env, 'promotions_enabled', { defaultValue: '1' }),
       getSetting(env, 'isic_api_enabled', { defaultValue: '0' }),
       getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }),
+      getSetting(env, 'rss_podcast_preview_mp3_enabled', { defaultValue: '1' }),
     ]);
+    const rssEnabled = toBoolSetting(rssPodcastEnabled, true);
     return jsonResponse(
       {
         promotionsEnabled: toBoolSetting(promotionsEnabled, true),
         isicEnabled: toBoolSetting(isicEnabled, false),
-        freePodcastPreviewEnabled: toBoolSetting(freePodcastPreviewEnabled, true),
+        rssPodcastEnabled: rssEnabled,
+        rssPodcastPreviewMp3Enabled: toBoolSetting(rssPodcastPreviewMp3Enabled, true),
+        /** @deprecated Use rssPodcastEnabled — kept for older admin clients. */
+        freePodcastPreviewEnabled: rssEnabled,
       },
       200,
       corsHeaders,
@@ -53,8 +76,15 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
   if (Object.hasOwn(body, 'isicEnabled')) {
     updates.push(['isic_api_enabled', body.isicEnabled === true ? '1' : '0']);
   }
-  if (Object.hasOwn(body, 'freePodcastPreviewEnabled')) {
-    updates.push(['rss_free_preview_enabled', body.freePodcastPreviewEnabled === true ? '1' : '0']);
+  if (Object.hasOwn(body, 'rssPodcastEnabled') || Object.hasOwn(body, 'freePodcastPreviewEnabled')) {
+    const enabled = resolveRssFreePreviewEnabledFromPatch(body);
+    updates.push(['rss_free_preview_enabled', enabled ? '1' : '0']);
+  }
+  if (Object.hasOwn(body, 'rssPodcastPreviewMp3Enabled')) {
+    updates.push([
+      'rss_podcast_preview_mp3_enabled',
+      body.rssPodcastPreviewMp3Enabled === true ? '1' : '0',
+    ]);
   }
   if (!updates.length) {
     return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders);

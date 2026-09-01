@@ -80,6 +80,7 @@ jobs:
           posthog-project-id: ${{ vars.POSTHOG_PROJECT_ID }}
           posthog-personal-api-key: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          vmp-features: ${{ vars.VMP_FEATURES }}
           mobile-android-cert-fingerprints: ${{ vars.MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS_STAGING }}
           mobile-apple-app-ids: ${{ vars.MOBILE_APPLE_APP_IDS_STAGING }}
           mobile-android-package: ${{ vars.MOBILE_ANDROID_PACKAGE_STAGING }}
@@ -120,6 +121,7 @@ jobs:
           posthog-project-id: ${{ vars.POSTHOG_PROJECT_ID }}
           posthog-personal-api-key: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
           sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          vmp-features: ${{ vars.VMP_FEATURES }}
           mobile-android-cert-fingerprints: ${{ vars.MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS_PROD }}
           mobile-apple-app-ids: ${{ vars.MOBILE_APPLE_APP_IDS_PROD }}
           mobile-android-package: ${{ vars.MOBILE_ANDROID_PACKAGE_PROD }}

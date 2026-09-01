@@ -35,10 +35,12 @@ export type PostHogLogTracingContext = {
 
 type OtlpAttribute = { key: string; value: Record<string, unknown> };
 
+/** Build an OTLP string value attribute. */
 function otlpStringValue(value: string): Record<string, unknown> {
   return { stringValue: value };
 }
 
+/** Convert a key-value pair to an OTLP attribute with type detection. */
 function otlpAttribute(key: string, value: unknown): OtlpAttribute | null {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string') return { key, value: otlpStringValue(value) };
@@ -49,6 +51,7 @@ function otlpAttribute(key: string, value: unknown): OtlpAttribute | null {
   return { key, value: otlpStringValue(String(value)) };
 }
 
+/** Map a log level to OTLP severity text and number. */
 function severityForLevel(level: PostHogLogEntry['level']): {
   severityText: string;
   severityNumber: number;
@@ -76,6 +79,7 @@ export function formatPostHogLogBody(entry: PostHogLogEntry): string {
   return component ? `${component}: ${summary}` : summary;
 }
 
+/** Check if PostHog Logs are enabled based on project token and opt-out flag. */
 export function isPostHogLogsEnabled(env: Record<string, unknown>): boolean {
   if (!resolvePostHogProjectToken(env)) return false;
   const flag = String(env.POSTHOG_LOGS_ENABLED ?? '')
@@ -85,6 +89,7 @@ export function isPostHogLogsEnabled(env: Record<string, unknown>): boolean {
   return true;
 }
 
+/** Resolve and validate that the PostHog host uses HTTPS. */
 function resolveSecurePostHogHost(env: Record<string, unknown>): string | null {
   const host = resolvePostHogHost(env).replace(/\/$/, '') || DEFAULT_POSTHOG_HOST;
   let parsed: URL;
@@ -101,12 +106,14 @@ function resolveSecurePostHogHost(env: Record<string, unknown>): string | null {
   return host;
 }
 
+/** Build the PostHog OTLP logs ingestion URL. */
 export function buildPostHogLogsUrl(env: Record<string, unknown>): string | null {
   const host = resolveSecurePostHogHost(env);
   if (!host) return null;
   return `${host}/i/v1/logs`;
 }
 
+/** Build an OTLP JSON payload from log entries with service attributes and tracing context. */
 export function buildPostHogOtlpPayload(
   entries: PostHogLogEntry[],
   env: Record<string, unknown>,
@@ -172,6 +179,7 @@ export function buildPostHogOtlpPayload(
   };
 }
 
+/** Upload log entries to PostHog OTLP endpoint (best-effort, logs on failure). */
 export async function flushPostHogLogs(
   env: Record<string, unknown>,
   entries: PostHogLogEntry[],

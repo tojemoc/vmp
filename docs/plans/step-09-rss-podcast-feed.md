@@ -2,7 +2,7 @@
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Step 9*  
 **Issue:** [#644](https://github.com/tojemoc/vmp/issues/644)  
-**Status:** Partially implemented (`packages/api/src/feed.ts`, `rssToken.ts`, `rssAccount.ts`)
+**Status:** Implemented (`packages/api/src/feed.ts`, `rssToken.ts`, `rssAccount.ts`)
 
 ## Scope
 
@@ -25,10 +25,10 @@ Documented contract for `handlePersonalFeed` (`feed.ts`):
 
 ## Checklist
 
-- [ ] RSS token signing + validation (include token version / per-user secret)
-- [ ] Token rotation endpoint + account UI
-- [ ] Personal feed endpoint (documented access rules above)
-- [ ] Public preview-only feed
-- [ ] `GET /api/account/rss` helper (return URLs using current token version)
-- [ ] Account page RSS section (copy URLs + rotate + instructions)
-- [ ] Tests + feed validator smoke
+- [x] RSS token signing + validation (include token version / per-user secret)
+- [x] Token rotation endpoint + account UI
+- [x] Personal feed endpoint (documented access rules above)
+- [x] Public preview-only feed
+- [x] `GET /api/account/rss` helper (return URLs using current token version)
+- [x] Account page RSS section (copy URLs + rotate + instructions)
+- [x] Tests + feed validator smoke
