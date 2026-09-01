@@ -1,6 +1,6 @@
 import type { ErrorEvent, Log } from '@sentry/core';
 
-import { isBenignAbortError } from '~/utils/analytics/noiseFilter';
+import { isBenignAbortError } from './analytics/noiseFilter';
 
 const SENSITIVE_KEYS = new Set([
   'authorization',
