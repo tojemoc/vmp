@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   isPostHogConfigured,
+  isPostHogDeploymentFeatureCompiled,
   resolvePostHogPublicKeyFromEnv,
   resolvePostHogPublicKeyFromRuntimeConfig,
 } from '../utils/posthogPublicKey';
@@ -52,5 +53,33 @@ describe('posthogPublicKey', () => {
       isPostHogConfigured({ public: { posthog: { publicKey: 'phc_ok' } } }),
       true,
     );
+  });
+
+  it('isPostHogConfigured is false when token is set but posthog is not compiled', () => {
+    assert.equal(
+      isPostHogConfigured({
+        public: {
+          posthog: { publicKey: 'phc_ok' },
+          deploymentFeatures: { posthog: { compiled: false } },
+        },
+      }),
+      false,
+    );
+  });
+
+  it('isPostHogConfigured requires compiled posthog when deploymentFeatures is present', () => {
+    assert.equal(
+      isPostHogConfigured({
+        public: {
+          posthog: { publicKey: 'phc_ok' },
+          deploymentFeatures: { posthog: { compiled: true } },
+        },
+      }),
+      true,
+    );
+  });
+
+  it('isPostHogDeploymentFeatureCompiled defaults true without deploymentFeatures', () => {
+    assert.equal(isPostHogDeploymentFeatureCompiled({ public: {} }), true);
   });
 });

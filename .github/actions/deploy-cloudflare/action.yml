@@ -62,6 +62,12 @@ inputs:
     required: false
     default: ''
     description: Optional PostHog personal API key for source-map upload (server-only).
+  vmp-features:
+    required: false
+    default: ''
+    description: >
+      Optional comma-separated deployment feature allowlist (VMP_FEATURES). Unset keeps all
+      features compiled. Example for staging without GTM: omit gtm from the list.
   sentry-auth-token:
     required: false
     default: ''
@@ -134,6 +140,7 @@ runs:
         MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS: ${{ inputs.mobile-android-cert-fingerprints }}
         MOBILE_APPLE_APP_IDS: ${{ inputs.mobile-apple-app-ids }}
         MOBILE_ANDROID_PACKAGE: ${{ inputs.mobile-android-package }}
+        VMP_FEATURES: ${{ inputs.vmp-features }}
         NODE_ENV: production
       run: npm run build
 
@@ -142,7 +149,13 @@ runs:
       env:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
-      run: npm run deploy --workspace=@vmp/api
+        VMP_FEATURES: ${{ inputs.vmp-features }}
+      run: |
+        if [ -n "$VMP_FEATURES" ]; then
+          npm run deploy --workspace=@vmp/api -- --var "VMP_FEATURES=${VMP_FEATURES}"
+        else
+          npm run deploy --workspace=@vmp/api
+        fi
 
     - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
       shell: bash

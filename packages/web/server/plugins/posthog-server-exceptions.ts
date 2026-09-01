@@ -8,6 +8,7 @@
  * `utils/posthogServerExceptions.ts` for why that matters.
  */
 import { PostHog } from 'posthog-node';
+import { isPostHogConfigured } from '../../utils/posthogPublicKey';
 import {
   httpStatusFromError,
   newServerExceptionDistinctId,
@@ -24,8 +25,8 @@ type ErrorHookEvent = {
 
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig();
+  if (!isPostHogConfigured(config)) return;
   const publicKey = (config.public.posthog?.publicKey ?? '').trim();
-  if (!publicKey) return;
 
   const host = (config.public.posthog?.host ?? '').trim() || undefined;
   const environment = (config.public.deployTier ?? '').trim() || undefined;
