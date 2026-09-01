@@ -1,6 +1,7 @@
 # Step 10 — Self-service account deletion
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Step 10*  
+**Issue:** [#646](https://github.com/tojemoc/vmp/issues/646) (spec [#506](https://github.com/tojemoc/vmp/issues/506) closed)  
 **Status:** Blocked — payment gateway adapter must support provider-agnostic immediate cancellation
 
 ## Checklist (high level)

@@ -1,6 +1,6 @@
 # Analytics & observability (canonical stack)
 
-Roadmap: `analytics-observability` — addresses [#452](https://github.com/tojemoc/vmp/issues/452), [#509](https://github.com/tojemoc/vmp/issues/509), [#512](https://github.com/tojemoc/vmp/issues/512), [#611](https://github.com/tojemoc/vmp/issues/611).
+Roadmap: `analytics-observability` (shipped [#642](https://github.com/tojemoc/vmp/pull/642)) — closed [#452](https://github.com/tojemoc/vmp/issues/452), [#509](https://github.com/tojemoc/vmp/issues/509), [#512](https://github.com/tojemoc/vmp/issues/512), [#611](https://github.com/tojemoc/vmp/issues/611). Remaining CMS scope: [#643](https://github.com/tojemoc/vmp/issues/643).
 
 ## Problem
 
@@ -55,4 +55,4 @@ Intentional navigation aborts (`AbortError`, “Request aborted”) are filtered
 
 ## Future work
 
-- CMS analytics expansion (views, referrer, country) — [#452](https://github.com/tojemoc/vmp/issues/452) remaining scope; build on first-party `segment_analytics`, not a new third-party pageview SDK.
+- CMS analytics expansion (views, referrer, country) — [#643](https://github.com/tojemoc/vmp/issues/643); build on first-party `segment_analytics`, not a new third-party pageview SDK.

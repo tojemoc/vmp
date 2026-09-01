@@ -1,6 +1,7 @@
 # Step 8 — Brevo newsletter sync
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Step 8*  
+**Issue:** [#645](https://github.com/tojemoc/vmp/issues/645)  
 **Status:** Not started
 
 ## Scope

@@ -1,6 +1,7 @@
 # Step 9 — RSS / podcast feed
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Step 9*  
+**Issue:** [#644](https://github.com/tojemoc/vmp/issues/644)  
 **Status:** Partially implemented (`packages/api/src/feed.ts`, `rssToken.ts`, `rssAccount.ts`)
 
 ## Scope
