@@ -74,7 +74,7 @@ import {
   handleCmsPagesList,
   handleCmsPageUnpublish,
 } from './cmsPages.js';
-import { applySessionBookmark, getReadSession } from './d1Session.js';
+import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
 import {
   handleAccountInvoices,
   handleAdminEInvoiceById,
@@ -198,6 +198,7 @@ import {
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
 import { handleGetAccountRss, handleRotateAccountRss } from './rssAccount.js';
+import { readRssTokenVersion } from './rssToken.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
   handleRssPodcastPreviewRebuildNotify,
@@ -1900,6 +1901,22 @@ async function handleVideoProxy(
       status: 403,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
+  }
+
+  // RSS-issued tokens carry rss_token_version; reject stale tokens after rotation.
+  if (
+    tokenClaims &&
+    tokenClaims.rssTokenVersion !== null &&
+    tokenClaims.userId !== 'anonymous'
+  ) {
+    const currentVersion = await readRssTokenVersion(getDb(env), tokenClaims.userId);
+    if (currentVersion !== tokenClaims.rssTokenVersion) {
+      return jsonResponse(
+        { error: 'Invalid or expired video token', code: 'video_token_invalid' },
+        403,
+        corsHeaders,
+      );
+    }
   }
 
   // Enforce previewUntil from token claims

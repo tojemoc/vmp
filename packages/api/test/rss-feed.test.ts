@@ -4,6 +4,7 @@ import { createAccessToken } from '../src/auth.js';
 import { handlePersonalFeed } from '../src/feed.js';
 import { handleGetAccountRss, handleRotateAccountRss } from '../src/rssAccount.js';
 import { computeRssTokenHex, normalizeRssTokenVersion } from '../src/rssToken.js';
+import { signVideoToken, verifyVideoToken } from '../src/videoTokens.js';
 
 const RSS_SECRET = 'test-rss-secret-at-least-thirty-two-characters';
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
@@ -117,6 +118,26 @@ describe('computeRssTokenHex', () => {
     const implicit = await computeRssTokenHex(RSS_SECRET, 'user-1');
     assert.equal(explicit, implicit);
   });
+
+  it('preserves the legacy version-zero HMAC message without a :0 suffix', async () => {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(RSS_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const legacySig = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode('rss:user-1'),
+    );
+    const legacyHex = Array.from(new Uint8Array(legacySig), (b) =>
+      b.toString(16).padStart(2, '0'),
+    ).join('');
+    const v0 = await computeRssTokenHex(RSS_SECRET, 'user-1', 0);
+    assert.equal(v0, legacyHex);
+  });
 });
 
 describe('handleRotateAccountRss', () => {
@@ -224,5 +245,31 @@ describe('handlePersonalFeed token validation', () => {
     const freshToken = await computeRssTokenHex(RSS_SECRET, 'u1', 1);
     const fresh = await handlePersonalFeed(personalFeedRequest('u1', freshToken), env, {});
     assert.equal(fresh.status, 200);
+  });
+});
+
+describe('RSS video token version binding', () => {
+  it('embeds rss_token_version in RSS-issued video tokens', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, null, {
+      ttlSeconds: 3600,
+      rssTokenVersion: 2,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(claims.rssTokenVersion, 2);
+  });
+
+  it('leaves rss_token_version unset for web playback tokens', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, 120);
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(claims.rssTokenVersion, null);
+  });
+
+  it('binds version zero explicitly when requested', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, null, {
+      ttlSeconds: 3600,
+      rssTokenVersion: 0,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(claims.rssTokenVersion, 0);
   });
 });

@@ -6,8 +6,12 @@
  *
  * Token format:
  *   base64url(payload) + "." + hex(HMAC-SHA256(base64url(payload)))
- * where payload = "<userId>:<videoId>:<unixExpires>:<previewUntilSecondsOrEmpty>"
+ * where payload = "<userId>:<videoId>:<unixExpires>:<previewUntilSecondsOrEmpty>[:<rssTokenVersion>]"
+ * The optional rssTokenVersion suffix binds RSS-issued tokens to the user's current
+ * rss_token_version so rotation invalidates outstanding podcast enclosure URLs.
  */
+
+import { normalizeRssTokenVersion } from './rssToken.js';
 
 function b64urlEncode(str: string): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -31,6 +35,7 @@ async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
 
 interface SignVideoTokenOptions {
   ttlSeconds?: number;
+  rssTokenVersion?: number;
 }
 
 export async function signVideoToken(
@@ -46,7 +51,11 @@ export async function signVideoToken(
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds;
   const previewUntilStr =
     previewUntil !== null && Number.isFinite(previewUntil) ? String(previewUntil) : '';
-  const payload = b64urlEncode(`${userId}:${videoId}:${expires}:${previewUntilStr}`);
+  let payloadPlain = `${userId}:${videoId}:${expires}:${previewUntilStr}`;
+  if (opts.rssTokenVersion !== undefined) {
+    payloadPlain += `:${normalizeRssTokenVersion(opts.rssTokenVersion)}`;
+  }
+  const payload = b64urlEncode(payloadPlain);
   const key = await importVideoHmacKey(secret);
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
   const sigHex = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -100,7 +109,14 @@ export async function verifyVideoToken(token: string, secret: string) {
   const previewUntil =
     previewUntilRaw !== null && Number.isFinite(previewUntilRaw) ? previewUntilRaw : null;
 
+  let rssTokenVersion: number | null = null;
+  if (parts.length >= 5 && parts[4] !== undefined && parts[4] !== '') {
+    const parsedVersion = parseInt(parts[4], 10);
+    if (!Number.isFinite(parsedVersion)) throw new Error('Malformed video token payload');
+    rssTokenVersion = normalizeRssTokenVersion(parsedVersion);
+  }
+
   if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired');
 
-  return { userId, videoId, expires, previewUntil };
+  return { userId, videoId, expires, previewUntil, rssTokenVersion };
 }

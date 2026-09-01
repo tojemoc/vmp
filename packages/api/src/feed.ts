@@ -13,7 +13,7 @@ import { buildProxyPlaylistUrl, resolveMediaEntrypointUrl } from './mediaEntrypo
 import { needsPodcastPreviewMp3 } from './podcastPreview.js';
 import { getRequestPublicOrigin } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
-import { computeRssTokenHex } from './rssToken.js';
+import { computeRssTokenHex, normalizeRssTokenVersion } from './rssToken.js';
 import { getSetting } from './settingsStore.js';
 import { signVideoToken } from './videoTokens.js';
 
@@ -203,6 +203,7 @@ async function buildRssEnclosureForVideo({
   videoId,
   vtUserId,
   previewUntilSeconds,
+  rssTokenVersion,
   v,
 }: {
   request: any;
@@ -210,6 +211,7 @@ async function buildRssEnclosureForVideo({
   videoId: string;
   vtUserId: string;
   previewUntilSeconds: number | null;
+  rssTokenVersion?: number;
   v: any;
 }) {
   const hasPreviewCap =
@@ -235,12 +237,18 @@ async function buildRssEnclosureForVideo({
 
   let enclosureUrl = basePlaylistUrl;
   if (env.JWT_SECRET) {
+    const signOpts: { ttlSeconds: number; rssTokenVersion?: number } = {
+      ttlSeconds: 60 * 60 * 24 * 30,
+    };
+    if (rssTokenVersion !== undefined) {
+      signOpts.rssTokenVersion = rssTokenVersion;
+    }
     const vt = await signVideoToken(
       vtUserId,
       videoId,
       env.JWT_SECRET,
       hasPreviewCap ? previewUntilSeconds : null,
-      { ttlSeconds: 60 * 60 * 24 * 30 },
+      signOpts,
     );
     enclosureUrl = basePlaylistUrl.includes('?')
       ? `${basePlaylistUrl}&vt=${vt}`
@@ -620,6 +628,7 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
           videoId,
           vtUserId: userId,
           previewUntilSeconds,
+          rssTokenVersion: normalizeRssTokenVersion(user.rss_token_version),
           v,
         });
       }),

@@ -10,26 +10,17 @@
 import { requireAuth } from './auth.js';
 import { getDb } from './d1Session.js';
 import { getRequestPublicOrigin } from './requestPublicOrigin.js';
-import { computeRssTokenHex, normalizeRssTokenVersion } from './rssToken.js';
+import {
+  computeRssTokenHex,
+  normalizeRssTokenVersion,
+  readRssTokenVersion,
+} from './rssToken.js';
 
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders },
   });
-}
-
-/** Read the current RSS token version for a user, tolerating a not-yet-migrated column. */
-async function readRssTokenVersion(db: any, userId: string): Promise<number> {
-  try {
-    const row = await db
-      .prepare('SELECT rss_token_version FROM users WHERE id = ? LIMIT 1')
-      .bind(userId)
-      .first();
-    return normalizeRssTokenVersion(row?.rss_token_version);
-  } catch {
-    return 0;
-  }
 }
 
 async function buildRssUrls(request: any, env: any, userId: string, tokenVersion: number) {

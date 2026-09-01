@@ -24,6 +24,19 @@ export function normalizeRssTokenVersion(rawVersion: unknown): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/** Read the current RSS token version for a user, tolerating a not-yet-migrated column. */
+export async function readRssTokenVersion(db: any, userId: string): Promise<number> {
+  try {
+    const row = await db
+      .prepare('SELECT rss_token_version FROM users WHERE id = ? LIMIT 1')
+      .bind(userId)
+      .first();
+    return normalizeRssTokenVersion(row?.rss_token_version);
+  } catch {
+    return 0;
+  }
+}
+
 export async function computeRssTokenHex(
   rssSecret: string,
   userId: string,
@@ -31,7 +44,9 @@ export async function computeRssTokenHex(
 ): Promise<string> {
   const version = normalizeRssTokenVersion(tokenVersion);
   const key = await importRssHmacKey(rssSecret);
-  const msg = new TextEncoder().encode(`rss:${userId}:${version}`);
+  const msg = new TextEncoder().encode(
+    version === 0 ? `rss:${userId}` : `rss:${userId}:${version}`,
+  );
   const sig = await crypto.subtle.sign('HMAC', key, msg);
   return hexFromBytes(new Uint8Array(sig));
 }
