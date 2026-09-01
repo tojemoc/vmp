@@ -262,15 +262,18 @@ jobs:
       - name: Prebuild iOS project
         run: npx expo prebuild --platform ios --clean --no-install
 
+      - name: Install CocoaPods dependencies
+        run: npx pod-install
+
       - name: Build unsigned iOS app
         run: |
-          if [ -d ios/VMP.xcworkspace ]; then
-            IOS_PROJECT_FLAG="-workspace ios/VMP.xcworkspace"
-          else
-            IOS_PROJECT_FLAG="-project ios/VMP.xcodeproj"
+          if [ ! -d ios/VMP.xcworkspace ]; then
+            echo "::error::Expected ios/VMP.xcworkspace after pod install"
+            ls -la ios || true
+            exit 1
           fi
           xcodebuild \
-            $IOS_PROJECT_FLAG \
+            -workspace ios/VMP.xcworkspace \
             -scheme VMP \
             -configuration Release \
             -sdk iphoneos \
