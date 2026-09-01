@@ -149,7 +149,13 @@ runs:
       env:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
-      run: npm run deploy --workspace=@vmp/api
+        VMP_FEATURES: ${{ inputs.vmp-features }}
+      run: |
+        if [ -n "$VMP_FEATURES" ]; then
+          npm run deploy --workspace=@vmp/api -- --var "VMP_FEATURES=${VMP_FEATURES}"
+        else
+          npm run deploy --workspace=@vmp/api
+        fi
 
     - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
       shell: bash

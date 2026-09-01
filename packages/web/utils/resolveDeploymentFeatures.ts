@@ -16,6 +16,8 @@ const webRoot = fileURLToPath(new URL('..', import.meta.url));
  */
 export const MODULAR_WEB_FEATURE_PLUGINS: Partial<Record<DeploymentFeatureId, string>> = {
   gtm: 'features/gtm/plugin.client.ts',
+  pwa: 'features/pwa/pwa-auth.client.ts',
+  posthog: 'features/posthog/posthog.client.ts',
 };
 
 export type WebDeploymentFeatures = Record<DeploymentFeatureId, DeploymentFeatureState>;

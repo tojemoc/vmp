@@ -33,17 +33,29 @@ async function priceIdForPlan(env: any, planType: PlanType): Promise<string | nu
 async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
   const stored = await getSetting(env, `gopay_${planType}_price`, { ttlSeconds: 300 });
   const value = String(stored ?? '').trim();
-  if (!value) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  if (value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  const fallback = await getSetting(env, `${planType}_price_eur`, { ttlSeconds: 300 });
+  const fallbackValue = String(fallback ?? '').trim();
+  if (!fallbackValue) return null;
+  const fallbackNumeric = Number(fallbackValue);
+  return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : null;
 }
 
 async function comgateAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
   const stored = await getSetting(env, `comgate_${planType}_price`, { ttlSeconds: 300 });
   const value = String(stored ?? '').trim();
-  if (!value) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  if (value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  const fallback = await getSetting(env, `${planType}_price_eur`, { ttlSeconds: 300 });
+  const fallbackValue = String(fallback ?? '').trim();
+  if (!fallbackValue) return null;
+  const fallbackNumeric = Number(fallbackValue);
+  return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : null;
 }
 
 function requireConfiguredUrl(raw: unknown, label: string): string {

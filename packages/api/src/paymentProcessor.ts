@@ -155,9 +155,7 @@ async function getEffectivePricingSettings(
 ) {
   const [providerPricing, fallbackPricing] = await Promise.all([
     getPricingSettings(env, provider),
-    provider === 'gopay' || provider === 'comgate'
-      ? Promise.resolve({ monthly: null, yearly: null, club: null })
-      : getPricingSettings(env),
+    getPricingSettings(env),
   ]);
   return {
     monthly: providerPricing.monthly ?? fallbackPricing.monthly,

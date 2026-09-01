@@ -26,6 +26,7 @@ const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim(
 const posthogEnabled =
   isWebDeploymentFeatureCompiled(deploymentFeatures, 'posthog') && Boolean(posthogPublicKey);
 const gtmCompiled = isWebDeploymentFeatureCompiled(deploymentFeatures, 'gtm');
+const pwaCompiled = isWebDeploymentFeatureCompiled(deploymentFeatures, 'pwa');
 const posthogSourcemapsEnabled = Boolean(
   posthogEnabled && posthogProjectId && posthogPersonalApiKey,
 );
@@ -45,7 +46,21 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
-  plugins: [...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : [])],
+  plugins: [
+    ...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : []),
+    ...(pwaCompiled
+      ? ([
+          '~/features/pwa/pwa-auth.client.ts',
+          '~/features/pwa/offline-downloads.client.ts',
+        ] as const)
+      : []),
+    ...(posthogEnabled
+      ? ([
+          '~/features/posthog/posthog.client.ts',
+          '~/features/posthog/posthog-consent.client.ts',
+        ] as const)
+      : []),
+  ],
 
   hooks: {
     // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
@@ -65,7 +80,7 @@ export default defineNuxtConfig({
   modules: [
     '@nuxtjs/tailwindcss',
     '@nuxtjs/color-mode',
-    '@vite-pwa/nuxt',
+    ...(pwaCompiled ? (['@vite-pwa/nuxt'] as const) : []),
     '@sentry/nuxt/module',
     ...(posthogEnabled ? (['@posthog/nuxt'] as const) : []),
   ],
@@ -212,9 +227,9 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#0f172a' },
       ],
       link: [
-        // Belt-and-suspenders: @vite-pwa/nuxt injects this automatically, but
-        // some Nitro presets miss the injection step — add it explicitly too.
-        { rel: 'manifest', href: '/manifest.webmanifest' },
+        ...(pwaCompiled
+          ? ([{ rel: 'manifest', href: '/manifest.webmanifest' }] as const)
+          : []),
         { rel: 'icon', type: 'image/png', href: '/icons/pwa-192.png' },
         // iOS home screen icon (Safari ignores the web manifest icons array)
         { rel: 'apple-touch-icon', href: '/icons/pwa-192.png' },
@@ -222,7 +237,9 @@ export default defineNuxtConfig({
     },
   },
 
-  pwa: {
+  ...(pwaCompiled
+    ? {
+        pwa: {
     // Keep the old precache alive for already-open tabs; they may still import
     // route chunks from the previous deployment until a close or refresh.
     registerType: 'prompt',
@@ -274,5 +291,7 @@ export default defineNuxtConfig({
       enabled: false,
       type: 'classic', // Workbox uses importScripts(); must not be 'module'
     },
-  },
+        },
+      }
+    : {}),
 });

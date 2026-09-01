@@ -33,6 +33,8 @@ import {
 } from './adminExtras.js';
 import { ensureAdminSettingsTable } from './adminSettingsTable.js';
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js';
+import { handleAdminDeploymentFeatures } from './deploymentFeaturesAdmin.js';
+import { maybeBlockDeploymentFeatureRoute } from './routeFeatureGuard.js';
 import {
   handleGetMe,
   handleLogout,
@@ -527,6 +529,9 @@ const workerHandler = {
           });
         }
 
+        const featureBlock = maybeBlockDeploymentFeatureRoute(request, env, corsHeaders);
+        if (featureBlock) return featureBlock;
+
         // ── Auth routes ───────────────────────────────────────────────────────────
         if (url.pathname === '/api/auth/magic-link' && request.method === 'POST') {
           return handleRequestMagicLink(request, env, corsHeaders);
@@ -756,6 +761,12 @@ const workerHandler = {
           ['GET', 'PATCH'].includes(request.method)
         ) {
           return handleSiteSettings(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/deployment-features' &&
+          request.method === 'GET'
+        ) {
+          return handleAdminDeploymentFeatures(request, env, corsHeaders);
         }
         if (
           url.pathname === '/api/admin/system/features' &&

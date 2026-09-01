@@ -136,7 +136,7 @@ Store profile names in GitHub Environment vars; CI passes the resolved `VMP_FEAT
 
 ## Implementation phases
 
-### Phase 1 — Foundation + GTM (this PR)
+### Phase 1 — Foundation + GTM
 
 - [x] `@vmp/shared` catalog + `parseDeploymentFeaturesEnv`
 - [x] Web resolver + `runtimeConfig.public.deploymentFeatures`
@@ -147,22 +147,22 @@ Store profile names in GitHub Environment vars; CI passes the resolved `VMP_FEAT
 
 ### Phase 2 — Admin surfaces + API parity
 
-- [ ] `useDeploymentFeatures()` drives admin tab visibility (`legacy_migration`, `pills`, `newsletter`, …)
-- [ ] API `VMP_FEATURES` parser + route guards
-- [ ] `GET /api/admin/deployment-features`
-- [ ] PWA module conditional registration
+- [x] `useDeploymentFeatures()` drives admin tab visibility (`legacy_migration`, `pills`, `newsletter`, …)
+- [x] API `VMP_FEATURES` parser + route guards
+- [x] `GET /api/admin/deployment-features`
+- [x] PWA module conditional registration
 
 ### Phase 3 — Tenant toggles alignment
 
-- [ ] Payment gateway sub-toggles + price fallback rules
-- [ ] RSS parent/child rename + preview MP3 messaging
-- [ ] Extend `/api/admin/system/features` PATCH schema
+- [x] Payment gateway sub-toggles + price fallback rules (GoPay/Comgate → plan price)
+- [x] RSS parent/child rename + preview MP3 messaging
+- [x] Extend `/api/admin/system/features` PATCH schema
 
 ### Phase 4 — Slim packages / dedicated Workers
 
-- [ ] Optional `packages/feature-*` workspaces
-- [ ] Build script that omits feature folders from slim artifacts
-- [ ] Document Mosaiq + BYOD tenant binding
+- [x] `packages/features/README.md` — optional workspace layout + slim build workflow
+- [x] Modular `packages/web/features/*` plugins (gtm, pwa, posthog)
+- [x] Document Mosaiq + BYOD tenant binding (in plan + packages/features README)
 
 ## Related docs
 

@@ -2342,6 +2342,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <label
+                    v-if="isDeploymentFeatureCompiled('payments')"
                     class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
                   >
                     <input
@@ -2352,6 +2353,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     Promo codes
                   </label>
                   <label
+                    v-if="isDeploymentFeatureCompiled('payments')"
                     class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
                   >
                     <input
@@ -2362,14 +2364,33 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     ISIC API
                   </label>
                   <label
+                    v-if="isDeploymentFeatureCompiled('rss_podcast')"
                     class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
                   >
                     <input
-                      v-model="systemFeatures.freePodcastPreviewEnabled"
+                      v-model="systemFeatures.rssPodcastEnabled"
                       type="checkbox"
                       class="rounded border-gray-300 dark:border-gray-600"
                     >
-                    Free podcast preview feed
+                    RSS / podcast feeds
+                  </label>
+                  <label
+                    v-if="
+                      isDeploymentFeatureCompiled('rss_podcast') &&
+                        isDeploymentFeatureCompiled('rss_podcast_preview_mp3') &&
+                        systemFeatures.rssPodcastEnabled
+                    "
+                    class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 md:col-span-2"
+                  >
+                    <input
+                      v-model="systemFeatures.rssPodcastPreviewMp3Enabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                    >
+                    Podcast preview MP3 prerender
+                    <span class="text-xs text-gray-500 dark:text-gray-400"
+                      >(shortened MP3s for the public feed)</span
+                    >
                   </label>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -2385,7 +2406,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </div>
             </AdminAccordionSection>
 
-            <AdminAccordionSection section-key="deno-postgres" title="Deno Postgres failover">
+            <AdminAccordionSection
+              v-if="isDeploymentFeatureCompiled('deno_replication')"
+              section-key="deno-postgres"
+              title="Deno Postgres failover"
+            >
               <div class="space-y-4">
                 <div
                   v-if="replicationMessage"
@@ -2647,7 +2672,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               </div>
             </AdminAccordionSection>
 
-            <AdminAccordionSection section-key="payment-gateways" title="Payment gateways">
+            <AdminAccordionSection
+              v-if="isDeploymentFeatureCompiled('payments')"
+              section-key="payment-gateways"
+              title="Payment gateways"
+            >
               <AdminPaymentPlans />
             </AdminAccordionSection>
 
@@ -3119,7 +3148,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </AdminAccordionSection>
 
             <AdminAccordionSection
-              v-if="systemFeatures.freePodcastPreviewEnabled"
+              v-if="
+                isDeploymentFeatureCompiled('rss_podcast') && systemFeatures.rssPodcastEnabled
+              "
               section-key="podcast-rebuild"
               title="Podcast rebuild webhook"
             >
@@ -3134,6 +3165,16 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     so preview length tracks your preview duration without waiting on ffmpeg. After
                     you change preview durations, notify your media host to re-encode preview MP3s
                     if you use them.
+                  </p>
+                  <p
+                    v-if="
+                      !systemFeatures.rssPodcastPreviewMp3Enabled ||
+                        !isDeploymentFeatureCompiled('rss_podcast_preview_mp3')
+                    "
+                    class="text-sm text-gray-600 dark:text-gray-400 mt-2"
+                  >
+                    Podcast preview MP3 prerender is disabled for this site — preview duration saves
+                    still apply to HLS preview; automatic MP3 rebuild webhooks are not sent.
                   </p>
                 </div>
 
@@ -4116,6 +4157,23 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   ];
   const adminTabs = computed(() =>
     baseAdminTabs.filter((tab) => {
+      const deployFeature =
+        tab.id === 'pills'
+          ? 'pills'
+          : tab.id === 'notifications'
+            ? 'push'
+            : tab.id === 'newsletter'
+              ? 'newsletter'
+              : tab.id === 'einvoicing'
+                ? 'einvoicing'
+                : tab.id === 'pages'
+                  ? 'cms'
+                  : tab.id === 'legacy_migration'
+                    ? 'legacy_migration'
+                    : tab.id === 'analytics'
+                      ? 'analytics'
+                      : null;
+      if (deployFeature && !isDeploymentFeatureCompiled(deployFeature)) return false;
       if (
         tab.id === 'pills' ||
         tab.id === 'legacy_migration' ||
@@ -4336,7 +4394,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   const systemFeatures = ref({
     promotionsEnabled: true,
     isicEnabled: false,
-    freePodcastPreviewEnabled: true,
+    rssPodcastEnabled: true,
+    rssPodcastPreviewMp3Enabled: true,
   });
   const systemFeaturesSaving = ref(false);
   const systemFeaturesMessage = ref('');
@@ -5880,7 +5939,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       systemFeatures.value = {
         promotionsEnabled: Boolean(data.promotionsEnabled),
         isicEnabled: Boolean(data.isicEnabled),
-        freePodcastPreviewEnabled: Boolean(data.freePodcastPreviewEnabled),
+        rssPodcastEnabled: Boolean(data.rssPodcastEnabled ?? data.freePodcastPreviewEnabled),
+        rssPodcastPreviewMp3Enabled: Boolean(data.rssPodcastPreviewMp3Enabled ?? true),
       };
       // Keep ISIC API enable checkbox in sync with feature toggle.
       isicApiConfig.value.enabled = systemFeatures.value.isicEnabled;
@@ -6458,8 +6518,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
   const saveRssPodcastWebhookSettings = async () => {
     if (!isAdmin.value) return;
-    if (!systemFeatures.value.freePodcastPreviewEnabled) {
-      rssPodcastMessage.value = 'Free podcast preview feed is disabled.';
+    if (!systemFeatures.value.rssPodcastEnabled) {
+      rssPodcastMessage.value = 'RSS / podcast feeds are disabled for this site.';
       rssPodcastMessageClass.value =
         'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
       return;
@@ -6504,8 +6564,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
 
   const notifyPodcastPreviewRebuild = async () => {
     if (!isAdmin.value) return;
-    if (!systemFeatures.value.freePodcastPreviewEnabled) {
-      rssPodcastMessage.value = 'Free podcast preview feed is disabled.';
+    if (!systemFeatures.value.rssPodcastEnabled) {
+      rssPodcastMessage.value = 'RSS / podcast feeds are disabled for this site.';
       rssPodcastMessageClass.value =
         'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-100';
       return;
@@ -7317,7 +7377,9 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         notifyNote =
           ' Configure the podcast rebuild webhook in System to auto-refresh preview MP3s after save.';
       } else if (notify?.code === 'free_preview_disabled') {
-        notifyNote = '';
+        notifyNote = ' Podcast preview MP3 prerender is disabled for this site.';
+      } else if (notify?.code === 'preview_mp3_disabled') {
+        notifyNote = ' Podcast preview MP3 prerender is disabled for this site.';
       } else if (notify && !notify.delivered && notify.code) {
         notifyNote = ` Preview MP3 host notify did not complete (${notify.code}).`;
       }
@@ -7413,7 +7475,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions);
       if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns);
       await trackLoader('site branding', loadSiteBranding);
-      if (systemFeatures.value.freePodcastPreviewEnabled)
+      if (systemFeatures.value.rssPodcastEnabled)
         await trackLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings);
       await trackLoader('users', loadUsers);
       await trackLoader('analytics', loadAnalytics);
