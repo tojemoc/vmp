@@ -2579,51 +2579,60 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                       class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
                     >
                   </label>
-                  <label
-                    class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2"
-                  >
-                    <input
-                      v-model="gtmEnabled"
-                      type="checkbox"
-                      class="rounded border-gray-300 dark:border-gray-600"
-                      :disabled="!siteBranding.gtm_container_id.trim()"
+                  <template v-if="gtmDeploymentCompiled">
+                    <label
+                      class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2"
                     >
-                    Google Tag Manager enabled
-                    <span
-                      v-if="!siteBranding.gtm_container_id.trim()"
-                      class="text-xs text-gray-500 dark:text-gray-400"
-                      >(enter container ID below first)</span
-                    >
-                  </label>
-                  <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                    Google Tag Manager container ID
-                    <input
-                      v-model="siteBranding.gtm_container_id"
-                      type="text"
-                      placeholder="GTM-XXXXXXX"
-                      class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
-                    >
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Required to enable GTM. No build-time fallback — set the container ID here.
-                    </p>
-                  </label>
-                  <template v-if="gtmEnabled">
-                    <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-                      GTM first-party measurement path
                       <input
-                        v-model="siteBranding.gtm_measurement_path"
+                        v-model="gtmEnabled"
+                        type="checkbox"
+                        class="rounded border-gray-300 dark:border-gray-600"
+                        :disabled="!siteBranding.gtm_container_id.trim()"
+                      >
+                      Google Tag Manager enabled
+                      <span
+                        v-if="!siteBranding.gtm_container_id.trim()"
+                        class="text-xs text-gray-500 dark:text-gray-400"
+                        >(enter container ID below first)</span
+                      >
+                    </label>
+                    <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                      Google Tag Manager container ID
+                      <input
+                        v-model="siteBranding.gtm_container_id"
                         type="text"
-                        placeholder="/hb2v  (leave empty to load GTM directly)"
+                        placeholder="GTM-XXXXXXX"
                         class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
                       >
                       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Optional. Set to the path configured in Cloudflare Google Tag Gateway (e.g.
-                        /hb2v). When set, GTM loads from your domain instead of
-                        googletagmanager.com. Leave Cloudflare “Set up tag” off — this app injects
-                        the script when enabled above.
+                        Required to enable GTM. No build-time fallback — set the container ID here.
                       </p>
                     </label>
+                    <template v-if="gtmEnabled">
+                      <label class="block text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+                        GTM first-party measurement path
+                        <input
+                          v-model="siteBranding.gtm_measurement_path"
+                          type="text"
+                          placeholder="/hb2v  (leave empty to load GTM directly)"
+                          class="mt-1 w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-xs"
+                        >
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Optional. Set to the path configured in Cloudflare Google Tag Gateway (e.g.
+                          /hb2v). When set, GTM loads from your domain instead of
+                          googletagmanager.com. Leave Cloudflare “Set up tag” off — this app injects
+                          the script when enabled above.
+                        </p>
+                      </label>
+                    </template>
                   </template>
+                  <p
+                    v-else
+                    class="md:col-span-2 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950/40 px-3 py-2 text-gray-600 dark:text-gray-400"
+                  >
+                    Google Tag Manager is not available in this deployment.
+                    {{ gtmDeploymentUnavailableReason }}
+                  </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button
@@ -4050,6 +4059,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   const config = useRuntimeConfig();
   const { strings } = useStrings();
   const { authHeader, canEditContent, isAdmin, initialised, user } = useAuth();
+  const {
+    isCompiled: isDeploymentFeatureCompiled,
+    unavailableReason: deploymentFeatureUnavailableReason,
+  } = useDeploymentFeatures();
+  const gtmDeploymentCompiled = computed(() => isDeploymentFeatureCompiled('gtm'));
+  const gtmDeploymentUnavailableReason = computed(() => deploymentFeatureUnavailableReason('gtm'));
   const router = useRouter();
   const route = useRoute();
   const loading = ref(true);

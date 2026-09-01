@@ -105,6 +105,15 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 - [ ] (Track milestones in native-clients plan; add sub-items here when scheduling)
 
+### Deployment feature modules (`deployment-feature-modules`)
+
+**Plan:** [docs/plans/deployment-feature-modules.md](docs/plans/deployment-feature-modules.md) — compile-time `VMP_FEATURES` allowlist, modular `packages/web/features/*`, tenant toggles, rollout flags.
+
+- [ ] Phase 1 — shared catalog, GTM modular plugin, PostHog allowlist gate
+- [ ] Phase 2 — admin tab visibility + API `VMP_FEATURES` parity
+- [ ] Phase 3 — payment gateway sub-toggles, RSS parent/child rename
+- [ ] Phase 4 — optional `packages/feature-*` slim Worker builds
+
 ---
 
 ## Adding new work

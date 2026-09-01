@@ -4,11 +4,16 @@ import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
 import { posthogBeforeSend } from './utils/posthogBeforeSend';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
+import {
+  isWebDeploymentFeatureCompiled,
+  resolveWebDeploymentFeatures,
+} from './utils/resolveDeploymentFeatures';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
 loadMonorepoRootEnv();
 
 const buildInfo = readBuildInfoDefaults();
+const deploymentFeatures = resolveWebDeploymentFeatures();
 
 const posthogPublicKey = resolvePostHogPublicKeyFromEnv();
 if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
@@ -18,7 +23,9 @@ if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
 const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com').trim();
 const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
 const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
-const posthogEnabled = Boolean(posthogPublicKey);
+const posthogEnabled =
+  isWebDeploymentFeatureCompiled(deploymentFeatures, 'posthog') && Boolean(posthogPublicKey);
+const gtmCompiled = isWebDeploymentFeatureCompiled(deploymentFeatures, 'gtm');
 const posthogSourcemapsEnabled = Boolean(
   posthogEnabled && posthogProjectId && posthogPersonalApiKey,
 );
@@ -37,6 +44,8 @@ const posthogTracingHost = hostnameFromUrl(apiUrl);
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
+
+  plugins: [...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : [])],
 
   hooks: {
     // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
@@ -184,6 +193,8 @@ export default defineNuxtConfig({
         publicKey: posthogPublicKey,
         host: posthogHost,
       },
+      /** Compile-time feature module allowlist (`VMP_FEATURES`). See docs/plans/deployment-feature-modules.md */
+      deploymentFeatures,
     },
   },
 

@@ -1,3 +1,17 @@
+export {
+  DEFAULT_DEPLOYMENT_FEATURES,
+  DEPLOYMENT_FEATURE_CATALOG,
+  DEPLOYMENT_FEATURE_IDS,
+  DEPLOYMENT_FEATURE_PARENTS,
+  deploymentFeatureCatalogEntry,
+  isDeploymentFeatureId,
+  parseDeploymentFeaturesEnv,
+} from './deploymentFeatures.js';
+export type {
+  DeploymentFeatureCatalogEntry,
+  DeploymentFeatureId,
+  DeploymentFeatureState,
+} from './deploymentFeatures.js';
 export type {
   CmsBlock,
   CmsCalloutBlock,
