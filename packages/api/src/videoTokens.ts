@@ -11,7 +11,7 @@
  * rss_token_version so rotation invalidates outstanding podcast enclosure URLs.
  */
 
-import { normalizeRssTokenVersion } from './rssToken.js';
+import { normalizeRssTokenVersion, type RssTokenVersionLookup } from './rssToken.js';
 
 function b64urlEncode(str: string): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -36,6 +36,38 @@ async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
 interface SignVideoTokenOptions {
   ttlSeconds?: number;
   rssTokenVersion?: number;
+}
+
+/** Default web playback token TTL; RSS enclosures use a much longer TTL. */
+export const WEB_VIDEO_TOKEN_MAX_TTL_SECONDS = 7200;
+
+export interface VideoTokenClaims {
+  userId: string;
+  videoId: string;
+  expires: number;
+  previewUntil: number | null;
+  rssTokenVersion: number | null;
+}
+
+export type VideoTokenRssVersionCheck = 'ok' | 'forbidden' | 'unavailable';
+
+/** True when a signed token lacks rss_token_version but has RSS-length TTL. */
+export function isLegacyRssVideoTokenWithoutVersion(claims: VideoTokenClaims): boolean {
+  if (claims.userId === 'anonymous' || claims.rssTokenVersion !== null) return false;
+  const ttlRemaining = claims.expires - Math.floor(Date.now() / 1000);
+  return ttlRemaining > WEB_VIDEO_TOKEN_MAX_TTL_SECONDS;
+}
+
+export function checkVideoTokenRssVersion(
+  claims: VideoTokenClaims,
+  lookup: RssTokenVersionLookup,
+): VideoTokenRssVersionCheck {
+  if (claims.userId === 'anonymous') return 'ok';
+  if (!lookup.ok) return 'unavailable';
+  if (claims.rssTokenVersion !== null) {
+    return lookup.version === claims.rssTokenVersion ? 'ok' : 'forbidden';
+  }
+  return isLegacyRssVideoTokenWithoutVersion(claims) ? 'forbidden' : 'ok';
 }
 
 export async function signVideoToken(
@@ -118,5 +150,5 @@ export async function verifyVideoToken(token: string, secret: string) {
 
   if (Math.floor(Date.now() / 1000) > expires) throw new Error('Video token expired');
 
-  return { userId, videoId, expires, previewUntil, rssTokenVersion };
+  return { userId, videoId, expires, previewUntil, rssTokenVersion } satisfies VideoTokenClaims;
 }

@@ -24,16 +24,21 @@ export function normalizeRssTokenVersion(rawVersion: unknown): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+export type RssTokenVersionLookup = { ok: true; version: number } | { ok: false };
+
 /** Read the current RSS token version for a user, tolerating a not-yet-migrated column. */
-export async function readRssTokenVersion(db: any, userId: string): Promise<number> {
+export async function readRssTokenVersion(
+  db: any,
+  userId: string,
+): Promise<RssTokenVersionLookup> {
   try {
     const row = await db
       .prepare('SELECT rss_token_version FROM users WHERE id = ? LIMIT 1')
       .bind(userId)
       .first();
-    return normalizeRssTokenVersion(row?.rss_token_version);
+    return { ok: true, version: normalizeRssTokenVersion(row?.rss_token_version) };
   } catch {
-    return 0;
+    return { ok: false };
   }
 }
 

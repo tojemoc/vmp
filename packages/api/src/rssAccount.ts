@@ -47,8 +47,11 @@ export async function handleGetAccountRss(request: any, env: any, corsHeaders: a
   }
 
   const db = getDb(env);
-  const tokenVersion = await readRssTokenVersion(db, user.sub);
-  const urls = await buildRssUrls(request, env, user.sub, tokenVersion);
+  const tokenVersionLookup = await readRssTokenVersion(db, user.sub);
+  if (!tokenVersionLookup.ok) {
+    return jsonResponse({ error: 'RSS temporarily unavailable' }, 503, corsHeaders);
+  }
+  const urls = await buildRssUrls(request, env, user.sub, tokenVersionLookup.version);
   return jsonResponse(urls, 200, corsHeaders);
 }
 

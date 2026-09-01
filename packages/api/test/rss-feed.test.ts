@@ -3,8 +3,14 @@ import { describe, it } from 'node:test';
 import { createAccessToken } from '../src/auth.js';
 import { handlePersonalFeed } from '../src/feed.js';
 import { handleGetAccountRss, handleRotateAccountRss } from '../src/rssAccount.js';
-import { computeRssTokenHex, normalizeRssTokenVersion } from '../src/rssToken.js';
-import { signVideoToken, verifyVideoToken } from '../src/videoTokens.js';
+import { computeRssTokenHex, normalizeRssTokenVersion, readRssTokenVersion } from '../src/rssToken.js';
+import {
+  checkVideoTokenRssVersion,
+  isLegacyRssVideoTokenWithoutVersion,
+  signVideoToken,
+  verifyVideoToken,
+  WEB_VIDEO_TOKEN_MAX_TTL_SECONDS,
+} from '../src/videoTokens.js';
 
 const RSS_SECRET = 'test-rss-secret-at-least-thirty-two-characters';
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
@@ -97,6 +103,26 @@ describe('normalizeRssTokenVersion', () => {
     assert.equal(normalizeRssTokenVersion(2.9), 2);
     assert.equal(normalizeRssTokenVersion('nope'), 0);
     assert.equal(normalizeRssTokenVersion(undefined), 0);
+  });
+});
+
+describe('readRssTokenVersion', () => {
+  it('returns version zero for a user without a stored version', async () => {
+    const db = new FakeFeedDb({
+      users: [{ id: 'u1', email: 'a@b.c', role: 'viewer' }],
+    });
+    const lookup = await readRssTokenVersion(db, 'u1');
+    assert.deepEqual(lookup, { ok: true, version: 0 });
+  });
+
+  it('returns a distinct failure state when the D1 read fails', async () => {
+    const db = {
+      prepare() {
+        throw new Error('D1 unavailable');
+      },
+    };
+    const lookup = await readRssTokenVersion(db, 'u1');
+    assert.deepEqual(lookup, { ok: false });
   });
 });
 
@@ -271,5 +297,44 @@ describe('RSS video token version binding', () => {
     });
     const claims = await verifyVideoToken(token, JWT_SECRET);
     assert.equal(claims.rssTokenVersion, 0);
+  });
+
+  it('rejects version-zero RSS tokens after rotation to version one', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, null, {
+      ttlSeconds: 60 * 60 * 24 * 30,
+      rssTokenVersion: 0,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    const check = checkVideoTokenRssVersion(claims, { ok: true, version: 1 });
+    assert.equal(check, 'forbidden');
+  });
+
+  it('rejects legacy four-field RSS tokens that omit rss_token_version', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, null, {
+      ttlSeconds: 60 * 60 * 24 * 30,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(claims.rssTokenVersion, null);
+    assert.equal(isLegacyRssVideoTokenWithoutVersion(claims), true);
+    assert.equal(checkVideoTokenRssVersion(claims, { ok: true, version: 0 }), 'forbidden');
+    assert.equal(checkVideoTokenRssVersion(claims, { ok: true, version: 1 }), 'forbidden');
+  });
+
+  it('allows short-lived web playback tokens without rss_token_version', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, 120, {
+      ttlSeconds: WEB_VIDEO_TOKEN_MAX_TTL_SECONDS,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(isLegacyRssVideoTokenWithoutVersion(claims), false);
+    assert.equal(checkVideoTokenRssVersion(claims, { ok: true, version: 0 }), 'ok');
+  });
+
+  it('returns unavailable when the rss_token_version lookup fails', async () => {
+    const token = await signVideoToken('u1', 'vid-1', JWT_SECRET, null, {
+      ttlSeconds: 3600,
+      rssTokenVersion: 0,
+    });
+    const claims = await verifyVideoToken(token, JWT_SECRET);
+    assert.equal(checkVideoTokenRssVersion(claims, { ok: false }), 'unavailable');
   });
 });

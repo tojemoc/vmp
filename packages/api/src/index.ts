@@ -216,7 +216,7 @@ import {
   handleThumbnailUpload,
   THUMBNAIL_CACHE_CONTROL,
 } from './thumbnails.js';
-import { signVideoToken, verifyVideoToken } from './videoTokens.js';
+import { checkVideoTokenRssVersion, signVideoToken, verifyVideoToken } from './videoTokens.js';
 import { sendPushNotification } from './webpush.js';
 
 type CorsHeaders = Record<string, string>;
@@ -1903,14 +1903,18 @@ async function handleVideoProxy(
     });
   }
 
-  // RSS-issued tokens carry rss_token_version; reject stale tokens after rotation.
-  if (
-    tokenClaims &&
-    tokenClaims.rssTokenVersion !== null &&
-    tokenClaims.userId !== 'anonymous'
-  ) {
-    const currentVersion = await readRssTokenVersion(getDb(env), tokenClaims.userId);
-    if (currentVersion !== tokenClaims.rssTokenVersion) {
+  // RSS-issued tokens carry rss_token_version; reject stale or legacy unbound tokens.
+  if (tokenClaims && tokenClaims.userId !== 'anonymous') {
+    const versionLookup = await readRssTokenVersion(getDb(env), tokenClaims.userId);
+    const versionCheck = checkVideoTokenRssVersion(tokenClaims, versionLookup);
+    if (versionCheck === 'unavailable') {
+      return jsonResponse(
+        { error: 'Video playback temporarily unavailable', code: 'video_auth_unavailable' },
+        503,
+        corsHeaders,
+      );
+    }
+    if (versionCheck === 'forbidden') {
       return jsonResponse(
         { error: 'Invalid or expired video token', code: 'video_token_invalid' },
         403,
