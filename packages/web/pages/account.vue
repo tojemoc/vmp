@@ -185,11 +185,9 @@
               class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
               :class="statusBadgeClass(subscription.status, subscription.cancelAtPeriodEnd)"
             >
-              {{
-                subscription.cancelAtPeriodEnd
+              {{ subscription.cancelAtPeriodEnd
                   ? strings.subscriptionCanceling
-                  : subscription.status
-              }}
+                  : subscription.status }}
             </span>
           </div>
 
@@ -223,11 +221,11 @@
               @click="openPortal"
             >
               <span v-if="openingPortal">{{ strings.openingPortal }}</span>
-              <span v-else>{{
-                subscription.cancelAtPeriodEnd
+              <span v-else
+                >{{ subscription.cancelAtPeriodEnd
                   ? strings.resumeSubscription
-                  : strings.manageSubscription
-              }}</span>
+                  : strings.manageSubscription }}</span
+              >
             </button>
             <a
               v-if="showLegacyManageButton && legacyManageUrl"
@@ -261,11 +259,9 @@
             {{ strings.continueWatchingTitle }}
           </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {{
-              continueWatchingDeletionOnly
+            {{ continueWatchingDeletionOnly
                 ? strings.continueWatchingIntroLapsed
-                : strings.continueWatchingIntro
-            }}
+                : strings.continueWatchingIntro }}
           </p>
         </div>
 
@@ -346,18 +342,13 @@
               :disabled="removingVideoId != null"
               @click="removeContinueWatchingItem(item.videoId)"
             >
-              {{
-                removingVideoId === item.videoId
+              {{ removingVideoId === item.videoId
                   ? strings.continueWatchingRemoving
-                  : strings.continueWatchingRemove
-              }}
+                  : strings.continueWatchingRemove }}
             </button>
           </li>
         </ul>
-        <p
-          v-if="continueWatchingHasMore"
-          class="text-xs text-gray-500 dark:text-gray-400"
-        >
+        <p v-if="continueWatchingHasMore" class="text-xs text-gray-500 dark:text-gray-400">
           {{ strings.continueWatchingTruncated }}
         </p>
       </div>
@@ -390,11 +381,11 @@
             >
               {{ strings.podcastRssPersonalLabel }}
             </p>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <input
                 :value="rssPersonalUrl"
                 readonly
-                class="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               >
               <button
                 class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
@@ -402,9 +393,53 @@
               >
                 {{ copiedWhich === 'personal' ? strings.copied : strings.copy }}
               </button>
+              <button
+                class="px-3 py-2 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60"
+                :disabled="rotatingRss"
+                @click="rotateRssUrl"
+              >
+                {{ rotatingRss ? strings.podcastRssRotating : strings.podcastRssRotate }}
+              </button>
             </div>
-            <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ strings.podcastRssRotateHint }}
+            </p>
+            <p v-if="rotateError" class="text-xs text-red-600 dark:text-red-400">
+              {{ rotateError }}
+            </p>
           </div>
+
+          <div class="space-y-2">
+            <p
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide"
+            >
+              {{ strings.podcastRssPublicLabel }}
+            </p>
+            <div class="flex flex-wrap items-center gap-2">
+              <input
+                :value="rssPublicUrl"
+                readonly
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+              <button
+                class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                @click="copyText(rssPublicUrl, 'public')"
+              >
+                {{ copiedWhich === 'public' ? strings.copied : strings.copy }}
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <p class="text-xs font-semibold text-gray-600 dark:text-gray-300">
+              {{ strings.podcastRssInstructionsTitle }}
+            </p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              {{ strings.podcastRssInstructions }}
+            </p>
+          </div>
+
+          <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
         </template>
       </div>
 
@@ -709,7 +744,10 @@
   const rssError = ref<string | null>(null);
   const copyError = ref<string | null>(null);
   const rssPersonalUrl = ref('');
-  const copiedWhich = ref<'personal' | null>(null);
+  const rssPublicUrl = ref('');
+  const rotatingRss = ref(false);
+  const rotateError = ref<string | null>(null);
+  const copiedWhich = ref<'personal' | 'public' | null>(null);
 
   type ContinueWatchingItem = {
     videoId: string;
@@ -846,10 +884,37 @@
         return;
       }
       rssPersonalUrl.value = data.personalUrl ?? '';
+      rssPublicUrl.value = data.publicUrl ?? '';
     } catch {
       rssError.value = strings.rssLoadNetworkError;
     } finally {
       loadingRss.value = false;
+    }
+  }
+
+  async function rotateRssUrl() {
+    if (rotatingRss.value) return;
+    if (!window.confirm(strings.podcastRssRotateConfirm)) return;
+    rotatingRss.value = true;
+    rotateError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/rss/rotate`, {
+        method: 'POST',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        rotateError.value = data.error ?? strings.podcastRssRotateFailed;
+        return;
+      }
+      rssPersonalUrl.value = data.personalUrl ?? rssPersonalUrl.value;
+      rssPublicUrl.value = data.publicUrl ?? rssPublicUrl.value;
+      capturePostHogEvent('podcast_rss_url_rotated');
+    } catch {
+      rotateError.value = strings.podcastRssRotateFailed;
+    } finally {
+      rotatingRss.value = false;
     }
   }
 
@@ -909,7 +974,7 @@
     }
   }
 
-  async function copyText(value: string, which: 'personal') {
+  async function copyText(value: string, which: 'personal' | 'public') {
     if (!value) return;
     copyError.value = null;
     try {

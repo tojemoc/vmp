@@ -313,6 +313,17 @@ export const strings: StringsDefinition = {
   podcastRssTitle: 'Podcast RSS',
   podcastRssIntro: 'Use your personal URL in your podcast app for full episodes while subscribed.',
   podcastRssPersonalLabel: 'Your personal URL',
+  podcastRssPublicLabel: 'Public preview URL',
+  podcastRssRotate: 'Rotate URL',
+  podcastRssRotating: 'Rotating…',
+  podcastRssRotateHint:
+    'If your personal URL leaks, rotate it. The old URL stops working right away, so re-add the new one in your podcast app.',
+  podcastRssRotateConfirm:
+    'Rotate your personal RSS URL? The current URL stops working right away and you must re-add the new one in every podcast app.',
+  podcastRssRotateFailed: 'Could not rotate your RSS URL.',
+  podcastRssInstructionsTitle: 'How to subscribe',
+  podcastRssInstructions:
+    'Copy your personal URL, then add it by URL in your podcast app (Overcast, Pocket Casts, and AntennaPod support "add by URL"). The public preview URL is for directory listings and always serves preview-only episodes.',
   continueWatchingTitle: 'Continue watching',
   continueWatchingIntro:
     'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',

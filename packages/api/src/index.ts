@@ -197,7 +197,7 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
-import { handleGetAccountRss } from './rssAccount.js';
+import { handleGetAccountRss, handleRotateAccountRss } from './rssAccount.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
   handleRssPodcastPreviewRebuildNotify,
@@ -1101,6 +1101,9 @@ const workerHandler = {
         }
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
+          return handleRotateAccountRss(request, env, corsHeaders);
         }
         if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
           return handleListPlaybackPositions(request, env, corsHeaders);

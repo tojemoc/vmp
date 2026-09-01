@@ -378,7 +378,18 @@ function constantTimeEqual(a: any, b: any) {
 }
 
 async function getUserById(db: any, userId: any) {
-  return db.prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1').bind(userId).first();
+  try {
+    return await db
+      .prepare('SELECT id, email, role, rss_token_version FROM users WHERE id = ? LIMIT 1')
+      .bind(userId)
+      .first();
+  } catch {
+    // Tolerate a D1 state where the rss_token_version column has not been migrated yet.
+    return db
+      .prepare('SELECT id, email, role FROM users WHERE id = ? LIMIT 1')
+      .bind(userId)
+      .first();
+  }
 }
 
 async function getActiveSubscriptionRow(db: any, userId: any) {
@@ -526,19 +537,17 @@ export async function handlePersonalFeed(request: any, env: any, corsHeaders: an
     }
 
     const cache = getDefaultCache();
-    const expectedToken = await computeRssTokenHex(rssSecret, userId);
-    if (!constantTimeEqual(expectedToken, token)) {
-      // 404 to avoid leaking valid user IDs.
-      return new Response(JSON.stringify({ error: 'Not Found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
-    }
-
     const { session } = getReadSession(env, request);
     const db = getDb(env);
-    const user = await getUserById(session, userId);
-    if (!user) {
+
+    // Read the token version from the primary DB so a rotated URL invalidates the
+    // old token immediately and the freshly issued URL works on first poll.
+    const user = await getUserById(db, userId);
+    const expectedToken = user
+      ? await computeRssTokenHex(rssSecret, userId, user.rss_token_version)
+      : null;
+    if (!user || expectedToken == null || !constantTimeEqual(expectedToken, token)) {
+      // 404 for both unknown users and bad tokens, to avoid leaking valid user IDs.
       return new Response(JSON.stringify({ error: 'Not Found' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },

@@ -18,9 +18,20 @@ async function importRssHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-export async function computeRssTokenHex(rssSecret: string, userId: string): Promise<string> {
+/** Normalize an untrusted token version into a non-negative integer. */
+export function normalizeRssTokenVersion(rawVersion: unknown): number {
+  const value = Math.trunc(Number(rawVersion));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+export async function computeRssTokenHex(
+  rssSecret: string,
+  userId: string,
+  tokenVersion: unknown = 0,
+): Promise<string> {
+  const version = normalizeRssTokenVersion(tokenVersion);
   const key = await importRssHmacKey(rssSecret);
-  const msg = new TextEncoder().encode(`rss:${userId}`);
+  const msg = new TextEncoder().encode(`rss:${userId}:${version}`);
   const sig = await crypto.subtle.sign('HMAC', key, msg);
   return hexFromBytes(new Uint8Array(sig));
 }
