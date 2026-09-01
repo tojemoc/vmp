@@ -16,6 +16,7 @@ import {
   readRssTokenVersion,
 } from './rssToken.js';
 
+/** Build a JSON response with CORS headers and the given status code. */
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -23,6 +24,7 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
   });
 }
 
+/** Build the public and personal RSS feed URLs for a user at the current token version. */
 async function buildRssUrls(request: any, env: any, userId: string, tokenVersion: number) {
   const rssSecret = env.RSS_SECRET?.trim();
   const origin = getRequestPublicOrigin(request, env);
@@ -33,6 +35,7 @@ async function buildRssUrls(request: any, env: any, userId: string, tokenVersion
   };
 }
 
+/** GET /api/account/rss — return the authenticated user's RSS feed URLs. */
 export async function handleGetAccountRss(request: any, env: any, corsHeaders: any) {
   let user;
   try {
@@ -55,6 +58,7 @@ export async function handleGetAccountRss(request: any, env: any, corsHeaders: a
   return jsonResponse(urls, 200, corsHeaders);
 }
 
+/** POST /api/account/rss/rotate — increment the user's token version and return fresh URLs. */
 export async function handleRotateAccountRss(request: any, env: any, corsHeaders: any) {
   let user;
   try {

@@ -4,10 +4,12 @@
  * Shared HMAC helper for stable per-user RSS feed tokens.
  */
 
+/** Convert a byte array to a lowercase hex string. */
 function hexFromBytes(bytes: ArrayLike<number>): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Import the RSS secret as an HMAC-SHA256 signing key. */
 async function importRssHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
@@ -42,6 +44,10 @@ export async function readRssTokenVersion(
   }
 }
 
+/**
+ * Generate an HMAC-SHA256 hex token for a user's RSS feed.
+ * The signature covers "rss:<userId>" for legacy v0 or "rss:<userId>:<version>" for versioned tokens.
+ */
 export async function computeRssTokenHex(
   rssSecret: string,
   userId: string,

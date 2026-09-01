@@ -13,16 +13,19 @@
 
 import { normalizeRssTokenVersion, type RssTokenVersionLookup } from './rssToken.js';
 
+/** Encode a string as base64url (no padding). */
 function b64urlEncode(str: string): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
+/** Decode a base64url string (restores padding if omitted). */
 function b64urlDecode(b64url: string): string {
   const padded =
     b64url.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice(0, (4 - (b64url.length % 4)) % 4);
   return atob(padded);
 }
 
+/** Import the video token secret as an HMAC-SHA256 key for signing and verification. */
 async function importVideoHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
@@ -58,6 +61,10 @@ export function isLegacyRssVideoTokenWithoutVersion(claims: VideoTokenClaims): b
   return ttlRemaining > WEB_VIDEO_TOKEN_MAX_TTL_SECONDS;
 }
 
+/**
+ * Check if a video token's RSS version matches the user's current version.
+ * Returns 'forbidden' if the token is stale or a legacy long-TTL token without version binding.
+ */
 export function checkVideoTokenRssVersion(
   claims: VideoTokenClaims,
   lookup: RssTokenVersionLookup,
@@ -70,6 +77,10 @@ export function checkVideoTokenRssVersion(
   return isLegacyRssVideoTokenWithoutVersion(claims) ? 'forbidden' : 'ok';
 }
 
+/**
+ * Sign a video access token with optional preview cap and RSS version binding.
+ * Returns a base64url payload and hex HMAC signature joined by a dot.
+ */
 export async function signVideoToken(
   userId: string,
   videoId: string,
@@ -94,6 +105,10 @@ export async function signVideoToken(
   return `${payload}.${sigHex}`;
 }
 
+/**
+ * Verify a video token's HMAC signature and parse its claims.
+ * Throws on malformed tokens, invalid signatures, or expiration.
+ */
 export async function verifyVideoToken(token: string, secret: string) {
   if (!token || typeof token !== 'string') throw new Error('Missing video token');
   const dotIndex = token.lastIndexOf('.');

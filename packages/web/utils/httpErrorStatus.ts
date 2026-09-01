@@ -9,6 +9,7 @@
  * failure, TLS error, timeout or abort against the API never has a status, and
  * must not be read as "the upstream said this resource is gone".
  */
+/** Convert an unknown value to a finite number representing an HTTP status code, or null. */
 function toStatusNumber(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string' && value.trim()) {

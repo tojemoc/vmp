@@ -83,6 +83,7 @@ export function setWorkerLogTracingContext(tracing: PostHogLogTracingContext): v
   if (tracing.sessionId !== undefined) context.posthogTracing.sessionId = tracing.sessionId;
 }
 
+/** Check if Datadog Logs are enabled based on the DD_LOGS_ENABLED flag and DD_API_KEY presence. */
 export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
   const flag = String(env.DD_LOGS_ENABLED ?? '')
     .trim()
@@ -91,6 +92,7 @@ export function isDatadogLogsEnabled(env: Record<string, unknown>): boolean {
   return Boolean(String(env.DD_API_KEY ?? '').trim());
 }
 
+/** Normalize a Datadog site name to a fully-qualified domain (e.g., 'datadoghq.eu'). */
 export function normalizeDatadogSite(site: string): string {
   const trimmed = site
     .trim()
@@ -101,6 +103,7 @@ export function normalizeDatadogSite(site: string): string {
   return `${trimmed}.datadoghq.eu`;
 }
 
+/** Build the Datadog HTTP logs intake URL from the DD_SITE environment variable. */
 export function buildDatadogIntakeUrl(env: Record<string, unknown>): string {
   const configured = String(env.DD_SITE ?? 'datadoghq.eu').trim() || 'datadoghq.eu';
   if (/^http:\/\//i.test(configured)) {
@@ -132,6 +135,7 @@ export function formatLogMessage(entry: LogEntry): string {
   return component ? `${component}: ${summary}` : summary;
 }
 
+/** Resolve the Datadog version tag from DD_VERSION or CF_VERSION_METADATA. */
 export function resolveDatadogVersion(env: Record<string, unknown>): string {
   const explicit = String(env.DD_VERSION ?? '').trim();
   if (explicit) return explicit;
@@ -139,6 +143,7 @@ export function resolveDatadogVersion(env: Record<string, unknown>): string {
   return String(meta?.id ?? '').trim();
 }
 
+/** Build a comma-separated Datadog tags string from DD_ENV and version. */
 export function buildDatadogTags(env: Record<string, unknown>): string | undefined {
   const tags: string[] = [];
   const ddEnv = String(env.DD_ENV ?? '').trim();
@@ -162,6 +167,7 @@ export function buildDatadogAttributes(entry: LogEntry): Record<string, unknown>
   return attrs;
 }
 
+/** Build a batch of Datadog log objects from log entries with service and tag metadata. */
 export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, unknown>) {
   const service = String(env.DD_SERVICE ?? 'vmp-api').trim() || 'vmp-api';
   const ddtags = buildDatadogTags(env);
@@ -181,6 +187,7 @@ export function buildDatadogLogBatch(entries: LogEntry[], env: Record<string, un
   });
 }
 
+/** Upload log entries to Datadog HTTP Logs API (best-effort, logs on failure). */
 export async function flushDatadogLogs(
   env: Record<string, unknown>,
   entries: LogEntry[],
@@ -223,6 +230,7 @@ export function setPostHogFlushHandlerForTests(handler: PostHogFlushHandler | nu
  * `scheduleDatadogFlush` before those tasks complete, or emit logs before the
  * main handler returns.
  */
+/** Schedule log uploads to enabled backends (Datadog and/or PostHog) via waitUntil. */
 function scheduleWorkerLogFlush(context: WorkerLogContext): void {
   if (context.buffer.length === 0) return;
 
@@ -268,6 +276,7 @@ export async function runWithDatadogLogContext<T>(
   }
 }
 
+/** Log a structured entry to console and buffer it for backend upload if enabled. */
 export function log(fields: LogFields): void {
   const entry: LogEntry = {
     level: 'info',

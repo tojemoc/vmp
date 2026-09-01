@@ -47,18 +47,22 @@ type CachedClient = {
 
 let cachedClient: CachedClient | null = null;
 
+/** Test hook to override the PostHog capture handler. */
 export function setPostHogCaptureForTests(handler: PostHogCaptureHandler | null): void {
   captureHandler = handler;
 }
 
+/** Test hook to override the PostHog exception handler. */
 export function setPostHogExceptionForTests(handler: PostHogExceptionHandler | null): void {
   exceptionHandler = handler;
 }
 
+/** Test hook to reset the cached PostHog client. */
 export function resetPostHogClientForTests(): void {
   cachedClient = null;
 }
 
+/** Resolve the PostHog project token from environment variables. */
 export function resolvePostHogProjectToken(env: Record<string, unknown> | undefined): string {
   const token = env?.POSTHOG_PROJECT_TOKEN ?? env?.POSTHOG_KEY;
   return typeof token === 'string' ? token.trim() : '';
@@ -70,6 +74,7 @@ export function resolvePostHogSecretApiToken(env: Record<string, unknown> | unde
   return typeof token === 'string' ? token.trim() : '';
 }
 
+/** Convert a byte array to a lowercase hex string. */
 function bytesToHex(bytes: Uint8Array): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -108,12 +113,14 @@ export async function resolvePostHogIdentityHashForUser(
   return hash || undefined;
 }
 
+/** Resolve the PostHog host URL from environment variables, falling back to the EU default. */
 export function resolvePostHogHost(env: Record<string, unknown> | undefined): string {
   const host = env?.POSTHOG_HOST;
   const trimmed = typeof host === 'string' ? host.trim() : '';
   return trimmed || DEFAULT_POSTHOG_HOST;
 }
 
+/** Create a PostHog Node SDK client configured with project token and host. */
 export function createPostHogClient(env: Record<string, unknown> | undefined): PostHog | null {
   const token = resolvePostHogProjectToken(env);
   if (!token) return null;
@@ -124,6 +131,7 @@ export function createPostHogClient(env: Record<string, unknown> | undefined): P
   });
 }
 
+/** Get or create a cached PostHog client, reused across Worker isolate invocations. */
 function getSharedPostHogClient(env: Record<string, unknown> | undefined): PostHog | null {
   const token = resolvePostHogProjectToken(env);
   if (!token) return null;
@@ -135,6 +143,7 @@ function getSharedPostHogClient(env: Record<string, unknown> | undefined): PostH
   return client;
 }
 
+/** Extract PostHog tracing context (distinct ID and session ID) from request headers. */
 export function posthogContextFromRequest(request: Request | undefined): {
   distinctId: string | null;
   sessionId: string | null;
@@ -184,6 +193,7 @@ export function redactPathForAnalytics(pathname: string): string {
     .join('/');
 }
 
+/** Build PostHog session properties from a session ID. */
 function sessionProperties(sessionId: string | null): Record<string, unknown> {
   return sessionId ? { $session_id: sessionId } : {};
 }
@@ -197,10 +207,12 @@ export function resolvePostHogEnvironment(env: Record<string, unknown> | undefin
   return 'development';
 }
 
+/** Build PostHog environment property for filtering staging vs production. */
 function environmentProperties(env: Record<string, unknown> | undefined): Record<string, unknown> {
   return { $environment: resolvePostHogEnvironment(env) };
 }
 
+/** Schedule PostHog work via ExecutionContext.waitUntil if available, or run it immediately. */
 function runPostHogWork(
   ctx: PostHogWaitUntilCtx | undefined,
   work: () => Promise<void>,
@@ -215,6 +227,7 @@ function runPostHogWork(
   return promise;
 }
 
+/** Capture a PostHog event with session and environment properties, scheduled via waitUntil if available. */
 export function capturePostHogEvent(
   env: Record<string, unknown> | undefined,
   input: PostHogCaptureInput,
@@ -253,6 +266,7 @@ export function capturePostHogEvent(
   });
 }
 
+/** Capture a PostHog exception with anonymous flag for errors without a user context. */
 export function capturePostHogException(
   env: Record<string, unknown> | undefined,
   error: unknown,
@@ -287,6 +301,7 @@ export function capturePostHogException(
   });
 }
 
+/** Map a Stripe webhook event to a PostHog subscription lifecycle event. */
 export function posthogEventFromStripeWebhook(
   type: string,
   object: Record<string, unknown>,
@@ -341,6 +356,7 @@ export function posthogEventFromStripeWebhook(
   return null;
 }
 
+/** Map a legacy provider webhook status to a PostHog subscription event. */
 export function posthogEventFromLegacyWebhook(
   status: string,
   userId: string,
@@ -357,6 +373,7 @@ export function posthogEventFromLegacyWebhook(
   return null;
 }
 
+/** Capture a mapped PostHog event if the input is not null. */
 export function captureMappedPostHogEvent(
   env: Record<string, unknown> | undefined,
   input: PostHogCaptureInput | null,
