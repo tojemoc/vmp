@@ -42,7 +42,8 @@ const ROUTE_FEATURE_RULES: RouteFeatureRule[] = [
   { prefix: '/api/auth/magic-pwa-handoff', feature: 'pwa' },
   { prefix: '/api/auth/redeem-pwa-handoff', feature: 'pwa' },
   { prefix: '/api/auth/device-pairing', feature: 'pwa' },
-].sort((a, b) => b.prefix.length - a.prefix.length);
+];
+ROUTE_FEATURE_RULES.sort((a, b) => b.prefix.length - a.prefix.length);
 
 function resolveRouteFeature(pathname: string): DeploymentFeatureId | null {
   for (const rule of ROUTE_FEATURE_RULES) {
