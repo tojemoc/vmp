@@ -111,6 +111,34 @@
     if (!offlineDownloadsEnabled.value) return;
     record.value = await getDownloadRecord(props.videoId);
     if (record.value?.rendition) rendition.value = record.value.rendition;
+    syncProgressFromRecord();
+  }
+
+  function emptyProgress() {
+    return {
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      filesCompleted: 0,
+      filesTotal: 0,
+      status: null as string | null,
+    };
+  }
+
+  function syncProgressFromRecord() {
+    const rec = record.value;
+    if (!rec) {
+      progress.value = emptyProgress();
+      return;
+    }
+    if (rec.status === 'downloading' || rec.status === 'paused') {
+      progress.value = {
+        bytesDownloaded: rec.bytesDownloaded,
+        totalBytes: rec.totalBytes,
+        filesCompleted: rec.filesCompleted,
+        filesTotal: rec.filesTotal,
+        status: rec.status,
+      };
+    }
   }
 
   onMounted(async () => {
@@ -192,7 +220,15 @@
   });
 
   const status = computed(() => record.value?.status ?? progress.value.status ?? null);
+  const isFinalizing = computed(() => {
+    const effectiveStatus = progress.value.status ?? record.value?.status ?? null;
+    if (effectiveStatus !== 'downloading') return false;
+    const filesTotal = progress.value.filesTotal || record.value?.filesTotal || 0;
+    const filesCompleted = progress.value.filesCompleted || record.value?.filesCompleted || 0;
+    return filesTotal > 0 && filesCompleted >= filesTotal;
+  });
   const percent = computed(() => {
+    if (isFinalizing.value) return 99;
     const liveTotal = progress.value.totalBytes;
     const liveBytes = progress.value.bytesDownloaded;
     const storedTotal = record.value?.totalBytes ?? 0;
@@ -200,12 +236,14 @@
     const totalBytes = liveTotal > 0 ? liveTotal : storedTotal;
     const bytesDownloaded = liveTotal > 0 ? liveBytes : storedBytes;
     if (!totalBytes) return 0;
-    return Math.min(100, Math.round((bytesDownloaded / totalBytes) * 100));
+    return Math.min(99, Math.round((bytesDownloaded / totalBytes) * 100));
   });
   const isActive = computed(
     () => status.value === 'downloading' || isDownloadActive(props.videoId),
   );
-  const showProgress = computed(() => isActive.value || status.value === 'paused');
+  const showProgress = computed(
+    () => isActive.value || status.value === 'paused' || isFinalizing.value,
+  );
 
   /** True when the user can actually start a download right now. */
   const downloadsAvailable = computed(() => canDownload.value);
@@ -370,7 +408,14 @@
         <path d="M5 18a1 1 0 011-1h12a1 1 0 110 2H6a1 1 0 01-1-1z" />
       </svg>
       <span
-        v-if="downloadsAvailable && (status === 'completed' || status === 'update_available')"
+        v-if="showProgress"
+        class="watch-offline-download-progress-badge text-[10px] font-semibold text-white dark:text-white"
+        aria-live="polite"
+      >
+        {{ isFinalizing ? strings.offlineDownloadFinalizing : strings.offlineDownloadProgress(percent) }}
+      </span>
+      <span
+        v-else-if="downloadsAvailable && (status === 'completed' || status === 'update_available')"
         class="watch-offline-download-badge"
         aria-hidden="true"
       />
@@ -398,7 +443,9 @@
           <div class="h-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
         </div>
         <p class="text-xs text-white/90 dark:text-gray-300">
-          {{ strings.offlineDownloadProgress(percent) }}
+          {{ isFinalizing
+              ? strings.offlineDownloadFinalizing
+              : strings.offlineDownloadProgress(percent) }}
         </p>
         <button
           v-if="isActive"
@@ -739,6 +786,22 @@
     height: 7px;
     border-radius: 9999px;
     background: #22c55e;
+  }
+
+  .watch-offline-download-progress-badge {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.15rem;
+    max-width: 6.5rem;
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.25rem;
+    background: rgba(17, 24, 39, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
   }
 
   .watch-offline-download-menu {

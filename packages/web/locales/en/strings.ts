@@ -343,6 +343,7 @@ export const strings: StringsDefinition = {
   offlineDownloadPlay: 'Play',
   offlineDownloadFailed: 'Download failed. Please try again.',
   offlineDownloadProgress: (percent: number) => `Downloading… ${percent}%`,
+  offlineDownloadFinalizing: 'Finishing download…',
   offlineDownloadRemoveConfirm: (title: string) => `Remove offline copy of “${title}”?`,
   offlineDownloadStatusDownloaded: 'Downloaded',
   offlineDownloadStatusDownloading: 'Downloading',

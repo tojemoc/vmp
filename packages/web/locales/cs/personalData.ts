@@ -19,10 +19,10 @@ export const personalData: PersonalDataPage = {
       title: 'Prohlížení bez přihlášení',
       paragraphs: [
         'Pokud jen čtete veřejné stránky a nepřihlásíte se, nenastavujeme autentifikační cookie. Anonymní ukázky videí jsou poskytovány přes naše API; pozice přehrávání se mezi návštěvami neukládá.',
-        'Používáme analytiku zaměřenou na soukromí bez cookies (Umami Cloud, datová oblast EU) k měření velikosti publika. Umami ve výchozí konfiguraci nenastavuje marketingové cookies ani cross-site identifikátory. Pro tento omezený statistický účel se opíráme o oprávněný zájem a můžete namítat (viz Vaše práva).',
         'Pro produktovou analytiku používáme PostHog (EU cloud). Dokud nevyberete v banneru na webu, PostHog nezachycuje události. Pokud přijmete, používáme analytické cookies a po přihlášení můžeme propojit aktivitu s interním ID účtu — e-mailovou adresu neodesíláme. Personální profily vznikají jen pro přihlášené uživatele. Pokud odmítnete, PostHog stále počítá návštěvy pomocí hash na straně PostHogu — v prohlížeči se neukládají analytické cookies ani localStorage.',
         'Naše API může odesílat technické výjimky do PostHogu pro analýzu spolehlivosti. Neautentizované chyby používají krátkodobé náhodné id (ne váš účet). Uchovávání událostí se řídí nastavením retence našeho PostHog projektu v EU.',
         'Odděleně od produktové analytiky v prohlížeči založené na souhlasu naše API odesílá do PostHogu události životního cyklu předplatného z platebních webhooků (aktivace, obnovení, zrušení, neúspěšná platba), vázané pouze na ID účtu — na základě našeho oprávněného zájmu spolehlivě provozovat fakturaci; odmítnutí analytiky v prohlížeči tyto serverové události nezastaví.',
+        'Pokud je v Admin → System zapnutý Google Tag Manager, mohou se načíst další marketingové nebo měřicí tagy, které v kontejneru nakonfigurujete. GTM je ve výchozím stavu vypnutý.',
       ],
     },
     {
@@ -31,7 +31,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Některé funkce fungují pouze tehdy, pokud prohlížeč uloží malé množství údajů. Jsou nezbytné pro funkci, o kterou žádáte — ne pro reklamu nebo profilování.',
         'Přihlášením, předplatným, povolením oznámení, instalací webové aplikace nebo změnou rychlosti přehrávání používáte funkce, které vyžadují úložiště uvedené v tabulce níže. Většině tohoto úložiště se můžete vyhnout tím, že tyto funkce nepoužijete (například zůstanete odhlášeni a neměníte nastavení přehrávače).',
-        'Vaši interakci nepoužíváme jako souhlas s nesouvisejícími marketingovými trackery. Volitelné reklamní nástroje, které nejsou nezbytné, by nejprve vyžadovaly souhlas. Plná produktová analytika PostHog (cookies, propojení účtu) vyžaduje výslovný souhlas v banneru. Pokud odmítnete, shromažďují se pouze návštěvy bez ukládání do prohlížeče pomocí hash.',
+        'Vaši interakci nepoužíváme jako souhlas s nesouvisejícími marketingovými trackery. Volitelné reklamní nástroje, které nejsou nezbytné, vyžadují souhlas — včetně tagů načtených přes Google Tag Manager, pokud ho administrátor zapne. Plná produktová analytika PostHog (cookies, propojení účtu) vyžaduje výslovný souhlas v banneru. Pokud odmítnete, shromažďují se pouze návštěvy bez ukládání do prohlížeče pomocí hash.',
       ],
     },
     {
@@ -47,15 +47,15 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primární hosting používá Cloudflare (API Worker, databáze D1, média R2, frontend Pages). Provoz probíhá přes globální síť Cloudflare; nemůžeme zaručit, že každý bajt zůstane v EU, ale minimalizujeme osobní údaje a kde je to možné používáme analytiku se sídlem v EU.',
         'Záložní infrastruktura může běžet na Deno Deploy (API) a Vercel (frontend).',
-        'Další zpracovatelé zahrnují: Umami Cloud (EU) pro anonymní statistiku; PostHog (EU) pro produktovou analytiku (plná po souhlasu, nebo cookieless počty při odmítnutí; po přihlášení jen ID účtu, bez e-mailu; výjimky API); Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API. Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
+        'Další zpracovatelé zahrnují: PostHog (EU) pro produktovou analytiku (plná po souhlasu, nebo cookieless počty při odmítnutí; po přihlášení jen ID účtu, bez e-mailu; výjimky API); Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API — pokud je nastaven frontend Sentry DSN, mohou být zachyceny záznamy relací spojené s chybou (maskovaný text a blokovaná média); Google Tag Manager při zapnutí administrátorem (může načíst další tagy z kontejneru). Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnost (globální edge)',
-        'Umami Cloud (region EU) — statistika zobrazení stránek bez cookies',
         'PostHog (EU cloud) — produktová analytika (plná po souhlasu, nebo cookieless počty při odmítnutí)',
+        'Google Tag Manager — volitelné marketingové/měřicí tagy při zapnutí v Admin',
         'Stripe — zpracování plateb při předplatném',
         'Brevo — magic-link a e-maily účtu',
-        'Sentry — monitorování chyb a stability (technické logy)',
+        'Sentry — monitorování chyb a stability; záznam relace při chybě, pokud je nastaven frontend DSN (maskovaný)',
         'Deno Deploy / Vercel — záložní nasazení API a frontendu',
       ],
     },

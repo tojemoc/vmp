@@ -1,0 +1,58 @@
+# Analytics & observability (canonical stack)
+
+Roadmap: `analytics-observability` — addresses [#452](https://github.com/tojemoc/vmp/issues/452), [#509](https://github.com/tojemoc/vmp/issues/509), [#512](https://github.com/tojemoc/vmp/issues/512), [#611](https://github.com/tojemoc/vmp/issues/611).
+
+## Problem
+
+Multiple overlapping tools were introduced over time (Contentsquare, GTM, Umami, Sentry, Datadog, Plausible, PostHog). Only a subset is loaded in application code today; the rest created privacy-notice drift and reviewer confusion about which system owns which signal.
+
+## Canonical roles (2026)
+
+### Web frontend (`@vmp/web`)
+
+| Concern | Tool | Integration | Notes |
+|---------|------|-------------|-------|
+| Product analytics (funnels, cohorts, feature usage) | **PostHog** (EU) | `@posthog/nuxt`, `plugins/posthog*.client.ts` | Consent required for full capture; `cookieless_mode: on_reject` for declined visitors |
+| Error monitoring + session replay on errors | **Sentry** | `@sentry/nuxt/module`, `sentry.*.config.ts` | When `NUXT_PUBLIC_SENTRY_DSN` is set, error-linked session replay may be captured (masked text, blocked media; 10% sample on errors) |
+| Optional marketing / legacy tags | **GTM** | `plugins/gtm-settings.client.ts` | Admin opt-in via D1 (`gtm_enabled`); first-party gateway path optional |
+
+Registry: `packages/web/utils/analytics/`.
+
+### API Worker (`@vmp/api`)
+
+| Concern | Tool | Integration |
+|---------|------|-------------|
+| Structured logs | PostHog Logs (OTLP) | `logger.ts`, `posthogLogs.ts` |
+| Optional log shipping | Datadog | `logger.ts` when `DD_LOGS_ENABLED=true` |
+| Error monitoring | Sentry | `@sentry/cloudflare` |
+| Subscription lifecycle analytics | PostHog server capture | `posthog.ts` from payment webhooks |
+
+### Admin CMS analytics (first-party)
+
+Segment/view analytics for editors live in D1 (`segment_analytics` tables) and `/api/admin/analytics` — not a third-party SDK.
+
+## Retired / not loaded
+
+- **Contentsquare**, **Plausible** — never shipped in repo code.
+- **Umami (standalone SDK)** — removed from privacy copy; cookieless visit counts come from PostHog when analytics is declined.
+- **Datadog browser RUM** — not used; Datadog is API logs only.
+
+## GDPR / consent model
+
+1. **Strictly necessary** — auth cookies, PWA/offline storage, playback prefs: disclosed, no consent wall.
+2. **PostHog product analytics** — explicit accept/decline banner (`vmp_posthog_analytics_consent`). Decline → cookieless server-side counts only.
+3. **GTM** — only when admin enables; may load additional tags configured in the GTM container (disclosed as optional marketing gateway).
+4. **Sentry** — technical stability monitoring; disclosed under processors.
+5. **Server-side PostHog** from Stripe webhooks — billing operations (legitimate interest); not gated by browser consent.
+
+## Environment separation
+
+Every PostHog browser event registers `$environment` from baked `deployTier` (`staging` | `beta` | `production` | `development`). Prefer separate PostHog project tokens per GitHub environment; the property is a fallback filter.
+
+## Exception noise
+
+Intentional navigation aborts (`AbortError`, “Request aborted”) are filtered from Sentry and PostHog — see `packages/web/utils/analytics/noiseFilter.ts`.
+
+## Future work
+
+- CMS analytics expansion (views, referrer, country) — [#452](https://github.com/tojemoc/vmp/issues/452) remaining scope; build on first-party `segment_analytics`, not a new third-party pageview SDK.

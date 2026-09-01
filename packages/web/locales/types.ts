@@ -298,6 +298,7 @@ export type StringsDefinition = {
   offlineDownloadPlay: string;
   offlineDownloadFailed: string;
   offlineDownloadProgress: (percent: number) => string;
+  offlineDownloadFinalizing: string;
   offlineDownloadRemoveConfirm: (title: string) => string;
   offlineDownloadStatusDownloaded: string;
   offlineDownloadStatusDownloading: string;

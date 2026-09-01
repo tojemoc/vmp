@@ -291,8 +291,8 @@
                 @timeupdate="handleTimeUpdate"
                 @seeking="handleSeeking"
                 @seeked="handleSeeked"
-                @play="isActivelyWatching = true"
-                @pause="isActivelyWatching = false"
+                @play="handleVideoPlay"
+                @pause="handleVideoPause"
               ></videojs-video>
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
@@ -1548,7 +1548,21 @@
     if (!video) return;
     currentTime.value = video.currentTime;
     isActivelyWatching.value = !video.paused;
+    if (video.paused) {
+      clearPreviewEndTimer();
+    }
     enforcePreviewLimit(video);
+  };
+
+  const handleVideoPlay = () => {
+    isActivelyWatching.value = true;
+    const video = resolveTimeUpdateTarget(videoElement.value);
+    if (video) schedulePreviewEndOverlay(video);
+  };
+
+  const handleVideoPause = () => {
+    isActivelyWatching.value = false;
+    clearPreviewEndTimer();
   };
 
   usePushAttribution({
@@ -1566,6 +1580,8 @@
 
   const handleSeeked = () => {
     isSeekingPlayback.value = false;
+    const video = resolveTimeUpdateTarget(videoElement.value);
+    if (video) schedulePreviewEndOverlay(video);
   };
 
   const handleSeekbarInput = (event: Event) => {
@@ -1595,10 +1611,42 @@
     const previewDuration = videoData.value?.video?.previewDuration;
     if (videoData.value?.hasAccess || !previewDuration || isFullPublicPreview.value) return;
     if (video.currentTime <= previewDuration) return;
+    clearPreviewEndTimer();
     video.currentTime = previewDuration;
     video.pause();
     showPremiumOverlay.value = true;
   };
+
+  let previewEndTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearPreviewEndTimer(): void {
+    if (previewEndTimer !== null) {
+      clearTimeout(previewEndTimer);
+      previewEndTimer = null;
+    }
+  }
+
+  /** Fire the premium overlay at the preview end second (timeupdate is ~250 ms granular). */
+  function schedulePreviewEndOverlay(video: HTMLVideoElement): void {
+    clearPreviewEndTimer();
+    const previewDuration = videoData.value?.video?.previewDuration;
+    if (videoData.value?.hasAccess || !previewDuration || isFullPublicPreview.value) return;
+    if (video.paused || video.ended) return;
+    if (video.currentTime >= previewDuration) {
+      enforcePreviewLimit(video);
+      return;
+    }
+    const rate = video.playbackRate > 0 ? video.playbackRate : 1;
+    const remainingMs = Math.max(0, ((previewDuration - video.currentTime) / rate) * 1000);
+    previewEndTimer = setTimeout(() => {
+      previewEndTimer = null;
+      if (videoData.value?.hasAccess || isFullPublicPreview.value) return;
+      if (video.paused || video.ended) return;
+      if (video.currentTime >= previewDuration - 0.05) {
+        enforcePreviewLimit(video);
+      }
+    }, remainingMs);
+  }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -1655,6 +1703,7 @@
   }
 
   onUnmounted(() => {
+    clearPreviewEndTimer();
     document.removeEventListener('fullscreenchange', handleDocumentFullscreenChange);
     document.removeEventListener('webkitfullscreenchange', handleDocumentFullscreenChange);
     document.removeEventListener('click', closeMobileSettingsFromDocument);
@@ -2230,6 +2279,8 @@
       if (!isCurrentInvocation()) return;
       buffering.value = false;
       isActivelyWatching.value = true;
+      const native = nativeVideoWithListeners ?? getNativeVideoElement(video);
+      if (native) schedulePreviewEndOverlay(native);
     };
     handleCanPlay = () => {
       if (isCurrentInvocation()) buffering.value = false;
@@ -2238,6 +2289,8 @@
       if (!isCurrentInvocation()) return;
       const rate = (video as HTMLMediaElement).playbackRate;
       if (Number.isFinite(rate)) setPlaybackRate(rate);
+      const native = nativeVideoWithListeners ?? getNativeVideoElement(video);
+      if (native) schedulePreviewEndOverlay(native);
     };
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });

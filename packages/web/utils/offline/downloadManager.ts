@@ -269,13 +269,12 @@ export async function startOfflineDownload({
     });
 
     let bytesDownloaded = isResume ? (existingRecord?.bytesDownloaded ?? 0) : 0;
-    let filesCompleted = 0;
+    let filesCompleted = isResume ? (existingRecord?.filesCompleted ?? 0) : 0;
 
     for (const file of downloadableFiles) {
       controller.signal.throwIfAborted();
       const alreadyStored = isResume ? await readOfflineAsset(videoId, file.path) : null;
       if (alreadyStored) {
-        filesCompleted += 1;
         continue;
       }
       const bytes = await fetchAsset(
@@ -294,15 +293,23 @@ export async function startOfflineDownload({
       });
     }
 
+    await patchDownload(videoId, {
+      bytesDownloaded,
+      filesCompleted: downloadableFiles.length,
+    });
+
     const generated = await buildGeneratedManifests(videoId, rendition, data.manifest.files);
     const renditionPlaylistPath = `${rendition}/offline-playlist.m3u8`;
     if (!generated.some((item) => item.path === renditionPlaylistPath)) {
       throw new Error('Offline rendition playlist could not be built');
     }
     for (const item of generated) {
+      controller.signal.throwIfAborted();
       await writeOfflineAsset(videoId, item.path, item.bytes);
       bytesDownloaded += item.bytes.byteLength;
     }
+
+    controller.signal.throwIfAborted();
 
     await patchDownload(videoId, {
       status: 'completed',
