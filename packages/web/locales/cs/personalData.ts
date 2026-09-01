@@ -47,7 +47,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primární hosting používá Cloudflare (API Worker, databáze D1, média R2, frontend Pages). Provoz probíhá přes globální síť Cloudflare; nemůžeme zaručit, že každý bajt zůstane v EU, ale minimalizujeme osobní údaje a kde je to možné používáme analytiku se sídlem v EU.',
         'Záložní infrastruktura může běžet na Deno Deploy (API) a Vercel (frontend).',
-        'Další zpracovatelé zahrnují: PostHog (EU) pro produktovou analytiku (plná po souhlasu, nebo cookieless počty při odmítnutí; po přihlášení jen ID účtu, bez e-mailu; výjimky API); Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API; Google Tag Manager při zapnutí administrátorem (může načíst další tagy z kontejneru). Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
+        'Další zpracovatelé zahrnují: PostHog (EU) pro produktovou analytiku (plná po souhlasu, nebo cookieless počty při odmítnutí; po přihlášení jen ID účtu, bez e-mailu; výjimky API); Stripe pro platby; Brevo pro transakční e-mail; Sentry pro monitorování chyb na frontendu a API — pokud je nastaven frontend Sentry DSN, mohou být zachyceny záznamy relací spojené s chybou (maskovaný text a blokovaná média); Google Tag Manager při zapnutí administrátorem (může načíst další tagy z kontejneru). Zpracování plateb a e-mailů probíhá pouze když tyto funkce použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnost (globální edge)',
@@ -55,7 +55,7 @@ export const personalData: PersonalDataPage = {
         'Google Tag Manager — volitelné marketingové/měřicí tagy při zapnutí v Admin',
         'Stripe — zpracování plateb při předplatném',
         'Brevo — magic-link a e-maily účtu',
-        'Sentry — monitorování chyb a stability (technické logy)',
+        'Sentry — monitorování chyb a stability; záznam relace při chybě, pokud je nastaven frontend DSN (maskovaný)',
         'Deno Deploy / Vercel — záložní nasazení API a frontendu',
       ],
     },

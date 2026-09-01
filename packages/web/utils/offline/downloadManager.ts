@@ -275,7 +275,6 @@ export async function startOfflineDownload({
       controller.signal.throwIfAborted();
       const alreadyStored = isResume ? await readOfflineAsset(videoId, file.path) : null;
       if (alreadyStored) {
-        filesCompleted += 1;
         continue;
       }
       const bytes = await fetchAsset(
@@ -305,9 +304,12 @@ export async function startOfflineDownload({
       throw new Error('Offline rendition playlist could not be built');
     }
     for (const item of generated) {
+      controller.signal.throwIfAborted();
       await writeOfflineAsset(videoId, item.path, item.bytes);
       bytesDownloaded += item.bytes.byteLength;
     }
+
+    controller.signal.throwIfAborted();
 
     await patchDownload(videoId, {
       status: 'completed',

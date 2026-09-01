@@ -13,7 +13,7 @@ Multiple overlapping tools were introduced over time (Contentsquare, GTM, Umami,
 | Concern | Tool | Integration | Notes |
 |---------|------|-------------|-------|
 | Product analytics (funnels, cohorts, feature usage) | **PostHog** (EU) | `@posthog/nuxt`, `plugins/posthog*.client.ts` | Consent required for full capture; `cookieless_mode: on_reject` for declined visitors |
-| Error monitoring + session replay on errors | **Sentry** | `@sentry/nuxt/module`, `sentry.*.config.ts` | Primary debugging surface; filters benign `AbortError` |
+| Error monitoring + session replay on errors | **Sentry** | `@sentry/nuxt/module`, `sentry.*.config.ts` | When `NUXT_PUBLIC_SENTRY_DSN` is set, error-linked session replay may be captured (masked text, blocked media; 10% sample on errors) |
 | Optional marketing / legacy tags | **GTM** | `plugins/gtm-settings.client.ts` | Admin opt-in via D1 (`gtm_enabled`); first-party gateway path optional |
 
 Registry: `packages/web/utils/analytics/`.

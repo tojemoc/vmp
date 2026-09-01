@@ -47,7 +47,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primárne hosting používa Cloudflare (API Worker, databáza D1, médiá R2, frontend Pages). Prevádzka prebieha cez globálnu sieť Cloudflare; nemôžeme zaručiť, že každý bajt zostane v EÚ, ale minimalizujeme osobné údaje a kde je to možné používame analytiku so sídlom v EÚ.',
         'Záložná infraštruktúra môže bežať na Deno Deploy (API) a Vercel (frontend).',
-        'Ďalší spracovatelia zahŕňajú: PostHog (EÚ) pre produktovú analytiku (plná po súhlase, alebo cookieless počty pri odmietnutí; po prihlásení len ID účtu, bez e-mailu; výnimky API); Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API; Google Tag Manager pri zapnutí administrátorom (môže načítať ďalšie tagy z kontajnera). Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
+        'Ďalší spracovatelia zahŕňajú: PostHog (EÚ) pre produktovú analytiku (plná po súhlase, alebo cookieless počty pri odmietnutí; po prihlásení len ID účtu, bez e-mailu; výnimky API); Stripe pre platby; Brevo pre transakčný e-mail; Sentry pre monitorovanie chýb na frontende a API — ak je nastavený frontend Sentry DSN, môžu byť zachytené záznamy relácií spojené s chybou (maskovaný text a blokované médiá); Google Tag Manager pri zapnutí administrátorom (môže načítať ďalšie tagy z kontajnera). Spracovanie platieb a e-mailov prebieha len keď tieto funkcie použijete.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, bezpečnosť (globálny edge)',
@@ -55,7 +55,7 @@ export const personalData: PersonalDataPage = {
         'Google Tag Manager — voliteľné marketingové/meracie tagy pri zapnutí v Admin',
         'Stripe — spracovanie platieb pri predplatení',
         'Brevo — magic-link a e-maily účtu',
-        'Sentry — monitorovanie chýb a stability (technické logy)',
+        'Sentry — monitorovanie chýb a stability; záznam relácie pri chybe, ak je nastavený frontend DSN (maskovaný)',
         'Deno Deploy / Vercel — záložné nasadenia API a frontendu',
       ],
     },

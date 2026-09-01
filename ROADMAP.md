@@ -31,7 +31,7 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 | `step-06` | PWA + push notifications | Push has known issues |
 | `step-07` | Thumbnail management | |
 | `playback-resume` | Playback position resume (#488) | `playback_positions` table; see code + AGENTS history |
-| `offline-downloads` | Offline downloads (PWA) (#385) | M1–M6 shipped [#387](https://github.com/tojemoc/vmp/pull/387), [#398](https://github.com/tojemoc/vmp/pull/398); follow-ups [#418](https://github.com/tojemoc/vmp/pull/418), [#419](https://github.com/tojemoc/vmp/pull/419), [#431](https://github.com/tojemoc/vmp/pull/431), [#492](https://github.com/tojemoc/vmp/pull/492); platform fixes in [#642](https://github.com/tojemoc/vmp/pull/642). Spec: [docs/archive/offline-downloads-roadmap.md](docs/archive/offline-downloads-roadmap.md) |
+| `offline-downloads` | Offline downloads (PWA) (#385) | M1–M6 shipped [#387](https://github.com/tojemoc/vmp/pull/387), [#398](https://github.com/tojemoc/vmp/pull/398); follow-ups [#418](https://github.com/tojemoc/vmp/pull/418), [#419](https://github.com/tojemoc/vmp/pull/419), [#431](https://github.com/tojemoc/vmp/pull/431), [#492](https://github.com/tojemoc/vmp/pull/492). Spec: [docs/archive/offline-downloads-roadmap.md](docs/archive/offline-downloads-roadmap.md) |
 
 ---
 

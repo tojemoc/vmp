@@ -21,9 +21,15 @@ describe('analytics noiseFilter', () => {
     assert.equal(isBenignAbortError(new Error('Network failed')), false);
   });
 
+  it('does not treat generic aborted substrings as benign', () => {
+    assert.equal(isBenignAbortError(new Error('Connection aborted')), false);
+    assert.equal(isBenignAbortError(new Error('Upload was aborted by server policy')), false);
+  });
+
   it('drops PostHog exception events for AbortError', () => {
     assert.equal(
       shouldDropPostHogExceptionEvent({
+        uuid: '1',
         event: '$exception',
         properties: {
           $exception_list: [
@@ -35,9 +41,26 @@ describe('analytics noiseFilter', () => {
     );
   });
 
+  it('keeps PostHog exceptions whose message only contains aborted', () => {
+    assert.equal(
+      shouldDropPostHogExceptionEvent({
+        uuid: '2',
+        event: '$exception',
+        properties: {
+          $exception_list: [{ type: 'Error', value: 'Error', message: 'Connection aborted' }],
+        },
+      }),
+      false,
+    );
+  });
+
   it('keeps non-exception PostHog events', () => {
     assert.equal(
-      shouldDropPostHogExceptionEvent({ event: 'subscription_activated', properties: {} }),
+      shouldDropPostHogExceptionEvent({
+        uuid: '3',
+        event: 'subscription_activated',
+        properties: {},
+      }),
       false,
     );
   });

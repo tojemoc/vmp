@@ -114,9 +114,22 @@
     syncProgressFromRecord();
   }
 
+  function emptyProgress() {
+    return {
+      bytesDownloaded: 0,
+      totalBytes: 0,
+      filesCompleted: 0,
+      filesTotal: 0,
+      status: null as string | null,
+    };
+  }
+
   function syncProgressFromRecord() {
     const rec = record.value;
-    if (!rec) return;
+    if (!rec) {
+      progress.value = emptyProgress();
+      return;
+    }
     if (rec.status === 'downloading' || rec.status === 'paused') {
       progress.value = {
         bytesDownloaded: rec.bytesDownloaded,
@@ -208,7 +221,8 @@
 
   const status = computed(() => record.value?.status ?? progress.value.status ?? null);
   const isFinalizing = computed(() => {
-    if (status.value !== 'downloading') return false;
+    const effectiveStatus = progress.value.status ?? record.value?.status ?? null;
+    if (effectiveStatus !== 'downloading') return false;
     const filesTotal = progress.value.filesTotal || record.value?.filesTotal || 0;
     const filesCompleted = progress.value.filesCompleted || record.value?.filesCompleted || 0;
     return filesTotal > 0 && filesCompleted >= filesTotal;

@@ -47,7 +47,7 @@ export const personalData: PersonalDataPage = {
       paragraphs: [
         'Primary hosting uses Cloudflare (API Worker, D1 database, R2 media, Pages frontend). Traffic is served from Cloudflare’s global network; we cannot guarantee that every byte stays inside the EU, but we minimise personal data and use EU-based analytics where possible.',
         'Backup infrastructure may run on Deno Deploy (API) and Vercel (frontend).',
-        'Other processors include: PostHog (EU) for product analytics (full tracking after consent, or cookieless visit counts if you decline; signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API; Google Tag Manager when enabled by administrators (may load additional tags configured in the container). Payment and email processing happen only when you use those features.',
+        'Other processors include: PostHog (EU) for product analytics (full tracking after consent, or cookieless visit counts if you decline; signed-in events keyed by account ID only, no email; API exception events); Stripe for payments; Brevo for transactional email; Sentry for error monitoring on the frontend and API — when the frontend Sentry DSN is configured, error-linked session replay may be captured (masked text and blocked media); Google Tag Manager when enabled by administrators (may load additional tags configured in the container). Payment and email processing happen only when you use those features.',
       ],
       bullets: [
         'Cloudflare — hosting, CDN, security (global edge)',
@@ -55,7 +55,7 @@ export const personalData: PersonalDataPage = {
         'Google Tag Manager — optional marketing/measurement tags when enabled in Admin',
         'Stripe — payment processing when you subscribe',
         'Brevo — magic-link and account email',
-        'Sentry — error and stability monitoring (technical logs)',
+        'Sentry — error and stability monitoring; error-linked session replay when the frontend DSN is configured (masked)',
         'Deno Deploy / Vercel — backup API and frontend deployments',
       ],
     },
