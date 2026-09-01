@@ -30,13 +30,29 @@ async function priceIdForPlan(env: any, planType: PlanType): Promise<string | nu
   return value || null;
 }
 
-async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
-  const stored = await getSetting(env, `gopay_${planType}_price`, { ttlSeconds: 300 });
+async function providerCurrency(env: any, provider: 'gopay' | 'comgate'): Promise<string> {
+  const key = provider === 'gopay' ? 'gopay_currency' : 'comgate_currency';
+  const stored = await getSetting(env, key, { defaultValue: 'CZK', ttlSeconds: 300 });
+  return (
+    String(stored ?? 'CZK')
+      .trim()
+      .toUpperCase() || 'CZK'
+  );
+}
+
+async function amountMajorForPlan(
+  env: any,
+  provider: 'gopay' | 'comgate',
+  planType: PlanType,
+): Promise<number | null> {
+  const stored = await getSetting(env, `${provider}_${planType}_price`, { ttlSeconds: 300 });
   const value = String(stored ?? '').trim();
   if (value) {
     const numeric = Number(value);
     if (Number.isFinite(numeric) && numeric > 0) return numeric;
   }
+  const currency = await providerCurrency(env, provider);
+  if (currency !== 'EUR') return null;
   const fallback = await getSetting(env, `${planType}_price_eur`, { ttlSeconds: 300 });
   const fallbackValue = String(fallback ?? '').trim();
   if (!fallbackValue) return null;
@@ -44,18 +60,12 @@ async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<nu
   return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : null;
 }
 
+async function gopayAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
+  return amountMajorForPlan(env, 'gopay', planType);
+}
+
 async function comgateAmountMajorForPlan(env: any, planType: PlanType): Promise<number | null> {
-  const stored = await getSetting(env, `comgate_${planType}_price`, { ttlSeconds: 300 });
-  const value = String(stored ?? '').trim();
-  if (value) {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric) && numeric > 0) return numeric;
-  }
-  const fallback = await getSetting(env, `${planType}_price_eur`, { ttlSeconds: 300 });
-  const fallbackValue = String(fallback ?? '').trim();
-  if (!fallbackValue) return null;
-  const fallbackNumeric = Number(fallbackValue);
-  return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : null;
+  return amountMajorForPlan(env, 'comgate', planType);
 }
 
 function requireConfiguredUrl(raw: unknown, label: string): string {

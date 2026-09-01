@@ -383,6 +383,17 @@ export async function handleRssPodcastPreviewRebuildNotify(
           corsHeaders,
         );
       }
+      if (result.code === 'preview_mp3_disabled') {
+        return jsonResponse(
+          {
+            error: 'Podcast preview MP3 prerender is disabled',
+            code: result.code,
+            videoCount: result.videoCount,
+          },
+          400,
+          corsHeaders,
+        );
+      }
       return jsonResponse(
         {
           error:

@@ -153,10 +153,19 @@ async function getEffectivePricingSettings(
   env: any,
   provider: 'stripe' | 'legacy' | 'gopay' | 'comgate',
 ) {
-  const [providerPricing, fallbackPricing] = await Promise.all([
-    getPricingSettings(env, provider),
-    getPricingSettings(env),
-  ]);
+  const providerPricing = await getPricingSettings(env, provider);
+  if (provider === 'gopay' || provider === 'comgate') {
+    const currencyKey = provider === 'gopay' ? 'gopay_currency' : 'comgate_currency';
+    const stored = await getSetting(env, currencyKey, { defaultValue: 'CZK', ttlSeconds: 300 });
+    const currency =
+      String(stored ?? 'CZK')
+        .trim()
+        .toUpperCase() || 'CZK';
+    if (currency !== 'EUR') {
+      return providerPricing;
+    }
+  }
+  const fallbackPricing = await getPricingSettings(env);
   return {
     monthly: providerPricing.monthly ?? fallbackPricing.monthly,
     yearly: providerPricing.yearly ?? fallbackPricing.yearly,

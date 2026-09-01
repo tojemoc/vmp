@@ -13,6 +13,19 @@ function toBoolSetting(value: unknown, fallback: boolean) {
   return String(value).trim() === '1';
 }
 
+/** Resolve rss_free_preview_enabled from a PATCH body; null when neither field is present. */
+export function resolveRssFreePreviewEnabledFromPatch(
+  body: Record<string, unknown>,
+): boolean | null {
+  if (!Object.hasOwn(body, 'rssPodcastEnabled') && !Object.hasOwn(body, 'freePodcastPreviewEnabled')) {
+    return null;
+  }
+  if (Object.hasOwn(body, 'rssPodcastEnabled')) {
+    return body.rssPodcastEnabled === true;
+  }
+  return body.freePodcastPreviewEnabled === true;
+}
+
 export async function handleAdminSystemFeatures(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
@@ -64,8 +77,7 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
     updates.push(['isic_api_enabled', body.isicEnabled === true ? '1' : '0']);
   }
   if (Object.hasOwn(body, 'rssPodcastEnabled') || Object.hasOwn(body, 'freePodcastPreviewEnabled')) {
-    const enabled =
-      body.rssPodcastEnabled === true || body.freePodcastPreviewEnabled === true;
+    const enabled = resolveRssFreePreviewEnabledFromPatch(body);
     updates.push(['rss_free_preview_enabled', enabled ? '1' : '0']);
   }
   if (Object.hasOwn(body, 'rssPodcastPreviewMp3Enabled')) {

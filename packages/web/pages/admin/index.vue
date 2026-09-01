@@ -2681,7 +2681,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </AdminAccordionSection>
 
             <AdminAccordionSection
-              v-if="systemFeatures.promotionsEnabled"
+              v-if="isDeploymentFeatureCompiled('payments') && systemFeatures.promotionsEnabled"
               section-key="promo-campaigns"
               title="Promo campaigns & codes"
             >
@@ -2946,7 +2946,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
             </AdminAccordionSection>
 
             <AdminAccordionSection
-              v-if="systemFeatures.isicEnabled"
+              v-if="isDeploymentFeatureCompiled('payments') && systemFeatures.isicEnabled"
               section-key="isic-campaigns"
               title="ISIC campaigns"
             >
@@ -7470,10 +7470,16 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       await trackLoader('newsletter templates', loadNewsletterTemplates);
       await trackLoader('system features', loadSystemFeatures);
       await trackLoader('replication status', () => loadReplicationStatus({ probe: true }));
-      await trackLoader('payment settings', loadPaymentSettings);
-      await trackLoader('payment plans', loadAdminPaymentPlans);
-      if (systemFeatures.value.promotionsEnabled) await trackLoader('promotions', loadPromotions);
-      if (systemFeatures.value.isicEnabled) await trackLoader('ISIC campaigns', loadIsicCampaigns);
+      if (isDeploymentFeatureCompiled('payments')) {
+        await trackLoader('payment settings', loadPaymentSettings);
+        await trackLoader('payment plans', loadAdminPaymentPlans);
+        if (systemFeatures.value.promotionsEnabled) {
+          await trackLoader('promotions', loadPromotions);
+        }
+        if (systemFeatures.value.isicEnabled) {
+          await trackLoader('ISIC campaigns', loadIsicCampaigns);
+        }
+      }
       await trackLoader('site branding', loadSiteBranding);
       if (systemFeatures.value.rssPodcastEnabled)
         await trackLoader('RSS podcast webhook settings', loadRssPodcastWebhookSettings);
