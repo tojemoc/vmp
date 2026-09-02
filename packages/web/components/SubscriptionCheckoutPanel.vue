@@ -829,6 +829,7 @@
 
     // Promos are Stripe-only until redirect providers support discounts.
     clearPromoCode();
+    const plan = selectedPlan.value;
     gopayCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -836,7 +837,7 @@
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          planType: selectedPlan.value,
+          planType: plan,
           provider: 'gopay',
           returnPath: props.returnPath,
         }),
@@ -847,7 +848,7 @@
         return;
       }
       capturePostHogEvent('subscription_checkout_started', {
-        plan_type: selectedPlan.value,
+        plan_type: plan,
         provider: 'gopay',
       });
       window.location.href = String(data.checkoutUrl);
@@ -867,6 +868,7 @@
 
     // Promos are Stripe-only until redirect providers support discounts.
     clearPromoCode();
+    const plan = selectedPlan.value;
     comgateCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -874,7 +876,7 @@
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          planType: selectedPlan.value,
+          planType: plan,
           provider: 'comgate',
           returnPath: props.returnPath,
         }),
@@ -885,7 +887,7 @@
         return;
       }
       capturePostHogEvent('subscription_checkout_started', {
-        plan_type: selectedPlan.value,
+        plan_type: plan,
         provider: 'comgate',
       });
       window.location.href = String(data.checkoutUrl);
