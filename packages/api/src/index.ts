@@ -158,6 +158,11 @@ import {
   handlePutPlaybackPosition,
 } from './playbackPositions.js';
 import {
+  enforceConcurrentPlaybackLimit,
+  handlePlaybackSessionHeartbeat,
+  handleReleasePlaybackSession,
+} from './playbackSessions.js';
+import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
@@ -1135,6 +1140,18 @@ const workerHandler = {
             return handleDeletePlaybackPosition(request, env, corsHeaders, playbackVideoId);
           }
         }
+        {
+          const playbackSessionMatch = url.pathname.match(
+            /^\/api\/account\/playback-sessions\/([^/]+)$/,
+          );
+          const sessionId = playbackSessionMatch?.[1];
+          if (sessionId && request.method === 'PUT') {
+            return handlePlaybackSessionHeartbeat(request, env, corsHeaders, sessionId);
+          }
+          if (sessionId && request.method === 'DELETE') {
+            return handleReleasePlaybackSession(request, env, corsHeaders, sessionId);
+          }
+        }
         if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
           return handleAccountInvoices(request, env, corsHeaders);
         }
@@ -1629,6 +1646,18 @@ async function handleVideoAccess(
     // Any active monthly/yearly/club subscription grants full access
     const hasPremiumSubscription = Boolean(subscription);
     const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription;
+
+    // Cap simultaneous streams per subscriber (club entitlements #649). Staff
+    // bypass; free/anonymous get preview only and are unaffected.
+    if (hasPremiumSubscription && !hasElevatedRole && userId) {
+      const limitResponse = await enforceConcurrentPlaybackLimit(request, env, ctx, {
+        userId,
+        planType: subscription?.plan_type,
+        videoId: resolvedVideoId,
+        corsHeaders,
+      });
+      if (limitResponse) return limitResponse;
+    }
 
     const hasVideoMetadata = Boolean(video);
     const hasAccess = hasPremiumAccess || !hasVideoMetadata;
