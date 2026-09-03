@@ -1,23 +1,28 @@
 /**
  * Concurrent playback session limits for club entitlements (#649).
  *
- * PUT    /api/account/playback-sessions/:sessionId   heartbeat / register ({ videoId, ended? })
+ * POST   /api/account/playback-sessions              mint a server-issued session
+ * PUT    /api/account/playback-sessions/:sessionId   heartbeat ({ videoId, ended? })
  * DELETE /api/account/playback-sessions/:sessionId   explicit release
  *
- * `/api/video-access` calls `enforceConcurrentPlaybackLimit`, which counts a
- * user's active sessions and rejects a new stream once the plan limit is
- * reached. Limits resolve per `plan_type` from `admin_settings` (1 default, 3
- * for club); staff roles bypass upstream. Enforcement is gated by
- * `concurrent_playback_enforced` and ships disabled.
+ * `/api/video-access` calls `enforceConcurrentPlaybackLimit`. When
+ * `concurrent_playback_enforced` is on, premium access requires a
+ * server-issued session id (minted by POST) bound to the authenticated user
+ * via `X-VMP-Playback-Session`. Client-selected ids cannot create slots.
+ * Limits resolve per `plan_type` from `admin_settings` (1 default, 3 for club);
+ * staff roles bypass upstream. Enforcement ships disabled.
  *
  * A session is "active" when its `last_seen_at` falls inside the stale window
- * (default 90s). The client sends its session id on the heartbeat routes and as
- * the `X-VMP-Playback-Session` header on video-access.
+ * (default 90s). Slot claims use an atomic INSERT…WHERE count < limit so
+ * concurrent creates cannot both succeed at capacity.
  */
 
 import { requireAuth } from './auth.js';
 import { capturePostHogEvent, type PostHogWaitUntilCtx } from './posthog.js';
 import { getSetting } from './settingsStore.js';
+
+/** Canonical request header name — included in OPTIONS Access-Control-Allow-Headers. */
+export const PLAYBACK_SESSION_HEADER_NAME = 'X-VMP-Playback-Session';
 
 /** Header the player sends on /api/video-access to identify its stream slot. */
 const PLAYBACK_SESSION_HEADER = 'x-vmp-playback-session';
@@ -88,7 +93,7 @@ export function resolveConcurrentPlaybackLimit(
   return plan === 'club' ? settings.limitClub : settings.limitDefault;
 }
 
-/** Client-generated session id: single path segment, bounded length. */
+/** Session id: single path segment, bounded length (server-minted UUIDs satisfy this). */
 export function normalizeSessionId(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   let decoded: string;
@@ -103,53 +108,123 @@ export function normalizeSessionId(raw: unknown): string | null {
   return trimmed;
 }
 
-/** Count the user's other active sessions — seen within the stale window, excluding their own. */
-async function countActivePlaybackSessions(
-  db: any,
-  userId: string,
-  sessionId: string,
-  staleSeconds: number,
-): Promise<number> {
+async function getActiveSubscriptionPlanType(db: any, userId: string): Promise<unknown> {
   const row = await db
     .prepare(
-      `SELECT COUNT(*) AS n FROM playback_sessions
-       WHERE user_id = ? AND id != ? AND datetime(last_seen_at) >= datetime('now', ?)`,
+      `SELECT plan_type FROM subscriptions
+       WHERE user_id = ?
+         AND status IN ('active', 'trialing')
+         AND (current_period_end IS NULL OR datetime(current_period_end) > CURRENT_TIMESTAMP)
+       ORDER BY created_at DESC
+       LIMIT 1`,
     )
-    .bind(userId, sessionId, `-${staleSeconds} seconds`)
+    .bind(userId)
     .first();
-  return Number(row?.n ?? 0);
+  return row?.plan_type;
 }
 
-/** Register a new session or refresh its heartbeat, without letting one user overwrite another's row. */
-async function upsertPlaybackSession(
+/**
+ * Atomically claim a new playback slot when under the plan limit.
+ * Returns true when a row was inserted; false when capacity is exhausted.
+ * Mirrors the offline-device `INSERT…SELECT WHERE count < limit` pattern.
+ */
+export async function claimPlaybackSessionSlot(
+  db: any,
+  params: {
+    sessionId: string;
+    userId: string;
+    videoId: string;
+    limit: number;
+    staleSeconds: number;
+  },
+): Promise<boolean> {
+  const insertResult = await db
+    .prepare(
+      `INSERT INTO playback_sessions (id, user_id, video_id, started_at, last_seen_at)
+       SELECT ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       WHERE (
+         SELECT COUNT(*) FROM playback_sessions
+         WHERE user_id = ?
+           AND datetime(last_seen_at) >= datetime('now', ?)
+       ) < ?`,
+    )
+    .bind(
+      params.sessionId,
+      params.userId,
+      params.videoId,
+      params.userId,
+      `-${params.staleSeconds} seconds`,
+      params.limit,
+    )
+    .run();
+  return Boolean(insertResult?.meta?.changes);
+}
+
+/** Refresh an existing session owned by this user. Returns false when no matching row. */
+async function touchOwnedPlaybackSession(
   db: any,
   sessionId: string,
   userId: string,
   videoId: string,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const result = await db
     .prepare(
-      `INSERT INTO playback_sessions (id, user_id, video_id, started_at, last_seen_at)
-       VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-       ON CONFLICT(id) DO UPDATE SET
-         video_id = excluded.video_id,
-         last_seen_at = CURRENT_TIMESTAMP
-       WHERE playback_sessions.user_id = excluded.user_id`,
+      `UPDATE playback_sessions
+       SET video_id = ?, last_seen_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ?`,
     )
-    .bind(sessionId, userId, videoId)
+    .bind(videoId, sessionId, userId)
     .run();
+  return Boolean(result?.meta?.changes);
+}
+
+function rejectedLimitResponse(
+  env: any,
+  ctx: PostHogWaitUntilCtx | undefined,
+  request: Request,
+  params: {
+    userId: string;
+    planType: unknown;
+    videoId: string;
+    limit: number;
+    activeSessions: number;
+    corsHeaders: CorsHeaders;
+  },
+) {
+  capturePostHogEvent(
+    env,
+    {
+      distinctId: params.userId,
+      event: 'concurrent_playback_rejected',
+      properties: {
+        plan_type: params.planType ?? 'unknown',
+        limit: params.limit,
+        active_sessions: params.activeSessions,
+        video_id: params.videoId,
+      },
+    },
+    ctx ? { request, ctx } : { request },
+  );
+  return jsonResponse(
+    {
+      error: 'Concurrent stream limit reached',
+      code: 'concurrent_playback_limit',
+      limit: params.limit,
+    },
+    409,
+    params.corsHeaders,
+  );
 }
 
 /**
- * Video-access gate. Returns a 409 `Response` when the caller's plan limit is
- * reached, otherwise claims the stream slot and returns `null` (proceed).
- * Inert when the player sends no session id or the flag is off, so enabling the
- * flag alone cannot break existing clients. Callers apply the staff bypass.
+ * Video-access gate. When enforcement is on, requires a server-issued session
+ * bound to the caller (minted via POST); missing or client-invented ids are
+ * rejected. Otherwise returns `null` (proceed). Callers apply the staff bypass.
  */
 export async function enforceConcurrentPlaybackLimit(
   request: Request,
   env: any,
-  ctx: PostHogWaitUntilCtx | undefined,
+  _ctx: PostHogWaitUntilCtx | undefined,
   params: {
     userId: string;
     planType: unknown;
@@ -157,46 +232,99 @@ export async function enforceConcurrentPlaybackLimit(
     corsHeaders: CorsHeaders;
   },
 ): Promise<Response | null> {
-  const sessionId = normalizeSessionId(request.headers.get(PLAYBACK_SESSION_HEADER));
-  if (!sessionId) return null;
-
   const settings = await getPlaybackSessionSettings(env);
   if (!settings.enforced) return null;
 
-  const db = getDb(env);
-  const limit = resolveConcurrentPlaybackLimit(params.planType, settings);
-  const activeOther = await countActivePlaybackSessions(
-    db,
-    params.userId,
-    sessionId,
-    settings.staleSeconds,
-  );
-
-  if (activeOther >= limit) {
-    capturePostHogEvent(
-      env,
-      {
-        distinctId: params.userId,
-        event: 'concurrent_playback_rejected',
-        properties: {
-          plan_type: params.planType ?? 'unknown',
-          limit,
-          active_sessions: activeOther,
-          video_id: params.videoId,
-        },
-      },
-      ctx ? { request, ctx } : { request },
-    );
+  const sessionId = normalizeSessionId(request.headers.get(PLAYBACK_SESSION_HEADER));
+  if (!sessionId) {
     return jsonResponse(
-      { error: 'Concurrent stream limit reached', code: 'concurrent_playback_limit', limit },
+      {
+        error: 'Playback session required',
+        code: 'playback_session_required',
+      },
       409,
       params.corsHeaders,
     );
   }
 
-  // Claim the slot now so the count is consistent before the first heartbeat.
-  await upsertPlaybackSession(db, sessionId, params.userId, params.videoId);
+  const db = getDb(env);
+  const touched = await touchOwnedPlaybackSession(db, sessionId, params.userId, params.videoId);
+  if (!touched) {
+    // Unknown / other-user / client-selected ids cannot mint a slot here.
+    return jsonResponse(
+      {
+        error: 'Playback session required',
+        code: 'playback_session_required',
+      },
+      409,
+      params.corsHeaders,
+    );
+  }
+
   return null;
+}
+
+/** Mint a server-issued session id and claim a concurrent-playback slot. */
+export async function handleCreatePlaybackSession(
+  request: Request,
+  env: any,
+  corsHeaders: CorsHeaders,
+  ctx?: PostHogWaitUntilCtx,
+) {
+  let user: { sub: string };
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, corsHeaders);
+  }
+
+  const videoId = typeof body.videoId === 'string' ? body.videoId.trim() : '';
+  if (!videoId || videoId.length > 200) {
+    return jsonResponse({ error: 'videoId is required' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
+  const settings = await getPlaybackSessionSettings(env);
+  const planType = await getActiveSubscriptionPlanType(db, user.sub);
+  const limit = resolveConcurrentPlaybackLimit(planType, settings);
+  const sessionId = crypto.randomUUID();
+
+  if (settings.enforced) {
+    const claimed = await claimPlaybackSessionSlot(db, {
+      sessionId,
+      userId: user.sub,
+      videoId,
+      limit,
+      staleSeconds: settings.staleSeconds,
+    });
+    if (!claimed) {
+      return rejectedLimitResponse(env, ctx, request, {
+        userId: user.sub,
+        planType,
+        videoId,
+        limit,
+        activeSessions: limit,
+        corsHeaders,
+      });
+    }
+  } else {
+    await db
+      .prepare(
+        `INSERT INTO playback_sessions (id, user_id, video_id, started_at, last_seen_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      )
+      .bind(sessionId, user.sub, videoId)
+      .run();
+  }
+
+  return jsonResponse({ sessionId, ok: true }, 201, corsHeaders);
 }
 
 export async function handlePlaybackSessionHeartbeat(
@@ -237,7 +365,15 @@ export async function handlePlaybackSessionHeartbeat(
     return jsonResponse({ error: 'videoId is required' }, 400, corsHeaders);
   }
 
-  await upsertPlaybackSession(db, sessionId, user.sub, videoId);
+  // Heartbeat refreshes server-issued rows only — never creates from a client id.
+  const touched = await touchOwnedPlaybackSession(db, sessionId, user.sub, videoId);
+  if (!touched) {
+    return jsonResponse(
+      { error: 'Playback session not found', code: 'playback_session_required' },
+      404,
+      corsHeaders,
+    );
+  }
   return jsonResponse({ sessionId, ok: true }, 200, corsHeaders);
 }
 

@@ -4,7 +4,7 @@
 -- (concurrent_playback_enforced = 0) for a safe, measurable rollout.
 
 CREATE TABLE playback_sessions (
-  id            TEXT PRIMARY KEY,        -- client-generated session UUID
+  id            TEXT PRIMARY KEY,        -- server-issued session UUID (POST mint)
   user_id       TEXT NOT NULL,
   video_id      TEXT NOT NULL,
   started_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

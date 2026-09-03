@@ -159,8 +159,10 @@ import {
 } from './playbackPositions.js';
 import {
   enforceConcurrentPlaybackLimit,
+  handleCreatePlaybackSession,
   handlePlaybackSessionHeartbeat,
   handleReleasePlaybackSession,
+  PLAYBACK_SESSION_HEADER_NAME,
 } from './playbackSessions.js';
 import {
   capturePostHogException,
@@ -529,6 +531,7 @@ const workerHandler = {
               'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
               'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
+                `${PLAYBACK_SESSION_HEADER_NAME}, ` +
                 POSTHOG_TRACING_REQUEST_HEADERS.join(', '),
               'Access-Control-Max-Age': '86400',
             },
@@ -1139,6 +1142,9 @@ const workerHandler = {
           if (playbackVideoId && request.method === 'DELETE') {
             return handleDeletePlaybackPosition(request, env, corsHeaders, playbackVideoId);
           }
+        }
+        if (url.pathname === '/api/account/playback-sessions' && request.method === 'POST') {
+          return handleCreatePlaybackSession(request, env, corsHeaders, ctx);
         }
         {
           const playbackSessionMatch = url.pathname.match(
