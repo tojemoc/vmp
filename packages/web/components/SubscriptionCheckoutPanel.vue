@@ -290,6 +290,7 @@
 </template>
 
 <script setup lang="ts">
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
   const props = withDefaults(
@@ -828,6 +829,7 @@
 
     // Promos are Stripe-only until redirect providers support discounts.
     clearPromoCode();
+    const plan = selectedPlan.value;
     gopayCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -835,7 +837,7 @@
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          planType: selectedPlan.value,
+          planType: plan,
           provider: 'gopay',
           returnPath: props.returnPath,
         }),
@@ -845,6 +847,10 @@
         checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: plan,
+        provider: 'gopay',
+      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;
@@ -862,6 +868,7 @@
 
     // Promos are Stripe-only until redirect providers support discounts.
     clearPromoCode();
+    const plan = selectedPlan.value;
     comgateCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -869,7 +876,7 @@
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({
-          planType: selectedPlan.value,
+          planType: plan,
           provider: 'comgate',
           returnPath: props.returnPath,
         }),
@@ -879,6 +886,10 @@
         checkoutError.value = data.error ?? strings.checkoutStartFailed;
         return;
       }
+      capturePostHogEvent('subscription_checkout_started', {
+        plan_type: plan,
+        provider: 'comgate',
+      });
       window.location.href = String(data.checkoutUrl);
     } catch {
       checkoutError.value = strings.networkError;
