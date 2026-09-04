@@ -4,6 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
+import { writeNewsletterPreference } from './newsletterPreference.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
@@ -1090,8 +1091,12 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
 
 /**
  * POST /api/payments/checkout — protected
- * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath? }
+ * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath?, newsletterOptOut? }
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
+ *
+ * newsletterOptOut (optional boolean): when true, records that the subscriber
+ * does not want the creator newsletter. Default / omitted / false keeps them
+ * on the marketing list once payment activates. System email is unaffected.
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user;
@@ -1111,6 +1116,14 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     );
   }
   const planType = normalizePlanType(body.planType);
+  if (body?.newsletterOptOut != null && typeof body.newsletterOptOut !== 'boolean') {
+    return jsonResponse(
+      { error: 'newsletterOptOut must be a boolean when provided', code: 'invalid_newsletter_opt_out' },
+      400,
+      corsHeaders,
+    );
+  }
+  const newsletterOptOut = body?.newsletterOptOut === true;
 
   try {
     const db = getDb(env);
@@ -1239,6 +1252,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         corsHeaders,
       );
     }
+
+    // Persist checkout-time newsletter preference only for a real new checkout so
+    // a 409 / early failure cannot wipe an existing account opt-out.
+    await writeNewsletterPreference(db, user.sub, newsletterOptOut);
 
     const returnPath = normalizeReturnPath(body?.returnPath);
     const einvoicingEnabled =
@@ -1465,9 +1482,9 @@ export async function handleWebhook(
         const userId = await findUserIdForPaymentEvent(db, normalizedEvent);
         await updateSubscriptionStatusByProviderRef(db, normalizedEvent, nextStatus);
         if (userId) {
-          // Marketing list membership is consent-driven, so cancellation is a
-          // billing transition, not a list removal. The user stays on the list
-          // until they withdraw consent.
+          // Newsletter list tracks paying (active/trialing) members who have not
+          // opted out — cancel / past_due removes list membership.
+          await syncSubscriptionNewsletter(db, userId, nextStatus, env);
           try {
             // Intentional grace period: past_due keeps offline licenses through Stripe
             // smart-retries / Qerko retry windows; revoke only on cancellation.
@@ -1604,6 +1621,13 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
 
     if (event.type === 'payment.failed' || event.type === 'subscription.past_due') {
       if (subscriptionId) {
+        const existing = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
         await db
           .prepare(
             `UPDATE subscriptions
@@ -1612,8 +1636,16 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           )
           .bind(subscriptionId)
           .run();
-        // Marketing list membership is consent-driven; a past_due transition
-        // never removes the user from the list.
+        if (existing?.user_id) {
+          try {
+            await syncSubscriptionNewsletter(db, String(existing.user_id), 'past_due', env);
+          } catch (brevoErr) {
+            console.error('[gopay webhook] newsletter sync failed', {
+              userId: existing.user_id,
+              err: brevoErr,
+            });
+          }
+        }
       }
       return jsonResponse({ ok: true }, 200, corsHeaders);
     }
@@ -1636,8 +1668,14 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           .bind(subscriptionId)
           .run();
         if (row?.user_id) {
-          // Marketing list membership is consent-driven; cancellation does not
-          // remove the user from the list.
+          try {
+            await syncSubscriptionNewsletter(db, String(row.user_id), 'cancelled', env);
+          } catch (brevoErr) {
+            console.error('[gopay webhook] newsletter sync failed', {
+              userId: row.user_id,
+              err: brevoErr,
+            });
+          }
           try {
             await revokeOfflineLicensesForUser(db, row.user_id, 'subscription_cancelled');
           } catch (offlineErr) {
@@ -1789,6 +1827,13 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
     // immediate cancellation. Offline licenses stay valid until actual cancellation.
     if (event.type === 'payment.failed') {
       if (subscriptionId) {
+        const existing = await db
+          .prepare(
+            `SELECT user_id FROM subscriptions
+             WHERE provider = 'comgate' AND provider_subscription_id = ? LIMIT 1`,
+          )
+          .bind(subscriptionId)
+          .first();
         await db
           .prepare(
             `UPDATE subscriptions
@@ -1799,8 +1844,16 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
           )
           .bind(subscriptionId)
           .run();
-        // Marketing list membership is consent-driven; a past_due transition
-        // never removes the user from the list.
+        if (existing?.user_id) {
+          try {
+            await syncSubscriptionNewsletter(db, String(existing.user_id), 'past_due', env);
+          } catch (brevoErr) {
+            console.error('[comgate webhook] newsletter sync failed', {
+              userId: existing.user_id,
+              err: brevoErr,
+            });
+          }
+        }
       }
     }
 

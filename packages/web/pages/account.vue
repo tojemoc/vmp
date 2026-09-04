@@ -399,21 +399,21 @@
         </template>
       </div>
 
-      <!-- Marketing consent card (opt-in to the newsletter) -->
+      <!-- Newsletter preference (opt-out; default is receive while paying) -->
       <div
         v-if="isLoggedIn"
         class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
       >
         <div>
           <h2 class="text-base font-semibold text-gray-900 dark:text-white">
-            {{ strings.marketingConsentTitle }}
+            {{ strings.newsletterOptOutTitle }}
           </h2>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {{ strings.marketingConsentIntro }}
+            {{ strings.newsletterOptOutIntro }}
           </p>
         </div>
 
-        <div v-if="loadingConsent" class="space-y-2">
+        <div v-if="loadingNewsletterPref" class="space-y-2">
           <div class="h-4 w-3/4 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
         </div>
         <template v-else>
@@ -421,19 +421,19 @@
             <input
               type="checkbox"
               class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-              :checked="marketingConsent"
-              :disabled="savingConsent"
-              @change="onToggleMarketingConsent(($event.target as HTMLInputElement).checked)"
+              :checked="newsletterOptedOut"
+              :disabled="savingNewsletterPref"
+              @change="onToggleNewsletterOptOut(($event.target as HTMLInputElement).checked)"
             >
             <span class="text-sm text-gray-700 dark:text-gray-200">
-              {{ strings.marketingConsentLabel }}
+              {{ strings.newsletterOptOutLabel }}
             </span>
           </label>
-          <p v-if="consentError" class="text-sm text-red-600 dark:text-red-400">
-            {{ consentError }}
+          <p v-if="newsletterPrefError" class="text-sm text-red-600 dark:text-red-400">
+            {{ newsletterPrefError }}
           </p>
-          <p v-else-if="consentSaved" class="text-xs text-green-600 dark:text-green-400">
-            {{ strings.marketingConsentSaved }}
+          <p v-else-if="newsletterPrefSaved" class="text-xs text-green-600 dark:text-green-400">
+            {{ strings.newsletterOptOutSaved }}
           </p>
         </template>
       </div>
@@ -741,11 +741,11 @@
   const rssPersonalUrl = ref('');
   const copiedWhich = ref<'personal' | null>(null);
 
-  const loadingConsent = ref(true);
-  const savingConsent = ref(false);
-  const consentError = ref<string | null>(null);
-  const consentSaved = ref(false);
-  const marketingConsent = ref(false);
+  const loadingNewsletterPref = ref(true);
+  const savingNewsletterPref = ref(false);
+  const newsletterPrefError = ref<string | null>(null);
+  const newsletterPrefSaved = ref(false);
+  const newsletterOptedOut = ref(false);
 
   type ContinueWatchingItem = {
     videoId: string;
@@ -812,10 +812,10 @@
 
     await fetchRssUrls();
     if (isLoggedIn.value) {
-      await fetchMarketingConsent();
+      await fetchNewsletterPreference();
       await fetchContinueWatching();
     } else {
-      loadingConsent.value = false;
+      loadingNewsletterPref.value = false;
       loadingContinueWatching.value = false;
     }
   });
@@ -891,50 +891,50 @@
     }
   }
 
-  async function fetchMarketingConsent() {
-    loadingConsent.value = true;
-    consentError.value = null;
+  async function fetchNewsletterPreference() {
+    loadingNewsletterPref.value = true;
+    newsletterPrefError.value = null;
     try {
-      const res = await fetch(`${apiUrl}/api/account/marketing-consent`, {
+      const res = await fetch(`${apiUrl}/api/account/newsletter-preference`, {
         headers: authHeader(),
         credentials: 'include',
       });
       const data = await res.json();
       if (!res.ok) {
-        consentError.value = data.error ?? strings.marketingConsentLoadFailed;
+        newsletterPrefError.value = data.error ?? strings.newsletterOptOutLoadFailed;
         return;
       }
-      marketingConsent.value = data.consented === true;
+      newsletterOptedOut.value = data.optedOut === true;
     } catch {
-      consentError.value = strings.marketingConsentLoadFailed;
+      newsletterPrefError.value = strings.newsletterOptOutLoadFailed;
     } finally {
-      loadingConsent.value = false;
+      loadingNewsletterPref.value = false;
     }
   }
 
-  async function onToggleMarketingConsent(next: boolean) {
-    savingConsent.value = true;
-    consentError.value = null;
-    consentSaved.value = false;
+  async function onToggleNewsletterOptOut(next: boolean) {
+    savingNewsletterPref.value = true;
+    newsletterPrefError.value = null;
+    newsletterPrefSaved.value = false;
     try {
-      const res = await fetch(`${apiUrl}/api/account/marketing-consent`, {
+      const res = await fetch(`${apiUrl}/api/account/newsletter-preference`, {
         method: 'PUT',
         headers: { ...authHeader(), 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ consent: next }),
+        body: JSON.stringify({ optedOut: next }),
       });
       const data = await res.json();
       if (!res.ok) {
-        consentError.value = data.error ?? strings.marketingConsentSaveFailed;
+        newsletterPrefError.value = data.error ?? strings.newsletterOptOutSaveFailed;
         return;
       }
-      marketingConsent.value = data.consented === true;
-      consentSaved.value = true;
-      capturePostHogEvent('marketing_consent_changed', { consent: marketingConsent.value });
+      newsletterOptedOut.value = data.optedOut === true;
+      newsletterPrefSaved.value = true;
+      capturePostHogEvent('newsletter_opt_out_changed', { optedOut: newsletterOptedOut.value });
     } catch {
-      consentError.value = strings.marketingConsentSaveFailed;
+      newsletterPrefError.value = strings.newsletterOptOutSaveFailed;
     } finally {
-      savingConsent.value = false;
+      savingNewsletterPref.value = false;
     }
   }
 

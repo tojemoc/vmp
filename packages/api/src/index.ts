@@ -17,9 +17,9 @@ import {
 } from '@vmp/shared';
 import type { ObjectStorageProvider } from '@vmp/storage/worker';
 import {
-  handleGetAccountMarketingConsent,
-  handlePutAccountMarketingConsent,
-} from './accountMarketingConsent.js';
+  handleGetAccountNewsletterPreference,
+  handlePutAccountNewsletterPreference,
+} from './accountNewsletterPreference.js';
 import {
   ensurePillsApiKeySetting,
   handleAdminAnalytics,
@@ -1106,11 +1106,11 @@ const workerHandler = {
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
         }
-        if (url.pathname === '/api/account/marketing-consent' && request.method === 'GET') {
-          return handleGetAccountMarketingConsent(request, env, corsHeaders);
+        if (url.pathname === '/api/account/newsletter-preference' && request.method === 'GET') {
+          return handleGetAccountNewsletterPreference(request, env, corsHeaders);
         }
-        if (url.pathname === '/api/account/marketing-consent' && request.method === 'PUT') {
-          return handlePutAccountMarketingConsent(request, env, corsHeaders);
+        if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
+          return handlePutAccountNewsletterPreference(request, env, corsHeaders);
         }
         if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
           return handleListPlaybackPositions(request, env, corsHeaders);

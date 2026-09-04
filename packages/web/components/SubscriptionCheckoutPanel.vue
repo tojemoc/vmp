@@ -117,6 +117,20 @@
       {{ checkoutError }}
     </div>
 
+    <label
+      class="mb-4 flex items-start gap-3 text-left cursor-pointer"
+      :class="embedded ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300'"
+    >
+      <input
+        v-model="newsletterOptOut"
+        type="checkbox"
+        class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+      >
+      <span class="text-sm">
+        {{ strings.newsletterOptOutCheckoutLabel }}
+      </span>
+    </label>
+
     <div class="mb-3 text-left">
       <label
         class="text-xs uppercase tracking-wide block mb-1"
@@ -219,6 +233,7 @@
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
+        :newsletter-opt-out="newsletterOptOut"
         :embedded="embedded"
         :show-wallet-surface="showWalletSurface"
         :show-card-surface="showCardSurface"
@@ -351,6 +366,8 @@
   const moreExpanded = ref(false);
   const cardMethodSelected = ref(false);
   const checkoutError = ref<string | null>(null);
+  /** Unchecked by default — checking opts out of the creator newsletter only. */
+  const newsletterOptOut = ref(false);
   const promoCodeInput = ref('');
   const promoValidating = ref(false);
   const promoError = ref<string | null>(null);
@@ -804,6 +821,7 @@
           planType: selectedPlan.value,
           provider: 'legacy',
           returnPath: props.returnPath,
+          newsletterOptOut: newsletterOptOut.value,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -838,6 +856,7 @@
           planType: selectedPlan.value,
           provider: 'gopay',
           returnPath: props.returnPath,
+          newsletterOptOut: newsletterOptOut.value,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -872,6 +891,7 @@
           planType: selectedPlan.value,
           provider: 'comgate',
           returnPath: props.returnPath,
+          newsletterOptOut: newsletterOptOut.value,
         }),
       });
       const data = await res.json().catch(() => ({}));

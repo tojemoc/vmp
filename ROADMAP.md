@@ -67,9 +67,9 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 **Plan:** [docs/plans/step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md) — [#645](https://github.com/tojemoc/vmp/issues/645)
 
-- [ ] Explicit marketing consent (store + account opt-in), gates every list sync
-- [ ] Brevo subscriber sync for consented subscribers, honoring Brevo suppression
-- [ ] Cancellation is a billing transition; removal only on consent withdrawal
+- [ ] Newsletter opt-out store + checkout/account checkbox (default: receive while paying)
+- [ ] Brevo subscriber sync for paying non-opted-out users, honoring Brevo suppression
+- [ ] Remove from marketing list on cancel / opt-out; system email unaffected
 - [ ] Admin Newsletter tab + campaign send
 - [ ] `brevo_subscriber_list_id` setting
 

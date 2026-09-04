@@ -319,13 +319,14 @@ export const strings: StringsDefinition = {
   podcastRssIntro:
     'Použijte svou osobní URL v podcast aplikaci pro plné epizody během předplatného.',
   podcastRssPersonalLabel: 'Vaše osobní URL',
-  marketingConsentTitle: 'Newsletter',
-  marketingConsentIntro:
-    'Marketingové e-maily posíláme jen lidem, kteří o ně požádají. Placené předplatné vás do newsletteru nepřidá.',
-  marketingConsentLabel: 'Posílejte mi newsletter a novinky o produktu e-mailem.',
-  marketingConsentSaved: 'Vaše volba byla uložena.',
-  marketingConsentLoadFailed: 'Nepodařilo se načíst vaši volbu newsletteru.',
-  marketingConsentSaveFailed: 'Nepodařilo se uložit vaši volbu newsletteru.',
+  newsletterOptOutTitle: 'Newsletter',
+  newsletterOptOutIntro:
+    'Platicí předplatitelé dostávají newsletter tvůrce ve výchozím nastavení. Účtové a bezpečnostní e-maily (přihlašovací odkazy, platby) se posílají vždy a jsou oddělené od newsletteru.',
+  newsletterOptOutLabel: 'Nechci dostávat žádný newsletter od tvůrce',
+  newsletterOptOutCheckoutLabel: 'Nechci dostávat žádný newsletter od tvůrce',
+  newsletterOptOutSaved: 'Vaše volba byla uložena.',
+  newsletterOptOutLoadFailed: 'Nepodařilo se načíst vaši volbu newsletteru.',
+  newsletterOptOutSaveFailed: 'Nepodařilo se uložit vaši volbu newsletteru.',
   continueWatchingTitle: 'Pokračovat ve sledování',
   continueWatchingIntro:
     'Pokračujte tam, kde jste u VOD videí skončili. Odstraněním položky smažete uloženou pozici.',
