@@ -197,6 +197,34 @@ describe('syncNewsletterForSubscription billing transitions', () => {
     );
     assert.ok(removeCall, 'cancellation removes the contact from the newsletter list');
   });
+
+  it('enqueues reconcile when non-paying removal fails', async () => {
+    const fetchMock = mock.fn(async () => new Response('{}', { status: 500 }));
+    globalThis.fetch = fetchMock as any;
+
+    let enqueued = false;
+    const base = fakeDb({ optedOutAt: null });
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes('newsletter_brevo_reconcile_queue')) {
+          return {
+            bind() {
+              return {
+                async run() {
+                  enqueued = true;
+                  return { meta: { changes: 1 } };
+                },
+              };
+            },
+          };
+        }
+        return base.prepare(sql);
+      },
+    };
+
+    await syncNewsletterForSubscription(db, 'u1', 'cancelled', { BREVO_API_KEY: 'k' });
+    assert.equal(enqueued, true, 'failed removal is queued for durable retry');
+  });
 });
 
 describe('newsletter preference store', () => {

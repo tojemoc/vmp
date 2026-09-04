@@ -158,7 +158,10 @@ export async function syncNewsletterForSubscription(
   if (paying) {
     await syncPayingSubscriberToNewsletter(db, userId, env);
   } else {
-    await removeSubscriberFromNewsletter(db, userId, env);
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
   }
 }
 
@@ -228,7 +231,10 @@ export async function syncPayingSubscriberToNewsletter(
     .first();
   if (row?.newsletter_opted_out_at) {
     // Opted out: keep the marketing list clear (idempotent remove).
-    await removeSubscriberFromNewsletter(db, userId, env);
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
     return false;
   }
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
@@ -421,8 +427,9 @@ async function userIsPayingSubscriber(db: any, userId: any): Promise<boolean> {
 
 /**
  * Derive Brevo marketing-list membership from the latest preference + paying
- * status. Re-reads preference after the Brevo call so a concurrent PUT cannot
- * leave membership stale relative to the newest optedOutAt.
+ * status. Re-reads preference and paying status after the Brevo call so a
+ * concurrent preference change or billing transition cannot leave membership
+ * stale relative to the newest snapshots.
  */
 export async function reconcileNewsletterMembershipForUser(
   db: any,
@@ -442,9 +449,14 @@ export async function reconcileNewsletterMembershipForUser(
 
   const prefBefore = await readNewsletterPreference(db, userId);
   if (!prefBefore) return false;
+  const payingBefore = await userIsPayingSubscriber(db, userId);
   let ok = await applyOnce();
   const prefAfter = await readNewsletterPreference(db, userId);
-  if (prefAfter && prefAfter.optedOutAt !== prefBefore.optedOutAt) {
+  const payingAfter = await userIsPayingSubscriber(db, userId);
+  if (
+    (prefAfter && prefAfter.optedOutAt !== prefBefore.optedOutAt) ||
+    payingAfter !== payingBefore
+  ) {
     ok = await applyOnce();
   }
   return ok;
