@@ -5,19 +5,29 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
-import { syncNewsletterForSubscription, syncPayingSubscriberToNewsletter } from '../src/brevo.js';
-import { hasNewsletterOptOut, writeNewsletterPreference } from '../src/newsletterPreference.js';
+import {
+  reconcileNewsletterMembershipForUser,
+  syncNewsletterForSubscription,
+  syncPayingSubscriberToNewsletter,
+} from '../src/brevo.js';
+import {
+  applyCheckoutNewsletterOptOut,
+  hasNewsletterOptOut,
+  writeNewsletterPreference,
+} from '../src/newsletterPreference.js';
 
 /**
  * Minimal fake D1 covering the queries the sync path runs:
  *  - admin_settings lookup for brevo_subscriber_list_id
  *  - users lookup for email + newsletter_opted_out_at
+ *  - optional subscriptions paying check
  * `optedOutAt` null means default (receive newsletter).
  */
 function fakeDb({
   listId = '7',
   email = 'paid@example.com',
   optedOutAt = null as string | null,
+  paying = true,
 }) {
   return {
     prepare(sql: string) {
@@ -26,6 +36,9 @@ function fakeDb({
           return {
             async first() {
               if (sql.includes('admin_settings')) return { value: listId };
+              if (sql.includes('FROM subscriptions')) {
+                return paying ? { ok: 1 } : null;
+              }
               if (sql.includes('FROM users')) {
                 return {
                   email,
@@ -107,6 +120,58 @@ describe('syncPayingSubscriberToNewsletter opt-out gate', () => {
     const postCall = fetchMock.mock.calls.find((c) => (c.arguments[1] as any)?.method === 'POST');
     assert.equal(postCall, undefined, 'never POSTs the contact when Brevo suppressed it');
   });
+
+  it('skips when listUnsubscribed contains the configured list id', async () => {
+    const fetchMock = mock.fn(async (url: string, opts: any) => {
+      if (opts?.method === 'GET') {
+        return new Response(JSON.stringify({ emailBlacklisted: false, listUnsubscribed: [7] }), {
+          status: 200,
+        });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const db = fakeDb({ optedOutAt: null, listId: '7' });
+    const added = await syncPayingSubscriberToNewsletter(db, 'u1', { BREVO_API_KEY: 'k' });
+
+    assert.equal(added, false);
+    const postCall = fetchMock.mock.calls.find((c) => (c.arguments[1] as any)?.method === 'POST');
+    assert.equal(postCall, undefined, 'never POSTs when list-unsubscribed');
+  });
+});
+
+describe('reconcileNewsletterMembershipForUser', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('does not add a non-paying user who cleared opt-out', async () => {
+    const fetchMock = mock.fn(async () => new Response('{}', { status: 200 }));
+    globalThis.fetch = fetchMock as any;
+
+    const db = fakeDb({ optedOutAt: null, paying: false });
+    const ok = await reconcileNewsletterMembershipForUser(db, 'u1', { BREVO_API_KEY: 'k' });
+
+    assert.equal(ok, true);
+    const addCall = fetchMock.mock.calls.find(
+      (c) =>
+        (c.arguments[1] as any)?.method === 'POST' &&
+        String(c.arguments[0]).endsWith('/contacts') &&
+        !String(c.arguments[0]).includes('/remove'),
+    );
+    assert.equal(addCall, undefined, 'non-paying opted-in user is never added');
+    const removeCall = fetchMock.mock.calls.find((c) =>
+      String(c.arguments[0]).includes('/contacts/remove'),
+    );
+    assert.ok(removeCall, 'keeps non-paying user off the marketing list');
+  });
 });
 
 describe('syncNewsletterForSubscription billing transitions', () => {
@@ -167,5 +232,44 @@ describe('newsletter preference store', () => {
     assert.equal(await hasNewsletterOptOut(db, 'u1'), true);
     const cleared = await writeNewsletterPreference(db, 'u1', false);
     assert.equal(cleared?.optedOut, false);
+  });
+
+  it('checkout false/omitted does not clear a prior opt-out', async () => {
+    let row: any = {
+      newsletter_opted_out_at: '2026-09-01',
+      newsletter_opt_out_version: '2026-09-04',
+    };
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...args: any[]) {
+            return {
+              async run() {
+                if (sql.includes('newsletter_opted_out_at = CURRENT_TIMESTAMP')) {
+                  row = {
+                    newsletter_opted_out_at: '2026-09-04',
+                    newsletter_opt_out_version: args[0],
+                  };
+                } else if (sql.includes('newsletter_opted_out_at = NULL')) {
+                  row = { newsletter_opted_out_at: null, newsletter_opt_out_version: null };
+                }
+              },
+              async first() {
+                return row;
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const unchanged = await applyCheckoutNewsletterOptOut(db, 'u1', false);
+    assert.equal(unchanged?.optedOut, true, 'unchecked checkout keeps prior opt-out');
+
+    const stillUnchanged = await applyCheckoutNewsletterOptOut(db, 'u1', false);
+    assert.equal(stillUnchanged?.optedOut, true);
+
+    const setFromCheckout = await applyCheckoutNewsletterOptOut(db, 'u1', true);
+    assert.equal(setFromCheckout?.optedOut, true);
   });
 });

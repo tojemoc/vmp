@@ -4,7 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
-import { writeNewsletterPreference } from './newsletterPreference.js';
+import { applyCheckoutNewsletterOptOut } from './newsletterPreference.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
 import { getSetting, setSettings } from './settingsStore.js';
@@ -1102,8 +1102,9 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
  *
  * newsletterOptOut (optional boolean): when true, records that the subscriber
- * does not want the creator newsletter. Default / omitted / false keeps them
- * on the marketing list once payment activates. System email is unaffected.
+ * does not want the creator newsletter. Omitted / false leaves any existing
+ * account opt-out unchanged — clearing remains an explicit account action.
+ * System email is unaffected.
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user;
@@ -1260,9 +1261,9 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
 
-    // Persist checkout-time newsletter preference only for a real new checkout so
-    // a 409 / early failure cannot wipe an existing account opt-out.
-    await writeNewsletterPreference(db, user.sub, newsletterOptOut);
+    // Persist checkout opt-out only when explicitly checked. Never clear an
+    // existing account-level opt-out from an unchecked / omitted checkout control.
+    await applyCheckoutNewsletterOptOut(db, user.sub, newsletterOptOut);
 
     const returnPath = normalizeReturnPath(body?.returnPath);
     const einvoicingEnabled =

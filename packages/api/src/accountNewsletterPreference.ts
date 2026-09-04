@@ -5,13 +5,17 @@
  *   GET  /api/account/newsletter-preference  — read opt-out state
  *   PUT  /api/account/newsletter-preference  — set or clear opt-out
  *
- * Opting out removes the user from the Brevo marketing list; clearing opt-out
- * re-adds them when they are a paying subscriber. System / transactional email
- * is never affected.
+ * Membership is derived from preference + active/trialing subscription via
+ * reconcileNewsletterMembershipForUser (which calls syncPayingSubscriberToNewsletter
+ * for eligible opt-ins). Opt-out failures enqueue durable Brevo reconciliation
+ * for the scheduled Worker. System / transactional email is never affected.
  */
 
 import { requireAuth } from './auth.js';
-import { removeSubscriberFromNewsletter, syncPayingSubscriberToNewsletter } from './brevo.js';
+import {
+  enqueueNewsletterBrevoReconcile,
+  reconcileNewsletterMembershipForUser,
+} from './brevo.js';
 import {
   NEWSLETTER_OPT_OUT_VERSION,
   readNewsletterPreference,
@@ -79,19 +83,25 @@ export async function handlePutAccountNewsletterPreference(
   const state = await writeNewsletterPreference(db, user.sub, body.optedOut);
   if (!state) return jsonResponse({ error: 'Not found' }, 404, corsHeaders);
 
-  // Reflect preference on the Brevo marketing list. Failures must not fail the
-  // request: the preference row is source of truth and a later sync retries.
+  // Preference row is source of truth. Brevo failures must not fail the request.
   try {
-    if (body.optedOut) {
-      await removeSubscriberFromNewsletter(db, user.sub, env);
-    } else {
-      await syncPayingSubscriberToNewsletter(db, user.sub, env);
+    const ok = await reconcileNewsletterMembershipForUser(db, user.sub, env);
+    if (body.optedOut && !ok) {
+      await enqueueNewsletterBrevoReconcile(db, user.sub);
     }
   } catch (err) {
     console.error('[account] newsletter preference brevo sync failed', {
-      fn: body.optedOut ? 'removeSubscriberFromNewsletter' : 'syncPayingSubscriberToNewsletter',
+      fn: 'reconcileNewsletterMembershipForUser',
+      optedOut: body.optedOut,
       err,
     });
+    if (body.optedOut) {
+      try {
+        await enqueueNewsletterBrevoReconcile(db, user.sub);
+      } catch (enqueueErr) {
+        console.error('[account] newsletter brevo reconcile enqueue failed', { err: enqueueErr });
+      }
+    }
   }
 
   return jsonResponse(serializePreference(state), 200, corsHeaders);

@@ -64,3 +64,18 @@ export async function writeNewsletterPreference(db: any, userId: any, optedOut: 
   }
   return readNewsletterPreference(db, userId);
 }
+
+/**
+ * Checkout may only *set* an opt-out. Omitted / false must not clear an existing
+ * account-level opt-out — clearing stays an explicit account-preference action.
+ */
+export async function applyCheckoutNewsletterOptOut(
+  db: any,
+  userId: any,
+  newsletterOptOut: boolean,
+) {
+  if (newsletterOptOut !== true) {
+    return readNewsletterPreference(db, userId);
+  }
+  return writeNewsletterPreference(db, userId, true);
+}

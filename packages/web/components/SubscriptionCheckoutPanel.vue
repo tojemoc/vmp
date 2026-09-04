@@ -586,6 +586,7 @@
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
     params.set('checkout_provider', provider);
+    if (newsletterOptOut.value) params.set('checkout_newsletter_opt_out', '1');
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
   }
@@ -990,6 +991,9 @@
     const hasRoutePlan = plan === 'monthly' || plan === 'yearly' || plan === 'club';
     if (hasRoutePlan) {
       pendingCheckoutPlan.value = plan;
+    }
+    if (q.checkout_newsletter_opt_out === '1') {
+      newsletterOptOut.value = true;
     }
     const provider = q.checkout_provider;
     const deferProviderStart = hasRoutePlan || loadingPrices.value;

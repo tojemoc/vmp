@@ -66,6 +66,7 @@ import {
   handleAdminNewsletterSync,
   handleAdminNewsletterTemplateById,
   handleAdminNewsletterTemplates,
+  processNewsletterBrevoReconcileQueue,
 } from './brevo.js';
 import {
   handleCmsMediaBatch,
@@ -1259,6 +1260,11 @@ const workerHandler = {
           await finalizeStalePushWatchSessions(env);
         } catch (err) {
           console.error('Push engagement sweep failed:', err);
+        }
+        try {
+          await processNewsletterBrevoReconcileQueue(env);
+        } catch (err) {
+          console.error('Newsletter Brevo reconcile sweep failed:', err);
         }
       }
 
