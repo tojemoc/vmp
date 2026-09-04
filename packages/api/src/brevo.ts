@@ -444,7 +444,11 @@ export async function reconcileNewsletterMembershipForUser(
     if (shouldBeOnList) {
       return syncPayingSubscriberToNewsletter(db, userId, env);
     }
-    return removeSubscriberFromNewsletter(db, userId, env);
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
+    return removed;
   };
 
   const prefBefore = await readNewsletterPreference(db, userId);

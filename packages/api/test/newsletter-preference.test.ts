@@ -172,6 +172,35 @@ describe('reconcileNewsletterMembershipForUser', () => {
     );
     assert.ok(removeCall, 'keeps non-paying user off the marketing list');
   });
+
+  it('enqueues reconcile when removal through reconcile fails', async () => {
+    const fetchMock = mock.fn(async () => new Response('{}', { status: 500 }));
+    globalThis.fetch = fetchMock as any;
+
+    let enqueued = false;
+    const base = fakeDb({ optedOutAt: '2026-09-04 00:00:00', paying: true });
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes('newsletter_brevo_reconcile_queue')) {
+          return {
+            bind() {
+              return {
+                async run() {
+                  enqueued = true;
+                  return { meta: { changes: 1 } };
+                },
+              };
+            },
+          };
+        }
+        return base.prepare(sql);
+      },
+    };
+
+    const ok = await reconcileNewsletterMembershipForUser(db, 'u1', { BREVO_API_KEY: 'k' });
+    assert.equal(ok, false);
+    assert.equal(enqueued, true, 'failed reconcile removal is queued for durable retry');
+  });
 });
 
 describe('syncNewsletterForSubscription billing transitions', () => {
