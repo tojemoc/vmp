@@ -60,7 +60,7 @@ Client (player)                    API Worker
      |<-- 409 concurrent_limit ---------|      reject new stream OR steal oldest
 ```
 
-**Session identity:** client-generated `sessionId` (UUID) stored in `sessionStorage`; sent on `video-access` and segment/manifest requests (header e.g. `X-VMP-Playback-Session` or signed query param on proxy URLs). All session register/heartbeat/release endpoints require a valid Bearer JWT. **`playback_sessions` lookups must match both `sessionId` and `JWT.sub`** — never trust a `userId` embedded only in a signed proxy URL without verifying it equals the authenticated subject. Proxy enforcement must bind the session (and/or `JWT.sub`) into the signed URL payload or re-validate the bearer on authenticated proxy requests so a leaked playlist URL cannot play under another account.
+**Session identity:** server-issued `sessionId` (UUID) from `POST /api/account/playback-sessions`, stored client-side (e.g. `sessionStorage`); sent on `video-access` and segment/manifest requests (header e.g. `X-VMP-Playback-Session` or signed query param on proxy URLs). Clients must not invent session ids — heartbeat/`video-access` only accept rows minted for `JWT.sub`. All session register/heartbeat/release endpoints require a valid Bearer JWT. **`playback_sessions` lookups must match both `sessionId` and `JWT.sub`** — never trust a `userId` embedded only in a signed proxy URL without verifying it equals the authenticated subject. Proxy enforcement must bind the session (and/or `JWT.sub`) into the signed URL payload or re-validate the bearer on authenticated proxy requests so a leaked playlist URL cannot play under another account.
 
 **Active definition:** row in `playback_sessions` with `last_seen_at` within **90s** (configurable `concurrent_playback_stale_seconds`). Player sends heartbeat every **30s** while playing (pause/stop → DELETE or let stale expire).
 
@@ -82,7 +82,7 @@ Recommendation: **D1** for v1 (consistent with `playback_positions`); revisit DO
 
 ```sql
 CREATE TABLE playback_sessions (
-  id TEXT PRIMARY KEY,              -- client session UUID
+  id TEXT PRIMARY KEY,              -- server-issued session UUID
   user_id TEXT NOT NULL,
   video_id TEXT NOT NULL,
   started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -96,14 +96,15 @@ CREATE INDEX idx_playback_sessions_user_active ON playback_sessions(user_id, las
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `PUT` | `/api/account/playback-sessions/:sessionId` | Bearer | Heartbeat / register (`videoId`, optional `ended: true` to release) |
+| `POST` | `/api/account/playback-sessions` | Bearer | Mint server-issued session + claim slot (`videoId`) |
+| `PUT` | `/api/account/playback-sessions/:sessionId` | Bearer | Heartbeat (`videoId`, optional `ended: true` to release) |
 | `DELETE` | `/api/account/playback-sessions/:sessionId` | Bearer | Explicit end |
 
-`video-access` and proxy: require valid session id for premium streams; return `409` + `{ code: 'concurrent_playback_limit', limit: N }` when exceeded.
+`video-access` and proxy: when enforcement is on, require a valid server-issued session id for premium streams; return `409` + `{ code: 'playback_session_required' }` when missing/unknown, or `409` + `{ code: 'concurrent_playback_limit', limit: N }` when create exceeds the plan cap.
 
 ### Web (`@vmp/web`)
 
-- `useVideoPlayer` / watch page: create `sessionId` on play, heartbeat while `playing`, release on `pause`/`ended`/`beforeunload`.
+- `useVideoPlayer` / watch page: `POST` to mint `sessionId` on play, heartbeat while `playing`, release on `pause`/`ended`/`beforeunload`.
 - User-facing copy when blocked: explain club allows more devices; suggest stopping another session or upgrading.
 
 ### Admin settings

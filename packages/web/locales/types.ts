@@ -283,6 +283,14 @@ export type StringsDefinition = {
   podcastRssTitle: string;
   podcastRssIntro: string;
   podcastRssPersonalLabel: string;
+  podcastRssPublicLabel: string;
+  podcastRssRotate: string;
+  podcastRssRotating: string;
+  podcastRssRotateHint: string;
+  podcastRssRotateConfirm: string;
+  podcastRssRotateFailed: string;
+  podcastRssInstructionsTitle: string;
+  podcastRssInstructions: string;
   newsletterOptOutTitle: string;
   newsletterOptOutIntro: string;
   newsletterOptOutLabel: string;

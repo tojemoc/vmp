@@ -4,11 +4,16 @@ import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
 import { posthogBeforeSend } from './utils/posthogBeforeSend';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
+import {
+  isWebDeploymentFeatureCompiled,
+  resolveWebDeploymentFeatures,
+} from './utils/resolveDeploymentFeatures';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
 
 loadMonorepoRootEnv();
 
 const buildInfo = readBuildInfoDefaults();
+const deploymentFeatures = resolveWebDeploymentFeatures();
 
 const posthogPublicKey = resolvePostHogPublicKeyFromEnv();
 if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
@@ -18,7 +23,10 @@ if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
 const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com').trim();
 const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
 const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
-const posthogEnabled = Boolean(posthogPublicKey);
+const posthogEnabled =
+  isWebDeploymentFeatureCompiled(deploymentFeatures, 'posthog') && Boolean(posthogPublicKey);
+const gtmCompiled = isWebDeploymentFeatureCompiled(deploymentFeatures, 'gtm');
+const pwaCompiled = isWebDeploymentFeatureCompiled(deploymentFeatures, 'pwa');
 const posthogSourcemapsEnabled = Boolean(
   posthogEnabled && posthogProjectId && posthogPersonalApiKey,
 );
@@ -38,6 +46,22 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
+  plugins: [
+    ...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : []),
+    ...(pwaCompiled
+      ? ([
+          '~/features/pwa/pwa-auth.client.ts',
+          '~/features/pwa/offline-downloads.client.ts',
+        ] as const)
+      : []),
+    ...(posthogEnabled
+      ? ([
+          '~/features/posthog/posthog.client.ts',
+          '~/features/posthog/posthog-consent.client.ts',
+        ] as const)
+      : []),
+  ],
+
   hooks: {
     // Nuxt emits <link rel="prefetch"> for lazy /_nuxt chunks. Cloudflare refuses any
     // sec-purpose: prefetch on Worker routes with HTTP 503 (same rule as Speed Brain
@@ -56,7 +80,7 @@ export default defineNuxtConfig({
   modules: [
     '@nuxtjs/tailwindcss',
     '@nuxtjs/color-mode',
-    '@vite-pwa/nuxt',
+    ...(pwaCompiled ? (['@vite-pwa/nuxt'] as const) : []),
     '@sentry/nuxt/module',
     ...(posthogEnabled ? (['@posthog/nuxt'] as const) : []),
   ],
@@ -179,11 +203,13 @@ export default defineNuxtConfig({
       /** Full git SHA baked in at build time (staging footer shows short form). */
       gitCommit: buildInfo.gitCommit,
       gitRepoUrl: buildInfo.gitRepoUrl,
-      /** Baked PostHog project token — override via NUXT_PUBLIC_POSTHOG_PUBLIC_KEY (or KEY / PROJECT_TOKEN aliases). */
+      /** Baked PostHog project token — only when `posthog` is in VMP_FEATURES. */
       posthog: {
-        publicKey: posthogPublicKey,
+        publicKey: posthogEnabled ? posthogPublicKey : '',
         host: posthogHost,
       },
+      /** Compile-time feature module allowlist (`VMP_FEATURES`). See docs/plans/deployment-feature-modules.md */
+      deploymentFeatures,
     },
   },
 
@@ -201,9 +227,9 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#0f172a' },
       ],
       link: [
-        // Belt-and-suspenders: @vite-pwa/nuxt injects this automatically, but
-        // some Nitro presets miss the injection step — add it explicitly too.
-        { rel: 'manifest', href: '/manifest.webmanifest' },
+        ...(pwaCompiled
+          ? ([{ rel: 'manifest', href: '/manifest.webmanifest' }] as const)
+          : []),
         { rel: 'icon', type: 'image/png', href: '/icons/pwa-192.png' },
         // iOS home screen icon (Safari ignores the web manifest icons array)
         { rel: 'apple-touch-icon', href: '/icons/pwa-192.png' },
@@ -211,7 +237,9 @@ export default defineNuxtConfig({
     },
   },
 
-  pwa: {
+  ...(pwaCompiled
+    ? {
+        pwa: {
     // Keep the old precache alive for already-open tabs; they may still import
     // route chunks from the previous deployment until a close or refresh.
     registerType: 'prompt',
@@ -263,5 +291,7 @@ export default defineNuxtConfig({
       enabled: false,
       type: 'classic', // Workbox uses importScripts(); must not be 'module'
     },
-  },
+        },
+      }
+    : {}),
 });

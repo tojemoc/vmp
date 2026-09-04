@@ -321,6 +321,17 @@ export const strings: StringsDefinition = {
   podcastRssIntro:
     'Použite svoju osobnú URL v podcast aplikácii pre plné epizódy počas predplatného.',
   podcastRssPersonalLabel: 'Vaša osobná URL',
+  podcastRssPublicLabel: 'Verejná ukážková URL',
+  podcastRssRotate: 'Obnoviť URL',
+  podcastRssRotating: 'Obnovujem…',
+  podcastRssRotateHint:
+    'Ak vaša osobná URL unikne, obnovte ju. Stará URL okamžite prestane fungovať, preto novú znova pridajte v podcast aplikácii.',
+  podcastRssRotateConfirm:
+    'Obnoviť osobnú RSS URL? Súčasná URL okamžite prestane fungovať a novú musíte znova pridať v každej podcast aplikácii.',
+  podcastRssRotateFailed: 'Nepodarilo sa obnoviť vašu RSS URL.',
+  podcastRssInstructionsTitle: 'Ako sa prihlásiť na odber',
+  podcastRssInstructions:
+    'Skopírujte svoju osobnú URL a pridajte ju pomocou URL v podcast aplikácii (Overcast, Pocket Casts a AntennaPod podporujú „pridať podľa URL“). Verejná ukážková URL slúži pre adresáre a vždy ponúka iba ukážkové epizódy.',
   newsletterOptOutTitle: 'Newsletter',
   newsletterOptOutIntro:
     'Platiaci predplatitelia dostávajú newsletter tvorcu vo východzom nastavení. Účtové a bezpečnostné e-maily (prihlasovacie odkazy, platby) sa posielajú vždy a sú oddelené od newslettera.',

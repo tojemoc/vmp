@@ -1,6 +1,8 @@
 /**
  * Loads GTM from public site settings when enabled in Admin → System.
  * Container ID and optional Cloudflare Google Tag Gateway path are runtime-only (D1).
+ *
+ * Registered from `nuxt.config.ts` only when the `gtm` deployment feature is compiled.
  */
 import { getGtmScriptUrl } from '~/utils/gtm';
 

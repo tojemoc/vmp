@@ -44,6 +44,15 @@ function mapVideosForRebuildPayload(videos: any[]) {
     }));
 }
 
+/** True when trimmed podcast_preview.mp3 rebuild webhooks may run. */
+async function isPodcastPreviewMp3PrerenderEnabled(env: any): Promise<boolean> {
+  return (
+    String(
+      (await getSetting(env, 'rss_podcast_preview_mp3_enabled', { defaultValue: '1' })) ?? '1',
+    ) === '1'
+  );
+}
+
 /** POST signed rebuild payload to the media host (no HTTP response wrapper). */
 export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[]) {
   const freePreviewEnabled =
@@ -54,6 +63,16 @@ export async function deliverPodcastPreviewRebuildWebhook(env: any, videos: any[
       delivered: false,
       code: 'free_preview_disabled',
       videoCount: 0,
+      eligibleCount: 0,
+      skippedFullUnlockCount: 0,
+    };
+  }
+
+  if (!(await isPodcastPreviewMp3PrerenderEnabled(env))) {
+    return {
+      delivered: false,
+      code: 'preview_mp3_disabled',
+      videoCount: videos.length,
       eligibleCount: 0,
       skippedFullUnlockCount: 0,
     };
@@ -361,6 +380,17 @@ export async function handleRssPodcastPreviewRebuildNotify(
             message: 'No videos need a trimmed preview MP3 (premium-only or full unlock).',
           },
           200,
+          corsHeaders,
+        );
+      }
+      if (result.code === 'preview_mp3_disabled') {
+        return jsonResponse(
+          {
+            error: 'Podcast preview MP3 prerender is disabled',
+            code: result.code,
+            videoCount: result.videoCount,
+          },
+          400,
           corsHeaders,
         );
       }

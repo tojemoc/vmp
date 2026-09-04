@@ -381,11 +381,11 @@
             >
               {{ strings.podcastRssPersonalLabel }}
             </p>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <input
                 :value="rssPersonalUrl"
                 readonly
-                class="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               >
               <button
                 class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
@@ -393,9 +393,53 @@
               >
                 {{ copiedWhich === 'personal' ? strings.copied : strings.copy }}
               </button>
+              <button
+                class="px-3 py-2 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60"
+                :disabled="rotatingRss"
+                @click="rotateRssUrl"
+              >
+                {{ rotatingRss ? strings.podcastRssRotating : strings.podcastRssRotate }}
+              </button>
             </div>
-            <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ strings.podcastRssRotateHint }}
+            </p>
+            <p v-if="rotateError" class="text-xs text-red-600 dark:text-red-400">
+              {{ rotateError }}
+            </p>
           </div>
+
+          <div class="space-y-2">
+            <p
+              class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide"
+            >
+              {{ strings.podcastRssPublicLabel }}
+            </p>
+            <div class="flex flex-wrap items-center gap-2">
+              <input
+                :value="rssPublicUrl"
+                readonly
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+              <button
+                class="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                @click="copyText(rssPublicUrl, 'public')"
+              >
+                {{ copiedWhich === 'public' ? strings.copied : strings.copy }}
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <p class="text-xs font-semibold text-gray-600 dark:text-gray-300">
+              {{ strings.podcastRssInstructionsTitle }}
+            </p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              {{ strings.podcastRssInstructions }}
+            </p>
+          </div>
+
+          <p v-if="copyError" class="text-xs text-red-600 dark:text-red-400">{{ copyError }}</p>
         </template>
       </div>
 
@@ -701,6 +745,18 @@
   const stripeCompletionError = ref<string | null>(null);
   const legacyCompletionError = ref<string | null>(null);
 
+  // GoPay and Comgate redirect back with a marker query param; activation is
+  // webhook-driven, so the return handler only records the visit and polls.
+  const returningFromGoPay = computed(() => route.query.gopay === 'return');
+  const returningFromComgate = computed(() => route.query.comgate === 'return');
+
+  async function clearRedirectReturnQuery(keys: string[]) {
+    const extraQuery: Record<string, string> = { subscribed: '1' };
+    const nextQuery = { ...route.query, ...extraQuery };
+    for (const key of keys) delete nextQuery[key];
+    await navigateTo({ path: route.path, query: nextQuery }, { replace: true });
+  }
+
   const showTotpDisable = ref(false);
   const totpDisableCode = ref('');
   const totpDisabling = ref(false);
@@ -739,7 +795,10 @@
   const rssError = ref<string | null>(null);
   const copyError = ref<string | null>(null);
   const rssPersonalUrl = ref('');
-  const copiedWhich = ref<'personal' | null>(null);
+  const rssPublicUrl = ref('');
+  const rotatingRss = ref(false);
+  const rotateError = ref<string | null>(null);
+  const copiedWhich = ref<'personal' | 'public' | null>(null);
 
   const loadingNewsletterPref = ref(true);
   const savingNewsletterPref = ref(false);
@@ -793,9 +852,25 @@
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;
       }
+    } else if (returningFromGoPay.value) {
+      showWelcomeBanner.value = true;
+      // Return-URL visit only — conversion SoT is API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'gopay' });
+      await clearRedirectReturnQuery(['gopay']);
+    } else if (returningFromComgate.value) {
+      showWelcomeBanner.value = true;
+      // Return-URL visit only — conversion SoT is API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'comgate' });
+      await clearRedirectReturnQuery(['comgate', 'refId', 'transId']);
     }
 
-    if (showWelcomeBanner.value || returningFromStripe.value || returningFromLegacy.value) {
+    if (
+      showWelcomeBanner.value ||
+      returningFromStripe.value ||
+      returningFromLegacy.value ||
+      returningFromGoPay.value ||
+      returningFromComgate.value
+    ) {
       // After checkout redirect the webhook may not have fired yet.
       // Poll up to 5 times (at 2 s intervals) until we see an active subscription.
       const MAX_ATTEMPTS = 5;
@@ -884,10 +959,37 @@
         return;
       }
       rssPersonalUrl.value = data.personalUrl ?? '';
+      rssPublicUrl.value = data.publicUrl ?? '';
     } catch {
       rssError.value = strings.rssLoadNetworkError;
     } finally {
       loadingRss.value = false;
+    }
+  }
+
+  async function rotateRssUrl() {
+    if (rotatingRss.value) return;
+    if (!window.confirm(strings.podcastRssRotateConfirm)) return;
+    rotatingRss.value = true;
+    rotateError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/rss/rotate`, {
+        method: 'POST',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        rotateError.value = data.error ?? strings.podcastRssRotateFailed;
+        return;
+      }
+      rssPersonalUrl.value = data.personalUrl ?? rssPersonalUrl.value;
+      rssPublicUrl.value = data.publicUrl ?? rssPublicUrl.value;
+      capturePostHogEvent('podcast_rss_url_rotated');
+    } catch {
+      rotateError.value = strings.podcastRssRotateFailed;
+    } finally {
+      rotatingRss.value = false;
     }
   }
 
@@ -994,7 +1096,7 @@
     }
   }
 
-  async function copyText(value: string, which: 'personal') {
+  async function copyText(value: string, which: 'personal' | 'public') {
     if (!value) return;
     copyError.value = null;
     try {

@@ -37,6 +37,8 @@ import {
 } from './adminExtras.js';
 import { ensureAdminSettingsTable } from './adminSettingsTable.js';
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js';
+import { handleAdminDeploymentFeatures } from './deploymentFeaturesAdmin.js';
+import { maybeBlockDeploymentFeatureRoute } from './routeFeatureGuard.js';
 import {
   handleGetMe,
   handleLogout,
@@ -78,7 +80,7 @@ import {
   handleCmsPagesList,
   handleCmsPageUnpublish,
 } from './cmsPages.js';
-import { applySessionBookmark, getReadSession } from './d1Session.js';
+import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
 import {
   handleAccountInvoices,
   handleAdminEInvoiceById,
@@ -160,6 +162,13 @@ import {
   handlePutPlaybackPosition,
 } from './playbackPositions.js';
 import {
+  enforceConcurrentPlaybackLimit,
+  handleCreatePlaybackSession,
+  handlePlaybackSessionHeartbeat,
+  handleReleasePlaybackSession,
+  PLAYBACK_SESSION_HEADER_NAME,
+} from './playbackSessions.js';
+import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
@@ -201,7 +210,8 @@ import {
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
-import { handleGetAccountRss } from './rssAccount.js';
+import { handleGetAccountRss, handleRotateAccountRss } from './rssAccount.js';
+import { readRssTokenVersion } from './rssToken.js';
 import {
   deliverPodcastPreviewRebuildWebhook,
   handleRssPodcastPreviewRebuildNotify,
@@ -219,7 +229,7 @@ import {
   handleThumbnailUpload,
   THUMBNAIL_CACHE_CONTROL,
 } from './thumbnails.js';
-import { signVideoToken, verifyVideoToken } from './videoTokens.js';
+import { checkVideoTokenRssVersion, signVideoToken, verifyVideoToken } from './videoTokens.js';
 import { sendPushNotification } from './webpush.js';
 
 type CorsHeaders = Record<string, string>;
@@ -525,11 +535,15 @@ const workerHandler = {
               'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
               'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
+                `${PLAYBACK_SESSION_HEADER_NAME}, ` +
                 POSTHOG_TRACING_REQUEST_HEADERS.join(', '),
               'Access-Control-Max-Age': '86400',
             },
           });
         }
+
+        const featureBlock = maybeBlockDeploymentFeatureRoute(request, env, corsHeaders);
+        if (featureBlock) return featureBlock;
 
         // ── Auth routes ───────────────────────────────────────────────────────────
         if (url.pathname === '/api/auth/magic-link' && request.method === 'POST') {
@@ -760,6 +774,12 @@ const workerHandler = {
           ['GET', 'PATCH'].includes(request.method)
         ) {
           return handleSiteSettings(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/admin/deployment-features' &&
+          request.method === 'GET'
+        ) {
+          return handleAdminDeploymentFeatures(request, env, corsHeaders);
         }
         if (
           url.pathname === '/api/admin/system/features' &&
@@ -1112,6 +1132,9 @@ const workerHandler = {
         if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
           return handlePutAccountNewsletterPreference(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
+          return handleRotateAccountRss(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/account/playback-positions' && request.method === 'GET') {
           return handleListPlaybackPositions(request, env, corsHeaders);
         }
@@ -1128,6 +1151,21 @@ const workerHandler = {
           }
           if (playbackVideoId && request.method === 'DELETE') {
             return handleDeletePlaybackPosition(request, env, corsHeaders, playbackVideoId);
+          }
+        }
+        if (url.pathname === '/api/account/playback-sessions' && request.method === 'POST') {
+          return handleCreatePlaybackSession(request, env, corsHeaders, ctx);
+        }
+        {
+          const playbackSessionMatch = url.pathname.match(
+            /^\/api\/account\/playback-sessions\/([^/]+)$/,
+          );
+          const sessionId = playbackSessionMatch?.[1];
+          if (sessionId && request.method === 'PUT') {
+            return handlePlaybackSessionHeartbeat(request, env, corsHeaders, sessionId);
+          }
+          if (sessionId && request.method === 'DELETE') {
+            return handleReleasePlaybackSession(request, env, corsHeaders, sessionId);
           }
         }
         if (url.pathname === '/api/account/invoices' && request.method === 'GET') {
@@ -1625,6 +1663,18 @@ async function handleVideoAccess(
     const hasPremiumSubscription = Boolean(subscription);
     const hasPremiumAccess = hasElevatedRole || hasPremiumSubscription;
 
+    // Cap simultaneous streams per subscriber (club entitlements #649). Staff
+    // bypass; free/anonymous get preview only and are unaffected.
+    if (hasPremiumSubscription && !hasElevatedRole && userId) {
+      const limitResponse = await enforceConcurrentPlaybackLimit(request, env, ctx, {
+        userId,
+        planType: subscription?.plan_type,
+        videoId: resolvedVideoId,
+        corsHeaders,
+      });
+      if (limitResponse) return limitResponse;
+    }
+
     const hasVideoMetadata = Boolean(video);
     const hasAccess = hasPremiumAccess || !hasVideoMetadata;
     const previewDuration = video?.preview_duration ?? video?.full_duration ?? 0;
@@ -1907,6 +1957,26 @@ async function handleVideoProxy(
       status: 403,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     });
+  }
+
+  // RSS-issued tokens carry rss_token_version; reject stale or legacy unbound tokens.
+  if (tokenClaims && tokenClaims.userId !== 'anonymous') {
+    const versionLookup = await readRssTokenVersion(getDb(env), tokenClaims.userId);
+    const versionCheck = checkVideoTokenRssVersion(tokenClaims, versionLookup);
+    if (versionCheck === 'unavailable') {
+      return jsonResponse(
+        { error: 'Video playback temporarily unavailable', code: 'video_auth_unavailable' },
+        503,
+        corsHeaders,
+      );
+    }
+    if (versionCheck === 'forbidden') {
+      return jsonResponse(
+        { error: 'Invalid or expired video token', code: 'video_token_invalid' },
+        403,
+        corsHeaders,
+      );
+    }
   }
 
   // Enforce previewUntil from token claims
