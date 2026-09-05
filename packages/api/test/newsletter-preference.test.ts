@@ -107,7 +107,9 @@ describe('syncPayingSubscriberToNewsletter opt-out gate', () => {
   it('skips a non-opted-out user who is suppressed (blacklisted) at Brevo', async () => {
     const fetchMock = mock.fn(async (url: string) => {
       if (String(url).includes('/contacts/') && !String(url).endsWith('/contacts')) {
-        return new Response(JSON.stringify({ emailBlacklisted: true }), { status: 200 });
+        return new Response(JSON.stringify({ emailBlacklisted: true, listUnsubscribed: [] }), {
+          status: 200,
+        });
       }
       return new Response('{}', { status: 200 });
     });
@@ -138,6 +140,43 @@ describe('syncPayingSubscriberToNewsletter opt-out gate', () => {
     assert.equal(added, false);
     const postCall = fetchMock.mock.calls.find((c) => (c.arguments[1] as any)?.method === 'POST');
     assert.equal(postCall, undefined, 'never POSTs when list-unsubscribed');
+  });
+
+  it('fails closed when contact body is missing suppression fields', async () => {
+    const fetchMock = mock.fn(async (url: string, opts: any) => {
+      if (opts?.method === 'GET') {
+        return new Response(JSON.stringify({ email: 'paid@example.com' }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const db = fakeDb({ optedOutAt: null });
+    const added = await syncPayingSubscriberToNewsletter(db, 'u1', { BREVO_API_KEY: 'k' });
+
+    assert.equal(added, false);
+    const postCall = fetchMock.mock.calls.find((c) => (c.arguments[1] as any)?.method === 'POST');
+    assert.equal(postCall, undefined, 'never POSTs when suppression fields are incomplete');
+  });
+
+  it('fails closed when contact body is invalid JSON', async () => {
+    const fetchMock = mock.fn(async (url: string, opts: any) => {
+      if (opts?.method === 'GET') {
+        return new Response('not-json', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const db = fakeDb({ optedOutAt: null });
+    const added = await syncPayingSubscriberToNewsletter(db, 'u1', { BREVO_API_KEY: 'k' });
+
+    assert.equal(added, false);
+    const postCall = fetchMock.mock.calls.find((c) => (c.arguments[1] as any)?.method === 'POST');
+    assert.equal(postCall, undefined, 'never POSTs when contact JSON is malformed');
   });
 });
 
@@ -201,6 +240,37 @@ describe('reconcileNewsletterMembershipForUser', () => {
     assert.equal(ok, false);
     assert.equal(enqueued, true, 'failed reconcile removal is queued for durable retry');
   });
+
+  it('enqueues reconcile when removal fetch rejects with a transport error', async () => {
+    const fetchMock = mock.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    globalThis.fetch = fetchMock as any;
+
+    let enqueued = false;
+    const base = fakeDb({ optedOutAt: '2026-09-04 00:00:00', paying: true });
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes('newsletter_brevo_reconcile_queue')) {
+          return {
+            bind() {
+              return {
+                async run() {
+                  enqueued = true;
+                  return { meta: { changes: 1 } };
+                },
+              };
+            },
+          };
+        }
+        return base.prepare(sql);
+      },
+    };
+
+    const ok = await reconcileNewsletterMembershipForUser(db, 'u1', { BREVO_API_KEY: 'k' });
+    assert.equal(ok, false);
+    assert.equal(enqueued, true, 'transport failure on remove is queued for durable retry');
+  });
 });
 
 describe('syncNewsletterForSubscription billing transitions', () => {
@@ -253,6 +323,36 @@ describe('syncNewsletterForSubscription billing transitions', () => {
 
     await syncNewsletterForSubscription(db, 'u1', 'cancelled', { BREVO_API_KEY: 'k' });
     assert.equal(enqueued, true, 'failed removal is queued for durable retry');
+  });
+
+  it('enqueues reconcile when non-paying removal fetch rejects', async () => {
+    const fetchMock = mock.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    globalThis.fetch = fetchMock as any;
+
+    let enqueued = false;
+    const base = fakeDb({ optedOutAt: null });
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes('newsletter_brevo_reconcile_queue')) {
+          return {
+            bind() {
+              return {
+                async run() {
+                  enqueued = true;
+                  return { meta: { changes: 1 } };
+                },
+              };
+            },
+          };
+        }
+        return base.prepare(sql);
+      },
+    };
+
+    await syncNewsletterForSubscription(db, 'u1', 'cancelled', { BREVO_API_KEY: 'k' });
+    assert.equal(enqueued, true, 'transport failure on cancel remove is queued');
   });
 });
 

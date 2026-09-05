@@ -194,11 +194,28 @@ async function brevoContactAllowsAdd(email: any, listId: number, env: any): Prom
     });
     return false;
   }
-  const data = asRecord(await res.json().catch(() => null));
-  if (!data || typeof data !== 'object') return false;
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    newsletterLog('suppression_check_failed', { status: res.status, code: 'invalid_json' });
+    return false;
+  }
+  // Fail closed: never treat malformed/incomplete bodies as an empty allow-add record.
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    newsletterLog('suppression_check_failed', { status: res.status, code: 'invalid_contact_shape' });
+    return false;
+  }
+  const data = raw as Record<string, unknown>;
+  if (typeof data.emailBlacklisted !== 'boolean' || !Array.isArray(data.listUnsubscribed)) {
+    newsletterLog('suppression_check_failed', {
+      status: res.status,
+      code: 'missing_suppression_fields',
+    });
+    return false;
+  }
   if (data.emailBlacklisted === true) return false;
-  const listUnsubscribed = Array.isArray(data.listUnsubscribed) ? data.listUnsubscribed : [];
-  if (listUnsubscribed.some((id) => Number(id) === listId)) return false;
+  if (data.listUnsubscribed.some((id) => Number(id) === listId)) return false;
   return true;
 }
 
@@ -394,11 +411,24 @@ export async function removeSubscriberFromNewsletter(
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
   if (!email) return false;
 
-  const res = await brevoFetch(
-    `/contacts/lists/${listId}/contacts/remove`,
-    { method: 'POST', body: JSON.stringify({ emails: [email] }) },
-    env,
-  );
+  let res: Response;
+  try {
+    res = await brevoFetch(
+      `/contacts/lists/${listId}/contacts/remove`,
+      { method: 'POST', body: JSON.stringify({ emails: [email] }) },
+      env,
+    );
+  } catch {
+    // Non-AbortError transport failures throw from brevoFetch; treat as failed
+    // removal so callers can enqueueNewsletterBrevoReconcile.
+    const userIdHash = await hashUserId(userId);
+    newsletterLog('remove_from_list_failed', {
+      userIdHash,
+      status: 0,
+      code: 'transport_error',
+    });
+    return false;
+  }
   if (res.ok || res.status === 404) return true;
   const err = asRecord(await res.json().catch(() => null));
   const userIdHash = await hashUserId(userId);
