@@ -324,6 +324,14 @@ export const strings: StringsDefinition = {
   podcastRssInstructionsTitle: 'How to subscribe',
   podcastRssInstructions:
     'Copy your personal URL, then add it by URL in your podcast app (Overcast, Pocket Casts, and AntennaPod support "add by URL"). The public preview URL is for directory listings and always serves preview-only episodes.',
+  newsletterOptOutTitle: 'Newsletter',
+  newsletterOptOutIntro:
+    'Paying subscribers receive the creator newsletter by default. Account and security emails (sign-in links, billing) are always sent and are separate from the newsletter.',
+  newsletterOptOutLabel: 'I do not want to receive any newsletter from the creator',
+  newsletterOptOutCheckoutLabel: 'I do not want to receive any newsletter from the creator',
+  newsletterOptOutSaved: 'Your preference is saved.',
+  newsletterOptOutLoadFailed: 'Could not load your newsletter preference.',
+  newsletterOptOutSaveFailed: 'Could not save your newsletter preference.',
   continueWatchingTitle: 'Continue watching',
   continueWatchingIntro:
     'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',

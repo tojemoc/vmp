@@ -8,6 +8,7 @@
  */
 
 import { requireRole } from './auth.js';
+import { readNewsletterPreference } from './newsletterPreference.js';
 
 const BREVO_BASE = 'https://api.brevo.com/v3';
 
@@ -141,7 +142,11 @@ async function brevoFetch(path: any, options = {}, env: any) {
 }
 
 /**
- * Sync newsletter membership from a subscription status (any payment provider).
+ * React to a subscription status change (any payment provider).
+ *
+ * Newsletter list = active/trialing paying subscribers who have not opted out.
+ * Cancellation / non-paying status removes list membership. Opt-out removes
+ * membership even while paying. Transactional mail is unrelated to this list.
  */
 export async function syncNewsletterForSubscription(
   db: any,
@@ -153,7 +158,10 @@ export async function syncNewsletterForSubscription(
   if (paying) {
     await syncPayingSubscriberToNewsletter(db, userId, env);
   } else {
-    await removeSubscriberFromNewsletter(db, userId, env);
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
   }
 }
 
@@ -168,8 +176,57 @@ export async function syncNewsletterForStripeSubscription(
 }
 
 /**
- * Add or update a user in the Brevo subscriber list (paying subscribers).
- * Returns true if the remote API call succeeded, false otherwise.
+ * Whether a contact may be added to the marketing list without overriding a
+ * Brevo-side opt-out. Returns false when Brevo confirms the contact is
+ * email-blacklisted or list-unsubscribed from `listId`. A 404 means the contact
+ * is unknown, so adding is safe. Any other non-ok / malformed response fails
+ * closed (returns false), so a transient Brevo error can never silently re-add
+ * a contact that opted out.
+ */
+async function brevoContactAllowsAdd(email: any, listId: number, env: any): Promise<boolean> {
+  const res = await brevoFetch(`/contacts/${encodeURIComponent(email)}`, { method: 'GET' }, env);
+  if (res.status === 404) return true;
+  if (!res.ok) {
+    const err = asRecord(await res.json().catch(() => null));
+    newsletterLog('suppression_check_failed', {
+      status: res.status,
+      code: recordString(err, 'code'),
+    });
+    return false;
+  }
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    newsletterLog('suppression_check_failed', { status: res.status, code: 'invalid_json' });
+    return false;
+  }
+  // Fail closed: never treat malformed/incomplete bodies as an empty allow-add record.
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    newsletterLog('suppression_check_failed', { status: res.status, code: 'invalid_contact_shape' });
+    return false;
+  }
+  const data = raw as Record<string, unknown>;
+  if (typeof data.emailBlacklisted !== 'boolean' || !Array.isArray(data.listUnsubscribed)) {
+    newsletterLog('suppression_check_failed', {
+      status: res.status,
+      code: 'missing_suppression_fields',
+    });
+    return false;
+  }
+  if (data.emailBlacklisted === true) return false;
+  if (data.listUnsubscribed.some((id) => Number(id) === listId)) return false;
+  return true;
+}
+
+/**
+ * Add or update a paying subscriber on the Brevo marketing list.
+ *
+ * No-ops (returns false) when the user has opted out of the newsletter, and
+ * honors Brevo's suppression state so a Brevo unsubscribe is never silently
+ * overwritten. Callers should only invoke this for active/trialing subscribers;
+ * use removeSubscriberFromNewsletter when they opt out or stop paying.
+ * Returns true only when the remote add succeeds.
  */
 export async function syncPayingSubscriberToNewsletter(
   db: any,
@@ -185,9 +242,26 @@ export async function syncPayingSubscriberToNewsletter(
       : NaN;
   if (!Number.isFinite(listId) || listId <= 0) return false;
 
-  const row = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first();
+  const row = await db
+    .prepare('SELECT email, newsletter_opted_out_at FROM users WHERE id = ? LIMIT 1')
+    .bind(userId)
+    .first();
+  if (row?.newsletter_opted_out_at) {
+    // Opted out: keep the marketing list clear (idempotent remove).
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
+    return false;
+  }
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
   if (!email || !EMAIL_RE.test(email)) return false;
+
+  if (!(await brevoContactAllowsAdd(email, listId, env))) {
+    const userIdHash = await hashUserId(userId);
+    newsletterLog('sync_skipped_suppressed', { userIdHash });
+    return false;
+  }
 
   const body = {
     email,
@@ -209,7 +283,8 @@ export async function syncPayingSubscriberToNewsletter(
   return true;
 }
 
-async function syncAllEligibleSubscribers(db: any, env: any) {
+/** Full list reconcile: sync eligible paying subscribers, then prune stale contacts. */
+export async function syncAllEligibleSubscribers(db: any, env: any) {
   if (!env.BREVO_API_KEY) {
     throw new Error('BREVO_API_KEY is not configured');
   }
@@ -223,35 +298,37 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
     throw new Error('Brevo subscriber list ID is not configured or invalid');
   }
 
-  const payingSubscriberRows = await db
+  // Paying + not opted out. Reconcile also removes opted-out or non-paying
+  // contacts that a prior sync left on the list.
+  const eligibleRows = await db
     .prepare(`
     SELECT DISTINCT s.user_id AS id
     FROM subscriptions s
+    INNER JOIN users u ON u.id = s.user_id
     WHERE s.status IN ('active', 'trialing')
       AND (s.current_period_end IS NULL OR datetime(s.current_period_end) > CURRENT_TIMESTAMP)
+      AND u.newsletter_opted_out_at IS NULL
   `)
     .all();
 
-  const payingSubscriberIds = (payingSubscriberRows?.results ?? [])
-    .map((r: any) => r.id)
-    .filter(Boolean);
+  const eligibleUserIds = (eligibleRows?.results ?? []).map((r: any) => r.id).filter(Boolean);
   let synced = 0;
-  for (const userId of payingSubscriberIds) {
+  for (const userId of eligibleUserIds) {
     const success = await syncPayingSubscriberToNewsletter(db, userId, env);
     if (success) synced += 1;
   }
 
   const eligibleEmails = new Set<string>();
-  if (payingSubscriberIds.length) {
+  if (eligibleUserIds.length) {
     const BATCH_SIZE = 500;
-    for (let i = 0; i < payingSubscriberIds.length; i += BATCH_SIZE) {
-      const chunk = payingSubscriberIds.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < eligibleUserIds.length; i += BATCH_SIZE) {
+      const chunk = eligibleUserIds.slice(i, i + BATCH_SIZE);
       const placeholders = chunk.map(() => '?').join(',');
-      const eligibleRows = await db
+      const emailRows = await db
         .prepare(`SELECT email FROM users WHERE id IN (${placeholders})`)
         .bind(...chunk)
         .all();
-      for (const row of eligibleRows?.results ?? []) {
+      for (const row of emailRows?.results ?? []) {
         const email = typeof row?.email === 'string' ? row.email.trim().toLowerCase() : '';
         if (email) eligibleEmails.add(email);
       }
@@ -286,7 +363,10 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
       .bind(email)
       .first();
     if (row?.id) {
-      await removeSubscriberFromNewsletter(db, row.id, env);
+      const removed = await removeSubscriberFromNewsletter(db, row.id, env);
+      if (!removed) {
+        await enqueueNewsletterBrevoReconcile(db, row.id);
+      }
       continue;
     }
     staleEmails.push(email);
@@ -314,35 +394,176 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
 
 /**
  * Remove a user's email from the subscriber list (e.g. subscription ended).
+ * Returns true when the contact is absent or successfully removed; false when
+ * the remove could not be confirmed (caller may enqueue durable reconcile).
  */
-export async function removeSubscriberFromNewsletter(db: any, userId: any, env: any) {
-  if (!env.BREVO_API_KEY) return;
+export async function removeSubscriberFromNewsletter(
+  db: any,
+  userId: any,
+  env: any,
+): Promise<boolean> {
+  if (!env.BREVO_API_KEY) return false;
 
   const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id');
   const listId =
     listIdRaw != null && String(listIdRaw).trim() !== ''
       ? Number.parseInt(String(listIdRaw).trim(), 10)
       : NaN;
-  if (!Number.isFinite(listId) || listId <= 0) return;
+  if (!Number.isFinite(listId) || listId <= 0) return false;
 
   const row = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first();
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
-  if (!email) return;
+  if (!email) return false;
 
-  const res = await brevoFetch(
-    `/contacts/lists/${listId}/contacts/remove`,
-    { method: 'POST', body: JSON.stringify({ emails: [email] }) },
-    env,
-  );
-  if (!res.ok && res.status !== 404) {
-    const err = asRecord(await res.json().catch(() => null));
+  let res: Response;
+  try {
+    res = await brevoFetch(
+      `/contacts/lists/${listId}/contacts/remove`,
+      { method: 'POST', body: JSON.stringify({ emails: [email] }) },
+      env,
+    );
+  } catch {
+    // Non-AbortError transport failures throw from brevoFetch; treat as failed
+    // removal so callers can enqueueNewsletterBrevoReconcile.
     const userIdHash = await hashUserId(userId);
     newsletterLog('remove_from_list_failed', {
       userIdHash,
-      status: res.status,
-      code: recordString(err, 'code'),
+      status: 0,
+      code: 'transport_error',
     });
+    return false;
   }
+  if (res.ok || res.status === 404) return true;
+  const err = asRecord(await res.json().catch(() => null));
+  const userIdHash = await hashUserId(userId);
+  newsletterLog('remove_from_list_failed', {
+    userIdHash,
+    status: res.status,
+    code: recordString(err, 'code'),
+  });
+  return false;
+}
+
+async function userIsPayingSubscriber(db: any, userId: any): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS ok
+       FROM subscriptions
+       WHERE user_id = ?
+         AND status IN ('active', 'trialing')
+         AND (current_period_end IS NULL OR datetime(current_period_end) > CURRENT_TIMESTAMP)
+       LIMIT 1`,
+    )
+    .bind(userId)
+    .first();
+  return !!row?.ok;
+}
+
+/**
+ * Derive Brevo marketing-list membership from the latest preference + paying
+ * status. Re-reads preference and paying status after the Brevo call so a
+ * concurrent preference change or billing transition cannot leave membership
+ * stale relative to the newest snapshots.
+ */
+export async function reconcileNewsletterMembershipForUser(
+  db: any,
+  userId: any,
+  env: any,
+): Promise<boolean> {
+  const applyOnce = async () => {
+    const pref = await readNewsletterPreference(db, userId);
+    if (!pref) return false;
+    const paying = await userIsPayingSubscriber(db, userId);
+    const shouldBeOnList = paying && !pref.optedOut;
+    if (shouldBeOnList) {
+      return syncPayingSubscriberToNewsletter(db, userId, env);
+    }
+    const removed = await removeSubscriberFromNewsletter(db, userId, env);
+    if (!removed) {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
+    return removed;
+  };
+
+  const prefBefore = await readNewsletterPreference(db, userId);
+  if (!prefBefore) return false;
+  const payingBefore = await userIsPayingSubscriber(db, userId);
+  let ok = await applyOnce();
+  const prefAfter = await readNewsletterPreference(db, userId);
+  const payingAfter = await userIsPayingSubscriber(db, userId);
+  if (
+    (prefAfter && prefAfter.optedOutAt !== prefBefore.optedOutAt) ||
+    payingAfter !== payingBefore
+  ) {
+    ok = await applyOnce();
+  }
+  return ok;
+}
+
+export async function enqueueNewsletterBrevoReconcile(db: any, userId: any) {
+  await db
+    .prepare(
+      `INSERT INTO newsletter_brevo_reconcile_queue (user_id, enqueued_at, attempts, last_error)
+       VALUES (?, CURRENT_TIMESTAMP, 0, NULL)
+       ON CONFLICT(user_id) DO UPDATE SET
+         enqueued_at = CURRENT_TIMESTAMP,
+         last_error = NULL`,
+    )
+    .bind(String(userId))
+    .run();
+}
+
+/**
+ * Drain durable Brevo reconcile work (scheduled Worker). Idempotent per user.
+ */
+export async function processNewsletterBrevoReconcileQueue(env: any, limit = 50) {
+  const db = getDb(env);
+  const rows = await db
+    .prepare(
+      `SELECT user_id FROM newsletter_brevo_reconcile_queue
+       ORDER BY datetime(enqueued_at) ASC
+       LIMIT ?`,
+    )
+    .bind(Math.max(1, Math.min(Number(limit) || 50, 200)))
+    .all();
+  let processed = 0;
+  for (const row of rows?.results ?? []) {
+    const userId = row?.user_id ? String(row.user_id) : '';
+    if (!userId) continue;
+    try {
+      const ok = await reconcileNewsletterMembershipForUser(db, userId, env);
+      if (ok) {
+        await db
+          .prepare('DELETE FROM newsletter_brevo_reconcile_queue WHERE user_id = ?')
+          .bind(userId)
+          .run();
+        processed += 1;
+      } else {
+        await db
+          .prepare(
+            `UPDATE newsletter_brevo_reconcile_queue
+             SET attempts = attempts + 1,
+                 last_error = 'reconcile_incomplete'
+             WHERE user_id = ?`,
+          )
+          .bind(userId)
+          .run();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      await db
+        .prepare(
+          `UPDATE newsletter_brevo_reconcile_queue
+           SET attempts = attempts + 1,
+               last_error = ?
+           WHERE user_id = ?`,
+        )
+        .bind(message.slice(0, 500), userId)
+        .run();
+      newsletterLog('reconcile_queue_item_failed', { error: message.slice(0, 200) });
+    }
+  }
+  return processed;
 }
 
 const STALE_CLAIM_MINUTES = 2;

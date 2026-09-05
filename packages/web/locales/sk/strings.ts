@@ -332,6 +332,14 @@ export const strings: StringsDefinition = {
   podcastRssInstructionsTitle: 'Ako sa prihlásiť na odber',
   podcastRssInstructions:
     'Skopírujte svoju osobnú URL a pridajte ju pomocou URL v podcast aplikácii (Overcast, Pocket Casts a AntennaPod podporujú „pridať podľa URL“). Verejná ukážková URL slúži pre adresáre a vždy ponúka iba ukážkové epizódy.',
+  newsletterOptOutTitle: 'Newsletter',
+  newsletterOptOutIntro:
+    'Platiaci predplatitelia dostávajú newsletter tvorcu vo východzom nastavení. Účtové a bezpečnostné e-maily (prihlasovacie odkazy, platby) sa posielajú vždy a sú oddelené od newslettera.',
+  newsletterOptOutLabel: 'Nechcem dostávať žiadny newsletter od tvorcu',
+  newsletterOptOutCheckoutLabel: 'Nechcem dostávať žiadny newsletter od tvorcu',
+  newsletterOptOutSaved: 'Vaša voľba bola uložená.',
+  newsletterOptOutLoadFailed: 'Nepodarilo sa načítať vašu voľbu newslettera.',
+  newsletterOptOutSaveFailed: 'Nepodarilo sa uložiť vašu voľbu newslettera.',
   continueWatchingTitle: 'Pokračovať v sledovaní',
   continueWatchingIntro:
     'Pokračujte tam, kde ste pri VOD videách skončili. Odstránením položky vymažete uloženú pozíciu.',

@@ -291,6 +291,13 @@ export type StringsDefinition = {
   podcastRssRotateFailed: string;
   podcastRssInstructionsTitle: string;
   podcastRssInstructions: string;
+  newsletterOptOutTitle: string;
+  newsletterOptOutIntro: string;
+  newsletterOptOutLabel: string;
+  newsletterOptOutCheckoutLabel: string;
+  newsletterOptOutSaved: string;
+  newsletterOptOutLoadFailed: string;
+  newsletterOptOutSaveFailed: string;
   copy: string;
   copied: string;
   rssLoadFailed: string;

@@ -65,8 +65,9 @@ GoPay and Comgate providers shipped in [PR #499](https://github.com/tojemoc/vmp/
 
 **Plan:** [docs/plans/step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md) — [#645](https://github.com/tojemoc/vmp/issues/645)
 
-- [ ] Brevo subscriber sync on subscribe/renewal
-- [ ] Remove on cancellation
+- [ ] Newsletter opt-out store + checkout/account checkbox (default: receive while paying)
+- [ ] Brevo subscriber sync for paying non-opted-out users, honoring Brevo suppression
+- [ ] Remove from marketing list on cancel / opt-out; system email unaffected
 - [ ] Admin Newsletter tab + campaign send
 - [ ] `brevo_subscriber_list_id` setting
 

@@ -17,6 +17,10 @@ import {
 } from '@vmp/shared';
 import type { ObjectStorageProvider } from '@vmp/storage/worker';
 import {
+  handleGetAccountNewsletterPreference,
+  handlePutAccountNewsletterPreference,
+} from './accountNewsletterPreference.js';
+import {
   ensurePillsApiKeySetting,
   handleAdminAnalytics,
   handleAdminPillImageUpload,
@@ -62,6 +66,7 @@ import {
   handleAdminNewsletterSync,
   handleAdminNewsletterTemplateById,
   handleAdminNewsletterTemplates,
+  processNewsletterBrevoReconcileQueue,
 } from './brevo.js';
 import {
   handleCmsMediaBatch,
@@ -168,8 +173,8 @@ import {
   capturePostHogException,
   POSTHOG_TRACING_REQUEST_HEADERS,
   posthogContextFromRequest,
-  resolvePostHogLogTracingContext,
   redactPathForAnalytics,
+  resolvePostHogLogTracingContext,
 } from './posthog.js';
 import {
   handleAdminIsicCampaigns,
@@ -1122,6 +1127,12 @@ const workerHandler = {
         if (url.pathname === '/api/account/rss' && request.method === 'GET') {
           return handleGetAccountRss(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/account/newsletter-preference' && request.method === 'GET') {
+          return handleGetAccountNewsletterPreference(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
+          return handlePutAccountNewsletterPreference(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
           return handleRotateAccountRss(request, env, corsHeaders);
         }
@@ -1249,6 +1260,11 @@ const workerHandler = {
           await finalizeStalePushWatchSessions(env);
         } catch (err) {
           console.error('Push engagement sweep failed:', err);
+        }
+        try {
+          await processNewsletterBrevoReconcileQueue(env);
+        } catch (err) {
+          console.error('Newsletter Brevo reconcile sweep failed:', err);
         }
       }
 

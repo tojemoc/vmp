@@ -443,6 +443,45 @@
         </template>
       </div>
 
+      <!-- Newsletter preference (opt-out; default is receive while paying) -->
+      <div
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.newsletterOptOutTitle }}
+          </h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ strings.newsletterOptOutIntro }}
+          </p>
+        </div>
+
+        <div v-if="loadingNewsletterPref" class="space-y-2">
+          <div class="h-4 w-3/4 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
+        </div>
+        <template v-else>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+              :checked="newsletterOptedOut"
+              :disabled="savingNewsletterPref"
+              @change="onToggleNewsletterOptOut(($event.target as HTMLInputElement).checked)"
+            >
+            <span class="text-sm text-gray-700 dark:text-gray-200">
+              {{ strings.newsletterOptOutLabel }}
+            </span>
+          </label>
+          <p v-if="newsletterPrefError" class="text-sm text-red-600 dark:text-red-400">
+            {{ newsletterPrefError }}
+          </p>
+          <p v-else-if="newsletterPrefSaved" class="text-xs text-green-600 dark:text-green-400">
+            {{ strings.newsletterOptOutSaved }}
+          </p>
+        </template>
+      </div>
+
       <!-- Security / 2FA card (staff roles required; viewers optional) -->
       <div
         v-if="show2faCard"
@@ -761,6 +800,12 @@
   const rotateError = ref<string | null>(null);
   const copiedWhich = ref<'personal' | 'public' | null>(null);
 
+  const loadingNewsletterPref = ref(true);
+  const savingNewsletterPref = ref(false);
+  const newsletterPrefError = ref<string | null>(null);
+  const newsletterPrefSaved = ref(false);
+  const newsletterOptedOut = ref(false);
+
   type ContinueWatchingItem = {
     videoId: string;
     title: string;
@@ -842,8 +887,10 @@
 
     await fetchRssUrls();
     if (isLoggedIn.value) {
+      await fetchNewsletterPreference();
       await fetchContinueWatching();
     } else {
+      loadingNewsletterPref.value = false;
       loadingContinueWatching.value = false;
     }
   });
@@ -943,6 +990,53 @@
       rotateError.value = strings.podcastRssRotateFailed;
     } finally {
       rotatingRss.value = false;
+    }
+  }
+
+  async function fetchNewsletterPreference() {
+    loadingNewsletterPref.value = true;
+    newsletterPrefError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/newsletter-preference`, {
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        newsletterPrefError.value = data.error ?? strings.newsletterOptOutLoadFailed;
+        return;
+      }
+      newsletterOptedOut.value = data.optedOut === true;
+    } catch {
+      newsletterPrefError.value = strings.newsletterOptOutLoadFailed;
+    } finally {
+      loadingNewsletterPref.value = false;
+    }
+  }
+
+  async function onToggleNewsletterOptOut(next: boolean) {
+    savingNewsletterPref.value = true;
+    newsletterPrefError.value = null;
+    newsletterPrefSaved.value = false;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/newsletter-preference`, {
+        method: 'PUT',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ optedOut: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        newsletterPrefError.value = data.error ?? strings.newsletterOptOutSaveFailed;
+        return;
+      }
+      newsletterOptedOut.value = data.optedOut === true;
+      newsletterPrefSaved.value = true;
+      capturePostHogEvent('newsletter_opt_out_changed', { optedOut: newsletterOptedOut.value });
+    } catch {
+      newsletterPrefError.value = strings.newsletterOptOutSaveFailed;
+    } finally {
+      savingNewsletterPref.value = false;
     }
   }
 
