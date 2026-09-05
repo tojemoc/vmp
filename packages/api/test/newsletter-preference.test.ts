@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 import {
   reconcileNewsletterMembershipForUser,
+  syncAllEligibleSubscribers,
   syncNewsletterForSubscription,
   syncPayingSubscriberToNewsletter,
 } from '../src/brevo.js';
@@ -270,6 +271,74 @@ describe('reconcileNewsletterMembershipForUser', () => {
     const ok = await reconcileNewsletterMembershipForUser(db, 'u1', { BREVO_API_KEY: 'k' });
     assert.equal(ok, false);
     assert.equal(enqueued, true, 'transport failure on remove is queued for durable retry');
+  });
+});
+
+
+describe('syncAllEligibleSubscribers stale-contact prune', () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('enqueues reconcile when stale known-user removal fails', async () => {
+    const fetchMock = mock.fn(async (url: string, opts: any) => {
+      const path = String(url);
+      if (opts?.method === 'GET' && path.includes('/contacts')) {
+        return new Response(
+          JSON.stringify({ contacts: [{ email: 'stale@example.com' }] }),
+          { status: 200 },
+        );
+      }
+      // Failed remove (HTTP error) — should enqueue durable reconcile.
+      return new Response('{}', { status: 500 });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    let enqueuedUserId: string | null = null;
+    const db = {
+      prepare(sql: string) {
+        const stmt = {
+          async all() {
+            // No eligible paying subscribers — every remote contact is stale.
+            if (sql.includes('FROM subscriptions') || sql.includes('SELECT DISTINCT')) {
+              return { results: [] };
+            }
+            return { results: [] };
+          },
+          bind(...args: unknown[]) {
+            return {
+              async first() {
+                if (sql.includes('admin_settings')) return { value: '7' };
+                if (sql.includes('lower(email)')) return { id: 'u-stale' };
+                if (sql.includes('SELECT email FROM users')) {
+                  return { email: 'stale@example.com' };
+                }
+                return null;
+              },
+              async all() {
+                return { results: [] };
+              },
+              async run() {
+                if (sql.includes('newsletter_brevo_reconcile_queue')) {
+                  enqueuedUserId = String(args[0] ?? '');
+                }
+                return { meta: { changes: 1 } };
+              },
+            };
+          },
+        };
+        return stmt;
+      },
+    };
+
+    await syncAllEligibleSubscribers(db, { BREVO_API_KEY: 'k' });
+    assert.equal(enqueuedUserId, 'u-stale', 'failed bulk stale removal is queued for durable retry');
   });
 });
 

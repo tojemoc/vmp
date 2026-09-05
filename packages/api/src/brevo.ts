@@ -283,7 +283,8 @@ export async function syncPayingSubscriberToNewsletter(
   return true;
 }
 
-async function syncAllEligibleSubscribers(db: any, env: any) {
+/** Full list reconcile: sync eligible paying subscribers, then prune stale contacts. */
+export async function syncAllEligibleSubscribers(db: any, env: any) {
   if (!env.BREVO_API_KEY) {
     throw new Error('BREVO_API_KEY is not configured');
   }
@@ -362,7 +363,10 @@ async function syncAllEligibleSubscribers(db: any, env: any) {
       .bind(email)
       .first();
     if (row?.id) {
-      await removeSubscriberFromNewsletter(db, row.id, env);
+      const removed = await removeSubscriberFromNewsletter(db, row.id, env);
+      if (!removed) {
+        await enqueueNewsletterBrevoReconcile(db, row.id);
+      }
       continue;
     }
     staleEmails.push(email);
