@@ -61,10 +61,10 @@ Tune worker / packager count:
 ```bash
 # Durable horizontal encode (API-only web + high/low worker pools + packager replicas):
 ENCORE_WORKER_HIGH_REPLICAS=3 ENCORE_WORKER_LOW_REPLICAS=2 ENCORE_PACKAGER_REPLICAS=3 \
-  docker compose -f encore/docker-compose.yml -f encore/docker-compose.scale.yml up -d
+  docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d
 
 # Optional KEDA-style one-shot workers (no loop; exit when idle):
-# docker compose -f encore/docker-compose.yml -f encore/docker-compose.workers.yml up -d
+# docker compose -f docker-compose.yml -f docker-compose.workers.yml up -d
 ```
 
 ### 4. Update `/etc/vmp/env`

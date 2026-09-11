@@ -14,10 +14,27 @@ export ENCORE_SETTINGS_WORKER_DRAIN_QUEUE="${ENCORE_SETTINGS_WORKER_DRAIN_QUEUE:
 
 echo "encore-worker-loop: starting ${BIN} (idle sleep ${IDLE_SLEEP}s)" >&2
 
+worker_pid=""
+
+forward_signal() {
+  sig="$1"
+  if [ -n "${worker_pid}" ]; then
+    kill "-${sig}" "${worker_pid}" 2>/dev/null || true
+    wait "${worker_pid}" 2>/dev/null || true
+  fi
+  exit 143
+}
+
+trap 'forward_signal TERM' TERM
+trap 'forward_signal INT' INT
+
 while true; do
   set +e
-  "${BIN}"
+  "${BIN}" &
+  worker_pid=$!
+  wait "${worker_pid}"
   code=$?
+  worker_pid=""
   set -e
   if [ "${code}" -ne 0 ]; then
     echo "encore-worker-loop: worker exited ${code}; retry in ${IDLE_SLEEP}s" >&2

@@ -14,14 +14,23 @@ export type HlsStartupPrefetchOptions = {
   priority?: RequestPriority;
 };
 
+export type PickedVariantPlaylist = {
+  url: string;
+  /** `#EXT-X-STREAM-INF` AUDIO= group id, when present. */
+  audioGroup: string | null;
+};
+
 function resolveUrl(base: string, ref: string): string {
   try {
     const resolved = new URL(ref, base);
     // Relative / query-less refs must inherit signed `vt` (and previewUntil) from the parent.
+    // Only copy when same-origin so cross-origin absolute URIs do not receive auth params.
     if (!ref.includes('?')) {
       const parent = new URL(base);
-      for (const [key, value] of parent.searchParams.entries()) {
-        if (!resolved.searchParams.has(key)) resolved.searchParams.set(key, value);
+      if (resolved.origin === parent.origin) {
+        for (const [key, value] of parent.searchParams.entries()) {
+          if (!resolved.searchParams.has(key)) resolved.searchParams.set(key, value);
+        }
       }
     }
     return resolved.toString();
@@ -43,13 +52,13 @@ function parseAttributeList(line: string): Record<string, string> {
   return attrs;
 }
 
-/** Pick the lowest BANDWIDTH media playlist URL from a master manifest. */
-export function pickLowestBandwidthPlaylistUrl(
+/** Pick the lowest BANDWIDTH media playlist (and its AUDIO group) from a master. */
+export function pickLowestBandwidthVariant(
   masterText: string,
   masterUrl: string,
-): string | null {
+): PickedVariantPlaylist | null {
   const lines = masterText.split(/\r?\n/);
-  let bestUrl: string | null = null;
+  let best: PickedVariantPlaylist | null = null;
   let bestBw = Number.POSITIVE_INFINITY;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]?.trim();
@@ -59,29 +68,53 @@ export function pickLowestBandwidthPlaylistUrl(
     const next = lines[i + 1]?.trim();
     if (!next || next.startsWith('#')) continue;
     const url = resolveUrl(masterUrl, next);
+    const audioGroup = (attrs.AUDIO ?? '').trim() || null;
     if (Number.isFinite(bw) && bw < bestBw) {
       bestBw = bw;
-      bestUrl = url;
-    } else if (!Number.isFinite(bw) && !bestUrl) {
-      bestUrl = url;
+      best = { url, audioGroup };
+    } else if (!Number.isFinite(bw) && !best) {
+      best = { url, audioGroup };
     }
   }
-  return bestUrl;
+  return best;
 }
 
-/** Collect demuxed audio media playlist URLs from `#EXT-X-MEDIA:TYPE=AUDIO`. */
-export function pickAudioPlaylistUrls(masterText: string, masterUrl: string): string[] {
-  const urls: string[] = [];
+/** Pick the lowest BANDWIDTH media playlist URL from a master manifest. */
+export function pickLowestBandwidthPlaylistUrl(
+  masterText: string,
+  masterUrl: string,
+): string | null {
+  return pickLowestBandwidthVariant(masterText, masterUrl)?.url ?? null;
+}
+
+/**
+ * Collect demuxed audio media playlist URL(s) from `#EXT-X-MEDIA:TYPE=AUDIO`.
+ * When `audioGroup` is set, only that GROUP-ID is considered and at most one
+ * rendition is returned (DEFAULT=YES preferred, else first match).
+ */
+export function pickAudioPlaylistUrls(
+  masterText: string,
+  masterUrl: string,
+  audioGroup?: string | null,
+): string[] {
+  const matches: { url: string; isDefault: boolean }[] = [];
+  const wanted = audioGroup?.trim() || null;
   for (const raw of masterText.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line.startsWith('#EXT-X-MEDIA:')) continue;
     const attrs = parseAttributeList(line);
     if ((attrs.TYPE ?? '').toUpperCase() !== 'AUDIO') continue;
+    if (wanted && (attrs['GROUP-ID'] ?? '').trim() !== wanted) continue;
     const uri = attrs.URI?.trim();
     if (!uri) continue;
-    urls.push(resolveUrl(masterUrl, uri));
+    matches.push({
+      url: resolveUrl(masterUrl, uri),
+      isDefault: (attrs.DEFAULT ?? '').toUpperCase() === 'YES',
+    });
   }
-  return urls;
+  if (!wanted) return matches.map((m) => m.url);
+  const preferred = matches.find((m) => m.isDefault) ?? matches[0];
+  return preferred ? [preferred.url] : [];
 }
 
 /** Init URI + first N segment URLs from a media playlist. */
@@ -156,9 +189,10 @@ export async function prefetchHlsStartup(
 
   try {
     const masterText = await fetchText(masterPlaylistUrl, signal, priority);
-    const mediaUrl = pickLowestBandwidthPlaylistUrl(masterText, masterPlaylistUrl);
-    const audioUrls = pickAudioPlaylistUrls(masterText, masterPlaylistUrl);
-    const targets = [mediaUrl, ...audioUrls].filter((u): u is string => Boolean(u));
+    const variant = pickLowestBandwidthVariant(masterText, masterPlaylistUrl);
+    if (!variant) return;
+    const audioUrls = pickAudioPlaylistUrls(masterText, masterPlaylistUrl, variant.audioGroup);
+    const targets = [variant.url, ...audioUrls];
 
     await Promise.all(
       targets.map(async (playlistUrl) => {

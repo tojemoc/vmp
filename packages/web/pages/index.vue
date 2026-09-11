@@ -619,7 +619,7 @@
             pushVideo(video);
             if (keys.length >= limit) return;
           }
-          for (const video of block.sideMini.videos ?? []) {
+          for (const video of block.sideMini.categorySection?.visible ?? []) {
             pushVideo(video);
             if (keys.length >= limit) return;
           }

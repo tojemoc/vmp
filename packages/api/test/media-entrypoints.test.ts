@@ -98,6 +98,23 @@ describe('sortMasterPlaylistByBandwidth', () => {
     assert.match(lines[6]!, /BANDWIDTH=5000000/);
     assert.equal(lines[7], 'stream_hi.m3u8');
   });
+
+  it('uses BANDWIDTH not AVERAGE-BANDWIDTH when both are present', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=4500000,BANDWIDTH=800000,RESOLUTION=854x480',
+      'stream_lo.m3u8',
+      '#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=900000,BANDWIDTH=5000000,RESOLUTION=1920x1080',
+      'stream_hi.m3u8',
+    ].join('\n');
+
+    const sorted = sortMasterPlaylistByBandwidth(input);
+    const lines = sorted.split('\n');
+    assert.match(lines[1]!, /BANDWIDTH=800000/);
+    assert.equal(lines[2], 'stream_lo.m3u8');
+    assert.match(lines[3]!, /BANDWIDTH=5000000/);
+    assert.equal(lines[4], 'stream_hi.m3u8');
+  });
 });
 
 describe('videoProxyCache keys', () => {

@@ -116,7 +116,7 @@ export function sortMasterPlaylistByBandwidth(manifest: string): string {
     const trimmed = line.trim();
     if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
       phase = 'variants';
-      const bwMatch = /BANDWIDTH=(\d+)/i.exec(trimmed);
+      const bwMatch = /(?:^|[,:\s])BANDWIDTH=(\d+)/i.exec(trimmed);
       const bandwidth = bwMatch ? Number.parseInt(bwMatch[1]!, 10) : Number.MAX_SAFE_INTEGER;
       const uri = lines[i + 1] ?? '';
       variants.push({

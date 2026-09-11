@@ -29,6 +29,18 @@ describe('pickLowestBandwidthPlaylistUrl', () => {
       'https://api.example/videos/v/lo.m3u8?vt=1',
     );
   });
+
+  it('does not copy parent query params onto cross-origin absolute URIs', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800000',
+      'https://cdn.example/v/lo.m3u8',
+    ].join('\n');
+    assert.equal(
+      pickLowestBandwidthPlaylistUrl(master, 'https://api.example/videos/v/master.m3u8?vt=1'),
+      'https://cdn.example/v/lo.m3u8',
+    );
+  });
 });
 
 describe('pickAudioPlaylistUrls', () => {
@@ -41,6 +53,20 @@ describe('pickAudioPlaylistUrls', () => {
     ].join('\n');
     assert.deepEqual(pickAudioPlaylistUrls(master, 'https://api.example/v/master.m3u8'), [
       'https://api.example/v/audio.m3u8',
+    ]);
+  });
+
+  it('returns only one rendition from the selected AUDIO group', () => {
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="eng",DEFAULT=YES,URI="a-eng.m3u8"',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="spa",URI="a-spa.m3u8"',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="b",NAME="eng",URI="b-eng.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="a"',
+      'lo.m3u8',
+    ].join('\n');
+    assert.deepEqual(pickAudioPlaylistUrls(master, 'https://api.example/v/master.m3u8', 'a'), [
+      'https://api.example/v/a-eng.m3u8',
     ]);
   });
 });
@@ -76,6 +102,7 @@ describe('prefetchHlsStartup', () => {
           [
             '#EXTM3U',
             '#EXT-X-MEDIA:TYPE=AUDIO,URI="audio.m3u8",GROUP-ID="a"',
+            '#EXT-X-MEDIA:TYPE=AUDIO,URI="other.m3u8",GROUP-ID="b"',
             '#EXT-X-STREAM-INF:BANDWIDTH=5000000,AUDIO="a"',
             'hi.m3u8',
             '#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="a"',
@@ -97,6 +124,7 @@ describe('prefetchHlsStartup', () => {
     assert.ok(calls.some((u) => u.includes('master.m3u8')));
     assert.ok(calls.some((u) => u.includes('lo.m3u8')));
     assert.ok(calls.some((u) => u.includes('audio.m3u8')));
+    assert.ok(!calls.some((u) => u.includes('other.m3u8')));
     assert.ok(calls.some((u) => u.includes('/init.mp4')));
     assert.ok(calls.some((u) => u.includes('/seg1.m4s')));
     assert.ok(!calls.some((u) => u.includes('/hi.m3u8')));

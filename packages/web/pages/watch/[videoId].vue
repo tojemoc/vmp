@@ -2059,11 +2059,17 @@
             playingOffline.value = false;
           }
         }
-        const playerPromise = initializeVideoElement(resolvedPlaylist, guard, options.signal);
+        const playerAbort = new AbortController();
+        const playerSignal = options.signal
+          ? AbortSignal.any([options.signal, playerAbort.signal])
+          : playerAbort.signal;
+        const playerPromise = initializeVideoElement(resolvedPlaylist, guard, playerSignal);
         const availability = await availabilityPromise;
         ensureCurrent();
         if (!availability.ok && isPlaybackUnavailableCode(availability.code)) {
           playbackUnavailable.value = true;
+          playerAbort.abort();
+          await playerPromise.catch(() => undefined);
           await loadBrowseRecommendations(options.signal);
           ensureCurrent();
           loading.value = false;
