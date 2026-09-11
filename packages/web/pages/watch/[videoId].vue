@@ -1986,10 +1986,10 @@
             `${config.public.apiUrl}/api/recommendations?videoId=${encodeURIComponent(String(videoData.value?.videoId ?? targetVideoId))}&limit=5`,
             { signal: options.signal },
           );
-          if (!guard() || options.signal.aborted) return;
+          if (!guard() || options.signal?.aborted) return;
           if (recsResponse.ok) {
             const recommendationsData = await recsResponse.json();
-            if (!guard() || options.signal.aborted) return;
+            if (!guard() || options.signal?.aborted) return;
             recommendations.value = recommendationsData.videos || [];
           }
         } catch (e: any) {
