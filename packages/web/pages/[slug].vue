@@ -132,21 +132,18 @@
     introBlock.value ? page.value.content.slice(1) : page.value.content,
   );
 
-  const introHtml = ref('');
-
-  async function loadIntroHtml() {
-    const block = introBlock.value;
-    if (!block) {
-      introHtml.value = '';
-      return;
-    }
-    introHtml.value = await renderCmsRichTextHtml(block.content as CmsRichTextDocument);
-  }
-
-  await loadIntroHtml();
-  watch(introBlock, () => {
-    void loadIntroHtml();
-  });
+  // Render on the server and reuse the serialized HTML during hydration; re-running
+  // the async renderer on the client can diverge from SSR and break hydration.
+  const { data: introHtml } = await useAsyncData(
+    `cms-intro-${slug.value}`,
+    () => {
+      const block = introBlock.value;
+      return block
+        ? renderCmsRichTextHtml(block.content as CmsRichTextDocument)
+        : Promise.resolve('');
+    },
+    { default: () => '', watch: [introBlock] },
+  );
 
   const imageIds = computed(() =>
     page.value.content
