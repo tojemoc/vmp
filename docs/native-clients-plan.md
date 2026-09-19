@@ -65,7 +65,7 @@ CI passes these from `vars.MOBILE_*_STAGING` / `vars.MOBILE_*_PROD` (see `.githu
 
 Production note: prefer exchanging a one-time handoff code (bound to app install) over passing raw magic-link tokens via custom schemes if a non-HTTPS fallback is ever required post-launch.
 
-### Device pairing (Tiers 2–3; endpoints land in Phase 0)
+### Device pairing (Tiers 2–4; endpoints land in Phase 0)
 
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
