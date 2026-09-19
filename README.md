@@ -63,7 +63,7 @@ Core API/web packages do not ship separate READMEs; see [AGENTS.md](AGENTS.md) f
 | [ROADMAP.md](ROADMAP.md) | **Living checklist** — what to build; agents check off items per PR |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | CI/CD, env vars, smoke checks, bootstrap / rollback |
 | [docs/README.md](docs/README.md) | Index of API notes and historical design docs |
-| [docs/native-clients-plan.md](docs/native-clients-plan.md) | Multi-tier native/TV clients (Expo → TV → Tizen/webOS) |
+| [docs/native-clients-plan.md](docs/native-clients-plan.md) | Multi-tier native/TV clients (Expo → TV → Tizen/webOS → Titan/VIDAA) |
 | [packages/web/docs/workers-deploy-env.md](packages/web/docs/workers-deploy-env.md) | Web Worker build-time env vars |
 | Package READMEs under `packages/*` | Package-specific ops (pipeline, api-node, storage, …) |
 
