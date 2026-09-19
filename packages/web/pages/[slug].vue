@@ -7,7 +7,7 @@
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
           {{ page.title }}
         </h1>
-        <div v-if="introBlock" class="cms-intro cms-rich-text" v-html="introHtml" />
+        <div v-if="introBlock" class="cms-intro cms-rich-text" v-html="renderedIntroHtml" />
       </header>
 
       <article>
@@ -136,14 +136,16 @@
   // the async renderer on the client can diverge from SSR and break hydration.
   const { data: introHtml } = await useAsyncData(
     `cms-intro-${slug.value}`,
-    () => {
+    async () => {
       const block = introBlock.value;
-      return block
-        ? renderCmsRichTextHtml(block.content as CmsRichTextDocument)
-        : Promise.resolve('');
+      return {
+        html: block ? await renderCmsRichTextHtml(block.content as CmsRichTextDocument) : '',
+      };
     },
-    { default: () => '', watch: [introBlock] },
+    { default: () => ({ html: '' }), watch: [introBlock] },
   );
+
+  const renderedIntroHtml = computed(() => introHtml.value?.html || '');
 
   const imageIds = computed(() =>
     page.value.content
