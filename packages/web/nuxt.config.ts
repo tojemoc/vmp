@@ -1,8 +1,8 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
+import { posthogBeforeSend } from './utils/posthogBeforeSend';
 import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
-import { posthogBeforeSend } from './utils/posthogBeforeSend';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
 import {
   isWebDeploymentFeatureCompiled,
@@ -188,6 +188,14 @@ export default defineNuxtConfig({
       apiUrl,
       /** Canonical site origin for og:url and absolute og:image (defaults to request origin). */
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'https://vmp.tjm.sk',
+      /**
+       * Android applicationId for magic-link intent:// handoff from `/auth/verify`.
+       * Keep in sync with `appLinks.androidPackageName` / `apps/mobile` package.
+       */
+      mobileAndroidPackage:
+        process.env.NUXT_PUBLIC_MOBILE_ANDROID_PACKAGE ||
+        process.env.MOBILE_ANDROID_PACKAGE ||
+        'sk.tjm.vmp',
       /** UI language for this deployment: `en`, `sk`, or `cs` (one locale per instance). */
       uiLocale: process.env.NUXT_PUBLIC_UI_LOCALE || 'en',
       sentry: {
@@ -227,9 +235,7 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#0f172a' },
       ],
       link: [
-        ...(pwaCompiled
-          ? ([{ rel: 'manifest', href: '/manifest.webmanifest' }] as const)
-          : []),
+        ...(pwaCompiled ? ([{ rel: 'manifest', href: '/manifest.webmanifest' }] as const) : []),
         { rel: 'icon', type: 'image/png', href: '/icons/pwa-192.png' },
         // iOS home screen icon (Safari ignores the web manifest icons array)
         { rel: 'apple-touch-icon', href: '/icons/pwa-192.png' },
@@ -240,57 +246,57 @@ export default defineNuxtConfig({
   ...(pwaCompiled
     ? {
         pwa: {
-    // Keep the old precache alive for already-open tabs; they may still import
-    // route chunks from the previous deployment until a close or refresh.
-    registerType: 'prompt',
-    // 'auto' lets vite-plugin-pwa choose the best registration strategy for
-    // the current environment (inline script in <head> during SSR builds).
-    injectRegister: 'auto',
-    manifest: {
-      name: 'VMP',
-      short_name: 'VMP',
-      description: 'Premium video content',
-      start_url: '/',
-      scope: '/',
-      theme_color: '#0f172a',
-      background_color: '#0f172a',
-      display: 'standalone',
-      // Prefer routing magic-link / handoff URLs into an already-installed PWA (Chromium; iOS may still open Safari).
-      launch_handler: {
-        client_mode: 'navigate-existing',
-      },
-      icons: [
-        { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-        // Separate maskable entry required by Chrome's installability audit
-        {
-          src: '/icons/pwa-512-maskable.png',
-          sizes: '512x512',
-          type: 'image/png',
-          purpose: 'maskable',
-        },
-      ],
-    },
-    workbox: {
-      navigateFallback: '/',
-      // The prerendered "/" shell must not be served for deep links — Workbox would
-      // hydrate the homepage on /auth/verify and Nuxt eventually rewrites to /?token=…,
-      // so magic-link login never runs.  Only the bare homepage uses the fallback.
-      navigateFallbackDenylist: [/^\/(?!$)/],
-      globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
-      cleanupOutdatedCaches: true,
-      // Keep push handlers in a tiny sidecar file so GenerateSW can still be used.
-      importScripts: ['/sw-push.js', '/sw-offline-media.js'],
-    },
-    client: {
-      installPrompt: true,
-    },
-    devOptions: {
-      // Set to true locally if you need to test the service worker in dev mode.
-      // Leave false for production — the module handles that path separately.
-      enabled: false,
-      type: 'classic', // Workbox uses importScripts(); must not be 'module'
-    },
+          // Keep the old precache alive for already-open tabs; they may still import
+          // route chunks from the previous deployment until a close or refresh.
+          registerType: 'prompt',
+          // 'auto' lets vite-plugin-pwa choose the best registration strategy for
+          // the current environment (inline script in <head> during SSR builds).
+          injectRegister: 'auto',
+          manifest: {
+            name: 'VMP',
+            short_name: 'VMP',
+            description: 'Premium video content',
+            start_url: '/',
+            scope: '/',
+            theme_color: '#0f172a',
+            background_color: '#0f172a',
+            display: 'standalone',
+            // Prefer routing magic-link / handoff URLs into an already-installed PWA (Chromium; iOS may still open Safari).
+            launch_handler: {
+              client_mode: 'navigate-existing',
+            },
+            icons: [
+              { src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+              { src: '/icons/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+              // Separate maskable entry required by Chrome's installability audit
+              {
+                src: '/icons/pwa-512-maskable.png',
+                sizes: '512x512',
+                type: 'image/png',
+                purpose: 'maskable',
+              },
+            ],
+          },
+          workbox: {
+            navigateFallback: '/',
+            // The prerendered "/" shell must not be served for deep links — Workbox would
+            // hydrate the homepage on /auth/verify and Nuxt eventually rewrites to /?token=…,
+            // so magic-link login never runs.  Only the bare homepage uses the fallback.
+            navigateFallbackDenylist: [/^\/(?!$)/],
+            globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+            cleanupOutdatedCaches: true,
+            // Keep push handlers in a tiny sidecar file so GenerateSW can still be used.
+            importScripts: ['/sw-push.js', '/sw-offline-media.js'],
+          },
+          client: {
+            installPrompt: true,
+          },
+          devOptions: {
+            // Set to true locally if you need to test the service worker in dev mode.
+            // Leave false for production — the module handles that path separately.
+            enabled: false,
+            type: 'classic', // Workbox uses importScripts(); must not be 'module'
+          },
         },
       }
     : {}),

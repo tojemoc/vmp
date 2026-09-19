@@ -70,6 +70,11 @@ export const strings: StringsDefinition = {
   authVerifyHandoffContinueSafari: 'Pokračovať v Safari',
   authVerifyHandoffCopyLink: 'Skopírovať odkaz na prihlásenie',
   authVerifyHandoffCopied: 'Odkaz skopírovaný',
+  authVerifyNativeAppTitle: 'Otvorte aplikáciu VMP',
+  authVerifyNativeAppBody:
+    'Nainštalovaná Android aplikácia by mala dokončiť toto prihlásenie. Klepnite na tlačidlo nižšie, ak sa neotvorila automaticky. V prehliadači pokračujte len ak aplikáciu nepoužívate — odkaz z e-mailu funguje len raz.',
+  authVerifyNativeAppOpen: 'Otvoriť aplikáciu VMP',
+  authVerifyNativeAppContinueBrowser: 'Pokračovať v prehliadači',
   authVerifyErrorGeneric: 'Niečo sa pokazilo. Požiadajte o nový odkaz na prihlásenie.',
   authVerifySignInIncomplete: 'Prihlásenie nebolo dokončené',
   authVerifyNoToken: 'V adrese URL sa nenašiel token. Skúste znova kliknúť na odkaz v e-maile.',

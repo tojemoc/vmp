@@ -88,6 +88,8 @@ See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-dis
 
 The matching association documents are served by the web Worker at `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association`, built from the `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` / `MOBILE_APPLE_APP_IDS` deploy vars. Until those are set the routes return 404 and `autoVerify` cannot succeed, so links open the browser instead of the app (checklist **S5**).
 
+**Android browser fallback:** `/auth/verify` detects Android, does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
+
 Magic-link tokens are single-use: if the link was opened on another device first, redeem fails with an explicit “already used (including on another device)” message.
 
 ## Pairing (Tier 2+)
