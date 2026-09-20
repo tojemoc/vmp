@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE } from '@vmp/shared';
 import {
+  consumeMagicLinkForUser,
   handleAcknowledgeInsecureNativeScheme,
   handleInsecureNativeSchemeStatus,
   hashToken,
@@ -33,7 +34,7 @@ class FakeAckDb {
   prepare(sql: string) {
     const db = this;
     const normalized = sql.replace(/\s+/g, ' ').trim();
-    return {
+    const stmt = {
       bind(...args: unknown[]) {
         return {
           async first() {
@@ -83,11 +84,54 @@ class FakeAckDb {
               });
               return { meta: { changes: 1 } };
             }
+            if (
+              normalized.startsWith(
+                'DELETE FROM insecure_native_scheme_acks WHERE magic_link_token_hash',
+              )
+            ) {
+              const tokenHash = String(args[0]);
+              const before = db.acks.length;
+              db.acks = db.acks.filter((a) => a.magic_link_token_hash !== tokenHash);
+              return { meta: { changes: before - db.acks.length } };
+            }
+            if (
+              normalized.startsWith(
+                "DELETE FROM insecure_native_scheme_acks WHERE datetime(expires_at) <= datetime('now')",
+              )
+            ) {
+              const before = db.acks.length;
+              const now = Date.now();
+              db.acks = db.acks.filter((a) => new Date(a.expires_at).getTime() > now);
+              return { meta: { changes: before - db.acks.length } };
+            }
+            if (normalized.startsWith('DELETE FROM insecure_native_scheme_acks WHERE user_id')) {
+              const userId = String(args[0]);
+              const before = db.acks.length;
+              db.acks = db.acks.filter((a) => a.user_id !== userId);
+              return { meta: { changes: before - db.acks.length } };
+            }
+            if (
+              normalized.includes('UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP')
+            ) {
+              const id = String(args[0]);
+              const row = db.magicLinks.find((r) => r.id === id && !r.used_at);
+              if (!row) return { meta: { changes: 0 } };
+              row.used_at = new Date().toISOString();
+              return { meta: { changes: 1 } };
+            }
             return { meta: { changes: 0 } };
           },
         };
       },
+      // D1 allows prepare(sql).run() with no bind for parameterless statements.
+      async run() {
+        return stmt.bind().run();
+      },
+      async first() {
+        return stmt.bind().first();
+      },
     };
+    return stmt;
   }
 }
 
@@ -100,7 +144,7 @@ function jsonRequest(url: string, body: unknown, headers: Record<string, string>
 }
 
 describe('isInsecureNativeVmpSchemeAllowed', () => {
-  it('is fail-closed unless flag is truthy and tier is not production/beta', () => {
+  it('allows only when flag is truthy and resolvePostHogEnvironment is staging', () => {
     assert.equal(isInsecureNativeVmpSchemeAllowed({}), false);
     assert.equal(
       isInsecureNativeVmpSchemeAllowed({
@@ -112,7 +156,35 @@ describe('isInsecureNativeVmpSchemeAllowed', () => {
     assert.equal(
       isInsecureNativeVmpSchemeAllowed({
         ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        SENTRY_ENVIRONMENT: 'prod',
+      }),
+      false,
+    );
+    assert.equal(
+      isInsecureNativeVmpSchemeAllowed({
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
         SENTRY_ENVIRONMENT: 'beta',
+      }),
+      false,
+    );
+    assert.equal(
+      isInsecureNativeVmpSchemeAllowed({
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        SENTRY_ENVIRONMENT: 'nightly',
+      }),
+      false,
+    );
+    assert.equal(
+      isInsecureNativeVmpSchemeAllowed({
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        SENTRY_ENVIRONMENT: 'development',
+      }),
+      false,
+    );
+    assert.equal(
+      isInsecureNativeVmpSchemeAllowed({
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        SENTRY_ENVIRONMENT: 'unknown-tier',
       }),
       false,
     );
@@ -127,6 +199,13 @@ describe('isInsecureNativeVmpSchemeAllowed', () => {
       isInsecureNativeVmpSchemeAllowed({
         ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
         SENTRY_ENVIRONMENT: 'staging',
+      }),
+      true,
+    );
+    assert.equal(
+      isInsecureNativeVmpSchemeAllowed({
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: 'true',
+        SENTRY_ENVIRONMENT: ' Staging ',
       }),
       true,
     );
@@ -147,12 +226,41 @@ describe('handleInsecureNativeSchemeStatus', () => {
 
     const allowed = await handleInsecureNativeSchemeStatus(
       new Request('https://api.example/api/auth/native/insecure-scheme/status'),
-      { SENTRY_ENVIRONMENT: 'staging', ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1' },
+      { SENTRY_ENVIRONMENT: 'staging', ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1', DB: new FakeAckDb() },
       {},
     );
     const allowedBody = await allowed.json();
     assert.equal(allowedBody.allowed, true);
     assert.equal(allowedBody.confirmPhrase, INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE);
+  });
+
+  it('purges expired ack rows (including user_id / user_agent / ip_hash) on status', async () => {
+    const db = new FakeAckDb();
+    db.acks.push({
+      id: 'ack-expired',
+      magic_link_token_hash: 'hash-expired',
+      user_id: 'user-1',
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'iphash',
+    });
+    db.acks.push({
+      id: 'ack-live',
+      magic_link_token_hash: 'hash-live',
+      user_id: 'user-2',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'iphash2',
+    });
+
+    await handleInsecureNativeSchemeStatus(
+      new Request('https://api.example/status'),
+      { SENTRY_ENVIRONMENT: 'staging', ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1', DB: db },
+      {},
+    );
+
+    assert.equal(db.acks.length, 1);
+    assert.equal(db.acks[0].id, 'ack-live');
   });
 });
 
@@ -252,5 +360,121 @@ describe('handleAcknowledgeInsecureNativeScheme', () => {
     assert.equal(db.acks[0].user_id, 'user-1');
     assert.equal(db.acks[0].user_agent, 'Safari/SideStore-Test');
     assert.ok(db.acks[0].ip_hash);
+  });
+
+  it('deletes the ack when the magic link is already expired', async () => {
+    const db = new FakeAckDb();
+    const token = 'expired-token';
+    const tokenHash = await hashToken(token);
+    db.users.set('user-1', {
+      id: 'user-1',
+      email: 'tester@example.com',
+      role: 'viewer',
+      totp_enabled: 0,
+    });
+    db.magicLinks.push({
+      id: 'ml-expired',
+      user_id: 'user-1',
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() - 1_000).toISOString(),
+      used_at: null,
+    });
+    db.acks.push({
+      id: 'ack-1',
+      magic_link_token_hash: tokenHash,
+      user_id: 'user-1',
+      expires_at: new Date(Date.now() - 1_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'deadbeef',
+    });
+
+    const res = await handleAcknowledgeInsecureNativeScheme(
+      jsonRequest('https://api.example/ack', {
+        token,
+        acknowledgedRisk: true,
+        doubleConfirmed: true,
+        confirmPhrase: INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE,
+      }),
+      {
+        SENTRY_ENVIRONMENT: 'staging',
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        DB: db,
+      },
+      {},
+    );
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).code, 'expired');
+    assert.equal(db.acks.length, 0);
+  });
+});
+
+describe('consumeMagicLinkForUser insecure-scheme ack cleanup', () => {
+  it('deletes the ack when the magic link is consumed', async () => {
+    const db = new FakeAckDb();
+    const token = 'consume-me';
+    const tokenHash = await hashToken(token);
+    db.users.set('user-1', {
+      id: 'user-1',
+      email: 'tester@example.com',
+      role: 'viewer',
+      totp_enabled: 0,
+    });
+    db.magicLinks.push({
+      id: 'ml-1',
+      user_id: 'user-1',
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      used_at: null,
+    });
+    db.acks.push({
+      id: 'ack-1',
+      magic_link_token_hash: tokenHash,
+      user_id: 'user-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'abc',
+    });
+
+    const phase = await consumeMagicLinkForUser(
+      { JWT_SECRET: 'test-secret-at-least-thirty-two-characters-long', DB: db },
+      token,
+    );
+    assert.equal(phase.tag, 'session_ready');
+    assert.equal(db.acks.length, 0);
+    assert.ok(db.magicLinks[0].used_at);
+  });
+
+  it('deletes the ack when the magic link is expired', async () => {
+    const db = new FakeAckDb();
+    const token = 'expired-consume';
+    const tokenHash = await hashToken(token);
+    db.users.set('user-1', {
+      id: 'user-1',
+      email: 'tester@example.com',
+      role: 'viewer',
+      totp_enabled: 0,
+    });
+    db.magicLinks.push({
+      id: 'ml-1',
+      user_id: 'user-1',
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() - 5_000).toISOString(),
+      used_at: null,
+    });
+    db.acks.push({
+      id: 'ack-1',
+      magic_link_token_hash: tokenHash,
+      user_id: 'user-1',
+      expires_at: new Date(Date.now() - 5_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'abc',
+    });
+
+    const phase = await consumeMagicLinkForUser(
+      { JWT_SECRET: 'test-secret-at-least-thirty-two-characters-long', DB: db },
+      token,
+    );
+    assert.equal(phase.tag, 'invalid');
+    assert.equal(db.acks.length, 0);
   });
 });

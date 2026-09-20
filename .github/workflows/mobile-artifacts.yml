@@ -31,7 +31,7 @@ on:
         default: false
         type: boolean
       enable_custom_scheme:
-        description: Enable claimable vmp:// only for flavor=development (SideStore staging PoC). Ignored for release/beta/nightly. Requires staging web double-confirm + D1 ack before Safari opens the scheme.
+        description: Enable claimable vmp:// only when flavor=development (SideStore staging PoC). Validation rejects this option unless flavor=development. Requires staging web double-confirm + D1 ack before Safari opens the scheme.
         required: true
         default: false
         type: boolean

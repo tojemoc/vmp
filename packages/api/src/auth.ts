@@ -197,6 +197,15 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
     .prepare('DELETE FROM magic_link_tokens WHERE user_id = ? AND used_at IS NULL')
     .bind(user.id)
     .run();
+  // Drop SideStore acks that belonged to those cancelled unused links.
+  try {
+    await db
+      .prepare('DELETE FROM insecure_native_scheme_acks WHERE user_id = ?')
+      .bind(user.id)
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack clear on magic-link rotate failed:', err);
+  }
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
@@ -497,10 +506,14 @@ export async function consumeMagicLinkForUser(
   const record = await loadMagicLinkRecord(db, tokenHash);
 
   if (!record || record.used_at) {
+    if (record?.used_at) {
+      await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    }
     return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' };
   }
 
   if (new Date(record.expires_at) < new Date()) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return { tag: 'invalid', message: 'Sign-in link has expired. Request a new one.' };
   }
 
@@ -512,8 +525,12 @@ export async function consumeMagicLinkForUser(
     .run();
 
   if (!consumeResult.meta.changes) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' };
   }
+
+  // Consumed: drop any SideStore vmp:// acknowledgment bound to this token.
+  await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
 
   const user = {
     id: record.user_id,
@@ -740,8 +757,9 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
  * Staging-only escape hatch for SideStore PoC: allow Safari to open
  * `vmp://auth/verify?token=…` after the user explicitly acknowledges the risk.
  *
- * Fail-closed unless `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (set by staging CI only).
- * Production / beta must never set that var.
+ * Fail-closed unless `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (set by staging CI only)
+ * **and** `resolvePostHogEnvironment(env)` is exactly `staging`.
+ * Production / beta / nightly / development / unknown must never enable this.
  */
 export function isInsecureNativeVmpSchemeAllowed(env: any): boolean {
   const flag = String(env?.ALLOW_INSECURE_NATIVE_VMP_SCHEME ?? '')
@@ -750,9 +768,32 @@ export function isInsecureNativeVmpSchemeAllowed(env: any): boolean {
   if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
   if (flag !== '1' && flag !== 'true' && flag !== 'on' && flag !== 'yes') return false;
 
-  const tier = resolvePostHogEnvironment(env).toLowerCase();
-  if (tier === 'production' || tier === 'prod' || tier === 'beta') return false;
-  return true;
+  return resolvePostHogEnvironment(env).toLowerCase() === 'staging';
+}
+
+/** Drop the SideStore ack row (and its PII columns) for a magic-link token hash. */
+async function deleteInsecureNativeSchemeAckByTokenHash(db: any, tokenHash: string): Promise<void> {
+  try {
+    await db
+      .prepare('DELETE FROM insecure_native_scheme_acks WHERE magic_link_token_hash = ?')
+      .bind(tokenHash)
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack delete failed:', err);
+  }
+}
+
+/** Purge expired SideStore acks (user_id / user_agent / ip_hash go with the row). */
+async function purgeExpiredInsecureNativeSchemeAcks(db: any): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `DELETE FROM insecure_native_scheme_acks WHERE datetime(expires_at) <= datetime('now')`,
+      )
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack purge failed:', err);
+  }
 }
 
 async function isInsecureSchemeAckRateLimited(request: any, env: any): Promise<boolean> {
@@ -837,10 +878,16 @@ export async function handleAcknowledgeInsecureNativeScheme(
   }
 
   const db = getDb(env);
+  // Opportunistic purge of expired SideStore acks (drops user_id / user_agent / ip_hash).
+  await purgeExpiredInsecureNativeSchemeAcks(db);
+
   const tokenHash = await hashToken(token);
   const record = await loadMagicLinkRecord(db, tokenHash);
 
   if (!record || record.used_at) {
+    if (record?.used_at) {
+      await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    }
     return authJson(
       {
         error: 'Sign-in link is invalid or has already been used.',
@@ -851,6 +898,7 @@ export async function handleAcknowledgeInsecureNativeScheme(
     );
   }
   if (new Date(record.expires_at) < new Date()) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return authJson(
       { error: 'Sign-in link has expired. Request a new one.', code: 'expired' },
       401,
@@ -909,6 +957,12 @@ export async function handleInsecureNativeSchemeStatus(
   env: any,
   corsHeaders: any,
 ) {
+  // Best-effort expiration cleanup whenever status is polled from staging verify UI.
+  try {
+    await purgeExpiredInsecureNativeSchemeAcks(getDb(env));
+  } catch {
+    /* D1 may be unavailable in unit tests without a binding */
+  }
   const allowed = isInsecureNativeVmpSchemeAllowed(env);
   return authJson(
     {
