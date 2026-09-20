@@ -7,7 +7,7 @@
         <h1 class="text-3xl font-bold text-gray-900 dark:text-white">
           {{ page.title }}
         </h1>
-        <div v-if="introBlock" class="cms-intro cms-rich-text" v-html="introHtml" />
+        <div v-if="introBlock" class="cms-intro cms-rich-text" v-html="renderedIntroHtml" />
       </header>
 
       <article>
@@ -131,22 +131,22 @@
   const bodyBlocks = computed(() =>
     introBlock.value ? page.value.content.slice(1) : page.value.content,
   );
+  const introHtmlKey = computed(() => `cms-intro-${slug.value}`);
 
-  const introHtml = ref('');
+  // Render on the server and reuse the serialized HTML during hydration; re-running
+  // the async renderer on the client can diverge from SSR and break hydration.
+  const { data: introHtml } = await useAsyncData(
+    introHtmlKey,
+    async () => {
+      const block = introBlock.value;
+      return {
+        html: block ? await renderCmsRichTextHtml(block.content as CmsRichTextDocument) : '',
+      };
+    },
+    { default: () => ({ html: '' }), watch: [introBlock] },
+  );
 
-  async function loadIntroHtml() {
-    const block = introBlock.value;
-    if (!block) {
-      introHtml.value = '';
-      return;
-    }
-    introHtml.value = await renderCmsRichTextHtml(block.content as CmsRichTextDocument);
-  }
-
-  await loadIntroHtml();
-  watch(introBlock, () => {
-    void loadIntroHtml();
-  });
+  const renderedIntroHtml = computed(() => introHtml.value?.html || '');
 
   const imageIds = computed(() =>
     page.value.content
