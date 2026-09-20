@@ -1,9 +1,8 @@
 import * as Linking from 'expo-linking';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { credentialFromAuthUrl } from './deepLink';
+import { tokenFromAuthUrl } from './deepLink';
 import {
   loadSession,
-  redeemHandoffCode,
   redeemMagicLinkToken,
   restoreSession,
   SessionRestoreError,
@@ -19,7 +18,6 @@ type SessionContextValue = {
   refreshFromStore: () => Promise<void>;
   handleIncomingUrl: (url: string | null) => Promise<boolean>;
   completeMagicLink: (token: string) => Promise<boolean>;
-  completeHandoff: (handoffCode: string) => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -42,26 +40,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const completeHandoff = useCallback(async (handoffCode: string): Promise<boolean> => {
-    try {
-      setError(null);
-      const next = await redeemHandoffCode(handoffCode);
-      setSession(next);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in handoff failed');
-      return false;
-    }
-  }, []);
-
   const handleIncomingUrl = useCallback(
     async (url: string | null): Promise<boolean> => {
-      const cred = credentialFromAuthUrl(url);
-      if (!cred) return false;
-      if (cred.kind === 'token') return completeMagicLink(cred.token);
-      return completeHandoff(cred.handoffCode);
+      const token = tokenFromAuthUrl(url);
+      if (!token) return false;
+      return completeMagicLink(token);
     },
-    [completeMagicLink, completeHandoff],
+    [completeMagicLink],
   );
 
   const refreshFromStore = useCallback(async () => {
@@ -90,7 +75,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const initialUrl = await Linking.getInitialURL();
-        if (credentialFromAuthUrl(initialUrl)) {
+        if (tokenFromAuthUrl(initialUrl)) {
           const redeemed = await handleIncomingUrl(initialUrl);
           if (!redeemed) {
             await refreshFromStore();
@@ -122,19 +107,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       refreshFromStore,
       handleIncomingUrl,
       completeMagicLink,
-      completeHandoff,
       logout,
     }),
-    [
-      session,
-      booting,
-      error,
-      refreshFromStore,
-      handleIncomingUrl,
-      completeMagicLink,
-      completeHandoff,
-      logout,
-    ],
+    [session, booting, error, refreshFromStore, handleIncomingUrl, completeMagicLink, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

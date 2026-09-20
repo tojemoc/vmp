@@ -3,7 +3,6 @@ import { describe, it } from 'node:test';
 
 import {
   buildAndroidNativeAppIntentUrl,
-  buildIosNativeAppHandoffUrl,
   DEFAULT_MOBILE_ANDROID_PACKAGE,
   isNativeAppFallbackQuery,
   resolveMobileAndroidPackage,
@@ -49,13 +48,5 @@ describe('nativeAppHandoff', () => {
     assert.equal(resolveMobileAndroidPackage(''), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('evil;package'), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('sk.tjm.vmp'), 'sk.tjm.vmp');
-  });
-
-  it('builds iOS vmp:// URLs with handoff codes only (never raw tokens)', () => {
-    const url = buildIosNativeAppHandoffUrl('abc123handoff', '/watch/1');
-    assert.equal(url, 'vmp://auth/verify?handoff=abc123handoff&redirect=%2Fwatch%2F1');
-    assert.doesNotMatch(url, /token=/);
-    assert.equal(buildIosNativeAppHandoffUrl('code-only'), 'vmp://auth/verify?handoff=code-only');
-    assert.throws(() => buildIosNativeAppHandoffUrl('  '), /handoff code/);
   });
 });

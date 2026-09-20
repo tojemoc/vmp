@@ -59,7 +59,7 @@ Inputs:
 - `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
 - `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
-- `enable_custom_scheme` — enables `vmp://` for SideStore/PoC artifact flavors (`development`/`beta`/`nightly`). Forced **off** when `flavor=release` (App Store / TestFlight). Does **not** put magic-link tokens in custom-scheme URLs from the web.
+- `enable_custom_scheme` — ignored by Mobile artifacts CI (scheme forced off for all distributed / PoC IPAs). For controlled local testing only, set `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` on a developer machine. Does **not** put magic-link tokens in custom-scheme URLs from the web.
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
 - `build_android` — also build/upload an Android test APK (default on)
 
@@ -81,7 +81,7 @@ See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-dis
 
 | Scheme | Example | When |
 | --- | --- | --- |
-| Custom | `vmp://auth/verify?token=…` | **Off by default** in app code. SideStore/PoC Mobile artifacts may set `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`; `flavor=release` forces it off. Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins. `session.ts` ignores `vmp://` tokens unless enabled. The web `/auth/verify` page does **not** place magic-link tokens in `vmp://` URLs (checklist S6). |
+| Custom | `vmp://auth/verify?token=…` | **Off** in Mobile artifact / SideStore / release CI builds. Local developer opt-in only (`EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`). Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins. Web never places magic-link tokens or unbound handoff codes in `vmp://` (checklist S6). |
 | Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
 Both land on Expo Router screen `app/auth/verify.tsx` (required — without it the OS opens the app but Expo shows **Unmatched Route**). `SessionProvider` still listens for Linking events; redeem is deduped so cold-start + the verify screen do not consume the single-use token twice.
@@ -92,7 +92,7 @@ The matching association documents are served by the web Worker at `/.well-known
 
 **Android browser fallback:** `/auth/verify?client=native` detects Android, does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
 
-**iOS:** Magic links requested from the native app carry `client=native`. Until AASA is live, Safari exchanges the token for a short-lived handoff code and opens `vmp://auth/verify?handoff=…` when the PoC scheme is enabled. Raw magic-link tokens are never placed in `vmp://` URLs from the web. Website login uses `client=browser` and redeems in Safari with no PWA/native bounce.
+**iOS:** Magic links requested from the native app carry `client=native`. Until AASA is live (or install-bound handoff codes exist), links that open in Safari redeem in the browser — web does not bounce via `vmp://`. Website login uses `client=browser` and redeems in Safari with no PWA/native bounce.
 
 Magic-link tokens are single-use: if the link was opened on another device first, redeem fails with an explicit “already used (including on another device)” message.
 

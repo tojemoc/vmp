@@ -7,7 +7,7 @@
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
  *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
- *  - Native redeem: POST /api/auth/native/redeem ({ token } or { handoffCode } → JWT + refreshToken in JSON).
+ *  - Native redeem: POST /api/auth/native/redeem ({ token } → JWT + refreshToken in JSON).
  *  - Refresh token issuance and rotation (cookie and/or JSON body for native clients).
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
@@ -663,13 +663,17 @@ async function loadUserRowForAuth(db: any, userId: string) {
 }
 
 /**
- * POST /api/auth/native/redeem  body: { token } | { handoffCode }
+ * POST /api/auth/native/redeem  body: { token }
  *
- * Same magic-link consume as GET /api/auth/verify, or exchange of a short-lived
- * handoff code (from Safari → `vmp://` on iOS SideStore PoC), but returns
- * refreshToken in the JSON body for native apps (Keychain / Keystore). Does
- * **not** set the refresh cookie — native clients must use the JSON body token
- * with POST /api/auth/refresh.
+ * Same magic-link consume as GET /api/auth/verify, but returns refreshToken in
+ * the JSON body for native apps (Keychain / Keystore). Does **not** set the
+ * refresh cookie — native clients must use the JSON body token with
+ * POST /api/auth/refresh.
+ *
+ * Unbound PWA handoff codes are intentionally **not** accepted here: a claimable
+ * custom scheme (`vmp://`) or any bearer-only handoff would issue native session
+ * tokens without an install-bound audience proof. Use HTTPS magic-link tokens
+ * (Universal / App Links) until install-bound handoff keys exist.
  */
 export async function handleNativeRedeemMagicLink(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -678,51 +682,22 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
   const token = typeof body?.token === 'string' ? body.token.trim() : '';
   const handoffCode = typeof body?.handoffCode === 'string' ? body.handoffCode.trim() : '';
 
-  if (token && handoffCode) {
+  if (handoffCode) {
     return authJson(
-      { error: 'Provide either token or handoffCode, not both', code: 'ambiguous_redeem' },
+      {
+        error:
+          'Handoff codes cannot issue native sessions without an install-bound proof. Open the https:// magic link (Universal / App Link), or continue in the browser.',
+        code: 'handoff_not_bound',
+      },
       400,
       corsHeaders,
     );
   }
-  if (!token && !handoffCode) {
-    return authJson({ error: 'token or handoffCode is required' }, 400, corsHeaders);
+  if (!token) {
+    return authJson({ error: 'token is required' }, 400, corsHeaders);
   }
 
   const db = getDb(env);
-
-  if (handoffCode) {
-    const userId = await consumePwaHandoffCode(db, handoffCode);
-    if (!userId) {
-      log({
-        service: 'auth',
-        event: 'native_handoff_redeem_failed',
-        level: 'warn',
-        error_code: 'invalid_or_used',
-      });
-      return authJson(
-        {
-          error:
-            'This sign-in step has expired or was already used. Request a new email link.',
-          code: 'invalid_or_used',
-        },
-        401,
-        corsHeaders,
-      );
-    }
-    const user = await loadUserRowForAuth(db, userId);
-    if (!user) return authJson({ error: 'User not found' }, 401, corsHeaders);
-
-    const session = await issueNativeSessionTokens(user, env, db);
-    const headers = buildResponseHeaders(corsHeaders);
-    log({
-      service: 'auth',
-      event: 'native_handoff_redeem_success',
-      level: 'info',
-      totp_required: Boolean(user.totp_enabled),
-    });
-    return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
-  }
 
   const phase = await consumeMagicLinkForUser(env, token);
   if (phase.tag === 'invalid') {

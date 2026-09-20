@@ -53,11 +53,11 @@ Deep link targets:
 | `https://<FRONTEND_HOST>/auth/verify?token=…&client=native` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. `client` is stamped when the native app requests the magic link. |
 | `https://<FRONTEND_HOST>/auth/verify?token=…&client=browser` | Website login | Redeem in the browser; no PWA / native bounce. |
 | `https://<FRONTEND_HOST>/auth/verify?token=…&client=pwa` (+ optional `pwa=1`) | Installed Home Screen web app | Push-login when `pwa=1`; otherwise iOS Safari may exchange for a short-lived handoff. |
-| `vmp://auth/verify?handoff=…` | **SideStore / PoC artifact builds only** | Fail-closed env gates: active only when `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`/`true` and `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not set. Mobile artifacts may enable it for `development`/`beta`/`nightly`; **`flavor=release` forces it off**. Web never puts **raw magic-link tokens** in `vmp://` — only short-lived handoff codes after Safari exchanges `client=native` links (checklist **S6**). |
+| `vmp://auth/verify?token=…` | **Local developer testing only** | Fail-closed. App code requires `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` and no `DISABLE`. **Mobile artifact / SideStore / release CI builds always force the scheme off** (no install-bound handoff keys yet). Web never embeds tokens or unbound handoff codes in `vmp://` (checklist **S6**). |
 
 **Client-tagged emails:** `POST /api/auth/magic-link` accepts `{ client: 'browser' \| 'pwa' \| 'native' }` and embeds it in the verify URL. Web login defaults to `browser` (or `pwa` when `isInstalledPwa()`); Expo login sends `native`. `/auth/verify` routes from that tag instead of guessing User-Agent / display-mode.
 
-**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) for `client=native`. iOS exchanges the token for a handoff code then opens `vmp://auth/verify?handoff=…` (SideStore builds with the scheme enabled).
+**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) for `client=native`. iOS has no safe custom-scheme bounce; `client=native` links that land in Safari redeem in the browser until AASA (S5) or install-bound handoff keys exist.
 
 **AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
 

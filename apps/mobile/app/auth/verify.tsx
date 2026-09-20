@@ -2,30 +2,23 @@ import * as Linking from 'expo-linking';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import {
-  credentialFromAuthUrl,
-  firstSearchParam,
-  safeRedirectPath,
-} from '../../src/auth/deepLink';
+import { firstSearchParam, safeRedirectPath, tokenFromAuthUrl } from '../../src/auth/deepLink';
 import { useSession } from '../../src/auth/SessionProvider';
 import { customSchemeDeepLinksAllowed } from '../../src/features';
 
 /**
  * Deep-link landing screen for magic links.
- * Matches `/auth/verify` from HTTPS App Links and `vmp://auth/verify` (PoC).
+ * Matches `/auth/verify` from HTTPS App Links and `vmp://auth/verify` (local testing only).
  * Without this route Expo Router shows "Unmatched Route" even when SessionProvider
- * redeems the credential in the background.
+ * redeems the token in the background.
  */
 export default function AuthVerifyScreen() {
-  const { session, booting, error, handleIncomingUrl, completeMagicLink, completeHandoff } =
-    useSession();
+  const { session, booting, error, handleIncomingUrl, completeMagicLink } = useSession();
   const params = useLocalSearchParams<{
     token?: string | string[];
-    handoff?: string | string[];
     redirect?: string | string[];
   }>();
   const token = firstSearchParam(params.token);
-  const handoff = firstSearchParam(params.handoff);
   const redirectTo = safeRedirectPath(firstSearchParam(params.redirect) || '/');
   const [localError, setLocalError] = useState<string | null>(null);
   const attempted = useRef(false);
@@ -39,14 +32,14 @@ export default function AuthVerifyScreen() {
       const initialUrl = await Linking.getInitialURL();
       if (cancelled) return;
 
-      if (initialUrl && credentialFromAuthUrl(initialUrl)) {
+      if (initialUrl && tokenFromAuthUrl(initialUrl)) {
         await handleIncomingUrl(initialUrl);
         return;
       }
 
       if (initialUrl && /^vmp:\/\//i.test(initialUrl) && !customSchemeDeepLinksAllowed) {
         setLocalError(
-          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild with EXPO_PUBLIC_ENABLE_VMP_SCHEME=1.',
+          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild locally with EXPO_PUBLIC_ENABLE_VMP_SCHEME=1 for controlled testing only.',
         );
         return;
       }
@@ -56,18 +49,13 @@ export default function AuthVerifyScreen() {
         return;
       }
 
-      if (handoff) {
-        await completeHandoff(handoff);
-        return;
-      }
-
       setLocalError('Missing sign-in token in this link.');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [booting, session, token, handoff, handleIncomingUrl, completeMagicLink, completeHandoff]);
+  }, [booting, session, token, handleIncomingUrl, completeMagicLink]);
 
   if (booting) {
     return (
@@ -78,7 +66,6 @@ export default function AuthVerifyScreen() {
   }
 
   if (session) {
-    // Dynamic post-login path from the magic-link query (validated by safeRedirectPath).
     return <Redirect href={redirectTo as '/'} />;
   }
 

@@ -31,9 +31,9 @@ on:
         default: false
         type: boolean
       enable_custom_scheme:
-        description: Enable vmp:// for SideStore/PoC artifact builds (development/beta/nightly). Ignored and forced off when flavor=release (App Store / TestFlight must use HTTPS Universal Links only).
+        description: Ignored — vmp:// stays off for all Mobile artifact / SideStore builds (no install-bound handoff yet). Use EXPO_PUBLIC_ENABLE_VMP_SCHEME=1 only on a local developer machine for controlled testing.
         required: true
-        default: true
+        default: false
         type: boolean
       publish_release:
         description: Publish GitHub Release, AltStore source JSON, and GitHub Pages install files
@@ -75,15 +75,14 @@ jobs:
           echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF}). Disable publish_release for artifact-only builds from feature branches."
           exit 1
 
-      - name: Guard custom scheme off for release flavor
+      - name: Guard custom scheme off for artifact builds
         working-directory: ${{ github.workspace }}
         env:
-          FLAVOR: ${{ inputs.flavor }}
           ENABLE_CUSTOM_SCHEME: ${{ inputs.enable_custom_scheme }}
         run: |
           set -euo pipefail
-          if [ "${FLAVOR}" = "release" ] && [ "${ENABLE_CUSTOM_SCHEME}" = "true" ]; then
-            echo "::warning::enable_custom_scheme=true is ignored for flavor=release; IPAs will use HTTPS Universal Links only (EXPO_PUBLIC_ENABLE_VMP_SCHEME=0)."
+          if [ "${ENABLE_CUSTOM_SCHEME}" = "true" ]; then
+            echo "::warning::enable_custom_scheme is ignored for all Mobile artifact builds. vmp:// stays off until install-bound handoff exists; use a local Expo env for controlled testing only."
           fi
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -119,9 +118,9 @@ jobs:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
       EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
-      # flavor=release always forces the custom scheme off (store / TestFlight).
-      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.flavor != 'release' && inputs.enable_custom_scheme && '1' || '0' }}
-      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.flavor == 'release' && '1' || (inputs.enable_custom_scheme && '0' || '1') }}
+      # Always off for CI artifacts / SideStore distribution (no install-bound handoff yet).
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: '0'
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: '1'
       FRONTEND_HOST: ${{ inputs.frontend_host }}
       # Expo SDK 57 / RN default; not preinstalled on ubuntu-24.04 (ships 27.3+).
       ANDROID_NDK_VERSION: 27.1.12297006
@@ -207,9 +206,9 @@ jobs:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
       EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
-      # flavor=release always forces the custom scheme off (store / TestFlight).
-      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.flavor != 'release' && inputs.enable_custom_scheme && '1' || '0' }}
-      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.flavor == 'release' && '1' || (inputs.enable_custom_scheme && '0' || '1') }}
+      # Always off for CI artifacts / SideStore distribution (no install-bound handoff yet).
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: '0'
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: '1'
       FRONTEND_HOST: ${{ inputs.frontend_host }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

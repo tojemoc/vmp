@@ -59,13 +59,6 @@ export async function redeemNativeMagicLink(token: string): Promise<NativeRedeem
   });
 }
 
-export async function redeemNativeHandoff(handoffCode: string): Promise<NativeRedeemResponse> {
-  return apiFetch('/api/auth/native/redeem', {
-    method: 'POST',
-    body: JSON.stringify({ handoffCode }),
-  });
-}
-
 export async function refreshNativeSession(refreshToken: string): Promise<NativeSessionResponse> {
   return apiFetch('/api/auth/refresh', {
     method: 'POST',

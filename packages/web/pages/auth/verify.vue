@@ -11,7 +11,7 @@
   - client=browser (default): redeem in this browser.
   - client=pwa + ?pwa=1: push-login deliver prompt (Home Screen iOS).
   - client=pwa (no pwa=1): iOS Safari → short-lived handoff for Home Screen redeem.
-  - client=native: Android intent:// / iOS vmp://?handoff=… before web redeem.
+  - client=native: Android intent:// before web redeem (iOS waits for AASA; no vmp://).
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -166,7 +166,6 @@
   import {
     isNativeAppFallbackQuery,
     openAndroidNativeApp,
-    openIosNativeAppWithHandoff,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
   import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
@@ -210,13 +209,15 @@
   }
 
   /**
-   * Native-tagged link in a browser (not already the installed PWA): offer
-   * package-targeted intent:// (Android) or vmp:// handoff (iOS) before web redeem.
+   * Native-tagged link on Android (not the installed PWA): offer package-targeted
+   * intent:// before web redeem consumes the token. iOS has no safe custom-scheme
+   * bounce until AASA or install-bound handoff keys exist — those links redeem in
+   * the browser instead.
    */
   function shouldOfferNativeAppHandoff(): boolean {
     if (import.meta.server) return false;
     if (magicLinkClient() !== 'native') return false;
-    if (isInstalledPwa()) return false;
+    if (!isAndroid() || isInstalledPwa()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
   }
@@ -249,9 +250,6 @@
     if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done';
     if (firstQueryString(route.query.handoff) && shouldDeferPwaHandoffRedeem()) {
       return 'handoff_wait';
-    }
-    if (firstQueryString(route.query.handoff) && shouldOfferNativeAppHandoff() && isIosLike()) {
-      return 'native_app_handoff';
     }
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
@@ -354,32 +352,10 @@
 
   function openInstalledNativeApp() {
     if (import.meta.server) return;
-    const redirect = safeRedirect(route.query.redirect, '/');
-    const handoff = handoffCodeForSafari.value || firstQueryString(route.query.handoff);
-    if (isIosLike() && handoff) {
-      openIosNativeAppWithHandoff(handoff, redirect);
-      return;
-    }
-    // Android (and iOS before handoff exchange): same HTTPS verify URL the email carried.
     openAndroidNativeApp(window.location.href, mobileAndroidPackage());
   }
 
   async function continueNativeAppInBrowser() {
-    const handoff = handoffCodeForSafari.value || firstQueryString(route.query.handoff);
-    if (handoff) {
-      state.value = 'verifying';
-      try {
-        const redirect = safeRedirect(route.query.redirect, '/');
-        await redeemPwaHandoff(handoff);
-        if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
-        await navigateAfterFullSession(redirect);
-      } catch (e: any) {
-        state.value = 'error';
-        errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
-      }
-      return;
-    }
-
     const token = magicTokenForFlow.value;
     if (!token) return;
     // Stay on this page with native_fallback so a reload does not auto-bounce again.
@@ -395,40 +371,6 @@
     }
     state.value = 'verifying';
     await runNormalTokenVerify(token);
-  }
-
-  /**
-   * Exchange a native-tagged magic token for a handoff code on iOS, then open vmp://.
-   * Raw email tokens are never placed in the custom scheme.
-   */
-  async function prepareIosNativeHandoffFromToken(token: string): Promise<void> {
-    const redirect = safeRedirect(route.query.redirect, '/');
-    const client = magicLinkClient();
-    const mh = await magicPwaHandoff(token);
-    if (mh.kind === '2fa') {
-      await navigateTo(
-        `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=${client}`,
-      );
-      return;
-    }
-    if (mh.kind === 'session') {
-      if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
-        await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
-        return;
-      }
-      await navigateTo(redirect);
-      return;
-    }
-    if (mh.kind === 'handoff') {
-      handoffCodeForSafari.value = mh.handoffCode;
-      await navigateTo(
-        {
-          path: '/auth/verify',
-          query: { handoff: mh.handoffCode, redirect, client },
-        },
-        { replace: true },
-      );
-    }
   }
 
   async function runNormalTokenVerify(token: string) {
@@ -520,22 +462,12 @@
       if (handoff) {
         handoffCodeForSafari.value = handoff;
 
-        // Native-tagged iOS: offer / auto-open vmp:// with the handoff code.
-        if (shouldOfferNativeAppHandoff() && isIosLike()) {
-          state.value = 'native_app_handoff';
-          if (!didAutoOpenNative.value) {
-            didAutoOpenNative.value = true;
-            openInstalledNativeApp();
-          }
-          return;
-        }
-
         if (shouldDeferPwaHandoffRedeem()) {
           state.value = 'handoff_wait';
           return;
         }
 
-        // Standalone PWA, browser-tagged, or native fallback: redeem here.
+        // Standalone PWA or browser: redeem the PWA handoff cookie session here.
         state.value = 'verifying';
         try {
           await redeemPwaHandoff(handoff);
@@ -563,17 +495,6 @@
 
       if (shouldOfferNativeAppHandoff()) {
         state.value = 'native_app_handoff';
-        if (isIosLike()) {
-          // Exchange token → handoff, then auto-open (watch re-enters on ?handoff=).
-          try {
-            await prepareIosNativeHandoffFromToken(token);
-          } catch (e: unknown) {
-            state.value = 'error';
-            errorMessage.value =
-              e instanceof Error ? e.message : strings.authVerifyErrorGeneric;
-          }
-          return;
-        }
         // Android: bounce intent:// with the HTTPS token URL still intact.
         if (!didAutoOpenNative.value) {
           didAutoOpenNative.value = true;
