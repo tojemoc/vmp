@@ -11,7 +11,7 @@
   - client=browser (default): redeem in this browser.
   - client=pwa + ?pwa=1: push-login deliver prompt (Home Screen iOS).
   - client=pwa (no pwa=1): iOS Safari → short-lived handoff for Home Screen redeem.
-  - client=native: Android intent:// before web redeem (iOS waits for AASA; no vmp://).
+  - client=native: Android intent:// before web redeem; iOS Safari explains missing Universal Links.
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -78,7 +78,7 @@
         <p class="text-gray-500 text-xs leading-relaxed">{{ strings.authVerifyPwaPushDoneHint }}</p>
       </div>
 
-      <!-- Native app: open installed client before / after handoff exchange -->
+      <!-- Android: open installed native APK before consuming the single-use token -->
       <div v-else-if="state === 'native_app_handoff'" class="space-y-6 text-left">
         <div>
           <h2 class="text-lg font-semibold text-white mb-2">
@@ -102,6 +102,25 @@
             {{ strings.authVerifyNativeAppContinueBrowser }}
           </button>
         </div>
+      </div>
+
+      <!-- iOS: native-tagged link landed in Safari (Universal Links not configured yet) -->
+      <div v-else-if="state === 'native_ios_safari'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-white mb-2">
+            {{ strings.authVerifyNativeIosSafariTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosSafariBody }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          @click="continueNativeIosInSafari"
+        >
+          {{ strings.authVerifyNativeIosSafariContinue }}
+        </button>
       </div>
 
       <!-- iOS Safari after PWA-tagged magic link: wait for Home Screen or Safari -->
@@ -210,14 +229,25 @@
 
   /**
    * Native-tagged link on Android (not the installed PWA): offer package-targeted
-   * intent:// before web redeem consumes the token. iOS has no safe custom-scheme
-   * bounce until AASA or install-bound handoff keys exist — those links redeem in
-   * the browser instead.
+   * intent:// before web redeem consumes the token.
    */
-  function shouldOfferNativeAppHandoff(): boolean {
+  function shouldOfferAndroidNativeAppHandoff(): boolean {
     if (import.meta.server) return false;
     if (magicLinkClient() !== 'native') return false;
     if (!isAndroid() || isInstalledPwa()) return false;
+    if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
+    return true;
+  }
+
+  /**
+   * Native-tagged link on iOS Safari: Universal Links would have opened the app
+   * already when AASA is live. Landing here means association is missing / SideStore
+   * re-sign — explain and offer a website session (no claimable vmp://).
+   */
+  function shouldExplainIosNativeInSafari(): boolean {
+    if (import.meta.server) return false;
+    if (magicLinkClient() !== 'native') return false;
+    if (!isIosLike() || isDisplayStandalone()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
   }
@@ -241,6 +271,7 @@
     | 'error'
     | 'handoff_wait'
     | 'native_app_handoff'
+    | 'native_ios_safari'
     | 'pwa_push_prompt'
     | 'pwa_push_sending'
     | 'pwa_push_done'
@@ -253,7 +284,8 @@
     }
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
-    if (token && shouldOfferNativeAppHandoff()) return 'native_app_handoff';
+    if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
+    if (token && shouldExplainIosNativeInSafari()) return 'native_ios_safari';
     return 'verifying';
   }
 
@@ -370,6 +402,22 @@
       return;
     }
     state.value = 'verifying';
+    await runNormalTokenVerify(token);
+  }
+
+  async function continueNativeIosInSafari() {
+    const token = magicTokenForFlow.value;
+    if (!token) return;
+    state.value = 'verifying';
+    if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
+      const next = new URL(window.location.href);
+      next.searchParams.set('native_fallback', '1');
+      await navigateTo(
+        { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
+        { replace: true },
+      );
+      return;
+    }
     await runNormalTokenVerify(token);
   }
 
@@ -493,13 +541,18 @@
         return;
       }
 
-      if (shouldOfferNativeAppHandoff()) {
+      if (shouldOfferAndroidNativeAppHandoff()) {
         state.value = 'native_app_handoff';
         // Android: bounce intent:// with the HTTPS token URL still intact.
         if (!didAutoOpenNative.value) {
           didAutoOpenNative.value = true;
           openInstalledNativeApp();
         }
+        return;
+      }
+
+      if (shouldExplainIosNativeInSafari()) {
+        state.value = 'native_ios_safari';
         return;
       }
 

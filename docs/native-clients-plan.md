@@ -57,9 +57,19 @@ Deep link targets:
 
 **Client-tagged emails:** `POST /api/auth/magic-link` accepts `{ client: 'browser' \| 'pwa' \| 'native' }` and embeds it in the verify URL. Web login defaults to `browser` (or `pwa` when `isInstalledPwa()`); Expo login sends `native`. `/auth/verify` routes from that tag instead of guessing User-Agent / display-mode.
 
-**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) for `client=native`. iOS has no safe custom-scheme bounce; `client=native` links that land in Safari redeem in the browser until AASA (S5) or install-bound handoff keys exist.
+**How magic-link → app is supposed to work (read this before inventing handoffs)**
 
-**AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
+1. **Website login** emails `…/auth/verify?token=…&client=browser`. The browser redeems the token and sets cookies. No app involvement.
+2. **Native app login** emails the **same HTTPS URL** with `client=native`. The OS should open the **installed app** via **Universal Links (iOS)** / **App Links (Android)** — not a custom `vmp://` scheme. The app calls `POST /api/auth/native/redeem` with the token.
+3. **Home Screen PWA (iOS)** uses the separate push-login path (`client=pwa` / `pwa=1`), because Safari and the PWA do not share cookies.
+
+**Why Universal Links “don’t work” today on `vmp.tjm.sk`:** the Worker already serves `/.well-known/apple-app-site-association` and `assetlinks.json`, but both **404 with “Not configured”** until the maintainer sets GitHub repo vars `MOBILE_APPLE_APP_IDS_*` and `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS_*` and redeploys. Without those files, iOS/Android **must** open the link in the browser — that is expected, not a bug in `/auth/verify`.
+
+**SideStore caveat:** each tester re-signs the IPA with their own Apple ID → different Team ID → AASA cannot list every tester. Universal Links need a **stable** Team ID (TestFlight / App Store / shared dev team). For SideStore-only PoC, prefer website (`client=browser`) login or move testers to TestFlight once S5 vars are set — do **not** put session secrets in claimable `vmp://` URLs.
+
+**Custom schemes (`vmp://`):** claimable by any app; off for all CI/SideStore artifact builds; local developer opt-in only. Not a substitute for Universal Links.
+
+**AASA / Digital Asset Links status:** **Routes exist; signing values unset on staging/prod (404).** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
 
 | Env var | Contents |
 | --- | --- |

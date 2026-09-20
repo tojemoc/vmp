@@ -69,9 +69,13 @@ export const strings: StringsDefinition = {
   authVerifyHandoffCopied: 'Link copied',
   authVerifyNativeAppTitle: 'Open the VMP app',
   authVerifyNativeAppBody:
-    'This sign-in was started from the installed VMP app. Tap below if it did not open automatically. Continue in the browser only if you want a website session instead — the email link works once.',
+    'This sign-in was started from the Android app. If it did not open, tap below. Continue in the browser only for a website session — the email link works once.',
   authVerifyNativeAppOpen: 'Open VMP app',
   authVerifyNativeAppContinueBrowser: 'Continue in browser',
+  authVerifyNativeIosSafariTitle: 'Sign-in link opened in Safari',
+  authVerifyNativeIosSafariBody:
+    'This link was meant for the VMP app. On iPhone it opens in Safari when Universal Links are not set up for this site yet. Continue here for a website session, or ask the site admin to enable Universal Links (Apple App Site Association).',
+  authVerifyNativeIosSafariContinue: 'Continue in Safari',
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',
   authVerifySignInIncomplete: 'Sign-in incomplete',
   authVerifyNoToken: 'No token found in the URL. Try clicking the link in your email again.',

@@ -72,9 +72,13 @@ export const strings: StringsDefinition = {
   authVerifyHandoffCopied: 'Odkaz zkopírován',
   authVerifyNativeAppTitle: 'Otevřete aplikaci VMP',
   authVerifyNativeAppBody:
-    'Toto přihlášení začalo z nainstalované aplikace VMP. Klepněte níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud chcete relaci na webu — odkaz z e-mailu funguje jen jednou.',
+    'Toto přihlášení začalo z Android aplikace. Pokud se neotevřela, klepněte níže. V prohlížeči pokračujte jen pro relaci na webu — odkaz z e-mailu funguje jen jednou.',
   authVerifyNativeAppOpen: 'Otevřít aplikaci VMP',
   authVerifyNativeAppContinueBrowser: 'Pokračovat v prohlížeči',
+  authVerifyNativeIosSafariTitle: 'Odkaz na přihlášení se otevřel v Safari',
+  authVerifyNativeIosSafariBody:
+    'Tento odkaz byl určen pro aplikaci VMP. Na iPhonu se otevře v Safari, dokud nejsou nastavené Universal Links pro tento web. Pokračujte zde pro relaci na webu, nebo požádejte správce o zapnutí Universal Links (Apple App Site Association).',
+  authVerifyNativeIosSafariContinue: 'Pokračovat v Safari',
   authVerifyErrorGeneric: 'Něco se pokazilo. Požádejte o nový odkaz na přihlášení.',
   authVerifySignInIncomplete: 'Přihlášení nebylo dokončeno',
   authVerifyNoToken: 'V adrese URL se nenašel token. Zkuste znovu kliknout na odkaz v e-mailu.',
