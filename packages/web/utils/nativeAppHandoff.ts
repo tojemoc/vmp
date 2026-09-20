@@ -1,13 +1,21 @@
 /**
- * Android browser → native APK handoff for magic-link `/auth/verify`.
+ * Browser → native app handoff for magic-link `/auth/verify`.
  *
- * Verified App Links need `/.well-known/assetlinks.json` (checklist S5). Until
- * that is live — or when an email client opens Chrome instead of the app —
- * a package-targeted `intent://` URL still delivers the same HTTPS deep link
- * to `sk.tjm.vmp` without consuming the single-use token in the browser first.
+ * Verified App / Universal Links need `/.well-known/assetlinks.json` and
+ * `/.well-known/apple-app-site-association` (checklist S5). Until those are
+ * live — or when an email client opens the system browser instead of the app —
+ * Android can still bounce into the installed APK without consuming the
+ * single-use token in the browser first:
+ *
+ * - **Android:** package-targeted `intent://` with the same HTTPS verify URL
+ * - **iOS:** custom-scheme handoff that embeds the raw magic-link token in a
+ *   `vmp://` URL is intentionally **disabled**. Any app can register `vmp://`,
+ *   and install-bound / authenticated native-client keys do not exist yet
+ *   (see `docs/native-clients-plan.md`). Prefer AASA Universal Links (S5) or a
+ *   future short-lived handoff code bound to an app-install key.
  */
 
-/** Query flag that skips auto intent and allows web redeem. */
+/** Query flag that skips auto native bounce and allows web redeem. */
 export const NATIVE_APP_FALLBACK_QUERY = 'native_fallback';
 
 export const DEFAULT_MOBILE_ANDROID_PACKAGE = 'sk.tjm.vmp';

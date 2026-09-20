@@ -8,6 +8,11 @@
 
   On Android browsers, offers a package-targeted intent:// into the native APK
   before web redeem consumes the single-use token (covers missing App Link verify).
+
+  iOS does not bounce via vmp:// with the raw magic-link token (any app can claim
+  the scheme; install-bound native-client keys are not available yet). Safari uses
+  the existing PWA handoff / continue-in-browser path until AASA (S5) or a
+  client-bound handoff code ships.
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -163,7 +168,7 @@
     openAndroidNativeApp,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
-  import { isAndroid, isInstalledPwa } from '~/utils/pwa';
+  import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const route = useRoute();
@@ -186,11 +191,7 @@
 
   function isIosLike() {
     if (import.meta.server) return false;
-    const ua = navigator.userAgent || '';
-    return (
-      /iP(ad|hone|od)/i.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    );
+    return isIosLikeUa();
   }
 
   /** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
@@ -347,6 +348,17 @@
   async function continueNativeAppInBrowser() {
     const token = magicTokenForFlow.value;
     if (!token) return;
+    // Stay on this page with native_fallback so a reload does not auto-bounce again.
+    if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
+      state.value = 'verifying';
+      const next = new URL(window.location.href);
+      next.searchParams.set('native_fallback', '1');
+      await navigateTo(
+        { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
+        { replace: true },
+      );
+      return;
+    }
     state.value = 'verifying';
     await runNormalTokenVerify(token);
   }
