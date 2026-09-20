@@ -8,6 +8,10 @@
 
   On Android browsers, offers a package-targeted intent:// into the native APK
   before web redeem consumes the single-use token (covers missing App Link verify).
+
+  On iOS Safari (not the Home Screen PWA), offers vmp:// into the native IPA the
+  same way — Universal Links need AASA (S5), and SideStore re-signs per Apple ID
+  so AASA cannot cover PoC installs.
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -161,9 +165,10 @@
   import {
     isNativeAppFallbackQuery,
     openAndroidNativeApp,
+    openIosNativeApp,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
-  import { isAndroid, isInstalledPwa } from '~/utils/pwa';
+  import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const route = useRoute();
@@ -186,11 +191,7 @@
 
   function isIosLike() {
     if (import.meta.server) return false;
-    const ua = navigator.userAgent || '';
-    return (
-      /iP(ad|hone|od)/i.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    );
+    return isIosLikeUa();
   }
 
   /** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
@@ -212,6 +213,22 @@
     if (!isAndroid() || isInstalledPwa()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
+  }
+
+  /**
+   * iOS Safari (not the Home Screen PWA): offer vmp:// into the native IPA before
+   * web/PWA redeem consumes the single-use token. Skipped when the user chose
+   * "Continue in browser" (`native_fallback=1`).
+   */
+  function shouldOfferIosNativeAppHandoff(): boolean {
+    if (import.meta.server) return false;
+    if (!isIosLike() || isInstalledPwa() || isDisplayStandalone()) return false;
+    if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
+    return true;
+  }
+
+  function shouldOfferNativeAppHandoff(): boolean {
+    return shouldOfferAndroidNativeAppHandoff() || shouldOfferIosNativeAppHandoff();
   }
 
   // Must start with a single slash; rejects //evil.com and external URLs.
@@ -243,7 +260,7 @@
     if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait';
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
-    if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
+    if (token && shouldOfferNativeAppHandoff()) return 'native_app_handoff';
     return 'verifying';
   }
 
@@ -341,12 +358,29 @@
 
   function openInstalledNativeApp() {
     if (import.meta.server) return;
-    openAndroidNativeApp(window.location.href, mobileAndroidPackage());
+    if (shouldOfferAndroidNativeAppHandoff()) {
+      openAndroidNativeApp(window.location.href, mobileAndroidPackage());
+      return;
+    }
+    if (shouldOfferIosNativeAppHandoff()) {
+      openIosNativeApp(window.location.href);
+    }
   }
 
   async function continueNativeAppInBrowser() {
     const token = magicTokenForFlow.value;
     if (!token) return;
+    // Stay on this page with native_fallback so a reload does not auto-bounce again.
+    if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
+      state.value = 'verifying';
+      const next = new URL(window.location.href);
+      next.searchParams.set('native_fallback', '1');
+      await navigateTo(
+        { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
+        { replace: true },
+      );
+      return;
+    }
     state.value = 'verifying';
     await runNormalTokenVerify(token);
   }
@@ -462,11 +496,13 @@
         return;
       }
 
-      if (shouldOfferAndroidNativeAppHandoff()) {
+      if (shouldOfferNativeAppHandoff()) {
         state.value = 'native_app_handoff';
-        // Attempt an automatic bounce into the APK; the UI remains if the OS
-        // keeps us in the browser (app missing, or intent blocked).
-        openInstalledNativeApp();
+        // Android: auto-bounce via intent://. iOS Safari often blocks programmatic
+        // custom-scheme navigation without a user gesture — leave the button.
+        if (shouldOfferAndroidNativeAppHandoff()) {
+          openInstalledNativeApp();
+        }
         return;
       }
 

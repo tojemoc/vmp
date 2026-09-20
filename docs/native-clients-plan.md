@@ -51,7 +51,9 @@ Deep link targets:
 | Target | When | Notes |
 | --- | --- | --- |
 | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
-| `vmp://auth/verify?token=…` | **Local PoC / dev only** | **Off by default (fail-closed).** Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `true`). Kill switch: `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` (or `true`) always wins, including when both flags are set. `DISABLE=0` is not an opt-in. Token redemption is gated in `apps/mobile/src/auth/session.ts` via `customSchemeDeepLinksAllowed`. Non-exclusive — any app could register `vmp://`. Store builds must omit ENABLE (and may set DISABLE=1) (checklist **S6**). |
+| `vmp://auth/verify?token=…` | **SideStore / PoC (and local dev)** | Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` (or `true`). Kill switch: `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins. Mobile artifacts defaults `enable_custom_scheme` **on** so iOS SideStore builds accept browser→app handoff from `/auth/verify` while AASA is unset / unusable (per-tester re-sign). Store / TestFlight builds must omit ENABLE (checklist **S6**). |
+
+**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) and iOS `vmp://` — so magic links opened in the system browser bounce into the installed client without consuming the token first.
 
 **AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
 

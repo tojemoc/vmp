@@ -59,7 +59,7 @@ Inputs:
 - `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
 - `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
-- `enable_custom_scheme` — toggles the dev-only `vmp://` fallback
+- `enable_custom_scheme` — enables `vmp://` deep-link handoff (default **on**; required for SideStore until Universal Links / AASA are live with a stable Team ID). Turn **off** for App Store / TestFlight release builds (checklist S6).
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
 - `build_android` — also build/upload an Android test APK (default on)
 
@@ -90,7 +90,12 @@ Both land on Expo Router screen `app/auth/verify.tsx` (required — without it t
 
 The matching association documents are served by the web Worker at `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association`, built from the `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` / `MOBILE_APPLE_APP_IDS` deploy vars. Until those are set the routes return 404 and `autoVerify` cannot succeed, so links open the browser instead of the app (checklist **S5**).
 
-**Android browser fallback:** `/auth/verify` detects Android, does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
+**Browser → native handoff (until S5):** `/auth/verify` detects the platform, does **not** redeem the token in the browser first, and opens the installed client:
+
+- **Android:** package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…`
+- **iOS:** `vmp://auth/verify?token=…` (IPA must be built with `enable_custom_scheme`; SideStore re-signing makes a shared AASA Team ID impossible for PoC testers)
+
+A “Continue in browser” path (or `?native_fallback=1`) keeps web / PWA sign-in. The app’s `frontend_host` must match the site that sent the email so HTTPS App Link hosts line up when S5 is live.
 
 Magic-link tokens are single-use: if the link was opened on another device first, redeem fails with an explicit “already used (including on another device)” message.
 

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildAndroidNativeAppIntentUrl,
+  buildIosNativeAppSchemeUrl,
   DEFAULT_MOBILE_ANDROID_PACKAGE,
   isNativeAppFallbackQuery,
   resolveMobileAndroidPackage,
@@ -45,5 +46,25 @@ describe('nativeAppHandoff', () => {
     assert.equal(resolveMobileAndroidPackage(''), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('evil;package'), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('sk.tjm.vmp'), 'sk.tjm.vmp');
+  });
+
+  it('builds vmp://auth/verify with token and optional redirect for iOS', () => {
+    const scheme = buildIosNativeAppSchemeUrl(
+      'https://vmp.example/auth/verify?token=abc%2B123&redirect=%2Fwatch%2F1&utm=ignore',
+    );
+    const url = new URL(scheme);
+    assert.equal(url.protocol, 'vmp:');
+    assert.equal(url.hostname, 'auth');
+    assert.equal(url.pathname, '/verify');
+    assert.equal(url.searchParams.get('token'), 'abc+123');
+    assert.equal(url.searchParams.get('redirect'), '/watch/1');
+    assert.equal(url.searchParams.get('utm'), null);
+  });
+
+  it('rejects iOS scheme handoff without a token', () => {
+    assert.throws(
+      () => buildIosNativeAppSchemeUrl('https://vmp.example/auth/verify'),
+      /requires a magic-link token/,
+    );
   });
 });

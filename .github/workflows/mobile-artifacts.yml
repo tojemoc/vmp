@@ -31,9 +31,9 @@ on:
         default: false
         type: boolean
       enable_custom_scheme:
-        description: Enable the vmp:// deep-link fallback (dev-only)
+        description: Enable vmp:// deep-link handoff (default on for SideStore/PoC; turn off for App Store / TestFlight release builds)
         required: true
-        default: false
+        default: true
         type: boolean
       publish_release:
         description: Publish GitHub Release, AltStore source JSON, and GitHub Pages install files
