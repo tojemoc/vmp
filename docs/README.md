@@ -20,7 +20,7 @@ Start with the [repository README](../README.md), [AGENTS.md](../AGENTS.md), and
 | [native-clients-promotion-checklist.md](native-clients-promotion-checklist.md) | Blocking checklist before workspace promotion / TestFlight |
 | [ios-sidestore-distribution-playbook.md](ios-sidestore-distribution-playbook.md) | SideStore / AltStore test IPA distribution (GitHub Releases + Pages) |
 
-Generated (do not commit): `altstore-source.json` is produced by `scripts/generate-altstore-source.py` from `altstore-source.meta.json` during CI or local runs.
+Generated Pages install files (committed by the Mobile artifacts publish job): `altstore-source.json` (from `altstore-source.meta.json` via `scripts/generate-altstore-source.py`), `index.html`, and `manifest.plist`. Templates stay as `*.template`; do not edit the generated trio by hand except when seeding a fix.
 | [pills-external-update-api.md](pills-external-update-api.md) | `POST /api/pills/update` external API contract |
 | [console-errors.md](console-errors.md) | Common browser console messages and how to interpret them |
 | [i18n-prep.md](i18n-prep.md) | Per-instance UI locale (`NUXT_PUBLIC_UI_LOCALE`) and translation workflow |

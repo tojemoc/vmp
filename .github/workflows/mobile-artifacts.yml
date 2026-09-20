@@ -343,11 +343,6 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Guard publishing from main only
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -514,8 +509,11 @@ jobs:
           ALTSTORE_WAIT_RELEASE_TAG: ${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}
         run: python3 scripts/generate-altstore-source.py
 
-      - name: Publish GitHub Pages (Actions deploy, no git push)
-        id: pages
+      # GitHub Pages for this repo is Deploy from branch: main /docs (legacy), same as
+      # tojemoc/floaty. Commit generated install files so branch builds serve them.
+      # actions/deploy-pages only works when Pages source is "GitHub Actions" and was
+      # fighting legacy /docs rebuilds on every main push (blank site + missing JSON).
+      - name: Update GitHub Pages files in docs/ (commit + push)
         env:
           VERSION_NAME: ${{ needs.build-ios.outputs.version_name }}
           BUILD_NUMBER: ${{ needs.build-ios.outputs.build_number }}
@@ -544,17 +542,12 @@ jobs:
           sed -i "s|__INSTALL_URL__|${INSTALL_URL_SED}|g" docs/index.html
           sed -i "s|__ALTSTORE_SOURCE_URL__|${ALTSTORE_SOURCE_URL}|g" docs/index.html
 
-          mkdir -p site
-          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/.nojekyll site/
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v4
-        with:
-          path: site
-
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/manifest.plist docs/index.html docs/altstore-source.json
+          if git diff --staged --quiet; then
+            echo "GitHub Pages files already up to date"
+          else
+            git commit -m "chore: update GitHub Pages (OTA + AltStore source) for ${TAG} [skip ci]"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi

@@ -1,0 +1,61 @@
+{
+  "name": "VMP Mobile",
+  "subtitle": "Subscription video client for iOS (test builds)",
+  "description": "VMP iOS builds from GitHub Releases. Includes pre-releases from manual CI runs (release, beta, nightly, development). IPAs are ad-hoc signed and packaged for SideStore and AltStore.",
+  "iconURL": "https://vmp.tjm.sk/favicon.ico",
+  "website": "https://vmp.tjm.sk",
+  "tintColor": "#111827",
+  "featuredApps": [
+    "sk.tjm.vmp"
+  ],
+  "news": [],
+  "apps": [
+    {
+      "name": "VMP",
+      "bundleIdentifier": "sk.tjm.vmp",
+      "developerName": "VMP",
+      "subtitle": "Subscription video streaming",
+      "localizedDescription": "VMP mobile client for iOS. Install via SideStore or AltStore; pick a build matching the channel you need (release, beta, nightly, or development).",
+      "iconURL": "https://vmp.tjm.sk/favicon.ico",
+      "tintColor": "#111827",
+      "category": "entertainment",
+      "screenshots": [],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.associated-domains"
+        ],
+        "privacy": {}
+      },
+      "patreon": {},
+      "versions": [
+        {
+          "version": "0.1.0",
+          "buildVersion": "7",
+          "marketingVersion": "0.1.0 (7)",
+          "date": "2026-09-20T15:01:43Z",
+          "downloadURL": "https://github.com/tojemoc/vmp/releases/download/development-v0.1.0-build7/vmp-0.1.0-ios.ipa",
+          "size": 11155656,
+          "localizedDescription": "[development] ## development iOS build"
+        },
+        {
+          "version": "0.1.0",
+          "buildVersion": "6",
+          "marketingVersion": "0.1.0 (6)",
+          "date": "2026-09-20T13:30:48Z",
+          "downloadURL": "https://github.com/tojemoc/vmp/releases/download/development-v0.1.0-build6/vmp-0.1.0-ios.ipa",
+          "size": 11155662,
+          "localizedDescription": "[development] ## development iOS build"
+        },
+        {
+          "version": "0.1.0",
+          "buildVersion": "5",
+          "marketingVersion": "0.1.0 (5)",
+          "date": "2026-09-01T10:15:22Z",
+          "downloadURL": "https://github.com/tojemoc/vmp/releases/download/development-v0.1.0-build5/vmp-0.1.0-ios.ipa",
+          "size": 11152281,
+          "localizedDescription": "[development] ## development iOS build"
+        }
+      ]
+    }
+  ]
+}

@@ -23,9 +23,9 @@ Install page (OTA manifest + source link):
 | Artifact | Location |
 | --- | --- |
 | IPA file | GitHub Release asset (`vmp-<version>-ios.ipa`) |
-| AltStore source JSON | GitHub Pages deployment (`altstore-source.json`, generated from `altstore-source.meta.json`) |
-| Install page | GitHub Pages deployment (`index.html`, from template) |
-| OTA manifest (optional) | GitHub Pages deployment (`manifest.plist`, from template) |
+| AltStore source JSON | Committed to `docs/altstore-source.json` (generated from `altstore-source.meta.json`; served by Pages from `/docs`) |
+| Install page | Committed to `docs/index.html` (from template) |
+| OTA manifest (optional) | Committed to `docs/manifest.plist` (from template) |
 
 IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always points at **GitHub Release assets**.
 
@@ -72,9 +72,10 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 
 ## Repo setup (maintainer, one-time)
 
-1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: GitHub Actions**. Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
-2. The publish job uses the official Pages deploy actions (`configure-pages`, `upload-pages-artifact`, `deploy-pages`). It creates GitHub Releases and deploys generated Pages files **without** committing or pushing to `main` or any branch.
-3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. All publishing (any flavor) requires dispatch from `main`.
+1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: Deploy from a branch** → Branch **`main`** / folder **`/docs`** (same layout as [tojemoc/floaty](https://github.com/tojemoc/floaty)). Keep `docs/.nojekyll` so GitHub does not run Jekyll on the install site.
+2. The publish job writes `docs/index.html`, `docs/altstore-source.json`, and `docs/manifest.plist`, then commits and pushes them to `main` with `[skip ci]`. Staging CD ignores `docs/**` (`deploy.yml` `paths-ignore`), so these commits do not autodeploy Workers.
+3. Do **not** switch Pages to “GitHub Actions” unless you also change the workflow back to `actions/deploy-pages`. Legacy `/docs` branch builds and Actions Pages deploys fight each other: a normal `main` push rebuilds from `/docs` (no generated files) and replaces a good Actions deploy with a blank site and a missing `altstore-source.json` (SideStore reports “invalid JSON”).
+4. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and refresh the Pages files. All publishing (any flavor) requires dispatch from `main`.
 
 ## Updating permissions metadata
 
@@ -83,7 +84,7 @@ When native entitlements or Info.plist privacy keys change (after `expo prebuild
 - `appPermissions.entitlements` — iOS entitlements (e.g. associated domains).
 - `appPermissions.privacy` — `NS*UsageDescription` keys from Info.plist.
 
-Regenerate the AltStore source locally (writes `docs/altstore-source.json`, which is **not** committed):
+Regenerate the AltStore source locally (CI commits the result to `docs/` on publish):
 
 ```bash
 GITHUB_REPOSITORY=tojemoc/vmp python3 scripts/generate-altstore-source.py

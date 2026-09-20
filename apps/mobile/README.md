@@ -68,7 +68,7 @@ Outputs (when the corresponding input is enabled):
 - When `build_android` is enabled: Android release `.apk` uploaded as the workflow artifact **`mobile-android-apk`** (download from the run’s Artifacts section).
 - When `publish_release` is enabled:
   - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
-  - `altstore-source.json` deployed to GitHub Pages (generated from `altstore-source.meta.json`, not committed to git)
+  - `docs/altstore-source.json` generated from `altstore-source.meta.json` and committed to `main` (Pages serves `/docs`)
   - Install page at `https://<org>.github.io/<repo>/` with SideStore source link and secondary OTA link
 
 SideStore source URL (after first publish on `main`):
