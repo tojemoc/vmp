@@ -60,25 +60,33 @@ class FakeAckDb {
           },
           async run() {
             if (normalized.includes('INSERT INTO insecure_native_scheme_acks')) {
-              const [id, tokenHash, userId, expiresAt, userAgent, ipHash] = args as [
-                string,
-                string,
-                string,
+              // Atomic INSERT…SELECT bind: ackId, userAgent, ipHash, tokenHash
+              const [id, userAgent, ipHash, tokenHash] = args as [
                 string,
                 string | null,
                 string | null,
+                string,
               ];
+              const live = db.magicLinks.find(
+                (r) =>
+                  r.token_hash === tokenHash &&
+                  !r.used_at &&
+                  new Date(r.expires_at).getTime() > Date.now(),
+              );
+              if (!live) return { meta: { changes: 0 } };
+
               const existing = db.acks.find((a) => a.magic_link_token_hash === tokenHash);
               if (existing) {
                 existing.user_agent = userAgent;
                 existing.ip_hash = ipHash;
+                existing.expires_at = live.expires_at;
                 return { meta: { changes: 1 } };
               }
               db.acks.push({
                 id,
                 magic_link_token_hash: tokenHash,
-                user_id: userId,
-                expires_at: expiresAt,
+                user_id: live.user_id,
+                expires_at: live.expires_at,
                 user_agent: userAgent,
                 ip_hash: ipHash,
               });
@@ -406,6 +414,69 @@ describe('handleAcknowledgeInsecureNativeScheme', () => {
     assert.equal((await res.json()).code, 'expired');
     assert.equal(db.acks.length, 0);
   });
+
+  it('returns invalid_or_used when the magic link is consumed before the atomic ack insert', async () => {
+    const db = new FakeAckDb();
+    const token = 'race-consumed';
+    const tokenHash = await hashToken(token);
+    db.users.set('user-1', {
+      id: 'user-1',
+      email: 'tester@example.com',
+      role: 'viewer',
+      totp_enabled: 0,
+    });
+    db.magicLinks.push({
+      id: 'ml-race',
+      user_id: 'user-1',
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      used_at: null,
+    });
+
+    // Simulate TOCTOU: mark used after loadMagicLinkRecord would succeed, before INSERT…SELECT.
+    const originalPrepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      const stmt = originalPrepare(sql);
+      const normalized = sql.replace(/\s+/g, ' ').trim();
+      if (normalized.includes('INSERT INTO insecure_native_scheme_acks')) {
+        const originalBind = stmt.bind.bind(stmt);
+        return {
+          ...stmt,
+          bind(...args: unknown[]) {
+            const bound = originalBind(...args);
+            const originalRun = bound.run.bind(bound);
+            return {
+              ...bound,
+              async run() {
+                const row = db.magicLinks.find((r) => r.token_hash === tokenHash);
+                if (row) row.used_at = new Date().toISOString();
+                return originalRun();
+              },
+            };
+          },
+        };
+      }
+      return stmt;
+    };
+
+    const res = await handleAcknowledgeInsecureNativeScheme(
+      jsonRequest('https://api.example/ack', {
+        token,
+        acknowledgedRisk: true,
+        doubleConfirmed: true,
+        confirmPhrase: INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE,
+      }),
+      {
+        SENTRY_ENVIRONMENT: 'staging',
+        ALLOW_INSECURE_NATIVE_VMP_SCHEME: '1',
+        DB: db,
+      },
+      {},
+    );
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).code, 'invalid_or_used');
+    assert.equal(db.acks.length, 0);
+  });
 });
 
 describe('consumeMagicLinkForUser insecure-scheme ack cleanup', () => {
@@ -434,13 +505,24 @@ describe('consumeMagicLinkForUser insecure-scheme ack cleanup', () => {
       user_agent: 'Safari',
       ip_hash: 'abc',
     });
+    // Unrelated live ack must survive cleanup of the consumed token's row.
+    db.acks.push({
+      id: 'ack-other',
+      magic_link_token_hash: 'other-unrelated-hash',
+      user_id: 'user-1',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user_agent: 'Safari',
+      ip_hash: 'def',
+    });
 
     const phase = await consumeMagicLinkForUser(
       { JWT_SECRET: 'test-secret-at-least-thirty-two-characters-long', DB: db },
       token,
     );
     assert.equal(phase.tag, 'session_ready');
-    assert.equal(db.acks.length, 0);
+    assert.equal(db.acks.length, 1);
+    assert.equal(db.acks[0].id, 'ack-other');
+    assert.equal(db.acks[0].magic_link_token_hash, 'other-unrelated-hash');
     assert.ok(db.magicLinks[0].used_at);
   });
 

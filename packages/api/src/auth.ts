@@ -912,18 +912,42 @@ export async function handleAcknowledgeInsecureNativeScheme(
   const ackId = crypto.randomUUID();
 
   try {
-    await db
+    // Atomically require the magic-link row to still be unused + unexpired on both
+    // INSERT and ON CONFLICT UPDATE paths (closes TOCTOU vs consume/expire).
+    const insertResult = await db
       .prepare(`
         INSERT INTO insecure_native_scheme_acks
           (id, magic_link_token_hash, user_id, expires_at, user_agent, ip_hash)
-        VALUES (?, ?, ?, ?, ?, ?)
+        SELECT ?, t.token_hash, t.user_id, t.expires_at, ?, ?
+        FROM magic_link_tokens t
+        WHERE t.token_hash = ?
+          AND t.used_at IS NULL
+          AND datetime(t.expires_at) > datetime('now')
         ON CONFLICT(magic_link_token_hash) DO UPDATE SET
           acknowledged_at = CURRENT_TIMESTAMP,
           user_agent = excluded.user_agent,
-          ip_hash = excluded.ip_hash
+          ip_hash = excluded.ip_hash,
+          expires_at = excluded.expires_at
+        WHERE EXISTS (
+          SELECT 1 FROM magic_link_tokens live
+          WHERE live.token_hash = insecure_native_scheme_acks.magic_link_token_hash
+            AND live.used_at IS NULL
+            AND datetime(live.expires_at) > datetime('now')
+        )
       `)
-      .bind(ackId, tokenHash, record.user_id, record.expires_at, userAgent, ipHash)
+      .bind(ackId, userAgent, ipHash, tokenHash)
       .run();
+
+    if (!insertResult.meta.changes) {
+      return authJson(
+        {
+          error: 'Sign-in link is invalid or has already been used.',
+          code: 'invalid_or_used',
+        },
+        401,
+        corsHeaders,
+      );
+    }
   } catch (err) {
     console.error('[auth] insecure scheme ack insert failed:', err);
     return authJson({ error: 'Could not record acknowledgment. Try again.' }, 500, corsHeaders);
