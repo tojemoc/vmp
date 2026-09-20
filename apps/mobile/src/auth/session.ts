@@ -1,14 +1,14 @@
 import type { NativeAuthUser, NativeSessionResponse } from '@vmp/shared';
 import * as SecureStore from 'expo-secure-store';
-import { ApiError, logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
+import { ApiError, logoutNative, redeemNativeHandoff, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
 import { shareInFlightByKey } from './inFlight';
 
 const ACCESS_KEY = 'vmp.accessToken';
 const REFRESH_KEY = 'vmp.refreshToken';
 const USER_KEY = 'vmp.user';
 
-/** Per-token in-flight redeem promises (cold start + route; independent across tokens). */
-const redeemInFlightByToken = new Map<string, Promise<SessionState>>();
+/** Per-credential in-flight redeem promises (cold start + route; independent across keys). */
+const redeemInFlightByKey = new Map<string, Promise<SessionState>>();
 
 export type SessionState = {
   accessToken: string;
@@ -83,8 +83,23 @@ export async function restoreSession(): Promise<SessionState | null> {
 }
 
 export async function redeemMagicLinkToken(token: string): Promise<SessionState> {
-  return shareInFlightByKey(redeemInFlightByToken, token, async () => {
+  return shareInFlightByKey(redeemInFlightByKey, `token:${token}`, async () => {
     const session = await redeemNativeMagicLink(token);
+    if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
+      throw new Error(
+        'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',
+      );
+    }
+    if (!('refreshToken' in session) || !session.refreshToken) {
+      throw new Error('Native redeem did not return a refreshToken');
+    }
+    return persistNativeSession(session);
+  });
+}
+
+export async function redeemHandoffCode(handoffCode: string): Promise<SessionState> {
+  return shareInFlightByKey(redeemInFlightByKey, `handoff:${handoffCode}`, async () => {
+    const session = await redeemNativeHandoff(handoffCode);
     if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
       throw new Error(
         'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',

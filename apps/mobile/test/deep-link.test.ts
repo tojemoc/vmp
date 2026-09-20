@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { firstSearchParam, safeRedirectPath, tokenFromAuthUrl } from '../src/auth/deepLink';
+import {
+  credentialFromAuthUrl,
+  firstSearchParam,
+  safeRedirectPath,
+  tokenFromAuthUrl,
+} from '../src/auth/deepLink';
 import { shareInFlightByKey } from '../src/auth/inFlight';
 
 const HOST = 'vmp.example';
@@ -24,7 +29,7 @@ describe('mobile deepLink helpers', () => {
   it('tokenFromAuthUrl reads https App Link tokens only for configured host + /auth/verify', () => {
     assert.equal(
       tokenFromAuthUrl(
-        `https://${HOST}/auth/verify?token=abc%2B123&redirect=%2F`,
+        `https://${HOST}/auth/verify?token=abc%2B123&redirect=%2F&client=native`,
         false,
         HOST,
       ),
@@ -58,6 +63,26 @@ describe('mobile deepLink helpers', () => {
     assert.equal(tokenFromAuthUrl('vmp://other/verify?token=secret', true, HOST), null);
     assert.equal(tokenFromAuthUrl('vmp://auth/other?token=secret', true, HOST), null);
     assert.equal(tokenFromAuthUrl('vmp://auth/verify/extra?token=secret', true, HOST), null);
+  });
+
+  it('credentialFromAuthUrl accepts handoff codes on https and vmp://', () => {
+    assert.deepEqual(
+      credentialFromAuthUrl(
+        `https://${HOST}/auth/verify?handoff=code1&client=native`,
+        false,
+        HOST,
+      ),
+      { kind: 'handoff', handoffCode: 'code1' },
+    );
+    assert.deepEqual(credentialFromAuthUrl('vmp://auth/verify?handoff=code2', true, HOST), {
+      kind: 'handoff',
+      handoffCode: 'code2',
+    });
+    assert.equal(credentialFromAuthUrl('vmp://auth/verify?handoff=code2', false, HOST), null);
+    assert.deepEqual(
+      credentialFromAuthUrl(`https://${HOST}/auth/verify?token=t1&handoff=h1`, false, HOST),
+      { kind: 'token', token: 't1' },
+    );
   });
 });
 
@@ -93,7 +118,6 @@ describe('shareInFlightByKey', () => {
 
     assert.equal(pA1, pA2);
     assert.notEqual(pA1, pB);
-    // Work is deferred; starts are still 0 until the microtask queue runs.
     assert.equal(aStarts, 0);
     assert.equal(bStarts, 0);
     assert.equal(map.get('A'), pA1);

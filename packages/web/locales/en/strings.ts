@@ -61,15 +61,15 @@ export const strings: StringsDefinition = {
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Signing you in…',
-  authVerifyHandoffTitle: 'Open the VMP app',
+  authVerifyHandoffTitle: 'Finish in the Home Screen app',
   authVerifyHandoffBody:
-    "On iPhone and iPad, the app you added to your Home Screen is separate from Safari. Open VMP from your Home Screen and the app will attempt to finish signing in. If it doesn't complete, return to Safari and use the button below.",
+    'This sign-in was started from the VMP app on your Home Screen, which is separate from Safari. Open VMP from the Home Screen to finish, or continue in Safari for a browser-only session.',
   authVerifyHandoffContinueSafari: 'Continue in Safari',
   authVerifyHandoffCopyLink: 'Copy sign-in link',
   authVerifyHandoffCopied: 'Link copied',
   authVerifyNativeAppTitle: 'Open the VMP app',
   authVerifyNativeAppBody:
-    'The installed Android app should finish this sign-in. Tap the button below if it did not open automatically. Continue in the browser only if you are not using the app — the email link works once.',
+    'This sign-in was started from the installed VMP app. Tap below if it did not open automatically. Continue in the browser only if you want a website session instead — the email link works once.',
   authVerifyNativeAppOpen: 'Open VMP app',
   authVerifyNativeAppContinueBrowser: 'Continue in browser',
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',

@@ -2,7 +2,11 @@ import * as Linking from 'expo-linking';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { firstSearchParam, safeRedirectPath, tokenFromAuthUrl } from '../../src/auth/deepLink';
+import {
+  credentialFromAuthUrl,
+  firstSearchParam,
+  safeRedirectPath,
+} from '../../src/auth/deepLink';
 import { useSession } from '../../src/auth/SessionProvider';
 import { customSchemeDeepLinksAllowed } from '../../src/features';
 
@@ -10,15 +14,18 @@ import { customSchemeDeepLinksAllowed } from '../../src/features';
  * Deep-link landing screen for magic links.
  * Matches `/auth/verify` from HTTPS App Links and `vmp://auth/verify` (PoC).
  * Without this route Expo Router shows "Unmatched Route" even when SessionProvider
- * redeems the token in the background.
+ * redeems the credential in the background.
  */
 export default function AuthVerifyScreen() {
-  const { session, booting, error, handleIncomingUrl, completeMagicLink } = useSession();
+  const { session, booting, error, handleIncomingUrl, completeMagicLink, completeHandoff } =
+    useSession();
   const params = useLocalSearchParams<{
     token?: string | string[];
+    handoff?: string | string[];
     redirect?: string | string[];
   }>();
   const token = firstSearchParam(params.token);
+  const handoff = firstSearchParam(params.handoff);
   const redirectTo = safeRedirectPath(firstSearchParam(params.redirect) || '/');
   const [localError, setLocalError] = useState<string | null>(null);
   const attempted = useRef(false);
@@ -32,7 +39,7 @@ export default function AuthVerifyScreen() {
       const initialUrl = await Linking.getInitialURL();
       if (cancelled) return;
 
-      if (initialUrl && tokenFromAuthUrl(initialUrl)) {
+      if (initialUrl && credentialFromAuthUrl(initialUrl)) {
         await handleIncomingUrl(initialUrl);
         return;
       }
@@ -49,13 +56,18 @@ export default function AuthVerifyScreen() {
         return;
       }
 
+      if (handoff) {
+        await completeHandoff(handoff);
+        return;
+      }
+
       setLocalError('Missing sign-in token in this link.');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [booting, session, token, handleIncomingUrl, completeMagicLink]);
+  }, [booting, session, token, handoff, handleIncomingUrl, completeMagicLink, completeHandoff]);
 
   if (booting) {
     return (

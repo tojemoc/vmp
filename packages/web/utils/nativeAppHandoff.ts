@@ -4,15 +4,15 @@
  * Verified App / Universal Links need `/.well-known/assetlinks.json` and
  * `/.well-known/apple-app-site-association` (checklist S5). Until those are
  * live — or when an email client opens the system browser instead of the app —
- * Android can still bounce into the installed APK without consuming the
- * single-use token in the browser first:
+ * the browser can still bounce into the installed native client:
  *
  * - **Android:** package-targeted `intent://` with the same HTTPS verify URL
- * - **iOS:** custom-scheme handoff that embeds the raw magic-link token in a
- *   `vmp://` URL is intentionally **disabled**. Any app can register `vmp://`,
- *   and install-bound / authenticated native-client keys do not exist yet
- *   (see `docs/native-clients-plan.md`). Prefer AASA Universal Links (S5) or a
- *   future short-lived handoff code bound to an app-install key.
+ *   (token still unconsumed).
+ * - **iOS (SideStore / PoC):** Safari first exchanges the magic-link token for a
+ *   short-lived one-time handoff code, then opens
+ *   `vmp://auth/verify?handoff=…`. Raw email tokens are never placed in
+ *   `vmp://` (claimable scheme). Store builds still prefer AASA (S5); install-bound
+ *   handoff keys remain a later hardening step.
  */
 
 /** Query flag that skips auto native bounce and allows web redeem. */
@@ -75,6 +75,45 @@ export function openAndroidNativeApp(
     window.location.assign(
       buildAndroidNativeAppIntentUrl(pageUrl, resolveMobileAndroidPackage(packageName)),
     );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Same-app redirect path only (mirrors verify.vue / mobile deepLink). */
+function safeHandoffRedirect(value: string | undefined): string {
+  if (typeof value !== 'string') return '/';
+  const t = value.trim();
+  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return '/';
+  return t;
+}
+
+/**
+ * iOS custom-scheme URL carrying a short-lived handoff code (not the email token).
+ * Requires a SideStore/PoC build with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`.
+ */
+export function buildIosNativeAppHandoffUrl(
+  handoffCode: string,
+  redirect: string = '/',
+): string {
+  const code = handoffCode.trim();
+  if (!code) throw new Error('Native app handoff requires a handoff code');
+  const params = new URLSearchParams();
+  params.set('handoff', code);
+  const safeRedirect = safeHandoffRedirect(redirect);
+  if (safeRedirect !== '/') params.set('redirect', safeRedirect);
+  return `vmp://auth/verify?${params.toString()}`;
+}
+
+/** Open the installed iOS native app with a one-time handoff code. */
+export function openIosNativeAppWithHandoff(
+  handoffCode: string,
+  redirect: string = '/',
+): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    window.location.assign(buildIosNativeAppHandoffUrl(handoffCode, redirect));
     return true;
   } catch {
     return false;

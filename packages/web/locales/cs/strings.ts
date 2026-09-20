@@ -64,15 +64,15 @@ export const strings: StringsDefinition = {
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Přihlašujeme vás…',
-  authVerifyHandoffTitle: 'Otevřete aplikaci VMP',
+  authVerifyHandoffTitle: 'Dokončete v aplikaci na Domovské obrazovce',
   authVerifyHandoffBody:
-    'Na iPhonu a iPadu je aplikace přidaná na Domovskou obrazovku oddělená od Safari. Otevřete VMP z Domovské obrazovky a aplikace se pokusí dokončit přihlášení. Pokud se to nepodaří, vraťte se do Safari a použijte tlačítko níže.',
+    'Toto přihlášení začalo z aplikace VMP na Domovské obrazovce, která je oddělená od Safari. Otevřete VMP z Domovské obrazovky, nebo pokračujte v Safari pro relaci jen v prohlížeči.',
   authVerifyHandoffContinueSafari: 'Pokračovat v Safari',
   authVerifyHandoffCopyLink: 'Zkopírovat odkaz na přihlášení',
   authVerifyHandoffCopied: 'Odkaz zkopírován',
   authVerifyNativeAppTitle: 'Otevřete aplikaci VMP',
   authVerifyNativeAppBody:
-    'Nainstalovaná Android aplikace by měla dokončit toto přihlášení. Klepněte na tlačítko níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud aplikaci nepoužíváte — odkaz z e-mailu funguje jen jednou.',
+    'Toto přihlášení začalo z nainstalované aplikace VMP. Klepněte níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud chcete relaci na webu — odkaz z e-mailu funguje jen jednou.',
   authVerifyNativeAppOpen: 'Otevřít aplikaci VMP',
   authVerifyNativeAppContinueBrowser: 'Pokračovat v prohlížeči',
   authVerifyErrorGeneric: 'Něco se pokazilo. Požádejte o nový odkaz na přihlášení.',

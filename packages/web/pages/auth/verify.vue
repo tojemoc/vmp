@@ -1,18 +1,17 @@
 <!-- packages/web/pages/auth/verify.vue -->
 <!--
   Landing page for magic link clicks.
-  URL: /auth/verify?token=<raw_token>  or  /auth/verify?handoff=<code>&redirect=...
+  URL: /auth/verify?token=…&client=browser|pwa|native
+    or /auth/verify?handoff=…&client=…&redirect=…
 
-  On iPhone/iPad Safari (not the installed web app), exchanges the email token for
-  a short-lived handoff code so the session can be created inside the Home Screen app.
+  The email link carries `client` from the surface that requested the magic link
+  (website, installed PWA, or native app). Verify must not guess from UA /
+  display-mode — that mixed PWA and native paths.
 
-  On Android browsers, offers a package-targeted intent:// into the native APK
-  before web redeem consumes the single-use token (covers missing App Link verify).
-
-  iOS does not bounce via vmp:// with the raw magic-link token (any app can claim
-  the scheme; install-bound native-client keys are not available yet). Safari uses
-  the existing PWA handoff / continue-in-browser path until AASA (S5) or a
-  client-bound handoff code ships.
+  - client=browser (default): redeem in this browser.
+  - client=pwa + ?pwa=1: push-login deliver prompt (Home Screen iOS).
+  - client=pwa (no pwa=1): iOS Safari → short-lived handoff for Home Screen redeem.
+  - client=native: Android intent:// / iOS vmp://?handoff=… before web redeem.
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -79,7 +78,7 @@
         <p class="text-gray-500 text-xs leading-relaxed">{{ strings.authVerifyPwaPushDoneHint }}</p>
       </div>
 
-      <!-- Android: open installed native APK before consuming the single-use token -->
+      <!-- Native app: open installed client before / after handoff exchange -->
       <div v-else-if="state === 'native_app_handoff'" class="space-y-6 text-left">
         <div>
           <h2 class="text-lg font-semibold text-white mb-2">
@@ -105,7 +104,7 @@
         </div>
       </div>
 
-      <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
+      <!-- iOS Safari after PWA-tagged magic link: wait for Home Screen or Safari -->
       <div v-else-if="state === 'handoff_wait'" class="space-y-6 text-left">
         <div>
           <h2 class="text-lg font-semibold text-white mb-2">
@@ -162,10 +161,12 @@
 </template>
 
 <script setup lang="ts">
+  import { normalizeMagicLinkClient, type MagicLinkClient } from '@vmp/shared';
   import { navigateTo, useRoute, useRuntimeConfig } from '#app';
   import {
     isNativeAppFallbackQuery,
     openAndroidNativeApp,
+    openIosNativeAppWithHandoff,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
   import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
@@ -194,23 +195,28 @@
     return isIosLikeUa();
   }
 
-  /** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
-  function shouldUseIosMagicHandoff(): boolean {
-    return isIosLike() && !isDisplayStandalone();
+  function magicLinkClient(): MagicLinkClient {
+    return normalizeMagicLinkClient(route.query.client);
   }
 
-  /** After handoff code is in the URL: defer redeem in iOS Safari so cookies attach where the user chooses. */
-  function shouldDeferHandoffRedeem(): boolean {
-    return isIosLike() && !isDisplayStandalone();
+  /** PWA-tagged link opened in iOS Safari (not the Home Screen app). */
+  function shouldUseIosPwaHandoff(): boolean {
+    return magicLinkClient() === 'pwa' && isIosLike() && !isDisplayStandalone();
+  }
+
+  /** Defer redeem of an existing handoff code only for PWA-tagged iOS Safari. */
+  function shouldDeferPwaHandoffRedeem(): boolean {
+    return magicLinkClient() === 'pwa' && isIosLike() && !isDisplayStandalone();
   }
 
   /**
-   * Android browser (not the installed PWA): offer package-targeted intent:// to the
-   * native APK before web redeem consumes the single-use magic-link token.
+   * Native-tagged link in a browser (not already the installed PWA): offer
+   * package-targeted intent:// (Android) or vmp:// handoff (iOS) before web redeem.
    */
-  function shouldOfferAndroidNativeAppHandoff(): boolean {
+  function shouldOfferNativeAppHandoff(): boolean {
     if (import.meta.server) return false;
-    if (!isAndroid() || isInstalledPwa()) return false;
+    if (magicLinkClient() !== 'native') return false;
+    if (isInstalledPwa()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
   }
@@ -241,10 +247,15 @@
 
   function initialVerifyState(): State {
     if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done';
-    if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait';
+    if (firstQueryString(route.query.handoff) && shouldDeferPwaHandoffRedeem()) {
+      return 'handoff_wait';
+    }
+    if (firstQueryString(route.query.handoff) && shouldOfferNativeAppHandoff() && isIosLike()) {
+      return 'native_app_handoff';
+    }
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
-    if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
+    if (token && shouldOfferNativeAppHandoff()) return 'native_app_handoff';
     return 'verifying';
   }
 
@@ -253,6 +264,7 @@
   const copyHint = ref<string>(strings.authVerifyHandoffCopyLink);
   const handoffCodeForSafari = ref<string | null>(null);
   const magicTokenForFlow = ref<string | null>(null);
+  const didAutoOpenNative = ref(false);
 
   async function navigateAfterFullSession(redirect: string) {
     const u = user.value;
@@ -317,7 +329,7 @@
           }
         }
         await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1`,
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1&client=pwa`,
         );
         return;
       }
@@ -342,10 +354,32 @@
 
   function openInstalledNativeApp() {
     if (import.meta.server) return;
+    const redirect = safeRedirect(route.query.redirect, '/');
+    const handoff = handoffCodeForSafari.value || firstQueryString(route.query.handoff);
+    if (isIosLike() && handoff) {
+      openIosNativeAppWithHandoff(handoff, redirect);
+      return;
+    }
+    // Android (and iOS before handoff exchange): same HTTPS verify URL the email carried.
     openAndroidNativeApp(window.location.href, mobileAndroidPackage());
   }
 
   async function continueNativeAppInBrowser() {
+    const handoff = handoffCodeForSafari.value || firstQueryString(route.query.handoff);
+    if (handoff) {
+      state.value = 'verifying';
+      try {
+        const redirect = safeRedirect(route.query.redirect, '/');
+        await redeemPwaHandoff(handoff);
+        if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
+        await navigateAfterFullSession(redirect);
+      } catch (e: any) {
+        state.value = 'error';
+        errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
+      }
+      return;
+    }
+
     const token = magicTokenForFlow.value;
     if (!token) return;
     // Stay on this page with native_fallback so a reload does not auto-bounce again.
@@ -363,20 +397,59 @@
     await runNormalTokenVerify(token);
   }
 
+  /**
+   * Exchange a native-tagged magic token for a handoff code on iOS, then open vmp://.
+   * Raw email tokens are never placed in the custom scheme.
+   */
+  async function prepareIosNativeHandoffFromToken(token: string): Promise<void> {
+    const redirect = safeRedirect(route.query.redirect, '/');
+    const client = magicLinkClient();
+    const mh = await magicPwaHandoff(token);
+    if (mh.kind === '2fa') {
+      await navigateTo(
+        `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=${client}`,
+      );
+      return;
+    }
+    if (mh.kind === 'session') {
+      if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
+        await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
+        return;
+      }
+      await navigateTo(redirect);
+      return;
+    }
+    if (mh.kind === 'handoff') {
+      handoffCodeForSafari.value = mh.handoffCode;
+      await navigateTo(
+        {
+          path: '/auth/verify',
+          query: { handoff: mh.handoffCode, redirect, client },
+        },
+        { replace: true },
+      );
+    }
+  }
+
   async function runNormalTokenVerify(token: string) {
     const redirect = safeRedirect(route.query.redirect, '/');
+    const client = magicLinkClient();
     try {
-      if (shouldUseIosMagicHandoff()) {
+      // Only PWA-tagged links use the iOS Safari → Home Screen handoff dance.
+      if (shouldUseIosPwaHandoff()) {
         const mh = await magicPwaHandoff(token);
         if (mh.kind === '2fa') {
           await navigateTo(
-            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=pwa`,
           );
           return;
         }
         if (mh.kind === 'handoff') {
           await navigateTo(
-            { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
+            {
+              path: '/auth/verify',
+              query: { handoff: mh.handoffCode, redirect, client: 'pwa' },
+            },
             { replace: true },
           );
           return;
@@ -394,7 +467,7 @@
       const result = await verify(token);
       if ('requiresTwoFactor' in result) {
         await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=${client}`,
         );
         return;
       }
@@ -412,7 +485,8 @@
   async function copyHandoffUrl() {
     const code = handoffCodeForSafari.value;
     if (!code || import.meta.server) return;
-    const path = `/auth/verify?handoff=${encodeURIComponent(code)}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`;
+    const client = magicLinkClient();
+    const path = `/auth/verify?handoff=${encodeURIComponent(code)}&client=${client}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`;
     const url = `${window.location.origin}${path}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -445,10 +519,23 @@
 
       if (handoff) {
         handoffCodeForSafari.value = handoff;
-        if (shouldDeferHandoffRedeem()) {
+
+        // Native-tagged iOS: offer / auto-open vmp:// with the handoff code.
+        if (shouldOfferNativeAppHandoff() && isIosLike()) {
+          state.value = 'native_app_handoff';
+          if (!didAutoOpenNative.value) {
+            didAutoOpenNative.value = true;
+            openInstalledNativeApp();
+          }
+          return;
+        }
+
+        if (shouldDeferPwaHandoffRedeem()) {
           state.value = 'handoff_wait';
           return;
         }
+
+        // Standalone PWA, browser-tagged, or native fallback: redeem here.
         state.value = 'verifying';
         try {
           await redeemPwaHandoff(handoff);
@@ -474,11 +561,24 @@
         return;
       }
 
-      if (shouldOfferAndroidNativeAppHandoff()) {
+      if (shouldOfferNativeAppHandoff()) {
         state.value = 'native_app_handoff';
-        // Attempt an automatic bounce into the APK; the UI remains if the OS
-        // keeps us in the browser (app missing, or intent blocked).
-        openInstalledNativeApp();
+        if (isIosLike()) {
+          // Exchange token → handoff, then auto-open (watch re-enters on ?handoff=).
+          try {
+            await prepareIosNativeHandoffFromToken(token);
+          } catch (e: unknown) {
+            state.value = 'error';
+            errorMessage.value =
+              e instanceof Error ? e.message : strings.authVerifyErrorGeneric;
+          }
+          return;
+        }
+        // Android: bounce intent:// with the HTTPS token URL still intact.
+        if (!didAutoOpenNative.value) {
+          didAutoOpenNative.value = true;
+          openInstalledNativeApp();
+        }
         return;
       }
 

@@ -50,10 +50,14 @@ Deep link targets:
 
 | Target | When | Notes |
 | --- | --- | --- |
-| `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
-| `vmp://auth/verify?token=…` | **SideStore / PoC artifact builds only** | Fail-closed env gates: active only when `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`/`true` and `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not set. Mobile artifacts may enable it for `development`/`beta`/`nightly`; **`flavor=release` forces it off**. The web `/auth/verify` page must **not** embed raw magic-link tokens in `vmp://` URLs — prefer AASA (S5) or a future one-time handoff code bound to an app install (checklist **S6**). |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=native` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. `client` is stamped when the native app requests the magic link. |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=browser` | Website login | Redeem in the browser; no PWA / native bounce. |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=pwa` (+ optional `pwa=1`) | Installed Home Screen web app | Push-login when `pwa=1`; otherwise iOS Safari may exchange for a short-lived handoff. |
+| `vmp://auth/verify?handoff=…` | **SideStore / PoC artifact builds only** | Fail-closed env gates: active only when `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`/`true` and `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not set. Mobile artifacts may enable it for `development`/`beta`/`nightly`; **`flavor=release` forces it off**. Web never puts **raw magic-link tokens** in `vmp://` — only short-lived handoff codes after Safari exchanges `client=native` links (checklist **S6**). |
 
-**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) so magic links opened in the system browser bounce into the installed APK without consuming the token first. iOS custom-scheme token handoff is disabled until install-bound codes exist.
+**Client-tagged emails:** `POST /api/auth/magic-link` accepts `{ client: 'browser' \| 'pwa' \| 'native' }` and embeds it in the verify URL. Web login defaults to `browser` (or `pwa` when `isInstalledPwa()`); Expo login sends `native`. `/auth/verify` routes from that tag instead of guessing User-Agent / display-mode.
+
+**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) for `client=native`. iOS exchanges the token for a handoff code then opens `vmp://auth/verify?handoff=…` (SideStore builds with the scheme enabled).
 
 **AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
 
@@ -109,7 +113,7 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 
 ### Reused as-is
 
-- `POST /api/auth/magic-link` — email still contains the web verify URL; the installed app intercepts it.
+- `POST /api/auth/magic-link` — body may include `client: 'browser' | 'pwa' | 'native'`; email verify URL carries the same tag so `/auth/verify` does not guess the originating surface.
 - `GET /api/videos`, `GET /api/video-access/{videoId}` (preferred; user from JWT), video proxy, offline device + download APIs.
   Legacy `GET /api/video-access/{userId}/{videoId}` remains for old clients only.
 

@@ -7,7 +7,7 @@
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
  *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
- *  - Native redeem: POST /api/auth/native/redeem (magic link → JWT + refreshToken in JSON).
+ *  - Native redeem: POST /api/auth/native/redeem ({ token } or { handoffCode } → JWT + refreshToken in JSON).
  *  - Refresh token issuance and rotation (cookie and/or JSON body for native clients).
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
@@ -39,6 +39,7 @@
  *       present it gets a fresh JWT silently.
  */
 
+import { normalizeMagicLinkClient } from '@vmp/shared';
 import { log } from './logger.js';
 import { resolvePostHogIdentityHashForUser } from './posthog.js';
 
@@ -338,9 +339,12 @@ async function isMagicLinkRateLimited(request: any, env: any, email: any) {
 
 /**
  * POST /api/auth/magic-link
- * Body: { email: string }
+ * Body: { email: string, redirect?: string, client?: 'browser' | 'pwa' | 'native' }
  *
  * Creates a magic link token, stores the hash, and emails the raw token.
+ * `client` is stamped onto the verify URL so the landing page knows whether
+ * the flow started from the website, the installed PWA, or a native app —
+ * instead of guessing from User-Agent / display-mode.
  * Always returns 200 — we never confirm whether an email is registered
  * to prevent user enumeration.
  */
@@ -356,6 +360,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   }
 
   const redirect = normalizeRedirectPath(body.redirect);
+  const client = normalizeMagicLinkClient(body.client);
   const db = getDb(env);
 
   try {
@@ -372,6 +377,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
     const frontendUrl = (env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const verifyUrl = new URL(`${frontendUrl}/auth/verify`);
     verifyUrl.searchParams.set('token', token);
+    verifyUrl.searchParams.set('client', client);
     if (redirect) verifyUrl.searchParams.set('redirect', redirect);
 
     if (env.BREVO_API_KEY) {
@@ -380,7 +386,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
       // No Brevo key — log the link for local development.
       console.log(`[DEV] Magic link for ${email}: ${verifyUrl.toString()}`);
     }
-    log({ service: 'auth', event: 'magic_link_sent', level: 'info' });
+    log({ service: 'auth', event: 'magic_link_sent', level: 'info', client });
   } catch (err) {
     console.error('[auth] magic link error:', err);
     // Still return success — don't leak whether the error was email-related.
@@ -624,19 +630,99 @@ async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsH
 }
 
 /**
- * POST /api/auth/native/redeem  body: { token }
+ * Atomically consume a one-time PWA/native handoff code from D1.
+ * Returns the bound user_id, or null when missing / used / expired.
+ */
+async function consumePwaHandoffCode(db: any, code: string): Promise<string | null> {
+  const codeHash = await hashToken(code);
+  const consumeResult = await db
+    .prepare(`
+      UPDATE pwa_handoffs
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
+      RETURNING user_id
+    `)
+    .bind(codeHash)
+    .first();
+  return consumeResult?.user_id ? String(consumeResult.user_id) : null;
+}
+
+async function loadUserRowForAuth(db: any, userId: string) {
+  const row = await db
+    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
+    .bind(userId)
+    .first();
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    totp_enabled: row.totp_enabled,
+    created_at: row.created_at,
+  };
+}
+
+/**
+ * POST /api/auth/native/redeem  body: { token } | { handoffCode }
  *
- * Same magic-link consume as GET /api/auth/verify, but returns refreshToken in
- * the JSON body for native apps (Keychain / Keystore). Does **not** set the
- * refresh cookie — native clients must use the JSON body token with
- * POST /api/auth/refresh.
+ * Same magic-link consume as GET /api/auth/verify, or exchange of a short-lived
+ * handoff code (from Safari → `vmp://` on iOS SideStore PoC), but returns
+ * refreshToken in the JSON body for native apps (Keychain / Keystore). Does
+ * **not** set the refresh cookie — native clients must use the JSON body token
+ * with POST /api/auth/refresh.
  */
 export async function handleNativeRedeemMagicLink(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
 
   const body = await request.json().catch(() => null);
   const token = typeof body?.token === 'string' ? body.token.trim() : '';
-  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders);
+  const handoffCode = typeof body?.handoffCode === 'string' ? body.handoffCode.trim() : '';
+
+  if (token && handoffCode) {
+    return authJson(
+      { error: 'Provide either token or handoffCode, not both', code: 'ambiguous_redeem' },
+      400,
+      corsHeaders,
+    );
+  }
+  if (!token && !handoffCode) {
+    return authJson({ error: 'token or handoffCode is required' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
+
+  if (handoffCode) {
+    const userId = await consumePwaHandoffCode(db, handoffCode);
+    if (!userId) {
+      log({
+        service: 'auth',
+        event: 'native_handoff_redeem_failed',
+        level: 'warn',
+        error_code: 'invalid_or_used',
+      });
+      return authJson(
+        {
+          error:
+            'This sign-in step has expired or was already used. Request a new email link.',
+          code: 'invalid_or_used',
+        },
+        401,
+        corsHeaders,
+      );
+    }
+    const user = await loadUserRowForAuth(db, userId);
+    if (!user) return authJson({ error: 'User not found' }, 401, corsHeaders);
+
+    const session = await issueNativeSessionTokens(user, env, db);
+    const headers = buildResponseHeaders(corsHeaders);
+    log({
+      service: 'auth',
+      event: 'native_handoff_redeem_success',
+      level: 'info',
+      totp_required: Boolean(user.totp_enabled),
+    });
+    return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
+  }
 
   const phase = await consumeMagicLinkForUser(env, token);
   if (phase.tag === 'invalid') {
@@ -664,7 +750,6 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     );
   }
 
-  const db = getDb(env);
   const session = await issueNativeSessionTokens(phase.user, env, db);
   const headers = buildResponseHeaders(corsHeaders);
   log({
@@ -790,22 +875,10 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
   const body = await request.json().catch(() => null);
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
   if (!code) return authJson({ error: 'code is required' }, 400, corsHeaders);
-  const codeHash = await hashToken(code);
 
   const db = getDb(env);
-
-  // Atomically consume the handoff: mark used_at only if not already used and not expired
-  const consumeResult = await db
-    .prepare(`
-      UPDATE pwa_handoffs
-      SET used_at = CURRENT_TIMESTAMP
-      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
-      RETURNING user_id
-    `)
-    .bind(codeHash)
-    .first();
-
-  if (!consumeResult || !consumeResult.user_id) {
+  const userId = await consumePwaHandoffCode(db, code);
+  if (!userId) {
     return authJson(
       { error: 'This sign-in step has expired or was already used. Request a new email link.' },
       401,
@@ -813,19 +886,9 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
     );
   }
 
-  const row = await db
-    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
-    .bind(consumeResult.user_id)
-    .first();
-  if (!row) return authJson({ error: 'User not found' }, 401, corsHeaders);
+  const user = await loadUserRowForAuth(db, userId);
+  if (!user) return authJson({ error: 'User not found' }, 401, corsHeaders);
 
-  const user = {
-    id: row.id,
-    email: row.email,
-    role: row.role,
-    totp_enabled: row.totp_enabled,
-    created_at: row.created_at,
-  };
   return await issueFullMagicSessionResponse(user, env, db, corsHeaders);
 }
 

@@ -21,7 +21,9 @@
  * shared across all component instances without a Pinia store.
  */
 
+import type { MagicLinkClient } from '@vmp/shared';
 import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
+import { isInstalledPwa } from '~/utils/pwa';
 
 export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
 
@@ -144,17 +146,21 @@ export function useAuth() {
   /**
    * POST /api/auth/magic-link
    * Sends a sign-in email. The user then clicks the link, which lands on
-   * /auth/verify?token=... and this composable's verify() is called.
+   * /auth/verify?token=...&client=... and this composable's verify() is called.
+   * `client` is stamped into the email URL (browser | pwa | native).
    */
   async function signIn(
     email: string,
     redirectPath?: string,
+    client?: MagicLinkClient,
   ): Promise<{ ok: boolean; message: string }> {
+    const resolvedClient =
+      client ?? (import.meta.client && isInstalledPwa() ? 'pwa' : 'browser');
     const res = await fetch(`${apiUrl}/api/auth/magic-link`, {
       method: 'POST',
       credentials: 'include', // needed so the Set-Cookie from verify() works
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, redirect: redirectPath }),
+      body: JSON.stringify({ email, redirect: redirectPath, client: resolvedClient }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to send sign-in link');

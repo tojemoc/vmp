@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildAndroidNativeAppIntentUrl,
+  buildIosNativeAppHandoffUrl,
   DEFAULT_MOBILE_ANDROID_PACKAGE,
   isNativeAppFallbackQuery,
   resolveMobileAndroidPackage,
@@ -30,10 +31,13 @@ describe('nativeAppHandoff', () => {
 
   it('builds a package-targeted https intent URL with browser fallback', () => {
     const intent = buildAndroidNativeAppIntentUrl(
-      'https://vmp.example/auth/verify?token=raw-token',
+      'https://vmp.example/auth/verify?token=raw-token&client=native',
       'sk.tjm.vmp',
     );
-    assert.match(intent, /^intent:\/\/vmp\.example\/auth\/verify\?token=raw-token#Intent;/);
+    assert.match(
+      intent,
+      /^intent:\/\/vmp\.example\/auth\/verify\?token=raw-token&client=native#Intent;/,
+    );
     assert.match(intent, /;scheme=https;/);
     assert.match(intent, /;package=sk\.tjm\.vmp;/);
     assert.match(intent, /S\.browser_fallback_url=/);
@@ -45,5 +49,13 @@ describe('nativeAppHandoff', () => {
     assert.equal(resolveMobileAndroidPackage(''), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('evil;package'), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('sk.tjm.vmp'), 'sk.tjm.vmp');
+  });
+
+  it('builds iOS vmp:// URLs with handoff codes only (never raw tokens)', () => {
+    const url = buildIosNativeAppHandoffUrl('abc123handoff', '/watch/1');
+    assert.equal(url, 'vmp://auth/verify?handoff=abc123handoff&redirect=%2Fwatch%2F1');
+    assert.doesNotMatch(url, /token=/);
+    assert.equal(buildIosNativeAppHandoffUrl('code-only'), 'vmp://auth/verify?handoff=code-only');
+    assert.throws(() => buildIosNativeAppHandoffUrl('  '), /handoff code/);
   });
 });

@@ -64,15 +64,15 @@ export const strings: StringsDefinition = {
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Prihlasujeme vás…',
-  authVerifyHandoffTitle: 'Otvorte aplikáciu VMP',
+  authVerifyHandoffTitle: 'Dokončite v aplikácii na Domovskej obrazovke',
   authVerifyHandoffBody:
-    'Na iPhone a iPade je aplikácia pridaná na Domovskú obrazovku oddelená od Safari. Otvorte VMP z Domovskej obrazovky a aplikácia sa pokúsi dokončiť prihlásenie. Ak sa to nepodarí, vráťte sa do Safari a použite tlačidlo nižšie.',
+    'Toto prihlásenie začalo z aplikácie VMP na Domovskej obrazovke, ktorá je oddelená od Safari. Otvorte VMP z Domovskej obrazovky, alebo pokračujte v Safari pre reláciu len v prehliadači.',
   authVerifyHandoffContinueSafari: 'Pokračovať v Safari',
   authVerifyHandoffCopyLink: 'Skopírovať odkaz na prihlásenie',
   authVerifyHandoffCopied: 'Odkaz skopírovaný',
   authVerifyNativeAppTitle: 'Otvorte aplikáciu VMP',
   authVerifyNativeAppBody:
-    'Nainštalovaná Android aplikácia by mala dokončiť toto prihlásenie. Klepnite na tlačidlo nižšie, ak sa neotvorila automaticky. V prehliadači pokračujte len ak aplikáciu nepoužívate — odkaz z e-mailu funguje len raz.',
+    'Toto prihlásenie začalo z nainštalovanej aplikácie VMP. Klepnite nižšie, ak sa neotvorila automaticky. V prehliadači pokračujte len ak chcete reláciu na webe — odkaz z e-mailu funguje len raz.',
   authVerifyNativeAppOpen: 'Otvoriť aplikáciu VMP',
   authVerifyNativeAppContinueBrowser: 'Pokračovať v prehliadači',
   authVerifyErrorGeneric: 'Niečo sa pokazilo. Požiadajte o nový odkaz na prihlásenie.',

@@ -226,6 +226,28 @@ export interface NativeTwoFactorPendingResponse {
 
 export type NativeRedeemResponse = NativeSessionResponse | NativeTwoFactorPendingResponse;
 
+/**
+ * Which surface requested the magic-link email. Embedded in the verify URL as
+ * `?client=` so `/auth/verify` does not guess from UA / display-mode.
+ *
+ * - `browser` — regular website login (default when omitted / unknown)
+ * - `pwa` — installed Home Screen / standalone web app
+ * - `native` — Expo / store / SideStore client
+ */
+export const MAGIC_LINK_CLIENTS = ['browser', 'pwa', 'native'] as const;
+export type MagicLinkClient = (typeof MAGIC_LINK_CLIENTS)[number];
+
+export function normalizeMagicLinkClient(value: unknown): MagicLinkClient {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'pwa' || v === 'native' || v === 'browser') return v;
+  }
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return normalizeMagicLinkClient(value[0]);
+  }
+  return 'browser';
+}
+
 export interface DevicePairingPreview {
   pairingCode: string;
   status: 'pending' | 'expired' | 'approved' | 'redeemed';
