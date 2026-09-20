@@ -1,6 +1,13 @@
-import type { NativeRedeemResponse, NativeSessionResponse } from '@vmp/shared';
+import type {
+  NativeRedeemResponse,
+  NativeSessionResponse,
+  OfflineAuthorizeResponse,
+  OfflineDeviceRegistration,
+  OfflineRendition,
+} from '@vmp/shared';
 import { apiUrl } from '../config';
 import { nativePushEnabled } from '../features';
+import { DEVICE_TOKEN_HEADER } from '../offline/constants';
 
 export class ApiError extends Error {
   status: number;
@@ -126,6 +133,54 @@ export async function completeDevicePairing(accessToken: string, pairingCode: st
   return apiFetch(
     '/api/auth/device-pairing/complete',
     { method: 'POST', body: JSON.stringify({ pairingCode }) },
+    accessToken,
+  );
+}
+
+export async function registerOfflineDevice(
+  accessToken: string,
+  payload: { deviceName: string; publicKey?: string },
+): Promise<OfflineDeviceRegistration> {
+  return apiFetch(
+    '/api/offline/devices/register',
+    { method: 'POST', body: JSON.stringify(payload) },
+    accessToken,
+  );
+}
+
+export async function authorizeOfflineDownload(
+  accessToken: string,
+  videoId: string,
+  payload: { rendition: OfflineRendition; deviceId: string; deviceToken: string },
+): Promise<OfflineAuthorizeResponse> {
+  return apiFetch(
+    `/api/downloads/${encodeURIComponent(videoId)}/authorize`,
+    {
+      method: 'POST',
+      headers: { [DEVICE_TOKEN_HEADER]: payload.deviceToken },
+      body: JSON.stringify({ rendition: payload.rendition, deviceId: payload.deviceId }),
+    },
+    accessToken,
+  );
+}
+
+export function buildOfflineAssetUrl(
+  videoId: string,
+  relativePath: string,
+  downloadToken: string,
+): string {
+  const encodedPath = relativePath
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `${apiUrl}/api/downloads/${encodeURIComponent(videoId)}/assets/${encodedPath}?dt=${encodeURIComponent(downloadToken)}`;
+}
+
+export async function revokeOfflineDownload(accessToken: string, videoId: string): Promise<void> {
+  await apiFetch(
+    `/api/downloads/${encodeURIComponent(videoId)}`,
+    { method: 'DELETE', body: JSON.stringify({}) },
     accessToken,
   );
 }

@@ -9,6 +9,7 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 - Magic-link request → deep-link redeem via `POST /api/auth/native/redeem`
 - Secure session storage (`expo-secure-store`)
 - Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
+- Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings
 - Device pairing **Approve a TV** under Settings (`preview` + `complete`)
 - Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)
 
@@ -93,6 +94,17 @@ The matching association documents are served by the web Worker at `/.well-known
 **Android browser fallback:** `/auth/verify` detects Android, does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
 
 Magic-link tokens are single-use: if the link was opened on another device first, redeem fails with an explicit “already used (including on another device)” message.
+
+## Offline downloads (Tier 1 PoC)
+
+Watch screen **Download** (default `720p`) and **Downloads** list:
+
+1. `POST /api/offline/devices/register` once → store `deviceId` / `deviceToken` in SecureStore
+2. `POST /api/downloads/:videoId/authorize` with `x-vmp-device-token`
+3. Fetch `GET /api/downloads/:videoId/assets/…?dt=` into app document storage
+4. Rewrite playlists to relative local paths; play `offline-master.m3u8` via `expo-video`
+
+Requires an R2-hosted HLS video (`r2_assets_required` if only CDN). License expiry is enforced before offline play; renew UI is deferred.
 
 ## Pairing (Tier 2+)
 

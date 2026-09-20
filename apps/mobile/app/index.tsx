@@ -54,6 +54,11 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.email}>{session.user.email}</Text>
         <View style={styles.headerActions}>
+          <Link href="/downloads" asChild>
+            <Pressable style={styles.secondaryBtn}>
+              <Text style={styles.secondaryBtnText}>Downloads</Text>
+            </Pressable>
+          </Link>
           <Link href="/settings" asChild>
             <Pressable style={styles.secondaryBtn}>
               <Text style={styles.secondaryBtnText}>Settings</Text>

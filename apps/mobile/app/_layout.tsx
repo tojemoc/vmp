@@ -20,6 +20,7 @@ export default function RootLayout() {
           options={{ title: 'Signing in', headerBackVisible: false }}
         />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen name="downloads" options={{ title: 'Downloads' }} />
         <Stack.Screen name="watch/[videoId]" options={{ title: 'Watch' }} />
         <Stack.Screen name="pairing" options={{ title: 'Approve device' }} />
       </Stack>
