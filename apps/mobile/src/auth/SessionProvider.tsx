@@ -1,5 +1,6 @@
 import * as Linking from 'expo-linking';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { tokenFromAuthUrl } from './deepLink';
 import {
   loadSession,
   redeemMagicLinkToken,
@@ -7,7 +8,6 @@ import {
   SessionRestoreError,
   type SessionState,
   signOut,
-  tokenFromAuthUrl,
 } from './session';
 
 type SessionContextValue = {
@@ -17,6 +17,7 @@ type SessionContextValue = {
   setSession: (session: SessionState | null) => void;
   refreshFromStore: () => Promise<void>;
   handleIncomingUrl: (url: string | null) => Promise<boolean>;
+  completeMagicLink: (token: string) => Promise<boolean>;
   logout: () => Promise<void>;
 };
 
@@ -27,9 +28,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const handleIncomingUrl = useCallback(async (url: string | null): Promise<boolean> => {
-    const token = tokenFromAuthUrl(url);
-    if (!token) return false;
+  const completeMagicLink = useCallback(async (token: string): Promise<boolean> => {
     try {
       setError(null);
       const next = await redeemMagicLinkToken(token);
@@ -40,6 +39,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
   }, []);
+
+  const handleIncomingUrl = useCallback(
+    async (url: string | null): Promise<boolean> => {
+      const token = tokenFromAuthUrl(url);
+      if (!token) return false;
+      return completeMagicLink(token);
+    },
+    [completeMagicLink],
+  );
 
   const refreshFromStore = useCallback(async () => {
     try {
@@ -98,9 +106,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession,
       refreshFromStore,
       handleIncomingUrl,
+      completeMagicLink,
       logout,
     }),
-    [session, booting, error, refreshFromStore, handleIncomingUrl, logout],
+    [session, booting, error, refreshFromStore, handleIncomingUrl, completeMagicLink, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

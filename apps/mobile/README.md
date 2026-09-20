@@ -84,6 +84,8 @@ See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-dis
 | Custom | `vmp://auth/verify?token=…` | **Off by default.** Canonical opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`. Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins if both are set. `session.ts` ignores `vmp://` tokens unless the flag is set. Store builds must omit ENABLE (checklist S6). |
 | Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
+Both land on Expo Router screen `app/auth/verify.tsx` (required — without it the OS opens the app but Expo shows **Unmatched Route**). `SessionProvider` still listens for Linking events; redeem is deduped so cold-start + the verify screen do not consume the single-use token twice.
+
 `REPLACE_WITH_FRONTEND_HOST` in `app.json` stays as-is — `.github/workflows/mobile-artifacts.yml` substitutes the dispatched `frontend_host` into both the iOS `associatedDomains` and the Android intent filter, so the committed value must remain a placeholder rather than one tier's host.
 
 The matching association documents are served by the web Worker at `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association`, built from the `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` / `MOBILE_APPLE_APP_IDS` deploy vars. Until those are set the routes return 404 and `autoVerify` cannot succeed, so links open the browser instead of the app (checklist **S5**).

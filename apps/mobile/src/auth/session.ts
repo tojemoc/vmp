@@ -1,11 +1,14 @@
 import type { NativeAuthUser, NativeSessionResponse } from '@vmp/shared';
 import * as SecureStore from 'expo-secure-store';
 import { ApiError, logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
-import { customSchemeDeepLinksAllowed } from '../features';
 
 const ACCESS_KEY = 'vmp.accessToken';
 const REFRESH_KEY = 'vmp.refreshToken';
 const USER_KEY = 'vmp.user';
+
+/** Deduplicate concurrent redeems of the same single-use token (cold start + route). */
+let redeemInFlightToken: string | null = null;
+let redeemInFlight: Promise<SessionState> | null = null;
 
 export type SessionState = {
   accessToken: string;
@@ -80,16 +83,30 @@ export async function restoreSession(): Promise<SessionState | null> {
 }
 
 export async function redeemMagicLinkToken(token: string): Promise<SessionState> {
-  const session = await redeemNativeMagicLink(token);
-  if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
-    throw new Error(
-      'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',
-    );
+  if (redeemInFlight && redeemInFlightToken === token) {
+    return redeemInFlight;
   }
-  if (!('refreshToken' in session) || !session.refreshToken) {
-    throw new Error('Native redeem did not return a refreshToken');
-  }
-  return persistNativeSession(session);
+  redeemInFlightToken = token;
+  redeemInFlight = (async () => {
+    try {
+      const session = await redeemNativeMagicLink(token);
+      if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
+        throw new Error(
+          'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',
+        );
+      }
+      if (!('refreshToken' in session) || !session.refreshToken) {
+        throw new Error('Native redeem did not return a refreshToken');
+      }
+      return persistNativeSession(session);
+    } finally {
+      if (redeemInFlightToken === token) {
+        redeemInFlightToken = null;
+        redeemInFlight = null;
+      }
+    }
+  })();
+  return redeemInFlight;
 }
 
 export async function signOut(): Promise<void> {
@@ -104,19 +121,4 @@ export async function signOut(): Promise<void> {
   await clearSession();
 }
 
-/** Extract magic-link token from Universal Link or vmp:// deep link. */
-export function tokenFromAuthUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (!customSchemeDeepLinksAllowed && /^vmp:\/\//i.test(url)) {
-    return null;
-  }
-  try {
-    const parsed = new URL(url);
-    const token = parsed.searchParams.get('token');
-    if (token) return token;
-  } catch {
-    // Fall through for non-standard URLs.
-  }
-  const match = url.match(/[?&]token=([^&]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
+export { firstSearchParam, safeRedirectPath, tokenFromAuthUrl } from './deepLink';
