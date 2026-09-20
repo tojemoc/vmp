@@ -39,9 +39,9 @@
  *       present it gets a fresh JWT silently.
  */
 
-import { normalizeMagicLinkClient } from '@vmp/shared';
+import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE, normalizeMagicLinkClient } from '@vmp/shared';
 import { log } from './logger.js';
-import { resolvePostHogIdentityHashForUser } from './posthog.js';
+import { resolvePostHogEnvironment, resolvePostHogIdentityHashForUser } from './posthog.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -734,6 +734,191 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     totp_required: Boolean(phase.user.totp_enabled),
   });
   return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
+}
+
+/**
+ * Staging-only escape hatch for SideStore PoC: allow Safari to open
+ * `vmp://auth/verify?token=…` after the user explicitly acknowledges the risk.
+ *
+ * Fail-closed unless `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (set by staging CI only).
+ * Production / beta must never set that var.
+ */
+export function isInsecureNativeVmpSchemeAllowed(env: any): boolean {
+  const flag = String(env?.ALLOW_INSECURE_NATIVE_VMP_SCHEME ?? '')
+    .trim()
+    .toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
+  if (flag !== '1' && flag !== 'true' && flag !== 'on' && flag !== 'yes') return false;
+
+  const tier = resolvePostHogEnvironment(env).toLowerCase();
+  if (tier === 'production' || tier === 'prod' || tier === 'beta') return false;
+  return true;
+}
+
+async function isInsecureSchemeAckRateLimited(request: any, env: any): Promise<boolean> {
+  const kv = env.RATE_LIMIT_KV;
+  if (!kv) return false;
+  try {
+    const ip = request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const fingerprint = await hashToken(`auth:insecure-scheme-ack:${ip}:${minuteBucket}`);
+    const key = `auth:insecure-scheme-ack:${fingerprint}`;
+    const currentRaw = await kv.get(key);
+    const current = Number.parseInt(currentRaw ?? '0', 10);
+    const count = Number.isFinite(current) ? current : 0;
+    if (count >= 10) return true;
+    await kv.put(key, String(count + 1), { expirationTtl: 120 });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /api/auth/native/insecure-scheme/acknowledge
+ * Body: { token, acknowledgedRisk: true, confirmPhrase, doubleConfirmed: true }
+ *
+ * Records a D1 acknowledgment bound to the (still unused) magic-link token.
+ * Does **not** consume the magic link — the native app redeems it via
+ * POST /api/auth/native/redeem after the `vmp://` open.
+ */
+export async function handleAcknowledgeInsecureNativeScheme(
+  request: any,
+  env: any,
+  corsHeaders: any,
+) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
+
+  if (!isInsecureNativeVmpSchemeAllowed(env)) {
+    return authJson(
+      {
+        error: 'Insecure custom-scheme handoff is disabled in this environment.',
+        code: 'insecure_scheme_disabled',
+      },
+      403,
+      corsHeaders,
+    );
+  }
+
+  if (await isInsecureSchemeAckRateLimited(request, env)) {
+    return authJson(
+      { error: 'Too many requests. Please try again later.', code: 'rate_limit_exceeded' },
+      429,
+      corsHeaders,
+    );
+  }
+
+  const body = await request.json().catch(() => null);
+  const token = typeof body?.token === 'string' ? body.token.trim() : '';
+  const confirmPhrase = typeof body?.confirmPhrase === 'string' ? body.confirmPhrase.trim() : '';
+  const acknowledgedRisk = body?.acknowledgedRisk === true;
+  const doubleConfirmed = body?.doubleConfirmed === true;
+
+  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders);
+  if (!acknowledgedRisk || !doubleConfirmed) {
+    return authJson(
+      {
+        error: 'Both risk acknowledgment and double confirmation are required.',
+        code: 'ack_incomplete',
+      },
+      400,
+      corsHeaders,
+    );
+  }
+  if (confirmPhrase !== INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE) {
+    return authJson(
+      {
+        error: `confirmPhrase must be exactly "${INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE}"`,
+        code: 'ack_phrase_mismatch',
+      },
+      400,
+      corsHeaders,
+    );
+  }
+
+  const db = getDb(env);
+  const tokenHash = await hashToken(token);
+  const record = await loadMagicLinkRecord(db, tokenHash);
+
+  if (!record || record.used_at) {
+    return authJson(
+      {
+        error: 'Sign-in link is invalid or has already been used.',
+        code: 'invalid_or_used',
+      },
+      401,
+      corsHeaders,
+    );
+  }
+  if (new Date(record.expires_at) < new Date()) {
+    return authJson(
+      { error: 'Sign-in link has expired. Request a new one.', code: 'expired' },
+      401,
+      corsHeaders,
+    );
+  }
+
+  const ip = request.headers.get('CF-Connecting-IP')?.trim() || '';
+  const ipHash = ip ? await hashToken(ip) : null;
+  const userAgent = String(request.headers.get('User-Agent') || '').slice(0, 512) || null;
+  const ackId = crypto.randomUUID();
+
+  try {
+    await db
+      .prepare(`
+        INSERT INTO insecure_native_scheme_acks
+          (id, magic_link_token_hash, user_id, expires_at, user_agent, ip_hash)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(magic_link_token_hash) DO UPDATE SET
+          acknowledged_at = CURRENT_TIMESTAMP,
+          user_agent = excluded.user_agent,
+          ip_hash = excluded.ip_hash
+      `)
+      .bind(ackId, tokenHash, record.user_id, record.expires_at, userAgent, ipHash)
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack insert failed:', err);
+    return authJson({ error: 'Could not record acknowledgment. Try again.' }, 500, corsHeaders);
+  }
+
+  log({
+    service: 'auth',
+    event: 'insecure_native_scheme_acknowledged',
+    level: 'warn',
+    user_id_hash: await hashToken(String(record.user_id)),
+  });
+
+  return authJson(
+    {
+      ok: true,
+      allowed: true,
+      warning:
+        'Custom vmp:// handoff is insecure: any app can claim the scheme and snatch this one-time token. Staging / SideStore testing only.',
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+/**
+ * GET /api/auth/native/insecure-scheme/status
+ * Returns whether this environment permits the SideStore vmp:// escape hatch.
+ */
+export async function handleInsecureNativeSchemeStatus(
+  _request: any,
+  env: any,
+  corsHeaders: any,
+) {
+  const allowed = isInsecureNativeVmpSchemeAllowed(env);
+  return authJson(
+    {
+      allowed,
+      confirmPhrase: allowed ? INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE : null,
+      environment: resolvePostHogEnvironment(env),
+    },
+    200,
+    corsHeaders,
+  );
 }
 
 async function readRefreshTokenFromRequest(request: any): Promise<{

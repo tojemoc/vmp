@@ -11,7 +11,8 @@
   - client=browser (default): redeem in this browser.
   - client=pwa + ?pwa=1: push-login deliver prompt (Home Screen iOS).
   - client=pwa (no pwa=1): iOS Safari → short-lived handoff for Home Screen redeem.
-  - client=native: Android intent:// before web redeem; iOS Safari explains missing Universal Links.
+  - client=native: Android intent:// before web redeem; iOS Safari explains missing Universal Links
+    (staging may offer acknowledged vmp:// SideStore escape hatch — never on production).
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -114,13 +115,94 @@
             {{ strings.authVerifyNativeIosSafariBody }}
           </p>
         </div>
-        <button
-          type="button"
-          class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          @click="continueNativeIosInSafari"
-        >
-          {{ strings.authVerifyNativeIosSafariContinue }}
-        </button>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="continueNativeIosInSafari"
+          >
+            {{ strings.authVerifyNativeIosSafariContinue }}
+          </button>
+          <button
+            v-if="insecureSchemeStatus?.allowed"
+            type="button"
+            class="w-full px-5 py-2.5 border border-amber-700/80 hover:border-amber-600 text-amber-200 text-sm font-medium rounded-lg transition-colors"
+            @click="beginInsecureNativeSchemeWarn"
+          >
+            {{ strings.authVerifyNativeIosInsecureOffer }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Staging SideStore: first of two confirms for claimable vmp:// -->
+      <div v-else-if="state === 'native_ios_insecure_warn'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-amber-200 mb-2">
+            {{ strings.authVerifyNativeIosInsecureWarnTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureWarnBody }}
+          </p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-amber-700 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="beginInsecureNativeSchemeConfirm"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnContinue }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            @click="cancelInsecureNativeScheme"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnCancel }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Staging SideStore: checkbox + confirm, then D1 ack + vmp:// open -->
+      <div v-else-if="state === 'native_ios_insecure_confirm'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-amber-200 mb-2">
+            {{ strings.authVerifyNativeIosInsecureConfirmTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureConfirmBody }}
+          </p>
+        </div>
+        <p v-if="errorMessage" class="text-red-400 text-sm leading-relaxed">{{ errorMessage }}</p>
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input
+            v-model="insecureSchemeAckChecked"
+            type="checkbox"
+            class="mt-1 h-4 w-4 shrink-0 rounded border-gray-600 bg-gray-900 text-amber-600 focus:ring-amber-500"
+          >
+          <span class="text-gray-300 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureCheckbox }}
+          </span>
+        </label>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            :disabled="!insecureSchemeAckChecked || insecureSchemeWorking"
+            @click="confirmInsecureNativeSchemeAndOpen"
+          >
+            {{ insecureSchemeWorking
+                ? strings.authVerifyNativeIosInsecureWorking
+                : strings.authVerifyNativeIosInsecureConfirm }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            :disabled="insecureSchemeWorking"
+            @click="cancelInsecureNativeScheme"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnCancel }}
+          </button>
+        </div>
       </div>
 
       <!-- iOS Safari after PWA-tagged magic link: wait for Home Screen or Safari -->
@@ -180,11 +262,17 @@
 </template>
 
 <script setup lang="ts">
-  import { normalizeMagicLinkClient, type MagicLinkClient } from '@vmp/shared';
+  import {
+    INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE,
+    type MagicLinkClient,
+    normalizeMagicLinkClient,
+  } from '@vmp/shared';
   import { navigateTo, useRoute, useRuntimeConfig } from '#app';
+  import { resolveDeployTier } from '~/utils/buildInfo';
   import {
     isNativeAppFallbackQuery,
     openAndroidNativeApp,
+    openIosInsecureNativeScheme,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
   import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
@@ -198,6 +286,41 @@
 
   function mobileAndroidPackage(): string {
     return resolveMobileAndroidPackage(String(runtimeConfig.public.mobileAndroidPackage || ''));
+  }
+
+  /** SideStore vmp:// escape hatch is staging web only (never production/beta). */
+  function isStagingWebDeploy(): boolean {
+    return resolveDeployTier(String(runtimeConfig.public.deployTier || '')) === 'staging';
+  }
+
+  type InsecureSchemeStatus = {
+    allowed: boolean;
+    confirmPhrase: string | null;
+  };
+
+  const insecureSchemeStatus = ref<InsecureSchemeStatus | null>(null);
+  const insecureSchemeAckChecked = ref(false);
+  const insecureSchemeWorking = ref(false);
+
+  async function refreshInsecureSchemeStatus(): Promise<void> {
+    insecureSchemeStatus.value = null;
+    if (!isStagingWebDeploy() || import.meta.server) return;
+    const apiUrl = String(runtimeConfig.public.apiUrl || '').replace(/\/$/, '');
+    if (!apiUrl) return;
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/native/insecure-scheme/status`);
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        allowed?: unknown;
+        confirmPhrase?: unknown;
+      };
+      insecureSchemeStatus.value = {
+        allowed: body.allowed === true,
+        confirmPhrase: typeof body.confirmPhrase === 'string' ? body.confirmPhrase : null,
+      };
+    } catch {
+      insecureSchemeStatus.value = null;
+    }
   }
 
   function isDisplayStandalone() {
@@ -242,7 +365,7 @@
   /**
    * Native-tagged link on iOS Safari: Universal Links would have opened the app
    * already when AASA is live. Landing here means association is missing / SideStore
-   * re-sign — explain and offer a website session (no claimable vmp://).
+   * re-sign — explain website session, and on staging offer acknowledged vmp://.
    */
   function shouldExplainIosNativeInSafari(): boolean {
     if (import.meta.server) return false;
@@ -272,6 +395,8 @@
     | 'handoff_wait'
     | 'native_app_handoff'
     | 'native_ios_safari'
+    | 'native_ios_insecure_warn'
+    | 'native_ios_insecure_confirm'
     | 'pwa_push_prompt'
     | 'pwa_push_sending'
     | 'pwa_push_done'
@@ -421,6 +546,66 @@
     await runNormalTokenVerify(token);
   }
 
+  function beginInsecureNativeSchemeWarn() {
+    if (!insecureSchemeStatus.value?.allowed) return;
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    state.value = 'native_ios_insecure_warn';
+  }
+
+  function beginInsecureNativeSchemeConfirm() {
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    state.value = 'native_ios_insecure_confirm';
+  }
+
+  function cancelInsecureNativeScheme() {
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    insecureSchemeWorking.value = false;
+    state.value = 'native_ios_safari';
+  }
+
+  async function confirmInsecureNativeSchemeAndOpen() {
+    const token = magicTokenForFlow.value;
+    if (!token || !insecureSchemeAckChecked.value || !insecureSchemeStatus.value?.allowed) return;
+    if (import.meta.server) return;
+
+    const apiUrl = String(runtimeConfig.public.apiUrl || '').replace(/\/$/, '');
+    const confirmPhrase =
+      insecureSchemeStatus.value.confirmPhrase || INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE;
+
+    insecureSchemeWorking.value = true;
+    errorMessage.value = '';
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/native/insecure-scheme/acknowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          acknowledgedRisk: true,
+          doubleConfirmed: true,
+          confirmPhrase,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
+      if (!res.ok || body?.ok !== true) {
+        errorMessage.value =
+          typeof body?.error === 'string' && body.error.trim()
+            ? body.error
+            : strings.authVerifyNativeIosInsecureFailed;
+        return;
+      }
+      if (!openIosInsecureNativeScheme(window.location.href)) {
+        errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
+      }
+    } catch {
+      errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
+    } finally {
+      insecureSchemeWorking.value = false;
+    }
+  }
+
   async function runNormalTokenVerify(token: string) {
     const redirect = safeRedirect(route.query.redirect, '/');
     const client = magicLinkClient();
@@ -552,6 +737,7 @@
       }
 
       if (shouldExplainIosNativeInSafari()) {
+        await refreshInsecureSchemeStatus();
         state.value = 'native_ios_safari';
         return;
       }

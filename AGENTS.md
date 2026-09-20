@@ -201,6 +201,8 @@ Manual workflow: `.github/workflows/mobile-artifacts.yml` (`workflow_dispatch` o
 
 IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is generated from `docs/altstore-source.meta.json` and deployed to GitHub Pages via the official Pages deploy actions (never committed to `main`). Testers add the source URL in SideStore on iPhone — **no Mac required**. Publishing (GitHub Releases + Pages) is allowed from `main` only; feature branches may run artifact-only builds with `publish_release` disabled.
 
+**Staging SideStore auth escape hatch (temporary):** Mobile artifacts with `flavor=development` + `enable_custom_scheme=true` may enable claimable `vmp://`. Staging web (`deployTier=staging` + API `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1`) requires a two-step confirm and records `insecure_native_scheme_acks` in D1 before opening the scheme. Production / beta never enable this. Prefer Universal Links (**S5**) when a stable Team ID exists.
+
 Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags).
 
 ### Running services locally

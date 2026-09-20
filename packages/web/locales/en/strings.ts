@@ -76,6 +76,21 @@ export const strings: StringsDefinition = {
   authVerifyNativeIosSafariBody:
     'This link was meant for the VMP app. On iPhone it opens in Safari when Universal Links are not set up for this site yet. Continue here for a website session, or ask the site admin to enable Universal Links (Apple App Site Association).',
   authVerifyNativeIosSafariContinue: 'Continue in Safari',
+  authVerifyNativeIosInsecureOffer: 'Open SideStore test app (insecure)',
+  authVerifyNativeIosInsecureWarnTitle: 'Insecure test handoff',
+  authVerifyNativeIosInsecureWarnBody:
+    'This opens the SideStore development build with a claimable vmp:// link that still carries your one-time sign-in token. Any other app could register the same scheme and steal that token. Staging / quick testing only — not for production or App Store builds.',
+  authVerifyNativeIosInsecureWarnContinue: 'I understand — continue',
+  authVerifyNativeIosInsecureWarnCancel: 'Cancel',
+  authVerifyNativeIosInsecureConfirmTitle: 'Confirm insecure handoff',
+  authVerifyNativeIosInsecureConfirmBody:
+    'If you accidentally share this link or an attacker snipes the token, they can sign in as you for this one-time link. Tick the box and confirm only for your own SideStore testing on staging.',
+  authVerifyNativeIosInsecureCheckbox:
+    'I confirm this insecure method is for quick staging tests only, and I accept that an attacker could snipe my sign-in token.',
+  authVerifyNativeIosInsecureConfirm: 'Confirm and open app',
+  authVerifyNativeIosInsecureWorking: 'Recording acknowledgment…',
+  authVerifyNativeIosInsecureFailed:
+    'Could not enable the insecure handoff. Stay on staging, or continue in Safari instead.',
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',
   authVerifySignInIncomplete: 'Sign-in incomplete',
   authVerifyNoToken: 'No token found in the URL. Try clicking the link in your email again.',

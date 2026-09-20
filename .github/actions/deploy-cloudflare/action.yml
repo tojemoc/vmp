@@ -150,13 +150,19 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         VMP_FEATURES: ${{ inputs.vmp-features }}
+        DEPLOY_TIER: ${{ inputs.deploy-tier }}
       run: |
+        EXTRA_ARGS=()
         if [ -n "$VMP_FEATURES" ]; then
-          npm run deploy --workspace=@vmp/api -- --var "VMP_FEATURES=${VMP_FEATURES}"
-        else
-          npm run deploy --workspace=@vmp/api
+          EXTRA_ARGS+=(--var "VMP_FEATURES=${VMP_FEATURES}")
         fi
-
+        # Temporary SideStore PoC: allow acknowledged vmp:// magic-link handoff on staging only.
+        if [ "$DEPLOY_TIER" = "staging" ]; then
+          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME=1")
+        else
+          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME=0")
+        fi
+        npm run deploy --workspace=@vmp/api -- "${EXTRA_ARGS[@]}"
     - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
       shell: bash
       working-directory: packages/web

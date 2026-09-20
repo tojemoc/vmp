@@ -248,6 +248,12 @@ export function normalizeMagicLinkClient(value: unknown): MagicLinkClient {
   return 'browser';
 }
 
+/**
+ * Exact phrase the user must type/confirm before staging may open `vmp://`
+ * with a magic-link token (temporary SideStore PoC only).
+ */
+export const INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE = 'INSECURE_SIDE_STORE_TEST';
+
 export interface DevicePairingPreview {
   pairingCode: string;
   status: 'pending' | 'expired' | 'approved' | 'redeemed';

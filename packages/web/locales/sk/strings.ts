@@ -79,6 +79,21 @@ export const strings: StringsDefinition = {
   authVerifyNativeIosSafariBody:
     'Tento odkaz bol určený pre aplikáciu VMP. Na iPhone sa otvorí v Safari, kým nie sú nastavené Universal Links pre túto stránku. Pokračujte tu pre reláciu na webe, alebo požiadajte správcu o zapnutie Universal Links (Apple App Site Association).',
   authVerifyNativeIosSafariContinue: 'Pokračovať v Safari',
+  authVerifyNativeIosInsecureOffer: 'Otvoriť SideStore testovaciu aplikáciu (nebezpečné)',
+  authVerifyNativeIosInsecureWarnTitle: 'Nebezpečné testovacie odovzdanie',
+  authVerifyNativeIosInsecureWarnBody:
+    'Toto otvorí SideStore development build cez claimable odkaz vmp://, ktorý stále nesie jednorazový prihlasovací token. Iná aplikácia môže zaregistrovať rovnakú schému a token ukradnúť. Len staging / rýchle testovanie — nie pre produkciu ani App Store.',
+  authVerifyNativeIosInsecureWarnContinue: 'Rozumiem — pokračovať',
+  authVerifyNativeIosInsecureWarnCancel: 'Zrušiť',
+  authVerifyNativeIosInsecureConfirmTitle: 'Potvrdiť nebezpečné odovzdanie',
+  authVerifyNativeIosInsecureConfirmBody:
+    'Ak odkaz omylom zdieľate alebo útočník token zachytí, môže sa jednorazovo prihlásiť ako vy. Začiarknite a potvrďte len pre vlastné SideStore testovanie na stagingu.',
+  authVerifyNativeIosInsecureCheckbox:
+    'Potvrdzujem, že táto nebezpečná metóda je len na rýchle staging testy, a beriem na vedomie, že útočník môže ukradnúť môj prihlasovací token.',
+  authVerifyNativeIosInsecureConfirm: 'Potvrdiť a otvoriť aplikáciu',
+  authVerifyNativeIosInsecureWorking: 'Zaznamenávam súhlas…',
+  authVerifyNativeIosInsecureFailed:
+    'Nebezpečné odovzdanie sa nepodarilo povoliť. Zostaňte na stagingu, alebo pokračujte v Safari.',
   authVerifyErrorGeneric: 'Niečo sa pokazilo. Požiadajte o nový odkaz na prihlásenie.',
   authVerifySignInIncomplete: 'Prihlásenie nebolo dokončené',
   authVerifyNoToken: 'V adrese URL sa nenašiel token. Skúste znova kliknúť na odkaz v e-maile.',

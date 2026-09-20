@@ -59,7 +59,7 @@ Inputs:
 - `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
 - `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
-- `enable_custom_scheme` — ignored by Mobile artifacts CI (scheme forced off for all distributed / PoC IPAs). For controlled local testing only, set `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1` on a developer machine. Does **not** put magic-link tokens in custom-scheme URLs from the web.
+- `enable_custom_scheme` — enables claimable `vmp://` **only** when `flavor=development` (staging SideStore PoC). Rejected for release/beta/nightly. Staging web still requires a double-confirm + D1 acknowledgment before Safari opens `vmp://` with the magic-link token. Local machines can also set `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`.
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
 - `build_android` — also build/upload an Android test APK (default on)
 
@@ -81,7 +81,7 @@ See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-dis
 
 | Scheme | Example | When |
 | --- | --- | --- |
-| Custom | `vmp://auth/verify?token=…` | **Off** in Mobile artifact / SideStore / release CI builds. Local developer opt-in only (`EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`). Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins. Web never places magic-link tokens or unbound handoff codes in `vmp://` (checklist S6). |
+| Custom | `vmp://auth/verify?token=…` | **Off** for release/beta/nightly CI. **Optional** for Mobile artifacts `flavor=development` + `enable_custom_scheme=true` (staging SideStore PoC). Local opt-in: `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`. Kill switch `EXPO_PUBLIC_DISABLE_VMP_SCHEME=1` always wins. Staging web never opens `vmp://` until the user double-confirms and the API records a D1 ack (checklist S6). |
 | Universal / App Link | `https://<FRONTEND_HOST>/auth/verify?token=…` | **Required** for TestFlight / production |
 
 Both land on Expo Router screen `app/auth/verify.tsx` (required — without it the OS opens the app but Expo shows **Unmatched Route**). `SessionProvider` still listens for Linking events; redeem is deduped so cold-start + the verify screen do not consume the single-use token twice.

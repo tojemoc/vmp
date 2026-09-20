@@ -39,7 +39,7 @@ export default function AuthVerifyScreen() {
 
       if (initialUrl && /^vmp:\/\//i.test(initialUrl) && !customSchemeDeepLinksAllowed) {
         setLocalError(
-          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild locally with EXPO_PUBLIC_ENABLE_VMP_SCHEME=1 for controlled testing only.',
+          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild with flavor=development + enable_custom_scheme (SideStore staging PoC) / EXPO_PUBLIC_ENABLE_VMP_SCHEME=1 locally.',
         );
         return;
       }
