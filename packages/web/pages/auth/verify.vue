@@ -5,6 +5,9 @@
 
   On iPhone/iPad Safari (not the installed web app), exchanges the email token for
   a short-lived handoff code so the session can be created inside the Home Screen app.
+
+  On Android browsers, offers a package-targeted intent:// into the native APK
+  before web redeem consumes the single-use token (covers missing App Link verify).
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -71,6 +74,32 @@
         <p class="text-gray-500 text-xs leading-relaxed">{{ strings.authVerifyPwaPushDoneHint }}</p>
       </div>
 
+      <!-- Android: open installed native APK before consuming the single-use token -->
+      <div v-else-if="state === 'native_app_handoff'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-white mb-2">
+            {{ strings.authVerifyNativeAppTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">{{ strings.authVerifyNativeAppBody }}</p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="openInstalledNativeApp"
+          >
+            {{ strings.authVerifyNativeAppOpen }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            @click="continueNativeAppInBrowser"
+          >
+            {{ strings.authVerifyNativeAppContinueBrowser }}
+          </button>
+        </div>
+      </div>
+
       <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
       <div v-else-if="state === 'handoff_wait'" class="space-y-6 text-left">
         <div>
@@ -128,14 +157,24 @@
 </template>
 
 <script setup lang="ts">
-  import { navigateTo, useRoute } from '#app';
-  import { isInstalledPwa } from '~/utils/pwa';
+  import { navigateTo, useRoute, useRuntimeConfig } from '#app';
+  import {
+    isNativeAppFallbackQuery,
+    openAndroidNativeApp,
+    resolveMobileAndroidPackage,
+  } from '~/utils/nativeAppHandoff';
+  import { isAndroid, isInstalledPwa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const route = useRoute();
+  const runtimeConfig = useRuntimeConfig();
   const { verify, magicPwaHandoff, redeemPwaHandoff, canEditContent, user } = useAuth();
   const { deliverMagicLinkToPwa } = usePwaPushLogin();
   const { startLoginFlow } = useLoginFlow();
+
+  function mobileAndroidPackage(): string {
+    return resolveMobileAndroidPackage(String(runtimeConfig.public.mobileAndroidPackage || ''));
+  }
 
   function isDisplayStandalone() {
     if (import.meta.server) return false;
@@ -164,6 +203,17 @@
     return isIosLike() && !isDisplayStandalone();
   }
 
+  /**
+   * Android browser (not the installed PWA): offer package-targeted intent:// to the
+   * native APK before web redeem consumes the single-use magic-link token.
+   */
+  function shouldOfferAndroidNativeAppHandoff(): boolean {
+    if (import.meta.server) return false;
+    if (!isAndroid() || isInstalledPwa()) return false;
+    if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
+    return true;
+  }
+
   // Must start with a single slash; rejects //evil.com and external URLs.
   function safeRedirect(value: unknown, fallback: string): string {
     if (typeof value !== 'string') return fallback;
@@ -182,6 +232,7 @@
     | 'verifying'
     | 'error'
     | 'handoff_wait'
+    | 'native_app_handoff'
     | 'pwa_push_prompt'
     | 'pwa_push_sending'
     | 'pwa_push_done'
@@ -192,6 +243,7 @@
     if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait';
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
+    if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
     return 'verifying';
   }
 
@@ -281,6 +333,18 @@
   }
 
   async function signInHereInstead() {
+    const token = magicTokenForFlow.value;
+    if (!token) return;
+    state.value = 'verifying';
+    await runNormalTokenVerify(token);
+  }
+
+  function openInstalledNativeApp() {
+    if (import.meta.server) return;
+    openAndroidNativeApp(window.location.href, mobileAndroidPackage());
+  }
+
+  async function continueNativeAppInBrowser() {
     const token = magicTokenForFlow.value;
     if (!token) return;
     state.value = 'verifying';
@@ -395,6 +459,14 @@
 
       if (isPwaPushLoginLink()) {
         state.value = 'pwa_push_prompt';
+        return;
+      }
+
+      if (shouldOfferAndroidNativeAppHandoff()) {
+        state.value = 'native_app_handoff';
+        // Attempt an automatic bounce into the APK; the UI remains if the OS
+        // keeps us in the browser (app missing, or intent blocked).
+        openInstalledNativeApp();
         return;
       }
 

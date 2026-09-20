@@ -81,6 +81,10 @@ export type StringsDefinition = {
   authVerifyHandoffContinueSafari: string;
   authVerifyHandoffCopyLink: string;
   authVerifyHandoffCopied: string;
+  authVerifyNativeAppTitle: string;
+  authVerifyNativeAppBody: string;
+  authVerifyNativeAppOpen: string;
+  authVerifyNativeAppContinueBrowser: string;
   authVerifyErrorGeneric: string;
   authVerifySignInIncomplete: string;
   authVerifyNoToken: string;
