@@ -55,7 +55,7 @@ Use **Actions → Mobile artifacts → Run workflow** when you want ad-hoc test 
 Inputs:
 
 - `api_url` — required; baked into `EXPO_PUBLIC_API_URL`
-- `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`
+- `frontend_host` — required; replaces the placeholder Universal Links / App Links host in `app.json`, and is baked into `EXPO_PUBLIC_FRONTEND_HOST` so magic-link redeem only accepts that host’s `/auth/verify` URLs
 - `flavor` — release channel tag prefix (`release`, `beta`, `nightly`, `development`; publishing any flavor requires dispatch from `main`)
 - `build_number` — optional iOS build number (defaults to the GitHub Actions run number so each dispatch gets a unique tag). Retries of a failed publish may reuse that identity only for the same commit: a missing IPA is uploaded, an existing IPA is not replaced.
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`

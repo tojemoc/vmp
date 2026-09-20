@@ -12,4 +12,7 @@ function resolveApiUrl(): string {
 
 export const apiUrl = resolveApiUrl();
 
+/** App Link / Universal Link host baked at build time (`EXPO_PUBLIC_FRONTEND_HOST`). */
+export const frontendHost = process.env.EXPO_PUBLIC_FRONTEND_HOST?.trim() || null;
+
 export const appScheme = 'vmp';
