@@ -103,6 +103,7 @@ jobs:
         working-directory: apps/mobile
     env:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
       EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
       EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
@@ -179,6 +180,7 @@ jobs:
       flavor_label: ${{ steps.flavor.outputs.label }}
     env:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
       EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
       EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}

@@ -15,6 +15,10 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'VMP' }} />
         <Stack.Screen name="login" options={{ title: 'Sign in' }} />
+        <Stack.Screen
+          name="auth/verify"
+          options={{ title: 'Signing in', headerBackVisible: false }}
+        />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="watch/[videoId]" options={{ title: 'Watch' }} />
         <Stack.Screen name="pairing" options={{ title: 'Approve device' }} />
