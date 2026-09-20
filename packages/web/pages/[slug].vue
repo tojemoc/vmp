@@ -131,11 +131,12 @@
   const bodyBlocks = computed(() =>
     introBlock.value ? page.value.content.slice(1) : page.value.content,
   );
+  const introHtmlKey = computed(() => `cms-intro-${slug.value}`);
 
   // Render on the server and reuse the serialized HTML during hydration; re-running
   // the async renderer on the client can diverge from SSR and break hydration.
   const { data: introHtml } = await useAsyncData(
-    `cms-intro-${slug.value}`,
+    introHtmlKey,
     async () => {
       const block = introBlock.value;
       return {

@@ -16,9 +16,9 @@
   // HTML when its chunk fails to load — which breaks hydration. Sharing the server
   // output through the payload keeps SSR and the first client render identical.
   const { data: html } = await useAsyncData(
-    `cms-rich-text-${serializeCmsRichTextContent(props.content)}`,
+    () => `cms-rich-text-${serializeCmsRichTextContent(props.content)}`,
     async () => ({ html: await renderCmsRichTextHtml(props.content) }),
-    { default: () => ({ html: '' }), watch: [() => props.content] },
+    { default: () => ({ html: '' }) },
   );
 
   const renderedHtml = computed(() => html.value?.html || '');
