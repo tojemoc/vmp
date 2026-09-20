@@ -72,7 +72,7 @@ export const strings: StringsDefinition = {
   authVerifyHandoffCopied: 'Odkaz zkopírován',
   authVerifyNativeAppTitle: 'Otevřete aplikaci VMP',
   authVerifyNativeAppBody:
-    'Nainstalovaná aplikace VMP by měla dokončit toto přihlášení. Klepněte na tlačítko níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud aplikaci nepoužíváte — odkaz z e-mailu funguje jen jednou.',
+    'Nainstalovaná Android aplikace by měla dokončit toto přihlášení. Klepněte na tlačítko níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud aplikaci nepoužíváte — odkaz z e-mailu funguje jen jednou.',
   authVerifyNativeAppOpen: 'Otevřít aplikaci VMP',
   authVerifyNativeAppContinueBrowser: 'Pokračovat v prohlížeči',
   authVerifyErrorGeneric: 'Něco se pokazilo. Požádejte o nový odkaz na přihlášení.',

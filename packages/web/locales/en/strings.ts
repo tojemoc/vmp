@@ -69,7 +69,7 @@ export const strings: StringsDefinition = {
   authVerifyHandoffCopied: 'Link copied',
   authVerifyNativeAppTitle: 'Open the VMP app',
   authVerifyNativeAppBody:
-    'The installed VMP app should finish this sign-in. Tap the button below if it did not open automatically. Continue in the browser only if you are not using the app — the email link works once.',
+    'The installed Android app should finish this sign-in. Tap the button below if it did not open automatically. Continue in the browser only if you are not using the app — the email link works once.',
   authVerifyNativeAppOpen: 'Open VMP app',
   authVerifyNativeAppContinueBrowser: 'Continue in browser',
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',

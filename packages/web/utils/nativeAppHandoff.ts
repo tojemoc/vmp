@@ -4,22 +4,21 @@
  * Verified App / Universal Links need `/.well-known/assetlinks.json` and
  * `/.well-known/apple-app-site-association` (checklist S5). Until those are
  * live — or when an email client opens the system browser instead of the app —
- * we bounce into the installed client without consuming the single-use token
- * in the browser first:
+ * Android can still bounce into the installed APK without consuming the
+ * single-use token in the browser first:
  *
  * - **Android:** package-targeted `intent://` with the same HTTPS verify URL
- * - **iOS (SideStore / PoC):** `vmp://auth/verify?token=…` custom scheme
- *   (Universal Links cannot work for SideStore: each tester re-signs with a
- *   different Apple Team ID, so a single AASA entry never matches)
+ * - **iOS:** custom-scheme handoff that embeds the raw magic-link token in a
+ *   `vmp://` URL is intentionally **disabled**. Any app can register `vmp://`,
+ *   and install-bound / authenticated native-client keys do not exist yet
+ *   (see `docs/native-clients-plan.md`). Prefer AASA Universal Links (S5) or a
+ *   future short-lived handoff code bound to an app-install key.
  */
 
 /** Query flag that skips auto native bounce and allows web redeem. */
 export const NATIVE_APP_FALLBACK_QUERY = 'native_fallback';
 
 export const DEFAULT_MOBILE_ANDROID_PACKAGE = 'sk.tjm.vmp';
-
-/** Must match `apps/mobile` scheme + `tokenFromAuthUrl` (`vmp://auth/verify`). */
-export const IOS_NATIVE_AUTH_SCHEME = 'vmp';
 
 export function isNativeAppFallbackQuery(value: unknown): boolean {
   if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
@@ -76,38 +75,6 @@ export function openAndroidNativeApp(
     window.location.assign(
       buildAndroidNativeAppIntentUrl(pageUrl, resolveMobileAndroidPackage(packageName)),
     );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * iOS custom-scheme URL that opens the installed Expo app with the same
- * magic-link token (and optional in-app redirect) as the HTTPS verify page.
- * Requires the IPA to be built with `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`.
- */
-export function buildIosNativeAppSchemeUrl(pageUrl: string): string {
-  const absolute = new URL(pageUrl);
-  if (absolute.protocol !== 'https:' && absolute.protocol !== 'http:') {
-    throw new Error('Native app scheme handoff requires an http(s) page URL');
-  }
-  const token = absolute.searchParams.get('token');
-  if (!token) {
-    throw new Error('Native app scheme handoff requires a magic-link token');
-  }
-  const out = new URL(`${IOS_NATIVE_AUTH_SCHEME}://auth/verify`);
-  out.searchParams.set('token', token);
-  const redirect = absolute.searchParams.get('redirect');
-  if (redirect) out.searchParams.set('redirect', redirect);
-  return out.toString();
-}
-
-/** Navigate to `vmp://auth/verify?token=…`; returns false off-window or on failure. */
-export function openIosNativeApp(pageUrl: string): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    window.location.assign(buildIosNativeAppSchemeUrl(pageUrl));
     return true;
   } catch {
     return false;
