@@ -1,20 +1,33 @@
 import type { NativeAuthUser, NativeSessionResponse } from '@vmp/shared';
 import * as SecureStore from 'expo-secure-store';
-import { ApiError, logoutNative, redeemNativeMagicLink, refreshNativeSession } from '../api/client';
+import {
+  ApiError,
+  logoutNative,
+  redeemNativeMagicLink,
+  refreshNativeSession,
+  verifyNativeTotp,
+} from '../api/client';
 import { shareInFlightByKey } from './inFlight';
+import { normalizeTotpCode, TotpVerifyError } from './totp';
+
+export { isTotpSessionExpired, normalizeTotpCode, TotpVerifyError } from './totp';
 
 const ACCESS_KEY = 'vmp.accessToken';
 const REFRESH_KEY = 'vmp.refreshToken';
 const USER_KEY = 'vmp.user';
 
 /** Per-token in-flight redeem promises (cold start + route; independent across tokens). */
-const redeemInFlightByKey = new Map<string, Promise<SessionState>>();
+const redeemInFlightByKey = new Map<string, Promise<RedeemMagicLinkResult>>();
 
 export type SessionState = {
   accessToken: string;
   refreshToken: string;
   user: NativeAuthUser;
 };
+
+export type RedeemMagicLinkResult =
+  | { status: 'authenticated'; session: SessionState }
+  | { status: 'two_factor_required'; pendingToken: string };
 
 export class SessionRestoreError extends Error {
   retryable: boolean;
@@ -82,19 +95,41 @@ export async function restoreSession(): Promise<SessionState | null> {
   }
 }
 
-export async function redeemMagicLinkToken(token: string): Promise<SessionState> {
+export async function redeemMagicLinkToken(token: string): Promise<RedeemMagicLinkResult> {
   return shareInFlightByKey(redeemInFlightByKey, `token:${token}`, async () => {
     const session = await redeemNativeMagicLink(token);
     if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
-      throw new Error(
-        'Two-factor authentication is required. Native TOTP entry is not in this PoC — use a viewer account without 2FA, or sign in on web.',
-      );
+      if (!session.pendingToken) {
+        throw new Error(
+          'Two-factor authentication is required, but no pending token was returned.',
+        );
+      }
+      return { status: 'two_factor_required', pendingToken: session.pendingToken };
     }
     if (!('refreshToken' in session) || !session.refreshToken) {
       throw new Error('Native redeem did not return a refreshToken');
     }
-    return persistNativeSession(session);
+    return { status: 'authenticated', session: await persistNativeSession(session) };
   });
+}
+
+export async function completeTotpLogin(pendingToken: string, code: string): Promise<SessionState> {
+  const digits = normalizeTotpCode(code);
+  if (!digits) {
+    throw new TotpVerifyError('Enter the 6-digit authenticator code.', 400);
+  }
+  try {
+    const session = await verifyNativeTotp(pendingToken, digits);
+    if (!session.refreshToken) {
+      throw new TotpVerifyError('Verification succeeded but no refresh token was returned.', 500);
+    }
+    return persistNativeSession(session);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      throw new TotpVerifyError(err.message, err.status, err.code);
+    }
+    throw err;
+  }
 }
 
 export async function signOut(): Promise<void> {

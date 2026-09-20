@@ -43,6 +43,7 @@ Base URL: existing `@vmp/api` Worker. Errors: `{ error: string, code?: string }`
 | Method | Path | Auth | Body / notes |
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/native/redeem` | none | `{ token }` — consumes magic-link token; returns `{ ok, accessToken, refreshToken, user }` (and 2FA pending shape when required). Prefer this over cookie-only `GET /api/auth/verify` in native apps. |
+| `POST` | `/api/auth/2fa/verify` | none | `{ code, pendingToken }` — completes TOTP after redeem/verify. Returns `{ ok, accessToken, refreshToken, user }` plus refresh cookie (web). Native apps must persist `refreshToken` from the body. |
 | `POST` | `/api/auth/refresh` | none | Cookie **or** `{ refreshToken }` — rotates refresh token. Body-based responses include `refreshToken` in JSON for secure storage. Cookie-only clients unchanged (no refresh token in JSON). |
 | `POST` | `/api/auth/logout` | none | Cookie **or** `{ refreshToken }` — deletes refresh row. |
 
@@ -137,7 +138,6 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 ## Explicit non-goals / known PoC gaps
 
 - Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS/Titan/VIDAA in Phase 1.
-- **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
 - **APNs/FCM delivery** — token storage only; `nativePushEnabled` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`) stays false until send path exists.
 - **Portrait-only orientation** and **background audio disabled** in `app.json` — checklist **S2/S3** before store.
 - **Cross-device magic link** — single-use token opened on laptop/phone mismatch; copy + error only in PoC; checklist **S7**.
@@ -152,14 +152,13 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 
 1. Landscape / rotation support for watch (**S2**).
 2. Optional background audio / PiP policy for long-form (**S3**).
-3. Native TOTP entry + `/api/auth/2fa/verify` wiring (**S1**).
-4. APNs/FCM send path + permission UX (**S9**).
-5. Publish AASA + Digital Asset Links on production host (**S5** — not live; placeholder in `app.json`).
-6. Workspace promotion + Nx `start` target for mobile (**W3**).
-7. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
-8. TV pairing label trust — self-reported device context at approve time (**S8**).
-9. Pairing abuse controls — per-IP **and global** start/poll/preview budgets plus preview per-code limits, fail-closed limiter, before any **public announcement** of pairing (**S10**).
-10. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
+3. APNs/FCM send path + permission UX (**S9**).
+4. Publish AASA + Digital Asset Links on production host (**S5** — not live; placeholder in `app.json`).
+5. Workspace promotion + Nx `start` target for mobile (**W3**).
+6. Cross-device magic-link UX — same email on desktop vs phone consumes token (**S7**).
+7. TV pairing label trust — self-reported device context at approve time (**S8**).
+8. Pairing abuse controls — per-IP **and global** start/poll/preview budgets plus preview per-code limits, fail-closed limiter, before any **public announcement** of pairing (**S10**).
+9. `vmp://` demoted to dev-only before store; HTTPS deep links primary (**S6**).
 
 ## Package layout
 
@@ -184,3 +183,4 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 7)**: Pairing counters use `SegmentRateLimiterDO`; `parsePairingLimit` rejects non-integer values.
 - **2026-08 (review 8)**: `vmp://` ENABLE is canonical; DISABLE=1 always wins. Pairing codes default to 10 chars; start/poll/preview have global DO budgets in addition to per-IP; limiter fail-closed; poll unknown/malformed returns `pending`.
 - **2026-08 (review 9)**: TV poll client guidance — local format gate, `expiresAt`/max-attempt bound, non-validating timeout UX.
+- **2026-09 (S1)**: Native TOTP entry screen (`apps/mobile/app/auth/2fa.tsx`); `POST /api/auth/2fa/verify` returns `refreshToken` in JSON for secure storage (cookie retained for web).

@@ -13,7 +13,8 @@ import { customSchemeDeepLinksAllowed } from '../../src/features';
  * redeems the token in the background.
  */
 export default function AuthVerifyScreen() {
-  const { session, booting, error, handleIncomingUrl, completeMagicLink } = useSession();
+  const { session, booting, error, pendingTwoFactorToken, handleIncomingUrl, completeMagicLink } =
+    useSession();
   const params = useLocalSearchParams<{
     token?: string | string[];
     redirect?: string | string[];
@@ -24,7 +25,7 @@ export default function AuthVerifyScreen() {
   const attempted = useRef(false);
 
   useEffect(() => {
-    if (booting || session || attempted.current) return;
+    if (booting || session || pendingTwoFactorToken || attempted.current) return;
     attempted.current = true;
 
     let cancelled = false;
@@ -55,7 +56,7 @@ export default function AuthVerifyScreen() {
     return () => {
       cancelled = true;
     };
-  }, [booting, session, token, handleIncomingUrl, completeMagicLink]);
+  }, [booting, session, pendingTwoFactorToken, token, handleIncomingUrl, completeMagicLink]);
 
   if (booting) {
     return (
@@ -67,6 +68,10 @@ export default function AuthVerifyScreen() {
 
   if (session) {
     return <Redirect href={redirectTo as '/'} />;
+  }
+
+  if (pendingTwoFactorToken) {
+    return <Redirect href="/auth/2fa" />;
   }
 
   const message = localError || error;
