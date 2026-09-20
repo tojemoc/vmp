@@ -19,18 +19,20 @@ Living plan for store apps that sit beside the existing Nuxt PWA (`@vmp/web`). T
 | **1** | iOS + Android (phone/tablet) | Expo (React Native) + thin native modules | Magic link → verified HTTPS Universal Links / App Links; `vmp://` dev fallback only | `expo-video` first; AVPlayer / ExoPlayer if needed | `@vmp/shared`, HTTP client vs `@vmp/api` |
 | **2** | tvOS + Android TV / Google TV | Same RN app via `react-native-tvos`; **rebuild screens** for D-pad focus (`react-tv-space-navigation` or equivalent) | **Pairing code** (TV shows code; user confirms on phone/web) | System / native TV player | Same shared client + most navigation shell; not touch layouts |
 | **3** | Tizen (Samsung) + webOS (LG) | Proprietary web runtimes (Tizen Web / Luna + Enact) | Same pairing-code flow as Tier 2 | Platform HTML5 / AVPlay | HTTP/TS client only — **no** RN modules |
+| **4** | Titan OS (Philips / AOC) + VIDAA / HomeOS (Hisense) | Dedicated hosted HTML5 / CTV web apps (Chromium or OEM browser), same pairing UX as Tier 3 | Same pairing-code flow as Tier 2 | Platform HTML5 media / OEM player APIs | Same thin HTTP/TS client as Tier 3 — **no** RN modules; port after one Tier 3 proof |
 
-TVs never open emailed magic links. Pairing is the correct auth pattern for Tiers 2–3.
+TVs never open emailed magic links. Pairing is the correct auth pattern for Tiers 2–4.
 
 ## Phasing
 
 | Phase | Scope | Goal |
 | --- | --- | --- |
-| **0** | API contracts | Native magic-link redeem (refresh token in JSON), body-based refresh/logout, device push token register, device-pairing start/preview/complete/poll. Unblocks Tier 2/3 later. |
+| **0** | API contracts | Native magic-link redeem (refresh token in JSON), body-based refresh/logout, device push token register, device-pairing start/preview/complete/poll. Unblocks Tier 2–4 later. |
 | **1** | Tier 1 PoC | Expo app: handoff, push register, catalog + one video online, offline download path wired to existing APIs. |
 | **2** | Tier 2 PoC | RN-tvOS fork on same app; focus nav for catalog + watch; pairing-code login; system player. |
 | **3** | Tier 3 PoC | **One** of Tizen or webOS as proof; lightweight web client against `@vmp/api`; pairing auth; no RN. |
-| **4** | Decision gate | Compare all three before full store builds / parity with PWA. |
+| **4** | Tier 4 PoC | Dedicated Titan OS and/or VIDAA apps from the Tier 3 HTML5 shell (store/CSP paperwork + OEM QA); pairing auth unchanged. |
+| **5** | Decision gate | Compare Tiers 1–4 before full store builds / parity with PWA. |
 
 ## Phase 0 API (contracts)
 
@@ -63,7 +65,7 @@ CI passes these from `vars.MOBILE_*_STAGING` / `vars.MOBILE_*_PROD` (see `.githu
 
 Production note: prefer exchanging a one-time handoff code (bound to app install) over passing raw magic-link tokens via custom schemes if a non-HTTPS fallback is ever required post-launch.
 
-### Device pairing (Tiers 2–3; endpoints land in Phase 0)
+### Device pairing (Tiers 2–4; endpoints land in Phase 0)
 
 | Method | Path | Auth | Behavior |
 | --- | --- | --- | --- |
@@ -118,7 +120,7 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 
 ## Explicit non-goals / known PoC gaps
 
-- Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS in Phase 1.
+- Admin UI, Stripe, MoQ livestreams, Brevo campaigns, full PWA feature parity, shipping Tizen/webOS/Titan/VIDAA in Phase 1.
 - **Native TOTP / 2FA UI** — API returns `requiresTwoFactor`; Expo does not collect TOTP yet. **Editors/admins cannot complete native sign-in in this PoC.** Prefer viewer accounts for internal testing, or add TOTP before staff testing.
 - **APNs/FCM delivery** — token storage only; `nativePushEnabled` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`) stays false until send path exists.
 - **Portrait-only orientation** and **background audio disabled** in `app.json` — checklist **S2/S3** before store.
@@ -156,6 +158,7 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 ## Decision log
 
 - **2026-08**: Agree Expo + thin native modules for Tier 1; `react-native-tvos` for Tier 2; separate web clients for Tier 3; pairing-code auth for all TV; Phase 0 contracts before Tier 1 UI polish.
+- **2026-09**: Add Tier 4 dedicated apps for Titan OS (after Tizen) and VIDAA/HomeOS (after webOS); decision gate becomes Phase/Tier 5.
 - **2026-08 (review)**: Prefer body `refreshToken` over cookie when both present; native redeem does not set refresh cookie; pairing preview + device labels; push token ownership check; document 2FA/push/workspace gaps.
 - **2026-08 (review 2)**: Pairing poll is one-shot — lost `ready` response requires new `start`; push permission gated by `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`.
 - **2026-08 (review 3)**: Promotion checklist; numbered open issues for cross-device magic link, TV labels; poll retry vs terminal errors; AASA not live yet.

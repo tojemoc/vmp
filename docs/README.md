@@ -16,7 +16,7 @@ Start with the [repository README](../README.md), [AGENTS.md](../AGENTS.md), and
 
 | Document | Description |
 | --- | --- |
-| [native-clients-plan.md](native-clients-plan.md) | Multi-tier native/TV client plan (Expo → tvOS/Android TV → Tizen/webOS) + Phase 0 API contracts |
+| [native-clients-plan.md](native-clients-plan.md) | Multi-tier native/TV client plan (Expo → tvOS/Android TV → Tizen/webOS → Titan/VIDAA) + Phase 0 API contracts |
 | [native-clients-promotion-checklist.md](native-clients-promotion-checklist.md) | Blocking checklist before workspace promotion / TestFlight |
 | [ios-sidestore-distribution-playbook.md](ios-sidestore-distribution-playbook.md) | SideStore / AltStore test IPA distribution (GitHub Releases + Pages) |
 

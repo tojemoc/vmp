@@ -14,7 +14,7 @@ function normalizePairingCode(raw: string): string | null {
   return normalized;
 }
 
-/** Phone side of Tier 2/3 pairing — preview device context, then approve. */
+/** Phone side of Tier 2+ pairing — preview device context, then approve. */
 export default function PairingScreen() {
   const { session, booting } = useSession();
   const [code, setCode] = useState('');
