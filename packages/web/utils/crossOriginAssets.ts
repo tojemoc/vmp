@@ -27,7 +27,7 @@ export function addCrossOriginToAssetTags(markup: string): string {
     if (/\scrossorigin(?:[\s=>/]|$)/i.test(tag)) return tag;
     const isScript = name.toLowerCase() === 'script';
     const urlMatch = tag.match(isScript ? /\ssrc="([^"]*)"/i : /\shref="([^"]*)"/i);
-    if (!urlMatch || !isSameOriginPath(urlMatch[1])) return tag;
+    if (!urlMatch || !urlMatch[1] || !isSameOriginPath(urlMatch[1])) return tag;
     if (!isScript && !isScriptLink(tag)) return tag;
     return tag.replace(/\s*\/?>$/, (close) => ` crossorigin="anonymous"${close}`);
   });

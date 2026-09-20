@@ -10,7 +10,8 @@ export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('render:html', (html) => {
     for (const section of [html.head, html.bodyPrepend, html.bodyAppend]) {
       for (let i = 0; i < section.length; i++) {
-        section[i] = addCrossOriginToAssetTags(section[i]);
+        const item = section[i];
+        if (item !== undefined) section[i] = addCrossOriginToAssetTags(item);
       }
     }
   });
