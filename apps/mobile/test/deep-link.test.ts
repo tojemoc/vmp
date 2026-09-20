@@ -93,6 +93,13 @@ describe('shareInFlightByKey', () => {
 
     assert.equal(pA1, pA2);
     assert.notEqual(pA1, pB);
+    // Work is deferred; starts are still 0 until the microtask queue runs.
+    assert.equal(aStarts, 0);
+    assert.equal(bStarts, 0);
+    assert.equal(map.get('A'), pA1);
+    assert.equal(map.get('B'), pB);
+
+    await Promise.resolve();
     assert.equal(aStarts, 1);
     assert.equal(bStarts, 1);
 
@@ -103,5 +110,32 @@ describe('shareInFlightByKey', () => {
     assert.equal(await pA1, 'A-done');
     assert.equal(await pA2, 'A-done');
     assert.equal(aStarts, 1);
+  });
+
+  it('stores the promise before work runs and allows retry after rejection', async () => {
+    const map = new Map<string, Promise<string>>();
+    let starts = 0;
+    let sawSelfInMap = false;
+
+    const failing = shareInFlightByKey(map, 'T', async () => {
+      starts += 1;
+      sawSelfInMap = map.get('T') === failing;
+      throw new Error('boom');
+    });
+
+    assert.equal(map.get('T'), failing);
+    assert.equal(starts, 0);
+
+    await assert.rejects(failing, /boom/);
+    assert.equal(sawSelfInMap, true);
+    assert.equal(map.has('T'), false);
+
+    const ok = shareInFlightByKey(map, 'T', async () => {
+      starts += 1;
+      return 'retry-ok';
+    });
+    assert.equal(await ok, 'retry-ok');
+    assert.equal(starts, 2);
+    assert.equal(map.has('T'), false);
   });
 });
