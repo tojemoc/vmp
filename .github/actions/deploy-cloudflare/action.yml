@@ -153,19 +153,22 @@ runs:
         DEPLOY_TIER: ${{ inputs.deploy-tier }}
       run: |
         EXTRA_ARGS=()
+        # Wrangler --var uses KEY:VALUE (colon). KEY=VALUE is treated as a var *named*
+        # "KEY=VALUE" with an empty string — that is what polluted the staging Worker
+        # dashboard after #687 / earlier VMP_FEATURES deploys.
         if [ -n "$VMP_FEATURES" ]; then
-          EXTRA_ARGS+=(--var "VMP_FEATURES=${VMP_FEATURES}")
+          EXTRA_ARGS+=(--var "VMP_FEATURES:${VMP_FEATURES}")
         fi
         # Tier label for PostHog / Sentry / SideStore escape-hatch gate (must be exact
         # "staging" for ALLOW_INSECURE_NATIVE_VMP_SCHEME to take effect). Pass via --var
         # so each deploy keeps the dashboard in sync; do not rely on wrangler.json alone
         # (same config deploys staging and production Workers).
-        EXTRA_ARGS+=(--var "SENTRY_ENVIRONMENT=${DEPLOY_TIER}")
+        EXTRA_ARGS+=(--var "SENTRY_ENVIRONMENT:${DEPLOY_TIER}")
         # Temporary SideStore PoC: allow acknowledged vmp:// magic-link handoff on staging only.
         if [ "$DEPLOY_TIER" = "staging" ]; then
-          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME=1")
+          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:1")
         else
-          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME=0")
+          EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:0")
         fi
         npm run deploy --workspace=@vmp/api -- "${EXTRA_ARGS[@]}"
     - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
