@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { completeDevicePairing, previewDevicePairing } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
+import { SubscriberLock } from '../src/components/SubscriberLock';
+import { requireActiveSubscription } from '../src/features';
 
 /** Matches server normalizePairingCode (packages/api/src/nativeClients.ts). */
 function normalizePairingCode(raw: string): string | null {
@@ -16,7 +18,7 @@ function normalizePairingCode(raw: string): string | null {
 
 /** Phone side of Tier 2+ pairing — preview device context, then approve. */
 export default function PairingScreen() {
-  const { session, booting } = useSession();
+  const { session, booting, canBrowseCatalog, subscriptionHydrated } = useSession();
   const [code, setCode] = useState('');
   const [previewedCode, setPreviewedCode] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
@@ -36,7 +38,7 @@ export default function PairingScreen() {
     preview?.status === 'pending' &&
     !busy;
 
-  if (booting) {
+  if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color="#38bdf8" />
@@ -46,6 +48,10 @@ export default function PairingScreen() {
 
   if (!session) {
     return <Redirect href="/login" />;
+  }
+
+  if (!canBrowseCatalog) {
+    return <SubscriberLock title="Subscribe to approve a TV" />;
   }
 
   function clearPreviewState() {

@@ -95,6 +95,45 @@ export async function listPublishedVideos(accessToken: string) {
   return apiFetch('/api/videos', { method: 'GET' }, accessToken);
 }
 
+export type AccountSubscriptionResponse = {
+  subscription: {
+    id: string;
+    planType: string;
+    status: string;
+    currentPeriodEnd: string | null;
+    provider?: string;
+  } | null;
+};
+
+/** Same entitlement source as the web account page. */
+export async function getAccountSubscription(
+  accessToken: string,
+): Promise<AccountSubscriptionResponse> {
+  return apiFetch('/api/account/subscription', { method: 'GET' }, accessToken);
+}
+
+export type RecommendationVideo = {
+  id: string;
+  slug?: string | null;
+  title: string;
+  description?: string | null;
+  thumbnail_url?: string | null;
+  full_duration?: number;
+  preview_duration?: number;
+};
+
+export async function getVideoRecommendations(
+  videoId: string,
+  accessToken: string,
+  limit = 8,
+): Promise<{ videos: RecommendationVideo[] }> {
+  const q = new URLSearchParams({
+    videoId,
+    limit: String(limit),
+  });
+  return apiFetch(`/api/recommendations?${q.toString()}`, { method: 'GET' }, accessToken);
+}
+
 /** Preferred path: JWT supplies userId (see handleVideoAccess). */
 export async function getVideoAccess(videoId: string, accessToken: string) {
   return apiFetch(

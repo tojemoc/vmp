@@ -4,6 +4,7 @@
  * - nativePushEnabled: notification permission + registerNativePushDevice
  * - customSchemeDeepLinksAllowed: vmp:// token handoff (fail-closed; local opt-in or
  *   Mobile artifacts flavor=development + enable_custom_scheme for staging SideStore PoC)
+ * - requireActiveSubscription: app-level subscriber gate (default on; see mobile-access-tiers plan)
  */
 export const nativePushEnabled =
   process.env.EXPO_PUBLIC_NATIVE_PUSH_ENABLED === '1' ||
@@ -12,6 +13,17 @@ export const nativePushEnabled =
 function envFlagTrue(name: string): boolean {
   return process.env[name] === '1' || process.env[name] === 'true';
 }
+
+function envFlagFalse(name: string): boolean {
+  return process.env[name] === '0' || process.env[name] === 'false';
+}
+
+/**
+ * When true (default), catalog / watch / downloads / TV pairing require an active
+ * subscription (or staff role). Set `EXPO_PUBLIC_REQUIRE_ACTIVE_SUBSCRIPTION=0`
+ * only when unlocking web-parity free/anonymous tiers (`mobile-access-tiers`).
+ */
+export const requireActiveSubscription = !envFlagFalse('EXPO_PUBLIC_REQUIRE_ACTIVE_SUBSCRIPTION');
 
 /**
  * Custom `vmp://` handling is fail-closed unless the build opts in.
