@@ -15,10 +15,11 @@ describe('native TOTP API client contract', () => {
   });
 
   it('verifyNativeTotp posts code + pendingToken and requires refreshToken', async () => {
-    let captured: { url: string; init: RequestInit } | null = null;
+    const captured: { url: string; init: RequestInit } = { url: '', init: {} };
 
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      captured = { url: String(input), init: init || {} };
+      captured.url = String(input);
+      captured.init = init || {};
       return new Response(
         JSON.stringify({
           ok: true,
@@ -36,12 +37,12 @@ describe('native TOTP API client contract', () => {
       );
     }) as typeof fetch;
 
-    const { verifyNativeTotp } = await import('../src/api/client.ts');
+    const { verifyNativeTotp } = await import('../src/api/client');
     const session = await verifyNativeTotp('pending.jwt.here', '123456');
 
-    assert.equal(captured?.url, 'https://api.example.test/api/auth/2fa/verify');
-    assert.equal(captured?.init.method, 'POST');
-    assert.deepEqual(JSON.parse(String(captured?.init.body)), {
+    assert.equal(captured.url, 'https://api.example.test/api/auth/2fa/verify');
+    assert.equal(captured.init.method, 'POST');
+    assert.deepEqual(JSON.parse(String(captured.init.body)), {
       pendingToken: 'pending.jwt.here',
       code: '123456',
     });
