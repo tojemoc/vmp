@@ -1,4 +1,8 @@
-import type { NativeRedeemResponse, NativeSessionResponse } from '@vmp/shared';
+import type {
+  NativeRedeemResponse,
+  NativeSessionResponse,
+  NativeTotpVerifyResponse,
+} from '@vmp/shared';
 import { apiUrl } from '../config';
 import { nativePushEnabled } from '../features';
 
@@ -56,6 +60,16 @@ export async function redeemNativeMagicLink(token: string): Promise<NativeRedeem
   return apiFetch('/api/auth/native/redeem', {
     method: 'POST',
     body: JSON.stringify({ token }),
+  });
+}
+
+export async function verifyNativeTotp(
+  pendingToken: string,
+  code: string,
+): Promise<NativeTotpVerifyResponse> {
+  return apiFetch('/api/auth/2fa/verify', {
+    method: 'POST',
+    body: JSON.stringify({ pendingToken, code }),
   });
 }
 

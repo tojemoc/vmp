@@ -1794,8 +1794,10 @@ export async function handleTotpDisable(request: any, env: any, corsHeaders: any
  * Body: { code: string, pendingToken: string }
  *
  * Completes the second factor of a login for editor/admin/super_admin users.
- * Accepts a short-lived "pending" JWT (issued by handleVerifyMagicLink) and
- * a TOTP code.  On success issues a real access token + refresh cookie.
+ * Accepts a short-lived "pending" JWT (issued by handleVerifyMagicLink /
+ * handleNativeRedeemMagicLink) and a TOTP code. On success issues a real
+ * access token, refresh cookie (for web), and `refreshToken` in the JSON body
+ * (for native / secure-storage clients).
  *
  * Brute-force protection — two layers:
  *  1. D1 totp_challenges row (keyed by JWT jti): max 5 wrong attempts, marks
@@ -1812,7 +1814,16 @@ export async function verifyTotpPendingLogin(
   pendingToken: string,
   code: string,
 ): Promise<
-  | { ok: true; user: { id: string; email: string; role: string; totp_enabled: number } }
+  | {
+      ok: true;
+      user: {
+        id: string;
+        email: string;
+        role: string;
+        totp_enabled: number;
+        created_at: string | null;
+      };
+    }
   | TotpVerifyFailure
 > {
   if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
@@ -1879,7 +1890,9 @@ export async function verifyTotpPendingLogin(
   }
 
   const userRow = await db
-    .prepare('SELECT id, email, role, totp_secret, totp_enabled FROM users WHERE id = ?')
+    .prepare(
+      'SELECT id, email, role, totp_secret, totp_enabled, created_at FROM users WHERE id = ?',
+    )
     .bind(pending.sub)
     .first();
 
@@ -1943,6 +1956,7 @@ export async function verifyTotpPendingLogin(
       email: userRow.email,
       role: userRow.role,
       totp_enabled: userRow.totp_enabled,
+      created_at: userRow.created_at ?? null,
     },
   };
 }
@@ -1967,25 +1981,21 @@ export async function handleTotpVerify(request: any, env: any, corsHeaders: any)
     email: verified.user.email,
     role: verified.user.role,
     totp_enabled: verified.user.totp_enabled,
+    created_at: verified.user.created_at,
   };
-  const totpRequired = shouldRequireTotpEnrollment(user, env);
-  const accessToken = await createAccessToken(user, env.JWT_SECRET);
-  const refreshToken = await issueRefreshToken(user.id, db);
+  // Same token material as native redeem so mobile can persist refreshToken
+  // without reading the HttpOnly cookie. Web still uses the Set-Cookie path.
+  const session = await issueNativeSessionTokens(user, env, db);
 
   const headers = buildResponseHeaders(corsHeaders);
-  headers.set('Set-Cookie', buildRefreshCookie(refreshToken, REFRESH_TOKEN_TTL));
+  headers.set('Set-Cookie', buildRefreshCookie(session.refreshToken, REFRESH_TOKEN_TTL));
 
   return new Response(
     JSON.stringify({
       ok: true,
-      accessToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        totpEnabled: !!user.totp_enabled,
-        totpRequired,
-      },
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      user: session.user,
     }),
     { status: 200, headers },
   );
