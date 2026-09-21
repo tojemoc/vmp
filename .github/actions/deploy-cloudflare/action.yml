@@ -156,6 +156,11 @@ runs:
         if [ -n "$VMP_FEATURES" ]; then
           EXTRA_ARGS+=(--var "VMP_FEATURES=${VMP_FEATURES}")
         fi
+        # Tier label for PostHog / Sentry / SideStore escape-hatch gate (must be exact
+        # "staging" for ALLOW_INSECURE_NATIVE_VMP_SCHEME to take effect). Pass via --var
+        # so each deploy keeps the dashboard in sync; do not rely on wrangler.json alone
+        # (same config deploys staging and production Workers).
+        EXTRA_ARGS+=(--var "SENTRY_ENVIRONMENT=${DEPLOY_TIER}")
         # Temporary SideStore PoC: allow acknowledged vmp:// magic-link handoff on staging only.
         if [ "$DEPLOY_TIER" = "staging" ]; then
           EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME=1")

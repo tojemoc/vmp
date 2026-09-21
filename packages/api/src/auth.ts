@@ -758,7 +758,8 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
  * `vmp://auth/verify?token=…` after the user explicitly acknowledges the risk.
  *
  * Fail-closed unless `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (set by staging CI only)
- * **and** `resolvePostHogEnvironment(env)` is exactly `staging`.
+ * **and** `resolvePostHogEnvironment(env)` is exactly `staging`
+ * (`SENTRY_ENVIRONMENT` / `VMP_ENV` / `DD_ENV` — staging CD sets `SENTRY_ENVIRONMENT=staging`).
  * Production / beta / nightly / development / unknown must never enable this.
  */
 export function isInsecureNativeVmpSchemeAllowed(env: any): boolean {
