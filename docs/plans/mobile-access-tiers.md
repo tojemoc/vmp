@@ -8,7 +8,7 @@
 
 Align native entitlement UX with the web product over time, without shipping full free/anonymous browsing in the first mobile cut.
 
-## Milestone A — App-level subscriber gate (`mobile-subscriber-gate`) — **this PR**
+## Milestone A — App-level subscriber gate (`mobile-subscriber-gate`) — **shipped [#692](https://github.com/tojemoc/vmp/pull/692)**
 
 **Product:** The Expo app is usable (catalog, watch, offline downloads, TV pairing approve) **only** for active paying subscribers (and staff roles that already get synthetic premium via `GET /api/account/subscription`).
 

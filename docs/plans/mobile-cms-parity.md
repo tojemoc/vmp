@@ -8,7 +8,7 @@
 
 Make the phone/tablet catalog and watch experience feel like the PWA: real thumbnails, richer watch chrome, then the same CMS-driven homepage blocks and text articles.
 
-## Milestone A — Thumbnails + watch chrome (`mobile-thumbnails-watch`) — **this PR**
+## Milestone A — Thumbnails + watch chrome (`mobile-thumbnails-watch`) — **shipped [#692](https://github.com/tojemoc/vmp/pull/692)**
 
 | Surface | Deliverable |
 | --- | --- |
