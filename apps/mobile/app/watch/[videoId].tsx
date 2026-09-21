@@ -40,6 +40,9 @@ export default function WatchScreen() {
   if (prevAccountIdRef.current !== accountId) {
     prevAccountIdRef.current = accountId;
     accountEpochRef.current += 1;
+    if (progress !== null) {
+      setProgress(null);
+    }
   }
 
   function isCurrentAccount(epoch: number, userId: string): boolean {
@@ -54,12 +57,14 @@ export default function WatchScreen() {
   }, [id, session]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !accountId) return;
+    const userId = accountId;
     return subscribeDownloadProgress(id, (p) => {
+      if (p.userId !== userId) return;
       setProgress(p);
       void refreshDownload();
     });
-  }, [id, refreshDownload]);
+  }, [id, refreshDownload, accountId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,8 +150,8 @@ export default function WatchScreen() {
   }
 
   async function onPause() {
-    if (!id) return;
-    await pauseOfflineDownload(id);
+    if (!session || !id) return;
+    await pauseOfflineDownload(id, session.user.id);
     await refreshDownload();
   }
 
@@ -157,7 +162,7 @@ export default function WatchScreen() {
     const accessToken = session.accessToken;
     setDownloadBusy(true);
     try {
-      await removeOfflineDownload(accessToken, id);
+      await removeOfflineDownload(accessToken, id, userId);
       if (!isCurrentAccount(epoch, userId)) return;
       setProgress(null);
       setPlaylistUrl(null);
@@ -188,7 +193,7 @@ export default function WatchScreen() {
   }
 
   const status = progress?.status ?? download?.status;
-  const active = id ? isDownloadActive(id) : false;
+  const active = isDownloadActive(id, session.user.id);
   const pct =
     progress && progress.totalBytes > 0
       ? Math.min(100, Math.round((progress.bytesDownloaded / progress.totalBytes) * 100))

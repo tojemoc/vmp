@@ -53,7 +53,7 @@ export default function DownloadsScreen() {
     setBusyId(videoId);
     setError(null);
     try {
-      await removeOfflineDownload(session.accessToken, videoId);
+      await removeOfflineDownload(session.accessToken, videoId, session.user.id);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Remove failed');

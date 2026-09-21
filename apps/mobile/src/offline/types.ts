@@ -44,6 +44,7 @@ export interface StoredDownload {
 
 export interface DownloadProgress {
   videoId: string;
+  userId: string;
   status: DownloadStatus;
   bytesDownloaded: number;
   totalBytes: number;

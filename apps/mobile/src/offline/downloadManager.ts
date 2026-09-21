@@ -42,6 +42,7 @@ function emitProgress(videoId: string, record: StoredDownload): void {
   if (!listeners?.size) return;
   const payload: DownloadProgress = {
     videoId,
+    userId: record.userId,
     status: record.status,
     bytesDownloaded: record.bytesDownloaded,
     totalBytes: record.totalBytes,
@@ -139,8 +140,9 @@ async function buildGeneratedManifests(
   return generated;
 }
 
-export function isDownloadActive(videoId: string): boolean {
-  return activeDownloads.has(videoId);
+export function isDownloadActive(videoId: string, userId: string): boolean {
+  const entry = activeDownloads.get(videoId);
+  return Boolean(entry && entry.userId === userId);
 }
 
 export async function getDownloadRecord(
@@ -381,20 +383,25 @@ export async function startOfflineDownload({
   return promise;
 }
 
-export async function pauseOfflineDownload(videoId: string): Promise<void> {
+export async function pauseOfflineDownload(videoId: string, userId: string): Promise<void> {
   const entry = activeDownloads.get(videoId);
   if (entry) {
+    if (entry.userId !== userId) return;
     entry.controller.abort();
     await entry.promise.catch(() => undefined);
   }
   const record = await readStoredDownload(videoId);
-  if (record && record.status === 'downloading') {
+  if (record && record.userId === userId && record.status === 'downloading') {
     await patchDownload(videoId, { status: 'paused', downloadToken: '' });
   }
 }
 
-export async function removeOfflineDownload(accessToken: string, videoId: string): Promise<void> {
-  await pauseOfflineDownload(videoId);
+export async function removeOfflineDownload(
+  accessToken: string,
+  videoId: string,
+  userId: string,
+): Promise<void> {
+  await pauseOfflineDownload(videoId, userId);
   await revokeOfflineDownload(accessToken, videoId).catch(() => undefined);
   await deleteOfflineVideo(videoId);
   await deleteStoredDownload(videoId);
