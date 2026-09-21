@@ -1,7 +1,7 @@
 import type { OfflineRendition } from '@vmp/shared';
 import { useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { getVideoAccess } from '../../src/api/client';
 import { useSession } from '../../src/auth/SessionProvider';
@@ -30,6 +30,21 @@ export default function WatchScreen() {
   const [download, setDownload] = useState<StoredDownload | null>(null);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
+
+  /** Bumps on sign-out / account switch so in-flight handlers discard stale UI updates. */
+  const accountEpochRef = useRef(0);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const accountId = session?.user.id ?? null;
+  const prevAccountIdRef = useRef(accountId);
+  if (prevAccountIdRef.current !== accountId) {
+    prevAccountIdRef.current = accountId;
+    accountEpochRef.current += 1;
+  }
+
+  function isCurrentAccount(epoch: number, userId: string): boolean {
+    return accountEpochRef.current === epoch && sessionRef.current?.user.id === userId;
+  }
 
   const id = videoId ? String(videoId) : '';
 
@@ -98,24 +113,32 @@ export default function WatchScreen() {
 
   async function onDownload() {
     if (!session || !id) return;
+    const epoch = accountEpochRef.current;
+    const userId = session.user.id;
+    const accessToken = session.accessToken;
     setDownloadBusy(true);
     setError(null);
     try {
       await startOfflineDownload({
-        accessToken: session.accessToken,
-        userId: session.user.id,
+        accessToken,
+        userId,
         videoId: id,
         rendition: DEFAULT_RENDITION,
       });
+      if (!isCurrentAccount(epoch, userId)) return;
       await refreshDownload();
-      const offlineUri = await getOfflinePlaybackUri(id, session.user.id);
+      if (!isCurrentAccount(epoch, userId)) return;
+      const offlineUri = await getOfflinePlaybackUri(id, userId);
+      if (!isCurrentAccount(epoch, userId)) return;
       if (offlineUri) {
         setPlaylistUrl(offlineUri);
         setSource('offline');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed');
-      await refreshDownload();
+      if (isCurrentAccount(epoch, userId)) {
+        setError(err instanceof Error ? err.message : 'Download failed');
+        await refreshDownload();
+      }
     } finally {
       setDownloadBusy(false);
     }
@@ -129,15 +152,21 @@ export default function WatchScreen() {
 
   async function onRemove() {
     if (!session || !id) return;
+    const epoch = accountEpochRef.current;
+    const userId = session.user.id;
+    const accessToken = session.accessToken;
     setDownloadBusy(true);
     try {
-      await removeOfflineDownload(session.accessToken, id);
+      await removeOfflineDownload(accessToken, id);
+      if (!isCurrentAccount(epoch, userId)) return;
       setProgress(null);
       setPlaylistUrl(null);
       setSource(null);
       await refreshDownload();
+      if (!isCurrentAccount(epoch, userId)) return;
       try {
-        const access = await getVideoAccess(id, session.accessToken);
+        const access = await getVideoAccess(id, accessToken);
+        if (!isCurrentAccount(epoch, userId)) return;
         const url = access?.video?.playlistUrl || access?.playlistUrl;
         if (url) {
           const absolute = url.startsWith('http') ? url : `${apiUrl}${url}`;
@@ -145,10 +174,14 @@ export default function WatchScreen() {
           setSource('online');
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not restore online playback');
+        if (isCurrentAccount(epoch, userId)) {
+          setError(err instanceof Error ? err.message : 'Could not restore online playback');
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Remove failed');
+      if (isCurrentAccount(epoch, userId)) {
+        setError(err instanceof Error ? err.message : 'Remove failed');
+      }
     } finally {
       setDownloadBusy(false);
     }
