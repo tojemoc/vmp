@@ -54,6 +54,40 @@ describe('analytics noiseFilter', () => {
     );
   });
 
+  it('drops opaque stackless Script error. exceptions', () => {
+    assert.equal(
+      shouldDropPostHogExceptionEvent({
+        uuid: '4',
+        event: '$exception',
+        properties: {
+          $exception_list: [
+            { type: 'Error', value: 'Script error.', mechanism: { synthetic: true } },
+          ],
+        },
+      }),
+      true,
+    );
+  });
+
+  it('keeps Script error. exceptions that carry a stack', () => {
+    assert.equal(
+      shouldDropPostHogExceptionEvent({
+        uuid: '5',
+        event: '$exception',
+        properties: {
+          $exception_list: [
+            {
+              type: 'Error',
+              value: 'Script error.',
+              stacktrace: { frames: [{ filename: 'app.js', lineno: 1 }] },
+            },
+          ],
+        },
+      }),
+      false,
+    );
+  });
+
   it('keeps non-exception PostHog events', () => {
     assert.equal(
       shouldDropPostHogExceptionEvent({
