@@ -10,6 +10,7 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 - Native TOTP / 2FA entry (`/auth/2fa`) when redeem returns `requiresTwoFactor` → `POST /api/auth/2fa/verify`
 - Secure session storage (`expo-secure-store`)
 - Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
+- Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings
 - Device pairing **Approve a TV** under Settings (`preview` + `complete`)
 - Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)
 
@@ -95,6 +96,17 @@ The matching association documents are served by the web Worker at `/.well-known
 **iOS:** Magic links requested from the native app carry `client=native`. Until AASA is live (or install-bound handoff codes exist), links that open in Safari redeem in the browser — web does not bounce via `vmp://`. Website login uses `client=browser` and redeems in Safari with no PWA/native bounce.
 
 Magic-link tokens are single-use: if the link was opened on another device first, redeem fails with an explicit “already used (including on another device)” message.
+
+## Offline downloads (Tier 1 PoC)
+
+Watch screen **Download** (default `720p`) and **Downloads** list:
+
+1. `POST /api/offline/devices/register` once → store `deviceId` / `deviceToken` in SecureStore
+2. `POST /api/downloads/:videoId/authorize` with `x-vmp-device-token`
+3. Fetch `GET /api/downloads/:videoId/assets/…?dt=` into app document storage
+4. Rewrite playlists to relative local paths; play `offline-master.m3u8` via `expo-video`
+
+Requires an R2-hosted HLS video (`r2_assets_required` if only CDN). License expiry is enforced before offline play; renew UI is deferred.
 
 ## Pairing (Tier 2+)
 

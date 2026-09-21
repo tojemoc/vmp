@@ -19,6 +19,13 @@ export default function SettingsScreen() {
       <Text style={styles.heading}>Settings</Text>
       <Text style={styles.copy}>{session.user.email}</Text>
 
+      <Link href="/downloads" asChild>
+        <Pressable style={styles.row}>
+          <Text style={styles.rowTitle}>Downloads</Text>
+          <Text style={styles.rowHint}>Manage offline videos on this device.</Text>
+        </Pressable>
+      </Link>
+
       <Link href="/pairing" asChild>
         <Pressable style={styles.row}>
           <Text style={styles.rowTitle}>Approve a TV</Text>
