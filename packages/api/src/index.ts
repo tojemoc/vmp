@@ -38,7 +38,9 @@ import {
 import { ensureAdminSettingsTable } from './adminSettingsTable.js';
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js';
 import {
+  handleAcknowledgeInsecureNativeScheme,
   handleGetMe,
+  handleInsecureNativeSchemeStatus,
   handleLogout,
   handleMagicPwaHandoff,
   handleNativeRedeemMagicLink,
@@ -562,6 +564,18 @@ const workerHandler = {
         }
         if (url.pathname === '/api/auth/native/redeem' && request.method === 'POST') {
           return handleNativeRedeemMagicLink(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/auth/native/insecure-scheme/acknowledge' &&
+          request.method === 'POST'
+        ) {
+          return handleAcknowledgeInsecureNativeScheme(request, env, corsHeaders);
+        }
+        if (
+          url.pathname === '/api/auth/native/insecure-scheme/status' &&
+          request.method === 'GET'
+        ) {
+          return handleInsecureNativeSchemeStatus(request, env, corsHeaders);
         }
         if (url.pathname === '/api/auth/magic-pwa-handoff' && request.method === 'POST') {
           return handleMagicPwaHandoff(request, env, corsHeaders);

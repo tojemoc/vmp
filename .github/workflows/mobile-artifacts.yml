@@ -31,7 +31,7 @@ on:
         default: false
         type: boolean
       enable_custom_scheme:
-        description: Enable the vmp:// deep-link fallback (dev-only)
+        description: Enable claimable vmp:// only when flavor=development (SideStore staging PoC). Validation rejects this option unless flavor=development. Requires staging web double-confirm + D1 ack before Safari opens the scheme.
         required: true
         default: false
         type: boolean
@@ -75,6 +75,23 @@ jobs:
           echo "::error::Publishing (GitHub Release + GitHub Pages) is only allowed from main (got ${DISPATCH_REF}). Disable publish_release for artifact-only builds from feature branches."
           exit 1
 
+      - name: Guard custom scheme (development SideStore PoC only)
+        working-directory: ${{ github.workspace }}
+        env:
+          ENABLE_CUSTOM_SCHEME: ${{ inputs.enable_custom_scheme }}
+          FLAVOR_LABEL: ${{ inputs.flavor }}
+        run: |
+          set -euo pipefail
+          if [ "${ENABLE_CUSTOM_SCHEME}" != "true" ]; then
+            echo "Custom vmp:// scheme stays off (enable_custom_scheme=false)."
+            exit 0
+          fi
+          if [ "${FLAVOR_LABEL}" != "development" ]; then
+            echo "::error::enable_custom_scheme=true is only allowed with flavor=development (got ${FLAVOR_LABEL}). release/beta/nightly must keep vmp:// off."
+            exit 1
+          fi
+          echo "::warning::development build will enable claimable vmp://. Staging web requires double-confirm + D1 acknowledgment before opening the scheme. Not for App Store / TestFlight distribution."
+
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
@@ -108,8 +125,9 @@ jobs:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
       EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
-      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
-      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      # Claimable vmp:// only when flavor=development AND enable_custom_scheme (staging SideStore PoC).
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.flavor == 'development' && inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.flavor == 'development' && inputs.enable_custom_scheme && '0' || '1' }}
       FRONTEND_HOST: ${{ inputs.frontend_host }}
       # Expo SDK 57 / RN default; not preinstalled on ubuntu-24.04 (ships 27.3+).
       ANDROID_NDK_VERSION: 27.1.12297006
@@ -195,8 +213,9 @@ jobs:
       EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
       EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
       EXPO_PUBLIC_NATIVE_PUSH_ENABLED: ${{ inputs.native_push_enabled && '1' || '0' }}
-      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '1' || '0' }}
-      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.enable_custom_scheme && '0' || '1' }}
+      # Claimable vmp:// only when flavor=development AND enable_custom_scheme (staging SideStore PoC).
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: ${{ inputs.flavor == 'development' && inputs.enable_custom_scheme && '1' || '0' }}
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: ${{ inputs.flavor == 'development' && inputs.enable_custom_scheme && '0' || '1' }}
       FRONTEND_HOST: ${{ inputs.frontend_host }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

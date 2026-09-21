@@ -8,7 +8,7 @@ const REFRESH_KEY = 'vmp.refreshToken';
 const USER_KEY = 'vmp.user';
 
 /** Per-token in-flight redeem promises (cold start + route; independent across tokens). */
-const redeemInFlightByToken = new Map<string, Promise<SessionState>>();
+const redeemInFlightByKey = new Map<string, Promise<SessionState>>();
 
 export type SessionState = {
   accessToken: string;
@@ -83,7 +83,7 @@ export async function restoreSession(): Promise<SessionState | null> {
 }
 
 export async function redeemMagicLinkToken(token: string): Promise<SessionState> {
-  return shareInFlightByKey(redeemInFlightByToken, token, async () => {
+  return shareInFlightByKey(redeemInFlightByKey, `token:${token}`, async () => {
     const session = await redeemNativeMagicLink(token);
     if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
       throw new Error(

@@ -48,10 +48,14 @@ async function apiFetch(path: string, init: RequestInit = {}, accessToken?: stri
   return data;
 }
 
-export async function requestMagicLink(email: string, redirect = '/'): Promise<void> {
+export async function requestMagicLink(
+  email: string,
+  redirect = '/',
+  client: 'native' | 'browser' | 'pwa' = 'native',
+): Promise<void> {
   await apiFetch('/api/auth/magic-link', {
     method: 'POST',
-    body: JSON.stringify({ email, redirect }),
+    body: JSON.stringify({ email, redirect, client }),
   });
 }
 

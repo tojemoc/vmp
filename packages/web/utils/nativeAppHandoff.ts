@@ -1,13 +1,21 @@
 /**
- * Android browser → native APK handoff for magic-link `/auth/verify`.
+ * Browser → native app handoff for magic-link `/auth/verify`.
  *
- * Verified App Links need `/.well-known/assetlinks.json` (checklist S5). Until
- * that is live — or when an email client opens Chrome instead of the app —
- * a package-targeted `intent://` URL still delivers the same HTTPS deep link
- * to `sk.tjm.vmp` without consuming the single-use token in the browser first.
+ * Verified App / Universal Links need `/.well-known/assetlinks.json` and
+ * `/.well-known/apple-app-site-association` (checklist S5). Until those are
+ * live — or when an email client opens the system browser instead of the app —
+ * Android can still bounce into the installed APK without consuming the
+ * single-use token in the browser first:
+ *
+ * - **Android:** package-targeted `intent://` with the same HTTPS verify URL
+ *   (token still unconsumed). Explicit `package=` is not a claimable custom scheme.
+ * - **iOS (staging SideStore PoC only):** after an explicit double-confirm + D1
+ *   acknowledgment, Safari may open `vmp://auth/verify?token=…`. Gated by web
+ *   `deployTier === staging` and API `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1`
+ *   (staging CI only). Not for production / App Store.
  */
 
-/** Query flag that skips auto intent and allows web redeem. */
+/** Query flag that skips auto native bounce and allows web redeem. */
 export const NATIVE_APP_FALLBACK_QUERY = 'native_fallback';
 
 export const DEFAULT_MOBILE_ANDROID_PACKAGE = 'sk.tjm.vmp';
@@ -67,6 +75,36 @@ export function openAndroidNativeApp(
     window.location.assign(
       buildAndroidNativeAppIntentUrl(pageUrl, resolveMobileAndroidPackage(packageName)),
     );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Build `vmp://auth/verify?…` from the current HTTPS verify URL (keeps token + client).
+ * Only call after staging insecure-scheme acknowledgment — the scheme is claimable.
+ */
+export function buildIosInsecureNativeSchemeUrl(pageUrl: string): string {
+  const absolute = new URL(pageUrl);
+  if (absolute.protocol !== 'https:' && absolute.protocol !== 'http:') {
+    throw new Error('Insecure native scheme handoff requires an http(s) page URL');
+  }
+  if (!absolute.pathname.startsWith('/auth/verify')) {
+    throw new Error('Insecure native scheme handoff only allows /auth/verify');
+  }
+  const params = new URLSearchParams(absolute.search);
+  if (!params.get('token')?.trim()) {
+    throw new Error('Insecure native scheme handoff requires a magic-link token');
+  }
+  return `vmp://auth/verify?${params.toString()}`;
+}
+
+/** Open SideStore/dev build via claimable vmp:// after user acknowledgment. */
+export function openIosInsecureNativeScheme(pageUrl: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    window.location.assign(buildIosInsecureNativeSchemeUrl(pageUrl));
     return true;
   } catch {
     return false;

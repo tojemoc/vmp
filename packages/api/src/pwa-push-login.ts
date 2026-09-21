@@ -294,6 +294,7 @@ export async function handlePwaPushLoginSubscribe(request: any, env: any, corsHe
   const frontendUrl = (env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
   const verifyUrl = new URL(`${frontendUrl}/auth/verify`);
   verifyUrl.searchParams.set('token', token);
+  verifyUrl.searchParams.set('client', 'pwa');
   verifyUrl.searchParams.set('pwa', '1');
 
   try {

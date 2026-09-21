@@ -8,7 +8,7 @@ import { customSchemeDeepLinksAllowed } from '../../src/features';
 
 /**
  * Deep-link landing screen for magic links.
- * Matches `/auth/verify` from HTTPS App Links and `vmp://auth/verify` (PoC).
+ * Matches `/auth/verify` from HTTPS App Links and `vmp://auth/verify` (local testing only).
  * Without this route Expo Router shows "Unmatched Route" even when SessionProvider
  * redeems the token in the background.
  */
@@ -39,7 +39,7 @@ export default function AuthVerifyScreen() {
 
       if (initialUrl && /^vmp:\/\//i.test(initialUrl) && !customSchemeDeepLinksAllowed) {
         setLocalError(
-          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild with EXPO_PUBLIC_ENABLE_VMP_SCHEME=1.',
+          'Custom vmp:// links are disabled in this build. Open the https:// magic link, or rebuild with flavor=development + enable_custom_scheme (SideStore staging PoC) / EXPO_PUBLIC_ENABLE_VMP_SCHEME=1 locally.',
         );
         return;
       }
@@ -66,7 +66,6 @@ export default function AuthVerifyScreen() {
   }
 
   if (session) {
-    // Dynamic post-login path from the magic-link query (validated by safeRedirectPath).
     return <Redirect href={redirectTo as '/'} />;
   }
 

@@ -64,17 +64,36 @@ export const strings: StringsDefinition = {
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Přihlašujeme vás…',
-  authVerifyHandoffTitle: 'Otevřete aplikaci VMP',
+  authVerifyHandoffTitle: 'Dokončete v aplikaci na Domovské obrazovce',
   authVerifyHandoffBody:
-    'Na iPhonu a iPadu je aplikace přidaná na Domovskou obrazovku oddělená od Safari. Otevřete VMP z Domovské obrazovky a aplikace se pokusí dokončit přihlášení. Pokud se to nepodaří, vraťte se do Safari a použijte tlačítko níže.',
+    'Toto přihlášení začalo z aplikace VMP na Domovské obrazovce, která je oddělená od Safari. Otevřete VMP z Domovské obrazovky, nebo pokračujte v Safari pro relaci jen v prohlížeči.',
   authVerifyHandoffContinueSafari: 'Pokračovat v Safari',
   authVerifyHandoffCopyLink: 'Zkopírovat odkaz na přihlášení',
   authVerifyHandoffCopied: 'Odkaz zkopírován',
   authVerifyNativeAppTitle: 'Otevřete aplikaci VMP',
   authVerifyNativeAppBody:
-    'Nainstalovaná Android aplikace by měla dokončit toto přihlášení. Klepněte na tlačítko níže, pokud se neotevřela automaticky. V prohlížeči pokračujte jen pokud aplikaci nepoužíváte — odkaz z e-mailu funguje jen jednou.',
+    'Toto přihlášení začalo z Android aplikace. Pokud se neotevřela, klepněte níže. V prohlížeči pokračujte jen pro relaci na webu — odkaz z e-mailu funguje jen jednou.',
   authVerifyNativeAppOpen: 'Otevřít aplikaci VMP',
   authVerifyNativeAppContinueBrowser: 'Pokračovat v prohlížeči',
+  authVerifyNativeIosSafariTitle: 'Odkaz na přihlášení se otevřel v Safari',
+  authVerifyNativeIosSafariBody:
+    'Tento odkaz byl určen pro aplikaci VMP. Na iPhonu se otevře v Safari, dokud nejsou nastavené Universal Links pro tento web. Pokračujte zde pro relaci na webu, nebo požádejte správce o zapnutí Universal Links (Apple App Site Association).',
+  authVerifyNativeIosSafariContinue: 'Pokračovat v Safari',
+  authVerifyNativeIosInsecureOffer: 'Otevřít SideStore testovací aplikaci (nejisté)',
+  authVerifyNativeIosInsecureWarnTitle: 'Nejisté testovací předání',
+  authVerifyNativeIosInsecureWarnBody:
+    'Toto otevře SideStore development build přes claimable odkaz vmp://, který stále nese jednorázový přihlašovací token. Jiná aplikace může zaregistrovat stejné schéma a token ukrást. Jen staging / rychlé testování — ne pro produkci ani App Store.',
+  authVerifyNativeIosInsecureWarnContinue: 'Rozumím — pokračovat',
+  authVerifyNativeIosInsecureWarnCancel: 'Zrušit',
+  authVerifyNativeIosInsecureConfirmTitle: 'Potvrdit nejisté předání',
+  authVerifyNativeIosInsecureConfirmBody:
+    'Pokud odkaz omylem nasdílíte nebo útočník token zachytí, může se jednorázově přihlásit jako vy. Zaškrtněte a potvrďte jen pro vlastní SideStore testování na stagingu.',
+  authVerifyNativeIosInsecureCheckbox:
+    'Potvrzuji, že tato nejistá metoda je jen pro rychlé staging testy, a beru na vědomí, že útočník může ukrást můj přihlašovací token.',
+  authVerifyNativeIosInsecureConfirm: 'Potvrdit a otevřít aplikaci',
+  authVerifyNativeIosInsecureWorking: 'Zaznamenávám souhlas…',
+  authVerifyNativeIosInsecureFailed:
+    'Nejisté předání se nepodařilo povolit. Zůstaňte na stagingu, nebo pokračujte v Safari.',
   authVerifyErrorGeneric: 'Něco se pokazilo. Požádejte o nový odkaz na přihlášení.',
   authVerifySignInIncomplete: 'Přihlášení nebylo dokončeno',
   authVerifyNoToken: 'V adrese URL se nenašel token. Zkuste znovu kliknout na odkaz v e-mailu.',

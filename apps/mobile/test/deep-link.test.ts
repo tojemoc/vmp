@@ -24,7 +24,7 @@ describe('mobile deepLink helpers', () => {
   it('tokenFromAuthUrl reads https App Link tokens only for configured host + /auth/verify', () => {
     assert.equal(
       tokenFromAuthUrl(
-        `https://${HOST}/auth/verify?token=abc%2B123&redirect=%2F`,
+        `https://${HOST}/auth/verify?token=abc%2B123&redirect=%2F&client=native`,
         false,
         HOST,
       ),
@@ -93,7 +93,6 @@ describe('shareInFlightByKey', () => {
 
     assert.equal(pA1, pA2);
     assert.notEqual(pA1, pB);
-    // Work is deferred; starts are still 0 until the microtask queue runs.
     assert.equal(aStarts, 0);
     assert.equal(bStarts, 0);
     assert.equal(map.get('A'), pA1);

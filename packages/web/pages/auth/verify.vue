@@ -1,13 +1,18 @@
 <!-- packages/web/pages/auth/verify.vue -->
 <!--
   Landing page for magic link clicks.
-  URL: /auth/verify?token=<raw_token>  or  /auth/verify?handoff=<code>&redirect=...
+  URL: /auth/verify?token=…&client=browser|pwa|native
+    or /auth/verify?handoff=…&client=…&redirect=…
 
-  On iPhone/iPad Safari (not the installed web app), exchanges the email token for
-  a short-lived handoff code so the session can be created inside the Home Screen app.
+  The email link carries `client` from the surface that requested the magic link
+  (website, installed PWA, or native app). Verify must not guess from UA /
+  display-mode — that mixed PWA and native paths.
 
-  On Android browsers, offers a package-targeted intent:// into the native APK
-  before web redeem consumes the single-use token (covers missing App Link verify).
+  - client=browser (default): redeem in this browser.
+  - client=pwa + ?pwa=1: push-login deliver prompt (Home Screen iOS).
+  - client=pwa (no pwa=1): iOS Safari → short-lived handoff for Home Screen redeem.
+  - client=native: Android intent:// before web redeem; iOS Safari explains missing Universal Links
+    (staging may offer acknowledged vmp:// SideStore escape hatch — never on production).
 -->
 <template>
   <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -100,7 +105,107 @@
         </div>
       </div>
 
-      <!-- iOS Safari: wait for user to open installed PWA or choose Safari -->
+      <!-- iOS: native-tagged link landed in Safari (Universal Links not configured yet) -->
+      <div v-else-if="state === 'native_ios_safari'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-white mb-2">
+            {{ strings.authVerifyNativeIosSafariTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosSafariBody }}
+          </p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="continueNativeIosInSafari"
+          >
+            {{ strings.authVerifyNativeIosSafariContinue }}
+          </button>
+          <button
+            v-if="insecureSchemeStatus?.allowed"
+            type="button"
+            class="w-full px-5 py-2.5 border border-amber-700/80 hover:border-amber-600 text-amber-200 text-sm font-medium rounded-lg transition-colors"
+            @click="beginInsecureNativeSchemeWarn"
+          >
+            {{ strings.authVerifyNativeIosInsecureOffer }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Staging SideStore: first of two confirms for claimable vmp:// -->
+      <div v-else-if="state === 'native_ios_insecure_warn'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-amber-200 mb-2">
+            {{ strings.authVerifyNativeIosInsecureWarnTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureWarnBody }}
+          </p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-amber-700 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="beginInsecureNativeSchemeConfirm"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnContinue }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            @click="cancelInsecureNativeScheme"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnCancel }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Staging SideStore: checkbox + confirm, then D1 ack + vmp:// open -->
+      <div v-else-if="state === 'native_ios_insecure_confirm'" class="space-y-6 text-left">
+        <div>
+          <h2 class="text-lg font-semibold text-amber-200 mb-2">
+            {{ strings.authVerifyNativeIosInsecureConfirmTitle }}
+          </h2>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureConfirmBody }}
+          </p>
+        </div>
+        <p v-if="errorMessage" class="text-red-400 text-sm leading-relaxed">{{ errorMessage }}</p>
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input
+            v-model="insecureSchemeAckChecked"
+            type="checkbox"
+            class="mt-1 h-4 w-4 shrink-0 rounded border-gray-600 bg-gray-900 text-amber-600 focus:ring-amber-500"
+          >
+          <span class="text-gray-300 text-sm leading-relaxed">
+            {{ strings.authVerifyNativeIosInsecureCheckbox }}
+          </span>
+        </label>
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            :disabled="!insecureSchemeAckChecked || insecureSchemeWorking"
+            @click="confirmInsecureNativeSchemeAndOpen"
+          >
+            {{ insecureSchemeWorking
+                ? strings.authVerifyNativeIosInsecureWorking
+                : strings.authVerifyNativeIosInsecureConfirm }}
+          </button>
+          <button
+            type="button"
+            class="w-full px-5 py-2.5 border border-gray-600 hover:border-gray-500 text-gray-200 text-sm font-medium rounded-lg transition-colors"
+            :disabled="insecureSchemeWorking"
+            @click="cancelInsecureNativeScheme"
+          >
+            {{ strings.authVerifyNativeIosInsecureWarnCancel }}
+          </button>
+        </div>
+      </div>
+
+      <!-- iOS Safari after PWA-tagged magic link: wait for Home Screen or Safari -->
       <div v-else-if="state === 'handoff_wait'" class="space-y-6 text-left">
         <div>
           <h2 class="text-lg font-semibold text-white mb-2">
@@ -157,13 +262,20 @@
 </template>
 
 <script setup lang="ts">
+  import {
+    INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE,
+    type MagicLinkClient,
+    normalizeMagicLinkClient,
+  } from '@vmp/shared';
   import { navigateTo, useRoute, useRuntimeConfig } from '#app';
+  import { resolveDeployTier } from '~/utils/buildInfo';
   import {
     isNativeAppFallbackQuery,
     openAndroidNativeApp,
+    openIosInsecureNativeScheme,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
-  import { isAndroid, isInstalledPwa } from '~/utils/pwa';
+  import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const route = useRoute();
@@ -176,6 +288,41 @@
     return resolveMobileAndroidPackage(String(runtimeConfig.public.mobileAndroidPackage || ''));
   }
 
+  /** SideStore vmp:// escape hatch is staging web only (never production/beta). */
+  function isStagingWebDeploy(): boolean {
+    return resolveDeployTier(String(runtimeConfig.public.deployTier || '')) === 'staging';
+  }
+
+  type InsecureSchemeStatus = {
+    allowed: boolean;
+    confirmPhrase: string | null;
+  };
+
+  const insecureSchemeStatus = ref<InsecureSchemeStatus | null>(null);
+  const insecureSchemeAckChecked = ref(false);
+  const insecureSchemeWorking = ref(false);
+
+  async function refreshInsecureSchemeStatus(): Promise<void> {
+    insecureSchemeStatus.value = null;
+    if (!isStagingWebDeploy() || import.meta.server) return;
+    const apiUrl = String(runtimeConfig.public.apiUrl || '').replace(/\/$/, '');
+    if (!apiUrl) return;
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/native/insecure-scheme/status`);
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        allowed?: unknown;
+        confirmPhrase?: unknown;
+      };
+      insecureSchemeStatus.value = {
+        allowed: body.allowed === true,
+        confirmPhrase: typeof body.confirmPhrase === 'string' ? body.confirmPhrase : null,
+      };
+    } catch {
+      insecureSchemeStatus.value = null;
+    }
+  }
+
   function isDisplayStandalone() {
     if (import.meta.server) return false;
     return (
@@ -186,30 +333,44 @@
 
   function isIosLike() {
     if (import.meta.server) return false;
-    const ua = navigator.userAgent || '';
-    return (
-      /iP(ad|hone|od)/i.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    );
+    return isIosLikeUa();
   }
 
-  /** iPhone/iPad in Mobile Safari (or in-app browsers) but not the Home Screen web app. */
-  function shouldUseIosMagicHandoff(): boolean {
-    return isIosLike() && !isDisplayStandalone();
+  function magicLinkClient(): MagicLinkClient {
+    return normalizeMagicLinkClient(route.query.client);
   }
 
-  /** After handoff code is in the URL: defer redeem in iOS Safari so cookies attach where the user chooses. */
-  function shouldDeferHandoffRedeem(): boolean {
-    return isIosLike() && !isDisplayStandalone();
+  /** PWA-tagged link opened in iOS Safari (not the Home Screen app). */
+  function shouldUseIosPwaHandoff(): boolean {
+    return magicLinkClient() === 'pwa' && isIosLike() && !isDisplayStandalone();
+  }
+
+  /** Defer redeem of an existing handoff code only for PWA-tagged iOS Safari. */
+  function shouldDeferPwaHandoffRedeem(): boolean {
+    return magicLinkClient() === 'pwa' && isIosLike() && !isDisplayStandalone();
   }
 
   /**
-   * Android browser (not the installed PWA): offer package-targeted intent:// to the
-   * native APK before web redeem consumes the single-use magic-link token.
+   * Native-tagged link on Android (not the installed PWA): offer package-targeted
+   * intent:// before web redeem consumes the token.
    */
   function shouldOfferAndroidNativeAppHandoff(): boolean {
     if (import.meta.server) return false;
+    if (magicLinkClient() !== 'native') return false;
     if (!isAndroid() || isInstalledPwa()) return false;
+    if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
+    return true;
+  }
+
+  /**
+   * Native-tagged link on iOS Safari: Universal Links would have opened the app
+   * already when AASA is live. Landing here means association is missing / SideStore
+   * re-sign — explain website session, and on staging offer acknowledged vmp://.
+   */
+  function shouldExplainIosNativeInSafari(): boolean {
+    if (import.meta.server) return false;
+    if (magicLinkClient() !== 'native') return false;
+    if (!isIosLike() || isDisplayStandalone()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
   }
@@ -233,6 +394,9 @@
     | 'error'
     | 'handoff_wait'
     | 'native_app_handoff'
+    | 'native_ios_safari'
+    | 'native_ios_insecure_warn'
+    | 'native_ios_insecure_confirm'
     | 'pwa_push_prompt'
     | 'pwa_push_sending'
     | 'pwa_push_done'
@@ -240,10 +404,13 @@
 
   function initialVerifyState(): State {
     if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done';
-    if (firstQueryString(route.query.handoff) && shouldDeferHandoffRedeem()) return 'handoff_wait';
+    if (firstQueryString(route.query.handoff) && shouldDeferPwaHandoffRedeem()) {
+      return 'handoff_wait';
+    }
     const token = firstQueryString(route.query.token);
     if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
     if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
+    if (token && shouldExplainIosNativeInSafari()) return 'native_ios_safari';
     return 'verifying';
   }
 
@@ -252,6 +419,7 @@
   const copyHint = ref<string>(strings.authVerifyHandoffCopyLink);
   const handoffCodeForSafari = ref<string | null>(null);
   const magicTokenForFlow = ref<string | null>(null);
+  const didAutoOpenNative = ref(false);
 
   async function navigateAfterFullSession(redirect: string) {
     const u = user.value;
@@ -316,7 +484,7 @@
           }
         }
         await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1`,
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&pwa=1&client=pwa`,
         );
         return;
       }
@@ -347,24 +515,116 @@
   async function continueNativeAppInBrowser() {
     const token = magicTokenForFlow.value;
     if (!token) return;
+    // Stay on this page with native_fallback so a reload does not auto-bounce again.
+    if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
+      state.value = 'verifying';
+      const next = new URL(window.location.href);
+      next.searchParams.set('native_fallback', '1');
+      await navigateTo(
+        { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
+        { replace: true },
+      );
+      return;
+    }
     state.value = 'verifying';
     await runNormalTokenVerify(token);
   }
 
+  async function continueNativeIosInSafari() {
+    const token = magicTokenForFlow.value;
+    if (!token) return;
+    state.value = 'verifying';
+    if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
+      const next = new URL(window.location.href);
+      next.searchParams.set('native_fallback', '1');
+      await navigateTo(
+        { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
+        { replace: true },
+      );
+      return;
+    }
+    await runNormalTokenVerify(token);
+  }
+
+  function beginInsecureNativeSchemeWarn() {
+    if (!insecureSchemeStatus.value?.allowed) return;
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    state.value = 'native_ios_insecure_warn';
+  }
+
+  function beginInsecureNativeSchemeConfirm() {
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    state.value = 'native_ios_insecure_confirm';
+  }
+
+  function cancelInsecureNativeScheme() {
+    errorMessage.value = '';
+    insecureSchemeAckChecked.value = false;
+    insecureSchemeWorking.value = false;
+    state.value = 'native_ios_safari';
+  }
+
+  async function confirmInsecureNativeSchemeAndOpen() {
+    const token = magicTokenForFlow.value;
+    if (!token || !insecureSchemeAckChecked.value || !insecureSchemeStatus.value?.allowed) return;
+    if (import.meta.server) return;
+
+    const apiUrl = String(runtimeConfig.public.apiUrl || '').replace(/\/$/, '');
+    const confirmPhrase =
+      insecureSchemeStatus.value.confirmPhrase || INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE;
+
+    insecureSchemeWorking.value = true;
+    errorMessage.value = '';
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/native/insecure-scheme/acknowledge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          acknowledgedRisk: true,
+          doubleConfirmed: true,
+          confirmPhrase,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { ok?: unknown; error?: unknown } | null;
+      if (!res.ok || body?.ok !== true) {
+        errorMessage.value =
+          typeof body?.error === 'string' && body.error.trim()
+            ? body.error
+            : strings.authVerifyNativeIosInsecureFailed;
+        return;
+      }
+      if (!openIosInsecureNativeScheme(window.location.href)) {
+        errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
+      }
+    } catch {
+      errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
+    } finally {
+      insecureSchemeWorking.value = false;
+    }
+  }
+
   async function runNormalTokenVerify(token: string) {
     const redirect = safeRedirect(route.query.redirect, '/');
+    const client = magicLinkClient();
     try {
-      if (shouldUseIosMagicHandoff()) {
+      // Only PWA-tagged links use the iOS Safari → Home Screen handoff dance.
+      if (shouldUseIosPwaHandoff()) {
         const mh = await magicPwaHandoff(token);
         if (mh.kind === '2fa') {
           await navigateTo(
-            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+            `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=pwa`,
           );
           return;
         }
         if (mh.kind === 'handoff') {
           await navigateTo(
-            { path: '/auth/verify', query: { handoff: mh.handoffCode, redirect } },
+            {
+              path: '/auth/verify',
+              query: { handoff: mh.handoffCode, redirect, client: 'pwa' },
+            },
             { replace: true },
           );
           return;
@@ -382,7 +642,7 @@
       const result = await verify(token);
       if ('requiresTwoFactor' in result) {
         await navigateTo(
-          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}`,
+          `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=${client}`,
         );
         return;
       }
@@ -400,7 +660,8 @@
   async function copyHandoffUrl() {
     const code = handoffCodeForSafari.value;
     if (!code || import.meta.server) return;
-    const path = `/auth/verify?handoff=${encodeURIComponent(code)}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`;
+    const client = magicLinkClient();
+    const path = `/auth/verify?handoff=${encodeURIComponent(code)}&client=${client}&redirect=${encodeURIComponent(safeRedirect(route.query.redirect, '/'))}`;
     const url = `${window.location.origin}${path}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -433,10 +694,13 @@
 
       if (handoff) {
         handoffCodeForSafari.value = handoff;
-        if (shouldDeferHandoffRedeem()) {
+
+        if (shouldDeferPwaHandoffRedeem()) {
           state.value = 'handoff_wait';
           return;
         }
+
+        // Standalone PWA or browser: redeem the PWA handoff cookie session here.
         state.value = 'verifying';
         try {
           await redeemPwaHandoff(handoff);
@@ -464,9 +728,17 @@
 
       if (shouldOfferAndroidNativeAppHandoff()) {
         state.value = 'native_app_handoff';
-        // Attempt an automatic bounce into the APK; the UI remains if the OS
-        // keeps us in the browser (app missing, or intent blocked).
-        openInstalledNativeApp();
+        // Android: bounce intent:// with the HTTPS token URL still intact.
+        if (!didAutoOpenNative.value) {
+          didAutoOpenNative.value = true;
+          openInstalledNativeApp();
+        }
+        return;
+      }
+
+      if (shouldExplainIosNativeInSafari()) {
+        await refreshInsecureSchemeStatus();
+        state.value = 'native_ios_safari';
         return;
       }
 
