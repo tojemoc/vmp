@@ -250,7 +250,11 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          VERSION_NAME="$(node -p "require('./app.json').expo.version")"
+          # app.json expo.version is the major.minor base only. SideStore's
+          # hasUpdate compares CFBundleShortVersionString (SemanticVersion),
+          # not buildVersion — so CI encodes the build into the patch component
+          # (0.1.0 + build 10 → 0.1.10). See scripts/ios-sidestore-marketing-version.mjs.
+          VERSION_BASE="$(node -p "require('./app.json').expo.version")"
           if [ -n "${INPUT_BUILD}" ]; then
             BUILD_NUMBER="${INPUT_BUILD}"
           else
@@ -263,23 +267,30 @@ jobs:
             echo "::error::iOS build number must be a positive integer. Found: $BUILD_NUMBER"
             exit 1
           fi
+          VERSION_NAME="$(node ../../scripts/ios-sidestore-marketing-version.mjs "$VERSION_BASE" "$BUILD_NUMBER")"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "Version name: $VERSION_NAME, build: $BUILD_NUMBER"
+          echo "base=$VERSION_BASE" >> "$GITHUB_OUTPUT"
+          echo "Version name: $VERSION_NAME (base $VERSION_BASE), build: $BUILD_NUMBER"
 
       - name: Install mobile dependencies
         run: npm ci
 
-      - name: Inject CI frontend host and build number
+      - name: Inject CI frontend host, marketing version, and build number
         env:
           BUILD_NUMBER: ${{ steps.version.outputs.build }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'app.json';
           const host = process.env.FRONTEND_HOST;
           const build = process.env.BUILD_NUMBER;
+          const versionName = process.env.VERSION_NAME;
           const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          // Must match CFBundleShortVersionString / AltStore source "version"
+          // so SideStore offers Update (buildVersion-only bumps are ignored).
+          app.expo.version = versionName;
           app.expo.ios = app.expo.ios || {};
           app.expo.ios.buildNumber = build;
           app.expo.ios.associatedDomains = [`applinks:${host}`];
@@ -344,6 +355,29 @@ jobs:
             unzip -l "$IPA" | head -10
             exit 1
           fi
+
+      - name: Verify IPA Info.plist versions for SideStore
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build }}
+        run: |
+          set -euo pipefail
+          IPA="dist/$VERSION_NAME/vmp-${VERSION_NAME}-ios.ipa"
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          unzip -q "$IPA" -d "$TMP"
+          PLIST="$TMP/Payload/VMP.app/Info.plist"
+          SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          if [ "$SHORT" != "$VERSION_NAME" ]; then
+            echo "::error::CFBundleShortVersionString is '$SHORT', expected '$VERSION_NAME' (SideStore update detection)"
+            exit 1
+          fi
+          if [ "$BUILD" != "$BUILD_NUMBER" ]; then
+            echo "::error::CFBundleVersion is '$BUILD', expected '$BUILD_NUMBER'"
+            exit 1
+          fi
+          echo "Info.plist OK: CFBundleShortVersionString=$SHORT CFBundleVersion=$BUILD"
 
       - name: Upload iOS IPA artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
