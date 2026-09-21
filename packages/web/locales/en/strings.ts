@@ -61,17 +61,36 @@ export const strings: StringsDefinition = {
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Signing you in…',
-  authVerifyHandoffTitle: 'Open the VMP app',
+  authVerifyHandoffTitle: 'Finish in the Home Screen app',
   authVerifyHandoffBody:
-    "On iPhone and iPad, the app you added to your Home Screen is separate from Safari. Open VMP from your Home Screen and the app will attempt to finish signing in. If it doesn't complete, return to Safari and use the button below.",
+    'This sign-in was started from the VMP app on your Home Screen, which is separate from Safari. Open VMP from the Home Screen to finish, or continue in Safari for a browser-only session.',
   authVerifyHandoffContinueSafari: 'Continue in Safari',
   authVerifyHandoffCopyLink: 'Copy sign-in link',
   authVerifyHandoffCopied: 'Link copied',
   authVerifyNativeAppTitle: 'Open the VMP app',
   authVerifyNativeAppBody:
-    'The installed Android app should finish this sign-in. Tap the button below if it did not open automatically. Continue in the browser only if you are not using the app — the email link works once.',
+    'This sign-in was started from the Android app. If it did not open, tap below. Continue in the browser only for a website session — the email link works once.',
   authVerifyNativeAppOpen: 'Open VMP app',
   authVerifyNativeAppContinueBrowser: 'Continue in browser',
+  authVerifyNativeIosSafariTitle: 'Sign-in link opened in Safari',
+  authVerifyNativeIosSafariBody:
+    'This link was meant for the VMP app. On iPhone it opens in Safari when Universal Links are not set up for this site yet. Continue here for a website session, or ask the site admin to enable Universal Links (Apple App Site Association).',
+  authVerifyNativeIosSafariContinue: 'Continue in Safari',
+  authVerifyNativeIosInsecureOffer: 'Open SideStore test app (insecure)',
+  authVerifyNativeIosInsecureWarnTitle: 'Insecure test handoff',
+  authVerifyNativeIosInsecureWarnBody:
+    'This opens the SideStore development build with a claimable vmp:// link that still carries your one-time sign-in token. Any other app could register the same scheme and steal that token. Staging / quick testing only — not for production or App Store builds.',
+  authVerifyNativeIosInsecureWarnContinue: 'I understand — continue',
+  authVerifyNativeIosInsecureWarnCancel: 'Cancel',
+  authVerifyNativeIosInsecureConfirmTitle: 'Confirm insecure handoff',
+  authVerifyNativeIosInsecureConfirmBody:
+    'If you accidentally share this link or an attacker snipes the token, they can sign in as you for this one-time link. Tick the box and confirm only for your own SideStore testing on staging.',
+  authVerifyNativeIosInsecureCheckbox:
+    'I confirm this insecure method is for quick staging tests only, and I accept that an attacker could snipe my sign-in token.',
+  authVerifyNativeIosInsecureConfirm: 'Confirm and open app',
+  authVerifyNativeIosInsecureWorking: 'Recording acknowledgment…',
+  authVerifyNativeIosInsecureFailed:
+    'Could not enable the insecure handoff. Stay on staging, or continue in Safari instead.',
   authVerifyErrorGeneric: 'Something went wrong. Please request a new sign-in link.',
   authVerifySignInIncomplete: 'Sign-in incomplete',
   authVerifyNoToken: 'No token found in the URL. Try clicking the link in your email again.',

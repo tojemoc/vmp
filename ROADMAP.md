@@ -109,6 +109,7 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 
 - [x] Phase 0 API contracts (native redeem, body refresh/logout, push register, device pairing)
 - [x] Tier 1 Expo scaffold (`apps/mobile`) + SideStore distribution playbook
+- [x] Client-tagged magic links (`client=browser|pwa|native` in email verify URL)
 - [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end)
 - [ ] AASA / Digital Asset Links live values (`MOBILE_*` env vars)
 - [ ] Tier 2–4 (TV: Android/tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5)

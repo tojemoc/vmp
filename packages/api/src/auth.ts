@@ -7,7 +7,7 @@
  *  - JWT sign/verify (HS256) implemented directly with SubtleCrypto — no library needed.
  *  - Magic link token generation, hashing, and email dispatch via Brevo.
  *  - PWA handoff: POST /api/auth/magic-pwa-handoff + POST /api/auth/redeem-pwa-handoff (D1-backed).
- *  - Native redeem: POST /api/auth/native/redeem (magic link → JWT + refreshToken in JSON).
+ *  - Native redeem: POST /api/auth/native/redeem ({ token } → JWT + refreshToken in JSON).
  *  - Refresh token issuance and rotation (cookie and/or JSON body for native clients).
  *  - Route handlers for /api/auth/*.
  *  - requireAuth / requireRole middleware helpers.
@@ -39,8 +39,9 @@
  *       present it gets a fresh JWT silently.
  */
 
+import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE, normalizeMagicLinkClient } from '@vmp/shared';
 import { log } from './logger.js';
-import { resolvePostHogIdentityHashForUser } from './posthog.js';
+import { resolvePostHogEnvironment, resolvePostHogIdentityHashForUser } from './posthog.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,15 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
     .prepare('DELETE FROM magic_link_tokens WHERE user_id = ? AND used_at IS NULL')
     .bind(user.id)
     .run();
+  // Drop SideStore acks that belonged to those cancelled unused links.
+  try {
+    await db
+      .prepare('DELETE FROM insecure_native_scheme_acks WHERE user_id = ?')
+      .bind(user.id)
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack clear on magic-link rotate failed:', err);
+  }
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
@@ -338,9 +348,12 @@ async function isMagicLinkRateLimited(request: any, env: any, email: any) {
 
 /**
  * POST /api/auth/magic-link
- * Body: { email: string }
+ * Body: { email: string, redirect?: string, client?: 'browser' | 'pwa' | 'native' }
  *
  * Creates a magic link token, stores the hash, and emails the raw token.
+ * `client` is stamped onto the verify URL so the landing page knows whether
+ * the flow started from the website, the installed PWA, or a native app —
+ * instead of guessing from User-Agent / display-mode.
  * Always returns 200 — we never confirm whether an email is registered
  * to prevent user enumeration.
  */
@@ -356,6 +369,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
   }
 
   const redirect = normalizeRedirectPath(body.redirect);
+  const client = normalizeMagicLinkClient(body.client);
   const db = getDb(env);
 
   try {
@@ -372,6 +386,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
     const frontendUrl = (env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const verifyUrl = new URL(`${frontendUrl}/auth/verify`);
     verifyUrl.searchParams.set('token', token);
+    verifyUrl.searchParams.set('client', client);
     if (redirect) verifyUrl.searchParams.set('redirect', redirect);
 
     if (env.BREVO_API_KEY) {
@@ -380,7 +395,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
       // No Brevo key — log the link for local development.
       console.log(`[DEV] Magic link for ${email}: ${verifyUrl.toString()}`);
     }
-    log({ service: 'auth', event: 'magic_link_sent', level: 'info' });
+    log({ service: 'auth', event: 'magic_link_sent', level: 'info', client });
   } catch (err) {
     console.error('[auth] magic link error:', err);
     // Still return success — don't leak whether the error was email-related.
@@ -491,10 +506,14 @@ export async function consumeMagicLinkForUser(
   const record = await loadMagicLinkRecord(db, tokenHash);
 
   if (!record || record.used_at) {
+    if (record?.used_at) {
+      await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    }
     return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' };
   }
 
   if (new Date(record.expires_at) < new Date()) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return { tag: 'invalid', message: 'Sign-in link has expired. Request a new one.' };
   }
 
@@ -506,8 +525,12 @@ export async function consumeMagicLinkForUser(
     .run();
 
   if (!consumeResult.meta.changes) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return { tag: 'invalid', message: 'Sign-in link is invalid or has already been used.' };
   }
+
+  // Consumed: drop any SideStore vmp:// acknowledgment bound to this token.
+  await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
 
   const user = {
     id: record.user_id,
@@ -624,19 +647,74 @@ async function issueFullMagicSessionResponse(user: any, env: any, db: any, corsH
 }
 
 /**
+ * Atomically consume a one-time PWA/native handoff code from D1.
+ * Returns the bound user_id, or null when missing / used / expired.
+ */
+async function consumePwaHandoffCode(db: any, code: string): Promise<string | null> {
+  const codeHash = await hashToken(code);
+  const consumeResult = await db
+    .prepare(`
+      UPDATE pwa_handoffs
+      SET used_at = CURRENT_TIMESTAMP
+      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
+      RETURNING user_id
+    `)
+    .bind(codeHash)
+    .first();
+  return consumeResult?.user_id ? String(consumeResult.user_id) : null;
+}
+
+async function loadUserRowForAuth(db: any, userId: string) {
+  const row = await db
+    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
+    .bind(userId)
+    .first();
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    totp_enabled: row.totp_enabled,
+    created_at: row.created_at,
+  };
+}
+
+/**
  * POST /api/auth/native/redeem  body: { token }
  *
  * Same magic-link consume as GET /api/auth/verify, but returns refreshToken in
  * the JSON body for native apps (Keychain / Keystore). Does **not** set the
  * refresh cookie — native clients must use the JSON body token with
  * POST /api/auth/refresh.
+ *
+ * Unbound PWA handoff codes are intentionally **not** accepted here: a claimable
+ * custom scheme (`vmp://`) or any bearer-only handoff would issue native session
+ * tokens without an install-bound audience proof. Use HTTPS magic-link tokens
+ * (Universal / App Links) until install-bound handoff keys exist.
  */
 export async function handleNativeRedeemMagicLink(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
 
   const body = await request.json().catch(() => null);
   const token = typeof body?.token === 'string' ? body.token.trim() : '';
-  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders);
+  const handoffCode = typeof body?.handoffCode === 'string' ? body.handoffCode.trim() : '';
+
+  if (handoffCode) {
+    return authJson(
+      {
+        error:
+          'Handoff codes cannot issue native sessions without an install-bound proof. Open the https:// magic link (Universal / App Link), or continue in the browser.',
+        code: 'handoff_not_bound',
+      },
+      400,
+      corsHeaders,
+    );
+  }
+  if (!token) {
+    return authJson({ error: 'token is required' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
 
   const phase = await consumeMagicLinkForUser(env, token);
   if (phase.tag === 'invalid') {
@@ -664,7 +742,6 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     );
   }
 
-  const db = getDb(env);
   const session = await issueNativeSessionTokens(phase.user, env, db);
   const headers = buildResponseHeaders(corsHeaders);
   log({
@@ -674,6 +751,252 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     totp_required: Boolean(phase.user.totp_enabled),
   });
   return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
+}
+
+/**
+ * Staging-only escape hatch for SideStore PoC: allow Safari to open
+ * `vmp://auth/verify?token=…` after the user explicitly acknowledges the risk.
+ *
+ * Fail-closed unless `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (set by staging CI only)
+ * **and** `resolvePostHogEnvironment(env)` is exactly `staging`.
+ * Production / beta / nightly / development / unknown must never enable this.
+ */
+export function isInsecureNativeVmpSchemeAllowed(env: any): boolean {
+  const flag = String(env?.ALLOW_INSECURE_NATIVE_VMP_SCHEME ?? '')
+    .trim()
+    .toLowerCase();
+  if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false;
+  if (flag !== '1' && flag !== 'true' && flag !== 'on' && flag !== 'yes') return false;
+
+  return resolvePostHogEnvironment(env).toLowerCase() === 'staging';
+}
+
+/** Drop the SideStore ack row (and its PII columns) for a magic-link token hash. */
+async function deleteInsecureNativeSchemeAckByTokenHash(db: any, tokenHash: string): Promise<void> {
+  try {
+    await db
+      .prepare('DELETE FROM insecure_native_scheme_acks WHERE magic_link_token_hash = ?')
+      .bind(tokenHash)
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack delete failed:', err);
+  }
+}
+
+/** Purge expired SideStore acks (user_id / user_agent / ip_hash go with the row). */
+async function purgeExpiredInsecureNativeSchemeAcks(db: any): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `DELETE FROM insecure_native_scheme_acks WHERE datetime(expires_at) <= datetime('now')`,
+      )
+      .run();
+  } catch (err) {
+    console.error('[auth] insecure scheme ack purge failed:', err);
+  }
+}
+
+async function isInsecureSchemeAckRateLimited(request: any, env: any): Promise<boolean> {
+  const kv = env.RATE_LIMIT_KV;
+  if (!kv) return false;
+  try {
+    const ip = request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const fingerprint = await hashToken(`auth:insecure-scheme-ack:${ip}:${minuteBucket}`);
+    const key = `auth:insecure-scheme-ack:${fingerprint}`;
+    const currentRaw = await kv.get(key);
+    const current = Number.parseInt(currentRaw ?? '0', 10);
+    const count = Number.isFinite(current) ? current : 0;
+    if (count >= 10) return true;
+    await kv.put(key, String(count + 1), { expirationTtl: 120 });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /api/auth/native/insecure-scheme/acknowledge
+ * Body: { token, acknowledgedRisk: true, confirmPhrase, doubleConfirmed: true }
+ *
+ * Records a D1 acknowledgment bound to the (still unused) magic-link token.
+ * Does **not** consume the magic link — the native app redeems it via
+ * POST /api/auth/native/redeem after the `vmp://` open.
+ */
+export async function handleAcknowledgeInsecureNativeScheme(
+  request: any,
+  env: any,
+  corsHeaders: any,
+) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
+
+  if (!isInsecureNativeVmpSchemeAllowed(env)) {
+    return authJson(
+      {
+        error: 'Insecure custom-scheme handoff is disabled in this environment.',
+        code: 'insecure_scheme_disabled',
+      },
+      403,
+      corsHeaders,
+    );
+  }
+
+  if (await isInsecureSchemeAckRateLimited(request, env)) {
+    return authJson(
+      { error: 'Too many requests. Please try again later.', code: 'rate_limit_exceeded' },
+      429,
+      corsHeaders,
+    );
+  }
+
+  const body = await request.json().catch(() => null);
+  const token = typeof body?.token === 'string' ? body.token.trim() : '';
+  const confirmPhrase = typeof body?.confirmPhrase === 'string' ? body.confirmPhrase.trim() : '';
+  const acknowledgedRisk = body?.acknowledgedRisk === true;
+  const doubleConfirmed = body?.doubleConfirmed === true;
+
+  if (!token) return authJson({ error: 'token is required' }, 400, corsHeaders);
+  if (!acknowledgedRisk || !doubleConfirmed) {
+    return authJson(
+      {
+        error: 'Both risk acknowledgment and double confirmation are required.',
+        code: 'ack_incomplete',
+      },
+      400,
+      corsHeaders,
+    );
+  }
+  if (confirmPhrase !== INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE) {
+    return authJson(
+      {
+        error: `confirmPhrase must be exactly "${INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE}"`,
+        code: 'ack_phrase_mismatch',
+      },
+      400,
+      corsHeaders,
+    );
+  }
+
+  const db = getDb(env);
+  // Opportunistic purge of expired SideStore acks (drops user_id / user_agent / ip_hash).
+  await purgeExpiredInsecureNativeSchemeAcks(db);
+
+  const tokenHash = await hashToken(token);
+  const record = await loadMagicLinkRecord(db, tokenHash);
+
+  if (!record || record.used_at) {
+    if (record?.used_at) {
+      await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    }
+    return authJson(
+      {
+        error: 'Sign-in link is invalid or has already been used.',
+        code: 'invalid_or_used',
+      },
+      401,
+      corsHeaders,
+    );
+  }
+  if (new Date(record.expires_at) < new Date()) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    return authJson(
+      { error: 'Sign-in link has expired. Request a new one.', code: 'expired' },
+      401,
+      corsHeaders,
+    );
+  }
+
+  const ip = request.headers.get('CF-Connecting-IP')?.trim() || '';
+  const ipHash = ip ? await hashToken(ip) : null;
+  const userAgent = String(request.headers.get('User-Agent') || '').slice(0, 512) || null;
+  const ackId = crypto.randomUUID();
+
+  try {
+    // Atomically require the magic-link row to still be unused + unexpired on both
+    // INSERT and ON CONFLICT UPDATE paths (closes TOCTOU vs consume/expire).
+    const insertResult = await db
+      .prepare(`
+        INSERT INTO insecure_native_scheme_acks
+          (id, magic_link_token_hash, user_id, expires_at, user_agent, ip_hash)
+        SELECT ?, t.token_hash, t.user_id, t.expires_at, ?, ?
+        FROM magic_link_tokens t
+        WHERE t.token_hash = ?
+          AND t.used_at IS NULL
+          AND datetime(t.expires_at) > datetime('now')
+        ON CONFLICT(magic_link_token_hash) DO UPDATE SET
+          acknowledged_at = CURRENT_TIMESTAMP,
+          user_agent = excluded.user_agent,
+          ip_hash = excluded.ip_hash,
+          expires_at = excluded.expires_at
+        WHERE EXISTS (
+          SELECT 1 FROM magic_link_tokens live
+          WHERE live.token_hash = insecure_native_scheme_acks.magic_link_token_hash
+            AND live.used_at IS NULL
+            AND datetime(live.expires_at) > datetime('now')
+        )
+      `)
+      .bind(ackId, userAgent, ipHash, tokenHash)
+      .run();
+
+    if (!insertResult.meta.changes) {
+      return authJson(
+        {
+          error: 'Sign-in link is invalid or has already been used.',
+          code: 'invalid_or_used',
+        },
+        401,
+        corsHeaders,
+      );
+    }
+  } catch (err) {
+    console.error('[auth] insecure scheme ack insert failed:', err);
+    return authJson({ error: 'Could not record acknowledgment. Try again.' }, 500, corsHeaders);
+  }
+
+  log({
+    service: 'auth',
+    event: 'insecure_native_scheme_acknowledged',
+    level: 'warn',
+    user_id_hash: await hashToken(String(record.user_id)),
+  });
+
+  return authJson(
+    {
+      ok: true,
+      allowed: true,
+      warning:
+        'Custom vmp:// handoff is insecure: any app can claim the scheme and snatch this one-time token. Staging / SideStore testing only.',
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+/**
+ * GET /api/auth/native/insecure-scheme/status
+ * Returns whether this environment permits the SideStore vmp:// escape hatch.
+ */
+export async function handleInsecureNativeSchemeStatus(
+  _request: any,
+  env: any,
+  corsHeaders: any,
+) {
+  // Best-effort expiration cleanup whenever status is polled from staging verify UI.
+  try {
+    await purgeExpiredInsecureNativeSchemeAcks(getDb(env));
+  } catch {
+    /* D1 may be unavailable in unit tests without a binding */
+  }
+  const allowed = isInsecureNativeVmpSchemeAllowed(env);
+  return authJson(
+    {
+      allowed,
+      confirmPhrase: allowed ? INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE : null,
+      environment: resolvePostHogEnvironment(env),
+    },
+    200,
+    corsHeaders,
+  );
 }
 
 async function readRefreshTokenFromRequest(request: any): Promise<{
@@ -790,22 +1113,10 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
   const body = await request.json().catch(() => null);
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
   if (!code) return authJson({ error: 'code is required' }, 400, corsHeaders);
-  const codeHash = await hashToken(code);
 
   const db = getDb(env);
-
-  // Atomically consume the handoff: mark used_at only if not already used and not expired
-  const consumeResult = await db
-    .prepare(`
-      UPDATE pwa_handoffs
-      SET used_at = CURRENT_TIMESTAMP
-      WHERE code = ? AND used_at IS NULL AND datetime(expires_at) > datetime('now')
-      RETURNING user_id
-    `)
-    .bind(codeHash)
-    .first();
-
-  if (!consumeResult || !consumeResult.user_id) {
+  const userId = await consumePwaHandoffCode(db, code);
+  if (!userId) {
     return authJson(
       { error: 'This sign-in step has expired or was already used. Request a new email link.' },
       401,
@@ -813,19 +1124,9 @@ export async function handleRedeemPwaHandoff(request: any, env: any, corsHeaders
     );
   }
 
-  const row = await db
-    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
-    .bind(consumeResult.user_id)
-    .first();
-  if (!row) return authJson({ error: 'User not found' }, 401, corsHeaders);
+  const user = await loadUserRowForAuth(db, userId);
+  if (!user) return authJson({ error: 'User not found' }, 401, corsHeaders);
 
-  const user = {
-    id: row.id,
-    email: row.email,
-    role: row.role,
-    totp_enabled: row.totp_enabled,
-    created_at: row.created_at,
-  };
   return await issueFullMagicSessionResponse(user, env, db, corsHeaders);
 }
 

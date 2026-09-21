@@ -50,12 +50,26 @@ Deep link targets:
 
 | Target | When | Notes |
 | --- | --- | --- |
-| `https://<FRONTEND_HOST>/auth/verify?token=…` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. |
-| `vmp://auth/verify?token=…` | **SideStore / PoC artifact builds only** | Fail-closed env gates: active only when `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`/`true` and `EXPO_PUBLIC_DISABLE_VMP_SCHEME` is not set. Mobile artifacts may enable it for `development`/`beta`/`nightly`; **`flavor=release` forces it off**. The web `/auth/verify` page must **not** embed raw magic-link tokens in `vmp://` URLs — prefer AASA (S5) or a future one-time handoff code bound to an app install (checklist **S6**). |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=native` | **Production + staging** | Universal Links (iOS) / App Links (Android). Required for store builds. `client` is stamped when the native app requests the magic link. |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=browser` | Website login | Redeem in the browser; no PWA / native bounce. |
+| `https://<FRONTEND_HOST>/auth/verify?token=…&client=pwa` (+ optional `pwa=1`) | Installed Home Screen web app | Push-login when `pwa=1`; otherwise iOS Safari may exchange for a short-lived handoff. |
+| `vmp://auth/verify?token=…` | **Local + staging SideStore PoC only** | Fail-closed in the app (`EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`, no `DISABLE`). **release/beta/nightly** Mobile artifact builds always force the scheme off. **`flavor=development` + `enable_custom_scheme`** may enable it for SideStore. Staging web opens `vmp://` only after a two-step confirm + D1 `insecure_native_scheme_acks` row, and only when `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` (staging CI). Not a substitute for Universal Links (checklist **S6**). |
 
-**Browser handoff until S5:** `packages/web/utils/nativeAppHandoff.ts` — Android `intent://` (package-targeted HTTPS) so magic links opened in the system browser bounce into the installed APK without consuming the token first. iOS custom-scheme token handoff is disabled until install-bound codes exist.
+**Client-tagged emails:** `POST /api/auth/magic-link` accepts `{ client: 'browser' \| 'pwa' \| 'native' }` and embeds it in the verify URL. Web login defaults to `browser` (or `pwa` when `isInstalledPwa()`); Expo login sends `native`. `/auth/verify` routes from that tag instead of guessing User-Agent / display-mode.
 
-**AASA / Digital Asset Links status:** **Routes exist; awaiting signing values.** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
+**How magic-link → app is supposed to work (read this before inventing handoffs)**
+
+1. **Website login** emails `…/auth/verify?token=…&client=browser`. The browser redeems the token and sets cookies. No app involvement.
+2. **Native app login** emails the **same HTTPS URL** with `client=native`. The OS should open the **installed app** via **Universal Links (iOS)** / **App Links (Android)** — not a custom `vmp://` scheme. The app calls `POST /api/auth/native/redeem` with the token.
+3. **Home Screen PWA (iOS)** uses the separate push-login path (`client=pwa` / `pwa=1`), because Safari and the PWA do not share cookies.
+
+**Why Universal Links “don’t work” today on `vmp.tjm.sk`:** the Worker already serves `/.well-known/apple-app-site-association` and `assetlinks.json`, but both **404 with “Not configured”** until the maintainer sets GitHub repo vars `MOBILE_APPLE_APP_IDS_*` and `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS_*` and redeploys. Without those files, iOS/Android **must** open the link in the browser — that is expected, not a bug in `/auth/verify`.
+
+**SideStore caveat:** each tester re-signs the IPA with their own Apple ID → different Team ID → AASA cannot list every tester. Universal Links need a **stable** Team ID (TestFlight / App Store / shared dev team). **Temporary staging escape hatch:** build Mobile artifacts with `flavor=development` and `enable_custom_scheme=true`, then on **staging** `/auth/verify?client=native` complete the two-step insecure confirm (checkbox + confirm). The API records an acknowledgment in D1 and only then may Safari open `vmp://` with the still-unused magic-link token. Production / beta web never expose this path.
+
+**Custom schemes (`vmp://`):** claimable by any app. Off for release/beta/nightly CI; optional for development SideStore PoC with staging double-confirm + D1 ack. Not a substitute for Universal Links.
+
+**AASA / Digital Asset Links status:** **Routes exist; signing values unset on staging/prod (404).** The web Worker serves both documents from `packages/web/server/routes/.well-known/`, assembled from deploy env:
 
 | Env var | Contents |
 | --- | --- |
@@ -109,7 +123,7 @@ Web Push (`/api/push/subscribe`, VAPID) stays for the PWA. Native delivery (APNs
 
 ### Reused as-is
 
-- `POST /api/auth/magic-link` — email still contains the web verify URL; the installed app intercepts it.
+- `POST /api/auth/magic-link` — body may include `client: 'browser' | 'pwa' | 'native'`; email verify URL carries the same tag so `/auth/verify` does not guess the originating surface.
 - `GET /api/videos`, `GET /api/video-access/{videoId}` (preferred; user from JWT), video proxy, offline device + download APIs.
   Legacy `GET /api/video-access/{userId}/{videoId}` remains for old clients only.
 

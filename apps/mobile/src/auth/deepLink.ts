@@ -49,7 +49,8 @@ function tokenFromQueryString(search: string): string | null {
  * Extract magic-link token from Universal Link or vmp:// deep link.
  *
  * HTTPS: only `https://<EXPO_PUBLIC_FRONTEND_HOST>/auth/verify?token=…`.
- * Custom: only `vmp://auth/verify?token=…` when the PoC scheme flag allows it.
+ * Custom: only `vmp://auth/verify?token=…` when the PoC scheme flag allows it
+ * (local testing only — distributed / SideStore artifact builds force the scheme off).
  * Unrelated deep links never yield a token (SessionProvider must not redeem them).
  */
 export function tokenFromAuthUrl(

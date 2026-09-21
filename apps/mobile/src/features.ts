@@ -2,7 +2,8 @@
  * Feature gates for Tier 1 PoC. Flip via env at build time — not runtime user settings.
  *
  * - nativePushEnabled: notification permission + registerNativePushDevice
- * - customSchemeDeepLinksAllowed: vmp:// token handoff (dev/PoC only; store builds use HTTPS)
+ * - customSchemeDeepLinksAllowed: vmp:// token handoff (fail-closed; local opt-in or
+ *   Mobile artifacts flavor=development + enable_custom_scheme for staging SideStore PoC)
  */
 export const nativePushEnabled =
   process.env.EXPO_PUBLIC_NATIVE_PUSH_ENABLED === '1' ||

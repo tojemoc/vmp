@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   buildAndroidNativeAppIntentUrl,
+  buildIosInsecureNativeSchemeUrl,
   DEFAULT_MOBILE_ANDROID_PACKAGE,
   isNativeAppFallbackQuery,
   resolveMobileAndroidPackage,
@@ -30,10 +31,13 @@ describe('nativeAppHandoff', () => {
 
   it('builds a package-targeted https intent URL with browser fallback', () => {
     const intent = buildAndroidNativeAppIntentUrl(
-      'https://vmp.example/auth/verify?token=raw-token',
+      'https://vmp.example/auth/verify?token=raw-token&client=native',
       'sk.tjm.vmp',
     );
-    assert.match(intent, /^intent:\/\/vmp\.example\/auth\/verify\?token=raw-token#Intent;/);
+    assert.match(
+      intent,
+      /^intent:\/\/vmp\.example\/auth\/verify\?token=raw-token&client=native#Intent;/,
+    );
     assert.match(intent, /;scheme=https;/);
     assert.match(intent, /;package=sk\.tjm\.vmp;/);
     assert.match(intent, /S\.browser_fallback_url=/);
@@ -45,5 +49,22 @@ describe('nativeAppHandoff', () => {
     assert.equal(resolveMobileAndroidPackage(''), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('evil;package'), DEFAULT_MOBILE_ANDROID_PACKAGE);
     assert.equal(resolveMobileAndroidPackage('sk.tjm.vmp'), 'sk.tjm.vmp');
+  });
+
+  it('builds claimable vmp:// verify URLs only from http(s) /auth/verify with a token', () => {
+    const built = buildIosInsecureNativeSchemeUrl(
+      'https://staging.example/auth/verify?token=raw%2Btoken&client=native&redirect=%2F',
+    );
+    assert.equal(built, 'vmp://auth/verify?token=raw%2Btoken&client=native&redirect=%2F');
+
+    assert.throws(() => buildIosInsecureNativeSchemeUrl('vmp://auth/verify?token=x'), /http\(s\)/);
+    assert.throws(
+      () => buildIosInsecureNativeSchemeUrl('https://staging.example/login?token=x'),
+      /\/auth\/verify/,
+    );
+    assert.throws(
+      () => buildIosInsecureNativeSchemeUrl('https://staging.example/auth/verify?client=native'),
+      /token/,
+    );
   });
 });
