@@ -29,7 +29,8 @@ TVs never open emailed magic links. Pairing is the correct auth pattern for Tier
 | --- | --- | --- |
 | **0** | API contracts | Native magic-link redeem (refresh token in JSON), body-based refresh/logout, device push token register, device-pairing start/preview/complete/poll. Unblocks Tier 2–4 later. |
 | **1** | Tier 1 PoC | Expo app: handoff, push register, catalog + one video online, offline download path wired to existing APIs. |
-| **2** | Tier 2 PoC | RN-tvOS fork on same app; focus nav for catalog + watch; pairing-code login; system player. |
+| **1b** | Tier 1 productization | Subscriber gate → later web-parity access tiers; catalog thumbnails + watch chrome → CMS homepage/articles. Plans: [mobile-access-tiers.md](plans/mobile-access-tiers.md), [mobile-cms-parity.md](plans/mobile-cms-parity.md). |
+| **2** | Tier 2 PoC / Sprint 0 | RN-tvOS fork on same app; **D-pad focus** catalog + watch; **pairing-code login**; system player. Detailed sprint: [tv-tier2-sprint.md](plans/tv-tier2-sprint.md). Voice control is post–Sprint 0. |
 | **3** | Tier 3 PoC | **One** of Tizen or webOS as proof; lightweight web client against `@vmp/api`; pairing auth; no RN. |
 | **4** | Tier 4 PoC | Dedicated Titan OS and/or VIDAA apps from the Tier 3 HTML5 shell (store/CSP paperwork + OEM QA); pairing auth unchanged. |
 | **5** | Decision gate | Compare Tiers 1–4 before full store builds / parity with PWA. |
@@ -183,4 +184,5 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 - **2026-08 (review 7)**: Pairing counters use `SegmentRateLimiterDO`; `parsePairingLimit` rejects non-integer values.
 - **2026-08 (review 8)**: `vmp://` ENABLE is canonical; DISABLE=1 always wins. Pairing codes default to 10 chars; start/poll/preview have global DO budgets in addition to per-IP; limiter fail-closed; poll unknown/malformed returns `pending`.
 - **2026-08 (review 9)**: TV poll client guidance — local format gate, `expiresAt`/max-attempt bound, non-validating timeout UX.
+- **2026-09**: Phase **1b** productization plans (subscriber gate → access tiers; thumbnails/watch → CMS); TV Sprint 0 plan for D-pad + pairing before voice.
 - **2026-09 (S1)**: Native TOTP entry screen (`apps/mobile/app/auth/2fa.tsx`); `POST /api/auth/2fa/verify` returns `refreshToken` in JSON for secure storage (cookie retained for web).

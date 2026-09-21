@@ -113,7 +113,29 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] Native TOTP / 2FA UI (**S1**) — redeem → `/auth/2fa` → `POST /api/auth/2fa/verify` (refreshToken in body) ([#684](https://github.com/tojemoc/vmp/pull/684))
 - [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end) — offline client wired in `apps/mobile` (authorize → filesystem → local play); still needs device E2E against R2-backed HLS + push delivery for full checkbox
 - [ ] AASA / Digital Asset Links live values (`MOBILE_*` env vars)
-- [ ] Tier 2–4 (TV: Android/tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5)
+
+#### Mobile entitlements (`mobile-subscriber-gate` → `mobile-access-tiers`)
+
+**Plan:** [docs/plans/mobile-access-tiers.md](docs/plans/mobile-access-tiers.md)
+
+- [ ] App-level gate: catalog / watch / downloads only for active subscribers + staff (`mobile-subscriber-gate`)
+- [ ] Web-parity tiers: anonymous (rate-limited) + logged-in free preview + subscriber full access (`mobile-access-tiers`)
+
+#### Mobile catalog / watch / CMS (`mobile-thumbnails-watch` → `mobile-cms-parity`)
+
+**Plan:** [docs/plans/mobile-cms-parity.md](docs/plans/mobile-cms-parity.md)
+
+- [ ] Catalog thumbnails + watch chrome closer to web (`mobile-thumbnails-watch`)
+- [ ] CMS homepage blocks (grid / mobileOrder) on native (`mobile-cms-parity` B1)
+- [ ] CMS text articles / pages in-app (`mobile-cms-parity` B2)
+
+#### TV first sprint (`tv-tier2-sprint`)
+
+**Plan:** [docs/plans/tv-tier2-sprint.md](docs/plans/tv-tier2-sprint.md)
+
+- [ ] Pairing-code login on TV + D-pad focus catalog/watch (Sprint 0)
+- [ ] Voice control / assistant intents (post–Sprint 0)
+- [ ] Tier 2–4 (Android/tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5)
 
 ---
 
