@@ -33,11 +33,21 @@ IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always
 
 `<flavor>-v<semver>-build<build>`
 
-Examples:
+Examples (after the SideStore marketing-version fix, `semver` patch equals the CI build):
 
-- `release-v0.1.0-build42`
-- `nightly-v0.1.0-build43`
+- `release-v0.1.42-build42`
+- `nightly-v0.1.43-build43`
 - `development-v0.1.1-build1`
+
+`app.json` keeps a stable `expo.version` major.minor base (e.g. `0.1.0`). CI rewrites the published marketing version to `major.minor.<build>` before `expo prebuild` so the IPA’s `CFBundleShortVersionString` matches the AltStore source `version` field.
+
+## SideStore update detection (important)
+
+SideStore decides **Update** vs **Open** by comparing **SemanticVersion of `version` / `CFBundleShortVersionString` only**. A bump to `buildVersion` / `CFBundleVersion` alone does **not** show Update when major.minor.patch are unchanged (upstream `InstalledApp.hasUpdate`; the older AltStore check that also compared `buildVersion` is commented out).
+
+Symptoms when only `buildVersion` changes (historical VMP bug): the new release appears in the source changelog, the button stays **Open**, and new JS/native bits only land after uninstall + reinstall (Keychain login can survive).
+
+Mitigation (same approach as [tojemoc/floaty](https://github.com/tojemoc/floaty)): every CI IPA must ship a **strictly increasing** marketing version. Helper: `scripts/ios-sidestore-marketing-version.mjs`.
 
 ## IPA packaging rules (SideStore)
 
@@ -65,7 +75,7 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 1. GitHub → **Actions** → **Mobile artifacts** → **Run workflow**.
 2. Set `api_url` and `frontend_host` for the target environment.
 3. Choose `flavor` (`release`, `beta`, `nightly`, `development`).
-4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). A new IPA requires a unique flavor+version+build. Re-running a failed publish is allowed only for the **same commit**: a missing IPA is uploaded, an existing IPA is not replaced, and a reserved tag is reused (or restored if a partial release dropped it). A later dispatch from a different commit with the same identity is rejected.
+4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). Published marketing version becomes `major.minor.<build>` (from `app.json` base + that build). A new IPA requires a unique flavor+version+build. Re-running a failed publish is allowed only for the **same commit**: a missing IPA is uploaded, an existing IPA is not replaced, and a reserved tag is reused (or restored if a partial release dropped it). A later dispatch from a different commit with the same identity is rejected.
 5. **Publishing** (`publish_release`) is only allowed when dispatching from `main` (all flavors). From a feature branch, disable `publish_release` to build IPA/APK artifacts without updating GitHub Releases or the public GitHub Pages install site.
 6. Download the Android APK from workflow artifacts if needed.
 7. On iPhone: add the Pages source URL in SideStore and install the desired version.

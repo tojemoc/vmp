@@ -205,7 +205,7 @@ IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The A
 
 **Wrangler `--var` trap:** Wrangler splits on `:` only (`collectKeyValues`). Passing `--var KEY=value` creates a plain-text var whose **name** is `KEY=value` and whose value is empty — that is how staging ended up with `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` / `VMP_FEATURES=…` ghost keys. Always use `--var KEY:value` in deploy scripts.
 
-Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags).
+Packaging: `scripts/package-ios-ipa-for-sidestore.sh` (ad-hoc sign + `Payload/App.app` zip layout). Source generator: `scripts/generate-altstore-source.py` (dedupes by `(version, buildVersion)`; prefers release > beta > nightly > development tags). **SideStore caveat:** CI must bump `CFBundleShortVersionString` every release (`scripts/ios-sidestore-marketing-version.mjs` → `major.minor.<build>`); build-number-only bumps do not show Update in SideStore.
 
 ### Running services locally
 
