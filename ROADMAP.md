@@ -118,14 +118,14 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 
 **Plan:** [docs/plans/mobile-access-tiers.md](docs/plans/mobile-access-tiers.md)
 
-- [ ] App-level gate: catalog / watch / downloads only for active subscribers + staff (`mobile-subscriber-gate`)
+- [x] App-level gate: catalog / watch / downloads only for active subscribers + staff (`mobile-subscriber-gate`) — [#692](https://github.com/tojemoc/vmp/pull/692)
 - [ ] Web-parity tiers: anonymous (rate-limited) + logged-in free preview + subscriber full access (`mobile-access-tiers`)
 
 #### Mobile catalog / watch / CMS (`mobile-thumbnails-watch` → `mobile-cms-parity`)
 
 **Plan:** [docs/plans/mobile-cms-parity.md](docs/plans/mobile-cms-parity.md)
 
-- [ ] Catalog thumbnails + watch chrome closer to web (`mobile-thumbnails-watch`)
+- [x] Catalog thumbnails + watch chrome closer to web (`mobile-thumbnails-watch`) — [#692](https://github.com/tojemoc/vmp/pull/692)
 - [ ] CMS homepage blocks (grid / mobileOrder) on native (`mobile-cms-parity` B1)
 - [ ] CMS text articles / pages in-app (`mobile-cms-parity` B2)
 
