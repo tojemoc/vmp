@@ -13,8 +13,18 @@ describe("sidestoreMarketingVersion", () => {
   });
 
   it("rejects non-integer builds", () => {
-    assert.throws(() => sidestoreMarketingVersion("0.1.0", "1.0"), /positive integer/);
-    assert.throws(() => sidestoreMarketingVersion("0.1.0", ""), /positive integer/);
+    assert.throws(
+      () => sidestoreMarketingVersion("0.1.0", "1.0"),
+      /non-zero decimal integer/,
+    );
+    assert.throws(() => sidestoreMarketingVersion("0.1.0", ""), /non-zero decimal integer/);
+  });
+
+  it("rejects zero and leading-zero build numbers", () => {
+    assert.throws(() => sidestoreMarketingVersion("0.1.0", "0"), /non-zero decimal integer/);
+    assert.throws(() => sidestoreMarketingVersion("0.1.0", 0), /non-zero decimal integer/);
+    assert.throws(() => sidestoreMarketingVersion("0.1.0", "01"), /non-zero decimal integer/);
+    assert.throws(() => sidestoreMarketingVersion("0.1.0", "010"), /non-zero decimal integer/);
   });
 });
 

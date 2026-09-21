@@ -20,8 +20,11 @@ import { pathToFileURL } from "node:url";
  */
 export function sidestoreMarketingVersion(baseVersion, buildNumber) {
   const build = String(buildNumber).trim();
-  if (!/^\d+$/.test(build)) {
-    throw new Error(`build number must be a positive integer, got: ${buildNumber}`);
+  // Non-zero decimal integer only — reject "0", "01", and other leading zeros.
+  if (!/^[1-9]\d*$/.test(build)) {
+    throw new Error(
+      `build number must be a non-zero decimal integer without leading zeros, got: ${buildNumber}`,
+    );
   }
 
   const raw = String(baseVersion ?? "").trim();
