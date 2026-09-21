@@ -401,6 +401,12 @@ export async function removeOfflineDownload(
   videoId: string,
   userId: string,
 ): Promise<void> {
+  const record = await readStoredDownload(videoId);
+  if (!record || record.userId !== userId) {
+    // Abort only this account's in-flight task; never touch another account's files.
+    await pauseOfflineDownload(videoId, userId);
+    return;
+  }
   await pauseOfflineDownload(videoId, userId);
   await revokeOfflineDownload(accessToken, videoId).catch(() => undefined);
   await deleteOfflineVideo(videoId);

@@ -52,9 +52,16 @@ export default function WatchScreen() {
   const id = videoId ? String(videoId) : '';
 
   const refreshDownload = useCallback(async () => {
-    if (!id || !session) return;
-    setDownload(await getDownloadRecord(id, session.user.id));
-  }, [id, session]);
+    if (!id) return;
+    const userId = sessionRef.current?.user.id;
+    if (!userId) return;
+    const epoch = accountEpochRef.current;
+    const record = await getDownloadRecord(id, userId);
+    if (accountEpochRef.current !== epoch || sessionRef.current?.user.id !== userId) {
+      return;
+    }
+    setDownload(record);
+  }, [id]);
 
   useEffect(() => {
     if (!id || !accountId) return;
