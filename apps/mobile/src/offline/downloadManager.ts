@@ -23,7 +23,13 @@ import type { DownloadProgress, StoredDownload } from './types';
 
 type ProgressListener = (progress: DownloadProgress) => void;
 
-const activeDownloads = new Map<string, AbortController>();
+type ActiveDownload = {
+  controller: AbortController;
+  /** Settles when the download task exits (success, failure, or pause). */
+  done: Promise<void>;
+};
+
+const activeDownloads = new Map<string, ActiveDownload>();
 const progressListeners = new Map<string, Set<ProgressListener>>();
 
 function nowIso(): string {
@@ -136,17 +142,27 @@ export function isDownloadActive(videoId: string): boolean {
   return activeDownloads.has(videoId);
 }
 
-export async function getDownloadRecord(videoId: string): Promise<StoredDownload | null> {
-  return readStoredDownload(videoId);
+export async function getDownloadRecord(
+  videoId: string,
+  userId: string,
+): Promise<StoredDownload | null> {
+  const record = await readStoredDownload(videoId);
+  if (!record || record.userId !== userId) return null;
+  return record;
 }
 
-export async function listDownloadRecords(): Promise<StoredDownload[]> {
-  return listStoredDownloads();
+export async function listDownloadRecords(userId: string): Promise<StoredDownload[]> {
+  const all = await listStoredDownloads();
+  return all.filter((d) => d.userId === userId);
 }
 
-export async function getOfflinePlaybackUri(videoId: string): Promise<string | null> {
+export async function getOfflinePlaybackUri(
+  videoId: string,
+  userId: string,
+): Promise<string | null> {
   const record = await readStoredDownload(videoId);
   if (record?.status !== 'completed') return null;
+  if (record.userId !== userId) return null;
   if (!isLicensePlaybackAllowed(record.license)) return null;
   const ready = await assetExists(videoId, 'offline-master.m3u8');
   if (!ready) return null;
@@ -155,63 +171,85 @@ export async function getOfflinePlaybackUri(videoId: string): Promise<string | n
 
 export async function startOfflineDownload({
   accessToken,
+  userId,
   videoId,
   rendition,
 }: {
   accessToken: string;
+  userId: string;
   videoId: string;
   rendition: OfflineRendition;
 }): Promise<void> {
-  if (activeDownloads.has(videoId)) return;
+  const existingActive = activeDownloads.get(videoId);
+  if (existingActive) return existingActive.done;
 
   const controller = new AbortController();
-  activeDownloads.set(videoId, controller);
+  let settle!: () => void;
+  const done = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const entry: ActiveDownload = { controller, done };
+  activeDownloads.set(videoId, entry);
 
   try {
     const existingRecord = await readStoredDownload(videoId);
+    const sameAccount = existingRecord?.userId === userId;
     let isResume = Boolean(
-      existingRecord &&
+      sameAccount &&
+        existingRecord &&
         existingRecord.rendition === rendition &&
         (existingRecord.status === 'paused' || existingRecord.status === 'failed') &&
         existingRecord.filesCompleted > 0,
     );
 
-    const device = await ensureOfflineDevice(accessToken);
+    const device = await ensureOfflineDevice(accessToken, userId);
+    if (device.userId !== userId) {
+      throw new Error('Offline device is not bound to the current account');
+    }
 
     if (!isResume) {
       const initial: StoredDownload = {
         videoId,
-        videoTitle: existingRecord?.videoTitle ?? '',
+        videoTitle: sameAccount ? (existingRecord?.videoTitle ?? '') : '',
+        userId,
         rendition,
         status: 'downloading',
-        license: existingRecord?.license ?? {
-          licenseId: '',
-          deviceId: device.deviceId,
-          videoId,
-          rendition,
-          expiresAt: new Date().toISOString(),
-          manifestHash: '',
-          manifestVersion: 1,
-          playbackState: 'allowed',
-          nextValidationDueAt: new Date().toISOString(),
-          signature: '',
-        },
-        downloadToken: existingRecord?.downloadToken ?? '',
-        manifestHash: existingRecord?.manifestHash ?? '',
-        manifestVersion: existingRecord?.manifestVersion ?? 1,
+        license:
+          sameAccount && existingRecord?.license
+            ? existingRecord.license
+            : {
+                licenseId: '',
+                deviceId: device.deviceId,
+                videoId,
+                rendition,
+                expiresAt: new Date().toISOString(),
+                manifestHash: '',
+                manifestVersion: 1,
+                playbackState: 'allowed',
+                nextValidationDueAt: new Date().toISOString(),
+                signature: '',
+              },
+        downloadToken: '',
+        manifestHash: sameAccount ? (existingRecord?.manifestHash ?? '') : '',
+        manifestVersion: sameAccount ? (existingRecord?.manifestVersion ?? 1) : 1,
         bytesDownloaded: 0,
         totalBytes: 0,
         filesCompleted: 0,
         filesTotal: 0,
         errorMessage: null,
-        createdAt: existingRecord?.createdAt ?? nowIso(),
+        createdAt: sameAccount ? (existingRecord?.createdAt ?? nowIso()) : nowIso(),
         updatedAt: nowIso(),
         completedAt: null,
       };
       await writeStoredDownload(initial);
       emitProgress(videoId, initial);
     } else {
-      await patchDownload(videoId, { status: 'downloading', errorMessage: null });
+      await patchDownload(videoId, {
+        status: 'downloading',
+        errorMessage: null,
+        userId,
+        downloadToken: '',
+      });
     }
 
     const data = await authorizeOfflineDownload(accessToken, videoId, {
@@ -242,8 +280,9 @@ export async function startOfflineDownload({
 
     await patchDownload(videoId, {
       videoTitle: data.video?.title ?? existingRecord?.videoTitle ?? videoId,
+      userId,
       license: data.license,
-      downloadToken: data.downloadToken,
+      downloadToken: '',
       manifestHash: data.license.manifestHash,
       manifestVersion: data.license.manifestVersion,
       totalBytes,
@@ -296,6 +335,7 @@ export async function startOfflineDownload({
       filesCompleted: downloadableFiles.length,
       completedAt: nowIso(),
       errorMessage: null,
+      downloadToken: '',
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Download failed';
@@ -303,25 +343,36 @@ export async function startOfflineDownload({
       controller.signal.aborted ||
       (err instanceof Error && (err.name === 'AbortError' || /paused|abort/i.test(err.message)));
     if (aborted) {
-      await patchDownload(videoId, { status: 'paused', errorMessage: null }).catch(() => undefined);
+      await patchDownload(videoId, {
+        status: 'paused',
+        errorMessage: null,
+        downloadToken: '',
+      }).catch(() => undefined);
     } else {
-      await patchDownload(videoId, { status: 'failed', errorMessage: message }).catch(
-        () => undefined,
-      );
+      await patchDownload(videoId, {
+        status: 'failed',
+        errorMessage: message,
+        downloadToken: '',
+      }).catch(() => undefined);
     }
     throw err;
   } finally {
-    activeDownloads.delete(videoId);
+    if (activeDownloads.get(videoId) === entry) {
+      activeDownloads.delete(videoId);
+    }
+    settle();
   }
 }
 
 export async function pauseOfflineDownload(videoId: string): Promise<void> {
-  const controller = activeDownloads.get(videoId);
-  controller?.abort();
-  activeDownloads.delete(videoId);
+  const entry = activeDownloads.get(videoId);
+  if (entry) {
+    entry.controller.abort();
+    await entry.done.catch(() => undefined);
+  }
   const record = await readStoredDownload(videoId);
   if (record && record.status === 'downloading') {
-    await patchDownload(videoId, { status: 'paused' });
+    await patchDownload(videoId, { status: 'paused', downloadToken: '' });
   }
 }
 
@@ -332,15 +383,18 @@ export async function removeOfflineDownload(accessToken: string, videoId: string
   await deleteStoredDownload(videoId);
 }
 
-export async function getPlayableOfflineSummary(videoId: string): Promise<{
+export async function getPlayableOfflineSummary(
+  videoId: string,
+  userId: string,
+): Promise<{
   record: StoredDownload;
   playlistUri: string;
   licenseDue: boolean;
 } | null> {
-  const record = await readStoredDownload(videoId);
+  const record = await getDownloadRecord(videoId, userId);
   if (record?.status !== 'completed') return null;
   if (!isLicensePlaybackAllowed(record.license)) return null;
-  const playlistUri = await getOfflinePlaybackUri(videoId);
+  const playlistUri = await getOfflinePlaybackUri(videoId, userId);
   if (!playlistUri) return null;
   return {
     record,
@@ -349,8 +403,11 @@ export async function getPlayableOfflineSummary(videoId: string): Promise<{
   };
 }
 
-export async function hasRegisteredOfflineDevice(): Promise<boolean> {
-  return Boolean(await readStoredDevice());
+export async function hasRegisteredOfflineDevice(userId?: string): Promise<boolean> {
+  const device = await readStoredDevice();
+  if (!device) return false;
+  if (userId && device.userId !== userId) return false;
+  return true;
 }
 
 export { deviceAuthHeaders, ensureOfflineDevice, readStoredDevice };

@@ -7,6 +7,7 @@ import {
   refreshNativeSession,
   verifyNativeTotp,
 } from '../api/client';
+import { clearStoredDevice } from '../offline/device';
 import { shareInFlightByKey } from './inFlight';
 import { normalizeTotpCode, TotpVerifyError } from './totp';
 
@@ -142,6 +143,7 @@ export async function signOut(): Promise<void> {
     }
   }
   await clearSession();
+  await clearStoredDevice();
 }
 
 export { firstSearchParam, safeRedirectPath, tokenFromAuthUrl } from './deepLink';

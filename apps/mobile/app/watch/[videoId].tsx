@@ -34,9 +34,9 @@ export default function WatchScreen() {
   const id = videoId ? String(videoId) : '';
 
   const refreshDownload = useCallback(async () => {
-    if (!id) return;
-    setDownload(await getDownloadRecord(id));
-  }, [id]);
+    if (!id || !session) return;
+    setDownload(await getDownloadRecord(id, session.user.id));
+  }, [id, session]);
 
   useEffect(() => {
     if (!id) return;
@@ -54,12 +54,12 @@ export default function WatchScreen() {
       setError(null);
       try {
         await refreshDownload();
-        const offlineUri = await getOfflinePlaybackUri(id);
+        const offlineUri = await getOfflinePlaybackUri(id, session.user.id);
         if (cancelled) return;
         if (offlineUri) {
           setPlaylistUrl(offlineUri);
           setSource('offline');
-          const record = await getDownloadRecord(id);
+          const record = await getDownloadRecord(id, session.user.id);
           setTitle(record?.videoTitle || id);
           return;
         }
@@ -103,11 +103,12 @@ export default function WatchScreen() {
     try {
       await startOfflineDownload({
         accessToken: session.accessToken,
+        userId: session.user.id,
         videoId: id,
         rendition: DEFAULT_RENDITION,
       });
       await refreshDownload();
-      const offlineUri = await getOfflinePlaybackUri(id);
+      const offlineUri = await getOfflinePlaybackUri(id, session.user.id);
       if (offlineUri) {
         setPlaylistUrl(offlineUri);
         setSource('offline');
@@ -132,17 +133,19 @@ export default function WatchScreen() {
     try {
       await removeOfflineDownload(session.accessToken, id);
       setProgress(null);
+      setPlaylistUrl(null);
+      setSource(null);
       await refreshDownload();
-      // Fall back to online if still available
-      const access = await getVideoAccess(id, session.accessToken);
-      const url = access?.video?.playlistUrl || access?.playlistUrl;
-      if (url) {
-        const absolute = url.startsWith('http') ? url : `${apiUrl}${url}`;
-        setPlaylistUrl(absolute);
-        setSource('online');
-      } else {
-        setPlaylistUrl(null);
-        setSource(null);
+      try {
+        const access = await getVideoAccess(id, session.accessToken);
+        const url = access?.video?.playlistUrl || access?.playlistUrl;
+        if (url) {
+          const absolute = url.startsWith('http') ? url : `${apiUrl}${url}`;
+          setPlaylistUrl(absolute);
+          setSource('online');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not restore online playback');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Remove failed');

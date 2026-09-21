@@ -65,22 +65,38 @@ async function writeDownloadsIndex(downloads: StoredDownload[]): Promise<void> {
   await FileSystem.writeAsStringAsync(downloadsIndexUri(), JSON.stringify(downloads));
 }
 
+/** Serialize read-modify-write updates to downloads.json (write + delete). */
+let downloadsIndexChain: Promise<unknown> = Promise.resolve();
+
+function withDownloadsIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = downloadsIndexChain.then(fn, fn);
+  downloadsIndexChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 export async function readStoredDownload(videoId: string): Promise<StoredDownload | null> {
   const all = await listStoredDownloads();
   return all.find((d) => d.videoId === videoId) ?? null;
 }
 
 export async function writeStoredDownload(record: StoredDownload): Promise<void> {
-  const all = await listStoredDownloads();
-  const idx = all.findIndex((d) => d.videoId === record.videoId);
-  if (idx >= 0) all[idx] = record;
-  else all.push(record);
-  await writeDownloadsIndex(all);
+  return withDownloadsIndexLock(async () => {
+    const all = await listStoredDownloads();
+    const idx = all.findIndex((d) => d.videoId === record.videoId);
+    if (idx >= 0) all[idx] = record;
+    else all.push(record);
+    await writeDownloadsIndex(all);
+  });
 }
 
 export async function deleteStoredDownload(videoId: string): Promise<void> {
-  const all = await listStoredDownloads();
-  await writeDownloadsIndex(all.filter((d) => d.videoId !== videoId));
+  return withDownloadsIndexLock(async () => {
+    const all = await listStoredDownloads();
+    await writeDownloadsIndex(all.filter((d) => d.videoId !== videoId));
+  });
 }
 
 export async function ensureVideoDir(videoId: string): Promise<void> {

@@ -20,16 +20,17 @@ export default function DownloadsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!session) return;
     setLoading(true);
     setError(null);
     try {
-      setRows(await listDownloadRecords());
+      setRows(await listDownloadRecords(session.user.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to list downloads');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     void load();
