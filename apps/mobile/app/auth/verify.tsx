@@ -71,7 +71,11 @@ export default function AuthVerifyScreen() {
   }
 
   if (pendingTwoFactorToken) {
-    return <Redirect href="/auth/2fa" />;
+    const twoFactorHref =
+      redirectTo === '/'
+        ? '/auth/2fa'
+        : (`/auth/2fa?redirect=${encodeURIComponent(redirectTo)}` as '/auth/2fa');
+    return <Redirect href={twoFactorHref} />;
   }
 
   const message = localError || error;

@@ -1814,7 +1814,16 @@ export async function verifyTotpPendingLogin(
   pendingToken: string,
   code: string,
 ): Promise<
-  | { ok: true; user: { id: string; email: string; role: string; totp_enabled: number } }
+  | {
+      ok: true;
+      user: {
+        id: string;
+        email: string;
+        role: string;
+        totp_enabled: number;
+        created_at: string | null;
+      };
+    }
   | TotpVerifyFailure
 > {
   if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
@@ -1881,7 +1890,9 @@ export async function verifyTotpPendingLogin(
   }
 
   const userRow = await db
-    .prepare('SELECT id, email, role, totp_secret, totp_enabled FROM users WHERE id = ?')
+    .prepare(
+      'SELECT id, email, role, totp_secret, totp_enabled, created_at FROM users WHERE id = ?',
+    )
     .bind(pending.sub)
     .first();
 
@@ -1945,6 +1956,7 @@ export async function verifyTotpPendingLogin(
       email: userRow.email,
       role: userRow.role,
       totp_enabled: userRow.totp_enabled,
+      created_at: userRow.created_at ?? null,
     },
   };
 }
@@ -1969,6 +1981,7 @@ export async function handleTotpVerify(request: any, env: any, corsHeaders: any)
     email: verified.user.email,
     role: verified.user.role,
     totp_enabled: verified.user.totp_enabled,
+    created_at: verified.user.created_at,
   };
   // Same token material as native redeem so mobile can persist refreshToken
   // without reading the HttpOnly cookie. Web still uses the Set-Cookie path.

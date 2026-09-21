@@ -1,6 +1,7 @@
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { firstSearchParam, safeRedirectPath } from '../../src/auth/deepLink';
 import { useSession } from '../../src/auth/SessionProvider';
 import { completeTotpLogin } from '../../src/auth/session';
 import { isTotpSessionExpired, TotpVerifyError } from '../../src/auth/totp';
@@ -12,6 +13,8 @@ import { isTotpSessionExpired, TotpVerifyError } from '../../src/auth/totp';
 export default function AuthTwoFactorScreen() {
   const { session, booting, pendingTwoFactorToken, clearPendingTwoFactor, setSession } =
     useSession();
+  const params = useLocalSearchParams<{ redirect?: string | string[] }>();
+  const redirectTo = safeRedirectPath(firstSearchParam(params.redirect) || '/');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export default function AuthTwoFactorScreen() {
   }
 
   if (session) {
-    return <Redirect href="/" />;
+    return <Redirect href={redirectTo as '/'} />;
   }
 
   async function onSubmit() {

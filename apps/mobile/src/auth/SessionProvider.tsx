@@ -2,6 +2,7 @@ import * as Linking from 'expo-linking';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { tokenFromAuthUrl } from './deepLink';
 import {
+  clearSession,
   loadSession,
   redeemMagicLinkToken,
   restoreSession,
@@ -43,6 +44,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       const result = await redeemMagicLinkToken(token);
       if (result.status === 'two_factor_required') {
+        // Drop any prior SecureStore session so boot cannot restore the old account
+        // while the TOTP challenge is still pending (token is in-memory only).
+        await clearSession();
         setPendingTwoFactorToken(result.pendingToken);
         setSession(null);
         return 'two_factor_required';
@@ -51,7 +55,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession(result.session);
       return 'authenticated';
     } catch (err) {
-      setPendingTwoFactorToken(null);
+      // Do not clear an active TOTP challenge on a later used/invalid magic-link 401.
       setError(err instanceof Error ? err.message : 'Sign-in link failed');
       return 'failed';
     }
