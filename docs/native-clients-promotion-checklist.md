@@ -19,7 +19,7 @@ Linked plan: [`native-clients-plan.md`](native-clients-plan.md).
 
 | # | Blocker | Verify | Sign-off |
 | --- | --- | --- | --- |
-| S1 | **2FA / TOTP UI** | Editors/admins can sign in natively, or staff testing is explicitly out of scope | Maintainer |
+| S1 | **2FA / TOTP UI** | Editors/admins can sign in natively via `/auth/2fa` after redeem returns `requiresTwoFactor`, or staff testing is explicitly out of scope | Maintainer |
 | S2 | **Landscape watch** | `app.json` no longer portrait-only, or waiver with UX sign-off | Maintainer |
 | S3 | **Background audio policy** | Intentional setting documented; matches product expectation for long-form | Maintainer |
 | S4 | **Approve TV placement** | Under Settings/profile — **not** a home-header primary action | Maintainer |

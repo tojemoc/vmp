@@ -1,6 +1,7 @@
 import type {
   NativeRedeemResponse,
   NativeSessionResponse,
+  NativeTotpVerifyResponse,
   OfflineAuthorizeResponse,
   OfflineDeviceRegistration,
   OfflineRendition,
@@ -63,6 +64,16 @@ export async function redeemNativeMagicLink(token: string): Promise<NativeRedeem
   return apiFetch('/api/auth/native/redeem', {
     method: 'POST',
     body: JSON.stringify({ token }),
+  });
+}
+
+export async function verifyNativeTotp(
+  pendingToken: string,
+  code: string,
+): Promise<NativeTotpVerifyResponse> {
+  return apiFetch('/api/auth/2fa/verify', {
+    method: 'POST',
+    body: JSON.stringify({ pendingToken, code }),
   });
 }
 

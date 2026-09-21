@@ -7,6 +7,7 @@ Expo (React Native) phone/tablet client. Plan: [`docs/native-clients-plan.md`](.
 Scaffold + API client for Phase 0 / Tier 1 PoC:
 
 - Magic-link request → deep-link redeem via `POST /api/auth/native/redeem`
+- Native TOTP / 2FA entry (`/auth/2fa`) when redeem returns `requiresTwoFactor` → `POST /api/auth/2fa/verify`
 - Secure session storage (`expo-secure-store`)
 - Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
 - Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings
@@ -17,7 +18,6 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 
 | Gap | Who it blocks | Notes |
 | --- | --- | --- |
-| No native TOTP UI | Editors/admins (2FA-enforced roles) | API returns `requiresTwoFactor`; app shows an explicit error. Use a non-2FA viewer for PoC testing, or add TOTP before staff testing. |
 | No APNs/FCM send path | Anyone expecting push content | Token register exists; `EXPO_PUBLIC_NATIVE_PUSH_ENABLED` must stay unset until delivery lands. |
 | Portrait-only + no background audio | UX polish | Tracked in plan “Open PoC issues”; change before store submission. |
 | Cross-device magic link | Same email opened on wrong device | Checklist **S7**; login copy warns single-use |

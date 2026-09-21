@@ -254,6 +254,18 @@ export function normalizeMagicLinkClient(value: unknown): MagicLinkClient {
  */
 export const INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE = 'INSECURE_SIDE_STORE_TEST';
 
+/** Body for POST /api/auth/2fa/verify (web + native). */
+export interface NativeTotpVerifyRequest {
+  code: string;
+  pendingToken: string;
+}
+
+/**
+ * Success body from POST /api/auth/2fa/verify.
+ * Native clients must persist `refreshToken`; web may ignore it and use the cookie.
+ */
+export type NativeTotpVerifyResponse = NativeSessionResponse;
+
 export interface DevicePairingPreview {
   pairingCode: string;
   status: 'pending' | 'expired' | 'approved' | 'redeemed';

@@ -19,6 +19,10 @@ export default function RootLayout() {
           name="auth/verify"
           options={{ title: 'Signing in', headerBackVisible: false }}
         />
+        <Stack.Screen
+          name="auth/2fa"
+          options={{ title: 'Two-factor auth', headerBackVisible: false }}
+        />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="downloads" options={{ title: 'Downloads' }} />
         <Stack.Screen name="watch/[videoId]" options={{ title: 'Watch' }} />

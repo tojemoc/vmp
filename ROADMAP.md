@@ -111,6 +111,7 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] Tier 1 Expo scaffold (`apps/mobile`) + SideStore distribution playbook
 - [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end) — offline client wired in `apps/mobile` (authorize → filesystem → local play); still needs device E2E against R2-backed HLS + push delivery for full checkbox
 - [x] Client-tagged magic links (`client=browser|pwa|native` in email verify URL)
+- [x] Native TOTP / 2FA UI (**S1**) — redeem → `/auth/2fa` → `POST /api/auth/2fa/verify` (refreshToken in body) ([#684](https://github.com/tojemoc/vmp/pull/684))
 - [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end)
 - [ ] AASA / Digital Asset Links live values (`MOBILE_*` env vars)
 - [ ] Tier 2–4 (TV: Android/tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5)

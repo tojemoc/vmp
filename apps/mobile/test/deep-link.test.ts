@@ -34,22 +34,13 @@ describe('mobile deepLink helpers', () => {
       tokenFromAuthUrl(`https://evil.example/auth/verify?token=secret`, false, HOST),
       null,
     );
-    assert.equal(
-      tokenFromAuthUrl(`https://${HOST}/watch/1?token=secret`, false, HOST),
-      null,
-    );
+    assert.equal(tokenFromAuthUrl(`https://${HOST}/watch/1?token=secret`, false, HOST), null);
     assert.equal(
       tokenFromAuthUrl(`https://${HOST}/auth/verify/extra?token=secret`, false, HOST),
       null,
     );
-    assert.equal(
-      tokenFromAuthUrl(`http://${HOST}/auth/verify?token=secret`, false, HOST),
-      null,
-    );
-    assert.equal(
-      tokenFromAuthUrl(`https://${HOST}/auth/verify?token=secret`, false, null),
-      null,
-    );
+    assert.equal(tokenFromAuthUrl(`http://${HOST}/auth/verify?token=secret`, false, HOST), null);
+    assert.equal(tokenFromAuthUrl(`https://${HOST}/auth/verify?token=secret`, false, null), null);
   });
 
   it('tokenFromAuthUrl gates vmp:// to exact auth/verify when allowed', () => {
