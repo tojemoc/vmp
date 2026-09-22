@@ -1677,6 +1677,14 @@
     stopPlaybackSessionHeartbeats();
   };
 
+  const handleVideoEnded = () => {
+    isActivelyWatching.value = false;
+    clearPreviewEndTimer();
+    if (playbackSessionEnabled()) {
+      void releasePlaybackSession();
+    }
+  };
+
   usePushAttribution({
     videoId: () => videoId.value,
     currentTime: () => currentTime.value,
