@@ -20,6 +20,7 @@ const ROUTE_FEATURE_RULES: RouteFeatureRule[] = [
   { prefix: '/api/admin/einvoicing', feature: 'einvoicing' },
   { prefix: '/api/account/invoices', feature: 'einvoicing' },
   { prefix: '/api/admin/analytics', feature: 'analytics' },
+  { prefix: '/api/analytics', feature: 'analytics' },
   { prefix: '/api/admin/cms', feature: 'cms' },
   { prefix: '/api/cms', feature: 'cms' },
   { prefix: '/api/pages', feature: 'cms' },

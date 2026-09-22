@@ -62,20 +62,18 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 **Issues:** [#646](https://github.com/tojemoc/vmp/issues/646) / [TOJ-136](https://linear.app/tojemoc/issue/TOJ-136)  
 **Plan:** [docs/plans/step-10-account-deletion.md](docs/plans/step-10-account-deletion.md) (spec #506 / TOJ-19 closed)
 
-**Blocked:** payment gateway adapter — provider-agnostic `cancelSubscriptionImmediately` before Stripe-touching deletion ships.
-
-Groundwork landed in [#656](https://github.com/tojemoc/vmp/pull/656):
+Groundwork landed in [#656](https://github.com/tojemoc/vmp/pull/656); full deletion flow in this PR:
 
 - [x] `requireAuth` rejects tokens whose user row is gone
 - [x] `einvoices.user_id` nullable + `ON DELETE SET NULL` (retention)
 - [x] `offline_devices` / `offline_download_licenses` / `pwa_handoffs` `ON DELETE CASCADE`
-- [ ] Deletion-pending gate on auth / refresh / magic-link
-- [ ] Deletion token table + request/confirm API
-- [ ] Durable `account_deletion_jobs` + R2 object inventory
-- [ ] `cancelSubscriptionImmediately` on payment adapter
-- [ ] Invoice PII anonymization + Brevo contact deletion
-- [ ] Account deletion UI + legal copy
-- [ ] Checkout consent persistence (`checkout_consents`)
+- [x] Deletion-pending gate on auth / refresh / magic-link
+- [x] Deletion token table + request/confirm API
+- [x] Durable `account_deletion_jobs` + R2 object inventory
+- [x] `cancelSubscriptionImmediately` on payment adapter
+- [x] Invoice PII anonymization + Brevo contact deletion
+- [x] Account deletion UI + legal copy
+- [x] Checkout consent persistence (`checkout_consents`)
 
 ### CMS admin analytics (`analytics-observability-cms`)
 
@@ -87,8 +85,8 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] Per-video / aggregate **view counts**
 - [x] **Referrer / traffic source** breakdown
 - [x] **Country** (geo) breakdown (`CF-IPCountry` on segment proxy)
-- [ ] CMS **page** view counts (today only video-segment traffic is counted)
-- [ ] “Help sponsor” (or similar) editor workflow — product decision still open
+- [x] CMS **page** view counts (`POST /api/analytics/pageview` + `cms_page_view_*` D1 tables; Analytics KPI/table/CSV)
+- [ ] “Help sponsor” (or similar) editor workflow — **deferred**: product decision still open; no sponsor UX in-repo. Split from #643 pageview delivery; open a follow-up issue when product defines the workflow.
 
 ### Native / TV clients (`native-clients`)
 

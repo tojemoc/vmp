@@ -4,8 +4,8 @@ import { createAccessToken, requireAuth } from '../src/auth.js';
 
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
 
-// Minimal D1 double: the `users` set holds the ids that still exist.
-function fakeDb(users: Set<string>) {
+// Minimal D1 double: the `users` map holds rows that still exist (with deletion_pending).
+function fakeDb(users: Map<string, { deletion_pending?: number }>) {
   return {
     prepare(sql: string) {
       const normalized = sql.replace(/\s+/g, ' ').trim();
@@ -13,8 +13,10 @@ function fakeDb(users: Set<string>) {
         bind(...args: unknown[]) {
           return {
             async first() {
-              if (normalized.startsWith('SELECT 1 FROM users WHERE id')) {
-                return users.has(String(args[0])) ? { 1: 1 } : null;
+              if (normalized.includes('FROM users WHERE id')) {
+                const row = users.get(String(args[0]));
+                if (!row) return null;
+                return { deletion_pending: row.deletion_pending ?? 0 };
               }
               return null;
             },
@@ -37,7 +39,7 @@ describe('requireAuth account existence', () => {
       { id: 'user-1', email: 'viewer@example.com', role: 'viewer' },
       JWT_SECRET,
     );
-    const env = { DB: fakeDb(new Set(['user-1'])), JWT_SECRET };
+    const env = { DB: fakeDb(new Map([['user-1', {}]])), JWT_SECRET };
     const payload = await requireAuth(requestWithToken(token), env);
     assert.equal(payload.sub, 'user-1');
   });
@@ -47,12 +49,24 @@ describe('requireAuth account existence', () => {
       { id: 'deleted-user', email: 'gone@example.com', role: 'viewer' },
       JWT_SECRET,
     );
-    const env = { DB: fakeDb(new Set()), JWT_SECRET };
+    const env = { DB: fakeDb(new Map()), JWT_SECRET };
     await assert.rejects(requireAuth(requestWithToken(token), env), /User no longer exists/);
   });
 
+  it('rejects a token for a deletion-pending user', async () => {
+    const token = await createAccessToken(
+      { id: 'pending-user', email: 'p@example.com', role: 'viewer' },
+      JWT_SECRET,
+    );
+    const env = {
+      DB: fakeDb(new Map([['pending-user', { deletion_pending: 1 }]])),
+      JWT_SECRET,
+    };
+    await assert.rejects(requireAuth(requestWithToken(token), env), /Account deletion pending/);
+  });
+
   it('rejects when the Authorization header is missing', async () => {
-    const env = { DB: fakeDb(new Set(['user-1'])), JWT_SECRET };
+    const env = { DB: fakeDb(new Map([['user-1', {}]])), JWT_SECRET };
     await assert.rejects(requireAuth(requestWithToken(), env), /Missing Bearer token/);
   });
 });

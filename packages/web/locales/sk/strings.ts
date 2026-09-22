@@ -373,6 +373,28 @@ export const strings: StringsDefinition = {
   newsletterOptOutSaved: 'Vaša voľba bola uložená.',
   newsletterOptOutLoadFailed: 'Nepodarilo sa načítať vašu voľbu newslettera.',
   newsletterOptOutSaveFailed: 'Nepodarilo sa uložiť vašu voľbu newslettera.',
+  checkoutTermsAcceptLabel:
+    'Beriem na vedomie, že prístup začína ihneď po zaplatení a že tam, kde to zákon pri okamžite dodávanom digitálnom obsahu umožňuje, vzdávam sa 14-dňového práva na odstúpenie. Povinné prostriedky nápravy pri vadnom plnení zostávajú.',
+  checkoutTermsLearnMore: 'Osobné údaje a podmienky',
+  checkoutTermsRequired: 'Pred platbou musíte prijať podmienky digitálneho obsahu.',
+  accountDeleteTitle: 'Zmazať môj účet',
+  accountDeleteIntro:
+    'Trvalo zmažete účet a osobné údaje. Túto akciu nie je možné vrátiť. Aktívne predplatné sa zruší okamžite (predplatený prístup končí so zmazaním účtu).',
+  accountDeleteInvoiceNote:
+    'Anonymizované faktúry (sumy a dátumy bez mena a e-mailu) sa uchovávajú počas zákonnej účtovnej lehoty podľa CZ/SK práva.',
+  accountDeleteImmediateCancelNote:
+    'Nárok na vrátenie zostávajúceho predplateného času sa riadi spotrebiteľským právom — nejde o plošné „bez refundácií“.',
+  accountDeleteRequest: 'Odoslať potvrdzovací e-mail na zmazanie',
+  accountDeleteRequesting: 'Odosielam…',
+  accountDeleteRequestSent:
+    'Skontrolujte e-mail s odkazom a potom prihlásení zadajte potvrdzovaciu frázu nižšie.',
+  accountDeleteRequestFailed: 'Nepodarilo sa spustiť zmazanie účtu.',
+  accountDeleteConfirmPhraseLabel: 'Napíšte DELETE MY ACCOUNT na potvrdenie',
+  accountDeleteConfirmPhraseHint: 'Musí sedieť presne vrátane veľkých písmen.',
+  accountDeleteConfirm: 'Trvalo zmazať účet',
+  accountDeleteConfirming: 'Mažem…',
+  accountDeleteConfirmFailed: 'Nepodarilo sa potvrdiť zmazanie účtu.',
+  accountDeleteDone: 'Váš účet bol zmazaný.',
   continueWatchingTitle: 'Pokračovať v sledovaní',
   continueWatchingIntro:
     'Pokračujte tam, kde ste pri VOD videách skončili. Odstránením položky vymažete uloženú pozíciu.',

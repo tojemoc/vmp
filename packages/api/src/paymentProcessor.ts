@@ -4,6 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
+import { linkCheckoutConsentSubscription, persistCheckoutConsent } from './checkoutConsent.js';
 import { applyCheckoutNewsletterOptOut } from './newsletterPreference.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
@@ -495,6 +496,24 @@ async function upsertSubscriptionFromNormalizedEvent(
     currentPeriodEnd,
     cancelAtPeriodEnd,
   });
+
+  const consentSubId = providerSubscriptionId || stripeSubscriptionId;
+  if (consentSubId) {
+    try {
+      await linkCheckoutConsentSubscription(db, {
+        userId,
+        provider: providerIdToDbProvider(event.providerId),
+        subscriptionId: consentSubId,
+        providerSessionId: event.providerOrderId ?? null,
+      });
+    } catch (err) {
+      console.warn(
+        '[payments] checkout consent link failed',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   return userId;
 }
 
@@ -1137,13 +1156,16 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
 
 /**
  * POST /api/payments/checkout — protected
- * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath?, newsletterOptOut? }
+ * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath?, newsletterOptOut?, termsAccepted? }
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
  *
  * newsletterOptOut (optional boolean): when true, records that the subscriber
  * does not want the creator newsletter. Omitted / false leaves any existing
  * account opt-out unchanged — clearing remains an explicit account action.
  * System email is unaffected.
+ *
+ * termsAccepted (required true): affirmative acknowledgment of immediate digital
+ * content delivery / statutory withdrawal conditions (checkout_consents).
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user;
@@ -1174,6 +1196,17 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     );
   }
   const newsletterOptOut = body?.newsletterOptOut === true;
+  if (body?.termsAccepted !== true) {
+    return jsonResponse(
+      {
+        error:
+          'You must accept the digital content terms (immediate access / withdrawal conditions) before checkout.',
+        code: 'terms_not_accepted',
+      },
+      400,
+      corsHeaders,
+    );
+  }
 
   try {
     const db = getDb(env);
@@ -1324,6 +1357,13 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     await applyCheckoutNewsletterOptOut(db, user.sub, newsletterOptOut);
 
     const returnPath = normalizeReturnPath(body?.returnPath);
+    const frontendUrl = String(env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    // Stripe Checkout `consent_collection.terms_of_service` needs a Dashboard ToS URL.
+    // Gate behind admin_settings so first-party checkbox remains the always-on consent path.
+    const stripeTosCollection =
+      String(await getSetting(env, 'stripe_checkout_tos_collection', { defaultValue: '0' })) ===
+      '1';
+    const termsOfServiceUrl = stripeTosCollection ? `${frontendUrl}/personal-data` : undefined;
     const einvoicingEnabled =
       String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1';
     const sellerJurisdiction = String(
@@ -1339,6 +1379,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       planType,
       returnPath,
       einvoicingCheckout,
+      ...(termsOfServiceUrl ? { termsOfServiceUrl } : {}),
       ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
       ...(promoMeta
         ? {
@@ -1352,6 +1393,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
             },
           }
         : {}),
+    });
+
+    const providerSessionId =
+      String(session.orderId ?? session.metadata?.refId ?? '').trim() || null;
+    await persistCheckoutConsent(db, {
+      userId: user.sub,
+      provider: apiProvider,
+      providerSessionId,
+      checkoutSessionId: null,
     });
 
     if (session.clientSecret) {

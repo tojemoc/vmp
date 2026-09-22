@@ -90,7 +90,7 @@
 <script setup lang="ts">
   import { getNativeEmailInboxHref } from '~/utils/emailInbox';
   import { capturePostHogEvent } from '~/utils/posthogClient';
-  import { isIosInstalledPwa } from '~/utils/pwa';
+  import { isInstalledPwa, isIosInstalledPwa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   usePageSeo({ title: strings.loginTitle, noIndex: true });
@@ -141,7 +141,9 @@
     try {
       await signIn(email.value, redirectTo);
       sent.value = true;
-      capturePostHogEvent('magic_link_requested');
+      capturePostHogEvent('magic_link_requested', {
+        client: import.meta.client && isInstalledPwa() ? 'pwa' : 'browser',
+      });
     } catch (err: any) {
       errorMessage.value = err.message || strings.loginErrorGeneric;
     } finally {

@@ -499,6 +499,76 @@
         </template>
       </div>
 
+      <!-- Account deletion (GDPR Art. 17) -->
+      <div
+        id="delete-account"
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-900/60 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.accountDeleteTitle }}
+          </h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {{ strings.accountDeleteIntro }}
+          </p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            {{ strings.accountDeleteInvoiceNote }}
+          </p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            {{ strings.accountDeleteImmediateCancelNote }}
+          </p>
+        </div>
+
+        <div class="flex flex-wrap gap-3">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-medium rounded-lg border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-gray-900 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+            :disabled="deleteRequesting"
+            @click="requestAccountDeletion"
+          >
+            {{ deleteRequesting ? strings.accountDeleteRequesting : strings.accountDeleteRequest }}
+          </button>
+        </div>
+        <p v-if="deleteRequestSent" class="text-sm text-green-700 dark:text-green-400">
+          {{ strings.accountDeleteRequestSent }}
+        </p>
+        <p v-if="deleteRequestError" class="text-sm text-red-600 dark:text-red-400">
+          {{ deleteRequestError }}
+        </p>
+
+        <div
+          v-if="deleteToken"
+          class="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-800"
+        >
+          <label class="block">
+            <span class="text-sm font-medium text-gray-900 dark:text-white">
+              {{ strings.accountDeleteConfirmPhraseLabel }}
+            </span>
+            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {{ strings.accountDeleteConfirmPhraseHint }}
+            </span>
+            <input
+              v-model="deleteConfirmPhrase"
+              type="text"
+              autocomplete="off"
+              class="mt-2 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
+            >
+          </label>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            :disabled="deleteConfirming || deleteConfirmPhrase !== ACCOUNT_DELETION_CONFIRM_PHRASE"
+            @click="confirmAccountDeletion"
+          >
+            {{ deleteConfirming ? strings.accountDeleteConfirming : strings.accountDeleteConfirm }}
+          </button>
+          <p v-if="deleteConfirmError" class="text-sm text-red-600 dark:text-red-400">
+            {{ deleteConfirmError }}
+          </p>
+        </div>
+      </div>
+
       <!-- Security / 2FA card (staff roles required; viewers optional) -->
       <div
         v-if="show2faCard"
@@ -633,6 +703,7 @@
 </template>
 
 <script setup lang="ts">
+  import { ACCOUNT_DELETION_CONFIRM_PHRASE } from '@vmp/shared';
   import { resolveComponent } from 'vue';
   import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
@@ -655,6 +726,7 @@
     isLoggedIn,
     markTotpDisabled,
     applyNewSession,
+    logout,
   } = useAuth();
   const { siteSettings } = useSiteSettings();
   const { startLoginFlow, waitForAuthInitialised } = useLoginFlow();
@@ -784,6 +856,14 @@
     await navigateTo({ path: route.path, query: nextQuery }, { replace: true });
   }
 
+  /** Strip the one-time delete token from the URL without adding a history entry. */
+  async function clearDeleteTokenQuery() {
+    if (!('delete_token' in route.query)) return;
+    const nextQuery = { ...route.query };
+    delete nextQuery.delete_token;
+    await navigateTo({ path: route.path, query: nextQuery, hash: route.hash }, { replace: true });
+  }
+
   const showTotpDisable = ref(false);
   const totpDisableCode = ref('');
   const totpDisabling = ref(false);
@@ -833,6 +913,14 @@
   const newsletterPrefSaved = ref(false);
   const newsletterOptedOut = ref(false);
 
+  const deleteRequesting = ref(false);
+  const deleteRequestSent = ref(false);
+  const deleteRequestError = ref<string | null>(null);
+  const deleteToken = ref('');
+  const deleteConfirmPhrase = ref('');
+  const deleteConfirming = ref(false);
+  const deleteConfirmError = ref<string | null>(null);
+
   type ContinueWatchingItem = {
     videoId: string;
     title: string;
@@ -857,6 +945,14 @@
       sessionStorage.getItem(relinkBannerStorageKey(user.value?.id)) === '1'
     ) {
       relinkBannerDismissed.value = true;
+    }
+
+    const deleteTokenParam = route.query.delete_token;
+    if (typeof deleteTokenParam === 'string' && deleteTokenParam.trim()) {
+      deleteToken.value = deleteTokenParam.trim();
+      deleteRequestSent.value = true;
+      // Keep the token in component state only — do not leave it in the URL/history.
+      await clearDeleteTokenQuery();
     }
 
     if (returningFromLegacy.value) {
@@ -1095,6 +1191,63 @@
       newsletterPrefError.value = strings.newsletterOptOutSaveFailed;
     } finally {
       savingNewsletterPref.value = false;
+    }
+  }
+
+  async function requestAccountDeletion() {
+    deleteRequesting.value = true;
+    deleteRequestError.value = null;
+    deleteRequestSent.value = false;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/delete-request`, {
+        method: 'POST',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        deleteRequestError.value = data.error ?? strings.accountDeleteRequestFailed;
+        return;
+      }
+      deleteRequestSent.value = true;
+      // A fresh email invalidates any previous link token in state/URL.
+      deleteToken.value = '';
+      deleteConfirmPhrase.value = '';
+      await clearDeleteTokenQuery();
+      capturePostHogEvent('account_deletion_requested');
+    } catch {
+      deleteRequestError.value = strings.accountDeleteRequestFailed;
+    } finally {
+      deleteRequesting.value = false;
+    }
+  }
+
+  async function confirmAccountDeletion() {
+    if (deleteConfirmPhrase.value !== ACCOUNT_DELETION_CONFIRM_PHRASE || !deleteToken.value) return;
+    deleteConfirming.value = true;
+    deleteConfirmError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/delete-confirm`, {
+        method: 'POST',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          token: deleteToken.value,
+          confirmationPhrase: deleteConfirmPhrase.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        deleteConfirmError.value = data.error ?? strings.accountDeleteConfirmFailed;
+        return;
+      }
+      capturePostHogEvent('account_deletion_confirmed');
+      await logout();
+      await navigateTo('/');
+    } catch {
+      deleteConfirmError.value = strings.accountDeleteConfirmFailed;
+    } finally {
+      deleteConfirming.value = false;
     }
   }
 

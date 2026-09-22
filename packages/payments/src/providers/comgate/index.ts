@@ -142,6 +142,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       recurringPayments: true,
       refunds: true,
       webhooks: true,
+      immediateCancellation: true,
     },
     isConfigured: () => Boolean(config.merchant && config.secret && config.frontendUrl),
 
@@ -250,6 +251,34 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
         await comgatePost('/v1.0/cancel', { transId: subscriptionId });
       } catch (err) {
         if (isComgateAlreadyCancelledError(err)) return;
+        throw err;
+      }
+    },
+
+    async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+      try {
+        await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+      } catch (err) {
+        // Do not match on err.message — it always contains the path `/v1.0/cancel`.
+        const details =
+          err && typeof err === 'object' && 'details' in err
+            ? ((err as { details?: Record<string, unknown> }).details ?? null)
+            : null;
+        const detailMessage = String(details?.message ?? '');
+        const detailCode = String(details?.code ?? '');
+        // Auth / credential failures must never look like success.
+        if (/unauthor|forbidden|secret|auth/i.test(detailMessage)) throw err;
+        // Comgate code 1400 = cannot change to CANCELLED (not found / wrong status / unauthorized).
+        // Only treat as idempotent success when status is already CANCELLED.
+        if (detailCode === '1400') {
+          try {
+            const status = await getPaymentStatus(subscriptionId);
+            if (/^CANCELLED$/i.test(String(status.status ?? ''))) return;
+          } catch {
+            // fall through and rethrow original cancel error
+          }
+        }
+        if (/already|not found|finished/i.test(detailMessage)) return;
         throw err;
       }
     },
