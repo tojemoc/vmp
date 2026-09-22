@@ -12,9 +12,7 @@ export const PLAYBACK_SESSION_HEADER = 'X-VMP-Playback-Session';
 /** Plan default: heartbeat every 30s while a session is active (stale window ≈ 90s). */
 export const PLAYBACK_SESSION_HEARTBEAT_MS = 30_000;
 
-export type ConcurrentPlaybackErrorCode =
-  | 'concurrent_playback_limit'
-  | 'playback_session_required';
+export type ConcurrentPlaybackErrorCode = 'concurrent_playback_limit' | 'playback_session_required';
 
 export type ConcurrentPlaybackError = {
   code: ConcurrentPlaybackErrorCode;

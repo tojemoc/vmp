@@ -93,11 +93,9 @@
                 {{ strings.concurrentPlaybackLimitTitle }}
               </h3>
               <p class="text-amber-800 dark:text-amber-300 mb-2">
-                {{
-                  strings.concurrentPlaybackLimitMessage(
+                {{ strings.concurrentPlaybackLimitMessage(
                     concurrentPlaybackLimitValue > 0 ? concurrentPlaybackLimitValue : 1,
-                  )
-                }}
+                  ) }}
               </p>
               <p class="text-amber-700 dark:text-amber-400 text-sm mb-4">
                 {{ strings.concurrentPlaybackLimitClubHint }}
@@ -650,10 +648,7 @@
               {{ videoData.video.title }}
             </h1>
 
-            <p
-              v-if="playbackResumeHint"
-              class="text-sm text-gray-600 dark:text-gray-400 mb-3"
-            >
+            <p v-if="playbackResumeHint" class="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {{ playbackResumeHint }}
             </p>
 
@@ -859,17 +854,20 @@
     shouldResumePlaybackPosition,
     usePlaybackPosition,
   } from '~/composables/usePlaybackPosition';
+  import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate';
   import {
     parseConcurrentPlaybackError,
     shouldClaimPlaybackSession,
     usePlaybackSession,
   } from '~/composables/usePlaybackSession';
-  import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate';
   import { usePushAttribution } from '~/composables/usePushAttribution';
   import { sizeUrl } from '~/composables/useThumbnail';
   import { renderMarkdownToHtml } from '~/utils/markdown';
-  import { claimActivePlayerVideoIdForFlush, assignActivePlayerVideoIdIfCurrent } from '~/utils/playbackRouteFlush';
   import { trackOfflineEvent } from '~/utils/offline/analytics';
+  import {
+    assignActivePlayerVideoIdIfCurrent,
+    claimActivePlayerVideoIdForFlush,
+  } from '~/utils/playbackRouteFlush';
   import {
     checkPlaylistAvailability,
     isPlaybackUnavailableCode,

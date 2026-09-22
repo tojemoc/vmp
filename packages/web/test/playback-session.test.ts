@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  parseConcurrentPlaybackError,
   PLAYBACK_SESSION_HEADER,
   PLAYBACK_SESSION_HEARTBEAT_MS,
+  parseConcurrentPlaybackError,
   shouldClaimPlaybackSession,
 } from '../composables/usePlaybackSession';
 
