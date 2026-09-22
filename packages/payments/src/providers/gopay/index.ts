@@ -30,20 +30,11 @@ const DEFAULT_API_BASE = 'https://gw.sandbox.gopay.com/api';
 const TOKEN_SKEW_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 
-function isGoPayAlreadyCancelledError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const details =
-    'details' in err && err.details && typeof err.details === 'object'
-      ? (err.details as Record<string, unknown>)
-      : null;
-  const blob = JSON.stringify(details ?? err).toLowerCase();
-  return (
-    blob.includes('already') ||
-    blob.includes('finished') ||
-    blob.includes('stopped') ||
-    blob.includes('void') ||
-    blob.includes('recurrence_state')
-  );
+function isTerminalGoPayRecurrenceState(state: unknown): boolean {
+  const normalized = String(state ?? '')
+    .trim()
+    .toUpperCase();
+  return normalized === 'STOPPED' || normalized === 'FINISHED';
 }
 
 type TokenCache = { accessToken: string; expiresAtMs: number };
@@ -327,29 +318,33 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
           `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
         );
       } catch (err) {
-        // Idempotent: already-voided / finished recurrence is success for retries.
-        if (isGoPayAlreadyCancelledError(err)) return;
+        // Idempotent only when the provider confirms a terminal recurrence state.
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isTerminalGoPayRecurrenceState(status.recurrence?.recurrence_state)) return;
+        } catch {
+          // fall through
+        }
         throw err;
       }
     },
 
     async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
       // GoPay void-recurrence stops future charges immediately; local access is revoked
-      // by account deletion. Treat already-voided recurrence as success when possible.
+      // by account deletion. Treat already-voided recurrence as success only when
+      // recurrence_state is confirmed terminal.
       try {
         await gopayJson(
           'POST',
           `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
         );
       } catch (err) {
-        const details =
-          err && typeof err === 'object' && 'details' in err
-            ? (err as { details?: unknown }).details
-            : undefined;
-        const detailText =
-          details == null ? '' : typeof details === 'string' ? details : JSON.stringify(details);
-        // Prefer provider payload (err.details) — generic Error messages may omit void reason.
-        if (/already|voided|finished|canceled|cancelled/i.test(detailText)) return;
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isTerminalGoPayRecurrenceState(status.recurrence?.recurrence_state)) return;
+        } catch {
+          // fall through
+        }
         throw err;
       }
     },

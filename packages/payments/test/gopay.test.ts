@@ -220,6 +220,13 @@ describe('createGoPayProvider', () => {
         status: 409,
         body: { errors: [{ message: 'Recurrence already finished' }] },
       },
+      // Status confirm: terminal recurrence_state required.
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'STOPPED' },
+        },
+      },
     ]);
     const provider = createGoPayProvider(baseConfig());
     await provider.cancelSubscription('99');
@@ -245,14 +252,40 @@ describe('createGoPayProvider', () => {
           errors: [{ message: 'Payment recurrence already voided', error_code: 409 }],
         },
       },
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'FINISHED' },
+        },
+      },
     ]);
     const provider = createGoPayProvider(baseConfig());
     await provider.cancelSubscriptionImmediately('99');
   });
 
+  it('cancelSubscriptionImmediately rejects ambiguous failures without terminal state', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      {
+        status: 409,
+        body: { errors: [{ message: 'Recurrence already finished' }] },
+      },
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'STARTED' },
+        },
+      },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await assert.rejects(() => provider.cancelSubscriptionImmediately('99'), /GoPay API/);
+  });
+
   it('cancelSubscriptionImmediately propagates non-terminal provider rejections', async () => {
     mockFetchSequence([
       { body: { access_token: 'tok', expires_in: 1800 } },
+      { status: 401, body: { errors: [{ message: 'Unauthorized', error_code: 401 }] } },
+      // Status confirm also fails / non-terminal — original error rethrown.
       { status: 401, body: { errors: [{ message: 'Unauthorized', error_code: 401 }] } },
     ]);
     const provider = createGoPayProvider(baseConfig());

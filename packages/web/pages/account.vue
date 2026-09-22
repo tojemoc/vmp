@@ -167,7 +167,7 @@
           </div>
         </template>
 
-        <template v-else-if="hasActiveSubscription && subscription">
+        <template v-else-if="(hasActiveSubscription || supportsRedirectCancel) && subscription">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
@@ -202,7 +202,7 @@
           </div>
 
           <p
-            v-if="subscription.cancelAtPeriodEnd"
+            v-if="subscription.cancelAtPeriodEnd && !supportsRedirectCancel"
             class="mt-2 text-sm text-amber-800 dark:text-amber-200"
           >
             {{ strings.subscriptionCancelingHint }}

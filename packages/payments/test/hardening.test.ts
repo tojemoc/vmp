@@ -4,13 +4,13 @@ import { isGoPaySandboxApiBase, timingSafeEqualString } from '../src/index.js';
 import { normalizeRedirectGatewayInvoice } from '../src/providers/redirectInvoice.js';
 
 describe('timingSafeEqualString', () => {
-  it('matches equal secrets', () => {
-    assert.equal(timingSafeEqualString('abc', 'abc'), true);
+  it('matches equal secrets', async () => {
+    assert.equal(await timingSafeEqualString('abc', 'abc'), true);
   });
 
-  it('rejects unequal secrets and length mismatches', () => {
-    assert.equal(timingSafeEqualString('abc', 'abd'), false);
-    assert.equal(timingSafeEqualString('abc', 'ab'), false);
+  it('rejects unequal secrets and length mismatches', async () => {
+    assert.equal(await timingSafeEqualString('abc', 'abd'), false);
+    assert.equal(await timingSafeEqualString('abc', 'ab'), false);
   });
 });
 

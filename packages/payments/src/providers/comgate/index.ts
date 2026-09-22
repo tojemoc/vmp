@@ -29,22 +29,8 @@ import { normalizeRedirectGatewayInvoice } from '../redirectInvoice.js';
 const DEFAULT_API_BASE = 'https://payments.comgate.cz';
 const REQUEST_TIMEOUT_MS = 10_000;
 
-function isComgateAlreadyCancelledError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const details =
-    'details' in err && err.details && typeof err.details === 'object'
-      ? (err.details as Record<string, unknown>)
-      : null;
-  const code = String(details?.code ?? '').trim();
-  const message = String(details?.message ?? '').toLowerCase();
-  // Comgate uses numeric codes; treat common "already cancelled / not found" as success.
-  return (
-    code === '1400' ||
-    code === '1300' ||
-    message.includes('cancel') ||
-    message.includes('not found') ||
-    message.includes('already')
-  );
+function isComgateCancelledStatus(status: unknown): boolean {
+  return /^CANCELLED$/i.test(String(status ?? '').trim());
 }
 
 export type ComgatePaymentStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'AUTHORIZED' | string;
@@ -250,7 +236,13 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       try {
         await comgatePost('/v1.0/cancel', { transId: subscriptionId });
       } catch (err) {
-        if (isComgateAlreadyCancelledError(err)) return;
+        // Only treat ambiguous cancel failures as success when status is CANCELLED.
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isComgateCancelledStatus(status.status)) return;
+        } catch {
+          // fall through
+        }
         throw err;
       }
     },
@@ -260,25 +252,12 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
         await comgatePost('/v1.0/cancel', { transId: subscriptionId });
       } catch (err) {
         // Do not match on err.message — it always contains the path `/v1.0/cancel`.
-        const details =
-          err && typeof err === 'object' && 'details' in err
-            ? ((err as { details?: Record<string, unknown> }).details ?? null)
-            : null;
-        const detailMessage = String(details?.message ?? '');
-        const detailCode = String(details?.code ?? '');
-        // Auth / credential failures must never look like success.
-        if (/unauthor|forbidden|secret|auth/i.test(detailMessage)) throw err;
-        // Comgate code 1400 = cannot change to CANCELLED (not found / wrong status / unauthorized).
-        // Only treat as idempotent success when status is already CANCELLED.
-        if (detailCode === '1400') {
-          try {
-            const status = await getPaymentStatus(subscriptionId);
-            if (/^CANCELLED$/i.test(String(status.status ?? ''))) return;
-          } catch {
-            // fall through and rethrow original cancel error
-          }
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isComgateCancelledStatus(status.status)) return;
+        } catch {
+          // fall through and rethrow original cancel error
         }
-        if (/already|not found|finished/i.test(detailMessage)) return;
         throw err;
       }
     },
@@ -308,7 +287,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
       const parsed = parseFormResponse(body);
       const provided = String(parsed.secret ?? '');
-      return timingSafeEqualString(provided, config.secret);
+      return await timingSafeEqualString(provided, config.secret);
     },
 
     async handleWebhook(rawBody: Buffer | string): Promise<NormalizedPaymentEvent> {
