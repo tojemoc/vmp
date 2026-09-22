@@ -1,0 +1,80 @@
+# .github/workflows/coderabbit-cursor-relay.yml
+#
+# Helper for the Cursor Cloud automation that drives CodeRabbit review loops.
+#
+# Why this exists
+# ---------------
+# Cursor's PR-comment trigger intentionally ignores comments from bots and
+# GitHub Apps (security: no chained/spoofed bot loops). CodeRabbit posts as
+# `coderabbitai[bot]`, so a Cursor automation matching "rate limit" never
+# fires on the bot's own comment.
+#
+# This workflow watches CodeRabbit, then re-posts a *human* comment via a
+# User PAT (`CURSOR_AUTOMATION_PAT`). Cursor can match that relay comment.
+#
+# What it relays
+# --------------
+# - Rate-limit warnings (issue_comment) → `@cursor coderabbit-relay`
+#   with wait_minutes
+# - Actionable pull_request_review bodies (`Actionable comments posted: N`,
+#   N>0) → `@cursor coderabbit-relay` kind=actionable
+# - Manual-trigger notices (OSS <10 stars) → `@coderabbitai review` directly
+#   (no Cursor needed; uses GITHUB_TOKEN)
+#
+# What it deliberately does NOT relay
+# -----------------------------------
+# - "No actionable comments were generated in the recent review" (clean)
+# - Draft / skipped review notices
+#
+# Setup
+# -----
+# 1. Create a classic or fine-grained PAT for a *User* account (not an App)
+#    with permission to comment on PRs in this repo.
+# 2. Add it as repo secret `CURSOR_AUTOMATION_PAT`.
+# 3. Enable this workflow if GitHub left it disabled.
+# 4. Point the Cursor automation trigger at: `coderabbit-relay`
+#    (see .github/CODERABBIT_CURSOR_AUTOMATION.md).
+#
+# Why `types: [created, edited]` / review `submitted, edited`:
+# CodeRabbit often edits its summarize comment in place instead of posting
+# a new one. Listening only to `created` misses those updates.
+#
+# Uses inline Node (not actions/github-script) to avoid codeload 429s.
+
+name: CodeRabbit → Cursor relay
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: coderabbit-cursor-relay-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    if: >
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       github.event.comment.user.login == 'coderabbitai[bot]') ||
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.user.login == 'coderabbitai[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Relay CodeRabbit event to Cursor (or manual re-trigger)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CURSOR_AUTOMATION_PAT: ${{ secrets.CURSOR_AUTOMATION_PAT }}
+        run: node .github/scripts/coderabbit-cursor-relay.mjs

@@ -1,0 +1,294 @@
+/**
+ * Relays CodeRabbit bot events to a human-authored PR comment that Cursor
+ * automations can match. Cursor intentionally ignores comments from bots /
+ * GitHub Apps, so coderabbitai[bot] never reaches a PR-comment trigger.
+ *
+ * Invoked from coderabbit-cursor-relay.yml (inline Node — no third-party
+ * action download, avoids codeload 429s).
+ *
+ * Required secret: CURSOR_AUTOMATION_PAT — a classic or fine-grained PAT
+ * belonging to a *User* account (not a GitHub App). That user must be able
+ * to comment on PRs in this repo.
+ */
+import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+export const RELAY_MARKER = '<!-- cursor-coderabbit-relay -->';
+export const RELAY_MENTION = '@cursor coderabbit-relay';
+export const BOT_LOGIN = 'coderabbitai[bot]';
+export const MANUAL_TRIGGER_PHRASE = '@coderabbitai review';
+
+/**
+ * Classify a CodeRabbit issue comment or pull-request review body.
+ *
+ * @param {{ eventName: string, body: string }} input
+ * @returns {{
+ *   kind: 'ratelimit' | 'actionable' | 'manual_trigger' | 'ignore',
+ *   waitMinutes?: number | null,
+ *   actionableCount?: number | null,
+ *   reason?: string,
+ * }}
+ */
+export function classifyCodeRabbitEvent({ eventName, body }) {
+  if (!body || typeof body !== 'string') {
+    return { kind: 'ignore', reason: 'empty' };
+  }
+
+  // Rate-limit warnings often also carry the summarize HTML marker — check first.
+  if (/rate limited by coderabbit\.ai/i.test(body) || /##\s*Review limit reached/i.test(body)) {
+    const waitMatch = body.match(
+      /next(?:\s+included)?\s+review\s+available\s+in[:\s]*(\d+)\s*minutes?/i,
+    );
+    return {
+      kind: 'ratelimit',
+      waitMinutes: waitMatch ? Number.parseInt(waitMatch[1], 10) : null,
+    };
+  }
+
+  if (/should be triggered manually/i.test(body)) {
+    return { kind: 'manual_trigger' };
+  }
+
+  if (
+    /skip review by coderabbit\.ai/i.test(body) ||
+    /##\s*Draft PR not reviewed/i.test(body) ||
+    /##\s*Review skipped/i.test(body)
+  ) {
+    return { kind: 'ignore', reason: 'skipped' };
+  }
+
+  // Explicit clean bill — do not wake Cursor (loop ends naturally).
+  if (/No actionable comments were generated in the recent review/i.test(body)) {
+    return { kind: 'ignore', reason: 'clear' };
+  }
+
+  // Actionable findings live on pull_request_review bodies. Do not treat
+  // summarize walkthrough issue_comments as actionable — those often arrive
+  // alongside the review and would double-wake Cursor for the same round.
+  if (eventName === 'pull_request_review') {
+    const actionable = body.match(/Actionable comments posted:\s*(\d+)/i);
+    if (actionable) {
+      const count = Number.parseInt(actionable[1], 10);
+      if (count > 0) {
+        return { kind: 'actionable', actionableCount: count };
+      }
+      return { kind: 'ignore', reason: 'actionable_zero' };
+    }
+  }
+
+  return { kind: 'ignore', reason: 'unmatched' };
+}
+
+/**
+ * @param {{
+ *   kind: 'ratelimit' | 'actionable',
+ *   prNumber: number,
+ *   source: 'comment' | 'review',
+ *   sourceId: number | string,
+ *   waitMinutes?: number | null,
+ *   actionableCount?: number | null,
+ * }} opts
+ */
+export function buildRelayCommentBody(opts) {
+  const lines = [
+    RELAY_MARKER,
+    RELAY_MENTION,
+    '',
+    '```',
+    `kind: ${opts.kind}`,
+    `pr: ${opts.prNumber}`,
+    `source: ${opts.source}`,
+    `source_id: ${opts.sourceId}`,
+  ];
+
+  if (opts.kind === 'ratelimit') {
+    lines.push(`wait_minutes: ${opts.waitMinutes == null ? 'unknown' : opts.waitMinutes}`);
+  }
+  if (opts.kind === 'actionable' && opts.actionableCount != null) {
+    lines.push(`actionable_count: ${opts.actionableCount}`);
+  }
+
+  lines.push('```', '');
+  return lines.join('\n');
+}
+
+function makeHeaders(token, userAgent) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': userAgent,
+  };
+}
+
+async function gh(token, path, options = {}) {
+  const headers = {
+    ...makeHeaders(token, 'vmp-coderabbit-cursor-relay'),
+    ...(options.headers ?? {}),
+  };
+  const res = await fetch(`https://api.github.com${path}`, { ...options, headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GitHub API ${options.method ?? 'GET'} ${path}: ${res.status} ${text}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+async function listAllComments(token, owner, repo, issueNumber) {
+  const comments = [];
+  let page = 1;
+  while (true) {
+    const batch = await gh(
+      token,
+      `/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
+    );
+    comments.push(...batch);
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return comments;
+}
+
+function alreadyRelayed(comments, { kind, sourceId }) {
+  const needleKind = `kind: ${kind}`;
+  const needleSource = `source_id: ${sourceId}`;
+  return comments.some(
+    (c) =>
+      typeof c.body === 'string' &&
+      c.body.includes(RELAY_MARKER) &&
+      c.body.includes(needleKind) &&
+      c.body.includes(needleSource),
+  );
+}
+
+function alreadyManualRetrigger(comments, afterTime) {
+  return comments.some(
+    (c) => /@coderabbitai review/i.test(c.body ?? '') && new Date(c.created_at) > afterTime,
+  );
+}
+
+/**
+ * @param {{
+ *   eventName: string,
+ *   payload: object,
+ *   owner: string,
+ *   repo: string,
+ *   githubToken: string,
+ *   relayPat: string | undefined,
+ * }} ctx
+ */
+export async function runRelay(ctx) {
+  const { eventName, payload, owner, repo, githubToken, relayPat } = ctx;
+
+  let body;
+  let prNumber;
+  let source;
+  let sourceId;
+  let sourceTime;
+
+  if (eventName === 'issue_comment') {
+    body = payload.comment?.body ?? '';
+    prNumber = payload.issue?.number;
+    source = 'comment';
+    sourceId = payload.comment?.id;
+    sourceTime = new Date(payload.comment?.updated_at || payload.comment?.created_at);
+  } else if (eventName === 'pull_request_review') {
+    body = payload.review?.body ?? '';
+    prNumber = payload.pull_request?.number;
+    source = 'review';
+    sourceId = payload.review?.id;
+    sourceTime = new Date(payload.review?.submitted_at || payload.review?.edited_at || Date.now());
+  } else {
+    console.log(`Unsupported event ${eventName}, skipping.`);
+    return { status: 'skipped', reason: 'unsupported_event' };
+  }
+
+  if (!prNumber || sourceId == null) {
+    console.log('Missing PR number or source id, skipping.');
+    return { status: 'skipped', reason: 'missing_ids' };
+  }
+
+  const classification = classifyCodeRabbitEvent({ eventName, body });
+  console.log(
+    `Classified as ${classification.kind}${classification.reason ? ` (${classification.reason})` : ''}`,
+  );
+
+  if (classification.kind === 'ignore') {
+    return { status: 'skipped', reason: classification.reason ?? 'ignore' };
+  }
+
+  const comments = await listAllComments(githubToken, owner, repo, prNumber);
+
+  if (classification.kind === 'manual_trigger') {
+    if (alreadyManualRetrigger(comments, sourceTime)) {
+      console.log('Already posted @coderabbitai review for this notice, skipping.');
+      return { status: 'skipped', reason: 'already_manual' };
+    }
+    await gh(githubToken, `/repos/${owner}/${repo}/issues/${prNumber}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: MANUAL_TRIGGER_PHRASE }),
+    });
+    console.log(`Posted ${MANUAL_TRIGGER_PHRASE} on PR #${prNumber}.`);
+    return { status: 'posted', kind: 'manual_trigger' };
+  }
+
+  if (!relayPat) {
+    throw new Error(
+      'CURSOR_AUTOMATION_PAT is not set. Add a User PAT (not GITHUB_TOKEN) as a repo secret so Cursor can see the relay comment.',
+    );
+  }
+
+  if (
+    alreadyRelayed(comments, {
+      kind: classification.kind,
+      sourceId,
+    })
+  ) {
+    console.log(`Already relayed ${classification.kind} for source_id ${sourceId}, skipping.`);
+    return { status: 'skipped', reason: 'already_relayed' };
+  }
+
+  const relayBody = buildRelayCommentBody({
+    kind: classification.kind,
+    prNumber,
+    source,
+    sourceId,
+    waitMinutes: classification.waitMinutes,
+    actionableCount: classification.actionableCount,
+  });
+
+  await gh(relayPat, `/repos/${owner}/${repo}/issues/${prNumber}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body: relayBody }),
+  });
+
+  console.log(`Posted Cursor relay (${classification.kind}) on PR #${prNumber}.`);
+  return { status: 'posted', kind: classification.kind };
+}
+
+async function main() {
+  const githubToken = process.env.GITHUB_TOKEN;
+  const relayPat = process.env.CURSOR_AUTOMATION_PAT || undefined;
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '/').split('/');
+  const payload = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+
+  if (!githubToken) throw new Error('GITHUB_TOKEN is required');
+  if (!eventName) throw new Error('GITHUB_EVENT_NAME is required');
+
+  await runRelay({
+    eventName,
+    payload,
+    owner,
+    repo,
+    githubToken,
+    relayPat,
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
