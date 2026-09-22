@@ -15,7 +15,8 @@
           "supportsBackgroundPlayback": false,
           "supportsPictureInPicture": true
         }
-      ]
+      ],
+      "./plugins/withAndroidLocalhostCleartext.js"
     ],
     "experiments": {
       "typedRoutes": true

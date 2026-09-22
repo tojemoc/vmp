@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { useSession } from '../src/auth/SessionProvider';
 import { SubscriberLock } from '../src/components/SubscriberLock';
 import { requireActiveSubscription } from '../src/features';
+import { userFacingRequestError } from '../src/network/errors';
 import { listDownloadRecords, removeOfflineDownload } from '../src/offline/downloadManager';
 import type { StoredDownload } from '../src/offline/types';
 
@@ -28,7 +29,7 @@ export default function DownloadsScreen() {
     try {
       setRows(await listDownloadRecords(session.user.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to list downloads');
+      setError(userFacingRequestError(err, 'Failed to list downloads'));
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,7 @@ export default function DownloadsScreen() {
       await removeOfflineDownload(session.accessToken, videoId, session.user.id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Remove failed');
+      setError(userFacingRequestError(err, 'Remove failed'));
     } finally {
       setBusyId(null);
     }

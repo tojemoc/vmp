@@ -431,6 +431,8 @@ export const strings: StringsDefinition = {
   offlineStorageUsed: (amount: string) => `Použité offline úložisko: ${amount}`,
   offlineStorageQuota: (amount: string) => `z ${amount} dostupných`,
   offlinePlaybackBadge: 'Prehráva sa z offline sťahovania',
+  offlineNoInternetMessage:
+    'Nie je pripojenie na internet. Fungujú iba videá stiahnuté vopred — otvorte Stiahnuté v nainštalovanej aplikácii.',
   copyFailed: 'Nepodarilo sa skopírovať do schránky. Môžete skopírovať manuálne z poľa.',
 
   // ── Subscription checkout ──────────────────────────────────────────────────
