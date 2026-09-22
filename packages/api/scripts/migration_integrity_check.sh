@@ -92,6 +92,13 @@ print_check "row_count.video_segment_events" "$segment_events_count"
 print_check "row_count.livestreams" "$livestreams_count"
 print_check "row_count.payment_checkout_sessions" "$checkout_sessions_count"
 
+if table_exists "users" && column_exists "users" "deletion_pending"; then
+  echo "[verify] schema_ok.users.deletion_pending"
+else
+  echo "[verify] schema_missing.users.deletion_pending"
+  schema_failures=$((schema_failures + 1))
+fi
+
 bad_provider=0
 bad_provider_mapping=0
 bad_brevo_missing_campaign=0

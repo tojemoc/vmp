@@ -17,7 +17,8 @@
     "db:reset": "npm run db:teardown && npm run db:create && npm run db:seed",
     "db:migration-backfill": "bash ./scripts/migration_backfill_and_mapping.sh",
     "db:migration-normalize-video-ids": "bash ./scripts/migration_normalize_video_ids.sh",
-    "db:migration-verify": "bash ./scripts/migration_integrity_check.sh"
+    "db:migration-verify": "bash ./scripts/migration_integrity_check.sh",
+    "db:ensure-schema": "bash ./scripts/ensure_d1_required_schema.sh"
   },
   "dependencies": {
     "@sentry/cloudflare": "^10.74.0",

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import { createAccessToken, requireAuth } from '../src/auth.js';
+import { resetD1OptionalColumnCache } from '../src/d1OptionalColumn.js';
 
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
 
@@ -34,6 +35,10 @@ function requestWithToken(token?: string) {
 }
 
 describe('requireAuth account existence', () => {
+  afterEach(() => {
+    resetD1OptionalColumnCache();
+  });
+
   it('accepts a token whose user row still exists', async () => {
     const token = await createAccessToken(
       { id: 'user-1', email: 'viewer@example.com', role: 'viewer' },
@@ -63,6 +68,39 @@ describe('requireAuth account existence', () => {
       JWT_SECRET,
     };
     await assert.rejects(requireAuth(requestWithToken(token), env), /Account deletion pending/);
+  });
+
+  it('accepts a token when D1 has not yet gained users.deletion_pending', async () => {
+    const token = await createAccessToken(
+      { id: 'user-1', email: 'viewer@example.com', role: 'viewer' },
+      JWT_SECRET,
+    );
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            bind(...args: unknown[]) {
+              return {
+                async first() {
+                  if (sql.includes('deletion_pending')) {
+                    throw new Error(
+                      'D1_ERROR: no such column: u.deletion_pending at offset 110: SQLITE_ERROR',
+                    );
+                  }
+                  if (sql.includes('FROM users WHERE id')) {
+                    return args[0] === 'user-1' ? { id: 'user-1' } : null;
+                  }
+                  return null;
+                },
+              };
+            },
+          };
+        },
+      },
+      JWT_SECRET,
+    };
+    const payload = await requireAuth(requestWithToken(token), env);
+    assert.equal(payload.sub, 'user-1');
   });
 
   it('rejects when the Authorization header is missing', async () => {
