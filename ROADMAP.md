@@ -100,7 +100,6 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] **Referrer / traffic source** breakdown
 - [x] **Country** (geo) breakdown (`CF-IPCountry` on segment proxy)
 - [ ] CMS **page** view counts (today only video-segment traffic is counted)
-- [ ] “Help sponsor” (or similar) editor workflow — product decision still open
 
 ### Native / TV clients (`native-clients`)
 

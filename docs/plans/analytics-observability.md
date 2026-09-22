@@ -60,5 +60,4 @@ Intentional navigation aborts (`AbortError`, “Request aborted”) are filtered
   - [x] Referrer / traffic source breakdown
   - [x] Country (geo) breakdown
   - [ ] CMS **page** view counts (only video-segment traffic is counted today)
-  - [ ] “Help sponsor” (or similar) editor workflow — needs a product decision; no sponsor UX exists in-repo
   - Build on first-party D1 tables above, not a new third-party pageview SDK.
