@@ -16,7 +16,7 @@ Align native entitlement UX with the web product over time, without shipping ful
 | --- | --- |
 | Signed-out | Login only |
 | Signed-in, no active/trialing sub (or expired `currentPeriodEnd`) | Lock screen: explain subscription required; deep-link / open web `/pricing` (and Settings → sign out) |
-| Signed-in, active monthly/yearly/club (or staff) | Full catalog + watch + downloads |
+| Signed-in, active or trialing monthly/yearly/club (or staff) | Full catalog + watch + downloads |
 
 **Implementation notes**
 

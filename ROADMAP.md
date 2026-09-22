@@ -118,7 +118,7 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 
 **Plan:** [docs/plans/mobile-access-tiers.md](docs/plans/mobile-access-tiers.md)
 
-- [x] App-level gate: catalog / watch / downloads only for active subscribers + staff (`mobile-subscriber-gate`) — [#692](https://github.com/tojemoc/vmp/pull/692)
+- [x] App-level gate: catalog / watch / downloads / TV pairing approve only for active subscribers + staff (`mobile-subscriber-gate`) — [#692](https://github.com/tojemoc/vmp/pull/692)
 - [ ] Web-parity tiers: anonymous (rate-limited) + logged-in free preview + subscriber full access (`mobile-access-tiers`)
 
 #### Mobile catalog / watch / CMS (`mobile-thumbnails-watch` → `mobile-cms-parity`)

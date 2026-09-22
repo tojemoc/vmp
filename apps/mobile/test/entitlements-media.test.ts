@@ -42,17 +42,11 @@ describe('isPremiumUser', () => {
   it('rejects expired currentPeriodEnd', () => {
     const now = new Date('2026-09-21T12:00:00Z');
     assert.equal(
-      isActiveSubscription(
-        { status: 'active', currentPeriodEnd: '2026-09-20T12:00:00Z' },
-        now,
-      ),
+      isActiveSubscription({ status: 'active', currentPeriodEnd: '2026-09-20T12:00:00Z' }, now),
       false,
     );
     assert.equal(
-      isActiveSubscription(
-        { status: 'active', currentPeriodEnd: '2026-09-22T12:00:00Z' },
-        now,
-      ),
+      isActiveSubscription({ status: 'active', currentPeriodEnd: '2026-09-22T12:00:00Z' }, now),
       true,
     );
   });
@@ -86,6 +80,7 @@ describe('formatDuration / premium hint', () => {
   it('detects premium preview hints', () => {
     assert.equal(showsPremiumHint(600, 30), true);
     assert.equal(showsPremiumHint(600, 600), false);
+    assert.equal(showsPremiumHint(600, 0), false);
     assert.equal(showsPremiumHint(0, 30), true);
     assert.equal(showsPremiumHint(0, 0), false);
   });

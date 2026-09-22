@@ -1,5 +1,13 @@
 import * as Linking from 'expo-linking';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { getAccountSubscription } from '../api/client';
 import { type AccountSubscription, isPremiumUser } from '../entitlements/premium';
 import { requireActiveSubscription } from '../features';
@@ -49,18 +57,32 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [pendingTwoFactorToken, setPendingTwoFactorToken] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<AccountSubscription>(null);
   const [subscriptionHydrated, setSubscriptionHydrated] = useState(false);
+  /** Bumps on each hydrate/clear so slower in-flight fetches cannot overwrite the active session. */
+  const entitlementsEpochRef = useRef(0);
+  /** Access token the latest hydrate/clear considers current (null when signed out). */
+  const activeAccessTokenRef = useRef<string | null>(null);
 
   const clearEntitlements = useCallback(() => {
+    entitlementsEpochRef.current += 1;
+    activeAccessTokenRef.current = null;
     setSubscription(null);
     setSubscriptionHydrated(false);
   }, []);
 
   const hydrateEntitlements = useCallback(async (accessToken: string) => {
+    const epoch = ++entitlementsEpochRef.current;
+    activeAccessTokenRef.current = accessToken;
     try {
       const data = await getAccountSubscription(accessToken);
+      if (entitlementsEpochRef.current !== epoch || activeAccessTokenRef.current !== accessToken) {
+        return;
+      }
       setSubscription(data.subscription ?? null);
       setSubscriptionHydrated(true);
     } catch {
+      if (entitlementsEpochRef.current !== epoch || activeAccessTokenRef.current !== accessToken) {
+        return;
+      }
       setSubscription(null);
       setSubscriptionHydrated(true);
     }

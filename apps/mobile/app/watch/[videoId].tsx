@@ -228,6 +228,17 @@ export default function WatchScreen() {
       try {
         const access = await getVideoAccess(id, accessToken);
         if (!isCurrentAccount(epoch, userId)) return;
+        setTitle(access?.video?.title || id);
+        setDescription(
+          typeof access?.video?.description === 'string' ? access.video.description : '',
+        );
+        setFullDuration(
+          typeof access?.video?.fullDuration === 'number' ? access.video.fullDuration : null,
+        );
+        setPreviewDuration(
+          typeof access?.video?.previewDuration === 'number' ? access.video.previewDuration : null,
+        );
+        setHasAccess(access?.hasAccess !== false);
         const url = access?.video?.playlistUrl || access?.playlistUrl;
         if (url) {
           const absolute = url.startsWith('http') ? url : `${apiUrl}${url}`;
@@ -318,7 +329,7 @@ export default function WatchScreen() {
         <View style={styles.actions}>
           {status !== 'completed' && status !== 'downloading' && !active ? (
             <Pressable
-              style={[styles.primaryBtn, downloadBusy && styles.disabled]}
+              style={[styles.primaryBtn, (downloadBusy || !hasAccess) && styles.disabled]}
               disabled={downloadBusy || !hasAccess}
               onPress={() => void onDownload()}
             >

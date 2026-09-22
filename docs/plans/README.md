@@ -17,5 +17,5 @@ Each backlog item links a **GitHub tracking issue** in `ROADMAP.md`. PRs should 
 
 Other long-running designs outside this folder:
 
-- [native-clients-plan.md](../native-clients-plan.md) — native / TV clients (Phase 0 + Tier 1)
+- [native-clients-plan.md](../native-clients-plan.md) — native / TV clients (multi-tier plan)
 - [archive/offline-downloads-roadmap.md](../archive/offline-downloads-roadmap.md) — offline downloads (shipped M1–M6)

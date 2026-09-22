@@ -12,13 +12,14 @@ export function formatDuration(totalSeconds: number | null | undefined): string 
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** True when preview is shorter than full (or full unknown with non-zero preview). */
+/** True when a positive preview is shorter than full (or full is unknown). */
 export function showsPremiumHint(
   fullDuration: number | null | undefined,
   previewDuration: number | null | undefined,
 ): boolean {
   const full = Number(fullDuration) || 0;
   const preview = Number(previewDuration) || 0;
+  if (preview <= 0) return false;
   if (full > 0) return preview < full;
-  return preview > 0;
+  return true;
 }
