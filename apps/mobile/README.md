@@ -107,7 +107,7 @@ Watch screen **Download** (default `720p`) and **Downloads** list:
 1. `POST /api/offline/devices/register` once → store `deviceId` / `deviceToken` in SecureStore
 2. `POST /api/downloads/:videoId/authorize` with `x-vmp-device-token`
 3. Fetch `GET /api/downloads/:videoId/assets/…?dt=` into app document storage
-4. Rewrite playlists to relative local paths; serve the offline tree via a loopback HTTP server (`@dr.pogodin/react-native-static-server`) and play `http://127.0.0.1:<port>/…/offline-master.m3u8` with `expo-video` (`contentType: 'hls'`). iOS AVPlayer rejects `file://` HLS.
+4. Rewrite playlists to relative local paths; serve the offline tree via a loopback HTTP server (`@dr.pogodin/react-native-static-server`) and play `http://127.0.0.1:<port>/…/offline-master.m3u8` with `expo-video` (`contentType: 'hls'`). iOS AVPlayer rejects `file://` HLS. Android cleartext is scoped to loopback only via `plugins/withAndroidLocalhostCleartext.js` (network security config); release API hosts still require HTTPS.
 
 Requires an R2-hosted HLS video (`r2_assets_required` if only CDN). License expiry is enforced before offline play; renew UI is deferred.
 

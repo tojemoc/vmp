@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { filterPubliclyListedVideos, isPubliclyListedVideo } from '../src/catalog/publishedVideos';
 import {
-  filterPubliclyListedVideos,
-  isPubliclyListedVideo,
-} from '../src/catalog/publishedVideos';
-import { isLikelyNetworkError, OFFLINE_MODE_MESSAGE, userFacingRequestError } from '../src/network/errors';
-import {
-  buildOfflinePlaybackHttpUrl,
-  fileUriToFsPath,
-} from '../src/offline/playbackUrls';
+  isLikelyNetworkError,
+  OFFLINE_MODE_MESSAGE,
+  userFacingRequestError,
+} from '../src/network/errors';
+import { buildOfflinePlaybackHttpUrl, fileUriToFsPath } from '../src/offline/playbackUrls';
 
 describe('isPubliclyListedVideo', () => {
   const now = Date.parse('2026-09-22T12:00:00Z');
@@ -61,9 +59,16 @@ describe('network error helpers', () => {
     assert.equal(isLikelyNetworkError(new Error('Invalid token')), false);
   });
 
-  it('maps network errors to offline mode copy', () => {
-    assert.equal(userFacingRequestError(new TypeError('Network request failed')), OFFLINE_MODE_MESSAGE);
-    assert.equal(userFacingRequestError(new Error('boom'), 'fallback'), 'boom');
+  it('maps network errors to offline mode copy and hides other Error.message', () => {
+    assert.equal(
+      userFacingRequestError(new TypeError('Network request failed')),
+      OFFLINE_MODE_MESSAGE,
+    );
+    assert.equal(userFacingRequestError(new Error('boom'), 'fallback'), 'fallback');
+    assert.equal(
+      userFacingRequestError(new Error('Internal stack'), 'Failed to load videos'),
+      'Failed to load videos',
+    );
   });
 });
 
@@ -73,10 +78,7 @@ describe('offline playback server URL helpers', () => {
       fileUriToFsPath('file:///var/mobile/Containers/Data/Application/x/Documents/vmp-offline/'),
       '/var/mobile/Containers/Data/Application/x/Documents/vmp-offline/',
     );
-    assert.equal(
-      fileUriToFsPath('file:///tmp/vmp%20offline/'),
-      '/tmp/vmp offline/',
-    );
+    assert.equal(fileUriToFsPath('file:///tmp/vmp%20offline/'), '/tmp/vmp offline/');
   });
 
   it('builds loopback HLS playlist URLs', () => {

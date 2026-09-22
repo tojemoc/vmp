@@ -23,7 +23,11 @@ import { apiUrl } from '../../src/config';
 import { requireActiveSubscription } from '../../src/features';
 import { formatDuration, showsPremiumHint } from '../../src/media/formatDuration';
 import { catalogThumbnailUrl } from '../../src/media/thumbnail';
-import { OFFLINE_MODE_MESSAGE, userFacingRequestError } from '../../src/network/errors';
+import {
+  OFFLINE_MODE_MESSAGE,
+  OFFLINE_PLAYBACK_FAILED_MESSAGE,
+  userFacingRequestError,
+} from '../../src/network/errors';
 import {
   getDownloadRecord,
   getOfflinePlaybackUri,
@@ -179,23 +183,12 @@ export default function WatchScreen() {
 
   useEventListener(player, 'statusChange', ({ status, error: playerError }) => {
     if (status !== 'error') return;
-    const nativeMessage =
-      playerError && typeof playerError === 'object' && 'message' in playerError
-        ? String((playerError as { message?: unknown }).message ?? '')
-        : '';
+    // Do not surface native Error.message in the UI (may leak internals).
     if (source === 'offline') {
-      setError(
-        nativeMessage
-          ? `Offline playback failed: ${nativeMessage}`
-          : 'Offline playback failed. Try Remove and download again while online.',
-      );
+      setError(OFFLINE_PLAYBACK_FAILED_MESSAGE);
       return;
     }
-    setError(
-      nativeMessage
-        ? userFacingRequestError(new Error(nativeMessage), 'Playback failed')
-        : userFacingRequestError(new Error('Playback failed'), 'Playback failed'),
-    );
+    setError(userFacingRequestError(playerError, 'Playback failed'));
   });
 
   if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {

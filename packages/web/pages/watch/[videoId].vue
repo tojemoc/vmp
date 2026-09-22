@@ -1967,6 +1967,7 @@
         if (accessErr?.name === 'AbortError' || options.signal?.aborted || !guard()) throw accessErr;
         // Fully offline (or API unreachable): fall back to a completed local download.
         const offline = await getOfflineSource(String(targetVideoId)).catch(() => null);
+        ensureCurrent();
         if (!offline?.playlistUrl) {
           const offlineish =
             (typeof navigator !== 'undefined' && navigator.onLine === false) ||

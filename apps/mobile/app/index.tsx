@@ -16,7 +16,7 @@ import { SubscriberLock } from '../src/components/SubscriberLock';
 import { requireActiveSubscription } from '../src/features';
 import { formatDuration, showsPremiumHint } from '../src/media/formatDuration';
 import { catalogThumbnailUrl } from '../src/media/thumbnail';
-import { userFacingRequestError } from '../src/network/errors';
+import { isLikelyNetworkError, userFacingRequestError } from '../src/network/errors';
 
 type VideoRow = {
   id: string;
@@ -34,17 +34,20 @@ export default function HomeScreen() {
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [listErrorIsNetwork, setListErrorIsNetwork] = useState(false);
 
   const load = useCallback(async () => {
     if (!session || !canBrowseCatalog) return;
     setLoading(true);
     setListError(null);
+    setListErrorIsNetwork(false);
     try {
       const data = await listPublishedVideos(session.accessToken);
       const rows = Array.isArray(data) ? data : data?.videos || [];
       // Editors get drafts from the API; the consumer catalog must stay published-only.
       setVideos(filterPubliclyListedVideos(rows));
     } catch (err) {
+      setListErrorIsNetwork(isLikelyNetworkError(err));
       setListError(userFacingRequestError(err, 'Failed to load videos'));
     } finally {
       setLoading(false);
@@ -102,11 +105,13 @@ export default function HomeScreen() {
       {listError ? (
         <View style={styles.offlineBanner}>
           <Text style={styles.error}>{listError}</Text>
-          <Link href="/downloads" asChild>
-            <Pressable style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnText}>Open Downloads</Text>
-            </Pressable>
-          </Link>
+          {listErrorIsNetwork ? (
+            <Link href="/downloads" asChild>
+              <Pressable style={styles.secondaryBtn}>
+                <Text style={styles.secondaryBtnText}>Open Downloads</Text>
+              </Pressable>
+            </Link>
+          ) : null}
         </View>
       ) : null}
       {loading ? <ActivityIndicator color="#38bdf8" /> : null}

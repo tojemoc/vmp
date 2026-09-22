@@ -15,7 +15,8 @@
           "supportsBackgroundPlayback": false,
           "supportsPictureInPicture": true
         }
-      ]
+      ],
+      "./plugins/withAndroidLocalhostCleartext.js"
     ],
     "experiments": {
       "typedRoutes": true
@@ -27,7 +28,6 @@
     },
     "android": {
       "package": "sk.tjm.vmp",
-      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",
