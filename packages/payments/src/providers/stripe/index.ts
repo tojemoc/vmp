@@ -223,6 +223,8 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
       }
       if (input.termsOfServiceUrl) {
         // Requires a Terms of Service URL in the Stripe Dashboard (Settings → Public details).
+        // Opt-in via CreateCheckoutSessionInput — callers must only set termsOfServiceUrl when
+        // Dashboard ToS is configured; otherwise Checkout Session create fails.
         sessionPayload.consent_collection = { terms_of_service: 'required' };
       }
       if (input.promo?.stripeCouponId) {

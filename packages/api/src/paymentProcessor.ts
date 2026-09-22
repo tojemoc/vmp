@@ -1303,7 +1303,12 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
     const returnPath = normalizeReturnPath(body?.returnPath);
     const frontendUrl = String(env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-    const termsOfServiceUrl = `${frontendUrl}/personal-data`;
+    // Stripe Checkout `consent_collection.terms_of_service` needs a Dashboard ToS URL.
+    // Gate behind admin_settings so first-party checkbox remains the always-on consent path.
+    const stripeTosCollection =
+      String(await getSetting(env, 'stripe_checkout_tos_collection', { defaultValue: '0' })) ===
+      '1';
+    const termsOfServiceUrl = stripeTosCollection ? `${frontendUrl}/personal-data` : undefined;
     const einvoicingEnabled =
       String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1';
     const sellerJurisdiction = String(
@@ -1319,7 +1324,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       planType,
       returnPath,
       einvoicingCheckout,
-      termsOfServiceUrl,
+      ...(termsOfServiceUrl ? { termsOfServiceUrl } : {}),
       ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
       ...(promoMeta
         ? {
