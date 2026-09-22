@@ -77,10 +77,12 @@ describe('formatDuration / premium hint', () => {
     assert.equal(formatDuration(0), '--');
   });
 
-  it('detects premium preview hints', () => {
+  it('detects premium preview hints (null vs explicit zero)', () => {
+    assert.equal(showsPremiumHint(600, null), false);
+    assert.equal(showsPremiumHint(600, undefined), false);
+    assert.equal(showsPremiumHint(600, 0), true);
     assert.equal(showsPremiumHint(600, 30), true);
     assert.equal(showsPremiumHint(600, 600), false);
-    assert.equal(showsPremiumHint(600, 0), false);
     assert.equal(showsPremiumHint(0, 30), true);
     assert.equal(showsPremiumHint(0, 0), false);
   });

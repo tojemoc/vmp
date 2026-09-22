@@ -35,10 +35,10 @@
         {{ displayDurationSeconds ? formatDuration(displayDurationSeconds) : '--' }}
       </div>
 
-      <!-- Premium Badge — show when preview is explicitly shorter than full, or when
-      full duration is unknown (0) but a non-zero preview_duration is set -->
+      <!-- Premium Badge — explicit 0 = premium-only; null/missing must not badge.
+      Positive preview shorter than full, or positive preview when full unknown. -->
       <div
-        v-if="displayDurationSeconds > 0 ? video.preview_duration < displayDurationSeconds : video.preview_duration > 0"
+        v-if="showPremiumBadge"
         class="absolute top-2 left-2 bg-yellow-500 text-black text-xs font-semibold px-2 py-1 rounded"
       >
         {{ premiumLabel }}
@@ -66,6 +66,7 @@
 
 <script setup lang="ts">
   import { computed, inject, onBeforeUnmount, onMounted, type Ref, ref } from 'vue';
+  import { showsPremiumPreviewHint } from '@vmp/shared';
   import { useThumbnail } from '~/composables/useThumbnail';
   import strings from '~/utils/strings';
 
@@ -82,7 +83,10 @@
      * Newer camelCase duration used by video-access and, in some cases, list endpoints.
      */
     fullDuration?: number;
-    preview_duration: number;
+    /**
+     * Preview lock seconds. `null`/absent = unset; explicit `0` = premium-only.
+     */
+    preview_duration: number | null;
     upload_date: string;
     slug?: string | null;
   }
@@ -236,6 +240,10 @@
   // Prefer camelCase `fullDuration` when present, with a fallback to legacy `full_duration`.
   const displayDurationSeconds = computed(
     () => props.video.fullDuration ?? props.video.full_duration ?? 0,
+  );
+
+  const showPremiumBadge = computed(() =>
+    showsPremiumPreviewHint(displayDurationSeconds.value, props.video.preview_duration),
   );
 
   const premiumLabel = strings.premiumBadge;

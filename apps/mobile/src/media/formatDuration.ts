@@ -1,3 +1,5 @@
+import { showsPremiumPreviewHint } from '@vmp/shared';
+
 /** Format seconds as m:ss or h:mm:ss (catalog / watch badges). */
 export function formatDuration(totalSeconds: number | null | undefined): string {
   const n = Number(totalSeconds);
@@ -12,14 +14,8 @@ export function formatDuration(totalSeconds: number | null | undefined): string 
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** True when a positive preview is shorter than full (or full is unknown). */
-export function showsPremiumHint(
-  fullDuration: number | null | undefined,
-  previewDuration: number | null | undefined,
-): boolean {
-  const full = Number(fullDuration) || 0;
-  const preview = Number(previewDuration) || 0;
-  if (preview <= 0) return false;
-  if (full > 0) return preview < full;
-  return true;
-}
+/**
+ * PRO badge for catalog/watch — shared null-vs-zero semantics with web.
+ * Re-export under the mobile name used by screens/tests.
+ */
+export const showsPremiumHint = showsPremiumPreviewHint;
