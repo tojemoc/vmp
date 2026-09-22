@@ -29,6 +29,7 @@ import {
   handleAdminUserImportCsv,
   handleAdminUsers,
   handleCategoryVideosBySlug,
+  handleCmsPageView,
   handleHomepageContent,
   handleHomepageContentPublic,
   handlePillsPublic,
@@ -897,6 +898,9 @@ const workerHandler = {
           (request.method === 'GET' || request.method === 'PATCH')
         ) {
           return handleAdminAnalytics(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/analytics/pageview' && request.method === 'POST') {
+          return handleCmsPageView(request, env, corsHeaders);
         }
         if (url.pathname === '/api/site-settings' && request.method === 'GET') {
           return handleSiteSettings(request, env, corsHeaders);
