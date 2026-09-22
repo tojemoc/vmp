@@ -5,7 +5,9 @@
 
 ## Status
 
-Providers + checkout analytics shipped ([#499](https://github.com/tojemoc/vmp/pull/499), [#654](https://github.com/tojemoc/vmp/pull/654)). Production code hardening is in this plan; **live merchant smoke remains maintainer ops**.
+Providers + checkout analytics + **production code hardening** shipped. **Live merchant smoke remains maintainer ops** (same pattern as Brevo step-08).
+
+Shipped providers: [#499](https://github.com/tojemoc/vmp/pull/499), analytics [#654](https://github.com/tojemoc/vmp/pull/654). Hardening on branch `cursor/gopay-comgate-prod-hardening-a164`.
 
 ## Checklist
 
