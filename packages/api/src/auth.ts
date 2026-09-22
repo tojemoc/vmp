@@ -41,7 +41,26 @@
 
 import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE, normalizeMagicLinkClient } from '@vmp/shared';
 import { log } from './logger.js';
-import { resolvePostHogEnvironment, resolvePostHogIdentityHashForUser } from './posthog.js';
+import {
+  capturePostHogEvent,
+  newAnonymousPostHogDistinctId,
+  posthogContextFromRequest,
+  resolvePostHogEnvironment,
+  resolvePostHogIdentityHashForUser,
+} from './posthog.js';
+
+/** Best-effort product analytics for auth flows (never blocks the response). */
+function captureAuthProductEvent(
+  env: any,
+  request: Request | undefined,
+  event: string,
+  properties: Record<string, unknown> = {},
+  distinctId?: string | null,
+) {
+  const fromRequest = posthogContextFromRequest(request);
+  const id = (distinctId || fromRequest.distinctId || '').trim() || newAnonymousPostHogDistinctId();
+  capturePostHogEvent(env, { distinctId: id, event, properties }, request ? { request } : {});
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -401,6 +420,10 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
       console.log(`[DEV] Magic link for ${email}: ${verifyUrl.toString()}`);
     }
     log({ service: 'auth', event: 'magic_link_sent', level: 'info', client });
+    captureAuthProductEvent(env, request, 'magic_link_requested', {
+      client,
+      surface: 'api',
+    });
   } catch (err) {
     console.error('[auth] magic link error:', err);
     // Still return success — don't leak whether the error was email-related.
@@ -741,6 +764,11 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
       level: 'warn',
       error_code: 'invalid_or_used',
     });
+    captureAuthProductEvent(env, request, 'magic_link_redeem_failed', {
+      surface: 'native_redeem',
+      reason: 'invalid_or_used',
+      client: 'native',
+    });
     return authJson(
       {
         error:
@@ -752,6 +780,11 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     );
   }
   if (phase.tag === 'totp_pending') {
+    captureAuthProductEvent(env, request, 'magic_link_redeem_succeeded', {
+      surface: 'native_redeem',
+      outcome: 'totp_required',
+      client: 'native',
+    });
     return authJson(
       { requiresTwoFactor: true, pendingToken: phase.pendingToken },
       200,
@@ -767,6 +800,13 @@ export async function handleNativeRedeemMagicLink(request: any, env: any, corsHe
     level: 'info',
     totp_required: Boolean(phase.user.totp_enabled),
   });
+  captureAuthProductEvent(
+    env,
+    request,
+    'magic_link_redeem_succeeded',
+    { surface: 'native_redeem', outcome: 'session', client: 'native' },
+    String(phase.user.id),
+  );
   return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
 }
 
@@ -1049,9 +1089,17 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
       level: 'warn',
       error_code: 'invalid_or_used',
     });
+    captureAuthProductEvent(env, request, 'magic_link_redeem_failed', {
+      surface: 'web_verify',
+      reason: 'invalid_or_used',
+    });
     return authJson({ error: phase.message }, 401, corsHeaders);
   }
   if (phase.tag === 'totp_pending') {
+    captureAuthProductEvent(env, request, 'magic_link_redeem_succeeded', {
+      surface: 'web_verify',
+      outcome: 'totp_required',
+    });
     return authJson(
       { requiresTwoFactor: true, pendingToken: phase.pendingToken },
       200,
@@ -1066,6 +1114,13 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
     level: 'info',
     totp_required: Boolean(phase.user.totp_enabled),
   });
+  captureAuthProductEvent(
+    env,
+    request,
+    'magic_link_redeem_succeeded',
+    { surface: 'web_verify', outcome: 'session' },
+    String(phase.user.id),
+  );
   return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders);
 }
 
