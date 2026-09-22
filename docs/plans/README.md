@@ -11,8 +11,11 @@ Each backlog item links a **GitHub tracking issue** in `ROADMAP.md`. PRs should 
 | [step-08-brevo-newsletter.md](step-08-brevo-newsletter.md) | Step 8 — Brevo newsletter sync — **shipped** | [#645](https://github.com/tojemoc/vmp/issues/645) / TOJ-138 (closed) |
 | [step-09-rss-podcast-feed.md](step-09-rss-podcast-feed.md) | Step 9 — RSS / podcast feed — **shipped** | [#644](https://github.com/tojemoc/vmp/issues/644) / TOJ-137 (closed) |
 | [step-10-account-deletion.md](step-10-account-deletion.md) | Step 10 — Self-service account deletion — in progress (groundwork) | [#646](https://github.com/tojemoc/vmp/issues/646) / TOJ-136 |
+| [mobile-access-tiers.md](mobile-access-tiers.md) | Native — subscriber gate → web-parity tiers | [#647](https://github.com/tojemoc/vmp/issues/647) |
+| [mobile-cms-parity.md](mobile-cms-parity.md) | Native — thumbnails/watch → CMS blocks + articles | [#647](https://github.com/tojemoc/vmp/issues/647) |
+| [tv-tier2-sprint.md](tv-tier2-sprint.md) | Native — TV Sprint 0 (D-pad + pairing) | [#647](https://github.com/tojemoc/vmp/issues/647) |
 
 Other long-running designs outside this folder:
 
-- [native-clients-plan.md](../native-clients-plan.md) — native / TV clients (Phase 0 + Tier 1)
+- [native-clients-plan.md](../native-clients-plan.md) — native / TV clients (multi-tier plan)
 - [archive/offline-downloads-roadmap.md](../archive/offline-downloads-roadmap.md) — offline downloads (shipped M1–M6)

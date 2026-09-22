@@ -761,7 +761,7 @@
                     {{ rec.full_duration ? formatDuration(rec.full_duration) : '--' }}
                   </div>
                   <div
-                    v-if="!isLiveRecommendation(rec) && (rec.full_duration > 0 ? rec.preview_duration < rec.full_duration : rec.preview_duration > 0)"
+                    v-if="!isLiveRecommendation(rec) && showsPremiumPreviewHint(rec.full_duration, rec.preview_duration)"
                     class="absolute top-1 left-1 bg-yellow-500 text-black text-xs font-semibold px-1.5 py-0.5 rounded"
                   >
                     PRO
@@ -786,7 +786,7 @@
 </template>
 
 <script setup lang="ts">
-  import { canonicalWatchToken } from '@vmp/shared';
+  import { canonicalWatchToken, showsPremiumPreviewHint } from '@vmp/shared';
   import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
   import { useRoute } from 'vue-router';
   import { setResponseStatus, useRuntimeConfig } from '#app';

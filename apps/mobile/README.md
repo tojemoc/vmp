@@ -9,7 +9,8 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 - Magic-link request → deep-link redeem via `POST /api/auth/native/redeem`
 - Native TOTP / 2FA entry (`/auth/2fa`) when redeem returns `requiresTwoFactor` → `POST /api/auth/2fa/verify`
 - Secure session storage (`expo-secure-store`)
-- Catalog + watch skeleton (`expo-video`) via `GET /api/video-access/{videoId}` (JWT supplies user)
+- **Subscriber gate (default on):** catalog / watch / downloads / TV pairing require an active subscription (or staff). Entitlement from `GET /api/account/subscription`. Disable later with `EXPO_PUBLIC_REQUIRE_ACTIVE_SUBSCRIPTION=0` when free/anonymous tiers ship.
+- Catalog with thumbnails + duration / PRO badges; watch chrome with description, access badge, Up next recommendations
 - Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings
 - Device pairing **Approve a TV** under Settings (`preview` + `complete`)
 - Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)

@@ -2,6 +2,8 @@ import { Link, Redirect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSession } from '../src/auth/SessionProvider';
+import { SubscriberLock } from '../src/components/SubscriberLock';
+import { requireActiveSubscription } from '../src/features';
 import { listDownloadRecords, removeOfflineDownload } from '../src/offline/downloadManager';
 import type { StoredDownload } from '../src/offline/types';
 
@@ -13,14 +15,14 @@ function formatBytes(n: number): string {
 }
 
 export default function DownloadsScreen() {
-  const { session, booting } = useSession();
+  const { session, booting, canBrowseCatalog, subscriptionHydrated } = useSession();
   const [rows, setRows] = useState<StoredDownload[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!session) return;
+    if (!session || !canBrowseCatalog) return;
     setLoading(true);
     setError(null);
     try {
@@ -30,13 +32,13 @@ export default function DownloadsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [session, canBrowseCatalog]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  if (booting) {
+  if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color="#38bdf8" />
@@ -46,6 +48,10 @@ export default function DownloadsScreen() {
 
   if (!session) {
     return <Redirect href="/login" />;
+  }
+
+  if (!canBrowseCatalog) {
+    return <SubscriberLock title="Subscribe for downloads" />;
   }
 
   async function onRemove(videoId: string) {
