@@ -171,7 +171,7 @@ export async function hashToken(token: any) {
 
 async function upsertUser(email: any, db: any) {
   const existing = await db
-    .prepare('SELECT id, email, role FROM users WHERE email = ?')
+    .prepare('SELECT id, email, role, deletion_pending FROM users WHERE email = ?')
     .bind(email)
     .first();
 
@@ -183,7 +183,7 @@ async function upsertUser(email: any, db: any) {
     .bind(id, email)
     .run();
 
-  return { id, email, role: 'viewer' };
+  return { id, email, role: 'viewer', deletion_pending: 0 };
 }
 
 async function createMagicLinkToken(request: any, email: any, db: any, env: any) {
@@ -191,6 +191,11 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
   if (throttled) return null;
 
   const user = await upsertUser(email, db);
+  if (Number(user.deletion_pending) === 1) {
+    // Do not mint a new session for accounts already locked for deletion.
+    // Still return success upstream to avoid email enumeration.
+    return null;
+  }
 
   // Cancel any outstanding unused tokens — one active link per user at a time.
   await db
@@ -426,7 +431,7 @@ async function loadMagicLinkRecord(db: any, tokenHash: string) {
   return db
     .prepare(`
       SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
-             u.totp_enabled, u.totp_secret, u.created_at
+             u.totp_enabled, u.totp_secret, u.created_at, u.deletion_pending
       FROM magic_link_tokens t
       JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = ?
@@ -515,6 +520,14 @@ export async function consumeMagicLinkForUser(
   if (new Date(record.expires_at) < new Date()) {
     await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
     return { tag: 'invalid', message: 'Sign-in link has expired. Request a new one.' };
+  }
+
+  if (Number(record.deletion_pending) === 1) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+    return {
+      tag: 'invalid',
+      message: 'Account deletion is in progress. Sign-in is disabled.',
+    };
   }
 
   const consumeResult = await db
@@ -666,10 +679,14 @@ async function consumePwaHandoffCode(db: any, code: string): Promise<string | nu
 
 async function loadUserRowForAuth(db: any, userId: string) {
   const row = await db
-    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
+    .prepare(
+      'SELECT id, email, role, totp_enabled, created_at, deletion_pending FROM users WHERE id = ? LIMIT 1',
+    )
     .bind(userId)
     .first();
   if (!row) return null;
+  // Treat deletion-pending like a missing user so handoff redemption cannot mint sessions.
+  if (Number(row.deletion_pending) === 1) return null;
   return {
     id: row.id,
     email: row.email,
@@ -977,11 +994,7 @@ export async function handleAcknowledgeInsecureNativeScheme(
  * GET /api/auth/native/insecure-scheme/status
  * Returns whether this environment permits the SideStore vmp:// escape hatch.
  */
-export async function handleInsecureNativeSchemeStatus(
-  _request: any,
-  env: any,
-  corsHeaders: any,
-) {
+export async function handleInsecureNativeSchemeStatus(_request: any, env: any, corsHeaders: any) {
   // Best-effort expiration cleanup whenever status is polled from staging verify UI.
   try {
     await purgeExpiredInsecureNativeSchemeAcks(getDb(env));
@@ -1156,7 +1169,7 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
   const record = await db
     .prepare(`
       SELECT r.id, r.expires_at, u.id AS user_id, u.email, u.role, u.totp_enabled
-           , u.created_at
+           , u.created_at, u.deletion_pending
       FROM refresh_tokens r
       JOIN users u ON u.id = r.user_id
       WHERE r.token_hash = ?
@@ -1172,6 +1185,21 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
       status: 401,
       headers,
     });
+  }
+
+  if (Number(record.deletion_pending) === 1) {
+    log({ service: 'auth', event: 'refresh_token_deletion_pending', level: 'warn' });
+    // Drop the refresh token so the client cannot keep retrying.
+    await db.prepare('DELETE FROM refresh_tokens WHERE id = ?').bind(record.id).run();
+    const headers = buildResponseHeaders(corsHeaders);
+    headers.set('Set-Cookie', clearRefreshCookie());
+    return new Response(
+      JSON.stringify({
+        error: 'Account deletion is in progress. Sign-in is disabled.',
+        code: 'deletion_pending',
+      }),
+      { status: 401, headers },
+    );
   }
 
   const user = {
@@ -1295,13 +1323,18 @@ export async function requireAuth(request: any, env: any) {
   // exists. Access tokens live for 15 minutes, so a deleted user keeps a working
   // token until it expires. Reject any token whose user row is gone, so account
   // deletion revokes access on every protected endpoint at once.
+  // Also reject deletion-pending accounts so confirmed deletions cannot mint or
+  // keep using sessions while the durable job runs.
   const sub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
   if (!sub) throw new Error('Invalid token subject');
-  const userExists = await getDb(env)
-    .prepare('SELECT 1 FROM users WHERE id = ? LIMIT 1')
+  const userRow = await getDb(env)
+    .prepare('SELECT deletion_pending FROM users WHERE id = ? LIMIT 1')
     .bind(sub)
     .first();
-  if (!userExists) throw new Error('User no longer exists');
+  if (!userRow) throw new Error('User no longer exists');
+  if (Number(userRow.deletion_pending) === 1) {
+    throw new Error('Account deletion pending');
+  }
 
   return payload;
 }

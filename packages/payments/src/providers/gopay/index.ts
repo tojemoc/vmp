@@ -216,6 +216,7 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
   return {
     id: 'gopay',
     capabilities: {
+      immediateCancellation: true,
       newSubscriptions: true,
       migrationOnly: false,
       recurringPayments: true,
@@ -307,6 +308,27 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
         'POST',
         `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
       );
+    },
+
+    async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+      // GoPay void-recurrence stops future charges immediately; local access is revoked
+      // by account deletion. Treat already-voided recurrence as success when possible.
+      try {
+        await gopayJson(
+          'POST',
+          `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
+        );
+      } catch (err) {
+        const details =
+          err && typeof err === 'object' && 'details' in err
+            ? (err as { details?: unknown }).details
+            : undefined;
+        const detailText =
+          details == null ? '' : typeof details === 'string' ? details : JSON.stringify(details);
+        // Prefer provider payload (err.details) — generic Error messages may omit void reason.
+        if (/already|voided|finished|canceled|cancelled/i.test(detailText)) return;
+        throw err;
+      }
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {
