@@ -10,10 +10,16 @@ function readOrCreateClientSessionId(): string | null {
   try {
     const existing = sessionStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
     if (existing && existing.length <= 64) return existing;
-    const next =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    let next: string;
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      next = crypto.randomUUID();
+    } else if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      next = `s-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+    } else {
+      return null;
+    }
     sessionStorage.setItem(CLIENT_SESSION_STORAGE_KEY, next);
     return next;
   } catch {

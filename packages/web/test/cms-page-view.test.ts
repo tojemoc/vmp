@@ -40,7 +40,6 @@ describe('trackCmsPageView', () => {
     globalThis.document = { referrer: 'https://example.com/' };
     // @ts-expect-error test stub
     globalThis.location = location;
-    // @ts-expect-error test stub
     globalThis.sessionStorage = {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
