@@ -1,3 +1,5 @@
+import { ANDROID_CHROME_PACKAGE, buildAndroidIntentUrl } from '~/utils/nativeAppHandoff';
+
 /** True on iPhone/iPad (including iPadOS desktop UA). */
 export function isIosLike(): boolean {
   if (typeof window === 'undefined') return false;
@@ -47,17 +49,26 @@ export function isAndroid(): boolean {
 }
 
 /**
+ * Android browsers that honor package-targeted `intent://` URLs (Chromium family).
+ * Firefox for Android does not open `intent://` and strands the user on a dead end.
+ */
+export function isAndroidChromium(): boolean {
+  if (!isAndroid() || typeof window === 'undefined') return false;
+  const ua = window.navigator.userAgent;
+  if (/Firefox|FxiOS/i.test(ua)) return false;
+  // Chrome, Edge, Samsung Internet, Opera, Brave, etc. include Chrome/ on Android.
+  return /Chrome\//i.test(ua);
+}
+
+/**
  * Try opening the current page in Chrome via an Android intent URL.
  * Returns false when the platform does not support this handoff.
  */
 export function openCurrentPageInChrome(): boolean {
-  if (!isAndroid() || typeof window === 'undefined') return false;
+  if (!isAndroidChromium() || typeof window === 'undefined') return false;
   try {
-    const pageUrl = window.location.href;
-    const withoutScheme = pageUrl.replace(/^https?:\/\//i, '');
-    const fallback = encodeURIComponent(pageUrl);
     window.location.assign(
-      `intent://${withoutScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${fallback};end`,
+      buildAndroidIntentUrl(window.location.href, ANDROID_CHROME_PACKAGE, window.location.href),
     );
     return true;
   } catch {
@@ -66,7 +77,7 @@ export function openCurrentPageInChrome(): boolean {
 }
 
 export function canOpenCurrentPageInChrome(): boolean {
-  return isAndroid();
+  return isAndroidChromium();
 }
 
 const DEVICE_TOKEN_KEY = 'vmp_pwa_device_token';

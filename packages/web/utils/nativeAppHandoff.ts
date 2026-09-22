@@ -1,5 +1,5 @@
 /**
- * Browser → native app handoff for magic-link `/auth/verify`.
+ * Browser → native app handoff helpers + shared Android intent URL builder.
  *
  * Verified App / Universal Links need `/.well-known/assetlinks.json` and
  * `/.well-known/apple-app-site-association` (checklist S5). Until those are
@@ -19,6 +19,7 @@
 export const NATIVE_APP_FALLBACK_QUERY = 'native_fallback';
 
 export const DEFAULT_MOBILE_ANDROID_PACKAGE = 'sk.tjm.vmp';
+export const ANDROID_CHROME_PACKAGE = 'com.android.chrome';
 
 export function isNativeAppFallbackQuery(value: unknown): boolean {
   if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true';
@@ -39,7 +40,7 @@ export function withNativeAppFallbackParam(pageUrl: string): string {
 }
 
 /**
- * Android Intent URL that opens the installed package with the HTTPS verify URL.
+ * Android Intent URL that opens a package with an HTTPS/HTTP page URL.
  * Explicit `package=` works even when Digital Asset Links autoVerify has not
  * succeeded (sideloaded / PoC APKs).
  */
@@ -51,9 +52,14 @@ export function resolveMobileAndroidPackage(packageName: string | null | undefin
   return DEFAULT_MOBILE_ANDROID_PACKAGE;
 }
 
-export function buildAndroidNativeAppIntentUrl(
+/**
+ * Shared `intent://` builder for Android package handoff (app or Chrome).
+ * When `browserFallbackUrl` is omitted, uses the page URL itself as fallback.
+ */
+export function buildAndroidIntentUrl(
   pageUrl: string,
-  packageName: string = DEFAULT_MOBILE_ANDROID_PACKAGE,
+  packageName: string,
+  browserFallbackUrl?: string,
 ): string {
   const safePackage = resolveMobileAndroidPackage(packageName);
   const absolute = new URL(pageUrl);
@@ -61,8 +67,20 @@ export function buildAndroidNativeAppIntentUrl(
     throw new Error('Native app intent requires an http(s) page URL');
   }
   const withoutScheme = absolute.href.replace(/^https?:\/\//i, '');
-  const fallback = encodeURIComponent(withNativeAppFallbackParam(absolute.href));
+  const fallbackTarget = browserFallbackUrl ?? absolute.href;
+  const fallback = encodeURIComponent(fallbackTarget);
   return `intent://${withoutScheme}#Intent;scheme=${absolute.protocol.slice(0, -1)};package=${safePackage};S.browser_fallback_url=${fallback};end`;
+}
+
+export function buildAndroidNativeAppIntentUrl(
+  pageUrl: string,
+  packageName: string = DEFAULT_MOBILE_ANDROID_PACKAGE,
+): string {
+  return buildAndroidIntentUrl(
+    pageUrl,
+    resolveMobileAndroidPackage(packageName),
+    withNativeAppFallbackParam(pageUrl),
+  );
 }
 
 /** Navigate to the package-targeted intent; returns false off-window or on failure. */

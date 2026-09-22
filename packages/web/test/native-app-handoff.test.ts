@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  ANDROID_CHROME_PACKAGE,
+  buildAndroidIntentUrl,
   buildAndroidNativeAppIntentUrl,
   buildIosInsecureNativeSchemeUrl,
   DEFAULT_MOBILE_ANDROID_PACKAGE,
@@ -43,6 +45,17 @@ describe('nativeAppHandoff', () => {
     assert.match(intent, /S\.browser_fallback_url=/);
     assert.match(intent, /native_fallback%3D1/);
     assert.match(intent, /;end$/);
+  });
+
+  it('builds Chrome handoff intents via the shared builder', () => {
+    const intent = buildAndroidIntentUrl(
+      'https://vmp.example/watch/1',
+      ANDROID_CHROME_PACKAGE,
+      'https://vmp.example/watch/1',
+    );
+    assert.match(intent, /^intent:\/\/vmp\.example\/watch\/1#Intent;/);
+    assert.match(intent, /;package=com\.android\.chrome;/);
+    assert.match(intent, /S\.browser_fallback_url=https%3A%2F%2Fvmp\.example%2Fwatch%2F1/);
   });
 
   it('falls back to the default package for empty or unsafe names', () => {
