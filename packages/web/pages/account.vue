@@ -541,7 +541,7 @@
           <button
             type="button"
             class="px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
-            :disabled="deleteConfirming || deleteConfirmPhrase !== 'DELETE MY ACCOUNT'"
+            :disabled="deleteConfirming || deleteConfirmPhrase !== ACCOUNT_DELETION_CONFIRM_PHRASE"
             @click="confirmAccountDeletion"
           >
             {{ deleteConfirming ? strings.accountDeleteConfirming : strings.accountDeleteConfirm }}
@@ -686,6 +686,7 @@
 </template>
 
 <script setup lang="ts">
+  import { ACCOUNT_DELETION_CONFIRM_PHRASE } from '@vmp/shared';
   import { resolveComponent } from 'vue';
   import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
@@ -1150,7 +1151,7 @@
   }
 
   async function confirmAccountDeletion() {
-    if (deleteConfirmPhrase.value !== 'DELETE MY ACCOUNT' || !deleteToken.value) return;
+    if (deleteConfirmPhrase.value !== ACCOUNT_DELETION_CONFIRM_PHRASE || !deleteToken.value) return;
     deleteConfirming.value = true;
     deleteConfirmError.value = null;
     try {

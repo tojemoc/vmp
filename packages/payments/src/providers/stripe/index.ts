@@ -235,9 +235,11 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
       if (!session.client_secret) {
         throw new Error('Failed to create checkout session');
       }
+      const sessionId = typeof session.id === 'string' ? session.id.trim() : '';
       return {
         provider: 'stripe',
         clientSecret: String(session.client_secret),
+        ...(sessionId ? { orderId: sessionId } : {}),
         ...(session.metadata ? { metadata: session.metadata as Record<string, string> } : {}),
       };
     },
@@ -332,6 +334,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
           return {
             ...base,
             type: 'checkout.completed' as const,
+            ...(typeof object.id === 'string' ? { providerOrderId: object.id } : {}),
             ...(typeof object.subscription === 'string'
               ? { subscriptionId: object.subscription }
               : {}),

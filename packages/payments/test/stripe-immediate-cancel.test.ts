@@ -48,4 +48,54 @@ describe('Stripe cancelSubscriptionImmediately', () => {
     });
     await provider.cancelSubscriptionImmediately('sub_gone');
   });
+
+  it('createCheckoutSession exposes Stripe session.id as orderId', async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          id: 'cs_test_abc',
+          client_secret: 'cs_test_abc_secret',
+          metadata: { userId: 'u1' },
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+
+    const provider = createStripeProvider({
+      secretKey: 'sk_test',
+      frontendUrl: 'http://localhost:3000',
+      priceIdForPlan: async () => 'price_1',
+    });
+    const session = await provider.createCheckoutSession({
+      userId: 'u1',
+      email: 'a@example.com',
+      planType: 'monthly',
+      returnPath: '/account',
+    });
+    assert.equal(session.orderId, 'cs_test_abc');
+    assert.equal(session.clientSecret, 'cs_test_abc_secret');
+  });
+
+  it('checkout.session.completed sets providerOrderId from session id', async () => {
+    const provider = createStripeProvider({
+      secretKey: 'sk_test',
+      frontendUrl: 'http://localhost:3000',
+      priceIdForPlan: async () => 'price_1',
+    });
+    const event = await provider.handleWebhook(
+      JSON.stringify({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_test_xyz',
+            subscription: 'sub_1',
+            customer: 'cus_1',
+            metadata: { userId: 'u1', planType: 'monthly' },
+          },
+        },
+      }),
+    );
+    assert.equal(event.type, 'checkout.completed');
+    assert.equal(event.providerOrderId, 'cs_test_xyz');
+    assert.equal(event.subscriptionId, 'sub_1');
+  });
 });

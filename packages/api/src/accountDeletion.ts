@@ -134,7 +134,10 @@ export async function handleAccountDeleteRequest(request: any, env: any, corsHea
   if (env.BREVO_API_KEY && email) {
     await sendDeletionEmail(email, confirmUrl, env);
   } else {
-    console.log(`[DEV] Account deletion confirm URL for ${email || user.sub}: ${confirmUrl}`);
+    // Never log the raw confirm URL or email — magic-link style tokens are secrets.
+    console.log(
+      `[DEV] Account deletion confirm token issued (tokenId=${tokenId}, userId=${user.sub})`,
+    );
   }
 
   return jsonResponse({ ok: true, expiresAt }, 200, corsHeaders);
@@ -367,13 +370,15 @@ async function cancelSubscriptionForUser(env: any, userId: string): Promise<void
     const subId =
       String(row.provider_subscription_id || '').trim() ||
       String(row.stripe_subscription_id || '').trim();
-    if (provider && subId && provider.capabilities.immediateCancellation) {
-      await provider.cancelSubscriptionImmediately(subId);
-    } else if (subId && provider) {
-      const err = new Error(`Provider ${providerId} does not support immediate cancellation`);
+    if (!provider || !subId || provider.capabilities.immediateCancellation !== true) {
+      const err = new Error(
+        `Provider ${providerId} does not support immediate cancellation` +
+          (!subId ? ' (missing provider subscription id)' : ''),
+      );
       Object.assign(err, { code: 'immediate_cancel_unsupported' });
       throw err;
     }
+    await provider.cancelSubscriptionImmediately(subId);
     await db
       .prepare(
         `UPDATE subscriptions

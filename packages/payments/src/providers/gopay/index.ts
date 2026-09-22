@@ -319,8 +319,14 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
           `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (/already|voided|finished|canceled|cancelled/i.test(message)) return;
+        const details =
+          err && typeof err === 'object' && 'details' in err
+            ? (err as { details?: unknown }).details
+            : undefined;
+        const detailText =
+          details == null ? '' : typeof details === 'string' ? details : JSON.stringify(details);
+        // Prefer provider payload (err.details) — generic Error messages may omit void reason.
+        if (/already|voided|finished|canceled|cancelled/i.test(detailText)) return;
         throw err;
       }
     },

@@ -278,7 +278,7 @@ describe('account deletion request/confirm', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('delete-request stores a token and logs URL without Brevo', async () => {
+  it('delete-request stores a token without Brevo (logs tokenId only)', async () => {
     const token = await createAccessToken(
       { id: 'u1', email: 'a@example.com', role: 'viewer' },
       JWT_SECRET,

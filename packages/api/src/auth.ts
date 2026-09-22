@@ -679,10 +679,14 @@ async function consumePwaHandoffCode(db: any, code: string): Promise<string | nu
 
 async function loadUserRowForAuth(db: any, userId: string) {
   const row = await db
-    .prepare('SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1')
+    .prepare(
+      'SELECT id, email, role, totp_enabled, created_at, deletion_pending FROM users WHERE id = ? LIMIT 1',
+    )
     .bind(userId)
     .first();
   if (!row) return null;
+  // Treat deletion-pending like a missing user so handoff redemption cannot mint sessions.
+  if (Number(row.deletion_pending) === 1) return null;
   return {
     id: row.id,
     email: row.email,
