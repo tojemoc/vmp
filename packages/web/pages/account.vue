@@ -210,7 +210,22 @@
 
           <div class="mt-5 pt-5 border-t border-gray-100 dark:border-gray-800">
             <button
-              v-if="!(showLegacyManageButton && legacyManageUrl)"
+              v-if="supportsRedirectCancel && !subscription.cancelAtPeriodEnd"
+              class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+              :disabled="cancelingSubscription"
+              @click="cancelRedirectSubscription"
+            >
+              <span v-if="cancelingSubscription">{{ strings.cancelingSubscription }}</span>
+              <span v-else>{{ strings.cancelSubscription }}</span>
+            </button>
+            <p
+              v-else-if="supportsRedirectCancel && subscription.cancelAtPeriodEnd"
+              class="text-sm text-gray-600 dark:text-gray-400"
+            >
+              {{ strings.redirectCancelNoResumeHint }}
+            </p>
+            <button
+              v-else-if="!(showLegacyManageButton && legacyManageUrl)"
               class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               :class="
                 subscription.cancelAtPeriodEnd
@@ -236,7 +251,9 @@
             >
               {{ strings.accountPayWithProvider(legacyProviderDisplayName) }}
             </a>
-            <p v-if="portalError" class="text-red-500 text-xs mt-2">{{ portalError }}</p>
+            <p v-if="portalError" class="text-red-600 dark:text-red-400 text-xs mt-2">
+              {{ portalError }}
+            </p>
           </div>
         </template>
 
@@ -677,6 +694,15 @@
     );
   });
 
+  const supportsRedirectCancel = computed(() => {
+    const sub = subscription.value;
+    if (!sub) return false;
+    return (
+      (sub.provider === 'gopay' || sub.provider === 'comgate') &&
+      ['active', 'trialing', 'past_due'].includes(sub.status ?? '')
+    );
+  });
+
   const legacyProviderDisplayName = computed(() => {
     const sub = subscription.value;
     const name = sub?.legacyProviderName?.trim();
@@ -735,6 +761,7 @@
 
   const loadingSub = ref(true);
   const openingPortal = ref(false);
+  const cancelingSubscription = ref(false);
   const portalError = ref<string | null>(null);
   const showWelcomeBanner = ref(route.query.subscribed === '1');
 
@@ -933,6 +960,10 @@
       });
       const data = await res.json();
       if (!res.ok || !data.portalUrl) {
+        if (data?.code === 'portal_not_supported' && data?.cancelSupported) {
+          portalError.value = strings.redirectCancelUseButtonHint;
+          return;
+        }
         portalError.value = data.error ?? strings.billingPortalFailed;
         return;
       }
@@ -942,6 +973,33 @@
       portalError.value = strings.networkError;
     } finally {
       openingPortal.value = false;
+    }
+  }
+
+  async function cancelRedirectSubscription() {
+    if (cancelingSubscription.value) return;
+    if (!window.confirm(strings.cancelSubscriptionConfirm)) return;
+    cancelingSubscription.value = true;
+    portalError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/payments/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: authHeader(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        portalError.value = data.error ?? strings.cancelSubscriptionFailed;
+        return;
+      }
+      capturePostHogEvent('subscription_cancel_at_period_end', {
+        provider: subscription.value?.provider ?? 'unknown',
+      });
+      await fetchSubscription();
+    } catch {
+      portalError.value = strings.networkError;
+    } finally {
+      cancelingSubscription.value = false;
     }
   }
 

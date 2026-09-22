@@ -129,6 +129,10 @@ export interface NormalizedPaymentEvent {
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
   promoCodeId?: string;
+  /** Paid amount in minor units when the provider reports it (GoPay / Comgate). */
+  amountMinor?: number;
+  /** ISO currency when the provider reports it. */
+  currency?: string;
   /** Populated on `invoice.paid` when the provider can supply invoice details. */
   invoice?: NormalizedInvoiceData;
   raw: unknown;

@@ -282,6 +282,14 @@ export const strings: StringsDefinition = {
   manageSubscription: 'Manage subscription',
   resumeSubscription: 'Resume subscription',
   openingPortal: 'Opening…',
+  cancelSubscription: 'Cancel renewal',
+  cancelingSubscription: 'Canceling…',
+  cancelSubscriptionConfirm:
+    'Stop automatic renewals? You keep access until the end of the current period.',
+  cancelSubscriptionFailed: 'Could not cancel the subscription. Please try again.',
+  redirectCancelNoResumeHint:
+    'Renewals are stopped. Access continues until the date above; resume is not available self-service for this payment provider.',
+  redirectCancelUseButtonHint: 'Use Cancel renewal to stop GoPay or Comgate renewals.',
   subscribedWelcome: "You're now subscribed!",
   subscribedWelcomeDetail: 'Welcome to VMP Premium. Enjoy unlimited access to all content.',
   renewsOn: 'Renews on',

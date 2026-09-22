@@ -22,6 +22,7 @@ import {
   type DbPaymentProvider,
   type NormalizedPaymentEvent,
   type PaymentProviderId,
+  type PlanType,
 } from '@vmp/payments';
 import {
   CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
@@ -39,7 +40,10 @@ import {
   getPaymentProviders,
   isComgateConfigured,
   isGoPayConfigured,
+  isGoPayUsingSandbox,
+  isNonLocalFrontendUrl,
   providerIdToDbProvider,
+  resolveGoPayApiBase,
   resolvePublicEnabledProviders,
   toApiProviderId,
   toSupportedApiProviderIds,
@@ -53,7 +57,6 @@ import {
 
 export { parseLocaleNumber } from './parseLocaleNumber.js';
 
-type PlanType = 'monthly' | 'yearly' | 'club';
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -122,6 +125,40 @@ async function buildAdminPlanList(env: any) {
 
 function parseConfiguredPrice(value: unknown): number | null {
   return parseLocaleNumber(value);
+}
+
+/**
+ * Verify a paid redirect-gateway event amount matches the configured plan price.
+ * Returns null when verification passes or cannot be performed (missing data);
+ * returns an error code when the paid amount/currency is wrong.
+ */
+async function verifyRedirectPaymentAmount(
+  env: any,
+  provider: 'gopay' | 'comgate',
+  planType: PlanType,
+  event: { amountMinor?: number; currency?: string },
+): Promise<string | null> {
+  if (event.amountMinor == null || !(event.amountMinor > 0)) return null;
+  const pricing = await getEffectivePricingSettings(env, provider);
+  const expectedMajor = pricing[planType];
+  if (expectedMajor == null || !(expectedMajor > 0)) return null;
+  const expectedMinor = Math.round(expectedMajor * 100);
+  if (expectedMinor !== Math.round(event.amountMinor)) {
+    return `${provider}_amount_mismatch`;
+  }
+  const currencyKey = provider === 'gopay' ? 'gopay_currency' : 'comgate_currency';
+  const stored = await getSetting(env, currencyKey, { defaultValue: 'CZK', ttlSeconds: 300 });
+  const expectedCurrency =
+    String(stored ?? 'CZK')
+      .trim()
+      .toUpperCase() || 'CZK';
+  const paidCurrency = String(event.currency ?? '')
+    .trim()
+    .toUpperCase();
+  if (paidCurrency && paidCurrency !== expectedCurrency) {
+    return `${provider}_currency_mismatch`;
+  }
+  return null;
 }
 
 async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate') {
@@ -779,6 +816,8 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
         comgateCurrency: valueByKey.comgate_currency ?? 'CZK',
         gopayConfigured: isGoPayConfigured(env),
         comgateConfigured: isComgateConfigured(env),
+        gopayApiBase: resolveGoPayApiBase(env),
+        gopaySandbox: isGoPayUsingSandbox(env),
         stripePriceIds: {
           monthly: valueByKey.stripe_price_monthly ?? '',
           yearly: valueByKey.stripe_price_yearly ?? '',
@@ -1126,7 +1165,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   const planType = normalizePlanType(body.planType);
   if (body?.newsletterOptOut != null && typeof body.newsletterOptOut !== 'boolean') {
     return jsonResponse(
-      { error: 'newsletterOptOut must be a boolean when provided', code: 'invalid_newsletter_opt_out' },
+      {
+        error: 'newsletterOptOut must be a boolean when provided',
+        code: 'invalid_newsletter_opt_out',
+      },
       400,
       corsHeaders,
     );
@@ -1210,6 +1252,22 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
           error:
             'Bank payments are temporarily unavailable. Please choose another payment method or try again later.',
           code: 'provider_not_configured',
+        },
+        503,
+        corsHeaders,
+      );
+    }
+
+    if (
+      providerId === 'gopay' &&
+      isGoPayUsingSandbox(env) &&
+      isNonLocalFrontendUrl(env.FRONTEND_URL)
+    ) {
+      return jsonResponse(
+        {
+          error:
+            'GoPay is still pointed at the sandbox API. Set GOPAY_API_BASE=https://gate.gopay.cz/api before taking live payments.',
+          code: 'gopay_sandbox_in_production',
         },
         503,
         corsHeaders,
@@ -1576,6 +1634,21 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
       if (!userId || !subscriptionId) {
         return jsonResponse({ ok: true, ignored: true }, 200, corsHeaders);
       }
+      const amountError = await verifyRedirectPaymentAmount(env, 'gopay', planType, event);
+      if (amountError) {
+        console.error('[gopay webhook] amount verification failed', {
+          code: amountError,
+          subscriptionId,
+          amountMinor: event.amountMinor,
+          currency: event.currency,
+          planType,
+        });
+        return jsonResponse(
+          { error: 'Payment amount mismatch', code: amountError },
+          400,
+          corsHeaders,
+        );
+      }
       await upsertSubscriptionRow(db, {
         userId,
         planType,
@@ -1589,6 +1662,15 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
         await syncSubscriptionNewsletter(db, userId, 'active', env);
       } catch (brevoErr) {
         console.error('[gopay webhook] newsletter sync failed', { userId, err: brevoErr });
+      }
+      try {
+        await handlePaymentInvoicePaid(env, db, userId, {
+          providerId: 'gopay',
+          invoice: event.invoice,
+          planType,
+        });
+      } catch (invoiceErr) {
+        console.error('[gopay webhook] e-invoice failed', { userId, err: invoiceErr });
       }
       return jsonResponse({ ok: true }, 200, corsHeaders);
     }
@@ -1606,6 +1688,21 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
         .first();
       if (existing?.user_id) {
         const existingPlan = normalizePlanType(String(existing.plan_type ?? planType));
+        const amountError = await verifyRedirectPaymentAmount(env, 'gopay', existingPlan, event);
+        if (amountError) {
+          console.error('[gopay webhook] renewal amount verification failed', {
+            code: amountError,
+            subscriptionId,
+            amountMinor: event.amountMinor,
+            currency: event.currency,
+            planType: existingPlan,
+          });
+          return jsonResponse(
+            { error: 'Payment amount mismatch', code: amountError },
+            400,
+            corsHeaders,
+          );
+        }
         await upsertSubscriptionRow(db, {
           userId: String(existing.user_id),
           planType: existingPlan,
@@ -1621,6 +1718,18 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           console.error('[gopay webhook] newsletter sync failed', {
             userId: existing.user_id,
             err: brevoErr,
+          });
+        }
+        try {
+          await handlePaymentInvoicePaid(env, db, String(existing.user_id), {
+            providerId: 'gopay',
+            invoice: event.invoice,
+            planType: existingPlan,
+          });
+        } catch (invoiceErr) {
+          console.error('[gopay webhook] e-invoice failed', {
+            userId: existing.user_id,
+            err: invoiceErr,
           });
         }
       }
@@ -1774,6 +1883,26 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         return comgateNotifyRetry(corsHeaders, 'unresolved user');
       }
 
+      const amountError = await verifyRedirectPaymentAmount(
+        env,
+        'comgate',
+        identity.planType,
+        event,
+      );
+      if (amountError) {
+        console.error('[comgate webhook] amount verification failed', {
+          code: amountError,
+          subscriptionId,
+          amountMinor: event.amountMinor,
+          currency: event.currency,
+          planType: identity.planType,
+        });
+        return new Response(`code=1400&message=${encodeURIComponent(amountError)}`, {
+          status: 400,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+        });
+      }
+
       await upsertSubscriptionRow(db, {
         userId: identity.userId,
         planType: identity.planType,
@@ -1827,6 +1956,18 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         console.error('[comgate webhook] newsletter sync failed', {
           userId: identity.userId,
           err: brevoErr,
+        });
+      }
+      try {
+        await handlePaymentInvoicePaid(env, db, identity.userId, {
+          providerId: 'comgate',
+          invoice: event.invoice,
+          planType: identity.planType,
+        });
+      } catch (invoiceErr) {
+        console.error('[comgate webhook] e-invoice failed', {
+          userId: identity.userId,
+          err: invoiceErr,
         });
       }
     }
@@ -2294,6 +2435,20 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
       }
     }
 
+    // Redirect gateways have no hosted portal — point the client at cancel-at-period-end.
+    if (registryId === 'gopay' || registryId === 'comgate') {
+      return jsonResponse(
+        {
+          error: 'Use cancel subscription to stop renewals for this payment provider.',
+          code: 'portal_not_supported',
+          cancelSupported: true,
+          provider: registryId,
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
     const providerName =
       dbProvider === 'legacy'
         ? String(
@@ -2311,6 +2466,116 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     );
   } catch (err) {
     console.error('handlePortal error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
+  }
+}
+
+/**
+ * POST /api/payments/cancel — protected
+ * Stop renewals for GoPay / Comgate subscriptions (cancel at period end).
+ * Stripe customers must use the Billing Portal instead.
+ */
+export async function handleCancelSubscription(request: any, env: any, corsHeaders: any) {
+  let user;
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  try {
+    const db = getDb(env);
+    const sub = await db
+      .prepare(`
+      SELECT id, provider, status, provider_subscription_id, cancel_at_period_end
+      FROM subscriptions
+      WHERE user_id = ?
+      ORDER BY
+        CASE
+          WHEN status IN ('active', 'trialing', 'past_due') THEN 0
+          ELSE 1
+        END,
+        created_at DESC
+      LIMIT 1
+    `)
+      .bind(user.sub)
+      .first();
+
+    if (!sub) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
+    }
+
+    const status = String(sub.status ?? '');
+    if (!['active', 'trialing', 'past_due'].includes(status)) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
+    }
+
+    const dbProvider = String(sub.provider ?? 'stripe');
+    const registryId = dbProviderToRegistryId(dbProvider);
+    if (registryId !== 'gopay' && registryId !== 'comgate') {
+      return jsonResponse(
+        {
+          error: 'Cancel this subscription from the billing portal.',
+          code: 'cancel_use_portal',
+          provider: registryId,
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
+    const alreadyCanceling =
+      sub.cancel_at_period_end === 1 ||
+      sub.cancel_at_period_end === true ||
+      sub.cancel_at_period_end === '1';
+    if (alreadyCanceling) {
+      return jsonResponse(
+        { ok: true, cancelAtPeriodEnd: true, idempotent: true },
+        200,
+        corsHeaders,
+      );
+    }
+
+    const subscriptionId = String(sub.provider_subscription_id ?? '').trim();
+    if (!subscriptionId) {
+      return jsonResponse(
+        {
+          error: 'Subscription is missing a provider reference',
+          code: 'missing_provider_subscription',
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
+    const { providers } = await getPaymentProviders(env);
+    let provider = providers.get(registryId);
+    if (!provider) {
+      const config = buildPaymentsConfig(env);
+      const forced = createEnabledProviders([registryId], config);
+      provider = forced.get(registryId);
+    }
+    if (!provider || !provider.isConfigured()) {
+      return jsonResponse(
+        { error: 'Payment provider is not configured', code: 'provider_not_configured' },
+        503,
+        corsHeaders,
+      );
+    }
+
+    await provider.cancelSubscription(subscriptionId);
+    await db
+      .prepare(
+        `UPDATE subscriptions
+         SET cancel_at_period_end = 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(sub.id, user.sub)
+      .run();
+
+    return jsonResponse({ ok: true, cancelAtPeriodEnd: true }, 200, corsHeaders);
+  } catch (err) {
+    console.error('handleCancelSubscription error:', err);
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }

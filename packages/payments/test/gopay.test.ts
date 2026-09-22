@@ -162,6 +162,9 @@ describe('createGoPayProvider', () => {
         body: {
           id: 99,
           state: 'PAID',
+          amount: 19900,
+          currency: 'CZK',
+          payer: { contact: { email: 'a@example.com' } },
           additional_params: [
             { name: 'userId', value: 'u1' },
             { name: 'planType', value: 'monthly' },
@@ -175,6 +178,10 @@ describe('createGoPayProvider', () => {
     assert.equal(event.providerId, 'gopay');
     assert.equal(event.userId, 'u1');
     assert.equal(event.subscriptionId, '99');
+    assert.equal(event.amountMinor, 19900);
+    assert.equal(event.currency, 'CZK');
+    assert.equal(event.invoice?.grossAmountCents, 19900);
+    assert.equal(event.invoice?.buyer.email, 'a@example.com');
   });
 
   it('handleWebhook maps child recurrence PAID to invoice.paid', async () => {
@@ -204,5 +211,17 @@ describe('createGoPayProvider', () => {
     const provider = createGoPayProvider(baseConfig());
     await provider.cancelSubscription('99');
     assert.match(calls[1]!.url, /\/void-recurrence$/);
+  });
+
+  it('cancelSubscription treats already-voided recurrence as success', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      {
+        status: 409,
+        body: { errors: [{ message: 'Recurrence already finished' }] },
+      },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await provider.cancelSubscription('99');
   });
 });

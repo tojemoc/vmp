@@ -145,6 +145,7 @@ import {
 import {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
+  handleCancelSubscription,
   handleCheckout,
   handleComgateWebhook,
   handleGetPricing,
@@ -1195,6 +1196,9 @@ const workerHandler = {
         }
         if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
           return handlePortal(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/cancel' && request.method === 'POST') {
+          return handleCancelSubscription(request, env, corsHeaders);
         }
         // ── Push notification routes ──────────────────────────────────────────────
         if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {

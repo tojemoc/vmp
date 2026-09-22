@@ -1,5 +1,5 @@
 /**
- * GoPay payment provider (draft).
+ * GoPay payment provider (production-ready redirect checkout).
  *
  * Checkout is redirect-only via `gw_url`. Recurring billing uses GoPay automatic
  * recurrence (MONTH cycle). Notifications are unsigned GET callbacks; authenticity
@@ -24,10 +24,27 @@ import type {
   RefundOptions,
   Subscription,
 } from '../../types.js';
+import { normalizeRedirectGatewayInvoice } from '../redirectInvoice.js';
 
 const DEFAULT_API_BASE = 'https://gw.sandbox.gopay.com/api';
 const TOKEN_SKEW_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
+
+function isGoPayAlreadyCancelledError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const details =
+    'details' in err && err.details && typeof err.details === 'object'
+      ? (err.details as Record<string, unknown>)
+      : null;
+  const blob = JSON.stringify(details ?? err).toLowerCase();
+  return (
+    blob.includes('already') ||
+    blob.includes('finished') ||
+    blob.includes('stopped') ||
+    blob.includes('void') ||
+    blob.includes('recurrence_state')
+  );
+}
 
 type TokenCache = { accessToken: string; expiresAtMs: number };
 
@@ -303,10 +320,16 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
     },
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
-      await gopayJson(
-        'POST',
-        `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
-      );
+      try {
+        await gopayJson(
+          'POST',
+          `/payments/payment/${encodeURIComponent(subscriptionId)}/void-recurrence`,
+        );
+      } catch (err) {
+        // Idempotent: already-voided / finished recurrence is success for retries.
+        if (isGoPayAlreadyCancelledError(err)) return;
+        throw err;
+      }
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {
@@ -360,6 +383,26 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
       const planType = (meta.planType as PlanType | undefined) ?? undefined;
       const userId = meta.userId || undefined;
       const eventType = mapGoPayStateToEvent(String(status.state ?? ''), Boolean(parentId));
+      const amountMinor = Number(status.amount);
+      const currency = String(status.currency ?? '')
+        .trim()
+        .toUpperCase();
+      const email =
+        status.payer?.contact?.email != null
+          ? String(status.payer.contact.email).trim()
+          : undefined;
+      const invoice =
+        eventType === 'checkout.completed' || eventType === 'invoice.paid'
+          ? normalizeRedirectGatewayInvoice({
+              providerInvoiceId: String(status.id ?? paymentId),
+              providerPaymentId: String(status.id ?? paymentId),
+              providerSubscriptionId: subscriptionId,
+              amountMinor: Number.isFinite(amountMinor) ? amountMinor : 0,
+              currency: currency || 'CZK',
+              email,
+              planType: planType ?? null,
+            })
+          : null;
 
       return {
         type: eventType,
@@ -370,6 +413,9 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
         providerOrderId: String(status.id ?? paymentId),
         ...(parentId ? { purchaseId: parentId } : {}),
         status: String(status.state ?? ''),
+        ...(Number.isFinite(amountMinor) && amountMinor > 0 ? { amountMinor } : {}),
+        ...(currency ? { currency } : {}),
+        ...(invoice ? { invoice } : {}),
         raw: status,
       };
     },

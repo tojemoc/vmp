@@ -90,6 +90,9 @@ describe('createComgateProvider', () => {
     assert.equal(event.providerId, 'comgate');
     assert.equal(event.subscriptionId, 'AB12-CD34-EF56');
     assert.equal(event.purchaseId, 'order-42');
+    assert.equal(event.amountMinor, 19900);
+    assert.equal(event.currency, 'CZK');
+    assert.equal(event.invoice?.grossAmountCents, 19900);
   });
 
   it('handleWebhook maps CANCELLED to payment.failed (API maps to past_due grace period)', async () => {
@@ -159,6 +162,12 @@ describe('createComgateProvider', () => {
     const provider = createComgateProvider(baseConfig());
     await provider.cancelSubscription('AB12-CD34-EF56');
     assert.match(calls[0]!.url, /\/v1\.0\/cancel$/);
+  });
+
+  it('cancelSubscription treats already-cancelled as success', async () => {
+    mockFetchSequence([{ body: 'code=1400&message=already%20cancelled' }]);
+    const provider = createComgateProvider(baseConfig());
+    await provider.cancelSubscription('AB12-CD34-EF56');
   });
 
   it('refund calls /v1.0/refund with amount', async () => {
