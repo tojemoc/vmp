@@ -108,6 +108,31 @@ async function stripeGet(config: StripePaymentsConfig, path: string) {
   }
 }
 
+async function stripeDelete(config: StripePaymentsConfig, path: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`https://api.stripe.com/v1${path}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${config.secretKey}`,
+        'Stripe-Version': STRIPE_API_VERSION,
+      },
+      signal: controller.signal,
+    });
+    return (await res.json()) as Record<string, unknown>;
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      const err = new Error('Stripe request timed out');
+      Object.assign(err, { status: 504, code: 'stripe_timeout' });
+      throw err;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function verifyStripeWebhook(
   rawBody: string,
   sigHeader: string,
@@ -168,6 +193,7 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
       recurringPayments: true,
       refunds: true,
       webhooks: true,
+      immediateCancellation: true,
     },
     isConfigured: () => Boolean(config.secretKey),
 
@@ -194,6 +220,10 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         // Gated by einvoicing_enabled + seller jurisdiction in the API checkout handler.
         sessionPayload.tax_id_collection = { enabled: true, required: 'if_supported' };
         sessionPayload.billing_address_collection = 'required';
+      }
+      if (input.termsOfServiceUrl) {
+        // Requires a Terms of Service URL in the Stripe Dashboard (Settings → Public details).
+        sessionPayload.consent_collection = { terms_of_service: 'required' };
       }
       if (input.promo?.stripeCouponId) {
         sessionPayload.discounts = [{ coupon: input.promo.stripeCouponId }];
@@ -234,6 +264,21 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
         { cancel_at_period_end: true },
       );
       assertNoStripeError(result, 'Failed to cancel subscription');
+    },
+
+    async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+      const result = await stripeDelete(
+        config,
+        `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      );
+      // Already-cancelled / missing subscriptions are safe to treat as success (idempotent retries).
+      if (result.error) {
+        const code = String(
+          (result.error as { code?: string } | undefined)?.code ?? '',
+        ).toLowerCase();
+        if (code === 'resource_missing') return;
+        assertNoStripeError(result, 'Failed to cancel subscription immediately');
+      }
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {

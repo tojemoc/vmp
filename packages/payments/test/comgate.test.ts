@@ -161,6 +161,14 @@ describe('createComgateProvider', () => {
     assert.match(calls[0]!.url, /\/v1\.0\/cancel$/);
   });
 
+  it('cancelSubscriptionImmediately is supported', async () => {
+    const calls = mockFetchSequence([{ body: 'code=0&message=OK' }]);
+    const provider = createComgateProvider(baseConfig());
+    assert.equal(provider.capabilities.immediateCancellation, true);
+    await provider.cancelSubscriptionImmediately('AB12-CD34-EF56');
+    assert.match(calls[0]!.url, /\/v1\.0\/cancel$/);
+  });
+
   it('refund calls /v1.0/refund with amount', async () => {
     const calls = mockFetchSequence([{ body: 'code=0&message=OK' }]);
     const provider = createComgateProvider(baseConfig());

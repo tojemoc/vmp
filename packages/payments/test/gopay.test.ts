@@ -205,4 +205,15 @@ describe('createGoPayProvider', () => {
     await provider.cancelSubscription('99');
     assert.match(calls[1]!.url, /\/void-recurrence$/);
   });
+
+  it('cancelSubscriptionImmediately voids recurrence and sets capability', async () => {
+    const calls = mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      { body: { id: 99, result: 'FINISHED' } },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    assert.equal(provider.capabilities.immediateCancellation, true);
+    await provider.cancelSubscriptionImmediately('99');
+    assert.match(calls[1]!.url, /\/void-recurrence$/);
+  });
 });

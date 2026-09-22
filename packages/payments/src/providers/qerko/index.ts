@@ -11,12 +11,17 @@ export function createQerkoProvider(config: QerkoPaymentsConfig): PaymentProvide
       recurringPayments: true,
       refunds: true,
       webhooks: true,
+      immediateCancellation: true,
     },
     isConfigured: () => config.isConfigured(),
 
     createCheckoutSession: (input) => config.createCheckout(input),
     createSubscription: (input) => config.createSubscription(input),
     cancelSubscription: (subscriptionId) => config.cancelSubscription(subscriptionId),
+    cancelSubscriptionImmediately: (subscriptionId) =>
+      config.cancelSubscriptionImmediately
+        ? config.cancelSubscriptionImmediately(subscriptionId)
+        : config.cancelSubscription(subscriptionId),
     getCustomer: (customerId) => config.getCustomer(customerId),
     refund: (paymentId, opts) => config.refund(paymentId, opts),
 

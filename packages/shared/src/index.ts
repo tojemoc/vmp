@@ -255,6 +255,18 @@ export function normalizeMagicLinkClient(value: unknown): MagicLinkClient {
  */
 export const INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE = 'INSECURE_SIDE_STORE_TEST';
 
+/**
+ * Exact confirmation phrase for self-service account deletion
+ * (`POST /api/account/delete-confirm`).
+ */
+export const ACCOUNT_DELETION_CONFIRM_PHRASE = 'DELETE MY ACCOUNT';
+
+/**
+ * Immutable version id for checkout withdrawal / digital-content consent wording.
+ * Bump when the statutory acknowledgment text changes.
+ */
+export const CHECKOUT_CONSENT_VERSION = '2026-09-withdrawal-digital-v1';
+
 /** Body for POST /api/auth/2fa/verify (web + native). */
 export interface NativeTotpVerifyRequest {
   code: string;

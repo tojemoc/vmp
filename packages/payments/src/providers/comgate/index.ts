@@ -122,6 +122,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       recurringPayments: true,
       refunds: true,
       webhooks: true,
+      immediateCancellation: true,
     },
     isConfigured: () => Boolean(config.merchant && config.secret && config.frontendUrl),
 
@@ -227,6 +228,16 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
       await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+    },
+
+    async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+      try {
+        await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (/already|cancel|not found|finished/i.test(message)) return;
+        throw err;
+      }
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {

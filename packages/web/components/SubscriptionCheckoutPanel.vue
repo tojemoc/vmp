@@ -131,6 +131,29 @@
       </span>
     </label>
 
+    <label
+      class="mb-4 flex items-start gap-3 text-left cursor-pointer"
+      :class="embedded ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300'"
+    >
+      <input
+        v-model="termsAccepted"
+        type="checkbox"
+        class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+        required
+      >
+      <span class="text-sm">
+        {{ strings.checkoutTermsAcceptLabel }}
+        <a
+          href="/personal-data"
+          class="underline text-blue-600 dark:text-blue-400 hover:text-blue-500"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click.stop
+          >{{ strings.checkoutTermsLearnMore }}</a
+        >
+      </span>
+    </label>
+
     <div class="mb-3 text-left">
       <label
         class="text-xs uppercase tracking-wide block mb-1"
@@ -223,7 +246,9 @@
         @click="startComgateCheckout"
       >
         <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span>
+        <span v-else
+          >{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span
+        >
       </button>
     </div>
 
@@ -234,6 +259,7 @@
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
         :newsletter-opt-out="newsletterOptOut"
+        :terms-accepted="termsAccepted"
         :embedded="embedded"
         :show-wallet-surface="showWalletSurface"
         :show-card-surface="showCardSurface"
@@ -369,6 +395,8 @@
   const checkoutError = ref<string | null>(null);
   /** Unchecked by default — checking opts out of the creator newsletter only. */
   const newsletterOptOut = ref(false);
+  /** Required affirmative consent for immediate digital content / withdrawal waiver. */
+  const termsAccepted = ref(false);
   const promoCodeInput = ref('');
   const promoValidating = ref(false);
   const promoError = ref<string | null>(null);
@@ -431,8 +459,7 @@
   });
 
   const showGoPayCheckout = computed(
-    () =>
-      enabledProviders.value.includes('gopay') && gopayPlanPrice.value != null,
+    () => enabledProviders.value.includes('gopay') && gopayPlanPrice.value != null,
   );
 
   const showComgateCheckout = computed(
@@ -559,10 +586,7 @@
     if (providers.includes('legacy') && hasConfiguredProviderPrice(legacyPrices.value[plan])) {
       return true;
     }
-    if (
-      providers.includes('gopay') &&
-      hasConfiguredProviderPrice(gopayPrices.value[plan])
-    ) {
+    if (providers.includes('gopay') && hasConfiguredProviderPrice(gopayPrices.value[plan])) {
       return true;
     }
     if (providers.includes('comgate') && hasConfiguredProviderPrice(comgatePrices.value[plan])) {
@@ -808,6 +832,10 @@
 
   async function startLegacyCheckout() {
     checkoutError.value = null;
+    if (!termsAccepted.value) {
+      checkoutError.value = strings.checkoutTermsRequired;
+      return;
+    }
     if (!isLoggedIn.value) {
       await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'legacy'));
       return;
@@ -824,6 +852,7 @@
           provider: 'legacy',
           returnPath: props.returnPath,
           newsletterOptOut: newsletterOptOut.value,
+          termsAccepted: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -841,6 +870,10 @@
 
   async function startGoPayCheckout() {
     checkoutError.value = null;
+    if (!termsAccepted.value) {
+      checkoutError.value = strings.checkoutTermsRequired;
+      return;
+    }
     if (!isLoggedIn.value) {
       await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'gopay'));
       return;
@@ -860,6 +893,7 @@
           provider: 'gopay',
           returnPath: props.returnPath,
           newsletterOptOut: newsletterOptOut.value,
+          termsAccepted: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -881,6 +915,10 @@
 
   async function startComgateCheckout() {
     checkoutError.value = null;
+    if (!termsAccepted.value) {
+      checkoutError.value = strings.checkoutTermsRequired;
+      return;
+    }
     if (!isLoggedIn.value) {
       await startLoginFlow(buildLoginRedirect(selectedPlan.value, 'comgate'));
       return;
@@ -900,6 +938,7 @@
           provider: 'comgate',
           returnPath: props.returnPath,
           newsletterOptOut: newsletterOptOut.value,
+          termsAccepted: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -920,9 +959,7 @@
   }
 
   async function goToLogin() {
-    await startLoginFlow(
-      buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()),
-    );
+    await startLoginFlow(buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()));
   }
 
   function isStalePromoValidation(

@@ -482,6 +482,76 @@
         </template>
       </div>
 
+      <!-- Account deletion (GDPR Art. 17) -->
+      <div
+        id="delete-account"
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-900/60 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.accountDeleteTitle }}
+          </h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {{ strings.accountDeleteIntro }}
+          </p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            {{ strings.accountDeleteInvoiceNote }}
+          </p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            {{ strings.accountDeleteImmediateCancelNote }}
+          </p>
+        </div>
+
+        <div class="flex flex-wrap gap-3">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-medium rounded-lg border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-gray-900 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+            :disabled="deleteRequesting"
+            @click="requestAccountDeletion"
+          >
+            {{ deleteRequesting ? strings.accountDeleteRequesting : strings.accountDeleteRequest }}
+          </button>
+        </div>
+        <p v-if="deleteRequestSent" class="text-sm text-green-700 dark:text-green-400">
+          {{ strings.accountDeleteRequestSent }}
+        </p>
+        <p v-if="deleteRequestError" class="text-sm text-red-600 dark:text-red-400">
+          {{ deleteRequestError }}
+        </p>
+
+        <div
+          v-if="deleteToken"
+          class="space-y-3 pt-2 border-t border-gray-200 dark:border-gray-800"
+        >
+          <label class="block">
+            <span class="text-sm font-medium text-gray-900 dark:text-white">
+              {{ strings.accountDeleteConfirmPhraseLabel }}
+            </span>
+            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {{ strings.accountDeleteConfirmPhraseHint }}
+            </span>
+            <input
+              v-model="deleteConfirmPhrase"
+              type="text"
+              autocomplete="off"
+              class="mt-2 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 text-sm"
+            >
+          </label>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            :disabled="deleteConfirming || deleteConfirmPhrase !== 'DELETE MY ACCOUNT'"
+            @click="confirmAccountDeletion"
+          >
+            {{ deleteConfirming ? strings.accountDeleteConfirming : strings.accountDeleteConfirm }}
+          </button>
+          <p v-if="deleteConfirmError" class="text-sm text-red-600 dark:text-red-400">
+            {{ deleteConfirmError }}
+          </p>
+        </div>
+      </div>
+
       <!-- Security / 2FA card (staff roles required; viewers optional) -->
       <div
         v-if="show2faCard"
@@ -638,6 +708,7 @@
     isLoggedIn,
     markTotpDisabled,
     applyNewSession,
+    logout,
   } = useAuth();
   const { siteSettings } = useSiteSettings();
   const { startLoginFlow, waitForAuthInitialised } = useLoginFlow();
@@ -806,6 +877,14 @@
   const newsletterPrefSaved = ref(false);
   const newsletterOptedOut = ref(false);
 
+  const deleteRequesting = ref(false);
+  const deleteRequestSent = ref(false);
+  const deleteRequestError = ref<string | null>(null);
+  const deleteToken = ref('');
+  const deleteConfirmPhrase = ref('');
+  const deleteConfirming = ref(false);
+  const deleteConfirmError = ref<string | null>(null);
+
   type ContinueWatchingItem = {
     videoId: string;
     title: string;
@@ -830,6 +909,12 @@
       sessionStorage.getItem(relinkBannerStorageKey(user.value?.id)) === '1'
     ) {
       relinkBannerDismissed.value = true;
+    }
+
+    const deleteTokenParam = route.query.delete_token;
+    if (typeof deleteTokenParam === 'string' && deleteTokenParam.trim()) {
+      deleteToken.value = deleteTokenParam.trim();
+      deleteRequestSent.value = true;
     }
 
     if (returningFromLegacy.value) {
@@ -1037,6 +1122,59 @@
       newsletterPrefError.value = strings.newsletterOptOutSaveFailed;
     } finally {
       savingNewsletterPref.value = false;
+    }
+  }
+
+  async function requestAccountDeletion() {
+    deleteRequesting.value = true;
+    deleteRequestError.value = null;
+    deleteRequestSent.value = false;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/delete-request`, {
+        method: 'POST',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        deleteRequestError.value = data.error ?? strings.accountDeleteRequestFailed;
+        return;
+      }
+      deleteRequestSent.value = true;
+      capturePostHogEvent('account_deletion_requested');
+    } catch {
+      deleteRequestError.value = strings.accountDeleteRequestFailed;
+    } finally {
+      deleteRequesting.value = false;
+    }
+  }
+
+  async function confirmAccountDeletion() {
+    if (deleteConfirmPhrase.value !== 'DELETE MY ACCOUNT' || !deleteToken.value) return;
+    deleteConfirming.value = true;
+    deleteConfirmError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/delete-confirm`, {
+        method: 'POST',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          token: deleteToken.value,
+          confirmationPhrase: deleteConfirmPhrase.value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        deleteConfirmError.value = data.error ?? strings.accountDeleteConfirmFailed;
+        return;
+      }
+      capturePostHogEvent('account_deletion_confirmed');
+      await logout();
+      await navigateTo('/');
+    } catch {
+      deleteConfirmError.value = strings.accountDeleteConfirmFailed;
+    } finally {
+      deleteConfirming.value = false;
     }
   }
 
