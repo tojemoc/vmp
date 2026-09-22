@@ -349,6 +349,7 @@
                 @seeked="handleSeeked"
                 @play="handleVideoPlay"
                 @pause="handleVideoPause"
+                @ended="handleVideoEnded"
               ></videojs-video>
 
               <media-loading-indicator slot="centered-chrome"></media-loading-indicator>
@@ -1670,10 +1671,10 @@
   const handleVideoPause = () => {
     isActivelyWatching.value = false;
     clearPreviewEndTimer();
-    // Free the concurrent slot while paused so another device can play.
-    if (playbackSessionEnabled()) {
-      void releasePlaybackSession();
-    }
+    // Stop heartbeats on pause; let the stale window free the slot so brief
+    // seek-induced pauses do not churn session ids. Explicit release happens on
+    // navigate / pagehide / composable dispose.
+    stopPlaybackSessionHeartbeats();
   };
 
   usePushAttribution({
