@@ -36,6 +36,8 @@ npm ci
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
 ```
 
+`metro.config.js` remaps TypeScript ESM `.js` import specifiers inside workspace packages (e.g. `@vmp/shared`) to sibling `.ts` sources. Without that, Metro looks for `foo.js.ts` and fails when a runtime import pulls in the shared barrel (see mobile CI / `cmsSystemPages.js`).
+
 `package-lock.json` in this directory is committed so `npm ci` is reproducible. After changing `package.json` versions, run `npm install` here (not the repo root) to refresh this lockfile.
 
 `EXPO_PUBLIC_API_URL` is **required** (no localhost default — that only targets the device itself).
