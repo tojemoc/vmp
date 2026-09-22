@@ -282,6 +282,16 @@ export const strings: StringsDefinition = {
     `Túto hodinu ste si pozreli ${current} z ${limit} bezplatných ukážok. Prihláste sa pre neobmedzené ukážky — je to zadarmo.`,
   rateLimitWait: (time: string) => `Alebo počkajte ${time}, kým sa limit obnoví.`,
 
+  // ── Concurrent playback (club entitlements) ────────────────────────────────
+  concurrentPlaybackLimitTitle: 'Príliš veľa prehrávaní naraz',
+  concurrentPlaybackLimitMessage: (limit: number) =>
+    `Váš plán umožňuje ${limit} ${limit === 1 ? 'video' : 'videá'} naraz. Zastavte prehrávanie na inom zariadení alebo karte a skúste znova.`,
+  concurrentPlaybackLimitClubHint:
+    'Členské Club zvyšuje limit, aby mohlo sledovať viac ľudí z domácnosti naraz.',
+  concurrentPlaybackLimitRetry: 'Skúsiť znova',
+  concurrentPlaybackSessionRequired:
+    'Nepodarilo sa spustiť reláciu prehrávania. Obnovte stránku alebo to skúste o chvíľu.',
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Váš účet',
   currentPlan: 'Aktuálny plán',

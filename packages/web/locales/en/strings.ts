@@ -275,6 +275,16 @@ export const strings: StringsDefinition = {
     `You've watched ${current} of ${limit} free previews this hour. Sign in for unlimited previews — it's free.`,
   rateLimitWait: (time: string) => `Or wait ${time} for your limit to reset.`,
 
+  // ── Concurrent playback (club entitlements) ────────────────────────────────
+  concurrentPlaybackLimitTitle: 'Too many streams playing',
+  concurrentPlaybackLimitMessage: (limit: number) =>
+    `Your plan allows ${limit} video${limit === 1 ? '' : 's'} at a time. Stop playback on another device or tab, then try again.`,
+  concurrentPlaybackLimitClubHint:
+    'Club membership raises the limit so more people in your household can watch together.',
+  concurrentPlaybackLimitRetry: 'Try again',
+  concurrentPlaybackSessionRequired:
+    'We could not start a playback session. Refresh the page or try again in a moment.',
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Your account',
   currentPlan: 'Current plan',

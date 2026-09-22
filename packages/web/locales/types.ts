@@ -247,6 +247,11 @@ export type StringsDefinition = {
   rateLimitTitle: string;
   rateLimitMessage: (current: number, limit: number) => string;
   rateLimitWait: (time: string) => string;
+  concurrentPlaybackLimitTitle: string;
+  concurrentPlaybackLimitMessage: (limit: number) => string;
+  concurrentPlaybackLimitClubHint: string;
+  concurrentPlaybackLimitRetry: string;
+  concurrentPlaybackSessionRequired: string;
   yourAccount: string;
   currentPlan: string;
   providerLabel: string;

@@ -63,7 +63,7 @@ Providers + checkout analytics shipped. Only production hardening + maintainer s
 **Product:** Yearly billing + higher price; IRL event access; ad-free if ads exist; **2–3 concurrent streams** (Stargaze had 1).
 
 - [x] Concurrent playback **API** (D1 `playback_sessions`, mint/heartbeat/release, `video-access` enforce, tests) — [#655](https://github.com/tojemoc/vmp/pull/655), [#661](https://github.com/tojemoc/vmp/pull/661); flag `concurrent_playback_enforced=0` by default
-- [ ] Web player session mint + heartbeats + limit error UI (required before flipping the enforce flag)
+- [x] Web player session mint + heartbeats + limit error UI (required before flipping the enforce flag)
 - [ ] IRL event invitations / access
 - [ ] Ad-free gate (when ad insertion exists)
 

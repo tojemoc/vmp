@@ -67,6 +67,64 @@
         </div>
       </div>
 
+      <!-- Concurrent playback limit (club entitlements #649) -->
+      <div v-else-if="concurrentPlaybackBlocked" class="max-w-4xl mx-auto">
+        <div
+          class="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-6"
+        >
+          <div class="flex items-start space-x-4">
+            <div
+              class="flex-shrink-0 w-10 h-10 bg-amber-100 dark:bg-amber-900 rounded-full flex items-center justify-center"
+            >
+              <svg
+                class="w-5 h-5 text-amber-600 dark:text-amber-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 102 0V6zm-1 8a1 1 0 100-2 1 1 0 000 2z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </div>
+            <div class="flex-1">
+              <h3 class="text-lg font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                {{ strings.concurrentPlaybackLimitTitle }}
+              </h3>
+              <p class="text-amber-800 dark:text-amber-300 mb-2">
+                {{
+                  strings.concurrentPlaybackLimitMessage(
+                    concurrentPlaybackLimitValue > 0 ? concurrentPlaybackLimitValue : 1,
+                  )
+                }}
+              </p>
+              <p class="text-amber-700 dark:text-amber-400 text-sm mb-4">
+                {{ strings.concurrentPlaybackLimitClubHint }}
+              </p>
+              <div class="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  class="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg transition-colors"
+                  @click="handleConcurrentPlaybackRetry"
+                >
+                  {{ strings.concurrentPlaybackLimitRetry }}
+                </button>
+                <NuxtLink
+                  to="/pricing"
+                  class="inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  {{ strings.planClub }}
+                </NuxtLink>
+                <NuxtLink to="/" class="text-amber-700 dark:text-amber-400 hover:underline text-sm">
+                  {{ strings.backToHomepage }}
+                </NuxtLink>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Video Not Found -->
       <div v-else-if="showVideoNotFound" class="max-w-6xl mx-auto space-y-8">
         <div
@@ -801,6 +859,11 @@
     shouldResumePlaybackPosition,
     usePlaybackPosition,
   } from '~/composables/usePlaybackPosition';
+  import {
+    parseConcurrentPlaybackError,
+    shouldClaimPlaybackSession,
+    usePlaybackSession,
+  } from '~/composables/usePlaybackSession';
   import { PLAYBACK_RATE_OPTIONS, usePlaybackRate } from '~/composables/usePlaybackRate';
   import { usePushAttribution } from '~/composables/usePushAttribution';
   import { sizeUrl } from '~/composables/useThumbnail';
@@ -917,7 +980,7 @@
   //
   // For logged-in users the API looks up their subscription and returns the
   // correct hasAccess / playlistUrl for their plan.
-  const { isLoggedIn, authHeader } = useAuth();
+  const { isLoggedIn, isPremium, authHeader, user, ensureSubscriptionHydrated } = useAuth();
   const { getOfflineSource } = useOfflineDownloads();
   const playingOffline = ref(false);
   const { startLoginFlow } = useLoginFlow();
@@ -929,6 +992,9 @@
   const isSeekingPlayback = ref(false);
   const isActivelyWatching = ref(false);
   const activePlayerVideoId = ref<string | null>(null);
+  const concurrentPlaybackBlocked = ref(false);
+  const concurrentPlaybackLimitValue = ref(0);
+  const concurrentPlaybackSessionError = ref<string | null>(null);
   let pendingResumeSeconds: number | null = null;
   let resumeAppliedForVideoId: string | null = null;
 
@@ -1079,6 +1145,41 @@
     isSeeking: () => isSeekingPlayback.value,
     isActivelyWatching: () => isActivelyWatching.value,
   });
+
+  const playbackSessionEnabled = () =>
+    shouldClaimPlaybackSession({
+      isLoggedIn: isLoggedIn.value,
+      isPremium: isPremium.value,
+      role: user.value?.role,
+    });
+
+  const {
+    mint: mintPlaybackSession,
+    release: releasePlaybackSession,
+    sessionHeaders: playbackSessionHeaders,
+    startHeartbeats: startPlaybackSessionHeartbeats,
+    stopHeartbeats: stopPlaybackSessionHeartbeats,
+    ensureSessionAndHeartbeat,
+  } = usePlaybackSession({
+    apiUrl: () => String(config.public.apiUrl),
+    authHeader,
+    enabled: playbackSessionEnabled,
+    videoId: () => String(videoData.value?.videoId ?? videoId.value),
+  });
+
+  const clearConcurrentPlaybackBlock = () => {
+    concurrentPlaybackBlocked.value = false;
+    concurrentPlaybackLimitValue.value = 0;
+    concurrentPlaybackSessionError.value = null;
+  };
+
+  const applyConcurrentPlaybackBlock = (limit?: number) => {
+    concurrentPlaybackBlocked.value = true;
+    concurrentPlaybackLimitValue.value =
+      typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? limit : 1;
+    concurrentPlaybackSessionError.value = null;
+    stopPlaybackSessionHeartbeats();
+  };
 
   /** Full-length preview for non-subscribers (admin set preview lock to full duration). */
   const isFullPublicPreview = computed(() => {
@@ -1558,11 +1659,23 @@
     isActivelyWatching.value = true;
     const video = resolveTimeUpdateTarget(videoElement.value);
     if (video) schedulePreviewEndOverlay(video);
+    if (playbackSessionEnabled() && videoData.value?.hasAccess) {
+      void ensureSessionAndHeartbeat().then((result) => {
+        if (!result.ok && result.error.code === 'concurrent_playback_limit') {
+          pausePlayback();
+          applyConcurrentPlaybackBlock(result.error.limit);
+        }
+      });
+    }
   };
 
   const handleVideoPause = () => {
     isActivelyWatching.value = false;
     clearPreviewEndTimer();
+    // Free the concurrent slot while paused so another device can play.
+    if (playbackSessionEnabled()) {
+      void releasePlaybackSession();
+    }
   };
 
   usePushAttribution({
@@ -1778,8 +1891,29 @@
     };
 
     ensureCurrent();
+    clearConcurrentPlaybackBlock();
+
+    // Premium subscribers must mint a server-issued session before video-access
+    // when concurrent_playback_enforced flips on (staff are exempt).
+    if (isLoggedIn.value) {
+      await ensureSubscriptionHydrated();
+      ensureCurrent();
+      if (playbackSessionEnabled()) {
+        const minted = await mintPlaybackSession(targetVideoId);
+        ensureCurrent();
+        if (!minted.ok) {
+          if (minted.error.code === 'concurrent_playback_limit') {
+            applyConcurrentPlaybackBlock(minted.error.limit);
+            return;
+          }
+          // Soft-fail when enforcement is still off: continue without a session.
+          concurrentPlaybackSessionError.value = minted.error.message;
+        }
+      }
+    }
+
     const videoResponse = await fetch(`${config.public.apiUrl}/api/video-access/${targetVideoId}`, {
-      headers: { ...authHeader() },
+      headers: { ...authHeader(), ...playbackSessionHeaders() },
       signal: options.signal,
     });
     ensureCurrent();
@@ -1803,6 +1937,67 @@
       throw new Error(strings.rateLimitExceeded);
     }
 
+    if (videoResponse.status === 409) {
+      const data = await videoResponse.json().catch(() => ({}));
+      ensureCurrent();
+      const concurrentError = parseConcurrentPlaybackError(409, data);
+      if (concurrentError?.code === 'concurrent_playback_limit') {
+        applyConcurrentPlaybackBlock(concurrentError.limit);
+        return;
+      }
+      if (concurrentError?.code === 'playback_session_required' && playbackSessionEnabled()) {
+        // Enforcement on but no valid session — mint and retry once.
+        const minted = await mintPlaybackSession(targetVideoId);
+        ensureCurrent();
+        if (!minted.ok) {
+          if (minted.error.code === 'concurrent_playback_limit') {
+            applyConcurrentPlaybackBlock(minted.error.limit);
+            return;
+          }
+          concurrentPlaybackSessionError.value =
+            minted.error.message || strings.concurrentPlaybackSessionRequired;
+          throw new Error(strings.concurrentPlaybackSessionRequired);
+        }
+        const retryResponse = await fetch(
+          `${config.public.apiUrl}/api/video-access/${targetVideoId}`,
+          {
+            headers: { ...authHeader(), ...playbackSessionHeaders() },
+            signal: options.signal,
+          },
+        );
+        ensureCurrent();
+        if (retryResponse.status === 409) {
+          const retryBody = await retryResponse.json().catch(() => ({}));
+          const retryError = parseConcurrentPlaybackError(409, retryBody);
+          if (retryError?.code === 'concurrent_playback_limit') {
+            applyConcurrentPlaybackBlock(retryError.limit);
+            return;
+          }
+          throw new Error(strings.concurrentPlaybackSessionRequired);
+        }
+        if (!retryResponse.ok) throw new Error(strings.videoLoadFailed);
+        const retryData = await retryResponse.json();
+        ensureCurrent();
+        accessNotFound.value = false;
+        videoData.value = retryData;
+        rateLimited.value = false;
+        rateLimitRetryAfter.value = null;
+        rateLimitCurrent.value = 0;
+        rateLimitLimit.value = 0;
+        resolvedFullDuration.value = 0;
+        if (!videoData.value?.video?.fullDuration) {
+          const playlistUrl = videoData.value?.video?.playlistUrl;
+          if (playlistUrl) {
+            const resolved = await resolvePlaylistDuration(playlistUrl);
+            ensureCurrent();
+            if (resolved) resolvedFullDuration.value = resolved;
+          }
+        }
+        return;
+      }
+      throw new Error(strings.videoLoadFailed);
+    }
+
     if (!videoResponse.ok) throw new Error(strings.videoLoadFailed);
     const data = await videoResponse.json();
     ensureCurrent();
@@ -1812,6 +2007,11 @@
     rateLimitRetryAfter.value = null;
     rateLimitCurrent.value = 0;
     rateLimitLimit.value = 0;
+
+    // Preview / non-premium: free the slot so it does not count against the limit.
+    if (!videoData.value?.hasAccess && playbackSessionEnabled()) {
+      void releasePlaybackSession();
+    }
 
     // If D1 has no duration stored yet (new draft auto-registered from R2),
     // parse the HLS playlist to get the real duration.
@@ -1904,6 +2104,7 @@
     const prevAccessNotFound = accessNotFound.value;
     const prevPlaybackUnavailable = playbackUnavailable.value;
     const prevRateLimited = rateLimited.value;
+    const prevConcurrentBlocked = concurrentPlaybackBlocked.value;
     const prevVideoNotFound = videoNotFound.value;
 
     // Route watcher / pagehide flush the previous video; do not flush here with
@@ -1918,6 +2119,7 @@
     resetPlaybackPositionState();
     isSeekingPlayback.value = false;
     isActivelyWatching.value = false;
+    stopPlaybackSessionHeartbeats();
 
     accessNotFound.value = false;
     playbackUnavailable.value = false;
@@ -1927,6 +2129,7 @@
     autoplayPlayError.value = false;
     showPremiumOverlay.value = false;
     rateLimited.value = false;
+    clearConcurrentPlaybackBlock();
     currentTime.value = 0;
     playingOffline.value = false;
     const preserveWatchShell = Boolean(
@@ -1934,7 +2137,8 @@
         !prevAccessNotFound &&
         !prevPlaybackUnavailable &&
         !prevVideoNotFound &&
-        !prevRateLimited,
+        !prevRateLimited &&
+        !prevConcurrentBlocked,
     );
     isNavigatingToAnotherVideo.value = preserveWatchShell;
     if (!preserveWatchShell) {
@@ -1965,6 +2169,12 @@
       ensureCurrent();
 
       if (accessNotFound.value || showVideoNotFound.value) {
+        loading.value = false;
+        isNavigatingToAnotherVideo.value = false;
+        return;
+      }
+
+      if (concurrentPlaybackBlocked.value) {
         loading.value = false;
         isNavigatingToAnotherVideo.value = false;
         return;
@@ -2107,6 +2317,22 @@
       clearPlayerLoadingIndicators();
     }
   };
+
+  async function handleConcurrentPlaybackRetry() {
+    clearConcurrentPlaybackBlock();
+    const { abortController, isCurrentInvocation } = createLoadInvocation();
+    try {
+      await loadVideoForRoute(String(route.params.videoId), {
+        signal: abortController.signal,
+        guard: isCurrentInvocation,
+      });
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || abortController.signal.aborted) return;
+      reportPlayerLoadFailure(e, String(route.params.videoId));
+      error.value = strings.videoLoadFailed;
+      clearPlayerLoadingIndicators();
+    }
+  }
 
   const initializeLivestreamRuntime = async (
     moqEndpoint: string,
@@ -2308,6 +2534,9 @@
       isActivelyWatching.value = true;
       const native = nativeVideoWithListeners ?? getNativeVideoElement(video);
       if (native) schedulePreviewEndOverlay(native);
+      if (playbackSessionEnabled() && videoData.value?.hasAccess) {
+        startPlaybackSessionHeartbeats();
+      }
     };
     handleCanPlay = () => {
       if (isCurrentInvocation()) buffering.value = false;
@@ -2486,6 +2715,7 @@
       if (claimedVideoId) {
         await flushPlaybackPosition(claimedVideoId);
       }
+      await releasePlaybackSession();
       if (!isCurrentInvocation()) return;
 
       accessNotFound.value = false;
