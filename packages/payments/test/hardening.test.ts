@@ -19,10 +19,17 @@ describe('isGoPaySandboxApiBase', () => {
     assert.equal(isGoPaySandboxApiBase(''), true);
     assert.equal(isGoPaySandboxApiBase('https://gw.sandbox.gopay.com/api'), true);
     assert.equal(isGoPaySandboxApiBase('https://gw.sandbox.gopay.com/api/'), true);
+    assert.equal(isGoPaySandboxApiBase('https://sandbox.gopay.com/api'), true);
   });
 
   it('treats production gate as non-sandbox', () => {
     assert.equal(isGoPaySandboxApiBase('https://gate.gopay.cz/api'), false);
+  });
+
+  it('does not treat sandbox substring in path or query as sandbox', () => {
+    assert.equal(isGoPaySandboxApiBase('https://evil.example/sandbox.gopay.com'), false);
+    assert.equal(isGoPaySandboxApiBase('https://evil.example/?host=sandbox.gopay.com'), false);
+    assert.equal(isGoPaySandboxApiBase('https://not-sandbox.gopay.com.evil/api'), false);
   });
 });
 

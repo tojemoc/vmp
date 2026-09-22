@@ -15,10 +15,12 @@ export const GOPAY_SANDBOX_API_BASE = 'https://gw.sandbox.gopay.com/api';
 export const GOPAY_PRODUCTION_API_BASE = 'https://gate.gopay.cz/api';
 
 export function isGoPaySandboxApiBase(apiBase: string | null | undefined): boolean {
-  const normalized = String(apiBase ?? '')
-    .trim()
-    .replace(/\/$/, '')
-    .toLowerCase();
-  if (!normalized) return true;
-  return normalized.includes('sandbox.gopay.com');
+  const raw = String(apiBase ?? '').trim();
+  if (!raw) return true;
+  try {
+    const hostname = new URL(raw).hostname.toLowerCase();
+    return hostname === 'sandbox.gopay.com' || hostname.endsWith('.sandbox.gopay.com');
+  } catch {
+    return false;
+  }
 }

@@ -399,7 +399,7 @@ export function createGoPayProvider(config: GoPayPaymentsConfig): PaymentProvide
               providerSubscriptionId: subscriptionId,
               amountMinor: Number.isFinite(amountMinor) ? amountMinor : 0,
               currency: currency || 'CZK',
-              email,
+              email: email ?? null,
               planType: planType ?? null,
             })
           : null;

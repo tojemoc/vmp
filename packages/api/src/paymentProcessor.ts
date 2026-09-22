@@ -1666,7 +1666,7 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
       try {
         await handlePaymentInvoicePaid(env, db, userId, {
           providerId: 'gopay',
-          invoice: event.invoice,
+          ...(event.invoice ? { invoice: event.invoice } : {}),
           planType,
         });
       } catch (invoiceErr) {
@@ -1723,7 +1723,7 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
         try {
           await handlePaymentInvoicePaid(env, db, String(existing.user_id), {
             providerId: 'gopay',
-            invoice: event.invoice,
+            ...(event.invoice ? { invoice: event.invoice } : {}),
             planType: existingPlan,
           });
         } catch (invoiceErr) {
@@ -1961,7 +1961,7 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
       try {
         await handlePaymentInvoicePaid(env, db, identity.userId, {
           providerId: 'comgate',
-          invoice: event.invoice,
+          ...(event.invoice ? { invoice: event.invoice } : {}),
           planType: identity.planType,
         });
       } catch (invoiceErr) {
