@@ -362,6 +362,28 @@ export const strings: StringsDefinition = {
   newsletterOptOutSaved: 'Vaše volba byla uložena.',
   newsletterOptOutLoadFailed: 'Nepodařilo se načíst vaši volbu newsletteru.',
   newsletterOptOutSaveFailed: 'Nepodařilo se uložit vaši volbu newsletteru.',
+  checkoutTermsAcceptLabel:
+    'Beru na vědomí, že přístup začíná ihned po zaplacení a že tam, kde to zákon u okamžitě dodávaného digitálního obsahu umožňuje, vzdávám se 14denního práva na odstoupení. Povinné prostředky nápravy při vadném plnění zůstávají.',
+  checkoutTermsLearnMore: 'Osobní údaje a podmínky',
+  checkoutTermsRequired: 'Před platbou musíte přijmout podmínky digitálního obsahu.',
+  accountDeleteTitle: 'Smazat můj účet',
+  accountDeleteIntro:
+    'Trvale smažete účet a osobní údaje. Tuto akci nelze vrátit. Aktivní předplatné se zruší okamžitě (předplacený přístup končí se smazáním účtu).',
+  accountDeleteInvoiceNote:
+    'Anonymizované faktury (částky a data bez jména a e-mailu) se uchovávají po zákonnou účetní dobu dle CZ/SK práva.',
+  accountDeleteImmediateCancelNote:
+    'Nárok na vrácení zbývající předplacené doby se řídí spotřebitelským právem — nejde o plošné „bez refundací“.',
+  accountDeleteRequest: 'Odeslat potvrzovací e-mail ke smazání',
+  accountDeleteRequesting: 'Odesílám…',
+  accountDeleteRequestSent:
+    'Zkontrolujte e-mail s odkazem a poté přihlášeni zadejte potvrzovací frázi níže.',
+  accountDeleteRequestFailed: 'Nepodařilo se zahájit smazání účtu.',
+  accountDeleteConfirmPhraseLabel: 'Napište DELETE MY ACCOUNT pro potvrzení',
+  accountDeleteConfirmPhraseHint: 'Musí sedět přesně včetně velkých písmen.',
+  accountDeleteConfirm: 'Trvale smazat účet',
+  accountDeleteConfirming: 'Mažu…',
+  accountDeleteConfirmFailed: 'Nepodařilo se potvrdit smazání účtu.',
+  accountDeleteDone: 'Váš účet byl smazán.',
   continueWatchingTitle: 'Pokračovat ve sledování',
   continueWatchingIntro:
     'Pokračujte tam, kde jste u VOD videí skončili. Odstraněním položky smažete uloženou pozici.',

@@ -275,7 +275,8 @@
     openIosInsecureNativeScheme,
     resolveMobileAndroidPackage,
   } from '~/utils/nativeAppHandoff';
-  import { isAndroid, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
+  import { isAndroidChromium, isInstalledPwa, isIosLike as isIosLikeUa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const route = useRoute();
@@ -351,13 +352,14 @@
   }
 
   /**
-   * Native-tagged link on Android (not the installed PWA): offer package-targeted
-   * intent:// before web redeem consumes the token.
+   * Native-tagged link on Android Chromium (not the installed PWA): offer
+   * package-targeted intent:// before web redeem consumes the token.
+   * Firefox for Android cannot open intent://, so it falls through to web redeem.
    */
   function shouldOfferAndroidNativeAppHandoff(): boolean {
     if (import.meta.server) return false;
     if (magicLinkClient() !== 'native') return false;
-    if (!isAndroid() || isInstalledPwa()) return false;
+    if (!isAndroidChromium() || isInstalledPwa()) return false;
     if (isNativeAppFallbackQuery(route.query.native_fallback)) return false;
     return true;
   }
@@ -402,15 +404,13 @@
     | 'pwa_push_done'
     | 'pwa_2fa_done';
 
+  /**
+   * SSR-safe initial state only. Never branch on navigator / display-mode here —
+   * that diverges from the server HTML and reintroduces hydration mismatches.
+   * Client `watch` (immediate) sets handoff / PWA prompt states after mount.
+   */
   function initialVerifyState(): State {
     if (firstQueryString(route.query.pwa_done) === '1') return 'pwa_2fa_done';
-    if (firstQueryString(route.query.handoff) && shouldDeferPwaHandoffRedeem()) {
-      return 'handoff_wait';
-    }
-    const token = firstQueryString(route.query.token);
-    if (token && isPwaPushLoginLink()) return 'pwa_push_prompt';
-    if (token && shouldOfferAndroidNativeAppHandoff()) return 'native_app_handoff';
-    if (token && shouldExplainIosNativeInSafari()) return 'native_ios_safari';
     return 'verifying';
   }
 
@@ -420,6 +420,13 @@
   const handoffCodeForSafari = ref<string | null>(null);
   const magicTokenForFlow = ref<string | null>(null);
   const didAutoOpenNative = ref(false);
+
+  function captureAuthEvent(event: string, properties: Record<string, unknown> = {}) {
+    capturePostHogEvent(event, {
+      client: magicLinkClient(),
+      ...properties,
+    });
+  }
 
   async function navigateAfterFullSession(redirect: string) {
     const u = user.value;
@@ -442,10 +449,15 @@
       const redirect = safeRedirect(route.query.redirect, '/');
       await redeemPwaHandoff(code);
       if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
+      captureAuthEvent('magic_link_redeem_succeeded', { surface: 'pwa_handoff_safari' });
       await navigateAfterFullSession(redirect);
     } catch (e: any) {
       state.value = 'error';
       errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
+      captureAuthEvent('magic_link_redeem_failed', {
+        surface: 'pwa_handoff_safari',
+        reason: 'redeem_error',
+      });
     }
   }
 
@@ -509,12 +521,14 @@
 
   function openInstalledNativeApp() {
     if (import.meta.server) return;
+    captureAuthEvent('magic_link_handoff_attempted', { platform: 'android', method: 'intent' });
     openAndroidNativeApp(window.location.href, mobileAndroidPackage());
   }
 
   async function continueNativeAppInBrowser() {
     const token = magicTokenForFlow.value;
     if (!token) return;
+    captureAuthEvent('magic_link_handoff_browser_fallback', { platform: 'android' });
     // Stay on this page with native_fallback so a reload does not auto-bounce again.
     if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
       state.value = 'verifying';
@@ -533,6 +547,7 @@
   async function continueNativeIosInSafari() {
     const token = magicTokenForFlow.value;
     if (!token) return;
+    captureAuthEvent('magic_link_handoff_browser_fallback', { platform: 'ios' });
     state.value = 'verifying';
     if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
       const next = new URL(window.location.href);
@@ -598,6 +613,17 @@
       }
       if (!openIosInsecureNativeScheme(window.location.href)) {
         errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
+        captureAuthEvent('magic_link_handoff_attempted', {
+          platform: 'ios',
+          method: 'vmp_scheme',
+          outcome: 'failed',
+        });
+      } else {
+        captureAuthEvent('magic_link_handoff_attempted', {
+          platform: 'ios',
+          method: 'vmp_scheme',
+          outcome: 'opened',
+        });
       }
     } catch {
       errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
@@ -614,12 +640,20 @@
       if (shouldUseIosPwaHandoff()) {
         const mh = await magicPwaHandoff(token);
         if (mh.kind === '2fa') {
+          captureAuthEvent('magic_link_redeem_succeeded', {
+            surface: 'pwa_handoff',
+            outcome: 'totp_required',
+          });
           await navigateTo(
             `/auth/2fa?pending=${encodeURIComponent(mh.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=pwa`,
           );
           return;
         }
         if (mh.kind === 'handoff') {
+          captureAuthEvent('magic_link_handoff_shown', {
+            platform: 'ios',
+            method: 'pwa_handoff_code',
+          });
           await navigateTo(
             {
               path: '/auth/verify',
@@ -630,6 +664,10 @@
           return;
         }
         if (mh.kind === 'session') {
+          captureAuthEvent('magic_link_redeem_succeeded', {
+            surface: 'pwa_handoff',
+            outcome: 'session',
+          });
           if (canEditContent.value && mh.user.totpRequired && !mh.user.totpEnabled) {
             await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
             return;
@@ -641,11 +679,19 @@
 
       const result = await verify(token);
       if ('requiresTwoFactor' in result) {
+        captureAuthEvent('magic_link_redeem_succeeded', {
+          surface: 'web_verify',
+          outcome: 'totp_required',
+        });
         await navigateTo(
           `/auth/2fa?pending=${encodeURIComponent(result.pendingToken)}&redirect=${encodeURIComponent(redirect)}&client=${client}`,
         );
         return;
       }
+      captureAuthEvent('magic_link_redeem_succeeded', {
+        surface: 'web_verify',
+        outcome: 'session',
+      });
       if (canEditContent.value && result.totpRequired && !result.totpEnabled) {
         await navigateTo(`/auth/2fa/setup?redirect=${encodeURIComponent(redirect)}`);
         return;
@@ -654,6 +700,10 @@
     } catch (err: unknown) {
       state.value = 'error';
       errorMessage.value = err instanceof Error ? err.message : strings.authVerifyErrorGeneric;
+      captureAuthEvent('magic_link_redeem_failed', {
+        surface: shouldUseIosPwaHandoff() ? 'pwa_handoff' : 'web_verify',
+        reason: 'verify_error',
+      });
     }
   }
 
@@ -697,6 +747,10 @@
 
         if (shouldDeferPwaHandoffRedeem()) {
           state.value = 'handoff_wait';
+          captureAuthEvent('magic_link_handoff_shown', {
+            platform: 'ios',
+            method: 'pwa_handoff_wait',
+          });
           return;
         }
 
@@ -705,10 +759,15 @@
         try {
           await redeemPwaHandoff(handoff);
           if (!user.value) throw new Error(strings.authVerifySignInIncomplete);
+          captureAuthEvent('magic_link_redeem_succeeded', { surface: 'pwa_handoff_redeem' });
           await navigateAfterFullSession(redirect);
         } catch (e: any) {
           state.value = 'error';
           errorMessage.value = e?.message || strings.authVerifyErrorGeneric;
+          captureAuthEvent('magic_link_redeem_failed', {
+            surface: 'pwa_handoff_redeem',
+            reason: 'redeem_error',
+          });
         }
         return;
       }
@@ -716,6 +775,10 @@
       if (!token) {
         state.value = 'error';
         errorMessage.value = strings.authVerifyNoToken;
+        captureAuthEvent('magic_link_redeem_failed', {
+          surface: 'web_verify',
+          reason: 'missing_token',
+        });
         return;
       }
 
@@ -723,11 +786,19 @@
 
       if (isPwaPushLoginLink()) {
         state.value = 'pwa_push_prompt';
+        captureAuthEvent('magic_link_handoff_shown', {
+          platform: 'ios',
+          method: 'pwa_push',
+        });
         return;
       }
 
       if (shouldOfferAndroidNativeAppHandoff()) {
         state.value = 'native_app_handoff';
+        captureAuthEvent('magic_link_handoff_shown', {
+          platform: 'android',
+          method: 'intent',
+        });
         // Android: bounce intent:// with the HTTPS token URL still intact.
         if (!didAutoOpenNative.value) {
           didAutoOpenNative.value = true;
@@ -739,6 +810,10 @@
       if (shouldExplainIosNativeInSafari()) {
         await refreshInsecureSchemeStatus();
         state.value = 'native_ios_safari';
+        captureAuthEvent('magic_link_handoff_shown', {
+          platform: 'ios',
+          method: 'native_safari_explain',
+        });
         return;
       }
 

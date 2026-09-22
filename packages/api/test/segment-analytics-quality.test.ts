@@ -202,7 +202,7 @@ describe('segment analytics persistence + snapshot', () => {
     const db = buildDbStub([
       { match: 'COUNT(DISTINCT session_id) AS total', response: { first: { total: 4 } } },
       {
-        match: 'COALESCE(source_category',
+        match: "video_id,\n          COALESCE(source_category, 'direct') AS source,",
         response: {
           all: {
             results: [
@@ -275,9 +275,49 @@ describe('segment analytics persistence + snapshot', () => {
         match: 'SELECT plan_type, COUNT(*) AS active_count',
         response: { all: { results: [{ plan_type: 'monthly', active_count: 5 }] } },
       },
+      {
+        match: 'SELECT COUNT(DISTINCT session_key) AS total\n      FROM cms_page_view_events',
+        response: { first: { total: 3 } },
+      },
+      {
+        match: 'AS bucket,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM cms_page_view_events',
+        response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 2 }] } },
+      },
+      {
+        match: 'FROM cms_pages p\n      LEFT JOIN per_page',
+        response: {
+          all: {
+            results: [
+              {
+                page_id: 'cms-page-personal-data',
+                title: 'Personal data',
+                slug: 'personal-data',
+                status: 'published',
+                published_at: '2026-01-01',
+                view_count: 3,
+                lifetime_view_count: 10,
+              },
+            ],
+          },
+        },
+      },
+      {
+        match:
+          "COALESCE(source_category, 'direct') AS source,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM cms_page_view_events",
+        response: { all: { results: [{ source: 'direct', unique_sessions: 2 }] } },
+      },
+      {
+        match:
+          'SELECT\n        country_code AS country,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM base',
+        response: { all: { results: [{ country: 'SK', unique_sessions: 2 }] } },
+      },
     ]);
     const snapshot = await buildSegmentAnalyticsSnapshot(db);
     assert.equal(snapshot.totalViews, 4);
+    assert.equal(snapshot.kpis.totalCmsPageViews, 3);
+    assert.equal(snapshot.pageStats[0].pageId, 'cms-page-personal-data');
+    assert.equal(snapshot.pageStats[0].lifetimeViewCount, 10);
+    assert.equal(snapshot.pageViews.series[0].uniqueSessions, 2);
     assert.equal(snapshot.trafficSources[0].source, 'search');
     assert.equal(snapshot.kpis.averageRetentionPercent, 55.5);
     assert.equal(snapshot.videoStats[0].videoId, 'video-1');
@@ -293,7 +333,7 @@ describe('segment analytics persistence + snapshot', () => {
         [
           { match: 'COUNT(DISTINCT session_id) AS total', response: { first: { total: 9 } } },
           {
-            match: 'COALESCE(source_category',
+            match: "video_id,\n          COALESCE(source_category, 'direct') AS source,",
             response: { all: { results: [{ source: 'social', unique_sessions: 5 }] } },
           },
           {
@@ -368,6 +408,42 @@ describe('segment analytics persistence + snapshot', () => {
             match: 'SELECT plan_type, COUNT(*) AS active_count',
             response: { all: { results: [{ plan_type: 'monthly', active_count: 6 }] } },
           },
+          {
+            match: 'SELECT COUNT(DISTINCT session_key) AS total\n      FROM cms_page_view_events',
+            response: { first: { total: 7 } },
+          },
+          {
+            match: 'AS bucket,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM cms_page_view_events',
+            response: { all: { results: [{ bucket: '2026-04-01', unique_sessions: 4 }] } },
+          },
+          {
+            match: 'FROM cms_pages p\n      LEFT JOIN per_page',
+            response: {
+              all: {
+                results: [
+                  {
+                    page_id: 'page-1',
+                    title: 'About',
+                    slug: 'about',
+                    status: 'published',
+                    published_at: null,
+                    view_count: 7,
+                    lifetime_view_count: 7,
+                  },
+                ],
+              },
+            },
+          },
+          {
+            match:
+              "COALESCE(source_category, 'direct') AS source,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM cms_page_view_events",
+            response: { all: { results: [{ source: 'referral', unique_sessions: 3 }] } },
+          },
+          {
+            match:
+              'SELECT\n        country_code AS country,\n        COUNT(DISTINCT session_key) AS unique_sessions\n      FROM base',
+            response: { all: { results: [{ country: 'CZ', unique_sessions: 3 }] } },
+          },
         ],
         {
           monthly_price_eur: '12',
@@ -387,6 +463,9 @@ describe('segment analytics persistence + snapshot', () => {
       videoId: null,
     });
     assert.equal(snapshot.kpis.totalUniqueViews, 9);
+    assert.equal(snapshot.kpis.totalCmsPageViews, 7);
+    assert.equal(snapshot.pageStats[0].slug, 'about');
+    assert.equal(snapshot.pageTrafficSources[0].source, 'referral');
     assert.equal(snapshot.kpis.totalWatchSeconds, 2400);
     assert.equal(snapshot.kpis.segmentRequests, 99);
     assert.equal(snapshot.trafficSources[0].source, 'social');

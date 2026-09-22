@@ -5,6 +5,7 @@ import {
   canAddToHomeScreenWithoutPrompt,
   canOpenCurrentPageInChrome,
   isAndroid,
+  isAndroidChromium,
   isInstalledPwa,
   isIosLike,
 } from '../utils/pwa';
@@ -100,10 +101,18 @@ describe('pwa offline-download surface helpers', () => {
     assert.equal(canAddToHomeScreenWithoutPrompt(), false);
   });
 
-  it('detects Android and Chrome intent handoff availability', () => {
+  it('detects Android Chromium for intent handoff and excludes Firefox', () => {
+    mockWindow({
+      ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    });
+    assert.equal(isAndroid(), true);
+    assert.equal(isAndroidChromium(), true);
+    assert.equal(canOpenCurrentPageInChrome(), true);
+
     mockWindow({ ua: 'Mozilla/5.0 (Linux; Android 14) Firefox/121.0' });
     assert.equal(isAndroid(), true);
-    assert.equal(canOpenCurrentPageInChrome(), true);
+    assert.equal(isAndroidChromium(), false);
+    assert.equal(canOpenCurrentPageInChrome(), false);
   });
 
   it('does not offer Chrome intent handoff on desktop Firefox', () => {
@@ -112,6 +121,7 @@ describe('pwa offline-download surface helpers', () => {
       platform: 'Win32',
     });
     assert.equal(isAndroid(), false);
+    assert.equal(isAndroidChromium(), false);
     assert.equal(canOpenCurrentPageInChrome(), false);
   });
 });

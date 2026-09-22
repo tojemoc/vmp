@@ -203,7 +203,10 @@ async function brevoContactAllowsAdd(email: any, listId: number, env: any): Prom
   }
   // Fail closed: never treat malformed/incomplete bodies as an empty allow-add record.
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    newsletterLog('suppression_check_failed', { status: res.status, code: 'invalid_contact_shape' });
+    newsletterLog('suppression_check_failed', {
+      status: res.status,
+      code: 'invalid_contact_shape',
+    });
     return false;
   }
   const data = raw as Record<string, unknown>;
@@ -442,6 +445,53 @@ export async function removeSubscriberFromNewsletter(
     code: recordString(err, 'code'),
   });
   return false;
+}
+
+/**
+ * Permanently delete a Brevo contact by email (account deletion).
+ * Treats 2xx and 404 as success. Transient failures (5xx/timeout) are retryable;
+ * permanent client/auth errors are not.
+ */
+export async function deleteBrevoContactByEmail(
+  email: string,
+  env: any,
+): Promise<{ ok: boolean; retryable: boolean; detail?: string }> {
+  const identifier = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!identifier) return { ok: true, retryable: false };
+  if (!env.BREVO_API_KEY) return { ok: true, retryable: false };
+
+  let res: Response;
+  try {
+    res = await brevoFetch(
+      `/contacts/${encodeURIComponent(identifier)}`,
+      { method: 'DELETE' },
+      env,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    newsletterLog('contact_delete_failed', { status: 0, code: 'transport_error', detail });
+    return { ok: false, retryable: true, detail };
+  }
+
+  if (res.ok || res.status === 404) {
+    newsletterLog('contact_deleted', { status: res.status });
+    return { ok: true, retryable: false };
+  }
+
+  const errBody = asRecord(await res.json().catch(() => null));
+  const detail = recordString(errBody, 'message') ?? `HTTP ${res.status}`;
+  newsletterLog('contact_delete_failed', {
+    status: res.status,
+    code: recordString(errBody, 'code'),
+  });
+
+  if (res.status >= 500 || res.status === 429) {
+    return { ok: false, retryable: true, detail };
+  }
+  // 400 / 401 / 403 — terminal for the job (operator remediation).
+  return { ok: false, retryable: false, detail };
 }
 
 async function userIsPayingSubscriber(db: any, userId: any): Promise<boolean> {

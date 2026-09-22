@@ -59,5 +59,5 @@ Intentional navigation aborts (`AbortError`, “Request aborted”) are filtered
   - [x] Video view counts in admin
   - [x] Referrer / traffic source breakdown
   - [x] Country (geo) breakdown
-  - [ ] CMS **page** view counts (only video-segment traffic is counted today)
+  - [x] CMS **page** view counts — first-party `POST /api/analytics/pageview` + D1 `cms_page_view_*` tables; admin Analytics KPI/table/CSV (`pages` dataset)
   - Build on first-party D1 tables above, not a new third-party pageview SDK.

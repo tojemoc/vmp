@@ -2042,6 +2042,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               type="button"
               class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
               :disabled="!!analyticsExporting || analyticsLoading"
+              @click="exportAnalytics('pages')"
+            >
+              {{ analyticsExporting === 'pages' ? 'Exporting…' : 'Export pages CSV' }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded border border-blue-300 dark:border-blue-700 text-sm text-blue-700 dark:text-blue-300 disabled:opacity-50"
+              :disabled="!!analyticsExporting || analyticsLoading"
               @click="exportAnalytics('retention')"
             >
               {{ analyticsExporting === 'retention' ? 'Exporting…' : 'Export retention CSV' }}
@@ -2050,7 +2058,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
           <p v-if="analyticsError" class="text-sm text-red-600 dark:text-red-400">
             {{ analyticsError }}
           </p>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-3">
             <div
               class="rounded-lg border border-gray-200 dark:border-gray-700 p-3"
               v-for="item in analyticsKpiCards"
@@ -2074,6 +2082,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
               />
               <p v-else class="text-sm text-gray-500 dark:text-gray-400">
                 No data for selected range.
+              </p>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">CMS page views over time</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Unique visitor sessions per published CMS page (first-party beacon).
+              </p>
+              <AdminLineChart
+                v-if="analyticsPageViewsLineChartPoints.length"
+                :points="analyticsPageViewsLineChartPoints"
+                aria-label="CMS page views over time line chart"
+              />
+              <p v-else class="text-sm text-gray-500 dark:text-gray-400">
+                No CMS page views for selected range.
               </p>
             </div>
             <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
@@ -2229,6 +2251,61 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     <tr v-if="!analyticsVideoStatsRows.length">
                       <td colspan="5" class="py-3 text-gray-500 dark:text-gray-400">
                         No published videos.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3 xl:col-span-2">
+              <h3 class="font-semibold text-gray-900 dark:text-white mb-2">Published CMS pages</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Per-page unique visitor sessions in the selected range, plus lifetime totals.
+              </p>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr
+                      class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                    >
+                      <th class="py-2 pr-4">Title</th>
+                      <th class="py-2 pr-4">Slug</th>
+                      <th class="py-2 pr-4">Views (range)</th>
+                      <th class="py-2 pr-4">Lifetime</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in analyticsPageStatsRows"
+                      :key="`ps-${row.pageId}`"
+                      class="border-b border-gray-100 dark:border-gray-800"
+                    >
+                      <td class="py-2 pr-4">
+                        <a
+                          v-if="row.slug"
+                          :href="`/${row.slug}`"
+                          target="_blank"
+                          rel="noopener"
+                          class="text-blue-600 dark:text-blue-400 hover:underline"
+                          >{{ row.title || row.pageId }}</a
+                        >
+                        <span v-else class="text-gray-900 dark:text-white">{{
+                          row.title || row.pageId
+                        }}</span>
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ row.slug || '—' }}
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ row.viewCount }}
+                      </td>
+                      <td class="py-2 pr-4 text-gray-700 dark:text-gray-200">
+                        {{ row.lifetimeViewCount }}
+                      </td>
+                    </tr>
+                    <tr v-if="!analyticsPageStatsRows.length">
+                      <td colspan="4" class="py-3 text-gray-500 dark:text-gray-400">
+                        No published CMS pages.
                       </td>
                     </tr>
                   </tbody>
@@ -4014,6 +4091,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     | 'all'
     | 'overview'
     | 'views'
+    | 'pages'
     | 'watchtime'
     | 'retention'
     | 'sources'
@@ -4043,6 +4121,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     };
     kpis?: {
       totalUniqueViews?: number;
+      totalCmsPageViews?: number;
       totalWatchSeconds?: number;
       totalWatchTimeLabel?: string;
       segmentRequests?: number;
@@ -4053,6 +4132,10 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     };
     definitions?: Record<string, string>;
     views?: {
+      totalUniqueSessions?: number;
+      series?: AnalyticsSeriesPoint[];
+    };
+    pageViews?: {
       totalUniqueSessions?: number;
       series?: AnalyticsSeriesPoint[];
     };
@@ -4072,6 +4155,8 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       buckets: Array<{ positionPercent: number; watchSeconds: number; segmentHits: number }>;
     } | null;
     trafficSources?: Array<{ source: string; unique_sessions?: number; hits?: number }>;
+    pageTrafficSources?: Array<{ source: string; unique_sessions?: number; hits?: number }>;
+    pageCountries?: Array<{ country: string; uniqueSessions: number }>;
     videoStats?: Array<{
       videoId: string;
       title: string;
@@ -4081,6 +4166,15 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       totalWatchSeconds?: number;
       averageRetentionPercent: number | null;
       engagementScore?: number | null;
+    }>;
+    pageStats?: Array<{
+      pageId: string;
+      title: string;
+      slug: string | null;
+      status?: string | null;
+      publishedAt: string | null;
+      viewCount: number;
+      lifetimeViewCount?: number;
     }>;
     subscriptions?: Array<{ status: string; count: number }>;
     subscriptionOverview?: {
@@ -4719,6 +4813,12 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         help: defs.totalUniqueViews || 'One per viewer session per video.',
       },
       {
+        key: 'totalCmsPageViews',
+        label: 'CMS page views',
+        value: formatMetricValue('totalCmsPageViews', kpis.totalCmsPageViews),
+        help: defs.totalCmsPageViews || 'One per visitor session per CMS page.',
+      },
+      {
         key: 'totalWatchTimeLabel',
         label: 'Total watch time',
         value: formatMetricValue(
@@ -4774,6 +4874,13 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     })),
   );
 
+  const analyticsPageViewsLineChartPoints = computed(() =>
+    (analytics.value.pageViews?.series ?? []).map((row) => ({
+      label: String(row.bucket),
+      value: Number(row.uniqueSessions || 0),
+    })),
+  );
+
   const analyticsWatchTimeLineChartPoints = computed(() =>
     (analytics.value.watchTime?.series ?? []).map((row) => ({
       label: String(row.bucket),
@@ -4819,6 +4926,16 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
       totalWatchSeconds: Number(row.totalWatchSeconds || 0),
       averageRetentionPercent: row.averageRetentionPercent,
       engagementScore: row.engagementScore ?? null,
+    })),
+  );
+
+  const analyticsPageStatsRows = computed(() =>
+    (analytics.value.pageStats ?? []).map((row) => ({
+      pageId: row.pageId,
+      title: row.title,
+      slug: row.slug,
+      viewCount: Number(row.viewCount || 0),
+      lifetimeViewCount: Number(row.lifetimeViewCount || 0),
     })),
   );
 

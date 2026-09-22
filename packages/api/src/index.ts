@@ -29,6 +29,7 @@ import {
   handleAdminUserImportCsv,
   handleAdminUsers,
   handleCategoryVideosBySlug,
+  handleCmsPageView,
   handleHomepageContent,
   handleHomepageContentPublic,
   handlePillsPublic,
@@ -89,6 +90,11 @@ import {
   handleAdminEInvoices,
   handleAdminEInvoicingSettings,
 } from './eInvoicing.js';
+import {
+  handleAccountDeleteConfirm,
+  handleAccountDeleteRequest,
+  processAccountDeletionJobs,
+} from './accountDeletion.js';
 import { handlePersonalFeed, handlePublicFeed } from './feed.js';
 import {
   collectPlacementVideoIds,
@@ -893,6 +899,9 @@ const workerHandler = {
         ) {
           return handleAdminAnalytics(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/analytics/pageview' && request.method === 'POST') {
+          return handleCmsPageView(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/site-settings' && request.method === 'GET') {
           return handleSiteSettings(request, env, corsHeaders);
         }
@@ -1151,6 +1160,12 @@ const workerHandler = {
         if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
           return handlePutAccountNewsletterPreference(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/account/delete-request' && request.method === 'POST') {
+          return handleAccountDeleteRequest(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/delete-confirm' && request.method === 'POST') {
+          return handleAccountDeleteConfirm(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
           return handleRotateAccountRss(request, env, corsHeaders);
         }
@@ -1283,6 +1298,11 @@ const workerHandler = {
           await processNewsletterBrevoReconcileQueue(env);
         } catch (err) {
           console.error('Newsletter Brevo reconcile sweep failed:', err);
+        }
+        try {
+          await processAccountDeletionJobs(env);
+        } catch (err) {
+          console.error('Account deletion sweep failed:', err);
         }
       }
 
