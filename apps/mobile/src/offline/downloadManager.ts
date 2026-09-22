@@ -7,13 +7,13 @@ import {
 import { deviceAuthHeaders, ensureOfflineDevice, readStoredDevice } from './device';
 import { isLicensePlaybackAllowed, isLicenseRevalidationDue } from './licenseClient';
 import { buildOfflineMasterPlaylist, rewritePlaylistForOfflineRelative } from './localManifest';
+import { buildOfflinePlaybackHttpUrl, ensureOfflinePlaybackServer } from './playbackServer';
 import {
   assetExists,
   deleteOfflineVideo,
   deleteStoredDownload,
   downloadRemoteAsset,
   listStoredDownloads,
-  masterPlaylistUri,
   readAssetText,
   readStoredDownload,
   writeAssetText,
@@ -169,7 +169,13 @@ export async function getOfflinePlaybackUri(
   if (!isLicensePlaybackAllowed(record.license)) return null;
   const ready = await assetExists(videoId, 'offline-master.m3u8');
   if (!ready) return null;
-  return masterPlaylistUri(videoId);
+  // Prefer loopback HTTP — file:// HLS is rejected by iOS AVPlayer / expo-video.
+  try {
+    const origin = await ensureOfflinePlaybackServer();
+    return buildOfflinePlaybackHttpUrl(origin, videoId);
+  } catch {
+    return null;
+  }
 }
 
 export async function startOfflineDownload({

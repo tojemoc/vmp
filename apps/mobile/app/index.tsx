@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { listPublishedVideos } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
+import { filterPubliclyListedVideos } from '../src/catalog/publishedVideos';
 import { SubscriberLock } from '../src/components/SubscriberLock';
 import { requireActiveSubscription } from '../src/features';
 import { formatDuration, showsPremiumHint } from '../src/media/formatDuration';
 import { catalogThumbnailUrl } from '../src/media/thumbnail';
+import { userFacingRequestError } from '../src/network/errors';
 
 type VideoRow = {
   id: string;
@@ -23,6 +25,8 @@ type VideoRow = {
   thumbnail_url?: string | null;
   full_duration?: number;
   preview_duration?: number;
+  publish_status?: string | null;
+  scheduled_publish_at?: string | null;
 };
 
 export default function HomeScreen() {
@@ -38,9 +42,10 @@ export default function HomeScreen() {
     try {
       const data = await listPublishedVideos(session.accessToken);
       const rows = Array.isArray(data) ? data : data?.videos || [];
-      setVideos(rows);
+      // Editors get drafts from the API; the consumer catalog must stay published-only.
+      setVideos(filterPubliclyListedVideos(rows));
     } catch (err) {
-      setListError(err instanceof Error ? err.message : 'Failed to load videos');
+      setListError(userFacingRequestError(err, 'Failed to load videos'));
     } finally {
       setLoading(false);
     }
@@ -94,7 +99,16 @@ export default function HomeScreen() {
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {listError ? <Text style={styles.error}>{listError}</Text> : null}
+      {listError ? (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.error}>{listError}</Text>
+          <Link href="/downloads" asChild>
+            <Pressable style={styles.secondaryBtn}>
+              <Text style={styles.secondaryBtnText}>Open Downloads</Text>
+            </Pressable>
+          </Link>
+        </View>
+      ) : null}
       {loading ? <ActivityIndicator color="#38bdf8" /> : null}
 
       <FlatList
@@ -207,4 +221,5 @@ const styles = StyleSheet.create({
   title: { color: '#f8fafc', fontSize: 17, fontWeight: '600' },
   muted: { color: '#94a3b8', fontSize: 14 },
   error: { color: '#f87171', fontSize: 14 },
+  offlineBanner: { gap: 8 },
 });

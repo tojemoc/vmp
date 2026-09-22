@@ -27,6 +27,7 @@
     },
     "android": {
       "package": "sk.tjm.vmp",
+      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",

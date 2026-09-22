@@ -423,6 +423,8 @@ export const strings: StringsDefinition = {
   offlineStorageUsed: (amount: string) => `Offline storage used: ${amount}`,
   offlineStorageQuota: (amount: string) => `of ${amount} available`,
   offlinePlaybackBadge: 'Playing from offline download',
+  offlineNoInternetMessage:
+    'There is no internet connection. Only videos you downloaded beforehand can play — open Downloads in the installed app.',
   copyFailed: 'Could not copy to clipboard. You can copy manually from the field.',
 
   // ── Subscription checkout ──────────────────────────────────────────────────

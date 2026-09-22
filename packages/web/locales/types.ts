@@ -362,6 +362,7 @@ export type StringsDefinition = {
   offlineStorageUsed: (amount: string) => string;
   offlineStorageQuota: (amount: string) => string;
   offlinePlaybackBadge: string;
+  offlineNoInternetMessage: string;
   copyFailed: string;
   checkoutPremiumTitle: string;
   checkoutPremiumSubtitle: string;

@@ -918,7 +918,7 @@
   // For logged-in users the API looks up their subscription and returns the
   // correct hasAccess / playlistUrl for their plan.
   const { isLoggedIn, authHeader } = useAuth();
-  const { getOfflineSource } = useOfflineDownloads();
+  const { getOfflineSource, getDownloadRecord } = useOfflineDownloads();
   const playingOffline = ref(false);
   const { startLoginFlow } = useLoginFlow();
   const { returningFromStripe, completeStripeCheckoutReturn, clearStripeSessionQuery } =
@@ -1957,11 +1957,49 @@
     }
 
     try {
-      await fetchVideoAccess({
-        videoId: targetVideoId,
-        signal: options.signal,
-        guard,
-      });
+      try {
+        await fetchVideoAccess({
+          videoId: targetVideoId,
+          signal: options.signal,
+          guard,
+        });
+      } catch (accessErr: any) {
+        if (accessErr?.name === 'AbortError' || options.signal?.aborted || !guard()) throw accessErr;
+        // Fully offline (or API unreachable): fall back to a completed local download.
+        const offline = await getOfflineSource(String(targetVideoId)).catch(() => null);
+        if (!offline?.playlistUrl) {
+          const offlineish =
+            (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+            /failed to fetch|networkerror|offline|internet|timed?\s*out/i.test(
+              String(accessErr?.message ?? ''),
+            );
+          if (offlineish) {
+            error.value = strings.offlineNoInternetMessage;
+            loading.value = false;
+            isNavigatingToAnotherVideo.value = false;
+            return;
+          }
+          throw accessErr;
+        }
+        const record = await getDownloadRecord(String(targetVideoId)).catch(() => null);
+        ensureCurrent();
+        accessNotFound.value = false;
+        playingOffline.value = true;
+        videoData.value = {
+          hasAccess: true,
+          videoId: targetVideoId,
+          video: {
+            title: record?.videoTitle || String(targetVideoId),
+            description: '',
+            playlistUrl: offline.playlistUrl,
+            fullDuration: null,
+            previewDuration: null,
+            isLivestream: false,
+          },
+          playlistUrl: offline.playlistUrl,
+        };
+        trackOfflineEvent('offline_playback_started', { videoId: targetVideoId });
+      }
       ensureCurrent();
 
       if (accessNotFound.value || showVideoNotFound.value) {
@@ -2038,20 +2076,22 @@
       // Availability preflight runs in parallel with player init; player error path
       // still surfaces storage failures if the preflight loses the race.
       const availabilityPromise =
-        playlistUrl && !rateLimited.value
+        playlistUrl && !rateLimited.value && !playingOffline.value
           ? checkPlaylistAvailability(playlistUrl, options.signal)
           : Promise.resolve({ ok: true as const });
 
+      let usedOfflineSource = playingOffline.value;
       if (playlistUrl && !rateLimited.value) {
         error.value = null;
         let resolvedPlaylist = playlistUrl;
-        if (videoData.value?.hasAccess) {
+        if (videoData.value?.hasAccess && !usedOfflineSource) {
           try {
             const offline = await getOfflineSource(
               String(videoData.value?.videoId ?? targetVideoId),
             );
             if (offline?.playlistUrl) {
               resolvedPlaylist = offline.playlistUrl;
+              usedOfflineSource = true;
               playingOffline.value = true;
               trackOfflineEvent('offline_playback_started', { videoId: targetVideoId });
             }
@@ -2066,7 +2106,13 @@
         const playerPromise = initializeVideoElement(resolvedPlaylist, guard, playerSignal);
         const availability = await availabilityPromise;
         ensureCurrent();
-        if (!availability.ok && isPlaybackUnavailableCode(availability.code)) {
+        // Online preflight failing must not kill a playable offline OPFS/SW source
+        // (common when the device is offline — fetch of the CDN playlist fails).
+        if (
+          !usedOfflineSource &&
+          !availability.ok &&
+          isPlaybackUnavailableCode(availability.code)
+        ) {
           playbackUnavailable.value = true;
           playerAbort.abort();
           await playerPromise.catch(() => undefined);
