@@ -60,5 +60,4 @@ Intentional navigation aborts (`AbortError`, “Request aborted”) are filtered
   - [x] Referrer / traffic source breakdown
   - [x] Country (geo) breakdown
   - [x] CMS **page** view counts — first-party `POST /api/analytics/pageview` + D1 `cms_page_view_*` tables; admin Analytics KPI/table/CSV (`pages` dataset)
-  - [ ] “Help sponsor” (or similar) editor workflow — **deferred / split**: no sponsor product or UX exists in-repo; do not invent sponsor flows until product defines requirements. Track separately when product decides (not part of pageview delivery).
   - Build on first-party D1 tables above, not a new third-party pageview SDK.

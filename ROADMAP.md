@@ -98,7 +98,6 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] **Referrer / traffic source** breakdown
 - [x] **Country** (geo) breakdown (`CF-IPCountry` on segment proxy)
 - [x] CMS **page** view counts (`POST /api/analytics/pageview` + `cms_page_view_*` D1 tables; Analytics KPI/table/CSV)
-- [ ] “Help sponsor” (or similar) editor workflow — **deferred**: product decision still open; no sponsor UX in-repo. Split from #643 pageview delivery; open a follow-up issue when product defines the workflow.
 
 ### Native / TV clients (`native-clients`)
 
