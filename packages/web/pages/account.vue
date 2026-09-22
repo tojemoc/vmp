@@ -829,6 +829,14 @@
     await navigateTo({ path: route.path, query: nextQuery }, { replace: true });
   }
 
+  /** Strip the one-time delete token from the URL without adding a history entry. */
+  async function clearDeleteTokenQuery() {
+    if (!('delete_token' in route.query)) return;
+    const nextQuery = { ...route.query };
+    delete nextQuery.delete_token;
+    await navigateTo({ path: route.path, query: nextQuery, hash: route.hash }, { replace: true });
+  }
+
   const showTotpDisable = ref(false);
   const totpDisableCode = ref('');
   const totpDisabling = ref(false);
@@ -916,6 +924,8 @@
     if (typeof deleteTokenParam === 'string' && deleteTokenParam.trim()) {
       deleteToken.value = deleteTokenParam.trim();
       deleteRequestSent.value = true;
+      // Keep the token in component state only — do not leave it in the URL/history.
+      await clearDeleteTokenQuery();
     }
 
     if (returningFromLegacy.value) {
@@ -1142,6 +1152,10 @@
         return;
       }
       deleteRequestSent.value = true;
+      // A fresh email invalidates any previous link token in state/URL.
+      deleteToken.value = '';
+      deleteConfirmPhrase.value = '';
+      await clearDeleteTokenQuery();
       capturePostHogEvent('account_deletion_requested');
     } catch {
       deleteRequestError.value = strings.accountDeleteRequestFailed;
