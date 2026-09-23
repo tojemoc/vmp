@@ -291,6 +291,25 @@ export const strings: StringsDefinition = {
   concurrentPlaybackSessionRequired:
     'Nepodařilo se spustit relaci přehrávání. Obnovte stránku nebo to zkuste za chvíli.',
 
+  // ── Club IRL events ────────────────────────────────────────────────────────
+  irlEventsTitle: 'Club akce',
+  irlEventsIntro:
+    'Nadcházející osobní akce pro členy Club. Po RSVP dostanete check-in kód ke vstupu.',
+  irlEventsEmpty: 'Momentálně nejsou žádné nadcházející Club akce.',
+  irlEventsLoadFailed: 'Nepodařilo se načíst Club akce. Zkuste to znovu.',
+  irlEventsClubOnly: 'Jen Club',
+  irlEventsOpen: 'Otevřené pro členy',
+  irlEventsRsvp: 'Zúčastním se',
+  irlEventsCancelRsvp: 'Zrušit účast',
+  irlEventsRsvping: 'Ukládám…',
+  irlEventsRsvpFailed: 'Nepodařilo se aktualizovat RSVP. Zkuste to znovu.',
+  irlEventsFull: 'Tato akce je plná.',
+  irlEventsClubRequired: 'Na tuto akci je potřeba členství Club.',
+  irlEventsCheckInCode: 'Váš check-in kód',
+  irlEventsCheckedIn: 'Odhlášeno na místě',
+  irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} míst`,
+  irlEventsUnlimited: (taken: number) => `${taken} jde`,
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Váš účet',
   currentPlan: 'Aktuální plán',

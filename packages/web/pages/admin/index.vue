@@ -1337,6 +1337,20 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         </div>
 
         <div
+          v-if="activeAdminTab === 'irl_events'"
+          id="irl_events-panel"
+          role="tabpanel"
+          class="p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800"
+        >
+          <ClientOnly>
+            <LazyAdminIrlEvents />
+            <template #fallback>
+              <p class="text-sm text-gray-600 dark:text-gray-400">Loading IRL events…</p>
+            </template>
+          </ClientOnly>
+        </div>
+
+        <div
           v-if="activeAdminTab === 'users'"
           id="users-panel"
           role="tabpanel"
@@ -2468,6 +2482,14 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
                     <span class="text-xs text-gray-500 dark:text-gray-400"
                       >(shortened MP3s for the public feed)</span
                     >
+                  </label>
+                  <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                    <input
+                      v-model="systemFeatures.adsEnabled"
+                      type="checkbox"
+                      class="rounded border-gray-300 dark:border-gray-600"
+                    >
+                    Ads enabled (club + staff stay ad-free)
                   </label>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -4230,6 +4252,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     | 'newsletter'
     | 'einvoicing'
     | 'pages'
+    | 'irl_events'
     | 'users'
     | 'legacy_migration'
     | 'analytics'
@@ -4244,6 +4267,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     { id: 'newsletter' as const, label: 'Newsletter' },
     { id: 'einvoicing' as const, label: 'E-invoicing' },
     { id: 'pages' as const, label: 'Pages' },
+    { id: 'irl_events' as const, label: 'IRL events' },
     { id: 'users' as const, label: 'Users & roles' },
     { id: 'legacy_migration' as const, label: 'Legacy migration' },
     { id: 'analytics' as const, label: 'Analytics' },
@@ -4490,6 +4514,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
     isicEnabled: false,
     rssPodcastEnabled: true,
     rssPodcastPreviewMp3Enabled: true,
+    adsEnabled: false,
   });
   const systemFeaturesSaving = ref(false);
   const systemFeaturesMessage = ref('');
@@ -6058,6 +6083,7 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
         isicEnabled: Boolean(data.isicEnabled),
         rssPodcastEnabled: Boolean(data.rssPodcastEnabled ?? data.freePodcastPreviewEnabled),
         rssPodcastPreviewMp3Enabled: Boolean(data.rssPodcastPreviewMp3Enabled ?? true),
+        adsEnabled: Boolean(data.adsEnabled),
       };
       // Keep ISIC API enable checkbox in sync with feature toggle.
       isicApiConfig.value.enabled = systemFeatures.value.isicEnabled;

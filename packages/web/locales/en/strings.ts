@@ -285,6 +285,25 @@ export const strings: StringsDefinition = {
   concurrentPlaybackSessionRequired:
     'We could not start a playback session. Refresh the page or try again in a moment.',
 
+  // ── Club IRL events ────────────────────────────────────────────────────────
+  irlEventsTitle: 'Club events',
+  irlEventsIntro:
+    'Upcoming in-person events for Club members. RSVP to get a check-in code for the door.',
+  irlEventsEmpty: 'No upcoming Club events right now.',
+  irlEventsLoadFailed: 'Could not load Club events. Please try again.',
+  irlEventsClubOnly: 'Club members',
+  irlEventsOpen: 'Open to members',
+  irlEventsRsvp: 'RSVP',
+  irlEventsCancelRsvp: 'Cancel RSVP',
+  irlEventsRsvping: 'Saving…',
+  irlEventsRsvpFailed: 'Could not update your RSVP. Please try again.',
+  irlEventsFull: 'This event is full.',
+  irlEventsClubRequired: 'Club membership is required for this event.',
+  irlEventsCheckInCode: 'Your check-in code',
+  irlEventsCheckedIn: 'Checked in',
+  irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} spots`,
+  irlEventsUnlimited: (taken: number) => `${taken} going`,
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Your account',
   currentPlan: 'Current plan',

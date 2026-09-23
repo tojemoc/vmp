@@ -16,6 +16,8 @@ interface SiteSettings {
   gtmEnabled: boolean;
   gtmContainerId: string;
   gtmMeasurementPath: string;
+  /** Global ads insertion flag; club + staff skip ads when true (see hasAdFreeEntitlement). */
+  adsEnabled: boolean;
 }
 
 function defaultSiteSettings(): SiteSettings {
@@ -29,6 +31,7 @@ function defaultSiteSettings(): SiteSettings {
     gtmEnabled: false,
     gtmContainerId: '',
     gtmMeasurementPath: '',
+    adsEnabled: false,
   };
 }
 
@@ -44,6 +47,7 @@ function mapSiteSettings(data: Record<string, unknown> | null | undefined): Site
     gtmEnabled: String(data.gtm_enabled ?? '0') === '1',
     gtmContainerId: String(data.gtm_container_id || ''),
     gtmMeasurementPath: String(data.gtm_measurement_path || ''),
+    adsEnabled: String(data.ads_enabled ?? '0') === '1',
   };
 }
 

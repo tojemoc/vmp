@@ -641,6 +641,16 @@
             </div>
           </div>
 
+          <!-- Ad insertion point: only mounts when ads_enabled and viewer is not club/staff. -->
+          <div
+            v-if="showAds"
+            data-testid="watch-ad-slot"
+            class="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-950/40 px-4 py-3 text-sm text-gray-600 dark:text-gray-400"
+            aria-hidden="true"
+          >
+            <!-- Reserved for future ad creatives; keep empty until an ad path ships. -->
+          </div>
+
           <!-- Video Info -->
           <div
             class="bg-white dark:bg-gray-900 rounded-lg p-6 border border-gray-200 dark:border-gray-800"
@@ -981,6 +991,7 @@
   // correct hasAccess / playlistUrl for their plan.
   const { isLoggedIn, isPremium, authHeader, user, ensureSubscriptionHydrated } = useAuth();
   const { getOfflineSource, getDownloadRecord } = useOfflineDownloads();
+  const { showAds } = useAdPolicy();
   const playingOffline = ref(false);
   const { startLoginFlow } = useLoginFlow();
   const { returningFromStripe, completeStripeCheckoutReturn, clearStripeSessionQuery } =

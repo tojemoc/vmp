@@ -39,11 +39,13 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
       isicEnabled,
       rssPodcastEnabled,
       rssPodcastPreviewMp3Enabled,
+      adsEnabled,
     ] = await Promise.all([
       getSetting(env, 'promotions_enabled', { defaultValue: '1' }),
       getSetting(env, 'isic_api_enabled', { defaultValue: '0' }),
       getSetting(env, 'rss_free_preview_enabled', { defaultValue: '1' }),
       getSetting(env, 'rss_podcast_preview_mp3_enabled', { defaultValue: '1' }),
+      getSetting(env, 'ads_enabled', { defaultValue: '0' }),
     ]);
     const rssEnabled = toBoolSetting(rssPodcastEnabled, true);
     return jsonResponse(
@@ -52,6 +54,7 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
         isicEnabled: toBoolSetting(isicEnabled, false),
         rssPodcastEnabled: rssEnabled,
         rssPodcastPreviewMp3Enabled: toBoolSetting(rssPodcastPreviewMp3Enabled, true),
+        adsEnabled: toBoolSetting(adsEnabled, false),
         /** @deprecated Use rssPodcastEnabled — kept for older admin clients. */
         freePodcastPreviewEnabled: rssEnabled,
       },
@@ -85,6 +88,9 @@ export async function handleAdminSystemFeatures(request: any, env: any, corsHead
       'rss_podcast_preview_mp3_enabled',
       body.rssPodcastPreviewMp3Enabled === true ? '1' : '0',
     ]);
+  }
+  if (Object.hasOwn(body, 'adsEnabled')) {
+    updates.push(['ads_enabled', body.adsEnabled === true ? '1' : '0']);
   }
   if (!updates.length) {
     return jsonResponse({ error: 'No fields to update' }, 400, corsHeaders);

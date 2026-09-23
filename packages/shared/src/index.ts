@@ -57,6 +57,13 @@ export {
 } from './playbackPosition.js';
 export { showsPremiumPreviewHint } from './previewAccess.js';
 export {
+  canAccessIrlEvent,
+  hasAdFreeEntitlement,
+  isClubPlanType,
+  isStaffRole,
+  shouldShowAds,
+} from './clubEntitlements.js';
+export {
   canonicalWatchToken,
   isValidVideoSlug,
   sanitizeVideoSlug,

@@ -22,6 +22,7 @@
  */
 
 import type { MagicLinkClient } from '@vmp/shared';
+import { hasAdFreeEntitlement } from '@vmp/shared';
 import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
 import { isInstalledPwa } from '~/utils/pwa';
 
@@ -487,5 +488,12 @@ export function useAuth() {
       ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? ''),
     ),
     isAdmin: computed(() => ['admin', 'super_admin'].includes(user.value?.role ?? '')),
+    isClub: computed(() => subscription.value?.planType === 'club'),
+    hasAdFree: computed(() =>
+      hasAdFreeEntitlement({
+        planType: subscription.value?.planType,
+        role: user.value?.role,
+      }),
+    ),
   };
 }
