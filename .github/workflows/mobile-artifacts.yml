@@ -593,137 +593,16 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
-          RUN_ID: ${{ github.run_id }}
-          GH_TOKEN: ${{ github.token }}
+          MOBILE_ARTIFACTS_RUN_ID: ${{ github.run_id }}
+          GITHUB_TOKEN: ${{ github.token }}
           ANDROID_JOB_RESULT: ${{ needs.build-android.result }}
         run: |
           set -euo pipefail
-          TAG="${FLAVOR_LABEL}-v${VERSION_NAME}-build${BUILD_NUMBER}"
-          IPA_FILE="vmp-${VERSION_NAME}-ios.ipa"
-          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${IPA_FILE}"
-          PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY_NAME}"
-          MANIFEST_URL="${PAGES_URL}/manifest.plist"
-          INSTALL_URL="itms-services://?action=download-manifest&url=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${MANIFEST_URL}', safe=''))")"
-          INSTALL_URL_HTML="${INSTALL_URL//&/&amp;}"
-          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
           # nightly.link "latest by branch" only queries push/schedule; workflow_dispatch
           # needs a run-scoped URL. Publish that evergreen pointer on Pages.
-          IOS_NIGHTLY_LINK="https://nightly.link/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/ios-ipa.zip"
-          ANDROID_NIGHTLY_LINK=""
-          ANDROID_ARTIFACT_ID=""
-          IOS_ARTIFACT_ID=""
-
-          # Confirm artifacts exist for this run (and capture IDs for downloads.json).
-          artifact_ids="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
-            --paginate \
-            --jq '.artifacts[] | [.name,.id] | @tsv')"
-          while IFS=$'\t' read -r name id; do
-            [ -n "${name:-}" ] || continue
-            case "$name" in
-              ios-ipa) IOS_ARTIFACT_ID="$id" ;;
-              mobile-android-apk) ANDROID_ARTIFACT_ID="$id" ;;
-            esac
-          done <<< "$artifact_ids"
-
-          if [ -z "$IOS_ARTIFACT_ID" ]; then
-            echo "::error::Expected ios-ipa artifact on run ${RUN_ID} before publishing Pages links."
-            exit 1
-          fi
-
-          if [ "$ANDROID_JOB_RESULT" = "success" ]; then
-            if [ -z "$ANDROID_ARTIFACT_ID" ]; then
-              echo "::error::Android job succeeded but mobile-android-apk artifact is missing on run ${RUN_ID}."
-              exit 1
-            fi
-            ANDROID_NIGHTLY_LINK="https://nightly.link/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/mobile-android-apk.zip"
-          elif [ "$ANDROID_JOB_RESULT" = "failure" ] || [ "$ANDROID_JOB_RESULT" = "cancelled" ]; then
-            echo "::warning::Android build ${ANDROID_JOB_RESULT}; Pages will omit the APK nightly.link button."
-          else
-            echo "Android job skipped; Pages will omit the APK nightly.link button."
-          fi
-
-          cp docs/manifest.plist.template docs/manifest.plist
-          sed -i "s|__IPA_URL__|${IPA_URL}|g" docs/manifest.plist
-          sed -i "s|__BUILD_NUMBER__|${BUILD_NUMBER}|g" docs/manifest.plist
-
-          cp docs/index.html.template docs/index.html
-          ALTSTORE_SOURCE_URL="${PAGES_URL}/altstore-source.json"
-          if [ -n "$ANDROID_NIGHTLY_LINK" ]; then
-            ANDROID_NIGHTLY_BTN="<a class=\"secondary-btn\" href=\"${ANDROID_NIGHTLY_LINK}\">Download Android APK (zip)</a>"
-          else
-            ANDROID_NIGHTLY_BTN=""
-          fi
-
-          # Use Python for multi-line / URL-safe substitutions (sed & escaping is brittle).
-          VERSION_NAME="$VERSION_NAME" \
-          FLAVOR_LABEL="$FLAVOR_LABEL" \
-          INSTALL_URL_HTML="$INSTALL_URL_HTML" \
-          ALTSTORE_SOURCE_URL="$ALTSTORE_SOURCE_URL" \
-          IOS_NIGHTLY_LINK="$IOS_NIGHTLY_LINK" \
-          ANDROID_NIGHTLY_BTN="$ANDROID_NIGHTLY_BTN" \
-          RUN_URL="$RUN_URL" \
-          RUN_ID="$RUN_ID" \
-          python3 <<'PY'
-          from pathlib import Path
-          import os
-
-          path = Path("docs/index.html")
-          text = path.read_text()
-          replacements = {
-              "__VERSION__": os.environ["VERSION_NAME"],
-              "__FLAVOR_LABEL__": os.environ["FLAVOR_LABEL"],
-              "__INSTALL_URL__": os.environ["INSTALL_URL_HTML"],
-              "__ALTSTORE_SOURCE_URL__": os.environ["ALTSTORE_SOURCE_URL"],
-              "__IOS_NIGHTLY_LINK__": os.environ["IOS_NIGHTLY_LINK"],
-              "__ANDROID_NIGHTLY_BTN__": os.environ["ANDROID_NIGHTLY_BTN"],
-              "__RUN_URL__": os.environ["RUN_URL"],
-              "__RUN_ID__": os.environ["RUN_ID"],
-          }
-          for key, value in replacements.items():
-              text = text.replace(key, value)
-          path.write_text(text)
-          PY
-
-          UPDATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          python3 <<PY
-          import json
-          from pathlib import Path
-
-          payload = {
-              "updatedAt": "${UPDATED_AT}",
-              "flavor": "${FLAVOR_LABEL}",
-              "version": "${VERSION_NAME}",
-              "build": "${BUILD_NUMBER}",
-              "releaseTag": "${TAG}",
-              "runId": int("${RUN_ID}"),
-              "runUrl": "${RUN_URL}",
-              "pagesUrl": "${PAGES_URL}/",
-              "altstoreSourceUrl": "${ALTSTORE_SOURCE_URL}",
-              "note": (
-                  "nightly.link /workflows/{name}/{branch} only finds push/schedule runs; "
-                  "these run-scoped URLs work for workflow_dispatch and need no GitHub login."
-              ),
-              "ios": {
-                  "artifactName": "ios-ipa",
-                  "artifactId": int("${IOS_ARTIFACT_ID}"),
-                  "nightlyLink": "${IOS_NIGHTLY_LINK}",
-                  "releaseAssetUrl": "${IPA_URL}",
-              },
-              "android": None,
-          }
-          android_link = "${ANDROID_NIGHTLY_LINK}"
-          android_id = "${ANDROID_ARTIFACT_ID}"
-          if android_link and android_id:
-              payload["android"] = {
-                  "artifactName": "mobile-android-apk",
-                  "artifactId": int(android_id),
-                  "nightlyLink": android_link,
-              }
-          Path("docs/downloads.json").write_text(json.dumps(payload, indent=2) + "\n")
-          PY
-
-          mkdir -p site
-          cp docs/altstore-source.json docs/index.html docs/manifest.plist docs/downloads.json docs/.nojekyll site/
+          # Do not re-run GitHub's dynamic pages-build-deployment — it deploys raw /docs
+          # and wipes this site. Use Actions → Publish SideStore Pages to restore.
+          python3 scripts/build-sidestore-pages-site.py
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
