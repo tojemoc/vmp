@@ -2,7 +2,7 @@
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *In progress — Club plan entitlements*  
 **Issue:** [#649](https://github.com/tojemoc/vmp/issues/649) / [TOJ-139](https://linear.app/tojemoc/issue/TOJ-139)  
-**Status:** Concurrent playback **API** shipped ([#655](https://github.com/tojemoc/vmp/pull/655), [#661](https://github.com/tojemoc/vmp/pull/661)); web player wiring + IRL + ad-free remain
+**Status:** Concurrent playback (API + web), IRL events v1, and ad-free gate shipped; ads creatives still absent (flag defaults off)
 
 ## Product definition (360tka.sk / Stargaze heritage)
 
@@ -27,9 +27,9 @@ Original marketing copy (paraphrased):
 | Yearly-length period | Yes | `periodEndIsoForPlan` treats club like yearly (12 months) |
 | Qerko legacy `subscriptionType: club` | Yes | Fixed: must not collapse to `yearly` on E-shop orders |
 | GoPay / Comgate club checkout | Shipped | Club uses yearly recurrence where required; production hardening in `payments-gopay-comgate` |
-| Concurrent playback limit | **Partial** | `playback_sessions` schema + authenticated mint/heartbeat/release APIs shipped; `video-access` enforces when `concurrent_playback_enforced=1` (default `0`). Web player wiring still pending — do not flip the flag without it. |
-| IRL event access | **No** | No invites, lists, or redemption flow |
-| Ad-free playback | **No** | No ads in product today; no `plan_type` gate for ads |
+| Concurrent playback limit | **Yes (flagged)** | API + web player mint/heartbeat/release + limit UI. `video-access` enforces when `concurrent_playback_enforced=1` (default `0`). Safe to enable in staging after this PR. |
+| IRL event access | **Yes (v1)** | Admin CRUD + account RSVP + check-in token; club-only gate. Optional Brevo invites still future. |
+| Ad-free playback | **Gate only** | `ads_enabled` admin flag + `hasAdFreeEntitlement` / watch-page slot. No ad creatives yet (flag defaults `0`). |
 
 ## 1. Concurrent playback limits (priority)
 
@@ -130,21 +130,19 @@ CREATE INDEX idx_playback_sessions_user_active ON playback_sessions(user_id, las
 
 ---
 
-## 2. IRL event access (future)
+## 2. IRL event access
 
-- Admin: create events, capacity, club-only flag.
-- Account: list upcoming events, RSVP, check-in token (QR).
-- Optional Brevo email for invitations.
-
-*Defer detailed API until events product is scoped.*
+- Admin: create events, capacity, club-only flag, publish, check-in by token (`/admin` → IRL events).
+- Account: list upcoming published events, RSVP, show check-in token.
+- Optional Brevo email for invitations remains future work.
 
 ---
 
-## 3. Ad-free playback (future)
+## 3. Ad-free playback
 
-- Introduce `features.ads_enabled` (global) and `user.hasAdFree(plan)` → `plan_type === 'club'` OR staff.
-- Player / layout: skip ad insertion when ad-free.
-- No work until an ad insertion path exists.
+- Global `ads_enabled` (`admin_settings`, System → Feature toggles; also exposed on `GET /api/site-settings`).
+- `hasAdFreeEntitlement` / `shouldShowAds` in `@vmp/shared` → club plan or staff.
+- Watch page mounts an empty `data-testid="watch-ad-slot"` only when ads should show; no creatives yet.
 
 ---
 
@@ -153,7 +151,7 @@ CREATE INDEX idx_playback_sessions_user_active ON playback_sessions(user_id, las
 - [x] D1 migration `playback_sessions` + admin_settings keys ([#655](https://github.com/tojemoc/vmp/pull/655))
 - [x] API: session mint / heartbeat / release ([#655](https://github.com/tojemoc/vmp/pull/655), [#661](https://github.com/tojemoc/vmp/pull/661))
 - [x] Enforce on `video-access` when `concurrent_playback_enforced=1` ([#655](https://github.com/tojemoc/vmp/pull/655), [#661](https://github.com/tojemoc/vmp/pull/661))
-- [ ] Web player session mint + heartbeats + limit error UI (not wired yet — do not enable the flag without this)
+- [x] Web player session mint + heartbeats + limit error UI
 - [x] API tests; flag defaults to `concurrent_playback_enforced=0`
-- [ ] IRL events (separate milestone)
-- [ ] Ad-free gate (blocked on ads feature)
+- [x] IRL events v1 (admin CRUD + account RSVP + check-in)
+- [x] Ad-free gate (`ads_enabled` + club/staff skip; creatives deferred)

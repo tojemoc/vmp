@@ -46,8 +46,9 @@ function defaultValueForSiteKey(key: (typeof SITE_KEYS)[number]): string {
 
 export async function handleSiteSettings(request: any, env: any, corsHeaders: any) {
   if (request.method === 'GET') {
-    const stored = await getSettings(env, [...SITE_KEYS], { defaultValue: null });
+    const stored = await getSettings(env, [...SITE_KEYS, 'ads_enabled'], { defaultValue: null });
     const entries = SITE_KEYS.map((key) => [key, stored[key] ?? defaultValueForSiteKey(key)]);
+    entries.push(['ads_enabled', stored.ads_enabled ?? '0']);
     return jsonResponse(Object.fromEntries(entries), 200, corsHeaders);
   }
 

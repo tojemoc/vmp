@@ -499,6 +499,104 @@
         </template>
       </div>
 
+      <!-- Club IRL events -->
+      <div
+        v-if="isLoggedIn"
+        class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4"
+      >
+        <div>
+          <h2 class="text-base font-semibold text-gray-900 dark:text-white">
+            {{ strings.irlEventsTitle }}
+          </h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {{ strings.irlEventsIntro }}
+          </p>
+        </div>
+
+        <div v-if="loadingIrlEvents" class="space-y-2">
+          <div class="h-4 w-2/3 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
+          <div class="h-4 w-1/2 bg-gray-200 dark:bg-gray-800 rounded animate-pulse" />
+        </div>
+        <p v-else-if="irlEventsError" class="text-sm text-red-600 dark:text-red-400">
+          {{ irlEventsError }}
+        </p>
+        <template v-else>
+          <p v-if="!irlEvents.length" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ strings.irlEventsEmpty }}
+          </p>
+          <p v-if="irlRsvpError" class="text-sm text-red-600 dark:text-red-400">
+            {{ irlRsvpError }}
+          </p>
+          <ul v-if="irlEvents.length" class="space-y-4">
+          <li
+            v-for="event in irlEvents"
+            :key="event.id"
+            class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-2"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p class="font-medium text-gray-900 dark:text-white">{{ event.title }}</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                  {{ formatIrlWhen(event.startsAt) }}
+                  <span v-if="event.location"> · {{ event.location }}</span>
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {{ event.clubOnly ? strings.irlEventsClubOnly : strings.irlEventsOpen }}
+                  ·
+                  {{
+                    event.capacity != null
+                      ? strings.irlEventsCapacity(event.rsvpCount, event.capacity)
+                      : strings.irlEventsUnlimited(event.rsvpCount)
+                  }}
+                </p>
+              </div>
+              <button
+                v-if="event.rsvpStatus === 'confirmed' || event.rsvpStatus === 'checked_in'"
+                type="button"
+                class="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                :disabled="irlRsvpBusyId === event.id"
+                @click="cancelIrlRsvp(event.id)"
+              >
+                {{
+                  irlRsvpBusyId === event.id ? strings.irlEventsRsvping : strings.irlEventsCancelRsvp
+                }}
+              </button>
+              <button
+                v-else
+                type="button"
+                class="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                :disabled="irlRsvpBusyId === event.id"
+                @click="createIrlRsvp(event.id)"
+              >
+                {{ irlRsvpBusyId === event.id ? strings.irlEventsRsvping : strings.irlEventsRsvp }}
+              </button>
+            </div>
+            <p
+              v-if="event.description"
+              class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap"
+            >
+              {{ event.description }}
+            </p>
+            <p
+              v-if="event.rsvpStatus === 'checked_in'"
+              class="text-sm text-green-700 dark:text-green-400"
+            >
+              {{ strings.irlEventsCheckedIn }}
+            </p>
+            <div
+              v-else-if="event.checkInToken"
+              class="rounded-md bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 px-3 py-2"
+            >
+              <p class="text-xs text-gray-600 dark:text-gray-400">{{ strings.irlEventsCheckInCode }}</p>
+              <p class="font-mono text-sm text-gray-900 dark:text-white break-all">
+                {{ event.checkInToken }}
+              </p>
+            </div>
+          </li>
+        </ul>
+        </template>
+      </div>
+
       <!-- Account deletion (GDPR Art. 17) -->
       <div
         id="delete-account"
@@ -913,6 +1011,24 @@
   const newsletterPrefSaved = ref(false);
   const newsletterOptedOut = ref(false);
 
+  type IrlAccountEvent = {
+    id: string;
+    title: string;
+    description: string;
+    location: string;
+    startsAt: string;
+    capacity: number | null;
+    clubOnly: boolean;
+    rsvpCount: number;
+    rsvpStatus: string | null;
+    checkInToken: string | null;
+  };
+  const loadingIrlEvents = ref(true);
+  const irlEventsError = ref<string | null>(null);
+  const irlRsvpError = ref<string | null>(null);
+  const irlEvents = ref<IrlAccountEvent[]>([]);
+  const irlRsvpBusyId = ref<string | null>(null);
+
   const deleteRequesting = ref(false);
   const deleteRequestSent = ref(false);
   const deleteRequestError = ref<string | null>(null);
@@ -1011,9 +1127,11 @@
     await fetchRssUrls();
     if (isLoggedIn.value) {
       await fetchNewsletterPreference();
+      await fetchIrlEvents();
       await fetchContinueWatching();
     } else {
       loadingNewsletterPref.value = false;
+      loadingIrlEvents.value = false;
       loadingContinueWatching.value = false;
     }
   });
@@ -1165,6 +1283,88 @@
       newsletterPrefError.value = strings.newsletterOptOutLoadFailed;
     } finally {
       loadingNewsletterPref.value = false;
+    }
+  }
+
+  function formatIrlWhen(iso: string): string {
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  async function fetchIrlEvents() {
+    loadingIrlEvents.value = true;
+    irlEventsError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/irl-events`, {
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        irlEventsError.value = data.error ?? strings.irlEventsLoadFailed;
+        return;
+      }
+      irlEvents.value = Array.isArray(data.events) ? data.events : [];
+    } catch {
+      irlEventsError.value = strings.irlEventsLoadFailed;
+    } finally {
+      loadingIrlEvents.value = false;
+    }
+  }
+
+  async function createIrlRsvp(eventId: string) {
+    irlRsvpBusyId.value = eventId;
+    irlRsvpError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/irl-events/${eventId}/rsvp`, {
+        method: 'POST',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'irl_event_full') irlRsvpError.value = strings.irlEventsFull;
+        else if (data.code === 'irl_club_required')
+          irlRsvpError.value = strings.irlEventsClubRequired;
+        else irlRsvpError.value = data.error ?? strings.irlEventsRsvpFailed;
+        return;
+      }
+      await fetchIrlEvents();
+    } catch {
+      irlRsvpError.value = strings.irlEventsRsvpFailed;
+    } finally {
+      irlRsvpBusyId.value = null;
+    }
+  }
+
+  async function cancelIrlRsvp(eventId: string) {
+    irlRsvpBusyId.value = eventId;
+    irlRsvpError.value = null;
+    try {
+      const res = await fetch(`${apiUrl}/api/account/irl-events/${eventId}/rsvp`, {
+        method: 'DELETE',
+        headers: authHeader(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        irlRsvpError.value = data.error ?? strings.irlEventsRsvpFailed;
+        return;
+      }
+      await fetchIrlEvents();
+    } catch {
+      irlRsvpError.value = strings.irlEventsRsvpFailed;
+    } finally {
+      irlRsvpBusyId.value = null;
     }
   }
 

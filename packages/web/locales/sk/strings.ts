@@ -282,6 +282,35 @@ export const strings: StringsDefinition = {
     `Túto hodinu ste si pozreli ${current} z ${limit} bezplatných ukážok. Prihláste sa pre neobmedzené ukážky — je to zadarmo.`,
   rateLimitWait: (time: string) => `Alebo počkajte ${time}, kým sa limit obnoví.`,
 
+  // ── Concurrent playback (club entitlements) ────────────────────────────────
+  concurrentPlaybackLimitTitle: 'Príliš veľa prehrávaní naraz',
+  concurrentPlaybackLimitMessage: (limit: number) =>
+    `Váš plán umožňuje ${limit} ${limit === 1 ? 'video' : 'videá'} naraz. Zastavte prehrávanie na inom zariadení alebo karte a skúste znova.`,
+  concurrentPlaybackLimitClubHint:
+    'Členstvo v Club zvyšuje limit, aby mohlo sledovať viac ľudí z domácnosti naraz.',
+  concurrentPlaybackLimitRetry: 'Skúsiť znova',
+  concurrentPlaybackSessionRequired:
+    'Nepodarilo sa spustiť reláciu prehrávania. Obnovte stránku alebo to skúste o chvíľu.',
+
+  // ── Club IRL events ────────────────────────────────────────────────────────
+  irlEventsTitle: 'Club podujatia',
+  irlEventsIntro:
+    'Nadchádzajúce osobné podujatia pre členov Club. Po RSVP dostanete check-in kód na vstup.',
+  irlEventsEmpty: 'Momentálne nie sú žiadne nadchádzajúce Club podujatia.',
+  irlEventsLoadFailed: 'Nepodarilo sa načítať Club podujatia. Skúste to znova.',
+  irlEventsClubOnly: 'Len Club',
+  irlEventsOpen: 'Otvorené pre členov',
+  irlEventsRsvp: 'Zúčastním sa',
+  irlEventsCancelRsvp: 'Zrušiť účasť',
+  irlEventsRsvping: 'Ukladám…',
+  irlEventsRsvpFailed: 'Nepodarilo sa aktualizovať RSVP. Skúste to znova.',
+  irlEventsFull: 'Toto podujatie je plné.',
+  irlEventsClubRequired: 'Na toto podujatie je potrebné členstvo Club.',
+  irlEventsCheckInCode: 'Váš check-in kód',
+  irlEventsCheckedIn: 'Prihlásené na mieste',
+  irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} miest`,
+  irlEventsUnlimited: (taken: number) => `${taken} ide`,
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Váš účet',
   currentPlan: 'Aktuálny plán',

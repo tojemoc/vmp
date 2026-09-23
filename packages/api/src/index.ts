@@ -39,6 +39,16 @@ import {
 import { ensureAdminSettingsTable } from './adminSettingsTable.js';
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js';
 import {
+  handleAccountIrlEventRsvp,
+  handleAdminCreateIrlEvent,
+  handleAdminDeleteIrlEvent,
+  handleAdminIrlEventCheckIn,
+  handleAdminListIrlEvents,
+  handleAdminUpdateIrlEvent,
+  handleCancelAccountIrlEventRsvp,
+  handleListAccountIrlEvents,
+} from './irlEvents.js';
+import {
   handleAcknowledgeInsecureNativeScheme,
   handleGetMe,
   handleInsecureNativeSchemeStatus,
@@ -807,6 +817,25 @@ const workerHandler = {
         if (url.pathname === '/api/admin/deployment-features' && request.method === 'GET') {
           return handleAdminDeploymentFeatures(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/admin/irl-events' && request.method === 'GET') {
+          return handleAdminListIrlEvents(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/irl-events' && request.method === 'POST') {
+          return handleAdminCreateIrlEvent(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/admin/irl-events/check-in' && request.method === 'POST') {
+          return handleAdminIrlEventCheckIn(request, env, corsHeaders);
+        }
+        {
+          const irlAdminMatch = url.pathname.match(/^\/api\/admin\/irl-events\/([^/]+)$/);
+          const irlEventId = irlAdminMatch?.[1];
+          if (irlEventId && request.method === 'PATCH') {
+            return handleAdminUpdateIrlEvent(request, env, corsHeaders, irlEventId);
+          }
+          if (irlEventId && request.method === 'DELETE') {
+            return handleAdminDeleteIrlEvent(request, env, corsHeaders, irlEventId);
+          }
+        }
         if (
           url.pathname === '/api/admin/system/features' &&
           ['GET', 'PATCH'].includes(request.method)
@@ -1160,6 +1189,19 @@ const workerHandler = {
         }
         if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
           return handlePutAccountNewsletterPreference(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/irl-events' && request.method === 'GET') {
+          return handleListAccountIrlEvents(request, env, corsHeaders);
+        }
+        {
+          const irlRsvpMatch = url.pathname.match(/^\/api\/account\/irl-events\/([^/]+)\/rsvp$/);
+          const irlEventId = irlRsvpMatch?.[1];
+          if (irlEventId && request.method === 'POST') {
+            return handleAccountIrlEventRsvp(request, env, corsHeaders, irlEventId);
+          }
+          if (irlEventId && request.method === 'DELETE') {
+            return handleCancelAccountIrlEventRsvp(request, env, corsHeaders, irlEventId);
+          }
         }
         if (url.pathname === '/api/account/delete-request' && request.method === 'POST') {
           return handleAccountDeleteRequest(request, env, corsHeaders);

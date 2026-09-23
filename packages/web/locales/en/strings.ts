@@ -275,6 +275,35 @@ export const strings: StringsDefinition = {
     `You've watched ${current} of ${limit} free previews this hour. Sign in for unlimited previews — it's free.`,
   rateLimitWait: (time: string) => `Or wait ${time} for your limit to reset.`,
 
+  // ── Concurrent playback (club entitlements) ────────────────────────────────
+  concurrentPlaybackLimitTitle: 'Too many streams playing',
+  concurrentPlaybackLimitMessage: (limit: number) =>
+    `Your plan allows ${limit} video${limit === 1 ? '' : 's'} at a time. Stop playback on another device or tab, then try again.`,
+  concurrentPlaybackLimitClubHint:
+    'Club membership raises the limit so more people in your household can watch together.',
+  concurrentPlaybackLimitRetry: 'Try again',
+  concurrentPlaybackSessionRequired:
+    'We could not start a playback session. Refresh the page or try again in a moment.',
+
+  // ── Club IRL events ────────────────────────────────────────────────────────
+  irlEventsTitle: 'Club events',
+  irlEventsIntro:
+    'Upcoming in-person events for Club members. RSVP to get a check-in code for the door.',
+  irlEventsEmpty: 'No upcoming Club events right now.',
+  irlEventsLoadFailed: 'Could not load Club events. Please try again.',
+  irlEventsClubOnly: 'Club members',
+  irlEventsOpen: 'Open to members',
+  irlEventsRsvp: 'RSVP',
+  irlEventsCancelRsvp: 'Cancel RSVP',
+  irlEventsRsvping: 'Saving…',
+  irlEventsRsvpFailed: 'Could not update your RSVP. Please try again.',
+  irlEventsFull: 'This event is full.',
+  irlEventsClubRequired: 'Club membership is required for this event.',
+  irlEventsCheckInCode: 'Your check-in code',
+  irlEventsCheckedIn: 'Checked in',
+  irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} spots`,
+  irlEventsUnlimited: (taken: number) => `${taken} going`,
+
   // ── Account / billing ──────────────────────────────────────────────────────
   yourAccount: 'Your account',
   currentPlan: 'Current plan',

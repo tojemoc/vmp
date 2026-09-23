@@ -22,8 +22,9 @@
  */
 
 import type { MagicLinkClient } from '@vmp/shared';
-import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
+import { hasAdFreeEntitlement } from '@vmp/shared';
 import { isInstalledPwa } from '~/utils/pwa';
+import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
 
 export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
 
@@ -154,8 +155,7 @@ export function useAuth() {
     redirectPath?: string,
     client?: MagicLinkClient,
   ): Promise<{ ok: boolean; message: string }> {
-    const resolvedClient =
-      client ?? (import.meta.client && isInstalledPwa() ? 'pwa' : 'browser');
+    const resolvedClient = client ?? (import.meta.client && isInstalledPwa() ? 'pwa' : 'browser');
     const res = await fetch(`${apiUrl}/api/auth/magic-link`, {
       method: 'POST',
       credentials: 'include', // needed so the Set-Cookie from verify() works
@@ -477,15 +477,30 @@ export function useAuth() {
     isLoggedIn: computed(() => user.value !== null),
     isPremium: computed(() => {
       if (user.value?.role && user.value.role !== 'viewer') return true;
-      if (!subscription.value) return false;
-      if (subscription.value.status !== 'active' && subscription.value.status !== 'trialing')
-        return false;
-      if (!subscription.value.currentPeriodEnd) return true;
-      return new Date(subscription.value.currentPeriodEnd) > new Date();
+      return isActivePaidSubscription(subscription.value);
     }),
     canEditContent: computed(() =>
       ['editor', 'admin', 'super_admin'].includes(user.value?.role ?? ''),
     ),
     isAdmin: computed(() => ['admin', 'super_admin'].includes(user.value?.role ?? '')),
+    isClub: computed(
+      () => isActivePaidSubscription(subscription.value) && subscription.value?.planType === 'club',
+    ),
+    hasAdFree: computed(() =>
+      hasAdFreeEntitlement({
+        planType: isActivePaidSubscription(subscription.value)
+          ? subscription.value?.planType
+          : null,
+        role: user.value?.role,
+      }),
+    ),
   };
+}
+
+/** True when the stored subscription is active/trialing and within its current period. */
+function isActivePaidSubscription(sub: SubscriptionData | null | undefined): boolean {
+  if (!sub) return false;
+  if (sub.status !== 'active' && sub.status !== 'trialing') return false;
+  if (!sub.currentPeriodEnd) return true;
+  return new Date(sub.currentPeriodEnd) > new Date();
 }
