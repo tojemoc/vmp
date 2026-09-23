@@ -452,13 +452,16 @@ describe('translateSqliteDdl migration 0066 price snapshot backfill', () => {
       'utf8',
     );
     const out = translateSqliteDdl(raw);
-    // Remaining price freezes must require a digit regex before casting.
+    // Remaining price freezes must CASE-guard the digit regex inside the cast
+    // (Postgres does not short-circuit AND before CAST → 22P02).
     const priceUpdates = splitExecutableSqlStatements(out).filter(
       (s) => /FROM admin_settings AS p/i.test(s) && /expected_amount_minor/i.test(s),
     );
     assert.ok(priceUpdates.length >= 2, `expected Postgres price UPDATEs, got ${priceUpdates.length}`);
     for (const stmt of priceUpdates) {
-      assert.match(stmt, /~\s*'?\^\[0-9\]/i);
+      assert.match(stmt, /CAST\s*\(\s*CASE\s+WHEN[\s\S]*~\s*'?\^\[0-9\]/i);
+      assert.match(stmt, /AND\s+CAST\s*\(\s*CASE\s+WHEN/i);
     }
+    assert.match(out, /AND\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+payment_checkout_sessions/i);
   });
 });
