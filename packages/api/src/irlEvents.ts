@@ -62,6 +62,46 @@ function parseBool01(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return getErrorMessage(error).toUpperCase().includes('UNIQUE');
+}
+
+/** Reject missing/unparseable startsAt; endsAt must parse and be >= startsAt when set. */
+export function validateEventDatetimes(
+  startsAtRaw: string | null,
+  endsAtRaw: string | null,
+): { ok: true; startsAt: string; endsAt: string | null } | { ok: false; error: string } {
+  if (!startsAtRaw) return { ok: false, error: 'startsAt is required' };
+  const startsMs = Date.parse(startsAtRaw);
+  if (!Number.isFinite(startsMs)) {
+    return { ok: false, error: 'startsAt must be a valid datetime' };
+  }
+  if (endsAtRaw == null || endsAtRaw === '') {
+    return { ok: true, startsAt: startsAtRaw, endsAt: null };
+  }
+  const endsMs = Date.parse(endsAtRaw);
+  if (!Number.isFinite(endsMs)) {
+    return { ok: false, error: 'endsAt must be a valid datetime' };
+  }
+  if (endsMs < startsMs) {
+    return { ok: false, error: 'endsAt must be on or after startsAt' };
+  }
+  return { ok: true, startsAt: startsAtRaw, endsAt: endsAtRaw };
+}
+
+function serializeRsvp(row: any) {
+  return {
+    id: row.id,
+    status: row.status,
+    checkInToken: row.check_in_token,
+    checkedInAt: row.checked_in_at ?? null,
+  };
+}
+
 async function getActiveSubscriptionPlanType(db: any, userId: string): Promise<string | null> {
   const row = await db
     .prepare(
@@ -203,47 +243,78 @@ export async function handleAccountIrlEventRsvp(
     .first();
 
   if (existing && existing.status !== 'cancelled') {
-    return jsonResponse(
-      {
-        ok: true,
-        rsvp: {
-          id: existing.id,
-          status: existing.status,
-          checkInToken: existing.check_in_token,
-          checkedInAt: existing.checked_in_at ?? null,
-        },
-      },
-      200,
-      corsHeaders,
-    );
-  }
-
-  if (event.capacity != null) {
-    const count = await countActiveRsvps(db, eventId);
-    if (count >= Number(event.capacity)) {
-      return errorResponse('Event is at capacity', 409, corsHeaders, 'irl_event_full');
-    }
+    return jsonResponse({ ok: true, rsvp: serializeRsvp(existing) }, 200, corsHeaders);
   }
 
   const id = crypto.randomUUID();
   const token = randomCheckInToken();
-  if (existing) {
-    await db
-      .prepare(
-        `UPDATE irl_event_rsvps
-         SET id = ?, check_in_token = ?, status = 'confirmed', checked_in_at = NULL, created_at = CURRENT_TIMESTAMP
-         WHERE event_id = ? AND user_id = ?`,
-      )
-      .bind(id, token, eventId, user.sub)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `INSERT INTO irl_event_rsvps (id, event_id, user_id, check_in_token, status)
-         VALUES (?, ?, ?, ?, 'confirmed')`,
-      )
-      .bind(id, eventId, user.sub, token)
-      .run();
+  const capacity = event.capacity == null || event.capacity === '' ? null : Number(event.capacity);
+  const hasCapacity = capacity != null && Number.isFinite(capacity) && capacity > 0;
+
+  try {
+    let changes = 0;
+    if (existing) {
+      // Reactivate cancelled RSVP only when under capacity (atomic count check).
+      const result = hasCapacity
+        ? await db
+            .prepare(
+              `UPDATE irl_event_rsvps
+               SET id = ?, check_in_token = ?, status = 'confirmed', checked_in_at = NULL,
+                   created_at = CURRENT_TIMESTAMP
+               WHERE event_id = ? AND user_id = ? AND status = 'cancelled'
+                 AND (
+                   SELECT COUNT(*) FROM irl_event_rsvps
+                   WHERE event_id = ? AND status IN ('confirmed', 'checked_in')
+                 ) < ?`,
+            )
+            .bind(id, token, eventId, user.sub, eventId, capacity)
+            .run()
+        : await db
+            .prepare(
+              `UPDATE irl_event_rsvps
+               SET id = ?, check_in_token = ?, status = 'confirmed', checked_in_at = NULL,
+                   created_at = CURRENT_TIMESTAMP
+               WHERE event_id = ? AND user_id = ? AND status = 'cancelled'`,
+            )
+            .bind(id, token, eventId, user.sub)
+            .run();
+      changes = Number(result?.meta?.changes ?? 0);
+    } else {
+      const result = hasCapacity
+        ? await db
+            .prepare(
+              `INSERT INTO irl_event_rsvps (id, event_id, user_id, check_in_token, status)
+               SELECT ?, ?, ?, ?, 'confirmed'
+               WHERE (
+                 SELECT COUNT(*) FROM irl_event_rsvps
+                 WHERE event_id = ? AND status IN ('confirmed', 'checked_in')
+               ) < ?`,
+            )
+            .bind(id, eventId, user.sub, token, eventId, capacity)
+            .run()
+        : await db
+            .prepare(
+              `INSERT INTO irl_event_rsvps (id, event_id, user_id, check_in_token, status)
+               VALUES (?, ?, ?, ?, 'confirmed')`,
+            )
+            .bind(id, eventId, user.sub, token)
+            .run();
+      changes = Number(result?.meta?.changes ?? 0);
+    }
+
+    if (!changes) {
+      return errorResponse('Event is at capacity', 409, corsHeaders, 'irl_event_full');
+    }
+  } catch (err) {
+    if (!isUniqueConstraintError(err)) throw err;
+    const raced = await db
+      .prepare('SELECT * FROM irl_event_rsvps WHERE event_id = ? AND user_id = ?')
+      .bind(eventId, user.sub)
+      .first();
+    if (raced && raced.status !== 'cancelled') {
+      return jsonResponse({ ok: true, rsvp: serializeRsvp(raced) }, 200, corsHeaders);
+    }
+    return errorResponse('Event is at capacity', 409, corsHeaders, 'irl_event_full');
   }
 
   return jsonResponse(
@@ -325,14 +396,15 @@ export async function handleAdminCreateIrlEvent(request: any, env: any, corsHead
 
   const title = trimText(body.title, 200);
   if (!title) return errorResponse('title is required', 400, corsHeaders);
-  const startsAt = trimText(body.startsAt, 64);
-  if (!startsAt) return errorResponse('startsAt is required', 400, corsHeaders);
+  const startsAtRaw = trimText(body.startsAt, 64);
+  const endsAtRaw =
+    typeof body.endsAt === 'string' && body.endsAt.trim() ? body.endsAt.trim().slice(0, 64) : null;
+  const datetimes = validateEventDatetimes(startsAtRaw, endsAtRaw);
+  if (!datetimes.ok) return errorResponse(datetimes.error, 400, corsHeaders);
 
   const description =
     typeof body.description === 'string' ? body.description.trim().slice(0, 4000) : '';
   const location = typeof body.location === 'string' ? body.location.trim().slice(0, 400) : '';
-  const endsAt =
-    typeof body.endsAt === 'string' && body.endsAt.trim() ? body.endsAt.trim().slice(0, 64) : null;
   const capacity = parseOptionalCapacity(body.capacity);
   if (body.capacity !== undefined && capacity === undefined) {
     return errorResponse('capacity must be a positive integer or null', 400, corsHeaders);
@@ -353,8 +425,8 @@ export async function handleAdminCreateIrlEvent(request: any, env: any, corsHead
       title,
       description,
       location,
-      startsAt,
-      endsAt,
+      datetimes.startsAt,
+      datetimes.endsAt,
       capacity === undefined ? null : capacity,
       clubOnly ? 1 : 0,
       published ? 1 : 0,
@@ -388,9 +460,16 @@ export async function handleAdminUpdateIrlEvent(
 
   const title = body.title !== undefined ? trimText(body.title, 200) : (existing.title as string);
   if (!title) return errorResponse('title is required', 400, corsHeaders);
-  const startsAt =
+  const startsAtRaw =
     body.startsAt !== undefined ? trimText(body.startsAt, 64) : (existing.starts_at as string);
-  if (!startsAt) return errorResponse('startsAt is required', 400, corsHeaders);
+  const endsAtRaw =
+    body.endsAt !== undefined
+      ? typeof body.endsAt === 'string' && body.endsAt.trim()
+        ? body.endsAt.trim().slice(0, 64)
+        : null
+      : ((existing.ends_at as string | null) ?? null);
+  const datetimes = validateEventDatetimes(startsAtRaw, endsAtRaw);
+  if (!datetimes.ok) return errorResponse(datetimes.error, 400, corsHeaders);
 
   const description =
     body.description !== undefined
@@ -400,12 +479,6 @@ export async function handleAdminUpdateIrlEvent(
     body.location !== undefined
       ? String(body.location).trim().slice(0, 400)
       : (existing.location as string);
-  const endsAt =
-    body.endsAt !== undefined
-      ? typeof body.endsAt === 'string' && body.endsAt.trim()
-        ? body.endsAt.trim().slice(0, 64)
-        : null
-      : (existing.ends_at as string | null);
   let capacity: number | null = existing.capacity == null ? null : Number(existing.capacity);
   if (body.capacity !== undefined) {
     const parsed = parseOptionalCapacity(body.capacity);
@@ -434,8 +507,8 @@ export async function handleAdminUpdateIrlEvent(
       title,
       description,
       location,
-      startsAt,
-      endsAt,
+      datetimes.startsAt,
+      datetimes.endsAt,
       capacity,
       clubOnly ? 1 : 0,
       published ? 1 : 0,

@@ -306,7 +306,7 @@ export const strings: StringsDefinition = {
   irlEventsFull: 'Tato akce je plná.',
   irlEventsClubRequired: 'Na tuto akci je potřeba členství Club.',
   irlEventsCheckInCode: 'Váš check-in kód',
-  irlEventsCheckedIn: 'Odhlášeno na místě',
+  irlEventsCheckedIn: 'Přihlášeno na místě',
   irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} míst`,
   irlEventsUnlimited: (taken: number) => `${taken} jde`,
 

@@ -520,10 +520,14 @@
         <p v-else-if="irlEventsError" class="text-sm text-red-600 dark:text-red-400">
           {{ irlEventsError }}
         </p>
-        <p v-else-if="!irlEvents.length" class="text-sm text-gray-500 dark:text-gray-400">
-          {{ strings.irlEventsEmpty }}
-        </p>
-        <ul v-else class="space-y-4">
+        <template v-else>
+          <p v-if="!irlEvents.length" class="text-sm text-gray-500 dark:text-gray-400">
+            {{ strings.irlEventsEmpty }}
+          </p>
+          <p v-if="irlRsvpError" class="text-sm text-red-600 dark:text-red-400">
+            {{ irlRsvpError }}
+          </p>
+          <ul v-if="irlEvents.length" class="space-y-4">
           <li
             v-for="event in irlEvents"
             :key="event.id"
@@ -590,6 +594,7 @@
             </div>
           </li>
         </ul>
+        </template>
       </div>
 
       <!-- Account deletion (GDPR Art. 17) -->
@@ -1020,6 +1025,7 @@
   };
   const loadingIrlEvents = ref(true);
   const irlEventsError = ref<string | null>(null);
+  const irlRsvpError = ref<string | null>(null);
   const irlEvents = ref<IrlAccountEvent[]>([]);
   const irlRsvpBusyId = ref<string | null>(null);
 
@@ -1317,7 +1323,7 @@
 
   async function createIrlRsvp(eventId: string) {
     irlRsvpBusyId.value = eventId;
-    irlEventsError.value = null;
+    irlRsvpError.value = null;
     try {
       const res = await fetch(`${apiUrl}/api/account/irl-events/${eventId}/rsvp`, {
         method: 'POST',
@@ -1326,15 +1332,15 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (data.code === 'irl_event_full') irlEventsError.value = strings.irlEventsFull;
+        if (data.code === 'irl_event_full') irlRsvpError.value = strings.irlEventsFull;
         else if (data.code === 'irl_club_required')
-          irlEventsError.value = strings.irlEventsClubRequired;
-        else irlEventsError.value = data.error ?? strings.irlEventsRsvpFailed;
+          irlRsvpError.value = strings.irlEventsClubRequired;
+        else irlRsvpError.value = data.error ?? strings.irlEventsRsvpFailed;
         return;
       }
       await fetchIrlEvents();
     } catch {
-      irlEventsError.value = strings.irlEventsRsvpFailed;
+      irlRsvpError.value = strings.irlEventsRsvpFailed;
     } finally {
       irlRsvpBusyId.value = null;
     }
@@ -1342,7 +1348,7 @@
 
   async function cancelIrlRsvp(eventId: string) {
     irlRsvpBusyId.value = eventId;
-    irlEventsError.value = null;
+    irlRsvpError.value = null;
     try {
       const res = await fetch(`${apiUrl}/api/account/irl-events/${eventId}/rsvp`, {
         method: 'DELETE',
@@ -1351,12 +1357,12 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        irlEventsError.value = data.error ?? strings.irlEventsRsvpFailed;
+        irlRsvpError.value = data.error ?? strings.irlEventsRsvpFailed;
         return;
       }
       await fetchIrlEvents();
     } catch {
-      irlEventsError.value = strings.irlEventsRsvpFailed;
+      irlRsvpError.value = strings.irlEventsRsvpFailed;
     } finally {
       irlRsvpBusyId.value = null;
     }

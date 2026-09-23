@@ -51,9 +51,9 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 **Product:** Yearly billing + higher price; IRL event access; ad-free if ads exist; **2–3 concurrent streams** (Stargaze had 1).
 
 - [x] Concurrent playback **API** (D1 `playback_sessions`, mint/heartbeat/release, `video-access` enforce, tests) — [#655](https://github.com/tojemoc/vmp/pull/655), [#661](https://github.com/tojemoc/vmp/pull/661); flag `concurrent_playback_enforced=0` by default
-- [x] Web player session mint + heartbeats + limit error UI (required before flipping the enforce flag)
-- [x] IRL event invitations / access (admin CRUD + account RSVP + check-in token)
-- [x] Ad-free gate (when ad insertion exists) — `ads_enabled` flag + club/staff entitlement; creatives deferred
+- [x] Web player session mint + heartbeats + limit error UI (required before flipping the enforce flag) — [#694](https://github.com/tojemoc/vmp/pull/694)
+- [x] IRL event invitations / access (admin CRUD + account RSVP + check-in token) — [#694](https://github.com/tojemoc/vmp/pull/694)
+- [x] Ad-free gate (when ad insertion exists) — `ads_enabled` flag + club/staff entitlement; creatives deferred — [#694](https://github.com/tojemoc/vmp/pull/694)
 
 **Not club entitlements:** `offline_device_limit_club` is for offline download device registration only.
 

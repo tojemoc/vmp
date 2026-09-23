@@ -75,6 +75,7 @@ export function usePlaybackSession(options: {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let disposed = false;
   let releaseChain: Promise<void> = Promise.resolve();
+  let mintInFlight: Promise<MintPlaybackSessionResult> | null = null;
 
   function getSessionId(): string | null {
     return sessionId;
@@ -176,8 +177,11 @@ export function usePlaybackSession(options: {
         },
       );
       if (res.status === 404) {
-        sessionId = null;
-        stopHeartbeats();
+        // Only clear if this heartbeat's id is still the active session.
+        if (sessionId === id) {
+          sessionId = null;
+          stopHeartbeats();
+        }
         return false;
       }
       return res.ok;
@@ -249,7 +253,12 @@ export function usePlaybackSession(options: {
       void heartbeat();
       return { ok: true, sessionId, reused: true };
     }
-    const minted = await mint(overrideVideoId);
+    if (!mintInFlight) {
+      mintInFlight = mint(overrideVideoId).finally(() => {
+        mintInFlight = null;
+      });
+    }
+    const minted = await mintInFlight;
     if (minted.ok) startHeartbeats();
     return minted;
   }

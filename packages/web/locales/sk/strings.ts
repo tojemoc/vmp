@@ -287,7 +287,7 @@ export const strings: StringsDefinition = {
   concurrentPlaybackLimitMessage: (limit: number) =>
     `Váš plán umožňuje ${limit} ${limit === 1 ? 'video' : 'videá'} naraz. Zastavte prehrávanie na inom zariadení alebo karte a skúste znova.`,
   concurrentPlaybackLimitClubHint:
-    'Členské Club zvyšuje limit, aby mohlo sledovať viac ľudí z domácnosti naraz.',
+    'Členstvo v Club zvyšuje limit, aby mohlo sledovať viac ľudí z domácnosti naraz.',
   concurrentPlaybackLimitRetry: 'Skúsiť znova',
   concurrentPlaybackSessionRequired:
     'Nepodarilo sa spustiť reláciu prehrávania. Obnovte stránku alebo to skúste o chvíľu.',
@@ -307,7 +307,7 @@ export const strings: StringsDefinition = {
   irlEventsFull: 'Toto podujatie je plné.',
   irlEventsClubRequired: 'Na toto podujatie je potrebné členstvo Club.',
   irlEventsCheckInCode: 'Váš check-in kód',
-  irlEventsCheckedIn: 'Odhlásené na mieste',
+  irlEventsCheckedIn: 'Prihlásené na mieste',
   irlEventsCapacity: (taken: number, capacity: number) => `${taken} / ${capacity} miest`,
   irlEventsUnlimited: (taken: number) => `${taken} ide`,
 
