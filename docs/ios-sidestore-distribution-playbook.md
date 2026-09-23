@@ -90,11 +90,26 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 6. Download the Android APK from the install page (`https://tojemoc.github.io/vmp/` → **Download Android APK**) or from `downloads.json` — no GitHub login. The Actions UI Artifacts section still works if you are signed in.
 7. On iPhone: add the Pages source URL in SideStore and install the desired version.
 
+## Republish Pages only (nightly.link / AltStore source)
+
+When the install site is missing, 404s, or lost its nightly.link buttons — **without** rebuilding the IPA — run:
+
+1. GitHub → **Actions** → **Publish SideStore Pages** → **Run workflow** (from `main`).
+2. Leave `mobile_artifacts_run_id` empty to use the latest successful **Mobile artifacts** run that still has an `ios-ipa` artifact, or paste a specific run ID.
+
+That workflow regenerates `altstore-source.json` from GitHub Releases and redeploys the install page + `downloads.json` via `actions/deploy-pages`.
+
+### Do not re-run `pages-build-deployment`
+
+`https://github.com/tojemoc/vmp/actions/workflows/pages/pages-build-deployment` is GitHub’s **dynamic** Pages workflow (no file under `.github/workflows/`). Re-running it checks out the repo and uploads raw `/docs` (markdown + templates only). That **wipes** the Actions-published install site (`altstore-source.json`, nightly.link buttons, `downloads.json`).
+
+If you already did that and the site shows the “Wrong GitHub Pages deployer” stub (or 404s for `altstore-source.json`), run **Publish SideStore Pages** as above.
+
 ## Repo setup (maintainer, one-time)
 
-1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: GitHub Actions**. Do **not** publish Pages from `main` (`main` pushes autodeploy staging).
-2. The publish job uses the official Pages deploy actions (`configure-pages`, `upload-pages-artifact`, `deploy-pages`). It creates GitHub Releases and deploys generated Pages files **without** committing or pushing to `main` or any branch.
-3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. All publishing (any flavor) requires dispatch from `main`.
+1. **GitHub Pages:** Settings → Pages → **Build and deployment → Source: GitHub Actions**. Do **not** publish Pages from a branch (`main` pushes autodeploy staging; branch deploys of `/docs` also wipe the install site).
+2. The publish jobs use the official Pages deploy actions (`configure-pages`, `upload-pages-artifact`, `deploy-pages`). They create GitHub Releases (Mobile artifacts) and deploy generated Pages files **without** committing generated JSON/HTML to `main`.
+3. After merge to `main`, run **Mobile artifacts** from `main` once (with `publish_release` enabled) to populate the first Release and Pages deployment. All publishing (any flavor) requires dispatch from `main`. To restore Pages later without a full rebuild, use **Publish SideStore Pages**.
 
 ## Updating permissions metadata
 

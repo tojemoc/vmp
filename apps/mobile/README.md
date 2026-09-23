@@ -84,6 +84,8 @@ Direct downloads (after publish; no GitHub account):
 
 `https://tojemoc.github.io/vmp/` · `https://tojemoc.github.io/vmp/downloads.json`
 
+To **republish Pages only** (restore nightly.link / AltStore source without a full rebuild): Actions → **Publish SideStore Pages**. Do **not** re-run the dynamic `pages-build-deployment` workflow — it has no workflow file and wipes the install site by deploying raw `/docs`.
+
 See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-distribution-playbook.md) for tester instructions (no Mac required).
 
 ## Deep links

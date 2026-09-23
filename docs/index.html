@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VMP install site — wrong Pages deployer</title>
+    <style>
+      body {
+        margin: 2rem auto;
+        max-width: 40rem;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+        padding: 0 1rem;
+      }
+      code {
+        background: #f0f0f0;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111;
+          color: #eee;
+        }
+        code {
+          background: #333;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Wrong GitHub Pages deployer</h1>
+    <p>
+      You are seeing this page because GitHub’s dynamic
+      <code>pages-build-deployment</code> workflow published the raw
+      <code>/docs</code> folder (markdown and templates). That workflow has
+      <strong>no workflow file</strong> and must not be re-run to refresh
+      SideStore / nightly.link links.
+    </p>
+    <p>To restore the install site (AltStore source + nightly.link downloads):</p>
+    <ol>
+      <li>
+        Open
+        <a href="https://github.com/tojemoc/vmp/actions/workflows/publish-sidestore-pages.yml"
+          >Actions → <strong>Publish SideStore Pages</strong></a
+        >
+      </li>
+      <li>Run workflow from <code>main</code> (leave run ID empty to use the latest Mobile artifacts build).</li>
+    </ol>
+    <p>
+      Or run <strong>Mobile artifacts</strong> from <code>main</code> with
+      <code>publish_release</code> enabled (full rebuild).
+    </p>
+  </body>
+</html>
