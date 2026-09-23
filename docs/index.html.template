@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Install VMP (iOS)</title>
+    <title>Install VMP</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -92,6 +92,9 @@
         line-height: 1.5;
         color: var(--muted);
       }
+      .notes:first-of-type {
+        margin-top: 0;
+      }
       .notes strong {
         color: var(--text);
       }
@@ -117,12 +120,21 @@
         font-size: 0.85rem;
         line-height: 1.45;
       }
+      .meta {
+        margin-top: 1rem;
+        font-size: 0.8rem;
+        line-height: 1.4;
+        color: var(--muted);
+      }
+      .meta a {
+        color: var(--text);
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>VMP</h1>
-      <p class="version">Version __VERSION__</p>
+      <p class="version">Version __VERSION__ · __FLAVOR_LABEL__</p>
       <div class="notes">
         <strong>SideStore / AltStore (recommended)</strong>
         <ul>
@@ -131,6 +143,27 @@
         <code class="source-url">__ALTSTORE_SOURCE_URL__</code>
         <p style="margin-top: 1rem">
           No Mac required — SideStore re-signs the IPA from GitHub Releases using your Apple ID.
+        </p>
+      </div>
+      <div class="notes">
+        <strong>Direct CI artifacts (no GitHub login)</strong>
+        <ul>
+          <li>
+            Downloads via
+            <a href="https://nightly.link/" style="color: var(--text)">nightly.link</a>
+            using this run’s artifact IDs. nightly.link’s “latest by branch” shortcut only
+            sees <code>push</code>/<code>schedule</code> runs — not <code>workflow_dispatch</code> —
+            so this page publishes the run-scoped URLs after each Mobile artifacts publish.
+          </li>
+          <li>Unzip the artifact, then install the <code>.ipa</code> / <code>.apk</code>.</li>
+          <li>GitHub Actions artifacts expire (typically after 90 days on public repos).</li>
+        </ul>
+        <a class="secondary-btn" href="__IOS_NIGHTLY_LINK__">Download iOS IPA (zip)</a>
+        __ANDROID_NIGHTLY_BTN__
+        <p class="meta">
+          Run <a href="__RUN_URL__">#__RUN_ID__</a>
+          · machine-readable
+          <a href="downloads.json">downloads.json</a>
         </p>
       </div>
       <a class="secondary-btn" href="__INSTALL_URL__">Install via OTA (advanced)</a>

@@ -196,10 +196,11 @@ That prompt installs the MoQ skill and covers architecture, packages, relay setu
 Manual workflow: `.github/workflows/mobile-artifacts.yml` (`workflow_dispatch` only — not on every push).
 
 - **SideStore / AltStore source URL:** `https://tojemoc.github.io/vmp/altstore-source.json`
-- **Install page:** `https://tojemoc.github.io/vmp/`
+- **Install page:** `https://tojemoc.github.io/vmp/` (includes nightly.link APK/IPA buttons — no GitHub login)
+- **Download pointers:** `https://tojemoc.github.io/vmp/downloads.json`
 - **Playbook:** [docs/ios-sidestore-distribution-playbook.md](docs/ios-sidestore-distribution-playbook.md)
 
-IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is generated from `docs/altstore-source.meta.json` and deployed to GitHub Pages via the official Pages deploy actions (never committed to `main`). Testers add the source URL in SideStore on iPhone — **no Mac required**. Publishing (GitHub Releases + Pages) is allowed from `main` only; feature branches may run artifact-only builds with `publish_release` disabled.
+IPAs are published as **GitHub Release assets** (`vmp-<version>-ios.ipa`). The AltStore source JSON is generated from `docs/altstore-source.meta.json` and deployed to GitHub Pages via the official Pages deploy actions (never committed to `main`). Testers add the source URL in SideStore on iPhone — **no Mac required**. Android APKs remain Actions artifacts; each publish writes run-scoped [nightly.link](https://nightly.link) URLs onto Pages because nightly.link’s “latest by branch” shortcut ignores `workflow_dispatch`. Publishing (GitHub Releases + Pages) is allowed from `main` only; feature branches may run artifact-only builds with `publish_release` disabled.
 
 **Staging SideStore auth escape hatch (temporary):** Mobile artifacts with `flavor=development` + `enable_custom_scheme=true` may enable claimable `vmp://`. Staging web (`deployTier=staging`) plus API `ALLOW_INSECURE_NATIVE_VMP_SCHEME=1` **and** `SENTRY_ENVIRONMENT=staging` (both set by staging CD `--var KEY:VALUE`) requires a two-step confirm and records `insecure_native_scheme_acks` in D1 before opening the scheme. Check `GET /api/auth/native/insecure-scheme/status` → `allowed: true`. Production / beta never enable this. Prefer Universal Links (**S5**) when a stable Team ID exists.
 

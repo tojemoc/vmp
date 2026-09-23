@@ -73,11 +73,16 @@ Outputs (when the corresponding input is enabled):
 - When `publish_release` is enabled:
   - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
   - `altstore-source.json` deployed to GitHub Pages (generated from `altstore-source.meta.json`, not committed to git)
-  - Install page at `https://<org>.github.io/<repo>/` with SideStore source link and secondary OTA link
+  - Install page at `https://<org>.github.io/<repo>/` with SideStore source link, secondary OTA link, and **nightly.link** buttons for the iOS IPA + Android APK zips (no GitHub login)
+  - `downloads.json` on Pages with the same run-scoped nightly.link URLs (evergreen pointer; rebuilds on each publish)
 
 SideStore source URL (after first publish on `main`):
 
 `https://tojemoc.github.io/vmp/altstore-source.json`
+
+Direct downloads (after publish; no GitHub account):
+
+`https://tojemoc.github.io/vmp/` · `https://tojemoc.github.io/vmp/downloads.json`
 
 See [`docs/ios-sidestore-distribution-playbook.md`](../../docs/ios-sidestore-distribution-playbook.md) for tester instructions (no Mac required).
 

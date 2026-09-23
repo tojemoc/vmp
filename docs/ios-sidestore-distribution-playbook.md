@@ -12,11 +12,19 @@ SideStore deep link (open on iPhone with SideStore installed):
 
 `sidestore://source?url=https%3A%2F%2Ftojemoc.github.io%2Fvmp%2Faltstore-source.json`
 
-Install page (OTA manifest + source link):
+Install page (OTA manifest + source link + direct CI downloads):
 
 `https://tojemoc.github.io/vmp/`
 
+Machine-readable download pointers (nightly.link URLs for the latest published run):
+
+`https://tojemoc.github.io/vmp/downloads.json`
+
 **No Mac is required** for SideStore installs — SideStore re-signs IPAs downloaded from GitHub Releases.
+
+**No GitHub login is required** for the direct APK/IPA zip links on the install page — they go through [nightly.link](https://nightly.link) using this run’s artifact IDs. nightly.link’s `/workflows/{name}/{branch}` “latest” shortcut only queries `push`/`schedule` events, so this workflow publishes run-scoped URLs onto Pages after each successful publish instead.
+
+GitHub Actions artifacts expire (typically after 90 days on public repos); after expiry, use SideStore / GitHub Release assets for iOS, or re-run **Mobile artifacts**.
 
 ## What CI publishes
 
@@ -25,9 +33,11 @@ Install page (OTA manifest + source link):
 | IPA file | GitHub Release asset (`vmp-<version>-ios.ipa`) |
 | AltStore source JSON | GitHub Pages deployment (`altstore-source.json`, generated from `altstore-source.meta.json`) |
 | Install page | GitHub Pages deployment (`index.html`, from template) |
+| Direct CI download pointers | GitHub Pages (`downloads.json` + nightly.link buttons on the install page) |
 | OTA manifest (optional) | GitHub Pages deployment (`manifest.plist`, from template) |
+| Android APK (CI artifact) | Actions artifact `mobile-android-apk` (public zip via nightly.link URL published on Pages) |
 
-IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always points at **GitHub Release assets**.
+IPAs are **not** hosted on GitHub Pages. `downloadURL` in the source JSON always points at **GitHub Release assets**. APKs stay as Actions artifacts; Pages only stores the evergreen nightly.link pointer for the latest published run.
 
 ## Release tag format
 
@@ -77,7 +87,7 @@ Static metadata lives in `docs/altstore-source.meta.json` (name, icon, website, 
 3. Choose `flavor` (`release`, `beta`, `nightly`, `development`).
 4. Optionally override `build_number` (defaults to the GitHub Actions **run number**, not `app.json`). Published marketing version becomes `major.minor.<build>` (from `app.json` base + that build). A new IPA requires a unique flavor+version+build. Re-running a failed publish is allowed only for the **same commit**: a missing IPA is uploaded, an existing IPA is not replaced, and a reserved tag is reused (or restored if a partial release dropped it). A later dispatch from a different commit with the same identity is rejected.
 5. **Publishing** (`publish_release`) is only allowed when dispatching from `main` (all flavors). From a feature branch, disable `publish_release` to build IPA/APK artifacts without updating GitHub Releases or the public GitHub Pages install site.
-6. Download the Android APK from workflow artifacts if needed.
+6. Download the Android APK from the install page (`https://tojemoc.github.io/vmp/` → **Download Android APK**) or from `downloads.json` — no GitHub login. The Actions UI Artifacts section still works if you are signed in.
 7. On iPhone: add the Pages source URL in SideStore and install the desired version.
 
 ## Repo setup (maintainer, one-time)
