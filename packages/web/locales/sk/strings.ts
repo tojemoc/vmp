@@ -289,6 +289,15 @@ export const strings: StringsDefinition = {
   manageSubscription: 'Spravovať predplatné',
   resumeSubscription: 'Obnoviť predplatné',
   openingPortal: 'Otvára sa…',
+  cancelSubscription: 'Zrušiť obnovenie',
+  cancelingSubscription: 'Ruším…',
+  cancelSubscriptionConfirm:
+    'Zastaviť automatické obnovenie? Prístup ostane do konca aktuálneho obdobia.',
+  cancelSubscriptionFailed: 'Predplatné sa nepodarilo zrušiť. Skúste to prosím znova.',
+  redirectCancelNoResumeHint:
+    'Obnovenie je zastavené. Prístup platí do dátumu vyššie; obnovenie cez samoobsluhu u tohto poskytovateľa nie je k dispozícii.',
+  redirectCancelUseButtonHint:
+    'Na zastavenie obnovenia GoPay alebo Comgate použite Zrušiť obnovenie.',
   subscribedWelcome: 'Teraz ste predplatiteľom!',
   subscribedWelcomeDetail:
     'Vitajte vo VMP Premium. Užite si neobmedzený prístup ku všetkému obsahu.',

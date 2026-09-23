@@ -92,6 +92,7 @@ describe('resolveComgateCheckoutIdentity', () => {
       planType: 'yearly',
       pendingSessionId: 'sess-1',
       fromPendingSession: true,
+      priceSnapshot: null,
     });
   });
 
@@ -118,6 +119,7 @@ describe('resolveComgateCheckoutIdentity', () => {
       planType: 'monthly',
       pendingSessionId: 'sess-2',
       fromPendingSession: true,
+      priceSnapshot: null,
     });
   });
 
@@ -152,6 +154,36 @@ describe('resolveComgateCheckoutIdentity', () => {
       planType: 'club',
       pendingSessionId: null,
       fromPendingSession: false,
+      priceSnapshot: null,
+    });
+  });
+
+  it('returns immutable price snapshot from pending checkout session', async () => {
+    const db = new FakeDb({
+      sessions: [
+        {
+          id: 'sess-priced',
+          provider: 'comgate',
+          status: 'pending',
+          checkout_token: 'vmp-user3-1',
+          provider_checkout_id: 'CC11-DD22-EE33',
+          user_id: 'user-3',
+          plan_type: 'monthly',
+          expected_amount_minor: 19900,
+          expected_currency: 'CZK',
+        },
+      ],
+    });
+    const result = await resolveComgateCheckoutIdentity(db, {
+      subscriptionId: 'CC11-DD22-EE33',
+      purchaseId: 'vmp-user3-1',
+    });
+    assert.deepEqual(result, {
+      userId: 'user-3',
+      planType: 'monthly',
+      pendingSessionId: 'sess-priced',
+      fromPendingSession: true,
+      priceSnapshot: { amountMinor: 19900, currency: 'CZK' },
     });
   });
 

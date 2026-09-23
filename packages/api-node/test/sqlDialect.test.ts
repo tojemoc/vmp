@@ -391,3 +391,77 @@ describe('isPostgresDuplicateObjectError', () => {
     assert.equal(isPostgresDuplicateObjectError(null), false);
   });
 });
+
+describe('translateSqliteToPostgres nested trim/datetime', () => {
+  it('rewrites TRIM(COALESCE((SELECT…), \'\')) without truncating at the first )', () => {
+    const sql = `AND UPPER(
+    TRIM(
+      COALESCE(
+        (
+          SELECT a.value
+          FROM admin_settings AS a
+          WHERE a.key = subscriptions.provider || '_currency'
+        ),
+        ''
+      )
+    )
+  ) = 'EUR'`;
+    const out = translateSqliteToPostgres(sql);
+    assert.match(out, /btrim\s*\(\s*\(\s*COALESCE\s*\(/i);
+    assert.match(out, /WHERE a\.key = subscriptions\.provider \|\| '_currency'/i);
+    assert.match(out, /,\s*''\s*\)\s*\)\s*::text\s*\)/i);
+    // Must not leave a truncated COALESCE(…)::text), ''  shape from the old [^)]+ rewrite.
+    assert.doesNotMatch(out, /COALESCE\s*\(\s*\(\s*SELECT[\s\S]*?\)\s*::text\s*\)\s*,\s*''/i);
+  });
+
+  it('casts nested datetime(COALESCE(...)) as a whole expression', () => {
+    const sql =
+      "ORDER BY datetime(COALESCE(pcs.completed_at, pcs.updated_at, pcs.created_at)) DESC";
+    const out = translateSqliteToPostgres(sql);
+    assert.match(
+      out,
+      /ORDER BY\s*\(\s*COALESCE\s*\(\s*pcs\.completed_at\s*,\s*pcs\.updated_at\s*,\s*pcs\.created_at\s*\)\s*::timestamptz\s*\)/i,
+    );
+  });
+});
+
+describe('translateSqliteDdl migration 0066 price snapshot backfill', () => {
+  it('keeps nested TRIM/COALESCE currency checks structurally valid for Postgres', () => {
+    const raw = readFileSync(
+      join(
+        import.meta.dirname,
+        '../../api/migrations/0066_redirect_payment_price_snapshot_backfill.sql',
+      ),
+      'utf8',
+    );
+    const out = translateSqliteDdl(raw);
+    assert.match(out, /UPDATE subscriptions/i);
+    assert.match(out, /FROM admin_settings AS p/i);
+    // SQLite-only CAST blocks are stripped; Postgres peers keep a numeric regex guard.
+    assert.match(out, /vmp:sqlite-only block/i);
+    assert.match(out, /~\s*'?\^\[0-9\]/i);
+    assert.doesNotMatch(out, /\/\*\s*vmp:sqlite-only\s*\*\//i);
+  });
+
+  it('does not emit unguarded CAST of admin_settings text to REAL on Postgres', () => {
+    const raw = readFileSync(
+      join(
+        import.meta.dirname,
+        '../../api/migrations/0066_redirect_payment_price_snapshot_backfill.sql',
+      ),
+      'utf8',
+    );
+    const out = translateSqliteDdl(raw);
+    // Remaining price freezes must CASE-guard the digit regex inside the cast
+    // (Postgres does not short-circuit AND before CAST → 22P02).
+    const priceUpdates = splitExecutableSqlStatements(out).filter(
+      (s) => /FROM admin_settings AS p/i.test(s) && /expected_amount_minor/i.test(s),
+    );
+    assert.ok(priceUpdates.length >= 2, `expected Postgres price UPDATEs, got ${priceUpdates.length}`);
+    for (const stmt of priceUpdates) {
+      assert.match(stmt, /CAST\s*\(\s*CASE\s+WHEN[\s\S]*~\s*'?\^\[0-9\]/i);
+      assert.match(stmt, /AND\s+CAST\s*\(\s*CASE\s+WHEN/i);
+    }
+    assert.match(out, /AND\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+payment_checkout_sessions/i);
+  });
+});

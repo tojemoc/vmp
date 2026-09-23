@@ -8,6 +8,7 @@ export {
 export {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
+  handleCancelSubscription,
   handleCheckout,
   handleComgateWebhook,
   handleGetPricing,

@@ -4,13 +4,15 @@
 
 import {
   createEnabledProviders,
+  GOPAY_SANDBOX_API_BASE,
   getRunnableProviderIds,
+  isGoPaySandboxApiBase,
   normalizeProviderId,
-  parseQerkoWebhookPayload,
   type PaymentProviderId,
   type PaymentsConfig,
   type PlanType,
   parseProviderIdList,
+  parseQerkoWebhookPayload,
   providerIdToDbProvider,
 } from '@vmp/payments';
 import { startLegacyCheckout } from './legacyPayments.js';
@@ -23,6 +25,32 @@ const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
 
 /** Public API provider ids exposed to checkout / pricing. */
 export type ApiPaymentProviderId = 'stripe' | 'legacy' | 'gopay' | 'comgate';
+
+export function resolveGoPayApiBase(env: any): string {
+  const configured = String(env.GOPAY_API_BASE ?? '')
+    .trim()
+    .replace(/\/$/, '');
+  return configured || GOPAY_SANDBOX_API_BASE;
+}
+
+export function isGoPayUsingSandbox(env: any): boolean {
+  return isGoPaySandboxApiBase(resolveGoPayApiBase(env));
+}
+
+/**
+ * True when FRONTEND_URL looks like a deployed host (not localhost / *.local).
+ * Used to fail closed if GoPay still points at the sandbox API.
+ */
+export function isNonLocalFrontendUrl(raw: unknown): boolean {
+  const value = String(raw ?? '').trim();
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host !== 'localhost' && host !== '127.0.0.1' && !host.endsWith('.local');
+  } catch {
+    return false;
+  }
+}
 
 async function priceIdForPlan(env: any, planType: PlanType): Promise<string | null> {
   const stored = await getSetting(env, `stripe_price_${planType}`, { ttlSeconds: 300 });
@@ -133,8 +161,7 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
       },
       verifyWebhook: (rawBody, signatureHeader) =>
         verifyLegacyWebhookSignature(env, rawBody, signatureHeader),
-      parseWebhook: async (rawBody) =>
-        parseQerkoWebhookPayload(rawBody ? JSON.parse(rawBody) : {}),
+      parseWebhook: async (rawBody) => parseQerkoWebhookPayload(rawBody ? JSON.parse(rawBody) : {}),
       cancelSubscription: async () => {
         throw new Error('Qerko subscription cancellation is managed in the legacy eshop portal');
       },
@@ -163,7 +190,7 @@ export function buildPaymentsConfig(env: any): PaymentsConfig {
         ? { clientSecret: String(env.GOPAY_CLIENT_SECRET).trim() }
         : {}),
       ...(String(env.GOPAY_GOID ?? '').trim() ? { goId: String(env.GOPAY_GOID).trim() } : {}),
-      apiBase: String(env.GOPAY_API_BASE ?? '').trim() || 'https://gw.sandbox.gopay.com/api',
+      apiBase: resolveGoPayApiBase(env),
       frontendUrl: env.FRONTEND_URL,
       ...(String(env.API_URL ?? '').trim()
         ? { notificationUrl: getGoPayNotificationUrl(env) }

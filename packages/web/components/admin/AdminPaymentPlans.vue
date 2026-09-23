@@ -72,7 +72,7 @@
             :disabled="!gopay.configured"
             @change="syncProviderOrderFromEnabled"
           >
-          GoPay (draft redirect)
+          GoPay (redirect)
           <span v-if="!gopay.configured" class="text-xs text-amber-700 dark:text-amber-300"
             >(not configured on server)</span
           >
@@ -86,7 +86,7 @@
             :disabled="!comgate.configured"
             @change="syncProviderOrderFromEnabled"
           >
-          Comgate (draft redirect)
+          Comgate (redirect)
           <span v-if="!comgate.configured" class="text-xs text-amber-700 dark:text-amber-300"
             >(not configured on server)</span
           >
@@ -94,16 +94,18 @@
       </div>
 
       <p
-        v-if="gopay.configured"
-        class="text-xs text-gray-600 dark:text-gray-400"
+        v-if="gopay.configured && gopay.sandbox"
+        class="text-xs text-amber-800 dark:text-amber-200"
       >
-        GoPay is web-gateway only: Apple Pay / Google Pay work inside the hosted gateway (no native
-        one-click / WebView).
+        GoPay API base is still sandbox ({{ gopay.apiBase }}). Set worker secret/var
+        <code class="font-mono">GOPAY_API_BASE=https://gate.gopay.cz/api</code>
+        before enabling live checkout on a non-local frontend.
       </p>
-      <p
-        v-if="comgate.configured"
-        class="text-xs text-gray-600 dark:text-gray-400"
-      >
+      <p v-else-if="gopay.configured" class="text-xs text-gray-600 dark:text-gray-400">
+        GoPay is web-gateway only: Apple Pay / Google Pay work inside the hosted gateway (no native
+        one-click / WebView). API base: {{ gopay.apiBase }}
+      </p>
+      <p v-if="comgate.configured" class="text-xs text-gray-600 dark:text-gray-400">
         Comgate recurring requires activation by Comgate support for the merchant account.
       </p>
 
@@ -176,8 +178,8 @@
           Qerko subscriber management
         </h5>
         <p class="text-xs text-gray-600 dark:text-gray-400">
-          Customers with a Qerko subscription see a “Manage with Qerko” button that opens this URL (the
-          Qerko manage / app link from the gateway docs). Leave empty to hide the button.
+          Customers with a Qerko subscription see a “Manage with Qerko” button that opens this URL
+          (the Qerko manage / app link from the gateway docs). Leave empty to hide the button.
         </p>
         <label class="block text-sm text-gray-700 dark:text-gray-300">
           Manage with Qerko URL
@@ -211,14 +213,15 @@
         v-if="enabledProviders.includes('gopay') || enabledProviders.includes('comgate')"
         class="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-3"
       >
-        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">
-          GoPay / Comgate amounts
-        </h5>
+        <h5 class="text-sm font-semibold text-gray-900 dark:text-white">GoPay / Comgate amounts</h5>
         <p class="text-xs text-gray-600 dark:text-gray-400">
           Major-unit amounts in gateway currency (defaults to CZK). Leave empty to use the plan
           price from Plans below.
         </p>
-        <div v-if="enabledProviders.includes('gopay')" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div
+          v-if="enabledProviders.includes('gopay')"
+          class="grid grid-cols-1 md:grid-cols-4 gap-3"
+        >
           <label class="text-xs text-gray-600 dark:text-gray-300 block">
             GoPay currency
             <input
@@ -243,7 +246,10 @@
             >
           </label>
         </div>
-        <div v-if="enabledProviders.includes('comgate')" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div
+          v-if="enabledProviders.includes('comgate')"
+          class="grid grid-cols-1 md:grid-cols-4 gap-3"
+        >
           <label class="text-xs text-gray-600 dark:text-gray-300 block">
             Comgate currency
             <input
@@ -586,7 +592,7 @@
   });
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
   const providerOrder = ref<PaymentProvider[]>(['stripe', 'legacy']);
-  const gopay = ref({ configured: false });
+  const gopay = ref({ configured: false, sandbox: true, apiBase: '' });
   const comgate = ref({ configured: false });
   const gopayPrices = ref<Record<LegacyPlanKey, string>>({
     monthly: '',
@@ -728,7 +734,9 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     const enabled = Array.isArray(data.enabledProviders)
-      ? data.enabledProviders.filter((p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate')
+      ? data.enabledProviders.filter(
+          (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+        )
       : ['stripe'];
     enabledProviders.value = enabled.length ? enabled : ['stripe'];
     const gopayProviderPrices = data.providerPrices?.gopay ?? {};
@@ -745,7 +753,11 @@
       club: String(comgateProviderPrices.club ?? ''),
     };
     comgateCurrency.value = String(data.comgateCurrency ?? 'CZK').toUpperCase() || 'CZK';
-    gopay.value = { configured: Boolean(data.gopayConfigured) };
+    gopay.value = {
+      configured: Boolean(data.gopayConfigured),
+      sandbox: data.gopaySandbox !== false,
+      apiBase: String(data.gopayApiBase ?? ''),
+    };
     comgate.value = { configured: Boolean(data.comgateConfigured) };
     if (!gopay.value.configured) {
       enabledProviders.value = enabledProviders.value.filter((p) => p !== 'gopay');
@@ -757,7 +769,9 @@
       enabledProviders.value = enabledProviders.value.filter((p) => p !== 'legacy');
     }
     const order = Array.isArray(data.providerOrder)
-      ? data.providerOrder.filter((p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate')
+      ? data.providerOrder.filter(
+          (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+        )
       : ['stripe', 'legacy'];
     providerOrder.value = order.length ? order : ['stripe', 'legacy'];
     syncProviderOrderFromEnabled();

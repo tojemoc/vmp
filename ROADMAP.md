@@ -37,23 +37,11 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 | `step-08` | Brevo newsletter sync (#645 / TOJ-138) | Opt-out model + sync + admin tab shipped [#665](https://github.com/tojemoc/vmp/pull/665); plan: [step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md). Staging smoke with live `BREVO_API_KEY` is maintainer ops. |
 | `step-09` | RSS / podcast feed (#644 / TOJ-137) | Personal + public feeds, revocable token, account UI [#653](https://github.com/tojemoc/vmp/pull/653); plan: [step-09-rss-podcast-feed.md](docs/plans/step-09-rss-podcast-feed.md) |
 | `deployment-feature-modules` | Compile-time `VMP_FEATURES` modules | Phases 1–4 shipped ([#652](https://github.com/tojemoc/vmp/pull/652)+); plan: [deployment-feature-modules.md](docs/plans/deployment-feature-modules.md) |
+| `payments-gopay-comgate` | GoPay + Comgate providers (#648 / TOJ-141) | Providers + analytics + production code hardening; live merchant smoke is maintainer ops. Plan: [payments-gopay-comgate.md](docs/plans/payments-gopay-comgate.md) |
 
 ---
 
 ## In progress
-
-### GoPay + Comgate production hardening (`payments-gopay-comgate`)
-
-**Issues:** [#648](https://github.com/tojemoc/vmp/issues/648) / [TOJ-141](https://linear.app/tojemoc/issue/TOJ-141)
-
-Providers + checkout analytics shipped. Only production hardening + maintainer sign-off remain.
-
-- [x] Provider registry + admin pricing ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Comgate first-checkout identity + renewals ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] GoPay redirect checkout + recurrence ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Qerko legacy club → `subscriptionType: club` (not yearly) ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Checkout analytics for GoPay + Comgate start/return ([#654](https://github.com/tojemoc/vmp/pull/654))
-- [ ] Production hardening + maintainer sign-off
 
 ### Club plan entitlements (`club`)
 

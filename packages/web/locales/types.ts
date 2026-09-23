@@ -253,6 +253,12 @@ export type StringsDefinition = {
   manageSubscription: string;
   resumeSubscription: string;
   openingPortal: string;
+  cancelSubscription: string;
+  cancelingSubscription: string;
+  cancelSubscriptionConfirm: string;
+  cancelSubscriptionFailed: string;
+  redirectCancelNoResumeHint: string;
+  redirectCancelUseButtonHint: string;
   subscribedWelcome: string;
   subscribedWelcomeDetail: string;
   renewsOn: string;
