@@ -81,12 +81,26 @@ def api_get_paginated(url: str, token: str | None, *, list_key: str | None = Non
     return items
 
 
+def run_has_successful_publish_job(repo: str, run_id: int, token: str | None) -> bool:
+    """True when this run's publish-ios-release job concluded successfully.
+
+    Overall workflow success is not enough: artifact-only dispatches
+    (publish_release=false) still upload ios-ipa but skip Pages publish.
+    """
+    jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+    jobs = api_get_paginated(jobs_url, token, list_key="jobs")
+    for job in jobs:
+        if job.get("name") == "publish-ios-release" and job.get("conclusion") == "success":
+            return True
+    return False
+
+
 def resolve_mobile_artifacts_run_id(repo: str, token: str | None, explicit: str | None) -> int:
     if explicit:
         return int(explicit)
 
     workflow_path = ".github/workflows/mobile-artifacts.yml"
-    # Prefer successful main runs; walk newest-first until ios-ipa is present.
+    # Prefer successful main runs that actually published Pages (not artifact-only).
     url = (
         f"https://api.github.com/repos/{repo}/actions/workflows/"
         f"{urllib.parse.quote(workflow_path, safe='')}/runs"
@@ -97,14 +111,21 @@ def resolve_mobile_artifacts_run_id(repo: str, token: str | None, explicit: str 
         run_id = run.get("id")
         if not run_id:
             continue
+        if not run_has_successful_publish_job(repo, int(run_id), token):
+            continue
         artifacts_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts"
         artifacts = api_get_paginated(artifacts_url, token, list_key="artifacts")
         names = {a.get("name") for a in artifacts if not a.get("expired")}
         if "ios-ipa" in names:
-            print(f"Resolved latest Mobile artifacts run with ios-ipa: {run_id}", file=sys.stderr)
+            print(
+                f"Resolved latest Mobile artifacts run with successful publish-ios-release "
+                f"and ios-ipa: {run_id}",
+                file=sys.stderr,
+            )
             return int(run_id)
     raise SystemExit(
-        "Could not find a successful Mobile artifacts run on main with a non-expired ios-ipa artifact. "
+        "Could not find a successful Mobile artifacts run on main whose publish-ios-release "
+        "job succeeded and that still has a non-expired ios-ipa artifact. "
         "Pass --run-id explicitly."
     )
 
