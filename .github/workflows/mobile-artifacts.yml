@@ -399,6 +399,7 @@ jobs:
           needs.build-android.result == 'success'
           || needs.build-android.result == 'skipped'
           || needs.build-android.result == 'failure'
+          || needs.build-android.result == 'cancelled'
         )
       }}
     needs:
@@ -635,8 +636,8 @@ jobs:
               exit 1
             fi
             ANDROID_NIGHTLY_LINK="https://nightly.link/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/mobile-android-apk.zip"
-          elif [ "$ANDROID_JOB_RESULT" = "failure" ]; then
-            echo "::warning::Android build failed; Pages will omit the APK nightly.link button."
+          elif [ "$ANDROID_JOB_RESULT" = "failure" ] || [ "$ANDROID_JOB_RESULT" = "cancelled" ]; then
+            echo "::warning::Android build ${ANDROID_JOB_RESULT}; Pages will omit the APK nightly.link button."
           else
             echo "Android job skipped; Pages will omit the APK nightly.link button."
           fi
