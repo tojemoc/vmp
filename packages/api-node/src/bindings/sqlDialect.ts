@@ -170,7 +170,9 @@ export function translateSqliteToPostgres(sql: string): string {
   s = replaceDateTimeWrapperPatterns(s);
 
   // Catch any remaining SQLite datetime(...) Postgres does not implement.
-  s = s.replace(/datetime\s*\(\s*([^)]+)\s*\)/gi, (_match, inner) => {
+  // Use balanced-paren matching so nested COALESCE(...) is not truncated at the
+  // first inner ')'.
+  s = replaceSqlFunctionCalls(s, 'datetime', (inner) => {
     const expr = inner.trim();
     if (/^'now'/i.test(expr)) return 'CURRENT_TIMESTAMP';
     if (/^CURRENT_TIMESTAMP$/i.test(expr)) return 'CURRENT_TIMESTAMP';
@@ -178,7 +180,9 @@ export function translateSqliteToPostgres(sql: string): string {
   });
 
   // SQLite trim() accepts any type; Postgres trim/btrim is text-only (TIMESTAMPTZ → 42883).
-  s = s.replace(/\btrim\s*\(\s*([^)]+)\s*\)/gi, 'btrim(($1)::text)');
+  // Balanced parens required: TRIM(COALESCE((SELECT …), '')) must not stop at the
+  // first ')' (that bug broke migration 0066 on Deno Deploy / Postgres).
+  s = replaceSqlFunctionCalls(s, 'trim', (inner) => `btrim((${inner})::text)`);
 
   // SQLite implicit rowid (e.g. migration 0029 dedup) → Postgres ctid system column.
   s = s.replace(/\browid\b/gi, 'ctid');
@@ -476,6 +480,144 @@ function findMatchingParen(input: string, openIndex: number): number {
     }
   }
   return -1;
+}
+
+/**
+ * Replace `fnName(...)` calls across the full SQL string, skipping matches inside
+ * string literals / comments. Must not use transformExecutableSql: empty-string
+ * literals (`''`) split code segments and break balanced-paren matching for
+ * nested calls like TRIM(COALESCE((SELECT …), '')).
+ */
+export function replaceSqlFunctionCalls(
+  sql: string,
+  fnName: string,
+  build: (inner: string) => string,
+): string {
+  const needle = fnName.toLowerCase();
+  let out = '';
+  let i = 0;
+  let state: SqlScanState = 'code';
+  let dollarTag = '';
+
+  while (i < sql.length) {
+    const ch = sql[i]!;
+    const next = i + 1 < sql.length ? sql[i + 1]! : '';
+
+    if (state === 'dollar') {
+      if (sql.startsWith(dollarTag, i)) {
+        out += dollarTag;
+        i += dollarTag.length;
+        state = 'code';
+        dollarTag = '';
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (state === 'lineComment') {
+      out += ch;
+      i += 1;
+      if (ch === '\n') state = 'code';
+      continue;
+    }
+
+    if (state === 'blockComment') {
+      out += ch;
+      i += 1;
+      if (ch === '*' && next === '/') {
+        out += next;
+        i += 1;
+        state = 'code';
+      }
+      continue;
+    }
+
+    if (state === 'single') {
+      out += ch;
+      i += 1;
+      if (ch === "'" && next === "'") {
+        out += next;
+        i += 1;
+        continue;
+      }
+      if (ch === "'") state = 'code';
+      continue;
+    }
+
+    if (state === 'double') {
+      out += ch;
+      i += 1;
+      if (ch === '"' && next === '"') {
+        out += next;
+        i += 1;
+        continue;
+      }
+      if (ch === '"') state = 'code';
+      continue;
+    }
+
+    // state === 'code'
+    if (ch === '-' && next === '-') {
+      out += ch + next;
+      i += 2;
+      state = 'lineComment';
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      out += ch + next;
+      i += 2;
+      state = 'blockComment';
+      continue;
+    }
+    if (ch === "'") {
+      out += ch;
+      i += 1;
+      state = 'single';
+      continue;
+    }
+    if (ch === '"') {
+      out += ch;
+      i += 1;
+      state = 'double';
+      continue;
+    }
+    if (ch === '$') {
+      const tagMatch = sql.slice(i).match(/^\$[A-Za-z0-9_]*\$/);
+      if (tagMatch) {
+        dollarTag = tagMatch[0]!;
+        out += dollarTag;
+        i += dollarTag.length;
+        state = 'dollar';
+        continue;
+      }
+    }
+
+    const lowerSlice = sql.slice(i, i + needle.length).toLowerCase();
+    if (lowerSlice === needle) {
+      const prev = i > 0 ? sql[i - 1]! : '';
+      if (!/[A-Za-z0-9_]/.test(prev)) {
+        let openIdx = i + needle.length;
+        while (openIdx < sql.length && /\s/.test(sql[openIdx]!)) openIdx += 1;
+        if (sql[openIdx] === '(') {
+          const closeIdx = findMatchingParen(sql, openIdx);
+          if (closeIdx !== -1) {
+            const inner = sql.slice(openIdx + 1, closeIdx);
+            const replacement = build(inner);
+            out += replacement;
+            i = closeIdx + 1;
+            continue;
+          }
+        }
+      }
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return out;
 }
 
 function replaceDateTimeWrapperPatterns(sql: string): string {
