@@ -15,8 +15,11 @@
 --      prices or the customer starts a new checkout (which persists a snapshot).
 -- Stripe / legacy / other providers are left unchanged.
 --
--- This is a one-time migration-time freeze so existing redirect renewals are not
--- blocked solely by the fail-closed verifier introduced with 0065.
+-- Dialect notes:
+--   Steps 2a/2b cast admin_settings text prices to REAL. SQLite CAST is forgiving
+--   (invalid → 0); Postgres throws 22P02. D1 keeps the sqlite-only marked blocks;
+--   api-node strips those markers and runs the -- POSTGRES: variants which guard
+--   with a numeric regex before casting.
 
 -- 1) Checkout-session snapshots (authoritative when present).
 UPDATE subscriptions
@@ -71,7 +74,8 @@ WHERE provider IN ('gopay', 'comgate')
     OR TRIM(COALESCE(expected_currency, '')) = ''
   );
 
--- 2a) Provider-specific admin_settings prices (one-time freeze of configured amount).
+-- 2a) Provider-specific admin_settings prices (D1 / SQLite — CAST is safe).
+/* vmp:sqlite-only */
 UPDATE subscriptions
 SET
   expected_amount_minor = CAST(
@@ -110,7 +114,10 @@ WHERE subscriptions.provider IN ('gopay', 'comgate')
   AND TRIM(COALESCE(p.value, '')) <> ''
   AND CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS REAL) > 0;
 
--- 2b) EUR shared-price fallback when provider currency is EUR and provider price missing.
+-- POSTGRES: UPDATE subscriptions SET expected_amount_minor = CAST(ROUND(CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS DOUBLE PRECISION) * 100) AS INTEGER), expected_currency = COALESCE(NULLIF(UPPER(TRIM((SELECT a.value FROM admin_settings AS a WHERE a.key = subscriptions.provider || '_currency'))), ''), 'CZK') FROM admin_settings AS p WHERE subscriptions.provider IN ('gopay', 'comgate') AND (subscriptions.expected_amount_minor IS NULL OR subscriptions.expected_amount_minor <= 0) AND p.key = CASE LOWER(TRIM(COALESCE(subscriptions.plan_type, 'monthly'))) WHEN 'yearly' THEN subscriptions.provider || '_yearly_price' WHEN 'club' THEN subscriptions.provider || '_club_price' ELSE subscriptions.provider || '_monthly_price' END AND TRIM(COALESCE(p.value, '')) <> '' AND REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') ~ '^[0-9]+(\.[0-9]+)?$' AND CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS DOUBLE PRECISION) > 0;
+
+-- 2b) EUR shared-price fallback (D1 / SQLite).
+/* vmp:sqlite-only */
 UPDATE subscriptions
 SET
   expected_amount_minor = CAST(
@@ -146,6 +153,8 @@ WHERE subscriptions.provider IN ('gopay', 'comgate')
   END
   AND TRIM(COALESCE(p.value, '')) <> ''
   AND CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS REAL) > 0;
+
+-- POSTGRES: UPDATE subscriptions SET expected_amount_minor = CAST(ROUND(CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS DOUBLE PRECISION) * 100) AS INTEGER), expected_currency = 'EUR' FROM admin_settings AS p WHERE subscriptions.provider IN ('gopay', 'comgate') AND (subscriptions.expected_amount_minor IS NULL OR subscriptions.expected_amount_minor <= 0) AND UPPER(TRIM(COALESCE((SELECT a.value FROM admin_settings AS a WHERE a.key = subscriptions.provider || '_currency'), ''))) = 'EUR' AND p.key = CASE LOWER(TRIM(COALESCE(subscriptions.plan_type, 'monthly'))) WHEN 'yearly' THEN 'yearly_price_eur' WHEN 'club' THEN 'club_price_eur' ELSE 'monthly_price_eur' END AND TRIM(COALESCE(p.value, '')) <> '' AND REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') ~ '^[0-9]+(\.[0-9]+)?$' AND CAST(REPLACE(REPLACE(TRIM(p.value), ' ', ''), ',', '.') AS DOUBLE PRECISION) > 0;
 
 -- 2c) Currency-only gaps when amount already exists (session/admin amount without currency).
 UPDATE subscriptions

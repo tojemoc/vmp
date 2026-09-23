@@ -195,6 +195,9 @@ export function translateSqliteToPostgres(sql: string): string {
   // -- POSTGRES: equivalent (see expandPostgresOnlyStatements) for the same path.
   s = stripJsonInsertUpdateStatements(s);
 
+  // /* vmp:sqlite-only */ blocks — D1 runs them; Postgres uses -- POSTGRES: peers.
+  s = stripVmpSqliteOnlyStatements(s);
+
   return s;
 }
 
@@ -462,6 +465,32 @@ function stripJsonInsertUpdateStatements(sql: string): string {
   const stripped = statements.map((statement) => {
     if (JSON_INSERT_UPDATE_RE.test(statement)) {
       return '-- (skipped: SQLite json_insert block not supported on Postgres)';
+    }
+    return statement;
+  });
+
+  return `${stripped.join(';\n\n')};\n`;
+}
+
+const VMP_SQLITE_ONLY_RE = /\/\*\s*vmp:sqlite-only\s*\*\//i;
+
+/**
+ * Drop D1-only statements so -- POSTGRES: peers own the Postgres path.
+ * Only strip when the marker appears as a real block comment immediately before
+ * the UPDATE (ignore doc mentions inside -- line comments).
+ */
+function stripVmpSqliteOnlyStatements(sql: string): string {
+  const statements = splitExecutableSqlStatements(sql);
+  if (statements.length === 0) return sql;
+  if (!statements.some((statement) => VMP_SQLITE_ONLY_RE.test(statement))) {
+    return sql;
+  }
+
+  const stripped = statements.map((statement) => {
+    // Remove -- line comments before testing so doc text cannot trigger a strip.
+    const withoutLineComments = statement.replace(/--.*$/gm, '');
+    if (VMP_SQLITE_ONLY_RE.test(withoutLineComments)) {
+      return '-- (skipped: vmp:sqlite-only block; see -- POSTGRES: peer)';
     }
     return statement;
   });

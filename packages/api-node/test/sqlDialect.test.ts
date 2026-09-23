@@ -437,14 +437,28 @@ describe('translateSqliteDdl migration 0066 price snapshot backfill', () => {
     const out = translateSqliteDdl(raw);
     assert.match(out, /UPDATE subscriptions/i);
     assert.match(out, /FROM admin_settings AS p/i);
-    // EUR predicate must keep COALESCE(subquery, '') intact after btrim cast.
-    assert.match(
-      out,
-      /btrim\s*\(\s*\(\s*COALESCE\s*\(\s*\(\s*SELECT a\.value[\s\S]*?\)\s*,\s*''\s*\)\s*\)\s*::text\s*\)/i,
+    // SQLite-only CAST blocks are stripped; Postgres peers keep a numeric regex guard.
+    assert.match(out, /vmp:sqlite-only block/i);
+    assert.match(out, /~\s*'?\^\[0-9\]/i);
+    assert.doesNotMatch(out, /\/\*\s*vmp:sqlite-only\s*\*\//i);
+  });
+
+  it('does not emit unguarded CAST of admin_settings text to REAL on Postgres', () => {
+    const raw = readFileSync(
+      join(
+        import.meta.dirname,
+        '../../api/migrations/0066_redirect_payment_price_snapshot_backfill.sql',
+      ),
+      'utf8',
     );
-    assert.doesNotMatch(
-      out,
-      /COALESCE\s*\(\s*\(\s*SELECT a\.value[\s\S]*?\)\s*::text\s*\)\s*,\s*''/i,
+    const out = translateSqliteDdl(raw);
+    // Remaining price freezes must require a digit regex before casting.
+    const priceUpdates = splitExecutableSqlStatements(out).filter(
+      (s) => /FROM admin_settings AS p/i.test(s) && /expected_amount_minor/i.test(s),
     );
+    assert.ok(priceUpdates.length >= 2, `expected Postgres price UPDATEs, got ${priceUpdates.length}`);
+    for (const stmt of priceUpdates) {
+      assert.match(stmt, /~\s*'?\^\[0-9\]/i);
+    }
   });
 });
