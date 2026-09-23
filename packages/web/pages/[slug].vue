@@ -56,6 +56,7 @@
 
 <script setup lang="ts">
   import type { CmsBlock, CmsPage, CmsRichTextBlock, CmsRichTextDocument } from '@vmp/shared';
+  import { trackCmsPageView } from '~/utils/cmsPageView';
   import { isCmsReservedSlug } from '~/utils/cmsReservedSlugs';
   import { renderCmsRichTextHtml } from '~/utils/cmsRichTextRender';
   import { fetchCmsMediaUrls } from '~/utils/fetchCmsMediaUrls';
@@ -70,9 +71,7 @@
 
   const { siteSettings } = useSiteSettings();
   const supportEmail = computed(() => siteSettings.value.supportEmail?.trim() || '');
-  const supportMailto = computed(() =>
-    supportEmail.value ? `mailto:${supportEmail.value}` : '',
-  );
+  const supportMailto = computed(() => (supportEmail.value ? `mailto:${supportEmail.value}` : ''));
 
   function throwPageNotFound(): never {
     if (import.meta.server) {
@@ -170,11 +169,19 @@
   );
 
   const { acknowledgeNotice } = usePersonalDataNotice();
+  const { authHeader, isLoggedIn } = useAuth();
 
   onMounted(() => {
     if (slug.value === 'personal-data') {
       acknowledgeNotice();
     }
+    void trackCmsPageView({
+      pageId: page.value.id,
+      slug: page.value.slug,
+      path: `/${page.value.slug}`,
+      apiUrl,
+      authHeader: isLoggedIn.value ? authHeader() : undefined,
+    });
   });
 </script>
 

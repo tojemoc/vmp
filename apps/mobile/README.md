@@ -36,6 +36,8 @@ npm ci
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
 ```
 
+`metro.config.js` remaps TypeScript ESM `.js` import specifiers inside workspace packages (e.g. `@vmp/shared`) to sibling `.ts` sources. Without that, Metro looks for `foo.js.ts` and fails when a runtime import pulls in the shared barrel (see mobile CI / `cmsSystemPages.js`).
+
 `package-lock.json` in this directory is committed so `npm ci` is reproducible. After changing `package.json` versions, run `npm install` here (not the repo root) to refresh this lockfile.
 
 `EXPO_PUBLIC_API_URL` is **required** (no localhost default — that only targets the device itself).
@@ -92,7 +94,7 @@ Both land on Expo Router screen `app/auth/verify.tsx` (required — without it t
 
 The matching association documents are served by the web Worker at `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association`, built from the `MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS` / `MOBILE_APPLE_APP_IDS` deploy vars. Until those are set the routes return 404 and `autoVerify` cannot succeed, so links open the browser instead of the app (checklist **S5**).
 
-**Android browser fallback:** `/auth/verify?client=native` detects Android, does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
+**Android browser fallback:** `/auth/verify?client=native` detects **Chromium** Android browsers (not Firefox), does **not** redeem the token in the browser first, and opens a package-targeted `intent://…#Intent;scheme=https;package=sk.tjm.vmp;…` URL so the installed APK still receives the same HTTPS deep link. Firefox for Android skips the intent bounce and redeems on the web. A “Continue in browser” path (or `?native_fallback=1`) keeps web sign-in. The APK’s `frontend_host` must match the site that sent the email so the intent filter host lines up.
 
 **iOS:** Magic links requested from the native app carry `client=native`. Until AASA is live (or install-bound handoff codes exist), links that open in Safari redeem in the browser — web does not bounce via `vmp://`. Website login uses `client=browser` and redeems in Safari with no PWA/native bounce.
 
@@ -105,9 +107,11 @@ Watch screen **Download** (default `720p`) and **Downloads** list:
 1. `POST /api/offline/devices/register` once → store `deviceId` / `deviceToken` in SecureStore
 2. `POST /api/downloads/:videoId/authorize` with `x-vmp-device-token`
 3. Fetch `GET /api/downloads/:videoId/assets/…?dt=` into app document storage
-4. Rewrite playlists to relative local paths; play `offline-master.m3u8` via `expo-video`
+4. Rewrite playlists to relative local paths; serve the offline tree via a loopback HTTP server (`@dr.pogodin/react-native-static-server`) and play `http://127.0.0.1:<port>/…/offline-master.m3u8` with `expo-video` (`contentType: 'hls'`). iOS AVPlayer rejects `file://` HLS. Android cleartext is scoped to loopback only via `plugins/withAndroidLocalhostCleartext.js` (network security config); release API hosts still require HTTPS.
 
 Requires an R2-hosted HLS video (`r2_assets_required` if only CDN). License expiry is enforced before offline play; renew UI is deferred.
+
+The home catalog always filters to `publish_status === 'published'` (and due schedules), even when `/api/videos` returns drafts for editor+ accounts.
 
 ## Pairing (Tier 2+)
 

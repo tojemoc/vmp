@@ -106,6 +106,8 @@
     embedded?: boolean;
     /** When true, checkout records newsletter opt-out before creating the Stripe session. */
     newsletterOptOut?: boolean;
+    /** Affirmative digital-content / withdrawal consent from the parent panel. */
+    termsAccepted?: boolean;
     /** Mount Apple Pay / Google Pay express buttons. */
     showWalletSurface: boolean;
     /** Show card / PayPal / SEPA payment element. */
@@ -211,6 +213,7 @@
         promoCode: props.promoCode || undefined,
         returnPath: props.returnPath,
         newsletterOptOut: props.newsletterOptOut === true,
+        termsAccepted: props.termsAccepted === true,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -330,7 +333,13 @@
     walletDetectionEmitted = false;
     clearWalletDetectionTimer();
 
-    const nextKey = `${props.planType}:${props.promoCode}:${props.returnPath}:${props.newsletterOptOut === true ? '1' : '0'}`;
+    if (props.termsAccepted !== true) {
+      loading.value = false;
+      initError.value = strings.checkoutTermsRequired;
+      return;
+    }
+
+    const nextKey = `${props.planType}:${props.promoCode}:${props.returnPath}:${props.newsletterOptOut === true ? '1' : '0'}:${props.termsAccepted === true ? '1' : '0'}`;
     sessionKey = nextKey;
 
     try {
@@ -408,7 +417,13 @@
 
   watch(
     () =>
-      [props.planType, props.promoCode, props.returnPath, props.newsletterOptOut === true] as const,
+      [
+        props.planType,
+        props.promoCode,
+        props.returnPath,
+        props.newsletterOptOut === true,
+        props.termsAccepted === true,
+      ] as const,
     () => {
       void setupCheckout();
     },

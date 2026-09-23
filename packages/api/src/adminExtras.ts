@@ -1697,6 +1697,7 @@ type AnalyticsDataset =
   | 'all'
   | 'overview'
   | 'views'
+  | 'pages'
   | 'watchtime'
   | 'retention'
   | 'sources'
@@ -1727,6 +1728,7 @@ function parseAnalyticsQuery(url: URL): { options: AnalyticsQueryOptions; error?
     'all',
     'overview',
     'views',
+    'pages',
     'watchtime',
     'retention',
     'sources',
@@ -1750,7 +1752,7 @@ function parseAnalyticsQuery(url: URL): { options: AnalyticsQueryOptions; error?
     return {
       options: fallbackAnalyticsOptions(),
       error:
-        'dataset must be one of all, overview, views, watchtime, retention, sources, countries, subscriptions, cashflow',
+        'dataset must be one of all, overview, views, pages, watchtime, retention, sources, countries, subscriptions, cashflow',
     };
   if (!formats.includes(format))
     return { options: fallbackAnalyticsOptions(), error: 'format must be json or csv' };
@@ -1950,6 +1952,11 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
     subscriptionChurnRows,
     subscriptionExpiringRows,
     planBreakdownRows,
+    pageViewsTotalRow,
+    pageViewsSeriesRows,
+    pageStatsRows,
+    pageSourceRows,
+    pageCountryRows,
   ] = await Promise.all([
     db
       .prepare(`
@@ -2233,6 +2240,89 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
       GROUP BY plan_type
     `)
       .all(),
+    db
+      .prepare(`
+      SELECT COUNT(DISTINCT session_key) AS total
+      FROM cms_page_view_events
+      WHERE datetime(created_at) >= datetime(?)
+    `)
+      .bind(startAt)
+      .first(),
+    db
+      .prepare(`
+      SELECT
+        ${bucketByCreated} AS bucket,
+        COUNT(DISTINCT session_key) AS unique_sessions
+      FROM cms_page_view_events
+      WHERE datetime(created_at) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `)
+      .bind(startAt)
+      .all(),
+    db
+      .prepare(`
+      WITH per_page AS (
+        SELECT
+          page_id,
+          COUNT(DISTINCT session_key) AS view_count
+        FROM cms_page_view_events
+        WHERE datetime(created_at) >= datetime(?)
+        GROUP BY page_id
+      )
+      SELECT
+        p.id AS page_id,
+        p.title AS title,
+        p.slug AS slug,
+        p.status AS status,
+        p.published_at AS published_at,
+        COALESCE(pp.view_count, 0) AS view_count,
+        COALESCE(lifetime.view_count, 0) AS lifetime_view_count
+      FROM cms_pages p
+      LEFT JOIN per_page pp ON pp.page_id = p.id
+      LEFT JOIN cms_page_view_counts lifetime ON lifetime.page_id = p.id
+      WHERE p.status = 'published'
+      ORDER BY view_count DESC, title ASC
+    `)
+      .bind(startAt)
+      .all(),
+    db
+      .prepare(`
+      SELECT
+        COALESCE(source_category, 'direct') AS source,
+        COUNT(DISTINCT session_key) AS unique_sessions
+      FROM cms_page_view_events
+      WHERE datetime(created_at) >= datetime(?)
+      GROUP BY source
+      ORDER BY unique_sessions DESC
+      LIMIT 12
+    `)
+      .bind(startAt)
+      .all(),
+    db
+      .prepare(`
+      WITH base AS (
+        SELECT
+          session_key,
+          country_code,
+          created_at,
+          ROW_NUMBER() OVER (PARTITION BY session_key ORDER BY datetime(created_at) ASC) AS event_rank
+        FROM cms_page_view_events
+        WHERE datetime(created_at) >= datetime(?)
+      )
+      SELECT
+        country_code AS country,
+        COUNT(DISTINCT session_key) AS unique_sessions
+      FROM base
+      WHERE event_rank = 1
+        AND country_code IS NOT NULL
+        AND country_code NOT IN ('XX', 'T1', '')
+      GROUP BY country_code
+      ORDER BY unique_sessions DESC
+      LIMIT 20
+    `)
+      .bind(startAt)
+      .all(),
   ]);
 
   const viewSeries = Array.isArray(viewsSeriesRows?.results)
@@ -2388,6 +2478,7 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
   });
 
   const totalViews = Number(views?.total || 0);
+  const totalCmsPageViews = Number(pageViewsTotalRow?.total || 0);
   const totalNewSubscriptions = subscriptionTrends.reduce(
     (sum, row) => sum + row.newSubscriptions,
     0,
@@ -2426,8 +2517,37 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
     };
   });
 
+  const pageViewSeries = Array.isArray(pageViewsSeriesRows?.results)
+    ? pageViewsSeriesRows.results.map((row: any) => ({
+        bucket: String(row.bucket),
+        uniqueSessions: Number(row.unique_sessions || 0),
+      }))
+    : [];
+
+  const pageStats = (pageStatsRows?.results ?? []).map((row: any) => ({
+    pageId: String(row.page_id),
+    title: String(row.title ?? ''),
+    slug: row.slug ? String(row.slug) : null,
+    status: row.status ? String(row.status) : null,
+    publishedAt: row.published_at ? String(row.published_at) : null,
+    viewCount: Number(row.view_count || 0),
+    lifetimeViewCount: Number(row.lifetime_view_count || 0),
+  }));
+
+  const pageTrafficSources = (pageSourceRows?.results ?? []).map((row: any) => ({
+    source: String(row.source || 'direct'),
+    unique_sessions: Number(row.unique_sessions || 0),
+    hits: Number(row.unique_sessions || 0),
+  }));
+
+  const pageCountries = (pageCountryRows?.results ?? []).map((row: any) => ({
+    country: String(row.country),
+    uniqueSessions: Number(row.unique_sessions || 0),
+  }));
+
   const kpis = {
     totalUniqueViews: totalViews,
+    totalCmsPageViews,
     totalWatchSeconds,
     totalWatchTimeLabel: formatWatchSeconds(totalWatchSeconds),
     segmentRequests,
@@ -2445,6 +2565,8 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
   const definitions = {
     totalUniqueViews:
       'Playback starts counted once per viewer session per video after min segment/watch thresholds.',
+    totalCmsPageViews:
+      'CMS page views counted once per visitor session per page in the selected range (30-minute session buckets).',
     totalWatchSeconds:
       'Cumulative seconds watched across all segment requests; rewatches and repeat visits add to the total.',
     segmentRequests: 'Total HLS segment requests served in the selected range.',
@@ -2460,6 +2582,11 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
       'Playback starts by country using IP geolocation at the first segment request in each session.',
     countryWatchTime: 'Cumulative watch seconds by country; rewatches add to the total.',
     heatmap: 'Timeline engagement for one video: watch intensity by position percent (0–99).',
+    pageStats:
+      'Published CMS pages with unique visitor sessions in the selected range and lifetime view totals.',
+    pageTrafficSources:
+      'CMS page traffic sources attributed from the document referrer / UTM params.',
+    pageCountries: 'CMS page views by country using CF-IPCountry on the pageview beacon.',
   };
 
   return {
@@ -2478,6 +2605,10 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
       totalUniqueSessions: totalViews,
       series: viewSeries,
     },
+    pageViews: {
+      totalUniqueSessions: totalCmsPageViews,
+      series: pageViewSeries,
+    },
     watchTime: {
       totalSeconds: totalWatchSeconds,
       totalLabel: formatWatchSeconds(totalWatchSeconds),
@@ -2487,9 +2618,12 @@ export async function buildSegmentAnalyticsSnapshotWithOptions(
       views: countryViews,
       watchTime: countryWatchTime,
     },
+    pageCountries,
     heatmap,
     trafficSources: sourceRows?.results ?? [],
+    pageTrafficSources,
     videoStats,
+    pageStats,
     subscriptionOverview: {
       statusBreakdown: subsStatusRows?.results ?? [],
       trends: subscriptionTrends,
@@ -2520,6 +2654,16 @@ function buildAnalyticsCsvExport(snapshot: any, dataset: AnalyticsDataset) {
     rows.push('bucket,unique_sessions');
     for (const row of snapshot.views?.series ?? []) {
       rows.push(`${escapeCsvCell(row.bucket)},${escapeCsvCell(row.uniqueSessions)}`);
+    }
+    return rows.join('\n');
+  }
+  if (dataset === 'pages') {
+    rows.push('format:cms_page_views_v1');
+    rows.push('page_id,title,slug,view_count,lifetime_view_count');
+    for (const row of snapshot.pageStats ?? []) {
+      rows.push(
+        `${escapeCsvCell(row.pageId)},${escapeCsvCell(row.title)},${escapeCsvCell(row.slug ?? '')},${escapeCsvCell(row.viewCount)},${escapeCsvCell(row.lifetimeViewCount ?? 0)}`,
+      );
     }
     return rows.join('\n');
   }
@@ -2803,4 +2947,201 @@ export async function logSegmentEvent(env: any, payload: any) {
       is_new_session: (sessionInsert.meta?.changes ?? 0) > 0,
     });
   }
+}
+
+async function sha256HexLocal(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export function buildPageViewSessionKey(payload: {
+  pageId?: string | null;
+  userId?: string | null;
+  clientSessionId?: string | null;
+  ipHash?: string | null;
+  timestampMs?: number | null;
+}) {
+  const pageId =
+    typeof payload?.pageId === 'string' && payload.pageId.trim()
+      ? payload.pageId.trim()
+      : 'unknown';
+  const userId =
+    typeof payload?.userId === 'string' && payload.userId.trim() ? payload.userId.trim() : '';
+  const clientSessionId =
+    typeof payload?.clientSessionId === 'string' && payload.clientSessionId.trim()
+      ? payload.clientSessionId.trim()
+      : '';
+  const ipHash =
+    typeof payload?.ipHash === 'string' && payload.ipHash.trim() ? payload.ipHash.trim() : '';
+  const actorKey = userId
+    ? `u:${userId}`
+    : clientSessionId
+      ? `c:${clientSessionId}`
+      : ipHash
+        ? `i:${ipHash}`
+        : 'anon';
+  const eventTimestampMs = Number.isFinite(payload?.timestampMs)
+    ? Number(payload.timestampMs)
+    : Date.now();
+  const sessionBucket = Math.floor(eventTimestampMs / (30 * 60 * 1000));
+  return `${pageId}:${actorKey}:${sessionBucket}`;
+}
+
+export async function logCmsPageViewEvent(env: any, payload: any) {
+  const db = getDb(env);
+  const pageId =
+    typeof payload?.pageId === 'string' && payload.pageId.trim() ? payload.pageId.trim() : '';
+  const pageSlug =
+    typeof payload?.pageSlug === 'string' && payload.pageSlug.trim() ? payload.pageSlug.trim() : '';
+  const path = typeof payload?.path === 'string' && payload.path.trim() ? payload.path.trim() : '';
+  if (!pageId || !pageSlug || !path) return { ok: false as const, reason: 'invalid_payload' };
+
+  const source = classifySegmentSource(payload);
+  const sessionKey = buildPageViewSessionKey(payload);
+  const countryCode = normalizeCountryCode(payload?.countryCode);
+
+  await db
+    .prepare(`
+    INSERT INTO cms_page_view_events (
+      id, page_id, page_slug, user_id, session_key, path, referer, source_host,
+      source_category, source_detail, campaign_source, campaign_medium, country_code, ip_hash, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      pageId,
+      pageSlug,
+      payload.userId || null,
+      sessionKey,
+      path,
+      payload.referer || null,
+      source.sourceHost || null,
+      source.category,
+      source.detail,
+      source.campaignSource,
+      source.campaignMedium,
+      countryCode,
+      payload.ipHash || null,
+    )
+    .run();
+
+  const sessionInsert = await db
+    .prepare(`
+    INSERT OR IGNORE INTO cms_page_view_count_sessions (page_id, session_id) VALUES (?, ?)
+  `)
+    .bind(pageId, sessionKey)
+    .run();
+  const isNewSession = (sessionInsert.meta?.changes ?? 0) > 0;
+  if (isNewSession) {
+    await db
+      .prepare(`
+      INSERT INTO cms_page_view_counts (page_id, view_count, updated_at)
+      VALUES (?, 1, CURRENT_TIMESTAMP)
+      ON CONFLICT(page_id) DO UPDATE SET
+        view_count = view_count + 1,
+        updated_at = CURRENT_TIMESTAMP
+    `)
+      .bind(pageId)
+      .run();
+  }
+
+  log({
+    service: 'cms_page_analytics',
+    event: 'page_view_logged',
+    page_id: pageId,
+    source_category: source.category,
+    has_user: Boolean(payload.userId),
+    is_new_session: isNewSession,
+  });
+
+  return { ok: true as const, sessionKey, isNewSession };
+}
+
+/**
+ * Public beacon: POST /api/analytics/pageview
+ * Counts published CMS page views for the admin Analytics tab (first-party, not PostHog).
+ */
+export async function handleCmsPageView(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  let body: any = null;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body', code: 'invalid_json' }, 400, corsHeaders);
+  }
+
+  const pageId = typeof body?.pageId === 'string' ? body.pageId.trim() : '';
+  if (!pageId || pageId.length > 128) {
+    return jsonResponse({ error: 'pageId is required', code: 'invalid_payload' }, 400, corsHeaders);
+  }
+
+  const db = getDb(env);
+  const page = await db
+    .prepare(`
+    SELECT id, slug, status FROM cms_pages WHERE id = ? LIMIT 1
+  `)
+    .bind(pageId)
+    .first();
+  if (!page || page.status !== 'published') {
+    return jsonResponse({ error: 'Page not found', code: 'not_found' }, 404, corsHeaders);
+  }
+
+  let userId: string | null = null;
+  try {
+    const payload = await requireAuth(request, env);
+    const sub = typeof payload?.sub === 'string' ? payload.sub.trim() : '';
+    userId = sub || null;
+  } catch {
+    // Anonymous page views are expected.
+  }
+
+  const rawIp =
+    request.headers.get('CF-Connecting-IP') ||
+    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+    '';
+  const ipHash = rawIp ? await sha256HexLocal(rawIp) : null;
+  const countryCode = request.headers.get('CF-IPCountry');
+
+  const refererFromBody = typeof body?.referer === 'string' ? body.referer : '';
+  const refererHeader = request.headers.get('referer') || '';
+  const referer = refererFromBody || refererHeader || '';
+
+  let sourceHost: string | null = null;
+  try {
+    sourceHost = referer ? new URL(referer).host : null;
+  } catch {
+    sourceHost = null;
+  }
+
+  const clientSessionId =
+    typeof body?.clientSessionId === 'string' && body.clientSessionId.trim()
+      ? body.clientSessionId.trim().slice(0, 64)
+      : null;
+  const pathFromBody = typeof body?.path === 'string' ? body.path.trim() : '';
+  const path = pathFromBody || `/${String(page.slug)}`;
+
+  const result = await logCmsPageViewEvent(env, {
+    pageId: String(page.id),
+    pageSlug: String(page.slug),
+    userId,
+    path: path.slice(0, 512),
+    referer: referer.slice(0, 1024),
+    sourceHost,
+    ipHash,
+    countryCode,
+    clientSessionId,
+    timestampMs: Date.now(),
+  });
+
+  if (!result.ok) {
+    return jsonResponse({ error: 'Failed to record page view' }, 400, corsHeaders);
+  }
+
+  return jsonResponse({ ok: true, counted: result.isNewSession }, 200, corsHeaders);
 }

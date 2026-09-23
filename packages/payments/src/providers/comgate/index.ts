@@ -1,5 +1,5 @@
 /**
- * Comgate payment provider (draft).
+ * Comgate payment provider (production-ready redirect checkout).
  *
  * Checkout is redirect-only via `redirect` URL from /v1.0/create.
  * Recurring billing uses initRecurring=true on the initial payment, then
@@ -11,6 +11,7 @@
  * merchant's account. Card payments only via ČSOB or Česká spořitelna.
  */
 
+import { timingSafeEqualString } from '../../timingSafe.js';
 import type {
   CheckoutSession,
   ComgatePaymentsConfig,
@@ -23,9 +24,14 @@ import type {
   RefundOptions,
   Subscription,
 } from '../../types.js';
+import { normalizeRedirectGatewayInvoice } from '../redirectInvoice.js';
 
 const DEFAULT_API_BASE = 'https://payments.comgate.cz';
 const REQUEST_TIMEOUT_MS = 10_000;
+
+function isComgateCancelledStatus(status: unknown): boolean {
+  return /^CANCELLED$/i.test(String(status ?? '').trim());
+}
 
 export type ComgatePaymentStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'AUTHORIZED' | string;
 
@@ -122,6 +128,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       recurringPayments: true,
       refunds: true,
       webhooks: true,
+      immediateCancellation: true,
     },
     isConfigured: () => Boolean(config.merchant && config.secret && config.frontendUrl),
 
@@ -226,7 +233,33 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
     },
 
     async cancelSubscription(subscriptionId: string): Promise<void> {
-      await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+      try {
+        await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+      } catch (err) {
+        // Only treat ambiguous cancel failures as success when status is CANCELLED.
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isComgateCancelledStatus(status.status)) return;
+        } catch {
+          // fall through
+        }
+        throw err;
+      }
+    },
+
+    async cancelSubscriptionImmediately(subscriptionId: string): Promise<void> {
+      try {
+        await comgatePost('/v1.0/cancel', { transId: subscriptionId });
+      } catch (err) {
+        // Do not match on err.message — it always contains the path `/v1.0/cancel`.
+        try {
+          const status = await getPaymentStatus(subscriptionId);
+          if (isComgateCancelledStatus(status.status)) return;
+        } catch {
+          // fall through and rethrow original cancel error
+        }
+        throw err;
+      }
     },
 
     async getCustomer(customerId: string): Promise<PaymentCustomer | null> {
@@ -244,7 +277,7 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
     },
 
     /**
-     * Comgate webhooks include the `secret` field. Verify it matches.
+     * Comgate webhooks include the `secret` field. Verify it matches (constant-time).
      */
     async verifyWebhookSignature(
       rawBody: Buffer | string,
@@ -253,7 +286,8 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
       if (!config.secret) return false;
       const body = typeof rawBody === 'string' ? rawBody : new TextDecoder().decode(rawBody);
       const parsed = parseFormResponse(body);
-      return parsed.secret === config.secret;
+      const provided = String(parsed.secret ?? '');
+      return await timingSafeEqualString(provided, config.secret);
     },
 
     async handleWebhook(rawBody: Buffer | string): Promise<NormalizedPaymentEvent> {
@@ -274,16 +308,48 @@ export function createComgateProvider(config: ComgatePaymentsConfig): PaymentPro
         String(status.status ?? notification.status ?? ''),
         isRecurring,
       );
+      const subscriptionId = initRecurringId || transId;
+      // Comgate status returns price in minor units (haléře).
+      const amountMinor = Number(status.price ?? notification.price);
+      const currency = String(status.curr ?? notification.curr ?? '')
+        .trim()
+        .toUpperCase();
+      const email = String(status.email ?? notification.email ?? '')
+        .trim()
+        .toLowerCase();
+      const label = String(status.label ?? '').trim();
+      const planFromLabel = label.toLowerCase().includes('club')
+        ? 'club'
+        : label.toLowerCase().includes('year')
+          ? 'yearly'
+          : label.toLowerCase().includes('month')
+            ? 'monthly'
+            : null;
+      const invoice =
+        eventType === 'checkout.completed' || eventType === 'invoice.paid'
+          ? normalizeRedirectGatewayInvoice({
+              providerInvoiceId: transId,
+              providerPaymentId: transId,
+              providerSubscriptionId: subscriptionId,
+              amountMinor: Number.isFinite(amountMinor) ? amountMinor : 0,
+              currency: currency || 'CZK',
+              email: email || null,
+              planType: planFromLabel,
+            })
+          : null;
 
       return {
         type: eventType,
         providerId: 'comgate',
         // Keep the original checkout transId as the subscription id; the current
         // payment's transId is stored separately as providerOrderId.
-        subscriptionId: initRecurringId || transId,
+        subscriptionId,
         providerOrderId: transId,
         ...(refId ? { purchaseId: refId } : {}),
         status: String(status.status ?? ''),
+        ...(Number.isFinite(amountMinor) && amountMinor > 0 ? { amountMinor } : {}),
+        ...(currency ? { currency } : {}),
+        ...(invoice ? { invoice } : {}),
         raw: status,
       };
     },

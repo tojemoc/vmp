@@ -4,6 +4,7 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
+import { linkCheckoutConsentSubscription, persistCheckoutConsent } from './checkoutConsent.js';
 import { applyCheckoutNewsletterOptOut } from './newsletterPreference.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
@@ -22,6 +23,7 @@ import {
   type DbPaymentProvider,
   type NormalizedPaymentEvent,
   type PaymentProviderId,
+  type PlanType,
 } from '@vmp/payments';
 import {
   CUSTOMER_SAFE_BANK_PAYMENTS_UNAVAILABLE,
@@ -39,7 +41,10 @@ import {
   getPaymentProviders,
   isComgateConfigured,
   isGoPayConfigured,
+  isGoPayUsingSandbox,
+  isNonLocalFrontendUrl,
   providerIdToDbProvider,
+  resolveGoPayApiBase,
   resolvePublicEnabledProviders,
   toApiProviderId,
   toSupportedApiProviderIds,
@@ -53,7 +58,6 @@ import {
 
 export { parseLocaleNumber } from './parseLocaleNumber.js';
 
-type PlanType = 'monthly' | 'yearly' | 'club';
 type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'cancelled';
 
 async function getAllowedPlans(env: any): Promise<PlanType[]> {
@@ -122,6 +126,76 @@ async function buildAdminPlanList(env: any) {
 
 function parseConfiguredPrice(value: unknown): number | null {
   return parseLocaleNumber(value);
+}
+
+type RedirectPriceSnapshot = {
+  amountMinor: number;
+  currency: string;
+};
+
+/** Resolve live admin pricing into a checkout snapshot (amount minor + currency). */
+async function resolveRedirectPriceSnapshot(
+  env: any,
+  provider: 'gopay' | 'comgate',
+  planType: PlanType,
+): Promise<RedirectPriceSnapshot | null> {
+  const pricing = await getEffectivePricingSettings(env, provider);
+  const expectedMajor = pricing[planType];
+  if (expectedMajor == null || !(expectedMajor > 0)) return null;
+  const currencyKey = provider === 'gopay' ? 'gopay_currency' : 'comgate_currency';
+  const stored = await getSetting(env, currencyKey, { defaultValue: 'CZK', ttlSeconds: 300 });
+  const currency =
+    String(stored ?? 'CZK')
+      .trim()
+      .toUpperCase() || '';
+  if (!currency) return null;
+  return {
+    amountMinor: Math.round(expectedMajor * 100),
+    currency,
+  };
+}
+
+function parseRedirectPriceSnapshot(row: {
+  expected_amount_minor?: unknown;
+  expected_currency?: unknown;
+} | null): RedirectPriceSnapshot | null {
+  if (!row) return null;
+  const amountMinor = Number(row.expected_amount_minor);
+  const currency = String(row.expected_currency ?? '')
+    .trim()
+    .toUpperCase();
+  if (!Number.isFinite(amountMinor) || !(amountMinor > 0) || !currency) return null;
+  return { amountMinor: Math.round(amountMinor), currency };
+}
+
+/**
+ * Verify a paid redirect-gateway event against an immutable checkout/subscription
+ * price snapshot. Fails closed when amount, currency, or expected price is missing.
+ */
+function verifyRedirectPaymentAmount(
+  provider: 'gopay' | 'comgate',
+  event: { amountMinor?: number; currency?: string },
+  expected: RedirectPriceSnapshot | null,
+): string | null {
+  if (event.amountMinor == null || !(event.amountMinor > 0)) {
+    return `${provider}_missing_amount`;
+  }
+  const paidCurrency = String(event.currency ?? '')
+    .trim()
+    .toUpperCase();
+  if (!paidCurrency) {
+    return `${provider}_missing_currency`;
+  }
+  if (expected == null || !(expected.amountMinor > 0) || !expected.currency) {
+    return `${provider}_missing_price`;
+  }
+  if (Math.round(event.amountMinor) !== Math.round(expected.amountMinor)) {
+    return `${provider}_amount_mismatch`;
+  }
+  if (paidCurrency !== expected.currency) {
+    return `${provider}_currency_mismatch`;
+  }
+  return null;
 }
 
 async function getPricingSettings(env: any, provider?: 'stripe' | 'legacy' | 'gopay' | 'comgate') {
@@ -228,7 +302,13 @@ export async function resolveComgateCheckoutIdentity(
   db: {
     prepare: (sql: string) => {
       bind: (...args: unknown[]) => {
-        first: () => Promise<{ id?: unknown; user_id?: unknown; plan_type?: unknown } | null>;
+        first: () => Promise<{
+          id?: unknown;
+          user_id?: unknown;
+          plan_type?: unknown;
+          expected_amount_minor?: unknown;
+          expected_currency?: unknown;
+        } | null>;
       };
     };
   },
@@ -238,6 +318,7 @@ export async function resolveComgateCheckoutIdentity(
   planType: PlanType;
   pendingSessionId: string | null;
   fromPendingSession: boolean;
+  priceSnapshot: RedirectPriceSnapshot | null;
 } | null> {
   const subscriptionId = String(opts.subscriptionId ?? '').trim();
   const purchaseId = String(opts.purchaseId ?? '').trim();
@@ -245,7 +326,7 @@ export async function resolveComgateCheckoutIdentity(
 
   const existing = await db
     .prepare(
-      `SELECT user_id, plan_type FROM subscriptions
+      `SELECT user_id, plan_type, expected_amount_minor, expected_currency FROM subscriptions
        WHERE provider = 'comgate' AND (provider_subscription_id = ? OR purchase_id = ?)
        LIMIT 1`,
     )
@@ -258,12 +339,14 @@ export async function resolveComgateCheckoutIdentity(
       planType: normalizePlanType(String(existing.plan_type ?? 'monthly')),
       pendingSessionId: null,
       fromPendingSession: false,
+      priceSnapshot: parseRedirectPriceSnapshot(existing),
     };
   }
 
   const pending = await db
     .prepare(
-      `SELECT id, user_id, plan_type FROM payment_checkout_sessions
+      `SELECT id, user_id, plan_type, expected_amount_minor, expected_currency
+       FROM payment_checkout_sessions
        WHERE provider = 'comgate' AND status = 'pending'
          AND (checkout_token = ? OR provider_checkout_id = ?)
        LIMIT 1`,
@@ -278,7 +361,40 @@ export async function resolveComgateCheckoutIdentity(
     planType: normalizePlanType(String(pending.plan_type ?? 'monthly')),
     pendingSessionId: String(pending.id ?? '').trim() || null,
     fromPendingSession: true,
+    priceSnapshot: parseRedirectPriceSnapshot(pending),
   };
+}
+
+async function loadRedirectPriceSnapshot(
+  db: any,
+  provider: 'gopay' | 'comgate',
+  opts: { subscriptionId: string; purchaseId?: string },
+): Promise<RedirectPriceSnapshot | null> {
+  const subscriptionId = String(opts.subscriptionId ?? '').trim();
+  const purchaseId = String(opts.purchaseId ?? '').trim();
+  if (!subscriptionId && !purchaseId) return null;
+
+  const existing = await db
+    .prepare(
+      `SELECT expected_amount_minor, expected_currency FROM subscriptions
+       WHERE provider = ? AND provider_subscription_id = ?
+       LIMIT 1`,
+    )
+    .bind(provider, subscriptionId || purchaseId)
+    .first();
+  const fromSub = parseRedirectPriceSnapshot(existing);
+  if (fromSub) return fromSub;
+
+  const pending = await db
+    .prepare(
+      `SELECT expected_amount_minor, expected_currency FROM payment_checkout_sessions
+       WHERE provider = ? AND status = 'pending'
+         AND (checkout_token = ? OR provider_checkout_id = ?)
+       LIMIT 1`,
+    )
+    .bind(provider, purchaseId || subscriptionId, subscriptionId || purchaseId)
+    .first();
+  return parseRedirectPriceSnapshot(pending);
 }
 
 async function upsertSubscriptionRow(
@@ -295,9 +411,20 @@ async function upsertSubscriptionRow(
     stripeCustomerId?: string | null;
     currentPeriodEnd?: string | null;
     cancelAtPeriodEnd?: boolean;
+    expectedAmountMinor?: number | null;
+    expectedCurrency?: string | null;
   },
 ) {
   const cancelAtPeriodEnd = params.cancelAtPeriodEnd === true ? 1 : 0;
+  const expectedAmountMinor =
+    params.expectedAmountMinor != null &&
+    Number.isFinite(params.expectedAmountMinor) &&
+    params.expectedAmountMinor > 0
+      ? Math.round(params.expectedAmountMinor)
+      : null;
+  const expectedCurrency = String(params.expectedCurrency ?? '')
+    .trim()
+    .toUpperCase() || null;
   await db
     .prepare(`
     INSERT INTO subscriptions
@@ -314,9 +441,11 @@ async function upsertSubscriptionRow(
         stripe_customer_id,
         current_period_end,
         cancel_at_period_end,
+        expected_amount_minor,
+        expected_currency,
         updated_at
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(provider, provider_subscription_id) DO UPDATE SET
       user_id                  = excluded.user_id,
       status                   = excluded.status,
@@ -327,6 +456,8 @@ async function upsertSubscriptionRow(
       stripe_customer_id       = excluded.stripe_customer_id,
       current_period_end       = excluded.current_period_end,
       cancel_at_period_end     = excluded.cancel_at_period_end,
+      expected_amount_minor    = COALESCE(excluded.expected_amount_minor, subscriptions.expected_amount_minor),
+      expected_currency        = COALESCE(excluded.expected_currency, subscriptions.expected_currency),
       updated_at               = CURRENT_TIMESTAMP
   `)
     .bind(
@@ -342,6 +473,8 @@ async function upsertSubscriptionRow(
       params.stripeCustomerId ?? null,
       params.currentPeriodEnd ?? null,
       cancelAtPeriodEnd,
+      expectedAmountMinor,
+      expectedCurrency,
     )
     .run();
 }
@@ -458,6 +591,24 @@ async function upsertSubscriptionFromNormalizedEvent(
     currentPeriodEnd,
     cancelAtPeriodEnd,
   });
+
+  const consentSubId = providerSubscriptionId || stripeSubscriptionId;
+  if (consentSubId) {
+    try {
+      await linkCheckoutConsentSubscription(db, {
+        userId,
+        provider: providerIdToDbProvider(event.providerId),
+        subscriptionId: consentSubId,
+        providerSessionId: event.providerOrderId ?? null,
+      });
+    } catch (err) {
+      console.warn(
+        '[payments] checkout consent link failed',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   return userId;
 }
 
@@ -779,6 +930,8 @@ export async function handleAdminPaymentSettings(request: any, env: any, corsHea
         comgateCurrency: valueByKey.comgate_currency ?? 'CZK',
         gopayConfigured: isGoPayConfigured(env),
         comgateConfigured: isComgateConfigured(env),
+        gopayApiBase: resolveGoPayApiBase(env),
+        gopaySandbox: isGoPayUsingSandbox(env),
         stripePriceIds: {
           monthly: valueByKey.stripe_price_monthly ?? '',
           yearly: valueByKey.stripe_price_yearly ?? '',
@@ -1098,13 +1251,16 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
 
 /**
  * POST /api/payments/checkout — protected
- * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath?, newsletterOptOut? }
+ * Body: { planType: 'monthly'|'yearly'|'club', provider?, promoCode?, returnPath?, newsletterOptOut?, termsAccepted? }
  * Stripe: embedded Checkout Session (ui_mode elements) → { clientSecret }.
  *
  * newsletterOptOut (optional boolean): when true, records that the subscriber
  * does not want the creator newsletter. Omitted / false leaves any existing
  * account opt-out unchanged — clearing remains an explicit account action.
  * System email is unaffected.
+ *
+ * termsAccepted (required true): affirmative acknowledgment of immediate digital
+ * content delivery / statutory withdrawal conditions (checkout_consents).
  */
 export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user;
@@ -1126,12 +1282,26 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   const planType = normalizePlanType(body.planType);
   if (body?.newsletterOptOut != null && typeof body.newsletterOptOut !== 'boolean') {
     return jsonResponse(
-      { error: 'newsletterOptOut must be a boolean when provided', code: 'invalid_newsletter_opt_out' },
+      {
+        error: 'newsletterOptOut must be a boolean when provided',
+        code: 'invalid_newsletter_opt_out',
+      },
       400,
       corsHeaders,
     );
   }
   const newsletterOptOut = body?.newsletterOptOut === true;
+  if (body?.termsAccepted !== true) {
+    return jsonResponse(
+      {
+        error:
+          'You must accept the digital content terms (immediate access / withdrawal conditions) before checkout.',
+        code: 'terms_not_accepted',
+      },
+      400,
+      corsHeaders,
+    );
+  }
 
   try {
     const db = getDb(env);
@@ -1216,6 +1386,22 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
 
+    if (
+      providerId === 'gopay' &&
+      isGoPayUsingSandbox(env) &&
+      isNonLocalFrontendUrl(env.FRONTEND_URL)
+    ) {
+      return jsonResponse(
+        {
+          error:
+            'GoPay is still pointed at the sandbox API. Set GOPAY_API_BASE=https://gate.gopay.cz/api before taking live payments.',
+          code: 'gopay_sandbox_in_production',
+        },
+        503,
+        corsHeaders,
+      );
+    }
+
     if (!provider.capabilities.newSubscriptions) {
       const legacyRelink = await db
         .prepare(`
@@ -1266,6 +1452,13 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     await applyCheckoutNewsletterOptOut(db, user.sub, newsletterOptOut);
 
     const returnPath = normalizeReturnPath(body?.returnPath);
+    const frontendUrl = String(env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    // Stripe Checkout `consent_collection.terms_of_service` needs a Dashboard ToS URL.
+    // Gate behind admin_settings so first-party checkbox remains the always-on consent path.
+    const stripeTosCollection =
+      String(await getSetting(env, 'stripe_checkout_tos_collection', { defaultValue: '0' })) ===
+      '1';
+    const termsOfServiceUrl = stripeTosCollection ? `${frontendUrl}/personal-data` : undefined;
     const einvoicingEnabled =
       String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1';
     const sellerJurisdiction = String(
@@ -1281,6 +1474,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       planType,
       returnPath,
       einvoicingCheckout,
+      ...(termsOfServiceUrl ? { termsOfServiceUrl } : {}),
       ...(typeof body?.purchaseId === 'string' ? { purchaseId: body.purchaseId } : {}),
       ...(promoMeta
         ? {
@@ -1296,6 +1490,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
         : {}),
     });
 
+    const providerSessionId =
+      String(session.orderId ?? session.metadata?.refId ?? '').trim() || null;
+    await persistCheckoutConsent(db, {
+      userId: user.sub,
+      provider: apiProvider,
+      providerSessionId,
+      checkoutSessionId: null,
+    });
+
     if (session.clientSecret) {
       return jsonResponse(
         { clientSecret: session.clientSecret, provider: apiProvider },
@@ -1304,11 +1507,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
     if (session.checkoutUrl) {
-      if (apiProvider === 'comgate') {
-        // Comgate cannot carry free-form metadata on the payment object. Persist a
-        // pending payment_checkout_sessions row (table from migration 0010) so the
-        // webhook can resolve userId/planType on first purchase.
-        const refId = String(session.metadata?.refId ?? '').trim();
+      if (apiProvider === 'comgate' || apiProvider === 'gopay') {
+        // Persist pending checkout + immutable price snapshot so webhooks verify against
+        // the amount charged at create time, not live admin_settings.
+        const refId = String(session.metadata?.refId ?? session.metadata?.orderNumber ?? '').trim();
         const orderId = String(session.orderId ?? '').trim();
         if (!refId || !orderId) {
           return jsonResponse(
@@ -1320,14 +1522,35 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
             corsHeaders,
           );
         }
+        const priceSnapshot = await resolveRedirectPriceSnapshot(env, apiProvider, planType);
+        if (!priceSnapshot) {
+          return jsonResponse(
+            {
+              error: 'Plan price is not configured for this payment provider.',
+              code: `${apiProvider}_missing_price`,
+            },
+            503,
+            corsHeaders,
+          );
+        }
         await db
           .prepare(
             `INSERT INTO payment_checkout_sessions (
               id, user_id, provider, plan_type, checkout_token, provider_checkout_id, status,
+              expected_amount_minor, expected_currency,
               created_at, updated_at
-            ) VALUES (?, ?, 'comgate', ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           )
-          .bind(crypto.randomUUID(), user.sub, planType, refId, orderId)
+          .bind(
+            crypto.randomUUID(),
+            user.sub,
+            apiProvider,
+            planType,
+            refId,
+            orderId,
+            priceSnapshot.amountMinor,
+            priceSnapshot.currency,
+          )
           .run();
       }
       return jsonResponse(
@@ -1576,6 +1799,25 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
       if (!userId || !subscriptionId) {
         return jsonResponse({ ok: true, ignored: true }, 200, corsHeaders);
       }
+      const priceSnapshot = await loadRedirectPriceSnapshot(db, 'gopay', {
+        subscriptionId,
+        purchaseId: String(event.purchaseId ?? '').trim(),
+      });
+      const amountError = verifyRedirectPaymentAmount('gopay', event, priceSnapshot);
+      if (amountError) {
+        console.error('[gopay webhook] amount verification failed', {
+          code: amountError,
+          subscriptionId,
+          amountMinor: event.amountMinor,
+          currency: event.currency,
+          planType,
+        });
+        return jsonResponse(
+          { error: 'Payment amount mismatch', code: amountError },
+          400,
+          corsHeaders,
+        );
+      }
       await upsertSubscriptionRow(db, {
         userId,
         planType,
@@ -1584,11 +1826,34 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
         providerSubscriptionId: subscriptionId,
         providerCustomerId: userId,
         currentPeriodEnd: periodEndIsoForPlan(planType),
+        expectedAmountMinor: priceSnapshot!.amountMinor,
+        expectedCurrency: priceSnapshot!.currency,
       });
+      await db
+        .prepare(
+          `UPDATE payment_checkout_sessions
+           SET status = 'completed',
+               provider_subscription_id = ?,
+               completed_at = CURRENT_TIMESTAMP,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE provider = 'gopay' AND status = 'pending'
+             AND (provider_checkout_id = ? OR checkout_token = ?)`,
+        )
+        .bind(subscriptionId, subscriptionId, String(event.purchaseId ?? '').trim() || subscriptionId)
+        .run();
       try {
         await syncSubscriptionNewsletter(db, userId, 'active', env);
       } catch (brevoErr) {
         console.error('[gopay webhook] newsletter sync failed', { userId, err: brevoErr });
+      }
+      try {
+        await handlePaymentInvoicePaid(env, db, userId, {
+          providerId: 'gopay',
+          ...(event.invoice ? { invoice: event.invoice } : {}),
+          planType,
+        });
+      } catch (invoiceErr) {
+        console.error('[gopay webhook] e-invoice failed', { userId, err: invoiceErr });
       }
       return jsonResponse({ ok: true }, 200, corsHeaders);
     }
@@ -1599,13 +1864,31 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
       }
       const existing = await db
         .prepare(
-          `SELECT user_id, plan_type FROM subscriptions
+          `SELECT user_id, plan_type, expected_amount_minor, expected_currency FROM subscriptions
            WHERE provider = 'gopay' AND provider_subscription_id = ? LIMIT 1`,
         )
         .bind(subscriptionId)
         .first();
       if (existing?.user_id) {
         const existingPlan = normalizePlanType(String(existing.plan_type ?? planType));
+        const priceSnapshot =
+          parseRedirectPriceSnapshot(existing) ??
+          (await loadRedirectPriceSnapshot(db, 'gopay', { subscriptionId }));
+        const amountError = verifyRedirectPaymentAmount('gopay', event, priceSnapshot);
+        if (amountError) {
+          console.error('[gopay webhook] renewal amount verification failed', {
+            code: amountError,
+            subscriptionId,
+            amountMinor: event.amountMinor,
+            currency: event.currency,
+            planType: existingPlan,
+          });
+          return jsonResponse(
+            { error: 'Payment amount mismatch', code: amountError },
+            400,
+            corsHeaders,
+          );
+        }
         await upsertSubscriptionRow(db, {
           userId: String(existing.user_id),
           planType: existingPlan,
@@ -1614,6 +1897,8 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           providerSubscriptionId: subscriptionId,
           providerCustomerId: String(existing.user_id),
           currentPeriodEnd: periodEndIsoForPlan(existingPlan),
+          expectedAmountMinor: priceSnapshot!.amountMinor,
+          expectedCurrency: priceSnapshot!.currency,
         });
         try {
           await syncSubscriptionNewsletter(db, String(existing.user_id), 'active', env);
@@ -1621,6 +1906,18 @@ export async function handleGoPayWebhook(request: any, env: any, corsHeaders: an
           console.error('[gopay webhook] newsletter sync failed', {
             userId: existing.user_id,
             err: brevoErr,
+          });
+        }
+        try {
+          await handlePaymentInvoicePaid(env, db, String(existing.user_id), {
+            providerId: 'gopay',
+            ...(event.invoice ? { invoice: event.invoice } : {}),
+            planType: existingPlan,
+          });
+        } catch (invoiceErr) {
+          console.error('[gopay webhook] e-invoice failed', {
+            userId: existing.user_id,
+            err: invoiceErr,
           });
         }
       }
@@ -1774,6 +2071,25 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         return comgateNotifyRetry(corsHeaders, 'unresolved user');
       }
 
+      const amountError = verifyRedirectPaymentAmount(
+        'comgate',
+        event,
+        identity.priceSnapshot,
+      );
+      if (amountError) {
+        console.error('[comgate webhook] amount verification failed', {
+          code: amountError,
+          subscriptionId,
+          amountMinor: event.amountMinor,
+          currency: event.currency,
+          planType: identity.planType,
+        });
+        return new Response(`code=1400&message=${encodeURIComponent(amountError)}`, {
+          status: 400,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...corsHeaders },
+        });
+      }
+
       await upsertSubscriptionRow(db, {
         userId: identity.userId,
         planType: identity.planType,
@@ -1782,6 +2098,8 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         providerSubscriptionId: subscriptionId,
         providerCustomerId: identity.userId,
         currentPeriodEnd: periodEndIsoForPlan(identity.planType),
+        expectedAmountMinor: identity.priceSnapshot!.amountMinor,
+        expectedCurrency: identity.priceSnapshot!.currency,
       });
       if (renewalTransId && renewalTransId !== subscriptionId) {
         await db
@@ -1827,6 +2145,18 @@ export async function handleComgateWebhook(request: any, env: any, corsHeaders: 
         console.error('[comgate webhook] newsletter sync failed', {
           userId: identity.userId,
           err: brevoErr,
+        });
+      }
+      try {
+        await handlePaymentInvoicePaid(env, db, identity.userId, {
+          providerId: 'comgate',
+          ...(event.invoice ? { invoice: event.invoice } : {}),
+          planType: identity.planType,
+        });
+      } catch (invoiceErr) {
+        console.error('[comgate webhook] e-invoice failed', {
+          userId: identity.userId,
+          err: invoiceErr,
         });
       }
     }
@@ -2294,6 +2624,20 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
       }
     }
 
+    // Redirect gateways have no hosted portal — point the client at cancel-at-period-end.
+    if (registryId === 'gopay' || registryId === 'comgate') {
+      return jsonResponse(
+        {
+          error: 'Use cancel subscription to stop renewals for this payment provider.',
+          code: 'portal_not_supported',
+          cancelSupported: true,
+          provider: registryId,
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
     const providerName =
       dbProvider === 'legacy'
         ? String(
@@ -2311,6 +2655,116 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
     );
   } catch (err) {
     console.error('handlePortal error:', err);
+    return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
+  }
+}
+
+/**
+ * POST /api/payments/cancel — protected
+ * Stop renewals for GoPay / Comgate subscriptions (cancel at period end).
+ * Stripe customers must use the Billing Portal instead.
+ */
+export async function handleCancelSubscription(request: any, env: any, corsHeaders: any) {
+  let user;
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  try {
+    const db = getDb(env);
+    const sub = await db
+      .prepare(`
+      SELECT id, provider, status, provider_subscription_id, cancel_at_period_end
+      FROM subscriptions
+      WHERE user_id = ?
+      ORDER BY
+        CASE
+          WHEN status IN ('active', 'trialing', 'past_due') THEN 0
+          ELSE 1
+        END,
+        created_at DESC
+      LIMIT 1
+    `)
+      .bind(user.sub)
+      .first();
+
+    if (!sub) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
+    }
+
+    const status = String(sub.status ?? '');
+    if (!['active', 'trialing', 'past_due'].includes(status)) {
+      return jsonResponse({ error: 'No active subscription found' }, 404, corsHeaders);
+    }
+
+    const dbProvider = String(sub.provider ?? 'stripe');
+    const registryId = dbProviderToRegistryId(dbProvider);
+    if (registryId !== 'gopay' && registryId !== 'comgate') {
+      return jsonResponse(
+        {
+          error: 'Cancel this subscription from the billing portal.',
+          code: 'cancel_use_portal',
+          provider: registryId,
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
+    const alreadyCanceling =
+      sub.cancel_at_period_end === 1 ||
+      sub.cancel_at_period_end === true ||
+      sub.cancel_at_period_end === '1';
+    if (alreadyCanceling) {
+      return jsonResponse(
+        { ok: true, cancelAtPeriodEnd: true, idempotent: true },
+        200,
+        corsHeaders,
+      );
+    }
+
+    const subscriptionId = String(sub.provider_subscription_id ?? '').trim();
+    if (!subscriptionId) {
+      return jsonResponse(
+        {
+          error: 'Subscription is missing a provider reference',
+          code: 'missing_provider_subscription',
+        },
+        409,
+        corsHeaders,
+      );
+    }
+
+    const { providers } = await getPaymentProviders(env);
+    let provider = providers.get(registryId);
+    if (!provider) {
+      const config = buildPaymentsConfig(env);
+      const forced = createEnabledProviders([registryId], config);
+      provider = forced.get(registryId);
+    }
+    if (!provider || !provider.isConfigured()) {
+      return jsonResponse(
+        { error: 'Payment provider is not configured', code: 'provider_not_configured' },
+        503,
+        corsHeaders,
+      );
+    }
+
+    await provider.cancelSubscription(subscriptionId);
+    await db
+      .prepare(
+        `UPDATE subscriptions
+         SET cancel_at_period_end = 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND user_id = ?`,
+      )
+      .bind(sub.id, user.sub)
+      .run();
+
+    return jsonResponse({ ok: true, cancelAtPeriodEnd: true }, 200, corsHeaders);
+  } catch (err) {
+    console.error('handleCancelSubscription error:', err);
     return jsonResponse({ error: 'Internal server error' }, 500, corsHeaders);
   }
 }

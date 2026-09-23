@@ -29,6 +29,7 @@ import {
   handleAdminUserImportCsv,
   handleAdminUsers,
   handleCategoryVideosBySlug,
+  handleCmsPageView,
   handleHomepageContent,
   handleHomepageContentPublic,
   handlePillsPublic,
@@ -89,6 +90,11 @@ import {
   handleAdminEInvoices,
   handleAdminEInvoicingSettings,
 } from './eInvoicing.js';
+import {
+  handleAccountDeleteConfirm,
+  handleAccountDeleteRequest,
+  processAccountDeletionJobs,
+} from './accountDeletion.js';
 import { handlePersonalFeed, handlePublicFeed } from './feed.js';
 import {
   collectPlacementVideoIds,
@@ -145,6 +151,7 @@ import {
 import {
   handleAdminPaymentPlans,
   handleAdminPaymentSettings,
+  handleCancelSubscription,
   handleCheckout,
   handleComgateWebhook,
   handleGetPricing,
@@ -893,6 +900,9 @@ const workerHandler = {
         ) {
           return handleAdminAnalytics(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/analytics/pageview' && request.method === 'POST') {
+          return handleCmsPageView(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/site-settings' && request.method === 'GET') {
           return handleSiteSettings(request, env, corsHeaders);
         }
@@ -1151,6 +1161,12 @@ const workerHandler = {
         if (url.pathname === '/api/account/newsletter-preference' && request.method === 'PUT') {
           return handlePutAccountNewsletterPreference(request, env, corsHeaders);
         }
+        if (url.pathname === '/api/account/delete-request' && request.method === 'POST') {
+          return handleAccountDeleteRequest(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/account/delete-confirm' && request.method === 'POST') {
+          return handleAccountDeleteConfirm(request, env, corsHeaders);
+        }
         if (url.pathname === '/api/account/rss/rotate' && request.method === 'POST') {
           return handleRotateAccountRss(request, env, corsHeaders);
         }
@@ -1195,6 +1211,9 @@ const workerHandler = {
         }
         if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
           return handlePortal(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/payments/cancel' && request.method === 'POST') {
+          return handleCancelSubscription(request, env, corsHeaders);
         }
         // ── Push notification routes ──────────────────────────────────────────────
         if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
@@ -1283,6 +1302,11 @@ const workerHandler = {
           await processNewsletterBrevoReconcileQueue(env);
         } catch (err) {
           console.error('Newsletter Brevo reconcile sweep failed:', err);
+        }
+        try {
+          await processAccountDeletionJobs(env);
+        } catch (err) {
+          console.error('Account deletion sweep failed:', err);
         }
       }
 

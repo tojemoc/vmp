@@ -11,6 +11,7 @@ import {
 import { getAccountSubscription } from '../api/client';
 import { type AccountSubscription, isPremiumUser } from '../entitlements/premium';
 import { requireActiveSubscription } from '../features';
+import { isLikelyNetworkError, OFFLINE_MODE_MESSAGE } from '../network/errors';
 import { tokenFromAuthUrl } from './deepLink';
 import {
   clearSession,
@@ -21,6 +22,11 @@ import {
   type SessionState,
   signOut,
 } from './session';
+import {
+  clearSubscriptionCache,
+  readSubscriptionCache,
+  writeSubscriptionCache,
+} from './subscriptionCache';
 
 export type MagicLinkOutcome = 'authenticated' | 'two_factor_required' | 'failed' | 'ignored';
 
@@ -69,7 +75,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSubscriptionHydrated(false);
   }, []);
 
-  const hydrateEntitlements = useCallback(async (accessToken: string) => {
+  const hydrateEntitlements = useCallback(async (accessToken: string, userId: string) => {
     const epoch = ++entitlementsEpochRef.current;
     activeAccessTokenRef.current = accessToken;
     try {
@@ -77,11 +83,27 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (entitlementsEpochRef.current !== epoch || activeAccessTokenRef.current !== accessToken) {
         return;
       }
-      setSubscription(data.subscription ?? null);
+      const next = data.subscription ?? null;
+      setSubscription(next);
       setSubscriptionHydrated(true);
-    } catch {
+      await writeSubscriptionCache(userId, next).catch(() => undefined);
+    } catch (err) {
       if (entitlementsEpochRef.current !== epoch || activeAccessTokenRef.current !== accessToken) {
         return;
+      }
+      if (isLikelyNetworkError(err)) {
+        const cached = await readSubscriptionCache(userId);
+        if (
+          entitlementsEpochRef.current !== epoch ||
+          activeAccessTokenRef.current !== accessToken
+        ) {
+          return;
+        }
+        if (cached) {
+          setSubscription(cached);
+          setSubscriptionHydrated(true);
+          return;
+        }
       }
       setSubscription(null);
       setSubscriptionHydrated(true);
@@ -93,10 +115,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSessionState(next);
       if (!next) {
         clearEntitlements();
+        void clearSubscriptionCache().catch(() => undefined);
         return;
       }
       setSubscriptionHydrated(false);
-      void hydrateEntitlements(next.accessToken);
+      void hydrateEntitlements(next.accessToken, next.user.id);
     },
     [clearEntitlements, hydrateEntitlements],
   );
@@ -107,7 +130,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setSubscriptionHydrated(false);
-    await hydrateEntitlements(session.accessToken);
+    await hydrateEntitlements(session.accessToken, session.user.id);
   }, [session, clearEntitlements, hydrateEntitlements]);
 
   const clearPendingTwoFactor = useCallback(() => {
@@ -156,7 +179,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (err instanceof SessionRestoreError && err.retryable) {
         const cached = await loadSession();
         setSession(cached);
-        setError('Could not refresh session (will retry). Showing last known session.');
+        setError(
+          isLikelyNetworkError(err)
+            ? OFFLINE_MODE_MESSAGE
+            : 'Could not refresh session (will retry). Showing last known session.',
+        );
         return;
       }
       setSession(null);

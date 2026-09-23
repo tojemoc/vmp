@@ -292,6 +292,14 @@ export const strings: StringsDefinition = {
   manageSubscription: 'Manage subscription',
   resumeSubscription: 'Resume subscription',
   openingPortal: 'Opening…',
+  cancelSubscription: 'Cancel renewal',
+  cancelingSubscription: 'Canceling…',
+  cancelSubscriptionConfirm:
+    'Stop automatic renewals? You keep access until the end of the current period.',
+  cancelSubscriptionFailed: 'Could not cancel the subscription. Please try again.',
+  redirectCancelNoResumeHint:
+    'Renewals are stopped. Access continues until the date above; resume is not available self-service for this payment provider.',
+  redirectCancelUseButtonHint: 'Use Cancel renewal to stop GoPay or Comgate renewals.',
   subscribedWelcome: "You're now subscribed!",
   subscribedWelcomeDetail: 'Welcome to VMP Premium. Enjoy unlimited access to all content.',
   renewsOn: 'Renews on',
@@ -366,6 +374,28 @@ export const strings: StringsDefinition = {
   newsletterOptOutSaved: 'Your preference is saved.',
   newsletterOptOutLoadFailed: 'Could not load your newsletter preference.',
   newsletterOptOutSaveFailed: 'Could not save your newsletter preference.',
+  checkoutTermsAcceptLabel:
+    'I acknowledge that access begins immediately upon payment and that, where the law permits for immediately delivered digital content, I waive the 14-day withdrawal right. Mandatory remedies for non-conforming delivery remain.',
+  checkoutTermsLearnMore: 'Personal data & terms',
+  checkoutTermsRequired: 'Accept the digital content terms before continuing to payment.',
+  accountDeleteTitle: 'Delete my account',
+  accountDeleteIntro:
+    'Permanently delete your account and personal data. This cannot be undone. Active subscriptions are cancelled immediately (prepaid access ends when the account is deleted).',
+  accountDeleteInvoiceNote:
+    'Anonymized invoice records (amounts and dates, without your name or email) are retained for the statutory accounting period under CZ/SK law.',
+  accountDeleteImmediateCancelNote:
+    'Refund eligibility for remaining prepaid time follows applicable consumer law — this is not a blanket “no refunds” waiver.',
+  accountDeleteRequest: 'Send deletion confirmation email',
+  accountDeleteRequesting: 'Sending…',
+  accountDeleteRequestSent:
+    'Check your email for a confirmation link, then type the phrase below while signed in.',
+  accountDeleteRequestFailed: 'Could not start account deletion.',
+  accountDeleteConfirmPhraseLabel: 'Type DELETE MY ACCOUNT to confirm',
+  accountDeleteConfirmPhraseHint: 'Must match exactly, including capitals.',
+  accountDeleteConfirm: 'Permanently delete account',
+  accountDeleteConfirming: 'Deleting…',
+  accountDeleteConfirmFailed: 'Could not confirm account deletion.',
+  accountDeleteDone: 'Your account has been deleted.',
   continueWatchingTitle: 'Continue watching',
   continueWatchingIntro:
     'Pick up on-demand videos where you left off. Remove any entry to delete its saved position.',
@@ -411,6 +441,8 @@ export const strings: StringsDefinition = {
   offlineStorageUsed: (amount: string) => `Offline storage used: ${amount}`,
   offlineStorageQuota: (amount: string) => `of ${amount} available`,
   offlinePlaybackBadge: 'Playing from offline download',
+  offlineNoInternetMessage:
+    'There is no internet connection. Only videos you downloaded beforehand can play — open Downloads in the installed app.',
   copyFailed: 'Could not copy to clipboard. You can copy manually from the field.',
 
   // ── Subscription checkout ──────────────────────────────────────────────────

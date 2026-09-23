@@ -26,7 +26,7 @@ Original marketing copy (paraphrased):
 | Distinct `plan_type = 'club'` | Yes | Subscriptions, checkout, admin pricing |
 | Yearly-length period | Yes | `periodEndIsoForPlan` treats club like yearly (12 months) |
 | Qerko legacy `subscriptionType: club` | Yes | Fixed: must not collapse to `yearly` on E-shop orders |
-| GoPay / Comgate club checkout | Partial | Provider draft; club uses yearly recurrence where required |
+| GoPay / Comgate club checkout | Shipped | Club uses yearly recurrence where required; production hardening in `payments-gopay-comgate` |
 | Concurrent playback limit | **Yes (flagged)** | API + web player mint/heartbeat/release + limit UI. `video-access` enforces when `concurrent_playback_enforced=1` (default `0`). Safe to enable in staging after this PR. |
 | IRL event access | **No** | No invites, lists, or redemption flow |
 | Ad-free playback | **No** | No ads in product today; no `plan_type` gate for ads |

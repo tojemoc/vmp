@@ -8,10 +8,10 @@ Pluggable payment providers for VMP billing.
 |---|---|---|
 | `stripe` | Production | Yes |
 | `qerko` | Production (legacy eshop / migration) | Only when listed in tenant settings |
-| `gopay` | **Draft** — redirect checkout + recurrence + notifications | No (enable via admin) |
-| `comgate` | **Draft** — redirect checkout + initRecurring + webhooks | No (enable via admin) |
+| `gopay` | Production — redirect checkout + recurrence + notifications | No (enable via admin) |
+| `comgate` | Production — redirect checkout + initRecurring + webhooks | No (enable via admin) |
 
-Admin settings still store `legacy` in CSV lists; the registry normalizes that to `qerko`. D1 `subscriptions.provider` continues to use `legacy` for Qerko rows and `gopay` for GoPay rows.
+Admin settings still store `legacy` in CSV lists; the registry normalizes that to `qerko`. D1 `subscriptions.provider` continues to use `legacy` for Qerko rows and `gopay` / `comgate` for those gateways.
 
 ## Tenant configuration
 
@@ -19,7 +19,7 @@ Admin settings still store `legacy` in CSV lists; the registry normalizes that t
 
 - Fresh launch: `stripe`
 - Migrated tenant: `stripe,legacy` (parsed as `stripe,qerko`)
-- Draft GoPay alongside Stripe: `stripe,gopay`
+- GoPay alongside Stripe: `stripe,gopay`
 
 `createEnabledProviders(enabledIds, config)` returns a `Map` of configured provider instances. Billing code must resolve the provider from this map — never import Stripe or Qerko SDKs directly.
 
@@ -36,25 +36,25 @@ Worker secrets / vars:
 |---|---|
 | `GOPAY_CLIENT_ID` / `GOPAY_CLIENT_SECRET` | OAuth2 client credentials |
 | `GOPAY_GOID` | Merchant goId |
-| `GOPAY_API_BASE` | Optional; default sandbox `https://gw.sandbox.gopay.com/api` (prod: `https://gate.gopay.cz/api`) |
+| `GOPAY_API_BASE` | **Required for live traffic.** Default (when unset) is sandbox `https://gw.sandbox.gopay.com/api`. Production: `https://gate.gopay.cz/api`. Checkout fails closed when `FRONTEND_URL` is non-local and the API base is still sandbox. |
 | `API_URL` | Used to build `notification_url` → `{API_URL}/api/payments/webhook/gopay` |
 
 ## Capabilities
 
 Each provider exposes `capabilities`:
 
-- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **true** when enabled in tenant settings; uses the legacy eshop initial payment / CardOnFile create flow; GoPay/Comgate drafts: **true**)
+- `newSubscriptions` — may onboard brand-new subscribers (Qerko: **true** when enabled in tenant settings; uses the legacy eshop initial payment / CardOnFile create flow; GoPay/Comgate: **true**)
 - `migrationOnly` — only for pre-existing platform subscribers (Qerko: **false**; relink still works via `needs_relink` + purchaseId)
 - `recurringPayments`, `refunds`, `webhooks` — feature flags for future UI/guards
 
 Checkout must gate on `provider.capabilities.newSubscriptions` instead of hardcoded provider IDs. Admins still control whether Qerko appears at checkout via `payments_enabled_providers`.
 
-## GoPay draft behaviour
+## GoPay behaviour
 
 1. **Checkout** — `POST /api/payments/payment` with automatic `recurrence` (`MONTH` / period 1 or 12). Returns `gw_url` for browser redirect (same UX pattern as legacy Qerko).
-2. **Webhook** — GoPay sends **GET** `{notification_url}?id=&parent_id=`. The Worker re-fetches payment status with merchant credentials (notifications are **not** HMAC-signed).
-3. **Cancel** — `POST .../void-recurrence` on the parent payment id stored as `provider_subscription_id`.
-4. **Portal** — GoPay has no Stripe-style customer portal; `/api/payments/portal` returns `portal_not_supported` for GoPay subscriptions.
+2. **Webhook** — GoPay sends **GET** `{notification_url}?id=&parent_id=`. The Worker re-fetches payment status with merchant credentials (notifications are **not** HMAC-signed), verifies paid amount against admin plan prices, and may create an e-invoice when enabled.
+3. **Cancel** — `POST /api/payments/cancel` calls `void-recurrence` on the parent payment id and sets `cancel_at_period_end` (idempotent). Access continues until `current_period_end`.
+4. **Portal** — GoPay has no Stripe-style customer portal; `/api/payments/portal` returns `portal_not_supported` with `cancelSupported: true`.
 
 ### One-click / Apple Pay / Google Pay limitations
 
@@ -64,13 +64,13 @@ From [GoPay docs](https://doc.gopay.cz/#android-a-ios) (also tracked in [#442](h
 - Apple Pay and Google Pay are available **only inside the hosted gateway**, not as native one-click dialogs from a mobile app.
 - **Do not use WebView** (`WebView` / `WKWebView`) — wallet methods will not work. Use Chrome Custom Tabs / `SFSafariViewController` (or a normal browser redirect).
 
-This draft therefore never promises native Apple/Google Pay; checkout always redirects to `gw_url`.
+Checkout always redirects to `gw_url`.
 
-## Comgate draft behaviour
+## Comgate behaviour
 
 1. **Checkout** — `POST /api/payments/payment` creates a Comgate payment with `initRecurring=true` and returns a `redirect` URL. A pending row in `payment_checkout_sessions` (table from migration `0010_gocardless_payments.sql`; keyed by `refId` / `transId`) stores the user and plan until the webhook fires. Checkout fails closed if that row cannot be written.
-2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field. The Worker verifies the secret, re-fetches status via `/v1.0/status`, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
-3. **Cancel** — `POST /v1.0/cancel` on the stored `provider_subscription_id` (Comgate `transId`).
+2. **Webhook** — Comgate sends **POST** callbacks with a `secret` field (verified with a **constant-time** compare). The Worker re-fetches status via `/v1.0/status`, verifies paid amount, and resolves the paying user from the pending checkout session (first purchase) or an existing subscription row (renewals).
+3. **Cancel** — `POST /api/payments/cancel` calls `/v1.0/cancel` and sets `cancel_at_period_end` so the renewal cron skips the row.
 4. **Failed renewal** — maps to `past_due` (same grace-period policy as GoPay), not immediate cancellation.
 5. **Renewal** — Worker cron first reconciles stale `pending`/`charged` attempts via `/v1.0/status`, then claims a due subscription row and calls `/v1.0/recurring` with `initRecurringId` = original checkout `transId` (`subscriptions.provider_subscription_id`). The original ID is never overwritten; each renewal `transId` is stored in `last_provider_payment_id` / `renewal_attempt_payment_id`. Access and `current_period_end` advance only after a successful Comgate notification (or status reconciliation) completes the claim. Ambiguous charge errors (`comgate_timeout`, `comgate_renewal_failed`) leave the claim pending; only definitive declines mark it failed.
 
@@ -90,6 +90,10 @@ Worker secrets / vars:
 | `COMGATE_COUNTRY` | Optional; default `CZ` |
 
 The Comgate webhook (`POST /api/payments/webhook/comgate`) is **not** registered via an `API_URL` env var. Configure that Worker URL as the merchant-server URL in **Client Portal → Integration → Store Settings → Store Linking**. The `url` parameter sent to `/v1.0/create` is only the **browser return URL** after the payer leaves the hosted gateway.
+
+## Production readiness checklist
+
+See [docs/plans/payments-gopay-comgate.md](../../docs/plans/payments-gopay-comgate.md). Live merchant smoke remains a maintainer ops step.
 
 ## Adding a provider
 

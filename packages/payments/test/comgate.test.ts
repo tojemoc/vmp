@@ -90,6 +90,9 @@ describe('createComgateProvider', () => {
     assert.equal(event.providerId, 'comgate');
     assert.equal(event.subscriptionId, 'AB12-CD34-EF56');
     assert.equal(event.purchaseId, 'order-42');
+    assert.equal(event.amountMinor, 19900);
+    assert.equal(event.currency, 'CZK');
+    assert.equal(event.invoice?.grossAmountCents, 19900);
   });
 
   it('handleWebhook maps CANCELLED to payment.failed (API maps to past_due grace period)', async () => {
@@ -159,6 +162,58 @@ describe('createComgateProvider', () => {
     const provider = createComgateProvider(baseConfig());
     await provider.cancelSubscription('AB12-CD34-EF56');
     assert.match(calls[0]!.url, /\/v1\.0\/cancel$/);
+  });
+
+  it('cancelSubscription treats already-cancelled as success', async () => {
+    const calls = mockFetchSequence([
+      { body: 'code=1400&message=already%20cancelled' },
+      { body: 'code=0&message=OK&status=CANCELLED&transId=AB12-CD34-EF56' },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    await provider.cancelSubscription('AB12-CD34-EF56');
+    assert.equal(calls.length, 2);
+    assert.match(calls[1]!.url, /\/v1\.0\/status$/);
+  });
+
+  it('cancelSubscription rejects ambiguous failures without CANCELLED status', async () => {
+    mockFetchSequence([
+      { body: 'code=1400&message=already%20cancelled' },
+      { body: 'code=0&message=OK&status=PAID&transId=AB12-CD34-EF56' },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    await assert.rejects(() => provider.cancelSubscription('AB12-CD34-EF56'), /already/);
+  });
+
+  it('cancelSubscriptionImmediately is supported', async () => {
+    const calls = mockFetchSequence([{ body: 'code=0&message=OK' }]);
+    const provider = createComgateProvider(baseConfig());
+    assert.equal(provider.capabilities.immediateCancellation, true);
+    await provider.cancelSubscriptionImmediately('AB12-CD34-EF56');
+    assert.match(calls[0]!.url, /\/v1\.0\/cancel$/);
+  });
+
+  it('cancelSubscriptionImmediately does not treat path "/cancel" as terminal success', async () => {
+    mockFetchSequence([
+      { body: 'code=1500&message=Invalid credentials' },
+      // Status confirm also fails — original cancel error rethrown.
+      { body: 'code=1500&message=Invalid credentials' },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    await assert.rejects(
+      () => provider.cancelSubscriptionImmediately('AB12-CD34-EF56'),
+      /Invalid credentials/,
+    );
+  });
+
+  it('cancelSubscriptionImmediately treats code 1400 + CANCELLED status as success', async () => {
+    const calls = mockFetchSequence([
+      { body: 'code=1400&message=cannot change to CANCELLED' },
+      { body: 'code=0&message=OK&status=CANCELLED&transId=AB12-CD34-EF56' },
+    ]);
+    const provider = createComgateProvider(baseConfig());
+    await provider.cancelSubscriptionImmediately('AB12-CD34-EF56');
+    assert.equal(calls.length, 2);
+    assert.match(calls[1]!.url, /\/v1\.0\/status$/);
   });
 
   it('refund calls /v1.0/refund with amount', async () => {

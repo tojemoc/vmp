@@ -2,7 +2,7 @@
 
 **Roadmap:** [ROADMAP.md](../../ROADMAP.md) → *Step 10*  
 **Issue:** [#646](https://github.com/tojemoc/vmp/issues/646) (spec [#506](https://github.com/tojemoc/vmp/issues/506) closed)  
-**Status:** In progress (groundwork [#656](https://github.com/tojemoc/vmp/pull/656)); remaining work blocked on provider-agnostic `cancelSubscriptionImmediately`
+**Status:** Implemented (groundwork [#656](https://github.com/tojemoc/vmp/pull/656); full flow closes [#646](https://github.com/tojemoc/vmp/issues/646))
 
 ## Groundwork landed (independent of the payment blocker)
 
@@ -15,19 +15,19 @@ Shipped in [#656](https://github.com/tojemoc/vmp/pull/656) (Linear [TOJ-136](htt
 ## Checklist (high level)
 
 - [x] `requireAuth` hardening for **deleted** users (user row missing)
-- [ ] `requireAuth` / refresh / magic-link gate for **deletion-pending** users
-- [ ] Deletion token table + request/confirm API
-- [ ] Durable `account_deletion_jobs` + R2 object inventory
-- [ ] `cancelSubscriptionImmediately` on payment adapter
+- [x] `requireAuth` / refresh / magic-link gate for **deletion-pending** users
+- [x] Deletion token table + request/confirm API
+- [x] Durable `account_deletion_jobs` + R2 object inventory
+- [x] `cancelSubscriptionImmediately` on payment adapter
 - [x] Invoice FK fix (`einvoices` → `ON DELETE SET NULL`)
-- [ ] Invoice PII anonymization + R2 payload sanitization
-- [ ] Brevo contact deletion path
-- [ ] Account deletion UI + legal copy
-- [ ] Checkout consent persistence (`checkout_consents`)
+- [x] Invoice PII anonymization + R2 payload sanitization
+- [x] Brevo contact deletion path
+- [x] Account deletion UI + legal copy
+- [x] Checkout consent persistence (`checkout_consents`)
 
 ---
 
-**Blocked on**: payment gateway adapter completion (all Stripe-touching work is on hold until the adapter is provider-agnostic).
+**Unblocked:** `cancelSubscriptionImmediately` is on the provider-agnostic payment adapter (Stripe DELETE; GoPay/Comgate/Qerko map to their immediate cancel APIs). Soft `cancelSubscription` (cancel-at-period-end) remains for subscriber self-service cancel.
 
 #### API (`@vmp/api`)
 

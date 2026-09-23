@@ -6,6 +6,11 @@ export interface PaymentProviderCapabilities {
   recurringPayments: boolean;
   refunds: boolean;
   webhooks: boolean;
+  /**
+   * Provider can revoke billing access immediately (account deletion).
+   * Soft cancel-at-period-end alone is not enough.
+   */
+  immediateCancellation: boolean;
 }
 
 export type PlanType = 'monthly' | 'yearly' | 'club';
@@ -49,6 +54,11 @@ export interface CreateCheckoutSessionInput {
    * for SK/CZ e-invoicing. Omit/false for standard B2C checkout (no extra fields).
    */
   einvoicingCheckout?: boolean;
+  /**
+   * Absolute URL to terms / personal-data page. When set, Stripe Checkout requests
+   * `consent_collection.terms_of_service = required` (Dashboard terms URL must match).
+   */
+  termsOfServiceUrl?: string;
 }
 
 export interface CreateSubscriptionInput {
@@ -129,6 +139,10 @@ export interface NormalizedPaymentEvent {
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
   promoCodeId?: string;
+  /** Paid amount in minor units when the provider reports it (GoPay / Comgate). */
+  amountMinor?: number;
+  /** ISO currency when the provider reports it. */
+  currency?: string;
   /** Populated on `invoice.paid` when the provider can supply invoice details. */
   invoice?: NormalizedInvoiceData;
   raw: unknown;
@@ -147,7 +161,13 @@ export interface PaymentProvider {
 
   createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
+  /** Soft cancel — typically `cancel_at_period_end` (access until period end). */
   cancelSubscription(subscriptionId: string): Promise<void>;
+  /**
+   * Immediate cancel for account deletion. Required when `capabilities.immediateCancellation`.
+   * Must be idempotent (safe to retry when already cancelled).
+   */
+  cancelSubscriptionImmediately(subscriptionId: string): Promise<void>;
   getCustomer(customerId: string): Promise<PaymentCustomer | null>;
   refund(paymentId: string, opts?: RefundOptions): Promise<void>;
 
@@ -181,6 +201,8 @@ export interface QerkoPaymentsConfig {
   verifyWebhook: (rawBody: string, signatureHeader: string | null) => Promise<boolean>;
   parseWebhook: (rawBody: string) => Promise<NormalizedPaymentEvent>;
   cancelSubscription: (subscriptionId: string) => Promise<void>;
+  /** When omitted, `cancelSubscription` is used for immediate cancel. */
+  cancelSubscriptionImmediately?: (subscriptionId: string) => Promise<void>;
   getCustomer: (customerId: string) => Promise<PaymentCustomer | null>;
   refund: (paymentId: string, opts?: RefundOptions) => Promise<void>;
   createSubscription: (input: CreateSubscriptionInput) => Promise<Subscription>;

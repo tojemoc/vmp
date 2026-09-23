@@ -1,7 +1,8 @@
 import type { OfflineRendition } from '@vmp/shared';
+import { useEventListener } from 'expo';
 import { Link, Redirect, useLocalSearchParams } from 'expo-router';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useVideoPlayer, type VideoSource, VideoView } from 'expo-video';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -23,6 +24,11 @@ import { requireActiveSubscription } from '../../src/features';
 import { formatDuration, showsPremiumHint } from '../../src/media/formatDuration';
 import { catalogThumbnailUrl } from '../../src/media/thumbnail';
 import {
+  OFFLINE_MODE_MESSAGE,
+  OFFLINE_PLAYBACK_FAILED_MESSAGE,
+  userFacingRequestError,
+} from '../../src/network/errors';
+import {
   getDownloadRecord,
   getOfflinePlaybackUri,
   isDownloadActive,
@@ -34,6 +40,15 @@ import {
 import type { DownloadProgress, StoredDownload } from '../../src/offline/types';
 
 const DEFAULT_RENDITION: OfflineRendition = '720p';
+
+function toHlsSource(uri: string | null): VideoSource | null {
+  if (!uri) return null;
+  return {
+    uri,
+    contentType: 'hls',
+    useCaching: false,
+  };
+}
 
 export default function WatchScreen() {
   const { videoId } = useLocalSearchParams<{ videoId: string }>();
@@ -141,7 +156,16 @@ export default function WatchScreen() {
           if (!cancelled) setRecommendations([]);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Playback failed');
+        if (!cancelled) {
+          const record = await getDownloadRecord(id, session.user.id).catch(() => null);
+          if (record?.status === 'completed') {
+            setError(
+              `${OFFLINE_MODE_MESSAGE} This download could not be prepared for playback — try Remove and download again while online.`,
+            );
+          } else {
+            setError(userFacingRequestError(err, 'Playback failed'));
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -151,9 +175,20 @@ export default function WatchScreen() {
     };
   }, [session, id, refreshDownload, canBrowseCatalog]);
 
-  const player = useVideoPlayer(playlistUrl, (p) => {
+  const videoSource = useMemo(() => toHlsSource(playlistUrl), [playlistUrl]);
+  const player = useVideoPlayer(videoSource, (p) => {
     p.loop = false;
-    if (playlistUrl) p.play();
+    if (videoSource) p.play();
+  });
+
+  useEventListener(player, 'statusChange', ({ status, error: playerError }) => {
+    if (status !== 'error') return;
+    // Do not surface native Error.message in the UI (may leak internals).
+    if (source === 'offline') {
+      setError(OFFLINE_PLAYBACK_FAILED_MESSAGE);
+      return;
+    }
+    setError(userFacingRequestError(playerError, 'Playback failed'));
   });
 
   if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
@@ -197,7 +232,7 @@ export default function WatchScreen() {
       }
     } catch (err) {
       if (isCurrentAccount(epoch, userId)) {
-        setError(err instanceof Error ? err.message : 'Download failed');
+        setError(userFacingRequestError(err, 'Download failed'));
         await refreshDownload();
       }
     } finally {
@@ -247,12 +282,12 @@ export default function WatchScreen() {
         }
       } catch (err) {
         if (isCurrentAccount(epoch, userId)) {
-          setError(err instanceof Error ? err.message : 'Could not restore online playback');
+          setError(userFacingRequestError(err, 'Could not restore online playback'));
         }
       }
     } catch (err) {
       if (isCurrentAccount(epoch, userId)) {
-        setError(err instanceof Error ? err.message : 'Remove failed');
+        setError(userFacingRequestError(err, 'Remove failed'));
       }
     } finally {
       setDownloadBusy(false);
@@ -316,7 +351,7 @@ export default function WatchScreen() {
         <Text style={styles.panelTitle}>Offline download</Text>
         <Text style={styles.hint}>
           Saves {DEFAULT_RENDITION} HLS to this device via the same authorize/assets APIs as the
-          PWA.
+          PWA. Playback uses a local HTTP server (required on iOS).
         </Text>
         {status ? (
           <Text style={styles.muted}>

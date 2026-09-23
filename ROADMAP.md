@@ -37,23 +37,11 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 | `step-08` | Brevo newsletter sync (#645 / TOJ-138) | Opt-out model + sync + admin tab shipped [#665](https://github.com/tojemoc/vmp/pull/665); plan: [step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md). Staging smoke with live `BREVO_API_KEY` is maintainer ops. |
 | `step-09` | RSS / podcast feed (#644 / TOJ-137) | Personal + public feeds, revocable token, account UI [#653](https://github.com/tojemoc/vmp/pull/653); plan: [step-09-rss-podcast-feed.md](docs/plans/step-09-rss-podcast-feed.md) |
 | `deployment-feature-modules` | Compile-time `VMP_FEATURES` modules | Phases 1–4 shipped ([#652](https://github.com/tojemoc/vmp/pull/652)+); plan: [deployment-feature-modules.md](docs/plans/deployment-feature-modules.md) |
+| `payments-gopay-comgate` | GoPay + Comgate providers (#648 / TOJ-141) | Providers + analytics + production code hardening; live merchant smoke is maintainer ops. Plan: [payments-gopay-comgate.md](docs/plans/payments-gopay-comgate.md) |
 
 ---
 
 ## In progress
-
-### GoPay + Comgate production hardening (`payments-gopay-comgate`)
-
-**Issues:** [#648](https://github.com/tojemoc/vmp/issues/648) / [TOJ-141](https://linear.app/tojemoc/issue/TOJ-141)
-
-Providers + checkout analytics shipped. Only production hardening + maintainer sign-off remain.
-
-- [x] Provider registry + admin pricing ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Comgate first-checkout identity + renewals ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] GoPay redirect checkout + recurrence ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Qerko legacy club → `subscriptionType: club` (not yearly) ([#499](https://github.com/tojemoc/vmp/pull/499))
-- [x] Checkout analytics for GoPay + Comgate start/return ([#654](https://github.com/tojemoc/vmp/pull/654))
-- [ ] Production hardening + maintainer sign-off
 
 ### Club plan entitlements (`club`)
 
@@ -74,20 +62,18 @@ Providers + checkout analytics shipped. Only production hardening + maintainer s
 **Issues:** [#646](https://github.com/tojemoc/vmp/issues/646) / [TOJ-136](https://linear.app/tojemoc/issue/TOJ-136)  
 **Plan:** [docs/plans/step-10-account-deletion.md](docs/plans/step-10-account-deletion.md) (spec #506 / TOJ-19 closed)
 
-**Blocked:** payment gateway adapter — provider-agnostic `cancelSubscriptionImmediately` before Stripe-touching deletion ships.
-
-Groundwork landed in [#656](https://github.com/tojemoc/vmp/pull/656):
+Groundwork landed in [#656](https://github.com/tojemoc/vmp/pull/656); full deletion flow in this PR:
 
 - [x] `requireAuth` rejects tokens whose user row is gone
 - [x] `einvoices.user_id` nullable + `ON DELETE SET NULL` (retention)
 - [x] `offline_devices` / `offline_download_licenses` / `pwa_handoffs` `ON DELETE CASCADE`
-- [ ] Deletion-pending gate on auth / refresh / magic-link
-- [ ] Deletion token table + request/confirm API
-- [ ] Durable `account_deletion_jobs` + R2 object inventory
-- [ ] `cancelSubscriptionImmediately` on payment adapter
-- [ ] Invoice PII anonymization + Brevo contact deletion
-- [ ] Account deletion UI + legal copy
-- [ ] Checkout consent persistence (`checkout_consents`)
+- [x] Deletion-pending gate on auth / refresh / magic-link
+- [x] Deletion token table + request/confirm API
+- [x] Durable `account_deletion_jobs` + R2 object inventory
+- [x] `cancelSubscriptionImmediately` on payment adapter
+- [x] Invoice PII anonymization + Brevo contact deletion
+- [x] Account deletion UI + legal copy
+- [x] Checkout consent persistence (`checkout_consents`)
 
 ### CMS admin analytics (`analytics-observability-cms`)
 
@@ -99,8 +85,7 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] Per-video / aggregate **view counts**
 - [x] **Referrer / traffic source** breakdown
 - [x] **Country** (geo) breakdown (`CF-IPCountry` on segment proxy)
-- [ ] CMS **page** view counts (today only video-segment traffic is counted)
-- [ ] “Help sponsor” (or similar) editor workflow — product decision still open
+- [x] CMS **page** view counts (`POST /api/analytics/pageview` + `cms_page_view_*` D1 tables; Analytics KPI/table/CSV)
 
 ### Native / TV clients (`native-clients`)
 
@@ -111,7 +96,7 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 - [x] Tier 1 Expo scaffold (`apps/mobile`) + SideStore distribution playbook
 - [x] Client-tagged magic links (`client=browser|pwa|native` in email verify URL)
 - [x] Native TOTP / 2FA UI (**S1**) — redeem → `/auth/2fa` → `POST /api/auth/2fa/verify` (refreshToken in body) ([#684](https://github.com/tojemoc/vmp/pull/684))
-- [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end) — offline client wired in `apps/mobile` (authorize → filesystem → local play); still needs device E2E against R2-backed HLS + push delivery for full checkbox
+- [ ] Tier 1 PoC success criteria (handoff, push, catalog + watch, offline path end-to-end) — offline client wired in `apps/mobile` (authorize → filesystem → **loopback HTTP** → local play); still needs device E2E against R2-backed HLS + push delivery for full checkbox. Fixes: published-only catalog, offline entitlement cache, friendly offline copy, PWA offline abort (`mobile-offline-playback`)
 - [ ] AASA / Digital Asset Links live values (`MOBILE_*` env vars)
 
 #### Mobile entitlements (`mobile-subscriber-gate` → `mobile-access-tiers`)

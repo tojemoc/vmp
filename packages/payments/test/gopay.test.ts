@@ -162,6 +162,9 @@ describe('createGoPayProvider', () => {
         body: {
           id: 99,
           state: 'PAID',
+          amount: 19900,
+          currency: 'CZK',
+          payer: { contact: { email: 'a@example.com' } },
           additional_params: [
             { name: 'userId', value: 'u1' },
             { name: 'planType', value: 'monthly' },
@@ -175,6 +178,10 @@ describe('createGoPayProvider', () => {
     assert.equal(event.providerId, 'gopay');
     assert.equal(event.userId, 'u1');
     assert.equal(event.subscriptionId, '99');
+    assert.equal(event.amountMinor, 19900);
+    assert.equal(event.currency, 'CZK');
+    assert.equal(event.invoice?.grossAmountCents, 19900);
+    assert.equal(event.invoice?.buyer.email, 'a@example.com');
   });
 
   it('handleWebhook maps child recurrence PAID to invoice.paid', async () => {
@@ -204,5 +211,84 @@ describe('createGoPayProvider', () => {
     const provider = createGoPayProvider(baseConfig());
     await provider.cancelSubscription('99');
     assert.match(calls[1]!.url, /\/void-recurrence$/);
+  });
+
+  it('cancelSubscription treats already-voided recurrence as success', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      {
+        status: 409,
+        body: { errors: [{ message: 'Recurrence already finished' }] },
+      },
+      // Status confirm: terminal recurrence_state required.
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'STOPPED' },
+        },
+      },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await provider.cancelSubscription('99');
+  });
+
+  it('cancelSubscriptionImmediately voids recurrence and sets capability', async () => {
+    const calls = mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      { body: { id: 99, result: 'FINISHED' } },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    assert.equal(provider.capabilities.immediateCancellation, true);
+    await provider.cancelSubscriptionImmediately('99');
+    assert.match(calls[1]!.url, /\/void-recurrence$/);
+  });
+
+  it('cancelSubscriptionImmediately treats already-voided details as success', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      {
+        status: 409,
+        body: {
+          errors: [{ message: 'Payment recurrence already voided', error_code: 409 }],
+        },
+      },
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'FINISHED' },
+        },
+      },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await provider.cancelSubscriptionImmediately('99');
+  });
+
+  it('cancelSubscriptionImmediately rejects ambiguous failures without terminal state', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      {
+        status: 409,
+        body: { errors: [{ message: 'Recurrence already finished' }] },
+      },
+      {
+        body: {
+          id: 99,
+          recurrence: { recurrence_state: 'STARTED' },
+        },
+      },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await assert.rejects(() => provider.cancelSubscriptionImmediately('99'), /GoPay API/);
+  });
+
+  it('cancelSubscriptionImmediately propagates non-terminal provider rejections', async () => {
+    mockFetchSequence([
+      { body: { access_token: 'tok', expires_in: 1800 } },
+      { status: 401, body: { errors: [{ message: 'Unauthorized', error_code: 401 }] } },
+      // Status confirm also fails / non-terminal — original error rethrown.
+      { status: 401, body: { errors: [{ message: 'Unauthorized', error_code: 401 }] } },
+    ]);
+    const provider = createGoPayProvider(baseConfig());
+    await assert.rejects(() => provider.cancelSubscriptionImmediately('99'), /GoPay API/);
   });
 });
