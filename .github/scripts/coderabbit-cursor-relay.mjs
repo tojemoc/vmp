@@ -80,11 +80,39 @@ export function classifyCodeRabbitEvent({ eventName, body }) {
 }
 
 /**
+ * Stable revision key for one CodeRabbit event state.
+ * Rate-limit notices reuse the same comment id when the wait window changes;
+ * bundling updated_at + wait_minutes lets each window relay separately.
+ *
+ * @param {{
+ *   kind: 'ratelimit' | 'actionable',
+ *   updatedAt: string | Date | null | undefined,
+ *   waitMinutes?: number | null,
+ *   actionableCount?: number | null,
+ * }} opts
+ */
+export function buildEventRevision(opts) {
+  const ts =
+    opts.updatedAt == null || opts.updatedAt === ''
+      ? 'unknown'
+      : new Date(opts.updatedAt).toISOString();
+
+  if (opts.kind === 'ratelimit') {
+    const wait = opts.waitMinutes == null ? 'unknown' : String(opts.waitMinutes);
+    return `${ts}|wait=${wait}`;
+  }
+
+  const count = opts.actionableCount == null ? 'unknown' : String(opts.actionableCount);
+  return `${ts}|actionable=${count}`;
+}
+
+/**
  * @param {{
  *   kind: 'ratelimit' | 'actionable',
  *   prNumber: number,
  *   source: 'comment' | 'review',
  *   sourceId: number | string,
+ *   revision: string,
  *   waitMinutes?: number | null,
  *   actionableCount?: number | null,
  * }} opts
@@ -99,6 +127,7 @@ export function buildRelayCommentBody(opts) {
     `pr: ${opts.prNumber}`,
     `source: ${opts.source}`,
     `source_id: ${opts.sourceId}`,
+    `revision: ${opts.revision}`,
   ];
 
   if (opts.kind === 'ratelimit') {
@@ -150,15 +179,30 @@ async function listAllComments(token, owner, repo, issueNumber) {
   return comments;
 }
 
-function alreadyRelayed(comments, { kind, sourceId }) {
+/**
+ * @param {Array<{ body?: string, user?: { login?: string } }>} comments
+ * @param {{
+ *   kind: string,
+ *   sourceId: number | string,
+ *   revision: string,
+ *   authorLogin: string,
+ * }} opts
+ */
+export function alreadyRelayed(comments, { kind, sourceId, revision, authorLogin }) {
+  if (!authorLogin) {
+    throw new Error('alreadyRelayed requires authorLogin (PAT /user login)');
+  }
   const needleKind = `kind: ${kind}`;
   const needleSource = `source_id: ${sourceId}`;
+  const needleRevision = `revision: ${revision}`;
   return comments.some(
     (c) =>
+      c.user?.login === authorLogin &&
       typeof c.body === 'string' &&
       c.body.includes(RELAY_MARKER) &&
       c.body.includes(needleKind) &&
-      c.body.includes(needleSource),
+      c.body.includes(needleSource) &&
+      c.body.includes(needleRevision),
   );
 }
 
@@ -186,19 +230,23 @@ export async function runRelay(ctx) {
   let source;
   let sourceId;
   let sourceTime;
+  let sourceUpdatedAt;
 
   if (eventName === 'issue_comment') {
     body = payload.comment?.body ?? '';
     prNumber = payload.issue?.number;
     source = 'comment';
     sourceId = payload.comment?.id;
-    sourceTime = new Date(payload.comment?.updated_at || payload.comment?.created_at);
+    sourceUpdatedAt = payload.comment?.updated_at || payload.comment?.created_at;
+    sourceTime = new Date(sourceUpdatedAt);
   } else if (eventName === 'pull_request_review') {
     body = payload.review?.body ?? '';
     prNumber = payload.pull_request?.number;
     source = 'review';
     sourceId = payload.review?.id;
-    sourceTime = new Date(payload.review?.submitted_at || payload.review?.edited_at || Date.now());
+    sourceUpdatedAt =
+      payload.review?.submitted_at || payload.review?.edited_at || new Date().toISOString();
+    sourceTime = new Date(sourceUpdatedAt);
   } else {
     console.log(`Unsupported event ${eventName}, skipping.`);
     return { status: 'skipped', reason: 'unsupported_event' };
@@ -240,13 +288,32 @@ export async function runRelay(ctx) {
     );
   }
 
+  const me = await gh(relayPat, '/user');
+  const relayAuthorLogin = me?.login;
+  if (!relayAuthorLogin || typeof relayAuthorLogin !== 'string') {
+    throw new Error(
+      'CURSOR_AUTOMATION_PAT did not resolve to a GitHub user login via GET /user. Check the token scopes.',
+    );
+  }
+
+  const revision = buildEventRevision({
+    kind: classification.kind,
+    updatedAt: sourceUpdatedAt,
+    waitMinutes: classification.waitMinutes,
+    actionableCount: classification.actionableCount,
+  });
+
   if (
     alreadyRelayed(comments, {
       kind: classification.kind,
       sourceId,
+      revision,
+      authorLogin: relayAuthorLogin,
     })
   ) {
-    console.log(`Already relayed ${classification.kind} for source_id ${sourceId}, skipping.`);
+    console.log(
+      `Already relayed ${classification.kind} for source_id ${sourceId} revision ${revision} by ${relayAuthorLogin}, skipping.`,
+    );
     return { status: 'skipped', reason: 'already_relayed' };
   }
 
@@ -255,6 +322,7 @@ export async function runRelay(ctx) {
     prNumber,
     source,
     sourceId,
+    revision,
     waitMinutes: classification.waitMinutes,
     actionableCount: classification.actionableCount,
   });
@@ -265,8 +333,10 @@ export async function runRelay(ctx) {
     body: JSON.stringify({ body: relayBody }),
   });
 
-  console.log(`Posted Cursor relay (${classification.kind}) on PR #${prNumber}.`);
-  return { status: 'posted', kind: classification.kind };
+  console.log(
+    `Posted Cursor relay (${classification.kind}) on PR #${prNumber} as ${relayAuthorLogin}.`,
+  );
+  return { status: 'posted', kind: classification.kind, authorLogin: relayAuthorLogin, revision };
 }
 
 async function main() {

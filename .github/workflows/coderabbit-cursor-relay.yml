@@ -26,6 +26,15 @@
 # - "No actionable comments were generated in the recent review" (clean)
 # - Draft / skipped review notices
 #
+# Fork / untrusted PR safety
+# --------------------------
+# `issue_comment` and `pull_request_review` always run the workflow file from
+# this repo's default branch (not the PR head). Checkout pins
+# `ref: default_branch` and only sparse-checks out `.github/scripts`, so fork
+# PR code is never checked out or executed. `CURSOR_AUTOMATION_PAT` is only
+# passed into that trusted script — it is never available to fork-controlled
+# workflow YAML or PR-tree scripts.
+#
 # Setup
 # -----
 # 1. Create a classic or fine-grained PAT for a *User* account (not an App)
@@ -33,7 +42,8 @@
 # 2. Add it as repo secret `CURSOR_AUTOMATION_PAT`.
 # 3. Enable this workflow if GitHub left it disabled.
 # 4. Point the Cursor automation trigger at: `coderabbit-relay`
-#    (see .github/CODERABBIT_CURSOR_AUTOMATION.md).
+#    (see .github/CODERABBIT_CURSOR_AUTOMATION.md). Restrict Commenter to
+#    the GitHub login that owns that PAT.
 #
 # Why `types: [created, edited]` / review `submitted, edited`:
 # CodeRabbit often edits its summarize comment in place instead of posting
@@ -68,13 +78,16 @@ jobs:
        github.event.review.user.login == 'coderabbitai[bot]')
     runs-on: ubuntu-latest
     steps:
+      # Always default-branch scripts — never PR head (fork or otherwise).
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           sparse-checkout-cone-mode: false
 
       - name: Relay CodeRabbit event to Cursor (or manual re-trigger)
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Secret is only injected into this trusted default-branch step.
           CURSOR_AUTOMATION_PAT: ${{ secrets.CURSOR_AUTOMATION_PAT }}
         run: node .github/scripts/coderabbit-cursor-relay.mjs
