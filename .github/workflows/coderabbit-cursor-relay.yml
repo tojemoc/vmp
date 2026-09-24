@@ -28,12 +28,15 @@
 #
 # Fork / untrusted PR safety
 # --------------------------
-# `issue_comment` and `pull_request_review` always run the workflow file from
-# this repo's default branch (not the PR head). Checkout pins
-# `ref: default_branch` and only sparse-checks out `.github/scripts`, so fork
-# PR code is never checked out or executed. `CURSOR_AUTOMATION_PAT` is only
-# passed into that trusted script — it is never available to fork-controlled
-# workflow YAML or PR-tree scripts.
+# Workflow *file* source differs by event (GitHub docs):
+# - `issue_comment` → workflow YAML from the default branch
+# - `pull_request_review` → workflow YAML from the PR merge commit
+#   (`refs/pull/<n>/merge`)
+# For public fork PRs, GitHub does not pass repository secrets to the runner
+# (only a read-only `GITHUB_TOKEN`). Checkout still pins
+# `ref: default_branch` and sparse-checks out `.github/scripts` only, so this
+# job never runs PR-head / merge-tree scripts even when the triggering event’s
+# default `GITHUB_SHA` would be the merge commit.
 #
 # Setup
 # -----
