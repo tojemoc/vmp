@@ -26,6 +26,7 @@ export const MANUAL_TRIGGER_PHRASE = '@coderabbitai review';
  *   kind: 'ratelimit' | 'actionable' | 'manual_trigger' | 'ignore',
  *   waitMinutes?: number | null,
  *   actionableCount?: number | null,
+ *   runId?: string | null,
  *   reason?: string,
  * }}
  */
@@ -42,6 +43,7 @@ export function classifyCodeRabbitEvent({ eventName, body }) {
     return {
       kind: 'ratelimit',
       waitMinutes: waitMatch ? Number.parseInt(waitMatch[1], 10) : null,
+      runId: parseCodeRabbitRunId(body),
     };
   }
 
@@ -70,7 +72,11 @@ export function classifyCodeRabbitEvent({ eventName, body }) {
     if (actionable) {
       const count = Number.parseInt(actionable[1], 10);
       if (count > 0) {
-        return { kind: 'actionable', actionableCount: count };
+        return {
+          kind: 'actionable',
+          actionableCount: count,
+          runId: parseCodeRabbitRunId(body),
+        };
       }
       return { kind: 'ignore', reason: 'actionable_zero' };
     }
@@ -80,15 +86,31 @@ export function classifyCodeRabbitEvent({ eventName, body }) {
 }
 
 /**
+ * Extract CodeRabbit's Run ID from a comment/review body when present.
+ * @param {string} body
+ * @returns {string | null}
+ */
+export function parseCodeRabbitRunId(body) {
+  if (!body || typeof body !== 'string') return null;
+  const match = body.match(
+    /\*{0,2}Run ID\*{0,2}:\s*`([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`/i,
+  );
+  return match ? match[1].toLowerCase() : null;
+}
+
+/**
  * Stable revision key for one CodeRabbit event state.
  * Rate-limit notices reuse the same comment id when the wait window changes;
  * bundling updated_at + wait_minutes lets each window relay separately.
+ * Actionable reviews may reuse the same GitHub review id and count across
+ * CodeRabbit runs — include runId when present so a new run re-relays.
  *
  * @param {{
  *   kind: 'ratelimit' | 'actionable',
  *   updatedAt: string | Date | null | undefined,
  *   waitMinutes?: number | null,
  *   actionableCount?: number | null,
+ *   runId?: string | null,
  * }} opts
  */
 export function buildEventRevision(opts) {
@@ -103,7 +125,8 @@ export function buildEventRevision(opts) {
   }
 
   const count = opts.actionableCount == null ? 'unknown' : String(opts.actionableCount);
-  return `${ts}|actionable=${count}`;
+  const run = opts.runId ? `|run=${opts.runId}` : '';
+  return `${ts}|actionable=${count}${run}`;
 }
 
 /**
@@ -115,6 +138,7 @@ export function buildEventRevision(opts) {
  *   revision: string,
  *   waitMinutes?: number | null,
  *   actionableCount?: number | null,
+ *   runId?: string | null,
  * }} opts
  */
 export function buildRelayCommentBody(opts) {
@@ -135,6 +159,9 @@ export function buildRelayCommentBody(opts) {
   }
   if (opts.kind === 'actionable' && opts.actionableCount != null) {
     lines.push(`actionable_count: ${opts.actionableCount}`);
+  }
+  if (opts.runId) {
+    lines.push(`run_id: ${opts.runId}`);
   }
 
   lines.push('```', '');
@@ -301,6 +328,7 @@ export async function runRelay(ctx) {
     updatedAt: sourceUpdatedAt,
     waitMinutes: classification.waitMinutes,
     actionableCount: classification.actionableCount,
+    runId: classification.runId,
   });
 
   if (
@@ -325,6 +353,7 @@ export async function runRelay(ctx) {
     revision,
     waitMinutes: classification.waitMinutes,
     actionableCount: classification.actionableCount,
+    runId: classification.runId,
   });
 
   await gh(relayPat, `/repos/${owner}/${repo}/issues/${prNumber}/comments`, {

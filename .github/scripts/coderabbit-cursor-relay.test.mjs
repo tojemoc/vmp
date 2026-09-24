@@ -8,8 +8,10 @@ import {
   buildEventRevision,
   buildRelayCommentBody,
   classifyCodeRabbitEvent,
+  parseCodeRabbitRunId,
   RELAY_MARKER,
   RELAY_MENTION,
+  runRelay,
 } from './coderabbit-cursor-relay.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -69,6 +71,7 @@ describe('classifyCodeRabbitEvent', () => {
     });
     assert.equal(result.kind, 'actionable');
     assert.equal(result.actionableCount, 5);
+    assert.equal(result.runId, '9247ee74-9851-4d6a-8f5f-0a7c2faeb56a');
   });
 
   it('classifies manual-trigger notices', () => {
@@ -215,5 +218,83 @@ describe('buildEventRevision + alreadyRelayed', () => {
     assert.throws(() => alreadyRelayed([], { kind: 'ratelimit', sourceId: 1, revision: 'x' }), {
       message: /authorLogin/,
     });
+  });
+
+  it('distinguishes actionable revisions by CodeRabbit Run ID', () => {
+    const shared = {
+      kind: 'actionable',
+      updatedAt: '2026-09-22T12:00:00.000Z',
+      actionableCount: 5,
+    };
+    const revA = buildEventRevision({ ...shared, runId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' });
+    const revB = buildEventRevision({ ...shared, runId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' });
+    assert.notEqual(revA, revB);
+    assert.ok(revA.includes('run=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'));
+    assert.equal(
+      parseCodeRabbitRunId(fixture('coderabbit-actionable-review.md')),
+      '9247ee74-9851-4d6a-8f5f-0a7c2faeb56a',
+    );
+  });
+});
+
+describe('runRelay', () => {
+  it('posts one actionable relay comment for a pull_request_review fixture', async () => {
+    const originalFetch = globalThis.fetch;
+    /** @type {Array<{ method: string, url: string, body?: string }>} */
+    const posts = [];
+
+    globalThis.fetch = async (input, init = {}) => {
+      const url = String(input);
+      const method = (init.method ?? 'GET').toUpperCase();
+
+      if (method === 'GET' && url.includes('/user')) {
+        return new Response(JSON.stringify({ login: RELAY_AUTHOR }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'GET' && url.includes('/issues/') && url.includes('/comments')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'POST' && url.includes('/issues/') && url.includes('/comments')) {
+        posts.push({ method, url, body: init.body });
+        return new Response(JSON.stringify({ id: 1 }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`);
+    };
+
+    try {
+      const result = await runRelay({
+        eventName: 'pull_request_review',
+        payload: {
+          review: {
+            id: 9001,
+            body: fixture('coderabbit-actionable-review.md'),
+            submitted_at: '2026-09-22T14:00:00.000Z',
+          },
+          pull_request: { number: 701 },
+        },
+        owner: 'tojemoc',
+        repo: 'vmp',
+        githubToken: 'gh-token',
+        relayPat: 'pat-token',
+      });
+
+      assert.equal(result.status, 'posted');
+      assert.equal(result.kind, 'actionable');
+      assert.equal(posts.length, 1);
+      const posted = JSON.parse(posts[0].body);
+      assert.ok(posted.body.includes('actionable_count: 5'));
+      assert.ok(posted.body.includes('run_id: 9247ee74-9851-4d6a-8f5f-0a7c2faeb56a'));
+      assert.ok(posted.body.includes(RELAY_MARKER));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
