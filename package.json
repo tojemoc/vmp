@@ -28,11 +28,11 @@
     "db:seed": "cd packages/api && wrangler d1 execute video-subscription-db --file=./migrations/0002_canonical_seed.sql"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.13",
+    "@biomejs/biome": "^2.5.14",
     "@nx/nuxt": "23.2.1",
     "@nx/vite": "23.2.1",
     "@vue/language-core": "^3.3.11",
-    "knip": "^6.35.1",
+    "knip": "^6.37.0",
     "nuxt": "^4.5.2",
     "nx": "23.2.1",
     "ws": "8.21.3",
