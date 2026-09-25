@@ -40,7 +40,7 @@
  */
 
 import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE, normalizeMagicLinkClient } from '@vmp/shared';
-import { d1FirstOptionalColumn } from './d1OptionalColumn.js';
+import { d1FirstOptionalColumn, isMissingD1ColumnError } from './d1OptionalColumn.js';
 import { log } from './logger.js';
 import {
   capturePostHogEvent,
@@ -743,9 +743,13 @@ export async function consumeMagicLinkOtpForUser(
       logEvent: 'd1_missing_deletion_pending_column',
     });
   } catch (err) {
-    // otp_hash column missing — treat as invalid until migration applied.
-    console.error('[auth] otp lookup failed:', err);
-    return { tag: 'invalid', message: 'Invalid confirmation code.' };
+    // Pre-migration DBs (no otp_hash) — treat as invalid until migration applied.
+    // Other D1 failures must surface as errors, not "wrong code".
+    if (isMissingD1ColumnError(err, 'otp_hash')) {
+      console.error('[auth] otp lookup failed (missing otp_hash column):', err);
+      return { tag: 'invalid', message: 'Invalid confirmation code.' };
+    }
+    throw err;
   }
 
   if (!record) {

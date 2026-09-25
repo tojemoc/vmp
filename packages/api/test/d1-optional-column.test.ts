@@ -20,6 +20,12 @@ describe('isMissingD1ColumnError', () => {
     assert.equal(isMissingD1ColumnError(err, 'totp_secret'), false);
   });
 
+  it('matches otp_hash missing-column errors', () => {
+    const err = new Error('D1_ERROR: no such column: t.otp_hash at offset 40: SQLITE_ERROR');
+    assert.equal(isMissingD1ColumnError(err, 'otp_hash'), true);
+    assert.equal(isMissingD1ColumnError(err, 'deletion_pending'), false);
+  });
+
   it('ignores unrelated D1 errors', () => {
     assert.equal(
       isMissingD1ColumnError(new Error('D1_ERROR: no such table: users'), 'deletion_pending'),

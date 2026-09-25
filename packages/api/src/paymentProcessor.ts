@@ -4,7 +4,11 @@
 
 import { requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
-import { linkCheckoutConsentSubscription, persistCheckoutConsent } from './checkoutConsent.js';
+import {
+  linkCheckoutConsentSubscription,
+  persistCheckoutConsent,
+  resolveCheckoutConsentVersion,
+} from './checkoutConsent.js';
 import { applyCheckoutNewsletterOptOut } from './newsletterPreference.js';
 import { applyPromoRedemption, resolvePromoCodeForCheckout } from './promotions.js';
 import { isAdministrativeRole } from './roles.js';
@@ -1602,7 +1606,12 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       provider: apiProvider,
       providerSessionId,
       checkoutSessionId: null,
-      ...(consentOverride ? { consentText: consentOverride } : {}),
+      ...(consentOverride
+        ? {
+            consentText: consentOverride,
+            consentVersion: await resolveCheckoutConsentVersion(consentOverride),
+          }
+        : {}),
     });
 
     if (session.clientSecret) {

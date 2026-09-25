@@ -204,13 +204,11 @@
 
   const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error');
 
-  /** Same return path magic-link / OTP already stamp onto the verify URL. */
-  const loginReturnPath = computed(
-    () => resolveAuthReturnPath(undefined, route.fullPath) ?? route.fullPath,
-  );
+  /** Same return path magic-link / OTP stamp onto the verify URL (unset on /login|/auth/*). */
+  const loginReturnPath = computed(() => resolveAuthReturnPath(undefined, route.fullPath));
 
   const loginPageHref = computed(() => {
-    const redirect = resolveAuthReturnPath(undefined, route.fullPath);
+    const redirect = loginReturnPath.value;
     return redirect ? { path: '/login', query: { redirect } } : { path: '/login' };
   });
 

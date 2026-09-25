@@ -11,6 +11,7 @@ describe('safeRedirectPath', () => {
   it('rejects open redirects', () => {
     assert.equal(safeRedirectPath('https://evil.example/', '/'), '/');
     assert.equal(safeRedirectPath('//evil.example/', '/'), '/');
+    assert.equal(safeRedirectPath('/\\evil.example/', '/'), '/');
     assert.equal(safeRedirectPath('', '/'), '/');
   });
 });
@@ -21,13 +22,24 @@ describe('resolveAuthReturnPath', () => {
   });
 
   it('falls back to current path when not an auth page', () => {
-    assert.equal(resolveAuthReturnPath(undefined, '/watch/vid?showPremium=1'), '/watch/vid?showPremium=1');
+    assert.equal(
+      resolveAuthReturnPath(undefined, '/watch/vid?showPremium=1'),
+      '/watch/vid?showPremium=1',
+    );
     assert.equal(resolveAuthReturnPath(undefined, '/blog/slug'), '/blog/slug');
+    assert.equal(resolveAuthReturnPath(undefined, '/authors'), '/authors');
+    assert.equal(
+      resolveAuthReturnPath(undefined, '/authentication-guide'),
+      '/authentication-guide',
+    );
   });
 
   it('does not bounce back onto login or auth intermediates', () => {
     assert.equal(resolveAuthReturnPath(undefined, '/login'), undefined);
     assert.equal(resolveAuthReturnPath(undefined, '/login?x=1'), undefined);
+    assert.equal(resolveAuthReturnPath(undefined, '/login/'), undefined);
+    assert.equal(resolveAuthReturnPath(undefined, '/auth'), undefined);
+    assert.equal(resolveAuthReturnPath(undefined, '/auth/'), undefined);
     assert.equal(resolveAuthReturnPath(undefined, '/auth/verify?token=x'), undefined);
     assert.equal(resolveAuthReturnPath(undefined, '/auth/2fa'), undefined);
   });
