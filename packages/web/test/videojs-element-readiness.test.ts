@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ensureVideojsElementReady } from '../lib/videojsBootstrap';
 
+/** Resolve after `ms` milliseconds (test timing helper). */
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -19,6 +20,7 @@ class FakeVideojsElement {
 
   constructor(private readonly initDelayMs = 0) {}
 
+  /** Mimic videojs-video-element load: set init flag before assigning `api`. */
   async load(): Promise<void> {
     this.loadCalls += 1;
     if (this.apiInit) {
@@ -44,35 +46,41 @@ class WedgedVideojsElement {
   loadCalls = 0;
   loadComplete = { resolve() {} };
 
+  /** Always throw the real element's mid-init TypeError without assigning `api`. */
   async load(): Promise<void> {
     this.loadCalls += 1;
     throw new TypeError('can\'t access property "src", this.api is undefined');
   }
 }
 
+/** Element whose load() never resolves — used to exercise abort/disconnect paths. */
 class NeverReadyElement {
   isConnected = true;
   api: undefined;
   nativeEl: { tagName: string } = { tagName: 'VIDEO' };
   loadCalls = 0;
 
+  /** Hang forever so readiness must abort or time out. */
   async load(): Promise<void> {
     this.loadCalls += 1;
     await new Promise<never>(() => {});
   }
 }
 
+/** Element with no native `<video>` — readiness should fail on the nativeEl wait. */
 class NoNativeElElement {
   isConnected = true;
   api: undefined;
   nativeEl: undefined;
   loadCalls = 0;
 
+  /** No-op load; `nativeEl` stays missing. */
   async load(): Promise<void> {
     this.loadCalls += 1;
   }
 }
 
+/** Minimal `customElements` stub keyed by tag name. */
 function registryWith(entries: Record<string, unknown>) {
   return {
     get: (name: string) => entries[name],
@@ -81,11 +89,13 @@ function registryWith(entries: Record<string, unknown>) {
   };
 }
 
+/** Install a fake `customElements` registry that returns `ctor` for `videojs-video`. */
 function installRegistry(ctor: unknown) {
   const entries = ctor === undefined ? {} : { 'videojs-video': ctor };
   (globalThis as { customElements?: unknown }).customElements = registryWith(entries);
 }
 
+/** Cast a fake element to `HTMLElement` for the readiness helper under test. */
 const asElement = (el: unknown) => el as unknown as HTMLElement;
 
 let previousCustomElements: unknown;

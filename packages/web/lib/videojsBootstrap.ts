@@ -45,6 +45,7 @@ const ELEMENT_LOAD_GRACE_MS = 2_000;
 
 let bootstrapPromise: Promise<void> | null = null;
 
+/** Return `globalThis.videojs` when it is already a callable constructor. */
 function getVideojsGlobal(): VideojsFn | null {
   const candidate = (globalThis as VideojsGlobal).videojs;
   // `typeof x === 'function'` only narrows to Function; VideojsFn needs unknown first.
@@ -84,6 +85,10 @@ async function publishVideojsGlobal(): Promise<VideojsFn> {
   return videojsLib;
 }
 
+/**
+ * Patch `<videojs-video>` play/pause to prefer `api` then `nativeEl`, so controls
+ * still work while Video.js is mid-upgrade.
+ */
 function patchVideojsPlaybackMethods() {
   const ctor = customElements.get(ELEMENT_NAME);
   if (!ctor?.prototype?.call) return;
@@ -206,6 +211,10 @@ function nextFrame(): Promise<void> {
   });
 }
 
+/**
+ * Poll `predicate` until it is true, the abort signal fires, or `timeoutMs` elapses.
+ * Throws `AbortError` on abort and `Error(message)` on timeout.
+ */
 async function waitUntil(
   predicate: () => boolean,
   options: { signal?: AbortSignal; message: string; timeoutMs?: number },
