@@ -47,14 +47,15 @@ let bootstrapPromise: Promise<void> | null = null;
 
 function getVideojsGlobal(): VideojsFn | null {
   const candidate = (globalThis as VideojsGlobal).videojs;
-  return typeof candidate === 'function' ? (candidate as VideojsFn) : null;
+  // `typeof x === 'function'` only narrows to Function; VideojsFn needs unknown first.
+  return typeof candidate === 'function' ? (candidate as unknown as VideojsFn) : null;
 }
 
 /** Unwrap CJS/ESM interop shapes (`fn`, `{ default: fn }`, nested default). */
 function unwrapVideojsExport(mod: unknown): VideojsFn | null {
   let candidate: unknown = mod;
   for (let i = 0; i < 3; i += 1) {
-    if (typeof candidate === 'function') return candidate as VideojsFn;
+    if (typeof candidate === 'function') return candidate as unknown as VideojsFn;
     if (candidate && typeof candidate === 'object' && 'default' in candidate) {
       candidate = (candidate as { default: unknown }).default;
       continue;
