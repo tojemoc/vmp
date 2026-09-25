@@ -1,7 +1,5 @@
-import { resolveAuthReturnPath, safeRedirectPath } from '~/utils/authRedirect';
+import { resolveAuthReturnPath } from '~/utils/authRedirect';
 import { isIosInstalledPwa } from '~/utils/pwa';
-
-export { resolveAuthReturnPath, safeRedirectPath };
 
 export function useLoginFlow() {
   const nuxtApp = useNuxtApp();
