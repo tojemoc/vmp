@@ -40,6 +40,7 @@
  */
 
 import { INSECURE_NATIVE_SCHEME_CONFIRM_PHRASE, normalizeMagicLinkClient } from '@vmp/shared';
+import { d1FirstOptionalColumn } from './d1OptionalColumn.js';
 import { log } from './logger.js';
 import {
   capturePostHogEvent,
@@ -189,10 +190,15 @@ export async function hashToken(token: any) {
 // ─── Magic link ───────────────────────────────────────────────────────────────
 
 async function upsertUser(email: any, db: any) {
-  const existing = await db
-    .prepare('SELECT id, email, role, deletion_pending FROM users WHERE email = ?')
-    .bind(email)
-    .first();
+  const existing = await d1FirstOptionalColumn(db, {
+    column: 'deletion_pending',
+    sql: 'SELECT id, email, role, deletion_pending FROM users WHERE email = ?',
+    fallbackSql: 'SELECT id, email, role FROM users WHERE email = ?',
+    binds: [email],
+    fallbackValue: 0,
+    logService: 'auth',
+    logEvent: 'd1_missing_deletion_pending_column',
+  });
 
   if (existing) return existing;
 
@@ -451,16 +457,27 @@ type MagicLinkConsumeResult =
  * Used by GET /api/auth/verify, POST /api/auth/magic-pwa-handoff, and redeem flows.
  */
 async function loadMagicLinkRecord(db: any, tokenHash: string) {
-  return db
-    .prepare(`
+  return d1FirstOptionalColumn(db, {
+    column: 'deletion_pending',
+    sql: `
       SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
              u.totp_enabled, u.totp_secret, u.created_at, u.deletion_pending
       FROM magic_link_tokens t
       JOIN users u ON u.id = t.user_id
       WHERE t.token_hash = ?
-    `)
-    .bind(tokenHash)
-    .first();
+    `,
+    fallbackSql: `
+      SELECT t.id, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
+             u.totp_enabled, u.totp_secret, u.created_at
+      FROM magic_link_tokens t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ?
+    `,
+    binds: [tokenHash],
+    fallbackValue: 0,
+    logService: 'auth',
+    logEvent: 'd1_missing_deletion_pending_column',
+  });
 }
 
 /**
@@ -701,12 +718,15 @@ async function consumePwaHandoffCode(db: any, code: string): Promise<string | nu
 }
 
 async function loadUserRowForAuth(db: any, userId: string) {
-  const row = await db
-    .prepare(
-      'SELECT id, email, role, totp_enabled, created_at, deletion_pending FROM users WHERE id = ? LIMIT 1',
-    )
-    .bind(userId)
-    .first();
+  const row = await d1FirstOptionalColumn(db, {
+    column: 'deletion_pending',
+    sql: 'SELECT id, email, role, totp_enabled, created_at, deletion_pending FROM users WHERE id = ? LIMIT 1',
+    fallbackSql: 'SELECT id, email, role, totp_enabled, created_at FROM users WHERE id = ? LIMIT 1',
+    binds: [userId],
+    fallbackValue: 0,
+    logService: 'auth',
+    logEvent: 'd1_missing_deletion_pending_column',
+  });
   if (!row) return null;
   // Treat deletion-pending like a missing user so handoff redemption cannot mint sessions.
   if (Number(row.deletion_pending) === 1) return null;
@@ -1221,16 +1241,27 @@ export async function handleRefreshToken(request: any, env: any, corsHeaders: an
   const db = getDb(env);
   const tokenHash = await hashToken(rawToken);
 
-  const record = await db
-    .prepare(`
+  const record = await d1FirstOptionalColumn(db, {
+    column: 'deletion_pending',
+    sql: `
       SELECT r.id, r.expires_at, u.id AS user_id, u.email, u.role, u.totp_enabled
            , u.created_at, u.deletion_pending
       FROM refresh_tokens r
       JOIN users u ON u.id = r.user_id
       WHERE r.token_hash = ?
-    `)
-    .bind(tokenHash)
-    .first();
+    `,
+    fallbackSql: `
+      SELECT r.id, r.expires_at, u.id AS user_id, u.email, u.role, u.totp_enabled
+           , u.created_at
+      FROM refresh_tokens r
+      JOIN users u ON u.id = r.user_id
+      WHERE r.token_hash = ?
+    `,
+    binds: [tokenHash],
+    fallbackValue: 0,
+    logService: 'auth',
+    logEvent: 'd1_missing_deletion_pending_column',
+  });
 
   if (!record || new Date(record.expires_at) < new Date()) {
     log({ service: 'auth', event: 'refresh_token_rejected', level: 'warn' });
@@ -1382,10 +1413,15 @@ export async function requireAuth(request: any, env: any) {
   // keep using sessions while the durable job runs.
   const sub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
   if (!sub) throw new Error('Invalid token subject');
-  const userRow = await getDb(env)
-    .prepare('SELECT deletion_pending FROM users WHERE id = ? LIMIT 1')
-    .bind(sub)
-    .first();
+  const userRow = await d1FirstOptionalColumn(getDb(env), {
+    column: 'deletion_pending',
+    sql: 'SELECT deletion_pending FROM users WHERE id = ? LIMIT 1',
+    fallbackSql: 'SELECT id FROM users WHERE id = ? LIMIT 1',
+    binds: [sub],
+    fallbackValue: 0,
+    logService: 'auth',
+    logEvent: 'd1_missing_deletion_pending_column',
+  });
   if (!userRow) throw new Error('User no longer exists');
   if (Number(userRow.deletion_pending) === 1) {
     throw new Error('Account deletion pending');

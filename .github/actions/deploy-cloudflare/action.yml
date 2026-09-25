@@ -144,6 +144,14 @@ runs:
         NODE_ENV: production
       run: npm run build
 
+    - name: Ensure D1 schema required by API (${{ inputs.deploy-tier }})
+      shell: bash
+      working-directory: packages/api
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: bash ./scripts/ensure_d1_required_schema.sh --remote
+
     - name: Deploy API (${{ inputs.deploy-tier }})
       shell: bash
       env:
@@ -171,6 +179,7 @@ runs:
           EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:0")
         fi
         npm run deploy --workspace=@vmp/api -- "${EXTRA_ARGS[@]}"
+
     - name: Deploy Web (${{ inputs.deploy-tier }} Worker)
       shell: bash
       working-directory: packages/web
