@@ -42,5 +42,9 @@ describe('resolveAuthReturnPath', () => {
     assert.equal(resolveAuthReturnPath(undefined, '/auth/'), undefined);
     assert.equal(resolveAuthReturnPath(undefined, '/auth/verify?token=x'), undefined);
     assert.equal(resolveAuthReturnPath(undefined, '/auth/2fa'), undefined);
+    // Explicit ?redirect= to auth intermediates is also rejected.
+    assert.equal(resolveAuthReturnPath('/login', '/watch/1'), undefined);
+    assert.equal(resolveAuthReturnPath('/auth/verify', '/account'), undefined);
+    assert.equal(resolveAuthReturnPath('/auth', '/'), undefined);
   });
 });

@@ -6,6 +6,12 @@ import { useSession } from '../../src/auth/SessionProvider';
 import { completeTotpLogin } from '../../src/auth/session';
 import { isTotpSessionExpired, TotpVerifyError } from '../../src/auth/totp';
 
+/** Keep post-login destination when recovering from an expired 2FA challenge. */
+function loginHref(redirectTo: string): '/login' | `/login?redirect=${string}` {
+  if (!redirectTo || redirectTo === '/') return '/login';
+  return `/login?redirect=${encodeURIComponent(redirectTo)}`;
+}
+
 /**
  * Second step after magic-link redeem when the account has TOTP enabled.
  * Pending token lives in SessionProvider (not URL) for the ~5 minute API TTL.
@@ -25,6 +31,11 @@ export default function AuthTwoFactorScreen() {
       setSessionExpired(true);
     }
   }, [booting, session, pendingTwoFactorToken]);
+
+  function goToLogin() {
+    clearPendingTwoFactor();
+    router.replace(loginHref(redirectTo));
+  }
 
   if (booting) {
     return (
@@ -76,13 +87,7 @@ export default function AuthTwoFactorScreen() {
           <Text style={styles.error}>
             {localError || 'Your sign-in session has expired. Please request a new magic link.'}
           </Text>
-          <Pressable
-            style={styles.primaryBtn}
-            onPress={() => {
-              clearPendingTwoFactor();
-              router.replace('/login');
-            }}
-          >
+          <Pressable style={styles.primaryBtn} onPress={goToLogin}>
             <Text style={styles.primaryBtnText}>Back to sign in</Text>
           </Pressable>
         </>
@@ -113,12 +118,7 @@ export default function AuthTwoFactorScreen() {
               <Text style={styles.primaryBtnText}>Verify</Text>
             )}
           </Pressable>
-          <Pressable
-            onPress={() => {
-              clearPendingTwoFactor();
-              router.replace('/login');
-            }}
-          >
+          <Pressable onPress={goToLogin}>
             <Text style={styles.link}>Request a new link</Text>
           </Pressable>
         </>

@@ -13,23 +13,26 @@ export function safeRedirectPath(value: unknown, fallback?: string): string | un
   return t;
 }
 
+function isAuthIntermediatePath(fullPath: string): boolean {
+  const pathOnly = fullPath.split('?')[0]?.split('#')[0] ?? fullPath;
+  const normalized =
+    pathOnly.length > 1 && pathOnly.endsWith('/') ? pathOnly.slice(0, -1) : pathOnly;
+  return normalized === '/login' || normalized === '/auth' || normalized.startsWith('/auth/');
+}
+
 /**
  * Prefer an explicit redirect; otherwise the current route (so Sign in from a
  * video / article / account / checkout return lands back there after the link).
- * Never bounce back onto `/login` or `/auth` intermediates.
+ * Never bounce back onto `/login` or `/auth` intermediates — including when
+ * those paths are passed explicitly via `?redirect=`.
  */
 export function resolveAuthReturnPath(
   explicit: unknown,
   currentFullPath: string | undefined,
 ): string | undefined {
-  const fromQuery = safeRedirectPath(explicit);
-  if (fromQuery) return fromQuery;
-  if (!currentFullPath) return undefined;
-  const pathOnly = currentFullPath.split('?')[0]?.split('#')[0] ?? currentFullPath;
-  const normalized =
-    pathOnly.length > 1 && pathOnly.endsWith('/') ? pathOnly.slice(0, -1) : pathOnly;
-  if (normalized === '/login' || normalized === '/auth' || normalized.startsWith('/auth/')) {
-    return undefined;
-  }
-  return safeRedirectPath(currentFullPath);
+  const sanitizedExplicit = safeRedirectPath(explicit);
+  const candidate = sanitizedExplicit ?? safeRedirectPath(currentFullPath);
+  if (!candidate) return undefined;
+  if (isAuthIntermediatePath(candidate)) return undefined;
+  return candidate;
 }

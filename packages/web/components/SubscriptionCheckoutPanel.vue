@@ -413,6 +413,8 @@
   /** Currency for the generic plan-card amounts (matches primary checkout provider). */
   const planCardCurrency = ref('EUR');
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
+  /** Admin-allowed plan types from pricing API (defaults to all until loaded). */
+  const allowedPlans = ref<PlanType[]>(['monthly', 'yearly', 'club']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
   const selectedPlan = ref<PlanType>('monthly');
@@ -615,6 +617,7 @@
 
   /** True when at least one enabled provider can sell this plan. */
   function isPlanAvailable(plan: PlanType): boolean {
+    if (!allowedPlans.value.includes(plan)) return false;
     const providers = enabledProviders.value;
     if (providers.includes('stripe') && hasConfiguredProviderPrice(stripePrices.value[plan])) {
       return true;
@@ -673,6 +676,7 @@
 
   /** True when the given provider can sell this plan at a configured price. */
   function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
+    if (!allowedPlans.value.includes(plan)) return false;
     if (!enabledProviders.value.includes(provider)) return false;
     switch (provider) {
       case 'stripe':
@@ -774,6 +778,12 @@
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
       enabledProviders.value = providers as PaymentProvider[];
+      const allowed = Array.isArray(data.allowedPlans)
+        ? data.allowedPlans.filter(
+            (p: string): p is PlanType => p === 'monthly' || p === 'yearly' || p === 'club',
+          )
+        : [];
+      allowedPlans.value = allowed.length ? allowed : ['monthly', 'yearly', 'club'];
       promotionsEnabled.value = data.promotionsEnabled !== false;
       const copy =
         data.checkoutCopy && typeof data.checkoutCopy === 'object' ? data.checkoutCopy : {};
