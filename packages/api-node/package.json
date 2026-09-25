@@ -18,19 +18,19 @@
     "node": "^22.12.0 || ^24.11.0 || >=26.0.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1131.0",
-    "@aws-sdk/s3-request-presigner": "^3.1131.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@smithy/fetch-http-handler": "^5.8.0",
     "@vmp/storage": "file:../storage",
     "postgres": "^3.4.7",
-    "posthog-node": "5.52.1"
+    "posthog-node": "5.52.5"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260914.1",
-    "@sentry/cloudflare": "^10.74.0",
-    "@types/node": "^26.5.1",
+    "@cloudflare/workers-types": "^5.20260921.1",
+    "@sentry/cloudflare": "^10.75.0",
+    "@types/node": "^26.6.2",
     "esbuild": "^0.28.2",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }

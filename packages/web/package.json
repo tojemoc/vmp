@@ -28,8 +28,8 @@
     "@moq/signals": "^0.2.0",
     "@moq/watch": "^0.5.4",
     "@nuxtjs/color-mode": "^4.0.0",
-    "@posthog/nuxt": "^1.7.89",
-    "@sentry/nuxt": "^10.74.0",
+    "@posthog/nuxt": "^1.7.91",
+    "@sentry/nuxt": "^10.75.0",
     "@stripe/stripe-js": "^9.16.0",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-link": "^3.31.3",
@@ -42,22 +42,22 @@
     "@vmp/shared": "*",
     "media-chrome": "^4.19.0",
     "nuxt": "^4.5.2",
-    "posthog-node": "^5.52.1",
+    "posthog-node": "^5.52.5",
     "qrcode": "^1.5.4",
     "tus-js-client": "^4.3.1",
     "unsane": "^0.1.0",
-    "video.js": "^8.24.0",
+    "video.js": "^8.24.1",
     "videojs-video-element": "^1.4.8",
-    "vue": "^3.5.42"
+    "vue": "^3.5.43"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.2",
     "@types/qrcode": "^1.5.6",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vue-tsc": "^3.3.10",
-    "wrangler": "^4.131.1"
+    "wrangler": "^4.135.0"
   },
   "nx": {
     "targets": {
