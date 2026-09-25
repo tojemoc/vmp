@@ -43,13 +43,13 @@ export const strings: StringsDefinition = {
 
   // ── Login (magic link) ─────────────────────────────────────────────────────
   loginTitle: 'Sign in',
-  loginSubtitle: "We'll email you a sign-in link. No password needed.",
+  loginSubtitle: "We'll email you a confirmation code and a sign-in link. No password needed.",
   loginEmailLabel: 'Email address',
   loginEmailPlaceholder: 'you@example.com',
-  loginSendLink: 'Send sign-in link',
+  loginSendLink: 'Send confirmation code',
   loginSending: 'Sending…',
-  loginMagicLinkSent: '✓ Check your inbox — a sign-in link is on its way.',
-  loginMagicLinkExpires: 'It expires in 15 minutes.',
+  loginMagicLinkSent: '✓ Check your inbox — a confirmation code and sign-in link are on their way.',
+  loginMagicLinkExpires: 'They expire in 15 minutes.',
   loginSessionFlowHint:
     'If this browser does not open the link inside the app, copy/paste it into this browser to keep your session flow consistent.',
   loginOpenEmailApp: 'Open your email app',
@@ -58,6 +58,8 @@ export const strings: StringsDefinition = {
   loginOpenEmailHint: 'Use your default mail app, or open webmail in a new tab.',
   loginTerms: 'By signing in, you agree to our terms of service.',
   loginErrorGeneric: 'Something went wrong. Please try again.',
+  loginInlineHint: 'Email a code to stay on this page, or open the sign-in link from your inbox.',
+  loginFullPageLink: 'Open full sign-in page',
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Signing you in…',

@@ -9,9 +9,9 @@
             aria-hidden="true"
             class="w-8 h-8 rounded-lg shrink-0"
           >
-          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden"
-            >{{ siteSettings.siteNameShort }}</span
-          >
+          <span class="text-lg font-bold text-gray-900 dark:text-white sm:hidden">{{
+            siteSettings.siteNameShort
+          }}</span>
           <span
             class="hidden sm:block text-xl font-bold text-gray-900 dark:text-white max-w-[12rem] md:max-w-none truncate"
           >
@@ -20,14 +20,52 @@
         </NuxtLink>
 
         <div class="flex items-center gap-2 sm:gap-4">
-          <button
-            v-if="!isLoggedIn"
-            type="button"
-            class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
-            @click="handleSignIn"
-          >
-            {{ strings.signIn }}
-          </button>
+          <div v-if="!isLoggedIn" class="relative" ref="loginDropdownRef">
+            <button
+              type="button"
+              class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
+              :aria-expanded="loginDropdownOpen"
+              aria-controls="login-menu"
+              @click="toggleLoginDropdown"
+            >
+              {{ strings.signIn }}
+            </button>
+
+            <Transition
+              enter-active-class="transition-all duration-150 ease-out"
+              enter-from-class="opacity-0 scale-95 -translate-y-1"
+              enter-to-class="opacity-100 scale-100 translate-y-0"
+              leave-active-class="transition-all duration-100 ease-in"
+              leave-from-class="opacity-100 scale-100 translate-y-0"
+              leave-to-class="opacity-0 scale-95 -translate-y-1"
+            >
+              <div
+                id="login-menu"
+                v-show="loginDropdownOpen"
+                :aria-hidden="!loginDropdownOpen ? 'true' : 'false'"
+                class="absolute right-0 top-full mt-2 w-72 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden z-50 p-4"
+              >
+                <p class="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                  {{ strings.loginTitle }}
+                </p>
+                <InlineAuthForm
+                  :redirect-path="loginReturnPath"
+                  surface="header"
+                  variant="popup"
+                  :bordered="false"
+                  :hint="strings.loginInlineHint"
+                  @success="onLoginSuccess"
+                />
+                <NuxtLink
+                  :to="loginPageHref"
+                  class="mt-3 block text-center text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline underline-offset-2"
+                  @click="loginDropdownOpen = false"
+                >
+                  {{ strings.loginFullPageLink }}
+                </NuxtLink>
+              </div>
+            </Transition>
+          </div>
 
           <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
             <button
@@ -83,7 +121,9 @@
                     @click="handleBellClick"
                   >
                     <span class="w-4 text-center">{{ pushSubscribed ? '🔔' : '🔕' }}</span>
-                    {{ pushSubscribed ? strings.disableNotifications : strings.enableNotifications }}
+                    {{
+                      pushSubscribed ? strings.disableNotifications : strings.enableNotifications
+                    }}
                   </button>
 
                   <NuxtLink
@@ -134,6 +174,8 @@
 </template>
 
 <script setup lang="ts">
+  import { resolveAuthReturnPath } from '~/utils/authRedirect';
+  import { isIosInstalledPwa } from '~/utils/pwa';
   import strings from '~/utils/strings';
 
   const { user, isLoggedIn, canEditContent, logout } = useAuth();
@@ -149,14 +191,28 @@
     clearError: clearPushError,
   } = usePushNotifications();
   const { startLoginFlow } = useLoginFlow();
+  const { openPwaPushLoginWizard } = usePwaLoginWizardState();
 
+  const route = useRoute();
   const router = useRouter();
   const dropdownOpen = ref(false);
   const dropdownRef = ref<HTMLElement | null>(null);
+  const loginDropdownOpen = ref(false);
+  const loginDropdownRef = ref<HTMLElement | null>(null);
   const pushToast = ref<{ type: 'success' | 'error'; message: string } | null>(null);
   let pushToastTimer: ReturnType<typeof setTimeout> | null = null;
 
   const isError = computed(() => !!pushError.value || pushToast.value?.type === 'error');
+
+  /** Same return path magic-link / OTP already stamp onto the verify URL. */
+  const loginReturnPath = computed(
+    () => resolveAuthReturnPath(undefined, route.fullPath) ?? route.fullPath,
+  );
+
+  const loginPageHref = computed(() => {
+    const redirect = resolveAuthReturnPath(undefined, route.fullPath);
+    return redirect ? { path: '/login', query: { redirect } } : { path: '/login' };
+  });
 
   const pushBellTitle = computed(() => {
     if (!pushSupported.value)
@@ -225,6 +281,9 @@
     if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
       dropdownOpen.value = false;
     }
+    if (loginDropdownRef.value && !loginDropdownRef.value.contains(e.target as Node)) {
+      loginDropdownOpen.value = false;
+    }
   }
 
   async function handleLogout() {
@@ -233,8 +292,18 @@
     router.push('/');
   }
 
-  async function handleSignIn() {
-    await startLoginFlow();
+  async function toggleLoginDropdown() {
+    // iOS installed PWA still needs the push-login wizard — fall through to /login.
+    if (isIosInstalledPwa()) {
+      openPwaPushLoginWizard();
+      await startLoginFlow(loginReturnPath.value);
+      return;
+    }
+    loginDropdownOpen.value = !loginDropdownOpen.value;
+  }
+
+  function onLoginSuccess() {
+    loginDropdownOpen.value = false;
   }
 
   const roleLabel = computed(() => strings.roleLabel(user.value?.role));

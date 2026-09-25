@@ -1340,10 +1340,13 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
 
 /**
  * POST /api/auth/verify-code
- * Body: { email: string, code: string }
+ * Body: { email: string, code: string, client?: 'browser' | 'pwa' | 'native' }
  *
- * Same outcomes as GET /api/auth/verify, but uses the email confirmation code
- * from the magic-link message so checkout can finish sign-in inline.
+ * Same outcomes as GET /api/auth/verify / POST native/redeem, but uses the
+ * email confirmation code from the magic-link message. `client` mirrors the
+ * stamp already used when requesting the magic link so native apps get
+ * `refreshToken` in the JSON body (like native redeem) while browser/PWA
+ * keep the HttpOnly cookie session.
  */
 export async function handleVerifyMagicLinkCode(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -1351,6 +1354,7 @@ export async function handleVerifyMagicLinkCode(request: any, env: any, corsHead
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === 'string' ? body.email.toLowerCase().trim() : '';
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  const client = normalizeMagicLinkClient(body?.client);
   if (!email || !code) {
     return authJson({ error: 'email and code are required' }, 400, corsHeaders);
   }
@@ -1362,6 +1366,8 @@ export async function handleVerifyMagicLinkCode(request: any, env: any, corsHead
     return authJson({ error: 'Too many attempts. Please try again shortly.' }, 429, corsHeaders);
   }
 
+  const surface = client === 'native' ? 'native_otp' : 'inline_otp';
+
   const phase = await consumeMagicLinkOtpForUser(env, email, code);
   if (phase.tag === 'invalid') {
     log({
@@ -1369,17 +1375,20 @@ export async function handleVerifyMagicLinkCode(request: any, env: any, corsHead
       event: 'magic_link_otp_verify_failed',
       level: 'warn',
       error_code: 'invalid_or_used',
+      client,
     });
     captureAuthProductEvent(env, request, 'magic_link_redeem_failed', {
-      surface: 'checkout_otp',
+      surface,
       reason: 'invalid_or_used',
+      client,
     });
     return authJson({ error: phase.message }, 401, corsHeaders);
   }
   if (phase.tag === 'totp_pending') {
     captureAuthProductEvent(env, request, 'magic_link_redeem_succeeded', {
-      surface: 'checkout_otp',
+      surface,
       outcome: 'totp_required',
+      client,
     });
     return authJson(
       { requiresTwoFactor: true, pendingToken: phase.pendingToken },
@@ -1394,14 +1403,24 @@ export async function handleVerifyMagicLinkCode(request: any, env: any, corsHead
     event: 'magic_link_otp_verify_success',
     level: 'info',
     totp_required: Boolean(phase.user.totp_enabled),
+    client,
   });
   captureAuthProductEvent(
     env,
     request,
     'magic_link_redeem_succeeded',
-    { surface: 'checkout_otp', outcome: 'session' },
+    { surface, outcome: 'session', client },
     String(phase.user.id),
   );
+
+  // Native: same contract as POST /api/auth/native/redeem — refreshToken in body,
+  // no HttpOnly cookie (Expo SecureStore). Browser/PWA keep cookie session.
+  if (client === 'native') {
+    const session = await issueNativeSessionTokens(phase.user, env, db);
+    const headers = buildResponseHeaders(corsHeaders);
+    return new Response(JSON.stringify({ ok: true, ...session }), { status: 200, headers });
+  }
+
   return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders);
 }
 

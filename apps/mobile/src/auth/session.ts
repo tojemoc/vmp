@@ -5,6 +5,7 @@ import {
   logoutNative,
   redeemNativeMagicLink,
   refreshNativeSession,
+  verifyNativeMagicLinkCode,
   verifyNativeTotp,
 } from '../api/client';
 import { clearStoredDevice } from '../offline/device';
@@ -109,6 +110,30 @@ export async function redeemMagicLinkToken(token: string): Promise<RedeemMagicLi
     }
     if (!('refreshToken' in session) || !session.refreshToken) {
       throw new Error('Native redeem did not return a refreshToken');
+    }
+    return { status: 'authenticated', session: await persistNativeSession(session) };
+  });
+}
+
+/** Same outcomes as redeemMagicLinkToken, via email OTP (client=native on verify-code). */
+export async function redeemMagicLinkCode(
+  email: string,
+  code: string,
+): Promise<RedeemMagicLinkResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const digits = code.replace(/\D/g, '').slice(0, 6);
+  return shareInFlightByKey(redeemInFlightByKey, `otp:${normalizedEmail}:${digits}`, async () => {
+    const session = await verifyNativeMagicLinkCode(normalizedEmail, digits);
+    if ('requiresTwoFactor' in session && session.requiresTwoFactor) {
+      if (!session.pendingToken) {
+        throw new Error(
+          'Two-factor authentication is required, but no pending token was returned.',
+        );
+      }
+      return { status: 'two_factor_required', pendingToken: session.pendingToken };
+    }
+    if (!('refreshToken' in session) || !session.refreshToken) {
+      throw new Error('Native OTP verify did not return a refreshToken');
     }
     return { status: 'authenticated', session: await persistNativeSession(session) };
   });

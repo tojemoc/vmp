@@ -60,6 +60,21 @@ export async function requestMagicLink(
   });
 }
 
+/**
+ * POST /api/auth/verify-code with client=native — same session contract as
+ * native/redeem (refreshToken in JSON). Shares the magic-link client stamp
+ * already used when requesting the email.
+ */
+export async function verifyNativeMagicLinkCode(
+  email: string,
+  code: string,
+): Promise<NativeRedeemResponse> {
+  return apiFetch('/api/auth/verify-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, code, client: 'native' }),
+  });
+}
+
 export async function redeemNativeMagicLink(token: string): Promise<NativeRedeemResponse> {
   return apiFetch('/api/auth/native/redeem', {
     method: 'POST',

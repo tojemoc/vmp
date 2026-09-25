@@ -23,7 +23,7 @@
 
 import type { MagicLinkClient } from '@vmp/shared';
 import { hasAdFreeEntitlement } from '@vmp/shared';
-import { isInstalledPwa } from '~/utils/pwa';
+import { resolveMagicLinkClient } from '~/utils/magicLinkClient';
 import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
 
 export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
@@ -155,7 +155,8 @@ export function useAuth() {
     redirectPath?: string,
     client?: MagicLinkClient,
   ): Promise<{ ok: boolean; message: string }> {
-    const resolvedClient = client ?? (import.meta.client && isInstalledPwa() ? 'pwa' : 'browser');
+    // Same client stamp as magic-link email URLs / OTP / header popup / native.
+    const resolvedClient = resolveMagicLinkClient(client);
     const res = await fetch(`${apiUrl}/api/auth/magic-link`, {
       method: 'POST',
       credentials: 'include', // needed so the Set-Cookie from verify() works

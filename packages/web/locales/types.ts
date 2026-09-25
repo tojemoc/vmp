@@ -75,6 +75,8 @@ export type StringsDefinition = {
   loginOpenEmailHint: string;
   loginTerms: string;
   loginErrorGeneric: string;
+  loginInlineHint: string;
+  loginFullPageLink: string;
   authVerifySigningIn: string;
   authVerifyHandoffTitle: string;
   authVerifyHandoffBody: string;

@@ -46,12 +46,12 @@ export const strings: StringsDefinition = {
 
   // ── Login (magic link) ─────────────────────────────────────────────────────
   loginTitle: 'Přihlásit se',
-  loginSubtitle: 'Pošleme vám e-mailem odkaz na přihlášení. Heslo není potřeba.',
+  loginSubtitle: 'Pošleme vám e-mailem potvrzovací kód a odkaz na přihlášení. Heslo není potřeba.',
   loginEmailLabel: 'E-mailová adresa',
   loginEmailPlaceholder: 'vy@priklad.cz',
-  loginSendLink: 'Odeslat odkaz na přihlášení',
+  loginSendLink: 'Odeslat potvrzovací kód',
   loginSending: 'Odesílá se…',
-  loginMagicLinkSent: '✓ Zkontrolujte svou schránku — odkaz na přihlášení je na cestě.',
+  loginMagicLinkSent: '✓ Zkontrolujte svou schránku — potvrzovací kód a odkaz na přihlášení jsou na cestě.',
   loginMagicLinkExpires: 'Platí 15 minut.',
   loginSessionFlowHint:
     'Pokud tento prohlížeč neotevře odkaz v aplikaci, zkopírujte ho a vložte do tohoto prohlížeče, abyste zachovali konzistentní průběh přihlášení.',
@@ -61,6 +61,8 @@ export const strings: StringsDefinition = {
   loginOpenEmailHint: 'Použijte výchozí poštovní aplikaci nebo otevřete webmail v nové záložce.',
   loginTerms: 'Přihlášením souhlasíte s našimi podmínkami používání.',
   loginErrorGeneric: 'Něco se pokazilo. Zkuste to prosím znovu.',
+  loginInlineHint: 'Pošlete kód e-mailem a zůstaňte na této stránce, nebo otevřete odkaz ze schránky.',
+  loginFullPageLink: 'Otevřít celou stránku přihlášení',
 
   // ── Magic link / PWA handoff (auth/verify) ────────────────────────────────
   authVerifySigningIn: 'Přihlašujeme vás…',

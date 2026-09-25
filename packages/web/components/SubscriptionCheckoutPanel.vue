@@ -117,134 +117,15 @@
       {{ checkoutError }}
     </div>
 
-    <!-- Inline sign-in: email → confirmation code → optional TOTP -->
-    <div
+    <!-- Inline sign-in: email → confirmation code → optional TOTP (shared client+redirect stamp) -->
+    <InlineAuthForm
       v-if="!isLoggedIn"
-      class="mb-4 text-left space-y-3 rounded-lg border p-3"
-      :class="embedded ? 'border-gray-200 dark:border-gray-700' : 'border-gray-700'"
-    >
-      <p class="text-sm" :class="embedded ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'">
-        {{ strings.checkoutSignInBefore }}
-      </p>
-
-      <div v-if="authStep === 'email'" class="space-y-2">
-        <label
-          class="text-xs uppercase tracking-wide block"
-          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
-        >
-          {{ strings.checkoutAuthEmailLabel }}
-        </label>
-        <input
-          v-model="authEmail"
-          type="email"
-          autocomplete="email"
-          :placeholder="strings.checkoutAuthEmailPlaceholder"
-          class="w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
-          :class="embedded
-            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'border-gray-700 bg-gray-800 text-white'"
-          :disabled="authBusy"
-          @keydown.enter="sendCheckoutAuthCode"
-        >
-        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
-        <button
-          type="button"
-          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-          :disabled="authBusy || !authEmail.trim()"
-          @click="sendCheckoutAuthCode"
-        >
-          {{ authBusy ? strings.checkoutAuthSending : strings.checkoutAuthSendCode }}
-        </button>
-      </div>
-
-      <div v-else-if="authStep === 'code'" class="space-y-2">
-        <p class="text-sm text-emerald-500 dark:text-emerald-400">
-          {{ strings.checkoutAuthCodeSent }}
-        </p>
-        <label
-          class="text-xs uppercase tracking-wide block"
-          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
-        >
-          {{ strings.checkoutAuthCodeLabel }}
-        </label>
-        <input
-          v-model="authCode"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          :placeholder="strings.checkoutAuthCodePlaceholder"
-          class="w-full px-3 py-2 rounded-lg border text-sm tracking-widest placeholder-gray-500"
-          :class="embedded
-            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'border-gray-700 bg-gray-800 text-white'"
-          :disabled="authBusy"
-          @keydown.enter="verifyCheckoutAuthCode"
-        >
-        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
-        <button
-          type="button"
-          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-          :disabled="authBusy || authCode.trim().length < 6"
-          @click="verifyCheckoutAuthCode"
-        >
-          {{ authBusy ? strings.checkoutAuthVerifying : strings.checkoutAuthVerifyCode }}
-        </button>
-        <div class="flex flex-wrap gap-3 text-xs">
-          <button
-            type="button"
-            class="text-blue-500 dark:text-blue-400 hover:underline"
-            :disabled="authBusy"
-            @click="sendCheckoutAuthCode"
-          >
-            {{ strings.checkoutAuthResend }}
-          </button>
-          <button
-            type="button"
-            class="text-gray-500 dark:text-gray-400 hover:underline"
-            :disabled="authBusy"
-            @click="resetCheckoutAuth"
-          >
-            {{ strings.checkoutAuthChangeEmail }}
-          </button>
-        </div>
-      </div>
-
-      <div v-else-if="authStep === 'totp'" class="space-y-2">
-        <p class="text-sm" :class="embedded ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'">
-          {{ strings.checkoutAuthTotpHint }}
-        </p>
-        <label
-          class="text-xs uppercase tracking-wide block"
-          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
-        >
-          {{ strings.checkoutAuthTotpLabel }}
-        </label>
-        <input
-          v-model="authTotp"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          :placeholder="strings.totpCodePlaceholder"
-          class="w-full px-3 py-2 rounded-lg border text-sm tracking-widest placeholder-gray-500"
-          :class="embedded
-            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'border-gray-700 bg-gray-800 text-white'"
-          :disabled="authBusy"
-          @keydown.enter="verifyCheckoutTotp"
-        >
-        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
-        <button
-          type="button"
-          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-          :disabled="authBusy || authTotp.trim().length < 6"
-          @click="verifyCheckoutTotp"
-        >
-          {{ authBusy ? strings.checkoutAuthVerifying : strings.totpVerifyButton }}
-        </button>
-      </div>
-    </div>
+      class="mb-4"
+      :redirect-path="checkoutAuthRedirect"
+      :embedded="embedded"
+      surface="checkout"
+      :hint="strings.checkoutSignInBefore"
+    />
 
     <label
       class="mb-4 flex items-start gap-3 text-left cursor-pointer"
@@ -509,12 +390,11 @@
   const config = useRuntimeConfig();
   const apiUrl = config.public.apiUrl as string;
   const route = useRoute();
-  const { isLoggedIn, authHeader, signIn, verifyCode, verifyTotp } = useAuth();
+  const { isLoggedIn, authHeader } = useAuth();
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
   type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
-  type AuthStep = 'email' | 'code' | 'totp';
 
   interface Prices {
     monthly: number;
@@ -557,13 +437,6 @@
   let promoValidationGeneration = 0;
 
   const checkoutCopyOverride = ref<{ termsAcceptLabel?: string; trustBlurb?: string }>({});
-  const authStep = ref<AuthStep>('email');
-  const authEmail = ref('');
-  const authCode = ref('');
-  const authTotp = ref('');
-  const authPendingToken = ref('');
-  const authBusy = ref(false);
-  const authError = ref<string | null>(null);
 
   const termsAcceptLabel = computed(
     () => checkoutCopyOverride.value.termsAcceptLabel || strings.checkoutTermsAcceptLabel,
@@ -792,6 +665,11 @@
     if (showLegacyCheckout.value) return 'legacy';
     return 'stripe';
   }
+
+  /** Stamp plan+provider onto return path so magic-link / OTP reopen checkout. */
+  const checkoutAuthRedirect = computed(() =>
+    buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()),
+  );
 
   /** True when the given provider can sell this plan at a configured price. */
   function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
@@ -1135,67 +1013,6 @@
       checkoutError.value = strings.networkError;
     } finally {
       comgateCheckoutStarting.value = false;
-    }
-  }
-
-  function resetCheckoutAuth() {
-    authStep.value = 'email';
-    authCode.value = '';
-    authTotp.value = '';
-    authPendingToken.value = '';
-    authError.value = null;
-  }
-
-  async function sendCheckoutAuthCode() {
-    authError.value = null;
-    const email = authEmail.value.trim().toLowerCase();
-    if (!email) return;
-    authBusy.value = true;
-    try {
-      await signIn(email, buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()));
-      authEmail.value = email;
-      authStep.value = 'code';
-      authCode.value = '';
-    } catch (err: unknown) {
-      authError.value = err instanceof Error ? err.message : strings.loginErrorGeneric;
-    } finally {
-      authBusy.value = false;
-    }
-  }
-
-  async function verifyCheckoutAuthCode() {
-    authError.value = null;
-    const code = authCode.value.trim();
-    if (code.length < 6) return;
-    authBusy.value = true;
-    try {
-      const result = await verifyCode(authEmail.value.trim().toLowerCase(), code);
-      if ('requiresTwoFactor' in result && result.requiresTwoFactor) {
-        authPendingToken.value = result.pendingToken;
-        authStep.value = 'totp';
-        authTotp.value = '';
-        return;
-      }
-      resetCheckoutAuth();
-    } catch (err: unknown) {
-      authError.value = err instanceof Error ? err.message : strings.loginErrorGeneric;
-    } finally {
-      authBusy.value = false;
-    }
-  }
-
-  async function verifyCheckoutTotp() {
-    authError.value = null;
-    const code = authTotp.value.trim();
-    if (code.length < 6 || !authPendingToken.value) return;
-    authBusy.value = true;
-    try {
-      await verifyTotp(code, authPendingToken.value);
-      resetCheckoutAuth();
-    } catch (err: unknown) {
-      authError.value = err instanceof Error ? err.message : strings.totpInvalidCode;
-    } finally {
-      authBusy.value = false;
     }
   }
 

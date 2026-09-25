@@ -1,11 +1,7 @@
+import { resolveAuthReturnPath, safeRedirectPath } from '~/utils/authRedirect';
 import { isIosInstalledPwa } from '~/utils/pwa';
 
-function safeRedirect(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const t = value.trim();
-  if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return undefined;
-  return t;
-}
+export { resolveAuthReturnPath, safeRedirectPath };
 
 export function useLoginFlow() {
   const nuxtApp = useNuxtApp();
@@ -32,6 +28,8 @@ export function useLoginFlow() {
 
   /**
    * Redirect to login (and optionally open the PWA push-login wizard).
+   * When `redirectPath` is omitted, stamps the current route so magic-link /
+   * OTP return lands back on the video, article, account, or checkout page.
    * Returns the result of navigateTo so route middleware can `return startLoginFlow(...)`.
    * Do not await navigateTo in a nested async function from middleware — that loses Nuxt context.
    */
@@ -41,21 +39,26 @@ export function useLoginFlow() {
     const authenticated = isLoggedIn.value;
     const initialized = initialised.value;
     const standalone = isIosInstalledPwa();
-    const route = import.meta.client ? window.location.pathname : '/login';
+    const route = useRoute();
+    const currentPath =
+      import.meta.client && typeof window !== 'undefined'
+        ? `${window.location.pathname}${window.location.search}`
+        : route.fullPath;
 
     if (!initialized && import.meta.dev) {
       console.warn('[AUTH ENTRY] auth not initialized yet');
     }
 
     const query: Record<string, string> = {};
-    const safe = safeRedirect(redirectPath);
+    const safe = resolveAuthReturnPath(redirectPath, currentPath);
     if (safe) query.redirect = safe;
 
     const goLogin = () => navigateTo({ path: '/login', query });
 
     if (!authenticated && standalone) {
       openPwaPushLoginWizard();
-      if (route !== '/login') {
+      const pathOnly = (currentPath.split('?')[0] || '').replace(/\/$/, '') || '/';
+      if (pathOnly !== '/login') {
         return nuxtApp.runWithContext(goLogin);
       }
       return;
