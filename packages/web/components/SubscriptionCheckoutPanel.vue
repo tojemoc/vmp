@@ -117,19 +117,134 @@
       {{ checkoutError }}
     </div>
 
-    <label
-      class="mb-4 flex items-start gap-3 text-left cursor-pointer"
-      :class="embedded ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300'"
+    <!-- Inline sign-in: email → confirmation code → optional TOTP -->
+    <div
+      v-if="!isLoggedIn"
+      class="mb-4 text-left space-y-3 rounded-lg border p-3"
+      :class="embedded ? 'border-gray-200 dark:border-gray-700' : 'border-gray-700'"
     >
-      <input
-        v-model="newsletterOptOut"
-        type="checkbox"
-        class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-      >
-      <span class="text-sm">
-        {{ strings.newsletterOptOutCheckoutLabel }}
-      </span>
-    </label>
+      <p class="text-sm" :class="embedded ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'">
+        {{ strings.checkoutSignInBefore }}
+      </p>
+
+      <div v-if="authStep === 'email'" class="space-y-2">
+        <label
+          class="text-xs uppercase tracking-wide block"
+          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        >
+          {{ strings.checkoutAuthEmailLabel }}
+        </label>
+        <input
+          v-model="authEmail"
+          type="email"
+          autocomplete="email"
+          :placeholder="strings.checkoutAuthEmailPlaceholder"
+          class="w-full px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
+          :class="embedded
+            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
+            : 'border-gray-700 bg-gray-800 text-white'"
+          :disabled="authBusy"
+          @keydown.enter="sendCheckoutAuthCode"
+        >
+        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
+        <button
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          :disabled="authBusy || !authEmail.trim()"
+          @click="sendCheckoutAuthCode"
+        >
+          {{ authBusy ? strings.checkoutAuthSending : strings.checkoutAuthSendCode }}
+        </button>
+      </div>
+
+      <div v-else-if="authStep === 'code'" class="space-y-2">
+        <p class="text-sm text-emerald-500 dark:text-emerald-400">
+          {{ strings.checkoutAuthCodeSent }}
+        </p>
+        <label
+          class="text-xs uppercase tracking-wide block"
+          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        >
+          {{ strings.checkoutAuthCodeLabel }}
+        </label>
+        <input
+          v-model="authCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          :placeholder="strings.checkoutAuthCodePlaceholder"
+          class="w-full px-3 py-2 rounded-lg border text-sm tracking-widest placeholder-gray-500"
+          :class="embedded
+            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
+            : 'border-gray-700 bg-gray-800 text-white'"
+          :disabled="authBusy"
+          @keydown.enter="verifyCheckoutAuthCode"
+        >
+        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
+        <button
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          :disabled="authBusy || authCode.trim().length < 6"
+          @click="verifyCheckoutAuthCode"
+        >
+          {{ authBusy ? strings.checkoutAuthVerifying : strings.checkoutAuthVerifyCode }}
+        </button>
+        <div class="flex flex-wrap gap-3 text-xs">
+          <button
+            type="button"
+            class="text-blue-500 dark:text-blue-400 hover:underline"
+            :disabled="authBusy"
+            @click="sendCheckoutAuthCode"
+          >
+            {{ strings.checkoutAuthResend }}
+          </button>
+          <button
+            type="button"
+            class="text-gray-500 dark:text-gray-400 hover:underline"
+            :disabled="authBusy"
+            @click="resetCheckoutAuth"
+          >
+            {{ strings.checkoutAuthChangeEmail }}
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="authStep === 'totp'" class="space-y-2">
+        <p class="text-sm" :class="embedded ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400'">
+          {{ strings.checkoutAuthTotpHint }}
+        </p>
+        <label
+          class="text-xs uppercase tracking-wide block"
+          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        >
+          {{ strings.checkoutAuthTotpLabel }}
+        </label>
+        <input
+          v-model="authTotp"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          :placeholder="strings.totpCodePlaceholder"
+          class="w-full px-3 py-2 rounded-lg border text-sm tracking-widest placeholder-gray-500"
+          :class="embedded
+            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
+            : 'border-gray-700 bg-gray-800 text-white'"
+          :disabled="authBusy"
+          @keydown.enter="verifyCheckoutTotp"
+        >
+        <p v-if="authError" class="text-xs text-red-400">{{ authError }}</p>
+        <button
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          :disabled="authBusy || authTotp.trim().length < 6"
+          @click="verifyCheckoutTotp"
+        >
+          {{ authBusy ? strings.checkoutAuthVerifying : strings.totpVerifyButton }}
+        </button>
+      </div>
+    </div>
 
     <label
       class="mb-4 flex items-start gap-3 text-left cursor-pointer"
@@ -142,114 +257,72 @@
         required
       >
       <span class="text-sm">
-        {{ strings.checkoutTermsAcceptLabel }}
+        {{ termsAcceptLabel }}
         <a
           href="/personal-data"
           class="underline text-blue-600 dark:text-blue-400 hover:text-blue-500"
           target="_blank"
           rel="noopener noreferrer"
           @click.stop
-          >{{ strings.checkoutTermsLearnMore }}</a
+          >{{
+            strings.checkoutTermsLearnMore
+          }}</a
         >
       </span>
     </label>
 
-    <div class="mb-3 text-left">
-      <label
-        class="text-xs uppercase tracking-wide block mb-1"
+    <div v-if="promotionsEnabled" class="mb-3 text-left">
+      <button
+        type="button"
+        class="text-xs underline mb-2"
         :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        @click="promoExpanded = !promoExpanded"
       >
-        {{ strings.checkoutPromoLabel }}
-      </label>
-      <div class="flex flex-wrap items-center gap-2">
-        <input
-          v-model="promoCodeInput"
-          type="text"
-          autocomplete="off"
-          :placeholder="strings.checkoutPromoPlaceholder"
-          class="flex-1 min-w-[10rem] px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
-          :class="embedded
-            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'border-gray-700 bg-gray-800 text-white'"
+        {{ promoExpanded ? strings.checkoutPromoHide : strings.checkoutPromoToggle }}
+      </button>
+      <div v-if="promoExpanded">
+        <label
+          class="text-xs uppercase tracking-wide block mb-1"
+          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
         >
-        <button
-          type="button"
-          class="px-3 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
-          :class="embedded ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'"
-          :disabled="promoValidating || !promoCodeInput.trim()"
-          @click="validatePromoCode"
-        >
-          {{ promoValidating ? strings.checkoutPromoChecking : strings.checkoutPromoApply }}
-        </button>
-        <button
-          v-if="promoApplied"
-          type="button"
-          class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
-          @click="clearPromoCode"
-        >
-          {{ strings.checkoutPromoClear }}
-        </button>
+          {{ strings.checkoutPromoLabel }}
+        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            v-model="promoCodeInput"
+            type="text"
+            autocomplete="off"
+            :placeholder="strings.checkoutPromoPlaceholder"
+            class="flex-1 min-w-[10rem] px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
+            :class="embedded
+              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
+              : 'border-gray-700 bg-gray-800 text-white'"
+          >
+          <button
+            type="button"
+            class="px-3 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
+            :class="embedded ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'"
+            :disabled="promoValidating || !promoCodeInput.trim()"
+            @click="validatePromoCode"
+          >
+            {{ promoValidating ? strings.checkoutPromoChecking : strings.checkoutPromoApply }}
+          </button>
+          <button
+            v-if="promoApplied"
+            type="button"
+            class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+            @click="clearPromoCode"
+          >
+            {{ strings.checkoutPromoClear }}
+          </button>
+        </div>
+        <p v-if="promoError" class="text-xs text-red-400 mt-1">{{ promoError }}</p>
+        <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
+          {{
+            strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' '))
+          }}
+        </p>
       </div>
-      <p v-if="promoError" class="text-xs text-red-400 mt-1">{{ promoError }}</p>
-      <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
-        {{ strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' ')) }}
-      </p>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showLegacyCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="legacyCheckoutStarting"
-        @click="startLegacyCheckout"
-      >
-        <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
-      </button>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showGoPayCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="gopayCheckoutStarting"
-        @click="startGoPayCheckout"
-      >
-        <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
-      </button>
-      <p
-        class="text-[11px] mt-1.5"
-        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400'"
-      >
-        {{ strings.checkoutGoPayGatewayNote }}
-      </p>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showComgateCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="comgateCheckoutStarting"
-        @click="startComgateCheckout"
-      >
-        <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else
-          >{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span
-        >
-      </button>
     </div>
 
     <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
@@ -258,7 +331,7 @@
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
-        :newsletter-opt-out="newsletterOptOut"
+        :newsletter-opt-out="false"
         :terms-accepted="termsAccepted"
         :embedded="embedded"
         :show-wallet-surface="showWalletSurface"
@@ -266,15 +339,18 @@
         :hide-payment-wallets="walletAvailable"
         @wallet-available="onWalletAvailable"
       >
-        <div v-if="showMoreToggle" class="space-y-3">
+        <div v-if="showMoreToggle || showSecondaryProviders" class="space-y-3">
           <button
+            v-if="showMoreToggle || showSecondaryProviders"
             type="button"
             class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors"
             :class="moreToggleClass"
             :aria-expanded="moreExpanded"
             @click="toggleMore"
           >
-            {{ moreExpanded ? strings.checkoutHidePaymentMethods : strings.checkoutMorePaymentMethods }}
+            {{
+              moreExpanded ? strings.checkoutHidePaymentMethods : strings.checkoutMorePaymentMethods
+            }}
           </button>
 
           <div
@@ -284,6 +360,7 @@
             :aria-label="strings.checkoutMorePaymentMethods"
           >
             <button
+              v-if="showMoreToggle"
               type="button"
               class="w-full text-left rounded-lg border-2 p-4 transition-all"
               :class="moreOptionClass"
@@ -302,9 +379,91 @@
                 {{ strings.checkoutPayByCardHint }}
               </p>
             </button>
+
+            <button
+              v-if="showLegacyCheckout"
+              type="button"
+              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+              :class="legacyButtonClass"
+              :disabled="legacyCheckoutStarting"
+              @click="startLegacyCheckout"
+            >
+              <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
+            </button>
+
+            <button
+              v-if="showGoPayCheckout"
+              type="button"
+              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+              :class="legacyButtonClass"
+              :disabled="gopayCheckoutStarting"
+              @click="startGoPayCheckout"
+            >
+              <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else>{{
+                strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice))
+              }}</span>
+            </button>
+
+            <button
+              v-if="showComgateCheckout"
+              type="button"
+              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+              :class="legacyButtonClass"
+              :disabled="comgateCheckoutStarting"
+              @click="startComgateCheckout"
+            >
+              <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else>{{
+                strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice))
+              }}</span>
+            </button>
           </div>
         </div>
       </StripeEmbeddedCheckout>
+
+      <!-- Non-Stripe-only fallbacks when Stripe is not available for this plan -->
+      <div
+        v-else-if="showLegacyCheckout || showGoPayCheckout || showComgateCheckout"
+        class="space-y-2"
+      >
+        <button
+          v-if="showLegacyCheckout"
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+          :class="legacyButtonClass"
+          :disabled="legacyCheckoutStarting"
+          @click="startLegacyCheckout"
+        >
+          <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
+        </button>
+        <button
+          v-if="showGoPayCheckout"
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+          :class="legacyButtonClass"
+          :disabled="gopayCheckoutStarting"
+          @click="startGoPayCheckout"
+        >
+          <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
+        </button>
+        <button
+          v-if="showComgateCheckout"
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+          :class="legacyButtonClass"
+          :disabled="comgateCheckoutStarting"
+          @click="startComgateCheckout"
+        >
+          <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{
+            strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice))
+          }}</span>
+        </button>
+      </div>
     </div>
 
     <p
@@ -312,20 +471,6 @@
       :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
     >
       {{ checkoutBlurb }}
-    </p>
-    <p
-      v-if="!isLoggedIn"
-      class="text-sm mt-2"
-      :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
-    >
-      {{ strings.checkoutSignInBefore }}
-      <button
-        type="button"
-        class="text-blue-500 dark:text-blue-400 hover:underline"
-        @click="goToLogin"
-      >
-        {{ strings.signIn }}
-      </button>
     </p>
   </div>
 </template>
@@ -358,11 +503,12 @@
   const config = useRuntimeConfig();
   const apiUrl = config.public.apiUrl as string;
   const route = useRoute();
-  const { isLoggedIn, authHeader } = useAuth();
+  const { isLoggedIn, authHeader, signIn, verifyCode, verifyTotp } = useAuth();
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
   type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
+  type AuthStep = 'email' | 'code' | 'totp';
 
   interface Prices {
     monthly: number;
@@ -393,16 +539,29 @@
   const moreExpanded = ref(false);
   const cardMethodSelected = ref(false);
   const checkoutError = ref<string | null>(null);
-  /** Unchecked by default — checking opts out of the creator newsletter only. */
-  const newsletterOptOut = ref(false);
   /** Required affirmative consent for immediate digital content / withdrawal waiver. */
   const termsAccepted = ref(false);
+  const promotionsEnabled = ref(true);
+  const promoExpanded = ref(false);
   const promoCodeInput = ref('');
   const promoValidating = ref(false);
   const promoError = ref<string | null>(null);
   const promoApplied = ref<null | { code: string; rewardType: string }>(null);
   /** Bumped on each validatePromoCode() so in-flight responses cannot overwrite newer state. */
   let promoValidationGeneration = 0;
+
+  const checkoutCopyOverride = ref<{ termsAcceptLabel?: string; trustBlurb?: string }>({});
+  const authStep = ref<AuthStep>('email');
+  const authEmail = ref('');
+  const authCode = ref('');
+  const authTotp = ref('');
+  const authPendingToken = ref('');
+  const authBusy = ref(false);
+  const authError = ref<string | null>(null);
+
+  const termsAcceptLabel = computed(
+    () => checkoutCopyOverride.value.termsAcceptLabel || strings.checkoutTermsAcceptLabel,
+  );
 
   const planLabelClass = computed(() =>
     props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400',
@@ -467,10 +626,15 @@
   );
 
   const checkoutBlurb = computed(() => {
+    if (checkoutCopyOverride.value.trustBlurb) return checkoutCopyOverride.value.trustBlurb;
     if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
     if (showLegacyCheckout.value) return strings.checkoutBlurbDefault;
     return strings.checkoutBlurbEmbedded;
   });
+
+  const showSecondaryProviders = computed(
+    () => showLegacyCheckout.value || showGoPayCheckout.value || showComgateCheckout.value,
+  );
 
   const legacyButtonClass = computed(() => {
     if (props.embedded) {
@@ -610,7 +774,6 @@
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
     params.set('checkout_provider', provider);
-    if (newsletterOptOut.value) params.set('checkout_newsletter_opt_out', '1');
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
   }
@@ -681,7 +844,10 @@
         void startLegacyCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      // Prefer silent fallback when Stripe is available — do not scare users with bank errors.
+      if (!showStripeCheckout.value) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
       return;
     }
 
@@ -691,7 +857,9 @@
         void startGoPayCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      if (!showStripeCheckout.value) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
       return;
     }
 
@@ -701,7 +869,9 @@
         void startComgateCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      if (!showStripeCheckout.value) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
     }
   }
 
@@ -727,6 +897,17 @@
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
       enabledProviders.value = providers as PaymentProvider[];
+      promotionsEnabled.value = data.promotionsEnabled !== false;
+      const copy =
+        data.checkoutCopy && typeof data.checkoutCopy === 'object' ? data.checkoutCopy : {};
+      checkoutCopyOverride.value = {
+        ...(typeof copy.termsAcceptLabel === 'string' && copy.termsAcceptLabel.trim()
+          ? { termsAcceptLabel: copy.termsAcceptLabel.trim() }
+          : {}),
+        ...(typeof copy.trustBlurb === 'string' && copy.trustBlurb.trim()
+          ? { trustBlurb: copy.trustBlurb.trim() }
+          : {}),
+      };
 
       const stripeRaw = data?.pricesByProvider?.stripe ?? {};
       const legacyRaw = data?.pricesByProvider?.legacy ?? {};
@@ -851,7 +1032,7 @@
           planType: selectedPlan.value,
           provider: 'legacy',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -892,7 +1073,7 @@
           planType: plan,
           provider: 'gopay',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -937,7 +1118,7 @@
           planType: plan,
           provider: 'comgate',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -958,8 +1139,65 @@
     }
   }
 
-  async function goToLogin() {
-    await startLoginFlow(buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()));
+  function resetCheckoutAuth() {
+    authStep.value = 'email';
+    authCode.value = '';
+    authTotp.value = '';
+    authPendingToken.value = '';
+    authError.value = null;
+  }
+
+  async function sendCheckoutAuthCode() {
+    authError.value = null;
+    const email = authEmail.value.trim().toLowerCase();
+    if (!email) return;
+    authBusy.value = true;
+    try {
+      await signIn(email, buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()));
+      authEmail.value = email;
+      authStep.value = 'code';
+      authCode.value = '';
+    } catch (err: unknown) {
+      authError.value = err instanceof Error ? err.message : strings.loginErrorGeneric;
+    } finally {
+      authBusy.value = false;
+    }
+  }
+
+  async function verifyCheckoutAuthCode() {
+    authError.value = null;
+    const code = authCode.value.trim();
+    if (code.length < 6) return;
+    authBusy.value = true;
+    try {
+      const result = await verifyCode(authEmail.value.trim().toLowerCase(), code);
+      if ('requiresTwoFactor' in result && result.requiresTwoFactor) {
+        authPendingToken.value = result.pendingToken;
+        authStep.value = 'totp';
+        authTotp.value = '';
+        return;
+      }
+      resetCheckoutAuth();
+    } catch (err: unknown) {
+      authError.value = err instanceof Error ? err.message : strings.loginErrorGeneric;
+    } finally {
+      authBusy.value = false;
+    }
+  }
+
+  async function verifyCheckoutTotp() {
+    authError.value = null;
+    const code = authTotp.value.trim();
+    if (code.length < 6 || !authPendingToken.value) return;
+    authBusy.value = true;
+    try {
+      await verifyTotp(code, authPendingToken.value);
+      resetCheckoutAuth();
+    } catch (err: unknown) {
+      authError.value = err instanceof Error ? err.message : strings.totpInvalidCode;
+    } finally {
+      authBusy.value = false;
+    }
   }
 
   function isStalePromoValidation(
@@ -1029,9 +1267,6 @@
     if (hasRoutePlan) {
       pendingCheckoutPlan.value = plan;
     }
-    if (q.checkout_newsletter_opt_out === '1') {
-      newsletterOptOut.value = true;
-    }
     const provider = q.checkout_provider;
     const deferProviderStart = hasRoutePlan || loadingPrices.value;
     if (provider === 'legacy') {
@@ -1074,6 +1309,7 @@
   watch(selectedPlan, () => {
     promoApplied.value = null;
     promoError.value = null;
+    checkoutError.value = null;
     walletDetectionDone.value = false;
     walletAvailable.value = false;
     moreExpanded.value = false;

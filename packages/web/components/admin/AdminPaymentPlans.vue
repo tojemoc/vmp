@@ -286,6 +286,43 @@
       </button>
     </div>
 
+    <!-- ── Checkout copy ─────────────────────────────────────────────────── -->
+    <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <div>
+        <h4 class="font-semibold text-gray-900 dark:text-white">Checkout copy</h4>
+        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
+          Optional overrides for the subscription popup. Leave blank to use the built-in locale
+          defaults.
+        </p>
+      </div>
+      <label class="block text-sm text-gray-700 dark:text-gray-300">
+        Terms checkbox label
+        <textarea
+          v-model="checkoutCopy.termsAcceptLabel"
+          rows="3"
+          class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+          placeholder="Leave empty for default legal wording"
+        />
+      </label>
+      <label class="block text-sm text-gray-700 dark:text-gray-300">
+        Trust line (under payment methods)
+        <input
+          v-model="checkoutCopy.trustBlurb"
+          type="text"
+          class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+          placeholder="e.g. Secure checkout. Cancel any time."
+        >
+      </label>
+      <button
+        type="button"
+        class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:text-white text-sm font-semibold disabled:opacity-50"
+        :disabled="saving"
+        @click="saveCheckoutCopy"
+      >
+        {{ saving ? 'Saving…' : 'Save checkout copy' }}
+      </button>
+    </div>
+
     <!-- ── Plans ────────────────────────────────────────────────────────── -->
     <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
       <div>
@@ -627,6 +664,7 @@
     club: '',
   });
   const allowedPlansSetting = ref<string[]>(['monthly', 'yearly', 'club']);
+  const checkoutCopy = ref({ termsAcceptLabel: '', trustBlurb: '' });
   const legacyOrders = ref<LegacyOrderRow[]>([]);
   const ordersLoading = ref(false);
   const loading = ref(false);
@@ -796,6 +834,10 @@
       monthly: String(stripeIds.monthly ?? ''),
       yearly: String(stripeIds.yearly ?? ''),
       club: String(stripeIds.club ?? ''),
+    };
+    checkoutCopy.value = {
+      termsAcceptLabel: String(data.checkoutCopy?.termsAcceptLabel ?? ''),
+      trustBlurb: String(data.checkoutCopy?.trustBlurb ?? ''),
     };
     const legacyProviderPrices = data.providerPrices?.legacy ?? {};
     legacyPrices.value = {
@@ -978,11 +1020,32 @@
         gopayCurrency: gopayCurrency.value,
         comgateCurrency: comgateCurrency.value,
         stripePriceIds: stripePriceIds.value,
+        checkoutCopy: {
+          termsAcceptLabel: checkoutCopy.value.termsAcceptLabel,
+          trustBlurb: checkoutCopy.value.trustBlurb,
+        },
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     await loadPaymentSettings();
+  }
+
+  async function saveCheckoutCopy() {
+    saving.value = true;
+    message.value = '';
+    try {
+      await persistPricingSettings();
+      message.value = 'Checkout copy saved.';
+      messageClass.value =
+        'border-green-300 bg-green-50 text-green-700 dark:bg-green-950 dark:border-green-700 dark:text-green-200';
+    } catch (e: unknown) {
+      message.value = e instanceof Error ? e.message : 'Save failed';
+      messageClass.value =
+        'border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-200';
+    } finally {
+      saving.value = false;
+    }
   }
 
   async function addPlan() {

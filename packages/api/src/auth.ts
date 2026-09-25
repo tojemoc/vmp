@@ -182,6 +182,12 @@ export function generateToken() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Six-digit email confirmation code (shown next to the magic link). */
+export function generateOtpCode() {
+  const n = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
+  return String(n).padStart(6, '0');
+}
+
 export async function hashToken(token: any) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -239,19 +245,44 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
 
   const token = generateToken();
   const tokenHash = await hashToken(token);
+  const otp = generateOtpCode();
+  const otpHash = await hashToken(otp);
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL * 1000).toISOString();
+  const id = crypto.randomUUID();
 
-  await db
-    .prepare(
-      'INSERT INTO magic_link_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)',
-    )
-    .bind(crypto.randomUUID(), user.id, tokenHash, expiresAt)
-    .run();
+  try {
+    await db
+      .prepare(
+        'INSERT INTO magic_link_tokens (id, user_id, token_hash, otp_hash, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(id, user.id, tokenHash, otpHash, expiresAt)
+      .run();
+  } catch (err) {
+    // Pre-migration DBs (no otp_hash column) — still issue the link-only token.
+    console.error('[auth] magic link otp_hash insert failed, falling back:', err);
+    await db
+      .prepare(
+        'INSERT INTO magic_link_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)',
+      )
+      .bind(id, user.id, tokenHash, expiresAt)
+      .run();
+    return { token, otp: null as string | null, user };
+  }
 
-  return { token, user };
+  return { token, otp, user };
 }
 
-async function sendMagicLinkEmail(to: any, verifyUrl: any, env: any) {
+async function sendMagicLinkEmail(to: any, verifyUrl: any, env: any, otp?: string | null) {
+  const otpBlock = otp
+    ? `
+          <p style="margin:0 0 8px;color:#444;line-height:1.6">
+            Or enter this confirmation code in the app:
+          </p>
+          <p style="margin:0 0 24px;font-size:28px;letter-spacing:0.2em;font-weight:700;font-family:monospace">
+            ${otp}
+          </p>
+        `
+    : '';
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
@@ -274,6 +305,7 @@ async function sendMagicLinkEmail(to: any, verifyUrl: any, env: any) {
                     color:#fff;text-decoration:none;border-radius:6px;font-weight:600">
             Sign in
           </a>
+          ${otpBlock}
           <p style="margin:24px 0 0;font-size:12px;color:#999">
             If you didn't request this, you can safely ignore it.
           </p>
@@ -374,6 +406,29 @@ async function isMagicLinkRateLimited(request: any, env: any, email: any) {
   }
 }
 
+/** Separate bucket so checkout OTP retries do not starve magic-link sends. */
+async function isOtpVerifyRateLimited(request: any, env: any, email: any) {
+  const kv = env.RATE_LIMIT_KV;
+  if (!kv) return false;
+  try {
+    const normalizedEmail = String(email || '')
+      .toLowerCase()
+      .trim();
+    const ip = request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const fingerprint = await hashToken(`${normalizedEmail}:${ip}:${minuteBucket}`);
+    const key = `auth:verify-code:${fingerprint}`;
+    const currentRaw = await kv.get(key);
+    const current = Number.parseInt(currentRaw ?? '0', 10);
+    const count = Number.isFinite(current) ? current : 0;
+    if (count >= 10) return true;
+    await kv.put(key, String(count + 1), { expirationTtl: 120 });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 /**
@@ -412,7 +467,7 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
         corsHeaders,
       );
     }
-    const { token } = tokenResult;
+    const { token, otp } = tokenResult;
     const frontendUrl = (env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const verifyUrl = new URL(`${frontendUrl}/auth/verify`);
     verifyUrl.searchParams.set('token', token);
@@ -420,10 +475,12 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
     if (redirect) verifyUrl.searchParams.set('redirect', redirect);
 
     if (env.BREVO_API_KEY) {
-      await sendMagicLinkEmail(email, verifyUrl.toString(), env);
+      await sendMagicLinkEmail(email, verifyUrl.toString(), env, otp);
     } else {
       // No Brevo key — log the link for local development.
-      console.log(`[DEV] Magic link for ${email}: ${verifyUrl.toString()}`);
+      console.log(
+        `[DEV] Magic link for ${email}: ${verifyUrl.toString()}${otp ? ` | code: ${otp}` : ''}`,
+      );
     }
     log({ service: 'auth', event: 'magic_link_sent', level: 'info', client });
     captureAuthProductEvent(env, request, 'magic_link_requested', {
@@ -584,6 +641,134 @@ export async function consumeMagicLinkForUser(
 
   // Consumed: drop any SideStore vmp:// acknowledgment bound to this token.
   await deleteInsecureNativeSchemeAckByTokenHash(db, tokenHash);
+
+  const user = {
+    id: record.user_id,
+    email: record.email,
+    role: record.role,
+    totp_enabled: record.totp_enabled,
+    created_at: record.created_at,
+  };
+  const totpRequired = shouldRequireTotpEnrollment(user, env);
+
+  if (totpRequired && user.totp_enabled && !options?.totpAlreadyVerified) {
+    const now = Math.floor(Date.now() / 1000);
+    const jti = crypto.randomUUID();
+    const expiresAt = new Date((now + PENDING_2FA_TTL) * 1000).toISOString();
+
+    const pendingToken = await signJwt(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        pending: true,
+        jti,
+        iat: now,
+        exp: now + PENDING_2FA_TTL,
+      },
+      env.JWT_SECRET,
+    );
+
+    await db
+      .prepare("DELETE FROM totp_challenges WHERE user_id = ? AND expires_at < datetime('now')")
+      .bind(user.id)
+      .run();
+
+    await db
+      .prepare('INSERT INTO totp_challenges (jti, user_id, expires_at) VALUES (?, ?, ?)')
+      .bind(jti, user.id, expiresAt)
+      .run();
+
+    return { tag: 'totp_pending', pendingToken };
+  }
+
+  return { tag: 'session_ready', user };
+}
+
+/**
+ * Consumes an unused magic-link row matched by email + confirmation code (otp_hash).
+ */
+export async function consumeMagicLinkOtpForUser(
+  env: any,
+  emailInput: string,
+  codeInput: string,
+  options?: { totpAlreadyVerified?: boolean },
+): Promise<MagicLinkConsumeResult> {
+  const email = String(emailInput || '')
+    .toLowerCase()
+    .trim();
+  const code = String(codeInput || '')
+    .trim()
+    .replace(/\s+/g, '');
+  if (!email || !/^\d{6}$/.test(code)) {
+    return { tag: 'invalid', message: 'Invalid confirmation code.' };
+  }
+
+  const db = getDb(env);
+  const otpHash = await hashToken(code);
+  let record: any = null;
+  try {
+    record = await d1FirstOptionalColumn(db, {
+      column: 'deletion_pending',
+      sql: `
+        SELECT t.id, t.token_hash, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
+               u.totp_enabled, u.totp_secret, u.created_at, u.deletion_pending
+        FROM magic_link_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE u.email = ? AND t.otp_hash = ? AND t.used_at IS NULL
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      `,
+      fallbackSql: `
+        SELECT t.id, t.token_hash, t.expires_at, t.used_at, u.id AS user_id, u.email, u.role,
+               u.totp_enabled, u.totp_secret, u.created_at
+        FROM magic_link_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE u.email = ? AND t.otp_hash = ? AND t.used_at IS NULL
+        ORDER BY t.created_at DESC
+        LIMIT 1
+      `,
+      binds: [email, otpHash],
+      fallbackValue: 0,
+      logService: 'auth',
+      logEvent: 'd1_missing_deletion_pending_column',
+    });
+  } catch (err) {
+    // otp_hash column missing — treat as invalid until migration applied.
+    console.error('[auth] otp lookup failed:', err);
+    return { tag: 'invalid', message: 'Invalid confirmation code.' };
+  }
+
+  if (!record) {
+    return { tag: 'invalid', message: 'Invalid confirmation code.' };
+  }
+
+  // Reuse the token-hash consume path so TOTP / deletion / used_at logic stays identical.
+  // We already matched otp_hash; pass the raw token is unavailable — consume by record id.
+  if (new Date(record.expires_at) < new Date()) {
+    return { tag: 'invalid', message: 'Confirmation code has expired. Request a new one.' };
+  }
+  if (Number(record.deletion_pending) === 1) {
+    return {
+      tag: 'invalid',
+      message: 'Account deletion is in progress. Sign-in is disabled.',
+    };
+  }
+
+  const consumeResult = await db
+    .prepare(
+      'UPDATE magic_link_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL',
+    )
+    .bind(record.id)
+    .run();
+
+  if (!consumeResult.meta.changes) {
+    return { tag: 'invalid', message: 'Confirmation code is invalid or has already been used.' };
+  }
+
+  if (record.token_hash) {
+    await deleteInsecureNativeSchemeAckByTokenHash(db, record.token_hash);
+  }
 
   const user = {
     id: record.user_id,
@@ -1139,6 +1324,73 @@ export async function handleVerifyMagicLink(request: any, env: any, corsHeaders:
     request,
     'magic_link_redeem_succeeded',
     { surface: 'web_verify', outcome: 'session' },
+    String(phase.user.id),
+  );
+  return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders);
+}
+
+/**
+ * POST /api/auth/verify-code
+ * Body: { email: string, code: string }
+ *
+ * Same outcomes as GET /api/auth/verify, but uses the email confirmation code
+ * from the magic-link message so checkout can finish sign-in inline.
+ */
+export async function handleVerifyMagicLinkCode(request: any, env: any, corsHeaders: any) {
+  if (request.method !== 'POST') return authJson({ error: 'Method not allowed' }, 405, corsHeaders);
+
+  const body = await request.json().catch(() => null);
+  const email = typeof body?.email === 'string' ? body.email.toLowerCase().trim() : '';
+  const code = typeof body?.code === 'string' ? body.code.trim() : '';
+  if (!email || !code) {
+    return authJson({ error: 'email and code are required' }, 400, corsHeaders);
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return authJson({ error: 'Invalid email format' }, 400, corsHeaders);
+  }
+
+  if (await isOtpVerifyRateLimited(request, env, email)) {
+    return authJson({ error: 'Too many attempts. Please try again shortly.' }, 429, corsHeaders);
+  }
+
+  const phase = await consumeMagicLinkOtpForUser(env, email, code);
+  if (phase.tag === 'invalid') {
+    log({
+      service: 'auth',
+      event: 'magic_link_otp_verify_failed',
+      level: 'warn',
+      error_code: 'invalid_or_used',
+    });
+    captureAuthProductEvent(env, request, 'magic_link_redeem_failed', {
+      surface: 'checkout_otp',
+      reason: 'invalid_or_used',
+    });
+    return authJson({ error: phase.message }, 401, corsHeaders);
+  }
+  if (phase.tag === 'totp_pending') {
+    captureAuthProductEvent(env, request, 'magic_link_redeem_succeeded', {
+      surface: 'checkout_otp',
+      outcome: 'totp_required',
+    });
+    return authJson(
+      { requiresTwoFactor: true, pendingToken: phase.pendingToken },
+      200,
+      corsHeaders,
+    );
+  }
+
+  const db = getDb(env);
+  log({
+    service: 'auth',
+    event: 'magic_link_otp_verify_success',
+    level: 'info',
+    totp_required: Boolean(phase.user.totp_enabled),
+  });
+  captureAuthProductEvent(
+    env,
+    request,
+    'magic_link_redeem_succeeded',
+    { surface: 'checkout_otp', outcome: 'session' },
     String(phase.user.id),
   );
   return await issueFullMagicSessionResponse(phase.user, env, db, corsHeaders);

@@ -192,6 +192,31 @@ export function useAuth() {
   }
 
   /**
+   * POST /api/auth/verify-code — email confirmation code from the magic-link message.
+   * Used by inline checkout sign-in so users never leave the payment panel.
+   */
+  async function verifyCode(
+    email: string,
+    code: string,
+  ): Promise<AuthUser | { requiresTwoFactor: true; pendingToken: string }> {
+    const res = await fetch(`${apiUrl}/api/auth/verify-code`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Verification failed');
+
+    if (data.requiresTwoFactor) {
+      return { requiresTwoFactor: true, pendingToken: data.pendingToken };
+    }
+
+    setAccessToken(data.accessToken, data.user);
+    return data.user;
+  }
+
+  /**
    * POST /api/auth/magic-pwa-handoff — consumes the magic link on iOS Safari and
    * returns either a 2FA challenge, a one-time handoff code for the installed PWA,
    * or a full session when KV is unavailable (dev / misconfiguration).
@@ -459,6 +484,7 @@ export function useAuth() {
     // Methods
     signIn,
     verify,
+    verifyCode,
     magicPwaHandoff,
     redeemPwaHandoff,
     verifyTotp,

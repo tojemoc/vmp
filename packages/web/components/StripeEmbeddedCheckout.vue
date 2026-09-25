@@ -156,7 +156,7 @@
   let walletDetectionEmitted = false;
   let walletDetectionTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const WALLET_DETECTION_TIMEOUT_MS = 8000;
+  const WALLET_DETECTION_TIMEOUT_MS = 2500;
 
   function clearWalletDetectionTimer() {
     if (walletDetectionTimer) {
