@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ensureVideojsElementReady } from '../lib/videojsBootstrap';
 
+/** Resolve after `ms` milliseconds (test timing helper). */
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -12,12 +13,14 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  */
 class FakeVideojsElement {
   isConnected = true;
-  api: { src: (value: string) => void } | undefined;
+  api: { src: (value: string) => void; ready?: (cb: () => void) => void } | undefined;
+  nativeEl: { tagName: string } = { tagName: 'VIDEO' };
   loadCalls = 0;
   private apiInit = false;
 
   constructor(private readonly initDelayMs = 0) {}
 
+  /** Mimic videojs-video-element load: set init flag before assigning `api`. */
   async load(): Promise<void> {
     this.loadCalls += 1;
     if (this.apiInit) {
@@ -32,17 +35,52 @@ class FakeVideojsElement {
   }
 }
 
+/**
+ * Models the Mobile Safari wedge: init flag consumed, load() throws, `api` never set.
+ * Recovery must build the player via globalThis.videojs(nativeEl).
+ */
+class WedgedVideojsElement {
+  isConnected = true;
+  api: { src: (value: string) => void; ready?: (cb: () => void) => void } | undefined;
+  nativeEl: { tagName: string } = { tagName: 'VIDEO' };
+  loadCalls = 0;
+  loadComplete = { resolve() {} };
+
+  /** Always throw the real element's mid-init TypeError without assigning `api`. */
+  async load(): Promise<void> {
+    this.loadCalls += 1;
+    throw new TypeError('can\'t access property "src", this.api is undefined');
+  }
+}
+
+/** Element whose load() never resolves — used to exercise abort/disconnect paths. */
 class NeverReadyElement {
   isConnected = true;
   api: undefined;
+  nativeEl: { tagName: string } = { tagName: 'VIDEO' };
   loadCalls = 0;
 
+  /** Hang forever so readiness must abort or time out. */
   async load(): Promise<void> {
     this.loadCalls += 1;
     await new Promise<never>(() => {});
   }
 }
 
+/** Element with no native `<video>` — readiness should fail on the nativeEl wait. */
+class NoNativeElElement {
+  isConnected = true;
+  api: undefined;
+  nativeEl: undefined;
+  loadCalls = 0;
+
+  /** No-op load; `nativeEl` stays missing. */
+  async load(): Promise<void> {
+    this.loadCalls += 1;
+  }
+}
+
+/** Minimal `customElements` stub keyed by tag name. */
 function registryWith(entries: Record<string, unknown>) {
   return {
     get: (name: string) => entries[name],
@@ -51,21 +89,26 @@ function registryWith(entries: Record<string, unknown>) {
   };
 }
 
+/** Install a fake `customElements` registry that returns `ctor` for `videojs-video`. */
 function installRegistry(ctor: unknown) {
   const entries = ctor === undefined ? {} : { 'videojs-video': ctor };
   (globalThis as { customElements?: unknown }).customElements = registryWith(entries);
 }
 
+/** Cast a fake element to `HTMLElement` for the readiness helper under test. */
 const asElement = (el: unknown) => el as unknown as HTMLElement;
 
 let previousCustomElements: unknown;
+let previousVideojs: unknown;
 
 beforeEach(() => {
   previousCustomElements = (globalThis as { customElements?: unknown }).customElements;
+  previousVideojs = (globalThis as { videojs?: unknown }).videojs;
 });
 
 afterEach(() => {
   (globalThis as { customElements?: unknown }).customElements = previousCustomElements;
+  (globalThis as { videojs?: unknown }).videojs = previousVideojs;
 });
 
 describe('ensureVideojsElementReady', () => {
@@ -132,6 +175,50 @@ describe('ensureVideojsElementReady', () => {
     await assert.rejects(
       ensureVideojsElementReady(asElement(new FakeVideojsElement())),
       /was not registered/,
+    );
+  });
+
+  it('recovers when load() wedges without exposing api (Mobile Safari CDN race)', async () => {
+    installRegistry(WedgedVideojsElement);
+    const el = new WedgedVideojsElement();
+    let recovered = false;
+    (globalThis as { videojs?: unknown }).videojs = (_video: unknown, _options: unknown) => {
+      recovered = true;
+      return {
+        src: () => {},
+        ready: (cb: () => void) => {
+          cb();
+        },
+      };
+    };
+
+    await ensureVideojsElementReady(asElement(el));
+
+    assert.ok(recovered, 'must reconstruct the player via globalThis.videojs');
+    assert.ok(el.api, 'api must exist after recovery');
+    assert.equal(el.loadCalls, 1);
+  });
+
+  it('aborts when the element is disconnected while waiting for api', async () => {
+    installRegistry(NeverReadyElement);
+    const el = new NeverReadyElement();
+    setTimeout(() => {
+      el.isConnected = false;
+    }, 60);
+
+    await assert.rejects(
+      ensureVideojsElementReady(asElement(el)),
+      (e: unknown) => e instanceof DOMException && e.name === 'AbortError',
+    );
+  });
+
+  it('fails when the native video never appears', async () => {
+    installRegistry(NoNativeElElement);
+    const el = new NoNativeElElement();
+
+    await assert.rejects(
+      ensureVideojsElementReady(asElement(el)),
+      /never created its native video/,
     );
   });
 });
