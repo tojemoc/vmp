@@ -50,4 +50,7 @@ fi
 echo "[ensure-d1] ensuring Step 10 tables/indexes"
 npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --file=./scripts/ensure_d1_step10_tables.sql
 
+echo "[ensure-d1] ensuring Club entitlement tables/indexes (IRL + playback sessions)"
+npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --file=./scripts/ensure_d1_club_entitlements.sql
+
 echo "[ensure-d1] done"

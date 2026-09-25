@@ -14,6 +14,7 @@
 
 import { canAccessIrlEvent } from '@vmp/shared';
 import { requireAuth, requireRole } from './auth.js';
+import { isMissingD1TableError } from './d1OptionalColumn.js';
 import { isAdministrativeRole } from './roles.js';
 
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
@@ -68,6 +69,37 @@ function getErrorMessage(error: unknown): string {
 
 function isUniqueConstraintError(error: unknown): boolean {
   return getErrorMessage(error).toUpperCase().includes('UNIQUE');
+}
+
+export function isMissingIrlSchemaError(error: unknown): boolean {
+  return (
+    isMissingD1TableError(error, 'irl_events') || isMissingD1TableError(error, 'irl_event_rsvps')
+  );
+}
+
+function missingIrlSchemaResponse(corsHeaders: Record<string, string>) {
+  return errorResponse(
+    'IRL events are temporarily unavailable',
+    503,
+    corsHeaders,
+    'irl_schema_missing',
+  );
+}
+
+function withIrlSchema<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>,
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      if (isMissingIrlSchemaError(error)) {
+        const corsHeaders = (args[2] ?? {}) as Record<string, string>;
+        return missingIrlSchemaResponse(corsHeaders);
+      }
+      throw error;
+    }
+  };
 }
 
 /** Reject missing/unparseable startsAt; endsAt must parse and be >= startsAt when set. */
@@ -145,7 +177,7 @@ async function countActiveRsvps(db: any, eventId: string): Promise<number> {
   return Number(row?.c ?? 0);
 }
 
-export async function handleListAccountIrlEvents(request: any, env: any, corsHeaders: any) {
+async function handleListAccountIrlEventsImpl(request: any, env: any, corsHeaders: any) {
   let user;
   try {
     user = await requireAuth(request, env);
@@ -202,7 +234,9 @@ export async function handleListAccountIrlEvents(request: any, env: any, corsHea
   );
 }
 
-export async function handleAccountIrlEventRsvp(
+export const handleListAccountIrlEvents = withIrlSchema(handleListAccountIrlEventsImpl);
+
+async function handleAccountIrlEventRsvpImpl(
   request: any,
   env: any,
   corsHeaders: any,
@@ -324,7 +358,9 @@ export async function handleAccountIrlEventRsvp(
   );
 }
 
-export async function handleCancelAccountIrlEventRsvp(
+export const handleAccountIrlEventRsvp = withIrlSchema(handleAccountIrlEventRsvpImpl);
+
+async function handleCancelAccountIrlEventRsvpImpl(
   request: any,
   env: any,
   corsHeaders: any,
@@ -353,7 +389,9 @@ export async function handleCancelAccountIrlEventRsvp(
   return jsonResponse({ ok: true }, 200, corsHeaders);
 }
 
-export async function handleAdminListIrlEvents(request: any, env: any, corsHeaders: any) {
+export const handleCancelAccountIrlEventRsvp = withIrlSchema(handleCancelAccountIrlEventRsvpImpl);
+
+async function handleAdminListIrlEventsImpl(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin');
   } catch {
@@ -382,7 +420,9 @@ export async function handleAdminListIrlEvents(request: any, env: any, corsHeade
   );
 }
 
-export async function handleAdminCreateIrlEvent(request: any, env: any, corsHeaders: any) {
+export const handleAdminListIrlEvents = withIrlSchema(handleAdminListIrlEventsImpl);
+
+async function handleAdminCreateIrlEventImpl(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin');
   } catch {
@@ -437,7 +477,9 @@ export async function handleAdminCreateIrlEvent(request: any, env: any, corsHead
   return jsonResponse({ event: serializeEvent(row, { rsvpCount: 0 }) }, 201, corsHeaders);
 }
 
-export async function handleAdminUpdateIrlEvent(
+export const handleAdminCreateIrlEvent = withIrlSchema(handleAdminCreateIrlEventImpl);
+
+async function handleAdminUpdateIrlEventImpl(
   request: any,
   env: any,
   corsHeaders: any,
@@ -521,7 +563,9 @@ export async function handleAdminUpdateIrlEvent(
   return jsonResponse({ event: serializeEvent(row, { rsvpCount }) }, 200, corsHeaders);
 }
 
-export async function handleAdminDeleteIrlEvent(
+export const handleAdminUpdateIrlEvent = withIrlSchema(handleAdminUpdateIrlEventImpl);
+
+async function handleAdminDeleteIrlEventImpl(
   request: any,
   env: any,
   corsHeaders: any,
@@ -541,7 +585,9 @@ export async function handleAdminDeleteIrlEvent(
   return jsonResponse({ ok: true }, 200, corsHeaders);
 }
 
-export async function handleAdminIrlEventCheckIn(request: any, env: any, corsHeaders: any) {
+export const handleAdminDeleteIrlEvent = withIrlSchema(handleAdminDeleteIrlEventImpl);
+
+async function handleAdminIrlEventCheckInImpl(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'editor', 'admin', 'super_admin');
   } catch {
@@ -598,3 +644,5 @@ export async function handleAdminIrlEventCheckIn(request: any, env: any, corsHea
     corsHeaders,
   );
 }
+
+export const handleAdminIrlEventCheckIn = withIrlSchema(handleAdminIrlEventCheckInImpl);

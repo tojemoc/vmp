@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test';
 import {
   d1FirstOptionalColumn,
   isMissingD1ColumnError,
+  isMissingD1TableError,
   resetD1OptionalColumnCache,
 } from '../src/d1OptionalColumn.js';
 
@@ -24,6 +25,20 @@ describe('isMissingD1ColumnError', () => {
       isMissingD1ColumnError(new Error('D1_ERROR: no such table: users'), 'deletion_pending'),
       false,
     );
+  });
+});
+
+describe('isMissingD1TableError', () => {
+  it('matches the production D1 SQLITE_ERROR signature for irl_events', () => {
+    const err = new Error('D1_ERROR: no such table: irl_events: SQLITE_ERROR');
+    assert.equal(isMissingD1TableError(err, 'irl_events'), true);
+    assert.equal(isMissingD1TableError(err, 'irl_event_rsvps'), false);
+  });
+
+  it('does not treat irl_event_rsvps as irl_events', () => {
+    const err = new Error('D1_ERROR: no such table: irl_event_rsvps: SQLITE_ERROR');
+    assert.equal(isMissingD1TableError(err, 'irl_event_rsvps'), true);
+    assert.equal(isMissingD1TableError(err, 'irl_events'), false);
   });
 });
 

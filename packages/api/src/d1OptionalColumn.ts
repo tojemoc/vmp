@@ -20,6 +20,14 @@ export function isMissingD1ColumnError(err: unknown, column: string): boolean {
   return msg.includes(column);
 }
 
+/** Match D1 `no such table: irl_events` without treating `irl_event_rsvps` as `irl_events`. */
+export function isMissingD1TableError(err: unknown, table: string): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!/no such table/i.test(msg)) return false;
+  const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`no such table:\\s*${escaped}(?:\\s|:|$)`, 'i').test(msg);
+}
+
 type D1FirstDb = {
   prepare: (sql: string) => {
     bind: (...args: unknown[]) => { first: () => Promise<Record<string, unknown> | null> };
