@@ -383,13 +383,16 @@
             <button
               v-if="showLegacyCheckout"
               type="button"
-              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-              :class="legacyButtonClass"
+              class="w-full inline-flex items-center justify-center gap-2.5 py-3 px-4 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 text-white bg-[#00B579] hover:bg-[#009966] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00B579]"
               :disabled="legacyCheckoutStarting"
+              :aria-label="`${strings.checkoutPayWithQerko} Qerko`"
               @click="startLegacyCheckout"
             >
               <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-              <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
+              <span v-else class="inline-flex items-center gap-2.5">
+                <span>{{ strings.checkoutPayWithQerko }}</span>
+                <QerkoWordmark class="text-white shrink-0" :width="78" :height="24" />
+              </span>
             </button>
 
             <button
@@ -431,13 +434,16 @@
         <button
           v-if="showLegacyCheckout"
           type="button"
-          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-          :class="legacyButtonClass"
+          class="w-full inline-flex items-center justify-center gap-2.5 py-3 px-4 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 text-white bg-[#00B579] hover:bg-[#009966] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00B579]"
           :disabled="legacyCheckoutStarting"
+          :aria-label="`${strings.checkoutPayWithQerko} Qerko`"
           @click="startLegacyCheckout"
         >
           <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-          <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
+          <span v-else class="inline-flex items-center gap-2.5">
+            <span>{{ strings.checkoutPayWithQerko }}</span>
+            <QerkoWordmark class="text-white shrink-0" :width="78" :height="24" />
+          </span>
         </button>
         <button
           v-if="showGoPayCheckout"
@@ -599,13 +605,6 @@
   );
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
-
-  const legacyPlanPrice = computed(() => {
-    const plan = selectedPlan.value;
-    const legacy = legacyPrices.value[plan];
-    if (Number.isFinite(legacy)) return Number(legacy);
-    return planPrice(plan);
-  });
 
   const gopayPlanPrice = computed(() => {
     const value = gopayPrices.value[selectedPlan.value];

@@ -402,6 +402,8 @@ export type StringsDefinition = {
   checkoutPricesLoadFailed: string;
   checkoutRedirecting: string;
   checkoutPayWithBank: (price: string) => string;
+  /** Prefix before the Qerko wordmark on the green bank-pay button. */
+  checkoutPayWithQerko: string;
   checkoutPayByCard: string;
   checkoutPayByCardHint: string;
   checkoutMorePaymentMethods: string;

@@ -483,6 +483,7 @@ export const strings: StringsDefinition = {
   checkoutPricesLoadFailed: 'Nepodařilo se načíst ceny. Obnovte prosím stránku.',
   checkoutRedirecting: 'Přesměrovává se na platbu…',
   checkoutPayWithBank: (price: string) => `Bankovní převod · ${price}`,
+  checkoutPayWithQerko: 'Zaplatit přes',
   checkoutPayByCard: 'Platit kartou',
   checkoutPayByCardHint: 'Karta, PayPal nebo SEPA inkaso',
   checkoutMorePaymentMethods: 'Další způsoby platby',

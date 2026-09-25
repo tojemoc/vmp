@@ -476,6 +476,7 @@ export const strings: StringsDefinition = {
   checkoutPricesLoadFailed: 'Could not load pricing. Please refresh the page.',
   checkoutRedirecting: 'Redirecting to checkout…',
   checkoutPayWithBank: (price: string) => `Bank transfer · ${price}`,
+  checkoutPayWithQerko: 'Pay with',
   checkoutPayByCard: 'Pay by card',
   checkoutPayByCardHint: 'Card, PayPal, or SEPA Direct Debit',
   checkoutMorePaymentMethods: 'More payment methods',
