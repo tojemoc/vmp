@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-
-import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 import { capturePostHogEvent } from '../utils/posthogClient';
+import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
+
+type PostHogCaptureFn = (event: string, properties?: Record<string, unknown>) => unknown;
 
 type WindowWithPostHog = {
   posthog?: {
-    capture: (event: string, properties?: Record<string, unknown>) => unknown;
+    capture: PostHogCaptureFn;
     is_capturing?: () => boolean;
   };
+};
+
+type GlobalWithUseNuxtApp = typeof globalThis & {
+  useNuxtApp?: () => { $posthog?: () => { capture: PostHogCaptureFn } };
 };
 
 function setWindow(next: WindowWithPostHog | undefined): void {
@@ -16,6 +21,17 @@ function setWindow(next: WindowWithPostHog | undefined): void {
     configurable: true,
     writable: true,
     value: next,
+  });
+}
+
+function grantAnalyticsConsent(): void {
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: {
+      getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
+      setItem: () => {},
+    },
   });
 }
 
@@ -29,10 +45,12 @@ describe('posthogClient', () => {
         setItem: () => {},
       },
     });
+    delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
   afterEach(() => {
     setWindow(undefined);
+    delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
   it('capturePostHogEvent is a no-op without a PostHog client', () => {
@@ -56,7 +74,7 @@ describe('posthogClient', () => {
     assert.deepEqual(captured, []);
   });
 
-  it('capturePostHogEvent forwards events to window.posthog after consent', () => {
+  it('capturePostHogEvent forwards events via getBrowserPostHog after consent', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
     setWindow({
       posthog: {
@@ -65,17 +83,49 @@ describe('posthogClient', () => {
         },
       },
     });
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      writable: true,
-      value: {
-        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
-        setItem: () => {},
-      },
-    });
+    grantAnalyticsConsent();
 
     capturePostHogEvent('subscription_checkout_started', {
       plan_type: 'monthly',
+      provider: 'stripe',
+    });
+    capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
+    capturePostHogEvent('offline_download_requested', { video_id: 'v1', rendition: '720p' });
+    capturePostHogEvent('billing_portal_opened');
+    capturePostHogEvent('magic_link_requested', { client: 'browser' });
+
+    assert.deepEqual(
+      captured.map((row) => row.event),
+      [
+        'subscription_checkout_started',
+        'subscription_checkout_completed',
+        'offline_download_requested',
+        'billing_portal_opened',
+        'magic_link_requested',
+      ],
+    );
+    assert.deepEqual(captured[0]?.properties, {
+      $environment: 'development',
+      plan_type: 'monthly',
+      provider: 'stripe',
+    });
+  });
+
+  it('capturePostHogEvent forwards via $posthog when window.posthog is unset', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    // Production path: `@posthog/nuxt` provides `$posthog` and does not set window.posthog.
+    setWindow({});
+    (globalThis as GlobalWithUseNuxtApp).useNuxtApp = () => ({
+      $posthog: () => ({
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
+      }),
+    });
+    grantAnalyticsConsent();
+
+    capturePostHogEvent('subscription_checkout_started', {
+      plan_type: 'yearly',
       provider: 'stripe',
     });
 
@@ -84,7 +134,7 @@ describe('posthogClient', () => {
         event: 'subscription_checkout_started',
         properties: {
           $environment: 'development',
-          plan_type: 'monthly',
+          plan_type: 'yearly',
           provider: 'stripe',
         },
       },

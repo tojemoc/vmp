@@ -886,6 +886,7 @@
     PlaybackUnavailableError,
   } from '~/utils/playlistAvailability';
   import { captureBrowserException } from '~/utils/posthogBrowserClient';
+  import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
   import { routeParamMatchesVideoMeta } from '~/utils/watchRouteMeta';
 
@@ -1792,6 +1793,10 @@
     if (returningFromLegacy.value) {
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
+        capturePostHogEvent(
+          result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
+          { provider: 'legacy' },
+        );
         showPremiumOverlay.value = false;
         await loadVideoForRoute(videoId.value);
         await clearLegacyOrderQuery();
@@ -1806,6 +1811,10 @@
     if (returningFromStripe.value) {
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
+        capturePostHogEvent(
+          result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
+          { provider: 'stripe' },
+        );
         showPremiumOverlay.value = false;
         await loadVideoForRoute(videoId.value);
         await clearStripeSessionQuery();
