@@ -1793,7 +1793,10 @@
     if (returningFromLegacy.value) {
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
-        capturePostHogEvent('subscription_checkout_completed', { provider: 'legacy' });
+        capturePostHogEvent(
+          result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
+          { provider: 'legacy' },
+        );
         showPremiumOverlay.value = false;
         await loadVideoForRoute(videoId.value);
         await clearLegacyOrderQuery();
@@ -1808,7 +1811,10 @@
     if (returningFromStripe.value) {
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
-        capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
+        capturePostHogEvent(
+          result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
+          { provider: 'stripe' },
+        );
         showPremiumOverlay.value = false;
         await loadVideoForRoute(videoId.value);
         await clearStripeSessionQuery();

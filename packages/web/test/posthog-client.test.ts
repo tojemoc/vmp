@@ -3,11 +3,17 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { capturePostHogEvent } from '../utils/posthogClient';
 import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 
+type PostHogCaptureFn = (event: string, properties?: Record<string, unknown>) => unknown;
+
 type WindowWithPostHog = {
   posthog?: {
-    capture: (event: string, properties?: Record<string, unknown>) => unknown;
+    capture: PostHogCaptureFn;
     is_capturing?: () => boolean;
   };
+};
+
+type GlobalWithUseNuxtApp = typeof globalThis & {
+  useNuxtApp?: () => { $posthog?: () => { capture: PostHogCaptureFn } };
 };
 
 function setWindow(next: WindowWithPostHog | undefined): void {
@@ -15,6 +21,17 @@ function setWindow(next: WindowWithPostHog | undefined): void {
     configurable: true,
     writable: true,
     value: next,
+  });
+}
+
+function grantAnalyticsConsent(): void {
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: {
+      getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
+      setItem: () => {},
+    },
   });
 }
 
@@ -28,10 +45,12 @@ describe('posthogClient', () => {
         setItem: () => {},
       },
     });
+    delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
   afterEach(() => {
     setWindow(undefined);
+    delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
   it('capturePostHogEvent is a no-op without a PostHog client', () => {
@@ -64,14 +83,7 @@ describe('posthogClient', () => {
         },
       },
     });
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      writable: true,
-      value: {
-        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
-        setItem: () => {},
-      },
-    });
+    grantAnalyticsConsent();
 
     capturePostHogEvent('subscription_checkout_started', {
       plan_type: 'monthly',
@@ -97,6 +109,36 @@ describe('posthogClient', () => {
       plan_type: 'monthly',
       provider: 'stripe',
     });
+  });
+
+  it('capturePostHogEvent forwards via $posthog when window.posthog is unset', () => {
+    const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    // Production path: `@posthog/nuxt` provides `$posthog` and does not set window.posthog.
+    setWindow({});
+    (globalThis as GlobalWithUseNuxtApp).useNuxtApp = () => ({
+      $posthog: () => ({
+        capture: (event, properties) => {
+          captured.push({ event, properties: properties ?? {} });
+        },
+      }),
+    });
+    grantAnalyticsConsent();
+
+    capturePostHogEvent('subscription_checkout_started', {
+      plan_type: 'yearly',
+      provider: 'stripe',
+    });
+
+    assert.deepEqual(captured, [
+      {
+        event: 'subscription_checkout_started',
+        properties: {
+          $environment: 'development',
+          plan_type: 'yearly',
+          provider: 'stripe',
+        },
+      },
+    ]);
   });
 
   it('capturePostHogEvent does not forward events without granted consent', () => {
