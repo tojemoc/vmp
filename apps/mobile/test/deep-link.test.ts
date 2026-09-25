@@ -18,6 +18,8 @@ describe('mobile deepLink helpers', () => {
   it('safeRedirectPath rejects login and auth intermediates', () => {
     assert.equal(safeRedirectPath('/login'), '/');
     assert.equal(safeRedirectPath('/login?next=1'), '/');
+    assert.equal(safeRedirectPath('/auth'), '/');
+    assert.equal(safeRedirectPath('/auth/'), '/');
     assert.equal(safeRedirectPath('/auth/verify'), '/');
     assert.equal(safeRedirectPath('/auth/2fa?redirect=%2F'), '/');
     assert.equal(safeRedirectPath('/authors'), '/authors');

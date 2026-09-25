@@ -163,6 +163,7 @@
       </button>
       <div v-if="promoExpanded">
         <label
+          for="checkout-promo-code"
           class="text-xs uppercase tracking-wide block mb-1"
           :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
         >
@@ -170,6 +171,7 @@
         </label>
         <div class="flex flex-wrap items-center gap-2">
           <input
+            id="checkout-promo-code"
             v-model="promoCodeInput"
             type="text"
             autocomplete="off"
@@ -178,6 +180,8 @@
             :class="embedded
               ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
               : 'border-gray-700 bg-gray-800 text-white'"
+            :aria-invalid="promoError ? 'true' : undefined"
+            :aria-describedby="promoError ? 'checkout-promo-error' : undefined"
           >
           <button
             type="button"
@@ -197,7 +201,9 @@
             {{ strings.checkoutPromoClear }}
           </button>
         </div>
-        <p v-if="promoError" class="text-xs text-red-400 mt-1">{{ promoError }}</p>
+        <p v-if="promoError" id="checkout-promo-error" class="text-xs text-red-400 mt-1">
+          {{ promoError }}
+        </p>
         <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
           {{
             strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' '))
@@ -644,35 +650,17 @@
     if (fallback) selectedPlan.value = fallback;
   }
 
-  function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
+  function buildLoginRedirect(plan: PlanType, provider?: PaymentProvider): string {
     const params = new URLSearchParams();
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
-    params.set('checkout_provider', provider);
+    if (provider) params.set('checkout_provider', provider);
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
   }
 
-  function checkoutProviderForRedirect(): PaymentProvider {
-    const fromRoute = route.query.checkout_provider;
-    if (
-      fromRoute === 'stripe' ||
-      fromRoute === 'legacy' ||
-      fromRoute === 'gopay' ||
-      fromRoute === 'comgate'
-    ) {
-      return fromRoute;
-    }
-    if (showGoPayCheckout.value) return 'gopay';
-    if (showComgateCheckout.value) return 'comgate';
-    if (showLegacyCheckout.value) return 'legacy';
-    return 'stripe';
-  }
-
-  /** Stamp plan+provider onto return path so magic-link / OTP reopen checkout. */
-  const checkoutAuthRedirect = computed(() =>
-    buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()),
-  );
+  /** Stamp selected plan onto return path for inline auth (provider only after explicit CTA). */
+  const checkoutAuthRedirect = computed(() => buildLoginRedirect(selectedPlan.value));
 
   /** True when the given provider can sell this plan at a configured price. */
   function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
@@ -721,11 +709,16 @@
   function tryCompleteDeferredCheckout() {
     if (pendingLegacyCheckoutIntent.value) {
       pendingLegacyCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('legacy') && showLegacyCheckout.value) {
         void startLegacyCheckout();
         return;
       }
-      // Prefer silent fallback when Stripe is available — do not scare users with bank errors.
+      // Prefer silent Stripe fallback for the *requested* plan — not the prior selection.
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
+        return;
+      }
       if (!showStripeCheckout.value) {
         checkoutError.value = strings.checkoutPlanUnavailable;
       }
@@ -734,8 +727,13 @@
 
     if (pendingGoPayCheckoutIntent.value) {
       pendingGoPayCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('gopay') && showGoPayCheckout.value) {
         void startGoPayCheckout();
+        return;
+      }
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
         return;
       }
       if (!showStripeCheckout.value) {
@@ -746,8 +744,13 @@
 
     if (pendingComgateCheckoutIntent.value) {
       pendingComgateCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('comgate') && showComgateCheckout.value) {
         void startComgateCheckout();
+        return;
+      }
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
         return;
       }
       if (!showStripeCheckout.value) {
@@ -909,6 +912,8 @@
       return;
     }
 
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
     legacyCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
