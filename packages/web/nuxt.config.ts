@@ -158,8 +158,15 @@ export default defineNuxtConfig({
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/video.js') || id.includes('videojs-video-element')) {
-              return 'videojs';
+            // Keep Video.js and videojs-video-element in separate chunks so importing
+            // video.js cannot evaluate the custom element (which would upgrade the
+            // in-DOM <videojs-video> before globalThis.videojs is published, forcing a
+            // CDN fallback that wedges the element's init flag without setting `api`).
+            if (id.includes('node_modules/video.js')) {
+              return 'videojs-core';
+            }
+            if (id.includes('videojs-video-element')) {
+              return 'videojs-element';
             }
             if (id.includes('node_modules/@tiptap/')) {
               return 'tiptap';
