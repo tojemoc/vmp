@@ -184,8 +184,17 @@ export function generateToken() {
 
 /** Six-digit email confirmation code (shown next to the magic link). */
 export function generateOtpCode() {
-  const n = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
-  return String(n).padStart(6, '0');
+  // Rejection sampling keeps the distribution uniform over [0, 1e6).
+  // Plain `getRandomValues() % 1e6` is slightly biased (CodeQL js/biased-cryptographic-random).
+  const range = 1_000_000;
+  const limit = Math.floor(0x1_0000_0000 / range) * range;
+  const buf = new Uint32Array(1);
+  let value = 0;
+  do {
+    crypto.getRandomValues(buf);
+    value = buf[0]!;
+  } while (value >= limit);
+  return String(value % range).padStart(6, '0');
 }
 
 export async function hashToken(token: any) {
