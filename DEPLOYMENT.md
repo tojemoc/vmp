@@ -51,7 +51,7 @@ Frontend deploy is **Workers only** (Nuxt `cloudflare-module` preset). Cloudflar
 
 `wrangler deploy` for `@vmp/api` does **not** apply `packages/api/migrations/*.sql`. Those files were historically applied with `wrangler d1 execute --file` and are not Wrangler D1 migration history — do not run `wrangler d1 migrations apply` against production/staging unless you know `d1_migrations` is in sync.
 
-Staging and production deploys run `packages/api/scripts/ensure_d1_required_schema.sh --remote` **before** publishing the API Worker. That script is idempotent: it adds columns/tables the current Worker requires (Step 10 `users.deletion_pending` and account-deletion tables) when they are missing. Auth queries also treat a missing `deletion_pending` column as `0` so a schema gap cannot 500 every session.
+Staging and production deploys run `packages/api/scripts/ensure_d1_required_schema.sh --remote` **before** publishing the API Worker. That script is idempotent: it adds columns/tables the current Worker requires (Step 10 `users.deletion_pending` and account-deletion tables, plus Club IRL / `playback_sessions` tables) when they are missing. Auth queries also treat a missing `deletion_pending` column as `0` so a schema gap cannot 500 every session. IRL handlers return `503` + `irl_schema_missing` if `irl_events` is still absent.
 
 New numbered files under `packages/api/migrations/` remain the source of truth for local/dev. Do not edit existing migration files.
 
