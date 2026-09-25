@@ -1,20 +1,22 @@
 # .github/workflows/bot-review-limit-cron.yml
 #
-# Handles CodeRabbit's "Review limit reached... Next review available in:
-# X minutes" message. We can't wait X minutes inside a job (that burns
-# Action minutes the whole time), so instead a lightweight cron job runs
-# every 15 minutes, checks whether the wait window has already elapsed for
-# any open PR, and only then posts the retry comment.
+# Optional cheaper alternative to Cursor-owned rate-limit waits.
+#
+# Prefer `.github/workflows/coderabbit-cursor-relay.yml` + the Cursor
+# automation (see `.github/CODERABBIT_CURSOR_AUTOMATION.md`) when you want
+# one loop that both waits out CodeRabbit limits and applies review fixes.
+# Keep THIS workflow disabled in that setup so you do not double-post
+# `@coderabbitai review`.
+#
+# Enable this cron instead when you only want Actions to retry reviews after
+# "Review limit reached... Next included review available in N minutes"
+# without waking a Cursor agent (saves cloud-agent minutes; up to ~15 min
+# of slop vs the timer).
 #
 # Note: the rate-limit message addresses whoever's push triggered it (e.g.
 # "@cursor[bot], you've reached your PR review limit") — that's just naming
 # the commit author, not a second bot to watch. The comment itself is
 # always posted by coderabbitai[bot], which is what we filter on below.
-#
-# Trade-off to know about: this has up to ~15 min of slop versus firing the
-# instant the timer expires. Tighten the cron schedule (e.g. */5) if you
-# want less slop, at the cost of more scheduled runs (still far cheaper than
-# a sleeping job).
 #
 # Uses inline Node (not actions/github-script) to avoid codeload 429s when
 # GitHub rate-limits action archive downloads.

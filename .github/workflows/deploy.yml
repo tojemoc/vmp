@@ -28,7 +28,7 @@ on:
       - '.github/workflows/ort-scan.yml'
       - '.github/workflows/stickydisk-cleanup.yml'
       - '.github/workflows/bot-review-limit-cron.yml'
-      - '.github/workflows/coderabbit-instant-trigger.yml'
+      - '.github/workflows/coderabbit-cursor-relay.yml'
       - '.github/workflows/dependabot-auto-merge.yml'
   workflow_dispatch:
     inputs:

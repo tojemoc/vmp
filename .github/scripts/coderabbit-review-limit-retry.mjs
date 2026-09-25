@@ -42,15 +42,18 @@ const openPRs = await listAll(
 
 for (const pr of openPRs) {
   const comments = await listAll(
-    (page) =>
-      `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100&page=${page}`,
+    (page) => `/repos/${owner}/${repo}/issues/${pr.number}/comments?per_page=100&page=${page}`,
   );
 
   const botComments = comments.filter((c) => c.user.login === BOT_LOGIN);
   if (botComments.length === 0) continue;
 
   const last = botComments[botComments.length - 1];
-  const match = last.body.match(/next review available in:\s*(\d+)\s*minutes?/i);
+  // Matches both legacy ("Next review available in: 12 minutes") and current
+  // CodeRabbit copy ("Next included review available in 54 minutes.").
+  const match = last.body.match(
+    /next(?:\s+included)?\s+review\s+available\s+in[:\s]*(\d+)\s*minutes?/i,
+  );
   if (!match) continue;
 
   const waitMinutes = Number.parseInt(match[1], 10);
