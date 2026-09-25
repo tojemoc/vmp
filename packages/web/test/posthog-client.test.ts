@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-
-import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 import { capturePostHogEvent } from '../utils/posthogClient';
+import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 
 type WindowWithPostHog = {
   posthog?: {
@@ -56,7 +55,7 @@ describe('posthogClient', () => {
     assert.deepEqual(captured, []);
   });
 
-  it('capturePostHogEvent forwards events to window.posthog after consent', () => {
+  it('capturePostHogEvent forwards events via getBrowserPostHog after consent', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
     setWindow({
       posthog: {
@@ -78,17 +77,26 @@ describe('posthogClient', () => {
       plan_type: 'monthly',
       provider: 'stripe',
     });
+    capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
+    capturePostHogEvent('offline_download_requested', { video_id: 'v1', rendition: '720p' });
+    capturePostHogEvent('billing_portal_opened');
+    capturePostHogEvent('magic_link_requested', { client: 'browser' });
 
-    assert.deepEqual(captured, [
-      {
-        event: 'subscription_checkout_started',
-        properties: {
-          $environment: 'development',
-          plan_type: 'monthly',
-          provider: 'stripe',
-        },
-      },
-    ]);
+    assert.deepEqual(
+      captured.map((row) => row.event),
+      [
+        'subscription_checkout_started',
+        'subscription_checkout_completed',
+        'offline_download_requested',
+        'billing_portal_opened',
+        'magic_link_requested',
+      ],
+    );
+    assert.deepEqual(captured[0]?.properties, {
+      $environment: 'development',
+      plan_type: 'monthly',
+      provider: 'stripe',
+    });
   });
 
   it('capturePostHogEvent does not forward events without granted consent', () => {

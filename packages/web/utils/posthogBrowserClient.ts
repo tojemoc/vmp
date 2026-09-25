@@ -13,9 +13,13 @@ export type PostHogIdentityClient = PostHogPersistenceClient & {
 /**
  * PostHog browser client from `@posthog/nuxt` (`$posthog`), with `window.posthog`
  * as fallback. The Nuxt module wraps posthog-js — console tags still say [PostHog.js].
+ *
+ * Prefer `import.meta.server` over `!import.meta.client` so Node unit tests (where
+ * neither Vite flag is set) can still exercise the `window.posthog` fallback.
+ * `@posthog/nuxt` does not assign `window.posthog`; production capture must use `$posthog`.
  */
 export function getBrowserPostHog(): PostHogIdentityClient | undefined {
-  if (!import.meta.client) return undefined;
+  if (import.meta.server) return undefined;
 
   try {
     const { $posthog } = useNuxtApp();
@@ -25,8 +29,8 @@ export function getBrowserPostHog(): PostHogIdentityClient | undefined {
     // Outside Nuxt context (tests) — fall through to window.
   }
 
-  const fromWindow = (window as Window & { posthog?: PostHogIdentityClient }).posthog;
-  return fromWindow;
+  if (typeof window === 'undefined') return undefined;
+  return (window as Window & { posthog?: PostHogIdentityClient }).posthog;
 }
 
 /** True when posthog-js has finished init (safe to call identify / opt-in). */

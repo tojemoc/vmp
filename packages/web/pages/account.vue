@@ -1075,8 +1075,8 @@
       const result = await completeLegacyCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
-        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
-        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'legacy' });
+        // Return-URL visit (incl. pending) — conversion SoT remains API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_completed', { provider: 'legacy' });
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {
         legacyCompletionError.value = result.error ?? strings.checkoutStartFailed;
@@ -1085,21 +1085,21 @@
       const result = await completeStripeCheckoutReturn();
       if (result.ok || result.pending) {
         showWelcomeBanner.value = true;
-        // Return-URL visit only (incl. pending) — conversion SoT is API `subscription_activated`.
-        capturePostHogEvent('subscription_checkout_return_visited', { provider: 'stripe' });
+        // Return-URL visit (incl. pending) — conversion SoT remains API `subscription_activated`.
+        capturePostHogEvent('subscription_checkout_completed', { provider: 'stripe' });
         await clearStripeSessionQuery({ subscribed: '1' });
       } else {
         stripeCompletionError.value = result.error ?? strings.checkoutStartFailed;
       }
     } else if (returningFromGoPay.value) {
       showWelcomeBanner.value = true;
-      // Return-URL visit only — conversion SoT is API `subscription_activated`.
-      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'gopay' });
+      // Return-URL visit — conversion SoT remains API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_completed', { provider: 'gopay' });
       await clearRedirectReturnQuery(['gopay']);
     } else if (returningFromComgate.value) {
       showWelcomeBanner.value = true;
-      // Return-URL visit only — conversion SoT is API `subscription_activated`.
-      capturePostHogEvent('subscription_checkout_return_visited', { provider: 'comgate' });
+      // Return-URL visit — conversion SoT remains API `subscription_activated`.
+      capturePostHogEvent('subscription_checkout_completed', { provider: 'comgate' });
       await clearRedirectReturnQuery(['comgate', 'refId', 'transId']);
     }
 

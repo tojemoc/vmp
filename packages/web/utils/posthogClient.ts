@@ -1,8 +1,5 @@
+import { getBrowserPostHog } from '~/utils/posthogBrowserClient';
 import { canCapturePostHogAnalytics } from '~/utils/posthogConsent';
-
-type PostHogCaptureClient = {
-  capture: (event: string, properties?: Record<string, unknown>) => unknown;
-};
 
 function posthogEnvironmentProperty(): Record<string, unknown> {
   if (typeof window === 'undefined') return { $environment: 'development' };
@@ -13,19 +10,20 @@ function posthogEnvironmentProperty(): Record<string, unknown> {
   return { $environment: tier || 'development' };
 }
 
-function getPostHogClient(): PostHogCaptureClient | undefined {
-  if (typeof window === 'undefined') return undefined;
-  const client = (window as Window & { posthog?: PostHogCaptureClient }).posthog;
-  if (!client || typeof client.capture !== 'function') return undefined;
-  return client;
-}
-
-/** Capture a snake_case product event when the browser PostHog client is initialized. */
+/**
+ * Capture a snake_case product event when the browser PostHog client is initialized.
+ *
+ * Resolves the client via `getBrowserPostHog()` (`$posthog` from `@posthog/nuxt`, then
+ * `window.posthog`). `@posthog/nuxt` does not assign `window.posthog`, so looking only at
+ * the window global silently dropped every custom product event.
+ */
 export function capturePostHogEvent(event: string, properties: Record<string, unknown> = {}): void {
   if (import.meta.server) return;
   if (!canCapturePostHogAnalytics()) return;
   try {
-    getPostHogClient()?.capture(event, { ...posthogEnvironmentProperty(), ...properties });
+    const client = getBrowserPostHog();
+    if (!client || typeof client.capture !== 'function') return;
+    client.capture(event, { ...posthogEnvironmentProperty(), ...properties });
   } catch {
     // Best-effort: analytics must not break product flows.
   }
