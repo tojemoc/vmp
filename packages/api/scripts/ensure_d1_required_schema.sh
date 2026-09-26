@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Idempotent D1 schema the current API Worker requires.
-# Do not run `wrangler d1 migrations apply` for the historical migrations/
-# tree — those files were applied with `d1 execute --file` and are not Wrangler
-# migration history. This script only adds missing columns/tables.
+#
+# IMPORTANT (remote/staging/production):
+#   Prefer this script (and the Worker cron ensure). Do NOT run
+#   `wrangler d1 migrations apply` against a DB whose schema was already
+#   created via `d1 execute --file` / ensure — non-idempotent CREATE TABLE
+#   migrations (e.g. 0067 irl_events) will fail with "already exists" while
+#   leaving later migrations (e.g. 0068 otp_hash) unapplied in Wrangler history.
+#   If that already happened, see DEPLOYMENT.md and
+#   scripts/repair_d1_wrangler_migration_history.sh.
+#
+# Historical migrations/*.sql were applied with `d1 execute --file` and are not
+# Wrangler migration history. This script only adds missing columns/tables.
 set -euo pipefail
 
 DB_NAME="${DB_NAME:-video-subscription-db}"

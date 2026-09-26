@@ -237,14 +237,17 @@ API_URL=http://localhost:8787 npm run dev --workspace=@vmp/web   # Nuxt dev on p
 
 ### Database setup
 
-Before the API can serve data, apply all D1 migrations in order:
+**Local:** before the API can serve data, apply all D1 migrations in order (or use ensure):
 
 ```bash
 cd packages/api
 for f in $(ls -1 migrations/*.sql | sort); do
   npx wrangler d1 execute video-subscription-db --local --file="$f"
 done
+# alternatively: bash ./scripts/ensure_d1_required_schema.sh --local
 ```
+
+**Remote (staging/production):** do **not** use `wrangler d1 migrations apply` unless `d1_migrations` is known in sync. Prefer `bash ./scripts/ensure_d1_required_schema.sh --remote` (also run by CD + five-minute Worker cron). If `migrations apply` already failed with `table irl_events already exists`, see `DEPLOYMENT.md` and `scripts/repair_d1_wrangler_migration_history.sh`.
 
 Seed videos default to `publish_status = 'draft'`. To make them visible on the public homepage:
 
