@@ -51,7 +51,7 @@ Frontend deploy is **Workers only** (Nuxt `cloudflare-module` preset). Cloudflar
 
 `wrangler deploy` for `@vmp/api` does **not** apply `packages/api/migrations/*.sql`. Those files were historically applied with `wrangler d1 execute --file` and are not Wrangler D1 migration history — do not run `wrangler d1 migrations apply` against production/staging unless you know `d1_migrations` is in sync.
 
-Staging and production deploys run `packages/api/scripts/ensure_d1_required_schema.sh --remote` **before** publishing the API Worker. That script is idempotent: it adds columns/tables the current Worker requires (Step 10 `users.deletion_pending` and account-deletion tables, plus Club IRL / `playback_sessions` tables) when they are missing. Auth queries also treat a missing `deletion_pending` column as `0` so a schema gap cannot 500 every session. IRL handlers return `503` + `irl_schema_missing` if `irl_events` is still absent.
+Staging and production deploys **publish the API Worker first**, then run `packages/api/scripts/ensure_d1_required_schema.sh --remote` as a best-effort accelerator (failures do not block CD). The deployed Worker also runs the same idempotent ensure on every **five-minute cron** via the D1 binding (`ensureD1RequiredSchema` in `@vmp/api`), so schema is applied even when the GitHub `CLOUDFLARE_API_TOKEN` cannot call the D1 HTTP API (Cloudflare error **7403** — add **Account → D1 → Edit** on the deploy token to make the wrangler step succeed). The ensure adds columns/tables the current Worker requires (Step 10 `users.deletion_pending` and account-deletion tables, plus Club IRL / `playback_sessions` tables) when they are missing. Auth queries also treat a missing `deletion_pending` column as `0` so a schema gap cannot 500 every session. IRL handlers return `503` + `irl_schema_missing` if `irl_events` is still absent.
 
 New numbered files under `packages/api/migrations/` remain the source of truth for local/dev. Do not edit existing migration files.
 
@@ -88,8 +88,8 @@ See [`packages/api-node/README.md`](packages/api-node/README.md) for runtime set
 
 Required repository secrets:
 
-- `CLOUDFLARE_API_TOKEN_STAGING`
-- `CLOUDFLARE_API_TOKEN_PROD`
+- `CLOUDFLARE_API_TOKEN_STAGING` — Workers deploy + optional D1 schema ensure via wrangler; include **Account → D1 → Edit** (or Edit Read) so `ensure_d1_required_schema.sh --remote` succeeds in CI
+- `CLOUDFLARE_API_TOKEN_PROD` — same as staging for production
 - `CLOUDFLARE_ACCOUNT_ID_STAGING`
 - `CLOUDFLARE_ACCOUNT_ID_PROD`
 - `STAGING_SMOKE_AUTH_TOKEN` (shared secret for staging `/api/admin/smoke-auth` smoke check)
