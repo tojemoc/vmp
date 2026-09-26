@@ -299,6 +299,8 @@ REPLICATION_TARGET_TOKEN — bearer token for replication ingest (same value as 
 Optional API Worker **vars** (runtime, Cloudflare dashboard / `wrangler.json` / `.dev.vars` — not GitHub Actions):
 
 ```text
+API_URL — public base URL of this API Worker (e.g. https://vmp-api.tjm.sk). Required for Qerko/legacy and GoPay webhook notifyUrl. Staging/prod CD passes it via `wrangler deploy --var API_URL:…` from `API_URL_STAGING` / `API_URL_PROD`.
+FRONTEND_URL — public frontend origin for checkout return URLs (also in wrangler.json; CD overrides per tier).
 POSTHOG_PROJECT_TOKEN — public PostHog project token (same value as NUXT_PUBLIC_POSTHOG_KEY on the frontend)
 POSTHOG_HOST          — ingest host; defaults to https://eu.i.posthog.com (also in wrangler.json vars)
 ```

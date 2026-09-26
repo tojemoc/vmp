@@ -73,6 +73,7 @@
   ],
   "vars": {
     "R2_BASE_URL": "https://vmp-videos.tjm.sk",
+    "API_URL": "https://vmp-api.tjm.sk",
     "FRONTEND_URL": "https://vmp.tjm.sk",
     "SENDER_EMAIL": "vmp@tjm.sk",
     "SENDER_NAME": "VMP",
