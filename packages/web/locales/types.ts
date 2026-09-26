@@ -75,6 +75,8 @@ export type StringsDefinition = {
   loginOpenEmailHint: string;
   loginTerms: string;
   loginErrorGeneric: string;
+  loginInlineHint: string;
+  loginFullPageLink: string;
   authVerifySigningIn: string;
   authVerifyHandoffTitle: string;
   authVerifyHandoffBody: string;
@@ -402,6 +404,8 @@ export type StringsDefinition = {
   checkoutPricesLoadFailed: string;
   checkoutRedirecting: string;
   checkoutPayWithBank: (price: string) => string;
+  /** Prefix before the Qerko wordmark on the green bank-pay button. */
+  checkoutPayWithQerko: string;
   checkoutPayByCard: string;
   checkoutPayByCardHint: string;
   checkoutMorePaymentMethods: string;
@@ -420,6 +424,21 @@ export type StringsDefinition = {
   checkoutProviderUnavailable: string;
   checkoutPlanUnavailable: string;
   checkoutSignInBefore: string;
+  checkoutAuthEmailLabel: string;
+  checkoutAuthEmailPlaceholder: string;
+  checkoutAuthSendCode: string;
+  checkoutAuthSending: string;
+  checkoutAuthCodeSent: string;
+  checkoutAuthCodeLabel: string;
+  checkoutAuthCodePlaceholder: string;
+  checkoutAuthVerifyCode: string;
+  checkoutAuthVerifying: string;
+  checkoutAuthTotpLabel: string;
+  checkoutAuthTotpHint: string;
+  checkoutAuthChangeEmail: string;
+  checkoutAuthResend: string;
+  checkoutPromoToggle: string;
+  checkoutPromoHide: string;
   checkoutPromoLabel: string;
   checkoutPromoPlaceholder: string;
   checkoutPromoChecking: string;

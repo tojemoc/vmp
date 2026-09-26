@@ -54,7 +54,7 @@
         type="button"
         class="relative min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="[planButtonClass('monthly'), compact ? 'pt-3.5' : 'pt-4']"
-        @click="selectedPlan = 'monthly'"
+        @click="selectPlan('monthly')"
       >
         <div
           class="absolute -top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[10px] font-semibold px-1.5 py-px rounded-full whitespace-nowrap leading-tight"
@@ -77,7 +77,7 @@
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('yearly')"
-        @click="selectedPlan = 'yearly'"
+        @click="selectPlan('yearly')"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
           {{ strings.checkoutPlanYearly }}
@@ -95,7 +95,7 @@
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('club')"
-        @click="selectedPlan = 'club'"
+        @click="selectPlan('club')"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
           {{ strings.checkoutPlanClub }}
@@ -117,19 +117,15 @@
       {{ checkoutError }}
     </div>
 
-    <label
-      class="mb-4 flex items-start gap-3 text-left cursor-pointer"
-      :class="embedded ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300'"
-    >
-      <input
-        v-model="newsletterOptOut"
-        type="checkbox"
-        class="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
-      >
-      <span class="text-sm">
-        {{ strings.newsletterOptOutCheckoutLabel }}
-      </span>
-    </label>
+    <!-- Inline sign-in: email → confirmation code → optional TOTP (shared client+redirect stamp) -->
+    <InlineAuthForm
+      v-if="!isLoggedIn"
+      class="mb-4"
+      :redirect-path="checkoutAuthRedirect"
+      :embedded="embedded"
+      surface="checkout"
+      :hint="strings.checkoutSignInBefore"
+    />
 
     <label
       class="mb-4 flex items-start gap-3 text-left cursor-pointer"
@@ -142,114 +138,78 @@
         required
       >
       <span class="text-sm">
-        {{ strings.checkoutTermsAcceptLabel }}
+        {{ termsAcceptLabel }}
         <a
           href="/personal-data"
           class="underline text-blue-600 dark:text-blue-400 hover:text-blue-500"
           target="_blank"
           rel="noopener noreferrer"
           @click.stop
-          >{{ strings.checkoutTermsLearnMore }}</a
+          >{{
+            strings.checkoutTermsLearnMore
+          }}</a
         >
       </span>
     </label>
 
-    <div class="mb-3 text-left">
-      <label
-        class="text-xs uppercase tracking-wide block mb-1"
+    <div v-if="promotionsEnabled" class="mb-3 text-left">
+      <button
+        type="button"
+        class="text-xs underline mb-2"
         :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
+        @click="promoExpanded = !promoExpanded"
       >
-        {{ strings.checkoutPromoLabel }}
-      </label>
-      <div class="flex flex-wrap items-center gap-2">
-        <input
-          v-model="promoCodeInput"
-          type="text"
-          autocomplete="off"
-          :placeholder="strings.checkoutPromoPlaceholder"
-          class="flex-1 min-w-[10rem] px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
-          :class="embedded
-            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'border-gray-700 bg-gray-800 text-white'"
+        {{ promoExpanded ? strings.checkoutPromoHide : strings.checkoutPromoToggle }}
+      </button>
+      <div v-if="promoExpanded">
+        <label
+          for="checkout-promo-code"
+          class="text-xs uppercase tracking-wide block mb-1"
+          :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
         >
-        <button
-          type="button"
-          class="px-3 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
-          :class="embedded ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'"
-          :disabled="promoValidating || !promoCodeInput.trim()"
-          @click="validatePromoCode"
-        >
-          {{ promoValidating ? strings.checkoutPromoChecking : strings.checkoutPromoApply }}
-        </button>
-        <button
-          v-if="promoApplied"
-          type="button"
-          class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
-          @click="clearPromoCode"
-        >
-          {{ strings.checkoutPromoClear }}
-        </button>
+          {{ strings.checkoutPromoLabel }}
+        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            id="checkout-promo-code"
+            v-model="promoCodeInput"
+            type="text"
+            autocomplete="off"
+            :placeholder="strings.checkoutPromoPlaceholder"
+            class="flex-1 min-w-[10rem] px-3 py-2 rounded-lg border text-sm placeholder-gray-500"
+            :class="embedded
+              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white'
+              : 'border-gray-700 bg-gray-800 text-white'"
+            :aria-invalid="promoError ? 'true' : undefined"
+            :aria-describedby="promoError ? 'checkout-promo-error' : undefined"
+          >
+          <button
+            type="button"
+            class="px-3 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50"
+            :class="embedded ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-700 hover:bg-gray-600'"
+            :disabled="promoValidating || !promoCodeInput.trim()"
+            @click="validatePromoCode"
+          >
+            {{ promoValidating ? strings.checkoutPromoChecking : strings.checkoutPromoApply }}
+          </button>
+          <button
+            v-if="promoApplied"
+            type="button"
+            class="px-3 py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+            @click="clearPromoCode"
+          >
+            {{ strings.checkoutPromoClear }}
+          </button>
+        </div>
+        <p v-if="promoError" id="checkout-promo-error" class="text-xs text-red-400 mt-1">
+          {{ promoError }}
+        </p>
+        <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
+          {{
+            strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' '))
+          }}
+        </p>
       </div>
-      <p v-if="promoError" class="text-xs text-red-400 mt-1">{{ promoError }}</p>
-      <p v-else-if="promoApplied" class="text-xs text-emerald-500 dark:text-emerald-400 mt-1">
-        {{ strings.checkoutPromoApplied(promoApplied.code, promoApplied.rewardType.replace('_', ' ')) }}
-      </p>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showLegacyCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="legacyCheckoutStarting"
-        @click="startLegacyCheckout"
-      >
-        <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithBank(formatPrice(legacyPlanPrice)) }}</span>
-      </button>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showGoPayCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="gopayCheckoutStarting"
-        @click="startGoPayCheckout"
-      >
-        <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
-      </button>
-      <p
-        class="text-[11px] mt-1.5"
-        :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500 dark:text-gray-400'"
-      >
-        {{ strings.checkoutGoPayGatewayNote }}
-      </p>
-    </div>
-
-    <div
-      v-if="!loadingPrices && !priceError && isLoggedIn && showComgateCheckout"
-      class="mb-4 text-left"
-    >
-      <button
-        type="button"
-        class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
-        :class="legacyButtonClass"
-        :disabled="comgateCheckoutStarting"
-        @click="startComgateCheckout"
-      >
-        <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
-        <span v-else
-          >{{ strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice)) }}</span
-        >
-      </button>
     </div>
 
     <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
@@ -258,23 +218,27 @@
         :plan-type="selectedPlan"
         :promo-code="promoApplied?.code ?? ''"
         :return-path="returnPath"
-        :newsletter-opt-out="newsletterOptOut"
+        :newsletter-opt-out="false"
         :terms-accepted="termsAccepted"
         :embedded="embedded"
         :show-wallet-surface="showWalletSurface"
         :show-card-surface="showCardSurface"
         :hide-payment-wallets="walletAvailable"
         @wallet-available="onWalletAvailable"
+        @stripe-ready="onStripeReady"
       >
-        <div v-if="showMoreToggle" class="space-y-3">
+        <div v-if="showMoreToggle || showSecondaryProviders" class="space-y-3">
           <button
+            v-if="showMoreToggle || showSecondaryProviders"
             type="button"
             class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors"
             :class="moreToggleClass"
             :aria-expanded="moreExpanded"
             @click="toggleMore"
           >
-            {{ moreExpanded ? strings.checkoutHidePaymentMethods : strings.checkoutMorePaymentMethods }}
+            {{
+              moreExpanded ? strings.checkoutHidePaymentMethods : strings.checkoutMorePaymentMethods
+            }}
           </button>
 
           <div
@@ -284,6 +248,7 @@
             :aria-label="strings.checkoutMorePaymentMethods"
           >
             <button
+              v-if="showCardPaymentOption"
               type="button"
               class="w-full text-left rounded-lg border-2 p-4 transition-all"
               :class="moreOptionClass"
@@ -302,9 +267,97 @@
                 {{ strings.checkoutPayByCardHint }}
               </p>
             </button>
+
+            <button
+              v-if="showLegacyCheckout"
+              type="button"
+              class="w-full inline-flex items-center justify-center gap-2.5 py-3 px-4 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 text-white bg-[#00B579] hover:bg-[#009966] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00B579]"
+              :disabled="legacyCheckoutStarting"
+              :aria-label="`${strings.checkoutPayWithQerko} Qerko`"
+              @click="startLegacyCheckout"
+            >
+              <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else class="inline-flex items-center gap-2.5">
+                <span>{{ strings.checkoutPayWithQerko }}</span>
+                <QerkoWordmark class="text-white shrink-0" :width="78" :height="24" />
+              </span>
+            </button>
+
+            <button
+              v-if="showGoPayCheckout"
+              type="button"
+              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+              :class="legacyButtonClass"
+              :disabled="gopayCheckoutStarting"
+              @click="startGoPayCheckout"
+            >
+              <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else>{{
+                strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice))
+              }}</span>
+            </button>
+
+            <button
+              v-if="showComgateCheckout"
+              type="button"
+              class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+              :class="legacyButtonClass"
+              :disabled="comgateCheckoutStarting"
+              @click="startComgateCheckout"
+            >
+              <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+              <span v-else>{{
+                strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice))
+              }}</span>
+            </button>
           </div>
         </div>
       </StripeEmbeddedCheckout>
+
+      <!-- Non-Stripe-only fallbacks when Stripe is not available for this plan -->
+      <div
+        v-else-if="showLegacyCheckout || showGoPayCheckout || showComgateCheckout"
+        class="space-y-2"
+      >
+        <button
+          v-if="showLegacyCheckout"
+          type="button"
+          class="w-full inline-flex items-center justify-center gap-2.5 py-3 px-4 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 text-white bg-[#00B579] hover:bg-[#009966] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00B579]"
+          :disabled="legacyCheckoutStarting"
+          :aria-label="`${strings.checkoutPayWithQerko} Qerko`"
+          @click="startLegacyCheckout"
+        >
+          <span v-if="legacyCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else class="inline-flex items-center gap-2.5">
+            <span>{{ strings.checkoutPayWithQerko }}</span>
+            <QerkoWordmark class="text-white shrink-0" :width="78" :height="24" />
+          </span>
+        </button>
+        <button
+          v-if="showGoPayCheckout"
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+          :class="legacyButtonClass"
+          :disabled="gopayCheckoutStarting"
+          @click="startGoPayCheckout"
+        >
+          <span v-if="gopayCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{ strings.checkoutPayWithGoPay(formatGoPayPrice(gopayPlanPrice)) }}</span>
+        </button>
+        <button
+          v-if="showComgateCheckout"
+          type="button"
+          class="w-full py-2.5 px-4 text-sm font-medium rounded-lg border transition-colors disabled:opacity-50"
+          :class="legacyButtonClass"
+          :disabled="comgateCheckoutStarting"
+          @click="startComgateCheckout"
+        >
+          <span v-if="comgateCheckoutStarting">{{ strings.checkoutRedirecting }}</span>
+          <span v-else>{{
+            strings.checkoutPayWithComgate(formatComgatePrice(comgatePlanPrice))
+          }}</span>
+        </button>
+      </div>
     </div>
 
     <p
@@ -312,20 +365,6 @@
       :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-500'"
     >
       {{ checkoutBlurb }}
-    </p>
-    <p
-      v-if="!isLoggedIn"
-      class="text-sm mt-2"
-      :class="embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'"
-    >
-      {{ strings.checkoutSignInBefore }}
-      <button
-        type="button"
-        class="text-blue-500 dark:text-blue-400 hover:underline"
-        @click="goToLogin"
-      >
-        {{ strings.signIn }}
-      </button>
     </p>
   </div>
 </template>
@@ -381,6 +420,8 @@
   /** Currency for the generic plan-card amounts (matches primary checkout provider). */
   const planCardCurrency = ref('EUR');
   const enabledProviders = ref<PaymentProvider[]>(['stripe']);
+  /** Admin-allowed plan types from pricing API (defaults to all until loaded). */
+  const allowedPlans = ref<PlanType[]>(['monthly', 'yearly', 'club']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
   const selectedPlan = ref<PlanType>('monthly');
@@ -390,19 +431,27 @@
   const walletAvailable = ref(false);
   /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
   const walletDetectionDone = ref(false);
+  /** Stripe Checkout session initialized successfully — gates "Pay by card". */
+  const stripeCheckoutReady = ref(false);
   const moreExpanded = ref(false);
   const cardMethodSelected = ref(false);
   const checkoutError = ref<string | null>(null);
-  /** Unchecked by default — checking opts out of the creator newsletter only. */
-  const newsletterOptOut = ref(false);
   /** Required affirmative consent for immediate digital content / withdrawal waiver. */
   const termsAccepted = ref(false);
+  const promotionsEnabled = ref(true);
+  const promoExpanded = ref(false);
   const promoCodeInput = ref('');
   const promoValidating = ref(false);
   const promoError = ref<string | null>(null);
   const promoApplied = ref<null | { code: string; rewardType: string }>(null);
   /** Bumped on each validatePromoCode() so in-flight responses cannot overwrite newer state. */
   let promoValidationGeneration = 0;
+
+  const checkoutCopyOverride = ref<{ termsAcceptLabel?: string; trustBlurb?: string }>({});
+
+  const termsAcceptLabel = computed(
+    () => checkoutCopyOverride.value.termsAcceptLabel || strings.checkoutTermsAcceptLabel,
+  );
 
   const planLabelClass = computed(() =>
     props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-400',
@@ -441,13 +490,6 @@
 
   const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
 
-  const legacyPlanPrice = computed(() => {
-    const plan = selectedPlan.value;
-    const legacy = legacyPrices.value[plan];
-    if (Number.isFinite(legacy)) return Number(legacy);
-    return planPrice(plan);
-  });
-
   const gopayPlanPrice = computed(() => {
     const value = gopayPrices.value[selectedPlan.value];
     return Number.isFinite(value) && value > 0 ? Number(value) : null;
@@ -467,10 +509,15 @@
   );
 
   const checkoutBlurb = computed(() => {
+    if (checkoutCopyOverride.value.trustBlurb) return checkoutCopyOverride.value.trustBlurb;
     if (showStripeCheckout.value && showLegacyCheckout.value) return strings.checkoutBlurbBoth;
     if (showLegacyCheckout.value) return strings.checkoutBlurbDefault;
     return strings.checkoutBlurbEmbedded;
   });
+
+  const showSecondaryProviders = computed(
+    () => showLegacyCheckout.value || showGoPayCheckout.value || showComgateCheckout.value,
+  );
 
   const legacyButtonClass = computed(() => {
     if (props.embedded) {
@@ -492,6 +539,9 @@
   });
 
   const showMoreToggle = computed(() => walletDetectionDone.value);
+
+  /** Card option only when Stripe init succeeded (secondary providers stay on showMoreToggle). */
+  const showCardPaymentOption = computed(() => showMoreToggle.value && stripeCheckoutReady.value);
 
   const moreToggleClass = computed(() => {
     if (props.embedded) {
@@ -522,6 +572,19 @@
       moreExpanded.value = false;
       cardMethodSelected.value = false;
     }
+  }
+
+  function onStripeReady(ready: boolean) {
+    stripeCheckoutReady.value = ready;
+    if (!ready) {
+      cardMethodSelected.value = false;
+    }
+  }
+
+  /** Explicit plan pick from the UI — clears checkout errors (watcher must not). */
+  function selectPlan(plan: PlanType) {
+    checkoutError.value = null;
+    selectedPlan.value = plan;
   }
 
   function toggleMore() {
@@ -579,6 +642,7 @@
 
   /** True when at least one enabled provider can sell this plan. */
   function isPlanAvailable(plan: PlanType): boolean {
+    if (!allowedPlans.value.includes(plan)) return false;
     const providers = enabledProviders.value;
     if (providers.includes('stripe') && hasConfiguredProviderPrice(stripePrices.value[plan])) {
       return true;
@@ -605,34 +669,21 @@
     if (fallback) selectedPlan.value = fallback;
   }
 
-  function buildLoginRedirect(plan: PlanType, provider: PaymentProvider): string {
+  function buildLoginRedirect(plan: PlanType, provider?: PaymentProvider): string {
     const params = new URLSearchParams();
     if (props.reopenPremiumOnReturn) params.set('showPremium', '1');
     params.set('checkout_plan', plan);
-    params.set('checkout_provider', provider);
-    if (newsletterOptOut.value) params.set('checkout_newsletter_opt_out', '1');
+    if (provider) params.set('checkout_provider', provider);
     const joiner = props.returnPath.includes('?') ? '&' : '?';
     return `${props.returnPath}${joiner}${params.toString()}`;
   }
 
-  function checkoutProviderForRedirect(): PaymentProvider {
-    const fromRoute = route.query.checkout_provider;
-    if (
-      fromRoute === 'stripe' ||
-      fromRoute === 'legacy' ||
-      fromRoute === 'gopay' ||
-      fromRoute === 'comgate'
-    ) {
-      return fromRoute;
-    }
-    if (showGoPayCheckout.value) return 'gopay';
-    if (showComgateCheckout.value) return 'comgate';
-    if (showLegacyCheckout.value) return 'legacy';
-    return 'stripe';
-  }
+  /** Stamp selected plan onto return path for inline auth (provider only after explicit CTA). */
+  const checkoutAuthRedirect = computed(() => buildLoginRedirect(selectedPlan.value));
 
   /** True when the given provider can sell this plan at a configured price. */
   function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
+    if (!allowedPlans.value.includes(plan)) return false;
     if (!enabledProviders.value.includes(provider)) return false;
     switch (provider) {
       case 'stripe':
@@ -677,31 +728,63 @@
   function tryCompleteDeferredCheckout() {
     if (pendingLegacyCheckoutIntent.value) {
       pendingLegacyCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('legacy') && showLegacyCheckout.value) {
         void startLegacyCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      // Prefer silent Stripe fallback for the *requested* plan — not the prior selection.
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
+        return;
+      }
+      // Stripe cannot sell requestedPlan (or no plan was requested and Stripe UI is absent).
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
       return;
     }
 
     if (pendingGoPayCheckoutIntent.value) {
       pendingGoPayCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('gopay') && showGoPayCheckout.value) {
         void startGoPayCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
+        return;
+      }
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
       return;
     }
 
     if (pendingComgateCheckoutIntent.value) {
       pendingComgateCheckoutIntent.value = false;
+      const requestedPlan = pendingCheckoutPlan.value;
       if (applyPendingCheckoutPlan('comgate') && showComgateCheckout.value) {
         void startComgateCheckout();
         return;
       }
-      checkoutError.value = strings.checkoutPlanUnavailable;
+      if (requestedPlan && isPlanAvailableForProvider(requestedPlan, 'stripe')) {
+        selectedPlan.value = requestedPlan;
+        return;
+      }
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
+        checkoutError.value = strings.checkoutPlanUnavailable;
+      }
     }
   }
 
@@ -727,6 +810,23 @@
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
       enabledProviders.value = providers as PaymentProvider[];
+      const allowed = Array.isArray(data.allowedPlans)
+        ? data.allowedPlans.filter(
+            (p: string): p is PlanType => p === 'monthly' || p === 'yearly' || p === 'club',
+          )
+        : [];
+      allowedPlans.value = allowed.length ? allowed : ['monthly', 'yearly', 'club'];
+      promotionsEnabled.value = data.promotionsEnabled !== false;
+      const copy =
+        data.checkoutCopy && typeof data.checkoutCopy === 'object' ? data.checkoutCopy : {};
+      checkoutCopyOverride.value = {
+        ...(typeof copy.termsAcceptLabel === 'string' && copy.termsAcceptLabel.trim()
+          ? { termsAcceptLabel: copy.termsAcceptLabel.trim() }
+          : {}),
+        ...(typeof copy.trustBlurb === 'string' && copy.trustBlurb.trim()
+          ? { trustBlurb: copy.trustBlurb.trim() }
+          : {}),
+      };
 
       const stripeRaw = data?.pricesByProvider?.stripe ?? {};
       const legacyRaw = data?.pricesByProvider?.legacy ?? {};
@@ -841,6 +941,8 @@
       return;
     }
 
+    // Promos are Stripe-only until redirect providers support discounts.
+    clearPromoCode();
     legacyCheckoutStarting.value = true;
     try {
       const res = await fetch(`${apiUrl}/api/payments/checkout`, {
@@ -851,7 +953,7 @@
           planType: selectedPlan.value,
           provider: 'legacy',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -892,7 +994,7 @@
           planType: plan,
           provider: 'gopay',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -937,7 +1039,7 @@
           planType: plan,
           provider: 'comgate',
           returnPath: props.returnPath,
-          newsletterOptOut: newsletterOptOut.value,
+          newsletterOptOut: false,
           termsAccepted: true,
         }),
       });
@@ -956,10 +1058,6 @@
     } finally {
       comgateCheckoutStarting.value = false;
     }
-  }
-
-  async function goToLogin() {
-    await startLoginFlow(buildLoginRedirect(selectedPlan.value, checkoutProviderForRedirect()));
   }
 
   function isStalePromoValidation(
@@ -1029,9 +1127,6 @@
     if (hasRoutePlan) {
       pendingCheckoutPlan.value = plan;
     }
-    if (q.checkout_newsletter_opt_out === '1') {
-      newsletterOptOut.value = true;
-    }
     const provider = q.checkout_provider;
     const deferProviderStart = hasRoutePlan || loadingPrices.value;
     if (provider === 'legacy') {
@@ -1074,8 +1169,12 @@
   watch(selectedPlan, () => {
     promoApplied.value = null;
     promoError.value = null;
+    // Do not clear checkoutError here — deferred checkout may set selectedPlan then
+    // start a provider that reports checkoutTermsRequired in the same tick; a watcher
+    // clear would erase that error before render.
     walletDetectionDone.value = false;
     walletAvailable.value = false;
+    stripeCheckoutReady.value = false;
     moreExpanded.value = false;
     cardMethodSelected.value = false;
   });

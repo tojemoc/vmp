@@ -6,6 +6,7 @@ Each backlog item links a **GitHub tracking issue** in `ROADMAP.md`. PRs should 
 
 | Plan | Roadmap section | Issue |
 |------|-----------------|-------|
+| [checkout-popup-ux.md](checkout-popup-ux.md) | Checkout popup UX (`checkout-popup-ux`) — in progress | [#712](https://github.com/tojemoc/vmp/issues/712) |
 | [analytics-observability.md](analytics-observability.md) | CMS admin analytics (`analytics-observability-cms`) — in progress | [#643](https://github.com/tojemoc/vmp/issues/643) / TOJ-135 |
 | [club-plan-entitlements.md](club-plan-entitlements.md) | Club plan — product entitlements — in progress | [#649](https://github.com/tojemoc/vmp/issues/649) / TOJ-139 |
 | [payments-gopay-comgate.md](payments-gopay-comgate.md) | GoPay + Comgate — **shipped** (live smoke ops) | [#648](https://github.com/tojemoc/vmp/issues/648) / TOJ-141 |

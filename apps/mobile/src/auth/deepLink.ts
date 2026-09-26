@@ -7,11 +7,18 @@ const VMP_VERIFY_PATH = '/verify';
 /**
  * Safe in-app redirect after magic-link redeem.
  * Must be a same-app path: starts with `/`, not `//`, length-capped.
+ * Rejects `/login`, `/auth`, and `/auth/*` so auth intermediates are not reused as destinations.
  */
 export function safeRedirectPath(value: unknown, fallback = '/'): string {
   if (typeof value !== 'string') return fallback;
   const t = value.trim();
   if (!t.startsWith('/') || t.startsWith('//') || t.length > 1024) return fallback;
+  const pathOnly = t.split('?')[0]?.split('#')[0] ?? t;
+  const normalized =
+    pathOnly.length > 1 && pathOnly.endsWith('/') ? pathOnly.slice(0, -1) : pathOnly;
+  if (normalized === '/login' || normalized === '/auth' || normalized.startsWith('/auth/')) {
+    return fallback;
+  }
   return t;
 }
 

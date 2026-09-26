@@ -15,6 +15,26 @@ export function generateCheckoutConsentId(): string {
   return crypto.randomUUID();
 }
 
+/** First 8 hex chars of SHA-256 — enough to distinguish admin override wording. */
+export async function shortConsentTextHash(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 8);
+}
+
+/**
+ * Version id for a consent row. Default canonical text keeps `CHECKOUT_CONSENT_VERSION`;
+ * admin overrides append a short hash so audits can tell which wording was shown.
+ */
+export async function resolveCheckoutConsentVersion(consentText?: string | null): Promise<string> {
+  const override = typeof consentText === 'string' ? consentText.trim() : '';
+  if (!override) return CHECKOUT_CONSENT_VERSION;
+  const hash = await shortConsentTextHash(override);
+  return `${CHECKOUT_CONSENT_VERSION}:${hash}`;
+}
+
 export async function persistCheckoutConsent(
   db: any,
   params: {

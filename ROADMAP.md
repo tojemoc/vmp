@@ -43,6 +43,18 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 
 ## In progress
 
+### Checkout popup UX (`checkout-popup-ux`)
+
+**Issues:** [#712](https://github.com/tojemoc/vmp/issues/712)  
+**Plan:** [docs/plans/checkout-popup-ux.md](docs/plans/checkout-popup-ux.md)
+
+- [x] Fast batched `/api/account/pricing` + promo-disabled must not block empty-promo Stripe checkout
+- [x] Inline email → confirmation code → optional TOTP in `SubscriptionCheckoutPanel` (shared form also on `/login`, header Sign-in popup, native)
+- [x] Return-to-origin via existing magic-link `redirect` + `client` stamps (video / article / account / checkout)
+- [x] Declutter: hide promo when disabled, drop checkout newsletter opt-out, quieter bank CTAs/errors
+- [x] Admin-editable checkout terms label + trust blurb
+- [x] Native `verify-code` with `client=native` → `refreshToken` (same contract as native redeem)
+
 ### Club plan entitlements (`club`)
 
 **Issues:** [#649](https://github.com/tojemoc/vmp/issues/649) / [TOJ-139](https://linear.app/tojemoc/issue/TOJ-139)  

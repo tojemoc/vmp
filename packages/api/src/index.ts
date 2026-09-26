@@ -63,6 +63,7 @@ import {
   handleTotpSetup,
   handleTotpVerify,
   handleVerifyMagicLink,
+  handleVerifyMagicLinkCode,
   requireAuth,
   requireRole,
   resolveAuthSubFromRequest,
@@ -578,6 +579,9 @@ const workerHandler = {
         }
         if (url.pathname === '/api/auth/verify' && request.method === 'GET') {
           return handleVerifyMagicLink(request, env, corsHeaders);
+        }
+        if (url.pathname === '/api/auth/verify-code' && request.method === 'POST') {
+          return handleVerifyMagicLinkCode(request, env, corsHeaders);
         }
         if (url.pathname === '/api/auth/native/redeem' && request.method === 'POST') {
           return handleNativeRedeemMagicLink(request, env, corsHeaders);

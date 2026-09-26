@@ -9,23 +9,27 @@
         {{ initError }}
       </div>
 
-      <div v-show="!loading && !initError" class="space-y-4">
-        <div v-show="showWalletSurface" ref="expressMountRef" class="min-h-[44px]" />
+      <!-- Wallet / card stay behind a successful init; slot stays available so
+           secondary providers (Qerko / GoPay / Comgate) survive Stripe init failures. -->
+      <div
+        v-show="!loading && !initError && showWalletSurface"
+        ref="expressMountRef"
+        class="min-h-[44px]"
+      />
 
-        <slot />
+      <slot v-if="!loading" />
 
-        <div v-show="showCardSurface">
-          <div ref="paymentMountRef" />
-          <button
-            v-if="cardReady"
-            type="button"
-            class="mt-4 w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-            :disabled="confirming"
-            @click="confirmCardPayment"
-          >
-            {{ confirming ? strings.checkoutStripeProcessing : resolvedCardConfirmLabel }}
-          </button>
-        </div>
+      <div v-show="!loading && !initError && showCardSurface">
+        <div ref="paymentMountRef" />
+        <button
+          v-if="cardReady"
+          type="button"
+          class="mt-4 w-full text-white font-semibold py-3 px-6 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+          :disabled="confirming"
+          @click="confirmCardPayment"
+        >
+          {{ confirming ? strings.checkoutStripeProcessing : resolvedCardConfirmLabel }}
+        </button>
       </div>
 
       <p v-if="confirmError" class="text-sm text-red-400">{{ confirmError }}</p>
@@ -119,6 +123,8 @@
 
   const emit = defineEmits<{
     walletAvailable: [available: boolean];
+    /** Stripe Checkout session + elements are ready for card confirm. */
+    stripeReady: [ready: boolean];
   }>();
 
   const config = useRuntimeConfig();
@@ -156,7 +162,7 @@
   let walletDetectionEmitted = false;
   let walletDetectionTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const WALLET_DETECTION_TIMEOUT_MS = 8000;
+  const WALLET_DETECTION_TIMEOUT_MS = 2500;
 
   function clearWalletDetectionTimer() {
     if (walletDetectionTimer) {
@@ -332,10 +338,13 @@
     expressReadyWithWallets = false;
     walletDetectionEmitted = false;
     clearWalletDetectionTimer();
+    // Wallet detection unlocks secondary providers; stripeReady gates "Pay by card".
+    emit('stripeReady', false);
 
     if (props.termsAccepted !== true) {
       loading.value = false;
       initError.value = strings.checkoutTermsRequired;
+      finishWalletDetection(false);
       return;
     }
 
@@ -344,7 +353,13 @@
 
     try {
       const stripe = await getStripe();
-      if (!stripe || generation !== teardownGeneration) return;
+      if (!stripe || generation !== teardownGeneration) {
+        if (generation === teardownGeneration) {
+          initError.value = strings.checkoutStripeSdkUnavailable;
+          finishWalletDetection(false);
+        }
+        return;
+      }
 
       const initCheckout = (
         stripe as Stripe & {
@@ -368,6 +383,7 @@
       confirmActions = loadActionsResult.actions;
 
       loading.value = false;
+      emit('stripeReady', true);
       await syncMountedSurfaces();
       if (generation !== teardownGeneration) return;
 
@@ -380,6 +396,9 @@
     } catch (err: unknown) {
       if (generation !== teardownGeneration) return;
       initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed;
+      emit('stripeReady', false);
+      // Unlock secondary providers without implying card checkout is usable.
+      finishWalletDetection(false);
     } finally {
       if (generation === teardownGeneration && loading.value) {
         loading.value = false;

@@ -78,7 +78,7 @@ async function getIsicRenewalMonthsMax(env: any): Promise<number> {
   );
 }
 
-async function isPromotionsEnabled(env: any): Promise<boolean> {
+export async function isPromotionsEnabled(env: any): Promise<boolean> {
   const raw = await getSetting(env, 'promotions_enabled', { defaultValue: '1' });
   return String(raw ?? '1').trim() === '1';
 }
@@ -205,6 +205,9 @@ export async function resolvePromoCodeForCheckout(
   planType: string,
   provider: PromoProvider = 'stripe',
 ) {
+  // Empty / missing promo must never block checkout — even when promotions are off.
+  const code = normalizeCode(codeInput);
+  if (!code) return { ok: false, reason: 'empty' };
   if (!(await isPromotionsEnabled(env))) {
     return {
       ok: false,
@@ -213,8 +216,6 @@ export async function resolvePromoCodeForCheckout(
       error: 'Promo codes are currently disabled',
     };
   }
-  const code = normalizeCode(codeInput);
-  if (!code) return { ok: false, reason: 'empty' };
   const db = getDb(env);
   const promoCode = await getCodeByValue(db, code);
   const valid = await validatePromoForPlan(env, promoCode, planType);

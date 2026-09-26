@@ -23,7 +23,7 @@
 
 import type { MagicLinkClient } from '@vmp/shared';
 import { hasAdFreeEntitlement } from '@vmp/shared';
-import { isInstalledPwa } from '~/utils/pwa';
+import { resolveMagicLinkClient } from '~/utils/magicLinkClient';
 import { shouldResetSubscriptionIdentity } from '../utils/authSubscriptionIdentity';
 
 export type Role = 'super_admin' | 'admin' | 'editor' | 'analyst' | 'moderator' | 'viewer';
@@ -155,7 +155,8 @@ export function useAuth() {
     redirectPath?: string,
     client?: MagicLinkClient,
   ): Promise<{ ok: boolean; message: string }> {
-    const resolvedClient = client ?? (import.meta.client && isInstalledPwa() ? 'pwa' : 'browser');
+    // Same client stamp as magic-link email URLs / OTP / header popup / native.
+    const resolvedClient = resolveMagicLinkClient(client);
     const res = await fetch(`${apiUrl}/api/auth/magic-link`, {
       method: 'POST',
       credentials: 'include', // needed so the Set-Cookie from verify() works
@@ -181,6 +182,31 @@ export function useAuth() {
       credentials: 'include', // lets the browser store the Set-Cookie refresh token
     });
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Verification failed');
+
+    if (data.requiresTwoFactor) {
+      return { requiresTwoFactor: true, pendingToken: data.pendingToken };
+    }
+
+    setAccessToken(data.accessToken, data.user);
+    return data.user;
+  }
+
+  /**
+   * POST /api/auth/verify-code — email confirmation code from the magic-link message.
+   * Used by inline checkout sign-in so users never leave the payment panel.
+   */
+  async function verifyCode(
+    email: string,
+    code: string,
+  ): Promise<AuthUser | { requiresTwoFactor: true; pendingToken: string }> {
+    const res = await fetch(`${apiUrl}/api/auth/verify-code`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Verification failed');
 
     if (data.requiresTwoFactor) {
@@ -459,6 +485,7 @@ export function useAuth() {
     // Methods
     signIn,
     verify,
+    verifyCode,
     magicPwaHandoff,
     redeemPwaHandoff,
     verifyTotp,

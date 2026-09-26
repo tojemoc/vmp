@@ -16,6 +16,7 @@ import { tokenFromAuthUrl } from './deepLink';
 import {
   clearSession,
   loadSession,
+  redeemMagicLinkCode,
   redeemMagicLinkToken,
   restoreSession,
   SessionRestoreError,
@@ -51,6 +52,7 @@ type SessionContextValue = {
   refreshEntitlements: () => Promise<void>;
   handleIncomingUrl: (url: string | null) => Promise<MagicLinkOutcome>;
   completeMagicLink: (token: string) => Promise<MagicLinkOutcome>;
+  completeEmailCode: (email: string, code: string) => Promise<MagicLinkOutcome>;
   logout: () => Promise<void>;
 };
 
@@ -162,6 +164,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [setSession],
   );
 
+  const completeEmailCode = useCallback(
+    async (email: string, code: string): Promise<MagicLinkOutcome> => {
+      try {
+        setError(null);
+        const result = await redeemMagicLinkCode(email, code);
+        if (result.status === 'two_factor_required') {
+          await clearSession();
+          setPendingTwoFactorToken(result.pendingToken);
+          setSession(null);
+          return 'two_factor_required';
+        }
+        setPendingTwoFactorToken(null);
+        setSession(result.session);
+        return 'authenticated';
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Confirmation code failed');
+        return 'failed';
+      }
+    },
+    [setSession],
+  );
+
   const handleIncomingUrl = useCallback(
     async (url: string | null): Promise<MagicLinkOutcome> => {
       const token = tokenFromAuthUrl(url);
@@ -258,6 +282,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       refreshEntitlements,
       handleIncomingUrl,
       completeMagicLink,
+      completeEmailCode,
       logout,
     }),
     [
@@ -274,6 +299,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       refreshEntitlements,
       handleIncomingUrl,
       completeMagicLink,
+      completeEmailCode,
       logout,
       setSession,
     ],
