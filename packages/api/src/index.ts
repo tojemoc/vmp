@@ -37,6 +37,7 @@ import {
   logSegmentEvent,
 } from './adminExtras.js';
 import { ensureAdminSettingsTable } from './adminSettingsTable.js';
+import { ensureD1RequiredSchema } from './ensureD1RequiredSchema.js';
 import { handleAdminSystemFeatures } from './adminSystemFeatures.js';
 import {
   handleAccountIrlEventRsvp,
@@ -1325,6 +1326,11 @@ const workerHandler = {
       const runReplication = cron === '*/15 * * * *';
 
       if (!runReplication) {
+        try {
+          await ensureD1RequiredSchema(getDb(env));
+        } catch (err) {
+          console.error('D1 required schema ensure failed:', err);
+        }
         try {
           await runComgateRenewalJobs(env);
         } catch (err) {
