@@ -1908,6 +1908,9 @@
     guard?: () => boolean;
   };
 
+  /** Must match API `WATCH_VIEW_HEADER` / CORS Allow-Headers. Counts anon free previews. */
+  const WATCH_VIEW_HEADER = 'X-VMP-Watch-View';
+
   const fetchVideoAccess = async (options: FetchVideoAccessOptions = {}) => {
     const targetVideoId = options.videoId ?? (route.params.videoId as string);
     const guard = options.guard ?? (() => true);
@@ -1939,8 +1942,12 @@
       }
     }
 
+    // Mark intentional /watch opens so anonymous rate limiting counts only here —
+    // not homepage HLS prefetch or segment/proxy fetches.
+    const watchViewHeaders = { [WATCH_VIEW_HEADER]: '1' };
+
     const videoResponse = await fetch(`${config.public.apiUrl}/api/video-access/${targetVideoId}`, {
-      headers: { ...authHeader(), ...playbackSessionHeaders() },
+      headers: { ...authHeader(), ...playbackSessionHeaders(), ...watchViewHeaders },
       signal: options.signal,
     });
     ensureCurrent();
@@ -1988,7 +1995,7 @@
         const retryResponse = await fetch(
           `${config.public.apiUrl}/api/video-access/${targetVideoId}`,
           {
-            headers: { ...authHeader(), ...playbackSessionHeaders() },
+            headers: { ...authHeader(), ...playbackSessionHeaders(), ...watchViewHeaders },
             signal: options.signal,
           },
         );

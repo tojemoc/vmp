@@ -1,15 +1,24 @@
 /**
- * packages/api/src/rateLimit.js
+ * packages/api/src/rateLimit.ts
  *
- * D1-backed hourly rate limiter for anonymous video-access requests.
+ * D1-backed hourly rate limiter for anonymous *watch* opens (free previews).
  *
- * Counter key: (ip, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
+ * Counter key: (ua_fingerprint, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
+ * Fingerprint is SHA-256 of the User-Agent only (no IP) so shared NATs / CGNAT do not
+ * collapse many viewers into one bucket, and segment/proxy traffic never touches this.
+ *
+ * Callers must only invoke this for intentional /watch opens (see WATCH_VIEW_HEADER).
+ * Homepage HLS prefetch and other video-access warmups must not count.
+ *
  * The limit value is read from admin_settings (key "rate_limit_anon", default 5)
- * via settingsStore/getSetting. TTL caching is delegated to settingsStore
- * (instead of module-scope variables in this file).
+ * via settingsStore/getSetting. TTL caching is delegated to settingsStore.
  */
 
+import { hashToken } from './auth.js';
 import { getSetting } from './settingsStore.js';
+
+/** Sent by the web /watch page so only real watch opens increment the counter. */
+export const WATCH_VIEW_HEADER = 'X-VMP-Watch-View';
 
 /**
  * Read rate_limit_anon from admin_settings via settingsStore/getSetting.
@@ -40,7 +49,25 @@ async function getRateLimitValue(env: any) {
 }
 
 /**
- * Check (and increment) the hourly counter for an anonymous request.
+ * Whether this request is an intentional anonymous watch open that should count.
+ * Prefetch / catalog warmups omit the header and must not burn the free-preview budget.
+ */
+export function isAnonymousWatchViewRequest(request: { headers: Headers }): boolean {
+  const value = request.headers.get(WATCH_VIEW_HEADER)?.trim().toLowerCase();
+  return value === '1' || value === 'true';
+}
+
+/**
+ * Client key for the hourly bucket: SHA-256 of User-Agent only.
+ * Stored in the legacy `ip` column of `anonymous_rate_limits` (no schema rename).
+ */
+export async function anonymousRateLimitClientKey(request: { headers: Headers }): Promise<string> {
+  const ua = request.headers.get('User-Agent')?.trim() || 'unknown';
+  return hashToken(`anon-preview-ua:${ua}`);
+}
+
+/**
+ * Check (and increment) the hourly counter for an anonymous *watch* open.
  *
  * Returns:
  *   null                              — D1 binding not configured, rate limiting skipped
@@ -51,12 +78,7 @@ export async function checkAnonymousRateLimit(request: any, env: any, ctx?: Exec
   const db = env.DB || env.video_subscription_db;
   if (!db) return null; // Database binding not configured — skip silently
 
-  // Use CF-Connecting-IP (set by Cloudflare) as the client identifier.
-  // Fall back to X-Forwarded-For for local dev / non-CF environments.
-  const ip =
-    request.headers.get('CF-Connecting-IP') ||
-    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    'unknown';
+  const clientKey = await anonymousRateLimitClientKey(request);
 
   const now = new Date();
   // e.g. "2026-03-30T14" — one bucket per UTC hour
@@ -94,14 +116,12 @@ export async function checkAnonymousRateLimit(request: any, env: any, ctx?: Exec
         updated_at = CURRENT_TIMESTAMP
       RETURNING request_count
     `)
-      .bind(ip, hourKey)
+      .bind(clientKey, hourKey)
       .first();
     current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0;
   } catch (error) {
     // Fail-open for anonymous traffic when D1 is transiently unavailable.
-    const redactedIp = ip ? '[REDACTED_IP]' : 'unknown';
     console.error('Anonymous rate-limit counter upsert failed; allowing request', {
-      ip: redactedIp,
       hourKey,
       error,
     });

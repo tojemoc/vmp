@@ -7,9 +7,10 @@ import {
 } from '../composables/useVideoStartupPrefetch';
 
 describe('video startup prefetch policy', () => {
-  it('keeps anonymous warmup under the default rate_limit_anon headroom', () => {
-    assert.equal(ANON_STARTUP_PREFETCH_BUDGET, 4);
-    assert.ok(ANON_STARTUP_PREFETCH_BUDGET < 5);
+  it('allows anonymous warmup comparable to logged-in eager queue size', () => {
+    // Prefetch no longer burns rate_limit_anon (watch-only header).
+    assert.equal(ANON_STARTUP_PREFETCH_BUDGET, 12);
+    assert.ok(ANON_STARTUP_PREFETCH_BUDGET >= 8);
   });
 
   it('warms more than a single segment for startup', () => {

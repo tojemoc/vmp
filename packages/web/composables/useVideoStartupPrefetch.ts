@@ -1,8 +1,12 @@
 import { computed, onBeforeUnmount, provide, type Ref } from 'vue';
 import { prefetchHlsStartup } from '~/utils/hlsStartupPrefetch';
 
-/** Anonymous video-access warmups per page session (leave headroom under rate_limit_anon). */
-export const ANON_STARTUP_PREFETCH_BUDGET = 4;
+/**
+ * Anonymous video-access warmups per page session.
+ * Prefetch omits `X-VMP-Watch-View`, so these do not burn `rate_limit_anon`
+ * (only intentional /watch opens count). Budget still caps concurrent work.
+ */
+export const ANON_STARTUP_PREFETCH_BUDGET = 12;
 
 /** Default media segments to warm per video (init + first N). */
 export const DEFAULT_STARTUP_SEGMENT_COUNT = 3;
@@ -12,8 +16,8 @@ export const DEFAULT_STARTUP_SEGMENT_COUNT = 3;
  *
  * Strategy (opposite of “disable HLS preload”): aggressively warm the cheapest
  * ladder rung for above-the-fold cards + a bit beyond, async/low-priority.
- * Logged-in users are uncapped; anonymous callers share a small session budget
- * so homepage warming does not burn `rate_limit_anon`.
+ * Logged-in users are uncapped; anonymous callers share a session budget for
+ * CPU/bandwidth only — free-preview rate limits are enforced on /watch opens.
  */
 export function useVideoStartupPrefetch(options: {
   apiUrl: string;

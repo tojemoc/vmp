@@ -222,7 +222,11 @@ import {
   handlePwaPushLoginSubscribe,
   handlePwaPushLoginVerify2fa,
 } from './pwa-push-login.js';
-import { checkAnonymousRateLimit } from './rateLimit.js';
+import {
+  checkAnonymousRateLimit,
+  isAnonymousWatchViewRequest,
+  WATCH_VIEW_HEADER,
+} from './rateLimit.js';
 import { handleVideoRecommendations } from './recommendations.js';
 import {
   enqueueReplicationBatch,
@@ -564,7 +568,7 @@ const workerHandler = {
               'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
               'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
-                `${PLAYBACK_SESSION_HEADER_NAME}, ` +
+                `${PLAYBACK_SESSION_HEADER_NAME}, ${WATCH_VIEW_HEADER}, ` +
                 POSTHOG_TRACING_REQUEST_HEADERS.join(', '),
               'Access-Control-Max-Age': '86400',
             },
@@ -1691,10 +1695,13 @@ async function handleVideoAccess(
     }
 
     // ── Anonymous rate limiting ────────────────────────────────────────────────
-    // Only applied when there is no authenticated user (anonymous viewer).
+    // Only applied when there is no authenticated user (anonymous viewer) and the
+    // client marks an intentional /watch open (WATCH_VIEW_HEADER). Homepage HLS
+    // prefetch and other video-access warmups omit the header and do not count.
+    // Segment/proxy (R2) hits never go through this path.
     // Logged-in users — even on the free plan — are never rate-limited here.
     const isAnonymous = !authUser && (!userId || userId === 'anonymous');
-    if (isAnonymous) {
+    if (isAnonymous && isAnonymousWatchViewRequest(request)) {
       const rateLimitResult = await checkAnonymousRateLimit(request, env, ctx);
       if (rateLimitResult?.limited) {
         return new Response(
