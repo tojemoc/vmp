@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import {
   ANON_ID_COOKIE_NAME,
+  ANON_IP_BURST_LIMIT_MULTIPLIER,
   checkAnonymousRateLimit,
   isAnonymousWatchViewRequest,
   resolveAnonymousClientIdentity,
@@ -211,5 +212,55 @@ describe('checkAnonymousRateLimit', () => {
 
   it('returns null when D1 is not bound', async () => {
     assert.equal(await checkAnonymousRateLimit({}, 'any-key'), null);
+  });
+
+  it('does not apply IP burst when setCookie is null (existing cookie)', async () => {
+    const db = new FakeRateLimitDb();
+    db.settings.set('rate_limit_anon', '2');
+    const env = { DB: db, JWT_SECRET };
+    const minted = await resolveAnonymousClientIdentity(requestWith({}), env);
+    assert.ok(minted?.setCookie);
+    const withCookie = await resolveAnonymousClientIdentity(
+      requestWith({ Cookie: cookieHeaderFromSetCookie(minted.setCookie) }),
+      env,
+    );
+    assert.ok(withCookie);
+    assert.equal(withCookie.setCookie, null);
+
+    // Many watches with a stable cookie — only the cookie bucket should grow.
+    for (let i = 0; i < 2; i += 1) {
+      const result = await checkAnonymousRateLimit(env, withCookie.clientKey, undefined, {
+        request: requestWith({ 'CF-Connecting-IP': '203.0.113.10' }),
+        applyIpBurstLimit: false,
+      });
+      assert.equal(result?.limited, false);
+    }
+    assert.equal(db.rows.length, 1);
+    assert.equal(db.rows[0]?.request_count, 2);
+  });
+
+  it('blocks cookie-discarding clients via IP burst after multiplier × limit', async () => {
+    const db = new FakeRateLimitDb();
+    db.settings.set('rate_limit_anon', '1');
+    const env = { DB: db, JWT_SECRET };
+    const ipHeaders = { 'CF-Connecting-IP': '198.51.100.7' };
+    const burstLimit = 1 * ANON_IP_BURST_LIMIT_MULTIPLIER;
+
+    let last: Awaited<ReturnType<typeof checkAnonymousRateLimit>> = null;
+    for (let i = 0; i < burstLimit + 1; i += 1) {
+      // Fresh identity each time (simulates discarding Set-Cookie).
+      const identity = await resolveAnonymousClientIdentity(requestWith({}), env);
+      assert.ok(identity?.setCookie);
+      last = await checkAnonymousRateLimit(env, identity.clientKey, undefined, {
+        request: requestWith(ipHeaders),
+        applyIpBurstLimit: true,
+      });
+    }
+
+    assert.equal(last?.limited, true);
+    assert.equal(last?.limit, burstLimit);
+    assert.equal(last?.current, burstLimit + 1);
+    // One row per minted cookie key + one shared IP-burst row.
+    assert.equal(db.rows.length, burstLimit + 1 + 1);
   });
 });

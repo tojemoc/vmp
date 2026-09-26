@@ -27,6 +27,13 @@ export const ANON_ID_COOKIE_NAME = 'vmp_anon_id';
 /** ~13 months — long enough to stay stable across sessions. */
 export const ANON_ID_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
 
+/**
+ * When minting a new anon cookie (no valid cookie presented), also enforce
+ * rate_limit_anon × this multiplier per client IP / UTC hour so discarding
+ * Set-Cookie cannot mint unlimited fresh identities.
+ */
+export const ANON_IP_BURST_LIMIT_MULTIPLIER = 10;
+
 export type AnonymousClientIdentity = {
   /** Opaque random id (UUID). */
   rawId: string;
@@ -34,6 +41,13 @@ export type AnonymousClientIdentity = {
   clientKey: string;
   /** Set-Cookie header value when the id was minted or rotated; otherwise null. */
   setCookie: string | null;
+};
+
+export type AnonymousRateLimitResult = {
+  limited: boolean;
+  current: number;
+  limit: number;
+  retryAfter?: number;
 };
 
 /**
@@ -135,7 +149,8 @@ function isPlausibleAnonRawId(rawId: string): boolean {
 
 /**
  * Resolve (or mint) a server-issued anonymous viewer id from the signed cookie.
- * Returns null when JWT_SECRET is missing (cannot sign) — callers fail-open.
+ * Returns null when JWT_SECRET is missing (cannot sign). Watch-view callers
+ * must fail closed — do not issue playable access without an identity.
  */
 export async function resolveAnonymousClientIdentity(
   request: { headers: Headers },
@@ -173,21 +188,76 @@ export async function resolveAnonymousClientIdentity(
   };
 }
 
+function clientIpFromRequest(request: { headers: Headers }): string {
+  return (
+    request.headers.get('CF-Connecting-IP') ||
+    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+    'unknown'
+  );
+}
+
+function utcHourKey(now = new Date()): string {
+  return now.toISOString().slice(0, 13);
+}
+
+function retryAfterSecondsInUtcHour(now = new Date()): number {
+  const minutesElapsed = now.getUTCMinutes();
+  const secondsElapsed = now.getUTCSeconds();
+  return (60 - minutesElapsed) * 60 - secondsElapsed;
+}
+
+async function incrementAnonymousBucket(
+  db: any,
+  bucketKey: string,
+  hourKey: string,
+): Promise<number> {
+  const upsert = await db
+    .prepare(`
+      INSERT INTO anonymous_rate_limits (
+        ip, bucket_hour, request_count, expires_at, updated_at
+      ) VALUES (
+        ?, ?, 1, datetime('now', '+3700 seconds'), CURRENT_TIMESTAMP
+      )
+      ON CONFLICT(ip, bucket_hour) DO UPDATE SET
+        request_count = anonymous_rate_limits.request_count + 1,
+        expires_at = datetime('now', '+3700 seconds'),
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING request_count
+    `)
+    .bind(bucketKey, hourKey)
+    .first();
+  return Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0;
+}
+
 /**
  * Check (and increment) the hourly counter for an anonymous *watch* open.
+ *
+ * When `applyIpBurstLimit` is true (caller minted a new cookie — `setCookie`
+ * non-null), also increments a coarser per-IP hourly bucket at
+ * rate_limit_anon × ANON_IP_BURST_LIMIT_MULTIPLIER so cookie-discarding
+ * clients cannot evade the preview quota. Valid-cookie requests skip the IP
+ * burst check.
  *
  * Returns:
  *   null                              — D1 binding not configured, rate limiting skipped
  *   { limited: false, current, limit } — request is allowed
  *   { limited: true, retryAfter, limit, current } — request is blocked (429)
  */
-export async function checkAnonymousRateLimit(env: any, clientKey: string, ctx?: ExecutionContext) {
+export async function checkAnonymousRateLimit(
+  env: any,
+  clientKey: string,
+  ctx?: ExecutionContext,
+  options?: {
+    request?: { headers: Headers };
+    /** True when resolveAnonymousClientIdentity returned a new Set-Cookie. */
+    applyIpBurstLimit?: boolean;
+  },
+): Promise<AnonymousRateLimitResult | null> {
   const db = env.DB || env.video_subscription_db;
   if (!db) return null; // Database binding not configured — skip silently
 
   const now = new Date();
-  // e.g. "2026-03-30T14" — one bucket per UTC hour
-  const hourKey = now.toISOString().slice(0, 13);
+  const hourKey = utcHourKey(now);
 
   // Opportunistic cleanup runs before the counter check and, when available,
   // is dispatched asynchronously to avoid adding latency to request handling.
@@ -208,22 +278,7 @@ export async function checkAnonymousRateLimit(env: any, clientKey: string, ctx?:
   const limit = await getRateLimitValue(env);
   let current = 0;
   try {
-    const upsert = await db
-      .prepare(`
-      INSERT INTO anonymous_rate_limits (
-        ip, bucket_hour, request_count, expires_at, updated_at
-      ) VALUES (
-        ?, ?, 1, datetime('now', '+3700 seconds'), CURRENT_TIMESTAMP
-      )
-      ON CONFLICT(ip, bucket_hour) DO UPDATE SET
-        request_count = anonymous_rate_limits.request_count + 1,
-        expires_at = datetime('now', '+3700 seconds'),
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING request_count
-    `)
-      .bind(clientKey, hourKey)
-      .first();
-    current = Number.parseInt(String(upsert?.request_count ?? 0), 10) || 0;
+    current = await incrementAnonymousBucket(db, clientKey, hourKey);
   } catch (error) {
     // Fail-open for anonymous traffic when D1 is transiently unavailable.
     console.error('Anonymous rate-limit counter upsert failed; allowing request', {
@@ -234,12 +289,31 @@ export async function checkAnonymousRateLimit(env: any, clientKey: string, ctx?:
   }
 
   if (current > limit) {
-    // Seconds remaining in the current UTC hour
-    const minutesElapsed = now.getUTCMinutes();
-    const secondsElapsed = now.getUTCSeconds();
-    const retryAfter = (60 - minutesElapsed) * 60 - secondsElapsed;
+    return { limited: true, retryAfter: retryAfterSecondsInUtcHour(now), limit, current };
+  }
 
-    return { limited: true, retryAfter, limit, current };
+  if (options?.applyIpBurstLimit && options.request) {
+    const ip = clientIpFromRequest(options.request);
+    const ipBurstKey = await hashToken(`anon-preview-ip-burst:${ip}`);
+    const ipBurstLimit = Math.max(limit * ANON_IP_BURST_LIMIT_MULTIPLIER, limit);
+    let ipCurrent = 0;
+    try {
+      ipCurrent = await incrementAnonymousBucket(db, ipBurstKey, hourKey);
+    } catch (error) {
+      console.error('Anonymous IP burst rate-limit upsert failed; allowing request', {
+        hourKey,
+        error,
+      });
+      ipCurrent = 0;
+    }
+    if (ipCurrent > ipBurstLimit) {
+      return {
+        limited: true,
+        retryAfter: retryAfterSecondsInUtcHour(now),
+        limit: ipBurstLimit,
+        current: ipCurrent,
+      };
+    }
   }
 
   return { limited: false, current, limit };

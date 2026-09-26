@@ -1708,27 +1708,40 @@ async function handleVideoAccess(
 
     if (isAnonymousWatchView) {
       const identity = await resolveAnonymousClientIdentity(request, env);
-      anonSetCookie = identity?.setCookie ?? null;
-      if (identity) {
-        const rateLimitResult = await checkAnonymousRateLimit(env, identity.clientKey, ctx);
-        if (rateLimitResult?.limited) {
-          const headers = new Headers({
-            'Content-Type': 'application/json',
-            'Retry-After': String(rateLimitResult.retryAfter),
-            ...corsHeaders,
-          });
-          if (anonSetCookie) headers.append('Set-Cookie', anonSetCookie);
-          return new Response(
-            JSON.stringify({
-              error: 'rate_limit_exceeded',
-              retryAfter: rateLimitResult.retryAfter,
-              loginPrompt: true,
-              current: rateLimitResult.current,
-              limit: rateLimitResult.limit,
-            }),
-            { status: 429, headers },
-          );
-        }
+      // Fail closed: without a signed identity we cannot enforce the free-preview
+      // quota, so do not expose playable playlists / MoQ endpoints.
+      if (!identity) {
+        return jsonResponse(
+          {
+            error: 'Anonymous preview temporarily unavailable',
+            code: 'anon_identity_unavailable',
+          },
+          503,
+          corsHeaders,
+        );
+      }
+      anonSetCookie = identity.setCookie ?? null;
+      const rateLimitResult = await checkAnonymousRateLimit(env, identity.clientKey, ctx, {
+        request,
+        applyIpBurstLimit: Boolean(identity.setCookie),
+      });
+      if (rateLimitResult?.limited) {
+        const headers = new Headers({
+          'Content-Type': 'application/json',
+          'Retry-After': String(rateLimitResult.retryAfter),
+          ...corsHeaders,
+        });
+        if (anonSetCookie) headers.append('Set-Cookie', anonSetCookie);
+        return new Response(
+          JSON.stringify({
+            error: 'rate_limit_exceeded',
+            retryAfter: rateLimitResult.retryAfter,
+            loginPrompt: true,
+            current: rateLimitResult.current,
+            limit: rateLimitResult.limit,
+          }),
+          { status: 429, headers },
+        );
       }
     } else if (isAnonymous) {
       // Establish / refresh the anon id cookie on warmups so the first /watch
