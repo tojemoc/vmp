@@ -110,14 +110,17 @@ export function isLegacyProviderConfigured(
 }
 
 /**
- * True when either production or sandbox legacy credentials are present.
+ * True when either production or sandbox legacy credentials are present and the
+ * Worker can build order notify/return URLs (API_URL + FRONTEND_URL).
  * Used for checkout / admin "configured" so local/sandbox testing works without
- * a production LEGACY_ESHOP_API_URL.
+ * a production LEGACY_ESHOP_API_URL — but still fail closed when notifyUrl would
+ * throw "API_URL is not configured" mid-checkout.
  */
 export function isLegacyCheckoutConfigured(env: LegacyEnv): boolean {
-  return (
-    isLegacyProviderConfigured(env, 'production') || isLegacyProviderConfigured(env, 'sandbox')
-  );
+  const hasCreds =
+    isLegacyProviderConfigured(env, 'production') || isLegacyProviderConfigured(env, 'sandbox');
+  if (!hasCreds) return false;
+  return Boolean(String(env.API_URL ?? '').trim() && String(env.FRONTEND_URL ?? '').trim());
 }
 
 /**

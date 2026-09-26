@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import {
-  getLegacyCheckoutApiBase,
-  isLegacyCheckoutConfigured,
-} from '../src/legacyProvider.js';
+import { getLegacyCheckoutApiBase, isLegacyCheckoutConfigured } from '../src/legacyProvider.js';
 import { parseLocaleNumber } from '../src/parseLocaleNumber.js';
 
 describe('parseLocaleNumber', () => {
@@ -44,6 +41,8 @@ describe('legacy checkout API base selection', () => {
       LEGACY_ESHOP_SANDBOX_API_URL: 'https://sandbox.example/api',
       LEGACY_ESHOP_MERCHANT_ID: 'm1',
       LEGACY_ESHOP_API_KEY: 'k1',
+      API_URL: 'https://api.example',
+      FRONTEND_URL: 'https://app.example',
     };
     assert.equal(isLegacyCheckoutConfigured(env), true);
     assert.equal(getLegacyCheckoutApiBase(env), 'https://prod.example/api');
@@ -54,6 +53,8 @@ describe('legacy checkout API base selection', () => {
       LEGACY_ESHOP_SANDBOX_API_URL: 'https://sandbox.example/api',
       LEGACY_ESHOP_MERCHANT_ID: 'm1',
       LEGACY_ESHOP_API_KEY: 'k1',
+      API_URL: 'https://api.example',
+      FRONTEND_URL: 'https://app.example',
     };
     assert.equal(isLegacyCheckoutConfigured(env), true);
     assert.equal(getLegacyCheckoutApiBase(env), 'https://sandbox.example/api');
@@ -62,6 +63,28 @@ describe('legacy checkout API base selection', () => {
   it('is not configured without merchant credentials', () => {
     const env = {
       LEGACY_ESHOP_SANDBOX_API_URL: 'https://sandbox.example/api',
+      API_URL: 'https://api.example',
+      FRONTEND_URL: 'https://app.example',
+    };
+    assert.equal(isLegacyCheckoutConfigured(env), false);
+  });
+
+  it('is not configured without API_URL (notifyUrl) even with merchant creds', () => {
+    const env = {
+      LEGACY_ESHOP_API_URL: 'https://prod.example/api',
+      LEGACY_ESHOP_MERCHANT_ID: 'm1',
+      LEGACY_ESHOP_API_KEY: 'k1',
+      FRONTEND_URL: 'https://app.example',
+    };
+    assert.equal(isLegacyCheckoutConfigured(env), false);
+  });
+
+  it('is not configured without FRONTEND_URL even with merchant creds', () => {
+    const env = {
+      LEGACY_ESHOP_API_URL: 'https://prod.example/api',
+      LEGACY_ESHOP_MERCHANT_ID: 'm1',
+      LEGACY_ESHOP_API_KEY: 'k1',
+      API_URL: 'https://api.example',
     };
     assert.equal(isLegacyCheckoutConfigured(env), false);
   });

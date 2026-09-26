@@ -151,6 +151,9 @@ runs:
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         VMP_FEATURES: ${{ inputs.vmp-features }}
         DEPLOY_TIER: ${{ inputs.deploy-tier }}
+        API_BASE_URL: ${{ inputs.api-base-url }}
+        FRONTEND_URL: ${{ inputs.frontend-url }}
+        EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
       run: |
         EXTRA_ARGS=()
         # Wrangler --var uses KEY:VALUE (colon). KEY=VALUE is treated as a var *named*
@@ -164,6 +167,11 @@ runs:
         # so each deploy keeps the dashboard in sync; do not rely on wrangler.json alone
         # (same config deploys staging and production Workers).
         EXTRA_ARGS+=(--var "SENTRY_ENVIRONMENT:${DEPLOY_TIER}")
+        # Qerko/legacy + GoPay webhooks need the Worker public URL for notifyUrl.
+        # Without API_URL, checkout throws mid-order and surfaces as legacy_not_configured.
+        EXTRA_ARGS+=(--var "API_URL:${API_BASE_URL}")
+        EXTRA_ARGS+=(--var "FRONTEND_URL:${FRONTEND_URL}")
+        EXTRA_ARGS+=(--var "ALLOWED_ORIGINS:${EXPECTED_ALLOWED_ORIGINS}")
         # Temporary SideStore PoC: allow acknowledged vmp:// magic-link handoff on staging only.
         if [ "$DEPLOY_TIER" = "staging" ]; then
           EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:1")
