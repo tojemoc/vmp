@@ -204,7 +204,8 @@ export function createStripeProvider(config: StripePaymentsConfig): PaymentProvi
       const sessionPayload: Record<string, unknown> = {
         mode: 'subscription',
         ui_mode: 'elements',
-        payment_method_types: ['card', 'paypal', 'sepa_debit'],
+        // Omit payment_method_types so Stripe Dashboard dynamic payment methods
+        // pick eligible methods per customer (card / PayPal / SEPA / wallets / …).
         line_items: [{ price: priceId, quantity: 1 }],
         customer_email: input.email,
         metadata: {

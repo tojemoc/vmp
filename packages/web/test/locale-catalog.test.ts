@@ -22,6 +22,8 @@ function smokeStrings(strings: StringsDefinition): void {
   strings.pwaLoginStepOf(1, 3);
   strings.moreInCategory(5);
   strings.previewOnly('1:30');
+  strings.checkoutSessionTotal('€9.99');
+  strings.checkoutSubscribeWithAmount('€9.99');
   strings.admin.slotEmpty(1);
 }
 

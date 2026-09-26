@@ -75,6 +75,37 @@ describe('Stripe cancelSubscriptionImmediately', () => {
     assert.equal(session.clientSecret, 'cs_test_abc_secret');
   });
 
+  it('createCheckoutSession omits payment_method_types for Dashboard dynamic methods', async () => {
+    let postedBody = '';
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      postedBody = String(init?.body ?? '');
+      return new Response(
+        JSON.stringify({
+          id: 'cs_test_dyn',
+          client_secret: 'cs_test_dyn_secret',
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const provider = createStripeProvider({
+      secretKey: 'sk_test',
+      frontendUrl: 'http://localhost:3000',
+      priceIdForPlan: async () => 'price_1',
+    });
+    await provider.createCheckoutSession({
+      userId: 'u1',
+      email: 'a@example.com',
+      planType: 'monthly',
+      returnPath: '/account',
+    });
+
+    // application/x-www-form-urlencoded from stripePost — key must be absent.
+    assert.equal(postedBody.includes('payment_method_types'), false);
+    assert.match(postedBody, /ui_mode=elements/);
+    assert.match(postedBody, /mode=subscription/);
+  });
+
   it('checkout.session.completed sets providerOrderId from session id', async () => {
     const provider = createStripeProvider({
       secretKey: 'sk_test',
