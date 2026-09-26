@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import {
-  getLegacyCheckoutApiBase,
-  isLegacyCheckoutConfigured,
-} from '../src/legacyProvider.js';
+import { getLegacyCheckoutApiBase, isLegacyCheckoutConfigured } from '../src/legacyProvider.js';
 import { parseLocaleNumber } from '../src/parseLocaleNumber.js';
 
 describe('parseLocaleNumber', () => {
