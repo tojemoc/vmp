@@ -270,7 +270,11 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
     // Only fall back for pre-migration DBs (no otp_hash). Other insert failures
     // must propagate — otherwise we email a link-only token while UI expects a code.
     if (!isMissingD1ColumnError(err, 'otp_hash')) throw err;
-    console.error('[auth] magic link otp_hash insert failed, falling back:', err);
+    const detail =
+      err instanceof Error
+        ? `${err.message}${err.cause instanceof Error ? ` | cause: ${err.cause.message}` : ''}`
+        : String(err);
+    console.error('[auth] magic link otp_hash insert failed, falling back:', detail);
     await db
       .prepare(
         'INSERT INTO magic_link_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)',
@@ -499,7 +503,11 @@ export async function handleRequestMagicLink(request: any, env: any, corsHeaders
       surface: 'api',
     });
   } catch (err) {
-    console.error('[auth] magic link error:', err);
+    const detail =
+      err instanceof Error
+        ? `${err.message}${err.cause instanceof Error ? ` | cause: ${err.cause.message}` : ''}`
+        : String(err);
+    console.error('[auth] magic link error:', detail, err);
     // Still return success — don't leak whether the error was email-related.
   }
 

@@ -26,6 +26,19 @@ describe('isMissingD1ColumnError', () => {
     assert.equal(isMissingD1ColumnError(err, 'deletion_pending'), false);
   });
 
+  it('matches alternate D1 wording and nested cause chains', () => {
+    const nested = new Error('wrapper');
+    nested.cause = new Error('D1_ERROR: table magic_link_tokens has no column named otp_hash');
+    assert.equal(isMissingD1ColumnError(nested, 'otp_hash'), true);
+    assert.equal(
+      isMissingD1ColumnError(
+        new Error('D1_ERROR: table users has no column named deletion_pending'),
+        'deletion_pending',
+      ),
+      true,
+    );
+  });
+
   it('ignores unrelated D1 errors', () => {
     assert.equal(
       isMissingD1ColumnError(new Error('D1_ERROR: no such table: users'), 'deletion_pending'),

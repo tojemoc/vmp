@@ -49,6 +49,61 @@
       <p class="text-sm text-emerald-500 dark:text-emerald-400">
         {{ strings.checkoutAuthCodeSent }}
       </p>
+      <p
+        class="text-[11px] leading-relaxed"
+        :class="embedded ? 'text-gray-500 dark:text-gray-400' : mutedClass"
+      >
+        {{ strings.loginOpenEmailHint }}
+      </p>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <a
+          :href="nativeEmailInboxHref"
+          class="font-medium underline underline-offset-2"
+          :class="
+            embedded || variant === 'popup'
+              ? 'text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-white'
+              : 'text-emerald-200 hover:text-white'
+          "
+        >
+          {{ strings.loginOpenEmailApp }}
+        </a>
+        <span
+          aria-hidden="true"
+          :class="embedded || variant === 'popup' ? 'text-gray-400' : 'text-emerald-600'"
+          >·</span
+        >
+        <a
+          :href="gmailInboxHref"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline underline-offset-2"
+          :class="
+            embedded || variant === 'popup'
+              ? 'text-emerald-600 dark:text-emerald-400/90 hover:text-emerald-900 dark:hover:text-white'
+              : 'text-emerald-300/90 hover:text-white'
+          "
+        >
+          {{ strings.loginOpenGmail }}
+        </a>
+        <span
+          aria-hidden="true"
+          :class="embedded || variant === 'popup' ? 'text-gray-400' : 'text-emerald-600'"
+          >·</span
+        >
+        <a
+          :href="outlookInboxHref"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline underline-offset-2"
+          :class="
+            embedded || variant === 'popup'
+              ? 'text-emerald-600 dark:text-emerald-400/90 hover:text-emerald-900 dark:hover:text-white'
+              : 'text-emerald-300/90 hover:text-white'
+          "
+        >
+          {{ strings.loginOpenOutlook }}
+        </a>
+      </div>
       <label
         class="text-xs uppercase tracking-wide block"
         :class="embedded ? 'text-gray-500 dark:text-gray-400' : labelClass"
@@ -134,6 +189,7 @@
 <script setup lang="ts">
   import type { MagicLinkClient } from '@vmp/shared';
   import { useInlineAuth } from '~/composables/useInlineAuth';
+  import { getNativeEmailInboxHref } from '~/utils/emailInbox';
   import strings from '~/utils/strings';
 
   const props = withDefaults(
@@ -167,6 +223,10 @@
       client: () => props.client,
       surface: props.surface,
     });
+
+  const nativeEmailInboxHref = computed(() => getNativeEmailInboxHref(email.value));
+  const gmailInboxHref = 'https://mail.google.com/mail/u/0/#inbox';
+  const outlookInboxHref = 'https://outlook.live.com/mail/0/inbox';
 
   const mutedClass = computed(() =>
     props.variant === 'popup' ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400',

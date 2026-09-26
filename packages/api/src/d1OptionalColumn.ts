@@ -15,8 +15,20 @@ export function resetD1OptionalColumnCache(): void {
 }
 
 export function isMissingD1ColumnError(err: unknown, column: string): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (!/no such column/i.test(msg)) return false;
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && current != null; depth += 1) {
+    if (current instanceof Error) {
+      parts.push(current.message, current.stack ?? '');
+      current = current.cause;
+      continue;
+    }
+    parts.push(String(current));
+    break;
+  }
+  const msg = parts.join('\n');
+  // D1 historically used "no such column:"; some paths say "has no column named".
+  if (!/no such column|has no column named/i.test(msg)) return false;
   return msg.includes(column);
 }
 

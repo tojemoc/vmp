@@ -47,6 +47,20 @@ else
     "ALTER TABLE users ADD COLUMN deletion_pending INTEGER NOT NULL DEFAULT 0;"
 fi
 
+if column_exists magic_link_tokens otp_hash; then
+  echo "[ensure-d1] magic_link_tokens.otp_hash already present"
+else
+  echo "[ensure-d1] adding magic_link_tokens.otp_hash"
+  npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --command \
+    "ALTER TABLE magic_link_tokens ADD COLUMN otp_hash TEXT;"
+fi
+
+# Partial index is optional; ignore failure if the column was just added on a
+# dialect that rejects IF NOT EXISTS on indexes (D1 accepts it).
+npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --command \
+  "CREATE INDEX IF NOT EXISTS idx_magic_link_otp_hash ON magic_link_tokens(otp_hash) WHERE otp_hash IS NOT NULL;" \
+  >/dev/null || echo "[ensure-d1] idx_magic_link_otp_hash skipped/already ok"
+
 echo "[ensure-d1] ensuring Step 10 tables/indexes"
 npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --file=./scripts/ensure_d1_step10_tables.sql
 
