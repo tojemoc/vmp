@@ -411,6 +411,10 @@ export type StringsDefinition = {
   checkoutMorePaymentMethods: string;
   checkoutHidePaymentMethods: string;
   checkoutSubscribeWithCard: string;
+  /** CTA including Checkout Session total from Stripe.js getSession(). */
+  checkoutSubscribeWithAmount: (amount: string) => string;
+  /** Label for the session total shown above the Payment Element. */
+  checkoutSessionTotal: (amount: string) => string;
   checkoutStripeLoading: string;
   checkoutStripeProcessing: string;
   checkoutStripeNotConfigured: string;

@@ -20,6 +20,22 @@
       <slot v-if="!loading" />
 
       <div v-show="!loading && !initError && showCardSurface">
+        <div
+          v-if="sessionTotalLabel"
+          class="mb-2 text-sm font-medium"
+          :class="embedded ? 'text-gray-900 dark:text-white' : 'text-white'"
+          data-testid="stripe-session-total"
+        >
+          {{ strings.checkoutSessionTotal(sessionTotalLabel) }}
+        </div>
+        <ul
+          v-if="sessionLineLabels.length"
+          class="mb-3 space-y-0.5 text-xs"
+          :class="mutedClass"
+          data-testid="stripe-session-line-items"
+        >
+          <li v-for="(line, idx) in sessionLineLabels" :key="idx">{{ line }}</li>
+        </ul>
         <div ref="paymentMountRef" />
         <button
           v-if="cardReady"
@@ -38,13 +54,24 @@
 </template>
 
 <script setup lang="ts">
-  import { loadStripe, type Stripe } from '@stripe/stripe-js';
+  import type { Stripe } from '@stripe/stripe-js';
   import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
+  import {
+    formatCheckoutSessionLineItems,
+    formatCheckoutSessionTotal,
+    type StripeCheckoutSessionSnapshot,
+  } from '~/utils/stripeCheckoutSession';
+  import { getStripeJs } from '~/utils/stripeClient';
 
   type PlanType = 'monthly' | 'yearly' | 'club';
 
   /** Minimal Checkout Elements SDK surface (runtime API from js.stripe.com). */
+  interface StripeCheckoutActions {
+    confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }>;
+    getSession: () => StripeCheckoutSessionSnapshot;
+  }
+
   interface StripeCheckoutSdk {
     createExpressCheckoutElement: (
       options?: Record<string, unknown>,
@@ -52,9 +79,7 @@
     createPaymentElement: (options?: Record<string, unknown>) => StripePaymentElement;
     loadActions: () => Promise<{
       type: string;
-      actions?: {
-        confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }>;
-      };
+      actions?: StripeCheckoutActions;
     }>;
     destroy?: () => void;
   }
@@ -137,25 +162,28 @@
   const confirming = ref(false);
   const cardReady = ref(false);
   const walletAvailable = ref(false);
+  const sessionTotalLabel = ref('');
+  const sessionLineLabels = ref<string[]>([]);
 
   const expressMountRef = ref<HTMLElement | null>(null);
   const paymentMountRef = ref<HTMLElement | null>(null);
 
-  const resolvedCardConfirmLabel = computed(
-    () => props.cardConfirmLabel ?? strings.checkoutSubscribeWithCard,
-  );
+  const resolvedCardConfirmLabel = computed(() => {
+    if (props.cardConfirmLabel) return props.cardConfirmLabel;
+    if (sessionTotalLabel.value) {
+      return strings.checkoutSubscribeWithAmount(sessionTotalLabel.value);
+    }
+    return strings.checkoutSubscribeWithCard;
+  });
 
   const mutedClass = computed(() =>
     props.embedded ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400',
   );
 
-  let stripePromise: Promise<Stripe | null> | null = null;
   let checkoutInstance: StripeCheckoutSdk | null = null;
   let expressElement: StripeExpressCheckoutElement | null = null;
   let paymentElement: StripePaymentElement | null = null;
-  let confirmActions: {
-    confirm: (opts?: Record<string, unknown>) => Promise<{ error?: { message?: string } }>;
-  } | null = null;
+  let confirmActions: StripeCheckoutActions | null = null;
   let sessionKey = '';
   let teardownGeneration = 0;
   let expressReadyWithWallets = false;
@@ -192,20 +220,20 @@
     }, WALLET_DETECTION_TIMEOUT_MS);
   }
 
-  function getStripe() {
-    if (!stripePromise) {
-      stripePromise = fetch(`${apiUrl}/api/payments/stripe-config`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (!data.publishableKey) throw new Error(strings.checkoutStripeNotConfigured);
-          return loadStripe(data.publishableKey);
-        })
-        .catch((err) => {
-          stripePromise = null;
-          throw err;
-        });
+  function syncSessionDisplay(actions: StripeCheckoutActions | null) {
+    if (!actions?.getSession) {
+      sessionTotalLabel.value = '';
+      sessionLineLabels.value = [];
+      return;
     }
-    return stripePromise;
+    try {
+      const session = actions.getSession();
+      sessionTotalLabel.value = formatCheckoutSessionTotal(session);
+      sessionLineLabels.value = formatCheckoutSessionLineItems(session);
+    } catch {
+      sessionTotalLabel.value = '';
+      sessionLineLabels.value = [];
+    }
   }
 
   async function createCheckoutSession(): Promise<string> {
@@ -239,6 +267,8 @@
     checkoutInstance?.destroy?.();
     checkoutInstance = null;
     cardReady.value = false;
+    sessionTotalLabel.value = '';
+    sessionLineLabels.value = [];
   }
 
   function mountExpressElement() {
@@ -352,7 +382,7 @@
     sessionKey = nextKey;
 
     try {
-      const stripe = await getStripe();
+      const stripe = await getStripeJs(apiUrl);
       if (!stripe || generation !== teardownGeneration) {
         if (generation === teardownGeneration) {
           initError.value = strings.checkoutStripeSdkUnavailable;
@@ -381,6 +411,8 @@
         throw new Error(strings.checkoutStartFailed);
       }
       confirmActions = loadActionsResult.actions;
+      // Stripe requires reading session total/currency into the UI for adaptive pricing.
+      syncSessionDisplay(confirmActions);
 
       loading.value = false;
       emit('stripeReady', true);
@@ -411,6 +443,7 @@
     confirmError.value = null;
     confirming.value = true;
     try {
+      syncSessionDisplay(confirmActions);
       const { error } = await confirmActions.confirm({ expressCheckoutConfirmEvent: event });
       if (error?.message) confirmError.value = error.message;
     } catch {
@@ -425,6 +458,7 @@
     confirmError.value = null;
     confirming.value = true;
     try {
+      syncSessionDisplay(confirmActions);
       const { error } = await confirmActions.confirm();
       if (error?.message) confirmError.value = error.message;
     } catch {
