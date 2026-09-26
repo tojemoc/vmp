@@ -123,6 +123,8 @@
 
   const emit = defineEmits<{
     walletAvailable: [available: boolean];
+    /** Stripe Checkout session + elements are ready for card confirm. */
+    stripeReady: [ready: boolean];
   }>();
 
   const config = useRuntimeConfig();
@@ -336,6 +338,8 @@
     expressReadyWithWallets = false;
     walletDetectionEmitted = false;
     clearWalletDetectionTimer();
+    // Wallet detection unlocks secondary providers; stripeReady gates "Pay by card".
+    emit('stripeReady', false);
 
     if (props.termsAccepted !== true) {
       loading.value = false;
@@ -349,7 +353,13 @@
 
     try {
       const stripe = await getStripe();
-      if (!stripe || generation !== teardownGeneration) return;
+      if (!stripe || generation !== teardownGeneration) {
+        if (generation === teardownGeneration) {
+          initError.value = strings.checkoutStripeSdkUnavailable;
+          finishWalletDetection(false);
+        }
+        return;
+      }
 
       const initCheckout = (
         stripe as Stripe & {
@@ -373,6 +383,7 @@
       confirmActions = loadActionsResult.actions;
 
       loading.value = false;
+      emit('stripeReady', true);
       await syncMountedSurfaces();
       if (generation !== teardownGeneration) return;
 
@@ -385,6 +396,8 @@
     } catch (err: unknown) {
       if (generation !== teardownGeneration) return;
       initError.value = err instanceof Error ? err.message : strings.checkoutStartFailed;
+      emit('stripeReady', false);
+      // Unlock secondary providers without implying card checkout is usable.
       finishWalletDetection(false);
     } finally {
       if (generation === teardownGeneration && loading.value) {

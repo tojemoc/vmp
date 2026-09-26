@@ -54,7 +54,7 @@
         type="button"
         class="relative min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="[planButtonClass('monthly'), compact ? 'pt-3.5' : 'pt-4']"
-        @click="selectedPlan = 'monthly'"
+        @click="selectPlan('monthly')"
       >
         <div
           class="absolute -top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[10px] font-semibold px-1.5 py-px rounded-full whitespace-nowrap leading-tight"
@@ -77,7 +77,7 @@
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('yearly')"
-        @click="selectedPlan = 'yearly'"
+        @click="selectPlan('yearly')"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
           {{ strings.checkoutPlanYearly }}
@@ -95,7 +95,7 @@
         type="button"
         class="min-w-0 rounded-lg border-2 px-2 py-2.5 text-center transition-all cursor-pointer"
         :class="planButtonClass('club')"
-        @click="selectedPlan = 'club'"
+        @click="selectPlan('club')"
       >
         <p class="text-[10px] uppercase tracking-wide mb-0.5 leading-tight" :class="planLabelClass">
           {{ strings.checkoutPlanClub }}
@@ -225,6 +225,7 @@
         :show-card-surface="showCardSurface"
         :hide-payment-wallets="walletAvailable"
         @wallet-available="onWalletAvailable"
+        @stripe-ready="onStripeReady"
       >
         <div v-if="showMoreToggle || showSecondaryProviders" class="space-y-3">
           <button
@@ -247,7 +248,7 @@
             :aria-label="strings.checkoutMorePaymentMethods"
           >
             <button
-              v-if="showMoreToggle"
+              v-if="showCardPaymentOption"
               type="button"
               class="w-full text-left rounded-lg border-2 p-4 transition-all"
               :class="moreOptionClass"
@@ -430,6 +431,8 @@
   const walletAvailable = ref(false);
   /** False until Stripe express checkout fires `ready` (avoids flashing card before wallet detection). */
   const walletDetectionDone = ref(false);
+  /** Stripe Checkout session initialized successfully — gates "Pay by card". */
+  const stripeCheckoutReady = ref(false);
   const moreExpanded = ref(false);
   const cardMethodSelected = ref(false);
   const checkoutError = ref<string | null>(null);
@@ -537,6 +540,9 @@
 
   const showMoreToggle = computed(() => walletDetectionDone.value);
 
+  /** Card option only when Stripe init succeeded (secondary providers stay on showMoreToggle). */
+  const showCardPaymentOption = computed(() => showMoreToggle.value && stripeCheckoutReady.value);
+
   const moreToggleClass = computed(() => {
     if (props.embedded) {
       return moreExpanded.value
@@ -566,6 +572,19 @@
       moreExpanded.value = false;
       cardMethodSelected.value = false;
     }
+  }
+
+  function onStripeReady(ready: boolean) {
+    stripeCheckoutReady.value = ready;
+    if (!ready) {
+      cardMethodSelected.value = false;
+    }
+  }
+
+  /** Explicit plan pick from the UI — clears checkout errors (watcher must not). */
+  function selectPlan(plan: PlanType) {
+    checkoutError.value = null;
+    selectedPlan.value = plan;
   }
 
   function toggleMore() {
@@ -1150,9 +1169,12 @@
   watch(selectedPlan, () => {
     promoApplied.value = null;
     promoError.value = null;
-    checkoutError.value = null;
+    // Do not clear checkoutError here — deferred checkout may set selectedPlan then
+    // start a provider that reports checkoutTermsRequired in the same tick; a watcher
+    // clear would erase that error before render.
     walletDetectionDone.value = false;
     walletAvailable.value = false;
+    stripeCheckoutReady.value = false;
     moreExpanded.value = false;
     cardMethodSelected.value = false;
   });

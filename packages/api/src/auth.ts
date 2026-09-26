@@ -267,7 +267,9 @@ async function createMagicLinkToken(request: any, email: any, db: any, env: any)
       .bind(id, user.id, tokenHash, otpHash, expiresAt)
       .run();
   } catch (err) {
-    // Pre-migration DBs (no otp_hash column) — still issue the link-only token.
+    // Only fall back for pre-migration DBs (no otp_hash). Other insert failures
+    // must propagate — otherwise we email a link-only token while UI expects a code.
+    if (!isMissingD1ColumnError(err, 'otp_hash')) throw err;
     console.error('[auth] magic link otp_hash insert failed, falling back:', err);
     await db
       .prepare(
