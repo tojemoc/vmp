@@ -3,12 +3,13 @@
  *
  * D1-backed hourly rate limiter for anonymous *watch* opens (free previews).
  *
- * Counter key: (ua_fingerprint, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
- * Fingerprint is SHA-256 of the User-Agent only (no IP) so shared NATs / CGNAT do not
- * collapse many viewers into one bucket, and segment/proxy traffic never touches this.
+ * Counter key: (client_key, bucket_hour) where bucket_hour = YYYY-MM-DDTHH in UTC.
+ * client_key is SHA-256 of a server-issued anonymous id cookie (HMAC-signed,
+ * HttpOnly) — not User-Agent or client IP — so the id is stable for a browser
+ * and cannot be forged without the API signing secret.
  *
- * Callers must only invoke this for intentional /watch opens (see WATCH_VIEW_HEADER).
- * Homepage HLS prefetch and other video-access warmups must not count.
+ * Playable anonymous access must send WATCH_VIEW_HEADER (intentional /watch).
+ * Warmup/prefetch requests omit the header and must not receive signed playlists.
  *
  * The limit value is read from admin_settings (key "rate_limit_anon", default 5)
  * via settingsStore/getSetting. TTL caching is delegated to settingsStore.
@@ -19,6 +20,21 @@ import { getSetting } from './settingsStore.js';
 
 /** Sent by the web /watch page so only real watch opens increment the counter. */
 export const WATCH_VIEW_HEADER = 'X-VMP-Watch-View';
+
+/** HttpOnly cookie carrying the signed anonymous viewer id. */
+export const ANON_ID_COOKIE_NAME = 'vmp_anon_id';
+
+/** ~13 months — long enough to stay stable across sessions. */
+export const ANON_ID_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
+
+export type AnonymousClientIdentity = {
+  /** Opaque random id (UUID). */
+  rawId: string;
+  /** DB counter key (SHA-256 hex of rawId). */
+  clientKey: string;
+  /** Set-Cookie header value when the id was minted or rotated; otherwise null. */
+  setCookie: string | null;
+};
 
 /**
  * Read rate_limit_anon from admin_settings via settingsStore/getSetting.
@@ -50,20 +66,111 @@ async function getRateLimitValue(env: any) {
 
 /**
  * Whether this request is an intentional anonymous watch open that should count.
- * Prefetch / catalog warmups omit the header and must not burn the free-preview budget.
+ * Prefetch / catalog warmups omit the header and must not receive playable access.
  */
 export function isAnonymousWatchViewRequest(request: { headers: Headers }): boolean {
   const value = request.headers.get(WATCH_VIEW_HEADER)?.trim().toLowerCase();
   return value === '1' || value === 'true';
 }
 
+function hexFromBytes(bytes: ArrayLike<number>): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function importAnonHmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+}
+
+async function signAnonId(secret: string, rawId: string): Promise<string> {
+  const key = await importAnonHmacKey(secret);
+  const sig = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`vmp-anon-id:${rawId}`),
+  );
+  return hexFromBytes(new Uint8Array(sig));
+}
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function readAnonIdCookie(request: { headers: Headers }): string | null {
+  const cookie = request.headers.get('Cookie') || '';
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${ANON_ID_COOKIE_NAME}=([^;]+)`));
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1].trim());
+  } catch {
+    return match[1].trim() || null;
+  }
+}
+
+function buildAnonIdCookie(value: string, maxAge = ANON_ID_COOKIE_MAX_AGE_SECONDS): string {
+  return [
+    `${ANON_ID_COOKIE_NAME}=${encodeURIComponent(value)}`,
+    `Max-Age=${maxAge}`,
+    'Path=/api',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Secure',
+  ].join('; ');
+}
+
+function isPlausibleAnonRawId(rawId: string): boolean {
+  // crypto.randomUUID() shape; reject empty / oversized client junk.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawId);
+}
+
 /**
- * Client key for the hourly bucket: SHA-256 of User-Agent only.
- * Stored in the legacy `ip` column of `anonymous_rate_limits` (no schema rename).
+ * Resolve (or mint) a server-issued anonymous viewer id from the signed cookie.
+ * Returns null when JWT_SECRET is missing (cannot sign) — callers fail-open.
  */
-export async function anonymousRateLimitClientKey(request: { headers: Headers }): Promise<string> {
-  const ua = request.headers.get('User-Agent')?.trim() || 'unknown';
-  return hashToken(`anon-preview-ua:${ua}`);
+export async function resolveAnonymousClientIdentity(
+  request: { headers: Headers },
+  env: { JWT_SECRET?: string },
+): Promise<AnonymousClientIdentity | null> {
+  const secret = typeof env.JWT_SECRET === 'string' ? env.JWT_SECRET.trim() : '';
+  if (!secret) return null;
+
+  const rawCookie = readAnonIdCookie(request);
+  if (rawCookie) {
+    const sep = rawCookie.lastIndexOf('.');
+    if (sep > 0) {
+      const rawId = rawCookie.slice(0, sep);
+      const providedSig = rawCookie.slice(sep + 1).toLowerCase();
+      if (isPlausibleAnonRawId(rawId) && /^[0-9a-f]{64}$/.test(providedSig)) {
+        const expectedSig = await signAnonId(secret, rawId);
+        if (timingSafeEqualHex(providedSig, expectedSig)) {
+          return {
+            rawId,
+            clientKey: await hashToken(`anon-preview-id:${rawId}`),
+            setCookie: null,
+          };
+        }
+      }
+    }
+  }
+
+  const rawId = crypto.randomUUID();
+  const sig = await signAnonId(secret, rawId);
+  const cookieValue = `${rawId}.${sig}`;
+  return {
+    rawId,
+    clientKey: await hashToken(`anon-preview-id:${rawId}`),
+    setCookie: buildAnonIdCookie(cookieValue),
+  };
 }
 
 /**
@@ -74,11 +181,9 @@ export async function anonymousRateLimitClientKey(request: { headers: Headers })
  *   { limited: false, current, limit } — request is allowed
  *   { limited: true, retryAfter, limit, current } — request is blocked (429)
  */
-export async function checkAnonymousRateLimit(request: any, env: any, ctx?: ExecutionContext) {
+export async function checkAnonymousRateLimit(env: any, clientKey: string, ctx?: ExecutionContext) {
   const db = env.DB || env.video_subscription_db;
   if (!db) return null; // Database binding not configured — skip silently
-
-  const clientKey = await anonymousRateLimitClientKey(request);
 
   const now = new Date();
   // e.g. "2026-03-30T14" — one bucket per UTC hour

@@ -2,11 +2,11 @@ import { computed, onBeforeUnmount, provide, type Ref } from 'vue';
 import { prefetchHlsStartup } from '~/utils/hlsStartupPrefetch';
 
 /**
- * Anonymous video-access warmups per page session.
- * Prefetch omits `X-VMP-Watch-View`, so these do not burn `rate_limit_anon`
- * (only intentional /watch opens count). Budget still caps concurrent work.
+ * Reserved for callers that opt into a local anon warmup budget.
+ * Anonymous clients do not receive signed playlists without `X-VMP-Watch-View`,
+ * so catalog HLS prefetch is logged-in only (avoids quota bypass via warmup).
  */
-export const ANON_STARTUP_PREFETCH_BUDGET = 12;
+export const ANON_STARTUP_PREFETCH_BUDGET = 0;
 
 /** Default media segments to warm per video (init + first N). */
 export const DEFAULT_STARTUP_SEGMENT_COUNT = 3;
@@ -16,8 +16,8 @@ export const DEFAULT_STARTUP_SEGMENT_COUNT = 3;
  *
  * Strategy (opposite of “disable HLS preload”): aggressively warm the cheapest
  * ladder rung for above-the-fold cards + a bit beyond, async/low-priority.
- * Logged-in users are uncapped; anonymous callers share a session budget for
- * CPU/bandwidth only — free-preview rate limits are enforced on /watch opens.
+ * Logged-in users are uncapped. Anonymous viewers skip catalog warmup because
+ * playable `video-access` requires an intentional /watch open (quota + cookie).
  */
 export function useVideoStartupPrefetch(options: {
   apiUrl: string;
@@ -45,7 +45,7 @@ export function useVideoStartupPrefetch(options: {
 
   const runNext = () => {
     while (active < maxConcurrent() && queue.length) {
-      if (anonBudgetRemaining() <= 0 && !options.isLoggedIn.value) {
+      if (!options.isLoggedIn.value && anonBudgetRemaining() <= 0) {
         queue.length = 0;
         break;
       }
@@ -63,7 +63,8 @@ export function useVideoStartupPrefetch(options: {
     if (!videoKey || warmed.has(videoKey) || inFlight.has(videoKey) || queue.includes(videoKey)) {
       return;
     }
-    if (!options.isLoggedIn.value && anonBudgetRemaining() <= 0) return;
+    // Anonymous: no playable playlist without watch header — skip catalog warmup.
+    if (!options.isLoggedIn.value) return;
     queue.push(videoKey);
     runNext();
   };
@@ -75,10 +76,7 @@ export function useVideoStartupPrefetch(options: {
 
   const warmVideo = async (videoKey: string) => {
     if (warmed.has(videoKey)) return;
-    if (!options.isLoggedIn.value) {
-      if (anonAttempts >= anonBudget) return;
-      anonAttempts += 1;
-    }
+    if (!options.isLoggedIn.value) return;
     const controller = new AbortController();
     inFlight.set(videoKey, controller);
     try {
@@ -86,13 +84,13 @@ export function useVideoStartupPrefetch(options: {
         `${options.apiUrl}/api/video-access/${encodeURIComponent(videoKey)}`,
         {
           headers: { ...options.authHeaders() },
+          credentials: 'include',
           signal: controller.signal,
           priority: 'low',
         } as RequestInit,
       );
       if (res.status === 429) {
         queue.length = 0;
-        anonAttempts = anonBudget;
         return;
       }
       if (!res.ok) return;

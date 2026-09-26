@@ -1948,6 +1948,7 @@
 
     const videoResponse = await fetch(`${config.public.apiUrl}/api/video-access/${targetVideoId}`, {
       headers: { ...authHeader(), ...playbackSessionHeaders(), ...watchViewHeaders },
+      credentials: 'include',
       signal: options.signal,
     });
     ensureCurrent();
@@ -1996,6 +1997,7 @@
           `${config.public.apiUrl}/api/video-access/${targetVideoId}`,
           {
             headers: { ...authHeader(), ...playbackSessionHeaders(), ...watchViewHeaders },
+            credentials: 'include',
             signal: options.signal,
           },
         );

@@ -225,6 +225,7 @@ import {
 import {
   checkAnonymousRateLimit,
   isAnonymousWatchViewRequest,
+  resolveAnonymousClientIdentity,
   WATCH_VIEW_HEADER,
 } from './rateLimit.js';
 import { handleVideoRecommendations } from './recommendations.js';
@@ -1695,33 +1696,45 @@ async function handleVideoAccess(
     }
 
     // ── Anonymous rate limiting ────────────────────────────────────────────────
-    // Only applied when there is no authenticated user (anonymous viewer) and the
-    // client marks an intentional /watch open (WATCH_VIEW_HEADER). Homepage HLS
-    // prefetch and other video-access warmups omit the header and do not count.
-    // Segment/proxy (R2) hits never go through this path.
     // Logged-in users — even on the free plan — are never rate-limited here.
+    // Anonymous playable access requires WATCH_VIEW_HEADER (intentional /watch).
+    // Warmups omit the header and must not receive a signed playlist / MoQ play URL
+    // (otherwise omitting the header would bypass the free-preview quota).
+    // Segment/proxy (R2) hits never go through this path.
     const isAnonymous = !authUser && (!userId || userId === 'anonymous');
-    if (isAnonymous && isAnonymousWatchViewRequest(request)) {
-      const rateLimitResult = await checkAnonymousRateLimit(request, env, ctx);
-      if (rateLimitResult?.limited) {
-        return new Response(
-          JSON.stringify({
-            error: 'rate_limit_exceeded',
-            retryAfter: rateLimitResult.retryAfter,
-            loginPrompt: true,
-            current: rateLimitResult.current,
-            limit: rateLimitResult.limit,
-          }),
-          {
-            status: 429,
-            headers: {
-              'Content-Type': 'application/json',
-              'Retry-After': String(rateLimitResult.retryAfter),
-              ...corsHeaders,
-            },
-          },
-        );
+    const isAnonymousWatchView = isAnonymous && isAnonymousWatchViewRequest(request);
+    const allowAnonymousPlayable = !isAnonymous || isAnonymousWatchView;
+    let anonSetCookie: string | null = null;
+
+    if (isAnonymousWatchView) {
+      const identity = await resolveAnonymousClientIdentity(request, env);
+      anonSetCookie = identity?.setCookie ?? null;
+      if (identity) {
+        const rateLimitResult = await checkAnonymousRateLimit(env, identity.clientKey, ctx);
+        if (rateLimitResult?.limited) {
+          const headers = new Headers({
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimitResult.retryAfter),
+            ...corsHeaders,
+          });
+          if (anonSetCookie) headers.append('Set-Cookie', anonSetCookie);
+          return new Response(
+            JSON.stringify({
+              error: 'rate_limit_exceeded',
+              retryAfter: rateLimitResult.retryAfter,
+              loginPrompt: true,
+              current: rateLimitResult.current,
+              limit: rateLimitResult.limit,
+            }),
+            { status: 429, headers },
+          );
+        }
       }
+    } else if (isAnonymous) {
+      // Establish / refresh the anon id cookie on warmups so the first /watch
+      // open already has a stable identity (credentials must be included).
+      const identity = await resolveAnonymousClientIdentity(request, env);
+      anonSetCookie = identity?.setCookie ?? null;
     }
     const db = getDatabaseBinding(env);
 
@@ -1893,6 +1906,10 @@ async function handleVideoAccess(
       // Active MoQ livestreams play in the frontend runtime, not via stored VOD media.
       playlistUrl = null;
     }
+    // Anonymous warmups (no WATCH_VIEW_HEADER) must not receive playable media URLs.
+    if (!allowAnonymousPlayable) {
+      playlistUrl = null;
+    }
     if (env.JWT_SECRET && playlistUrl) {
       const shouldSignProxyUrl = isLocalVideoProxyUrl(request, playlistUrl, env);
       if (shouldSignProxyUrl) {
@@ -1907,6 +1924,9 @@ async function handleVideoAccess(
           : `${playlistUrl}?vt=${vt}`;
       }
     }
+
+    const playableMoqEndpoint = allowAnonymousPlayable ? livestreamMoqEndpoint : null;
+    const playableMoqBroadcast = allowAnonymousPlayable ? livestreamMoqBroadcast : null;
 
     const response = {
       userId: userId ?? null,
@@ -1926,12 +1946,13 @@ async function handleVideoAccess(
         isLivestream,
         livestreamStatus,
         livestreamProvider: livestream?.provider ?? null,
-        livestreamMoqEndpoint,
-        livestreamMoqBroadcast,
+        livestreamMoqEndpoint: playableMoqEndpoint,
+        livestreamMoqBroadcast: playableMoqBroadcast,
         livestreamRecordingVideoId: livestreamRecordingId,
         livestreamUnavailableReason: (() => {
           if (!isLivestream || playlistUrl) return null;
-          if (!(livestreamMoqEndpoint && livestreamMoqBroadcast)) {
+          if (!(playableMoqEndpoint && playableMoqBroadcast)) {
+            if (!allowAnonymousPlayable) return null;
             return 'Live stream is not configured. Add MoQ endpoint + broadcast, or attach a recorded VOD.';
           }
           return null;
@@ -1953,7 +1974,7 @@ async function handleVideoAccess(
       is_preview: !hasPremiumAccess,
       subscription_status: subscription?.status ?? 'none',
     });
-    return jsonResponse(response, 200, corsHeaders);
+    return jsonResponse(response, 200, corsHeaders, anonSetCookie);
   } catch (error) {
     console.error('Error:', error);
     return jsonResponse(
@@ -4812,10 +4833,17 @@ function getDatabaseBinding(env: any) {
   return db;
 }
 
-function jsonResponse(data: any, status = 200, corsHeaders = {}) {
+function jsonResponse(
+  data: any,
+  status = 200,
+  corsHeaders: Record<string, string> = {},
+  setCookie?: string | null,
+) {
+  const headers = new Headers({ 'Content-Type': 'application/json', ...corsHeaders });
+  if (setCookie) headers.append('Set-Cookie', setCookie);
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers,
   });
 }
 
