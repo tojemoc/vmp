@@ -263,4 +263,26 @@ describe('checkAnonymousRateLimit', () => {
     // One row per minted cookie key + one shared IP-burst row.
     assert.equal(db.rows.length, burstLimit + 1 + 1);
   });
+
+  it('shares the unknown burst bucket despite changing X-Forwarded-For when CF-Connecting-IP is absent', async (t) => {
+    t.mock.method(Math, 'random', () => 0.5);
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-26T12:00:00Z') });
+    const db = new FakeRateLimitDb();
+    db.settings.set('rate_limit_anon', '1');
+    const env = { DB: db, JWT_SECRET };
+    const burstLimit = ANON_IP_BURST_LIMIT_MULTIPLIER;
+
+    for (let i = 0; i <= burstLimit; i += 1) {
+      const result = await checkAnonymousRateLimit(env, `fresh-client-${i}`, undefined, {
+        request: requestWith(i === 0 ? {} : { 'X-Forwarded-For': `198.51.100.${i}` }),
+        applyIpBurstLimit: true,
+      });
+      assert.equal(result?.limited, i === burstLimit);
+      if (i === burstLimit) {
+        assert.equal(result?.current, burstLimit + 1);
+        assert.equal(result?.limit, burstLimit);
+      }
+    }
+    assert.equal(db.rows.length, burstLimit + 2);
+  });
 });

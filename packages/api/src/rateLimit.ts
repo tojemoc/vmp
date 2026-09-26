@@ -189,11 +189,7 @@ export async function resolveAnonymousClientIdentity(
 }
 
 function clientIpFromRequest(request: { headers: Headers }): string {
-  return (
-    request.headers.get('CF-Connecting-IP') ||
-    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    'unknown'
-  );
+  return request.headers.get('CF-Connecting-IP') || 'unknown';
 }
 
 function utcHourKey(now = new Date()): string {
