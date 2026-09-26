@@ -87,6 +87,11 @@ await esbuild.build({
     '@vmp/storage/worker': storageWorker,
     '@vmp/storage': storageIndex,
   },
+  // Worker imports ensure_d1_*.sql as text (Wrangler Text modules). esbuild needs
+  // the same loader when bundling @vmp/api into the Deno Deploy artifact.
+  loader: {
+    '.sql': 'text',
+  },
   sourcemap: true,
   logLevel: 'info',
 });
