@@ -719,7 +719,11 @@
         selectedPlan.value = requestedPlan;
         return;
       }
-      if (!showStripeCheckout.value) {
+      // Stripe cannot sell requestedPlan (or no plan was requested and Stripe UI is absent).
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
         checkoutError.value = strings.checkoutPlanUnavailable;
       }
       return;
@@ -736,7 +740,10 @@
         selectedPlan.value = requestedPlan;
         return;
       }
-      if (!showStripeCheckout.value) {
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
         checkoutError.value = strings.checkoutPlanUnavailable;
       }
       return;
@@ -753,7 +760,10 @@
         selectedPlan.value = requestedPlan;
         return;
       }
-      if (!showStripeCheckout.value) {
+      if (
+        !showStripeCheckout.value ||
+        (requestedPlan != null && !isPlanAvailableForProvider(requestedPlan, 'stripe'))
+      ) {
         checkoutError.value = strings.checkoutPlanUnavailable;
       }
     }
