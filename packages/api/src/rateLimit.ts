@@ -48,6 +48,11 @@ export type AnonymousRateLimitResult = {
   current: number;
   limit: number;
   retryAfter?: number;
+  /**
+   * Which counter blocked the request. `ip_burst` means the caller should not
+   * mint/rotate `vmp_anon_id` (cookie discard would otherwise keep working).
+   */
+  bucket?: 'client' | 'ip_burst';
 };
 
 /**
@@ -285,7 +290,13 @@ export async function checkAnonymousRateLimit(
   }
 
   if (current > limit) {
-    return { limited: true, retryAfter: retryAfterSecondsInUtcHour(now), limit, current };
+    return {
+      limited: true,
+      retryAfter: retryAfterSecondsInUtcHour(now),
+      limit,
+      current,
+      bucket: 'client',
+    };
   }
 
   if (options?.applyIpBurstLimit && options.request) {
@@ -308,6 +319,7 @@ export async function checkAnonymousRateLimit(
         retryAfter: retryAfterSecondsInUtcHour(now),
         limit: ipBurstLimit,
         current: ipCurrent,
+        bucket: 'ip_burst',
       };
     }
   }

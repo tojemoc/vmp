@@ -1731,7 +1731,11 @@ async function handleVideoAccess(
           'Retry-After': String(rateLimitResult.retryAfter),
           ...corsHeaders,
         });
-        if (anonSetCookie) headers.append('Set-Cookie', anonSetCookie);
+        // Per-id 429 may still establish the cookie; IP-burst 429 must not —
+        // otherwise cookie-discarding clients keep receiving fresh identities.
+        if (anonSetCookie && rateLimitResult.bucket !== 'ip_burst') {
+          headers.append('Set-Cookie', anonSetCookie);
+        }
         return new Response(
           JSON.stringify({
             error: 'rate_limit_exceeded',

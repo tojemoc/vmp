@@ -29,49 +29,57 @@ class FakeRateLimitDb {
   prepare(sql: string) {
     const db = this;
     const normalized = sql.replace(/\s+/g, ' ').trim();
+    const bound = (...args: unknown[]) => ({
+      async first() {
+        if (normalized.startsWith('SELECT value FROM admin_settings')) {
+          const key = String(args[0]);
+          const value = db.settings.get(key);
+          return value == null ? null : { value };
+        }
+        if (normalized.includes('INSERT INTO anonymous_rate_limits')) {
+          const ip = String(args[0]);
+          const bucketHour = String(args[1]);
+          const existing = db.rows.find((r) => r.ip === ip && r.bucket_hour === bucketHour);
+          if (existing) {
+            existing.request_count += 1;
+            existing.expires_at = new Date(Date.now() + 3700_000).toISOString();
+            return { request_count: existing.request_count };
+          }
+          const row: RateRow = {
+            ip,
+            bucket_hour: bucketHour,
+            request_count: 1,
+            expires_at: new Date(Date.now() + 3700_000).toISOString(),
+          };
+          db.rows.push(row);
+          return { request_count: 1 };
+        }
+        return null;
+      },
+      async run() {
+        if (normalized.startsWith('DELETE FROM anonymous_rate_limits')) {
+          // Mirror SQL: DELETE … WHERE expires_at <= CURRENT_TIMESTAMP
+          const now = Date.now();
+          const before = db.rows.length;
+          db.rows = db.rows.filter((r) => {
+            const expiresAt = Date.parse(r.expires_at);
+            return Number.isFinite(expiresAt) && expiresAt > now;
+          });
+          return { meta: { changes: before - db.rows.length } };
+        }
+        return { meta: { changes: 0 } };
+      },
+    });
     return {
       bind(...args: unknown[]) {
-        return {
-          async first() {
-            if (normalized.startsWith('SELECT value FROM admin_settings')) {
-              const key = String(args[0]);
-              const value = db.settings.get(key);
-              return value == null ? null : { value };
-            }
-            if (normalized.includes('INSERT INTO anonymous_rate_limits')) {
-              const ip = String(args[0]);
-              const bucketHour = String(args[1]);
-              const existing = db.rows.find((r) => r.ip === ip && r.bucket_hour === bucketHour);
-              if (existing) {
-                existing.request_count += 1;
-                existing.expires_at = new Date(Date.now() + 3700_000).toISOString();
-                return { request_count: existing.request_count };
-              }
-              const row: RateRow = {
-                ip,
-                bucket_hour: bucketHour,
-                request_count: 1,
-                expires_at: new Date(Date.now() + 3700_000).toISOString(),
-              };
-              db.rows.push(row);
-              return { request_count: 1 };
-            }
-            return null;
-          },
-          async run() {
-            if (normalized.startsWith('DELETE FROM anonymous_rate_limits')) {
-              // Mirror SQL: DELETE … WHERE expires_at <= CURRENT_TIMESTAMP
-              const now = Date.now();
-              const before = db.rows.length;
-              db.rows = db.rows.filter((r) => {
-                const expiresAt = Date.parse(r.expires_at);
-                return Number.isFinite(expiresAt) && expiresAt > now;
-              });
-              return { meta: { changes: before - db.rows.length } };
-            }
-            return { meta: { changes: 0 } };
-          },
-        };
+        return bound(...args);
+      },
+      // D1 allows prepare(sql).run() with no bind for parameterless statements.
+      run() {
+        return bound().run();
+      },
+      first() {
+        return bound().first();
       },
     };
   }
@@ -192,6 +200,7 @@ describe('checkAnonymousRateLimit', () => {
     assert.equal(third?.limited, true);
     assert.equal(third?.current, 3);
     assert.equal(third?.limit, 2);
+    assert.equal(third?.bucket, 'client');
     assert.ok(typeof third?.retryAfter === 'number' && third.retryAfter > 0);
   });
 
@@ -260,6 +269,7 @@ describe('checkAnonymousRateLimit', () => {
     assert.equal(last?.limited, true);
     assert.equal(last?.limit, burstLimit);
     assert.equal(last?.current, burstLimit + 1);
+    assert.equal(last?.bucket, 'ip_burst');
     // One row per minted cookie key + one shared IP-burst row.
     assert.equal(db.rows.length, burstLimit + 1 + 1);
   });
@@ -281,6 +291,7 @@ describe('checkAnonymousRateLimit', () => {
       if (i === burstLimit) {
         assert.equal(result?.current, burstLimit + 1);
         assert.equal(result?.limit, burstLimit);
+        assert.equal(result?.bucket, 'ip_burst');
       }
     }
     assert.equal(db.rows.length, burstLimit + 2);
