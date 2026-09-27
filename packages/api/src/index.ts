@@ -1723,6 +1723,7 @@ async function handleVideoAccess(
       anonSetCookie = identity.setCookie ?? null;
       const rateLimitResult = await checkAnonymousRateLimit(env, identity.clientKey, ctx, {
         request,
+        // New cookie (no valid prior identity) → also enforce shared IP burst.
         applyIpBurstLimit: Boolean(identity.setCookie),
       });
       if (rateLimitResult?.limited) {
@@ -1747,12 +1748,9 @@ async function handleVideoAccess(
           { status: 429, headers },
         );
       }
-    } else if (isAnonymous) {
-      // Establish / refresh the anon id cookie on warmups so the first /watch
-      // open already has a stable identity (credentials must be included).
-      const identity = await resolveAnonymousClientIdentity(request, env);
-      anonSetCookie = identity?.setCookie ?? null;
     }
+    // Unmarked anonymous requests (prefetch/warmup) must not mint vmp_anon_id —
+    // only intentional /watch opens (X-VMP-Watch-View) may establish identity.
     const db = getDatabaseBinding(env);
 
     const subscription = userId

@@ -270,8 +270,8 @@ describe('checkAnonymousRateLimit', () => {
     assert.equal(last?.limit, burstLimit);
     assert.equal(last?.current, burstLimit + 1);
     assert.equal(last?.bucket, 'ip_burst');
-    // One row per minted cookie key + one shared IP-burst row.
-    assert.equal(db.rows.length, burstLimit + 1 + 1);
+    // IP-burst rejection inserts no per-ID row: burstLimit client keys + 1 IP row.
+    assert.equal(db.rows.length, burstLimit + 1);
   });
 
   it('shares the unknown burst bucket despite changing X-Forwarded-For when CF-Connecting-IP is absent', async (t) => {
@@ -294,6 +294,7 @@ describe('checkAnonymousRateLimit', () => {
         assert.equal(result?.bucket, 'ip_burst');
       }
     }
-    assert.equal(db.rows.length, burstLimit + 2);
+    // burstLimit allowed clients + 1 shared IP-burst row (rejected attempt adds no client row).
+    assert.equal(db.rows.length, burstLimit + 1);
   });
 });

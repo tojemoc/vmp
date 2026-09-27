@@ -234,10 +234,11 @@ async function incrementAnonymousBucket(
  * Check (and increment) the hourly counter for an anonymous *watch* open.
  *
  * When `applyIpBurstLimit` is true (caller minted a new cookie — `setCookie`
- * non-null), also increments a coarser per-IP hourly bucket at
- * rate_limit_anon × ANON_IP_BURST_LIMIT_MULTIPLIER so cookie-discarding
- * clients cannot evade the preview quota. Valid-cookie requests skip the IP
- * burst check.
+ * non-null), the shared per-IP hourly bucket is checked first at
+ * rate_limit_anon × ANON_IP_BURST_LIMIT_MULTIPLIER. The per-ID counter is
+ * inserted only if that IP check passes, so discarded-cookie bursts do not
+ * litter the table with one-off client keys. Valid-cookie requests skip the
+ * IP burst check and only touch the per-ID bucket.
  *
  * Returns:
  *   null                              — D1 binding not configured, rate limiting skipped
@@ -277,28 +278,9 @@ export async function checkAnonymousRateLimit(
   }
 
   const limit = await getRateLimitValue(env);
-  let current = 0;
-  try {
-    current = await incrementAnonymousBucket(db, clientKey, hourKey);
-  } catch (error) {
-    // Fail-open for anonymous traffic when D1 is transiently unavailable.
-    console.error('Anonymous rate-limit counter upsert failed; allowing request', {
-      hourKey,
-      error,
-    });
-    current = 0;
-  }
 
-  if (current > limit) {
-    return {
-      limited: true,
-      retryAfter: retryAfterSecondsInUtcHour(now),
-      limit,
-      current,
-      bucket: 'client',
-    };
-  }
-
+  // For newly minted identities, check the shared IP burst bucket first so a
+  // rejection does not insert a throwaway per-ID row.
   if (options?.applyIpBurstLimit && options.request) {
     const ip = clientIpFromRequest(options.request);
     const ipBurstKey = await hashToken(`anon-preview-ip-burst:${ip}`);
@@ -322,6 +304,28 @@ export async function checkAnonymousRateLimit(
         bucket: 'ip_burst',
       };
     }
+  }
+
+  let current = 0;
+  try {
+    current = await incrementAnonymousBucket(db, clientKey, hourKey);
+  } catch (error) {
+    // Fail-open for anonymous traffic when D1 is transiently unavailable.
+    console.error('Anonymous rate-limit counter upsert failed; allowing request', {
+      hourKey,
+      error,
+    });
+    current = 0;
+  }
+
+  if (current > limit) {
+    return {
+      limited: true,
+      retryAfter: retryAfterSecondsInUtcHour(now),
+      limit,
+      current,
+      bucket: 'client',
+    };
   }
 
   return { limited: false, current, limit };
