@@ -222,7 +222,12 @@ import {
   handlePwaPushLoginSubscribe,
   handlePwaPushLoginVerify2fa,
 } from './pwa-push-login.js';
-import { checkAnonymousRateLimit } from './rateLimit.js';
+import {
+  checkAnonymousRateLimit,
+  isAnonymousWatchViewRequest,
+  resolveAnonymousClientIdentity,
+  WATCH_VIEW_HEADER,
+} from './rateLimit.js';
 import { handleVideoRecommendations } from './recommendations.js';
 import {
   enqueueReplicationBatch,
@@ -564,7 +569,7 @@ const workerHandler = {
               'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
               'Access-Control-Allow-Headers':
                 'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
-                `${PLAYBACK_SESSION_HEADER_NAME}, ` +
+                `${PLAYBACK_SESSION_HEADER_NAME}, ${WATCH_VIEW_HEADER}, ` +
                 POSTHOG_TRACING_REQUEST_HEADERS.join(', '),
               'Access-Control-Max-Age': '86400',
             },
@@ -1691,12 +1696,47 @@ async function handleVideoAccess(
     }
 
     // ── Anonymous rate limiting ────────────────────────────────────────────────
-    // Only applied when there is no authenticated user (anonymous viewer).
     // Logged-in users — even on the free plan — are never rate-limited here.
+    // Anonymous playable access requires WATCH_VIEW_HEADER (intentional /watch).
+    // Warmups omit the header and must not receive a signed playlist / MoQ play URL
+    // (otherwise omitting the header would bypass the free-preview quota).
+    // Segment/proxy (R2) hits never go through this path.
     const isAnonymous = !authUser && (!userId || userId === 'anonymous');
-    if (isAnonymous) {
-      const rateLimitResult = await checkAnonymousRateLimit(request, env, ctx);
+    const isAnonymousWatchView = isAnonymous && isAnonymousWatchViewRequest(request);
+    const allowAnonymousPlayable = !isAnonymous || isAnonymousWatchView;
+    let anonSetCookie: string | null = null;
+
+    if (isAnonymousWatchView) {
+      const identity = await resolveAnonymousClientIdentity(request, env);
+      // Fail closed: without a signed identity we cannot enforce the free-preview
+      // quota, so do not expose playable playlists / MoQ endpoints.
+      if (!identity) {
+        return jsonResponse(
+          {
+            error: 'Anonymous preview temporarily unavailable',
+            code: 'anon_identity_unavailable',
+          },
+          503,
+          corsHeaders,
+        );
+      }
+      anonSetCookie = identity.setCookie ?? null;
+      const rateLimitResult = await checkAnonymousRateLimit(env, identity.clientKey, ctx, {
+        request,
+        // New cookie (no valid prior identity) → also enforce shared IP burst.
+        applyIpBurstLimit: Boolean(identity.setCookie),
+      });
       if (rateLimitResult?.limited) {
+        const headers = new Headers({
+          'Content-Type': 'application/json',
+          'Retry-After': String(rateLimitResult.retryAfter),
+          ...corsHeaders,
+        });
+        // Per-id 429 may still establish the cookie; IP-burst 429 must not —
+        // otherwise cookie-discarding clients keep receiving fresh identities.
+        if (anonSetCookie && rateLimitResult.bucket !== 'ip_burst') {
+          headers.append('Set-Cookie', anonSetCookie);
+        }
         return new Response(
           JSON.stringify({
             error: 'rate_limit_exceeded',
@@ -1705,17 +1745,12 @@ async function handleVideoAccess(
             current: rateLimitResult.current,
             limit: rateLimitResult.limit,
           }),
-          {
-            status: 429,
-            headers: {
-              'Content-Type': 'application/json',
-              'Retry-After': String(rateLimitResult.retryAfter),
-              ...corsHeaders,
-            },
-          },
+          { status: 429, headers },
         );
       }
     }
+    // Unmarked anonymous requests (prefetch/warmup) must not mint vmp_anon_id —
+    // only intentional /watch opens (X-VMP-Watch-View) may establish identity.
     const db = getDatabaseBinding(env);
 
     const subscription = userId
@@ -1886,6 +1921,10 @@ async function handleVideoAccess(
       // Active MoQ livestreams play in the frontend runtime, not via stored VOD media.
       playlistUrl = null;
     }
+    // Anonymous warmups (no WATCH_VIEW_HEADER) must not receive playable media URLs.
+    if (!allowAnonymousPlayable) {
+      playlistUrl = null;
+    }
     if (env.JWT_SECRET && playlistUrl) {
       const shouldSignProxyUrl = isLocalVideoProxyUrl(request, playlistUrl, env);
       if (shouldSignProxyUrl) {
@@ -1900,6 +1939,9 @@ async function handleVideoAccess(
           : `${playlistUrl}?vt=${vt}`;
       }
     }
+
+    const playableMoqEndpoint = allowAnonymousPlayable ? livestreamMoqEndpoint : null;
+    const playableMoqBroadcast = allowAnonymousPlayable ? livestreamMoqBroadcast : null;
 
     const response = {
       userId: userId ?? null,
@@ -1919,12 +1961,13 @@ async function handleVideoAccess(
         isLivestream,
         livestreamStatus,
         livestreamProvider: livestream?.provider ?? null,
-        livestreamMoqEndpoint,
-        livestreamMoqBroadcast,
+        livestreamMoqEndpoint: playableMoqEndpoint,
+        livestreamMoqBroadcast: playableMoqBroadcast,
         livestreamRecordingVideoId: livestreamRecordingId,
         livestreamUnavailableReason: (() => {
           if (!isLivestream || playlistUrl) return null;
-          if (!(livestreamMoqEndpoint && livestreamMoqBroadcast)) {
+          if (!(playableMoqEndpoint && playableMoqBroadcast)) {
+            if (!allowAnonymousPlayable) return null;
             return 'Live stream is not configured. Add MoQ endpoint + broadcast, or attach a recorded VOD.';
           }
           return null;
@@ -1946,7 +1989,7 @@ async function handleVideoAccess(
       is_preview: !hasPremiumAccess,
       subscription_status: subscription?.status ?? 'none',
     });
-    return jsonResponse(response, 200, corsHeaders);
+    return jsonResponse(response, 200, corsHeaders, anonSetCookie);
   } catch (error) {
     console.error('Error:', error);
     return jsonResponse(
@@ -4805,10 +4848,17 @@ function getDatabaseBinding(env: any) {
   return db;
 }
 
-function jsonResponse(data: any, status = 200, corsHeaders = {}) {
+function jsonResponse(
+  data: any,
+  status = 200,
+  corsHeaders: Record<string, string> = {},
+  setCookie?: string | null,
+) {
+  const headers = new Headers({ 'Content-Type': 'application/json', ...corsHeaders });
+  if (setCookie) headers.append('Set-Cookie', setCookie);
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers,
   });
 }
 

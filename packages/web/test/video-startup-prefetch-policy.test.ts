@@ -7,9 +7,8 @@ import {
 } from '../composables/useVideoStartupPrefetch';
 
 describe('video startup prefetch policy', () => {
-  it('keeps anonymous warmup under the default rate_limit_anon headroom', () => {
-    assert.equal(ANON_STARTUP_PREFETCH_BUDGET, 4);
-    assert.ok(ANON_STARTUP_PREFETCH_BUDGET < 5);
+  it('disables anonymous catalog HLS warmup (playable access is watch-only)', () => {
+    assert.equal(ANON_STARTUP_PREFETCH_BUDGET, 0);
   });
 
   it('warms more than a single segment for startup', () => {

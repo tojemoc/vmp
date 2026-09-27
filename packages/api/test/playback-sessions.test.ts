@@ -9,6 +9,7 @@ import {
   resolveConcurrentPlaybackLimit,
 } from '../src/playbackSessions.js';
 import { POSTHOG_TRACING_REQUEST_HEADERS } from '../src/posthog.js';
+import { WATCH_VIEW_HEADER } from '../src/rateLimit.js';
 import { resetSettingsCacheForTests } from '../src/settingsStore.js';
 
 describe('parsePlaybackSessionSettings', () => {
@@ -99,12 +100,16 @@ describe('PLAYBACK_SESSION_HEADER_NAME CORS preflight', () => {
     // Keep in sync with packages/api/src/index.ts OPTIONS handler.
     const allowHeaders =
       'Content-Type, Authorization, Range, x-d1-bookmark, X-VMP-Device-Token, ' +
-      `${PLAYBACK_SESSION_HEADER_NAME}, ` +
+      `${PLAYBACK_SESSION_HEADER_NAME}, ${WATCH_VIEW_HEADER}, ` +
       POSTHOG_TRACING_REQUEST_HEADERS.join(', ');
     assert.match(allowHeaders, /X-VMP-Playback-Session/);
     assert.ok(
       allowHeaders.split(', ').includes(PLAYBACK_SESSION_HEADER_NAME),
       'preflight Allow-Headers must list the playback session header',
+    );
+    assert.ok(
+      allowHeaders.split(', ').includes(WATCH_VIEW_HEADER),
+      'preflight Allow-Headers must list the watch-view rate-limit header',
     );
   });
 });
