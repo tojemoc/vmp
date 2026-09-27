@@ -38,14 +38,34 @@ describe('formatCheckoutSessionLineItems', () => {
   it('formats name, quantity, and amount from session line items', () => {
     const session: StripeCheckoutSessionSnapshot = {
       lineItems: [
-        { name: 'Monthly', quantity: 1, totalAmount: { amount: '€9.99' } },
-        { name: 'Add-on', quantity: 2, amountTotal: { amount: '€4.00' } },
+        // Stripe Checkout Sessions API: line total lives on `total.amount`
+        { name: 'Monthly', quantity: 1, total: { amount: '€9.99' }, unitAmount: { amount: '€9.99' } },
+        {
+          name: 'Add-on',
+          quantity: 2,
+          total: { amount: '€4.00' },
+          unitAmount: { amount: '€2.00' },
+        },
       ],
     };
     assert.deepEqual(formatCheckoutSessionLineItems(session), [
       'Monthly — €9.99',
       'Add-on × 2 — €4.00',
     ]);
+  });
+
+  it('prefers line-item total.amount over unitAmount when they differ', () => {
+    const session: StripeCheckoutSessionSnapshot = {
+      lineItems: [
+        {
+          name: 'Yearly',
+          quantity: 1,
+          total: { amount: '€99.00' },
+          unitAmount: { amount: '€120.00' },
+        },
+      ],
+    };
+    assert.deepEqual(formatCheckoutSessionLineItems(session), ['Yearly — €99.00']);
   });
 
   it('returns empty array when line items are missing', () => {

@@ -57,7 +57,7 @@ New numbered files under `packages/api/migrations/` remain the source of truth f
 
 **If `wrangler d1 migrations apply --remote` fails with `table irl_events already exists` (or similar):** the Club IRL schema was already created by `ensure_d1` / cron, but Wrangler never recorded `0067_…` in `d1_migrations`. Do **not** drop the tables. Either:
 
-1. Prefer the supported path: `bash packages/api/scripts/ensure_d1_required_schema.sh --remote` (and stop using `migrations apply` on that database), or
+1. Prefer the supported path: from `packages/api`, run `bash ./scripts/ensure_d1_required_schema.sh --remote` (and stop using `migrations apply` on that database), or
 2. Sync history then resume apply: from `packages/api`, run `bash ./scripts/repair_d1_wrangler_migration_history.sh --remote` (stamps `0067` / `0068` when the objects already exist), then `npx wrangler d1 migrations apply video-subscription-db --remote` again.
 
 ### Deno Deploy backup API (`@vmp/api-node`) — verify and deploy gates

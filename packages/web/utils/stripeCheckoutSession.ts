@@ -1,6 +1,9 @@
 /**
  * Helpers for displaying Checkout Session totals from Stripe.js loadActions().getSession().
  * Stripe requires reading session amount/currency into the UI (adaptive pricing / localization).
+ *
+ * Line-item shape matches `@stripe/stripe-js` `StripeCheckoutLineItem`:
+ * prefer `total.amount` (line total) over `unitAmount.amount`.
  */
 
 export type StripeCheckoutTotalAmount = {
@@ -14,7 +17,10 @@ export type StripeCheckoutSessionSnapshot = {
   lineItems?: Array<{
     name?: string;
     quantity?: number;
+    /** Stripe Checkout Sessions API line-item total (qty × unit − discounts). */
+    total?: StripeCheckoutTotalAmount;
     unitAmount?: StripeCheckoutTotalAmount;
+    /** Legacy / defensive aliases — not present on current stripe-js types. */
     totalAmount?: StripeCheckoutTotalAmount;
     amountTotal?: StripeCheckoutTotalAmount;
   }>;
@@ -59,6 +65,7 @@ export function formatCheckoutSessionLineItems(
       const qty =
         typeof item.quantity === 'number' && item.quantity > 1 ? ` × ${item.quantity}` : '';
       const amount =
+        item.total?.amount?.trim() ||
         item.totalAmount?.amount?.trim() ||
         item.amountTotal?.amount?.trim() ||
         item.unitAmount?.amount?.trim() ||

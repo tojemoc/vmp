@@ -50,6 +50,23 @@ column_exists() {
   [[ "$n" == "1" ]]
 }
 
+index_exists() {
+  local index="$1"
+  local n
+  n="$(run_scalar "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name = '$index';")"
+  [[ "$n" == "1" ]]
+}
+
+admin_setting_exists() {
+  local key="$1"
+  if ! table_exists admin_settings; then
+    return 1
+  fi
+  local n
+  n="$(run_scalar "SELECT COUNT(*) AS n FROM admin_settings WHERE key = '$key';")"
+  [[ "$n" != "0" ]]
+}
+
 migration_recorded() {
   local name="$1"
   if ! table_exists d1_migrations; then
@@ -79,15 +96,26 @@ stamp_migration() {
 echo "[repair-d1] ${DB_NAME} (${MODE_FLAG})"
 echo "[repair-d1] Prefer ensure_d1_required_schema.sh for remote schema; this only syncs Wrangler history."
 
-# 0067 — Club IRL tables (also created by ensure_d1_club_entitlements.sql)
-if table_exists irl_events && table_exists irl_event_rsvps; then
+# 0067 — Club IRL tables + indexes + ads_enabled seed (also created by ensure_d1_club_entitlements.sql).
+# Stamp only when the full migration state is present so Wrangler does not skip missing work.
+if table_exists irl_events && table_exists irl_event_rsvps \
+  && index_exists idx_irl_events_starts_at \
+  && index_exists idx_irl_events_published_starts \
+  && index_exists idx_irl_event_rsvps_event \
+  && index_exists idx_irl_event_rsvps_user \
+  && admin_setting_exists ads_enabled; then
   stamp_migration "0067_club_irl_events_and_ads.sql"
 else
-  echo "[repair-d1] skip 0067: irl_events / irl_event_rsvps not both present (run ensure_d1 first)"
+  echo "[repair-d1] skip 0067: incomplete Club IRL / ads schema (run ensure_d1 first — need irl tables, four indexes, ads_enabled)"
 fi
 
 # 0068 — magic_link_tokens.otp_hash (ensure path / manual ALTER may have added it)
 if column_exists magic_link_tokens otp_hash; then
+  if ! index_exists idx_magic_link_otp_hash; then
+    echo "[repair-d1] creating: idx_magic_link_otp_hash"
+    npx wrangler d1 execute "$DB_NAME" "$MODE_FLAG" --command \
+      "CREATE INDEX IF NOT EXISTS idx_magic_link_otp_hash ON magic_link_tokens(otp_hash) WHERE otp_hash IS NOT NULL;"
+  fi
   stamp_migration "0068_magic_link_otp_hash.sql"
 else
   echo "[repair-d1] skip 0068: magic_link_tokens.otp_hash missing (run ensure_d1 or apply 0068)"

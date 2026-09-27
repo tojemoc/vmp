@@ -27,7 +27,12 @@ export function getStripeJs(apiUrl = resolveApiUrl()): Promise<Stripe | null> {
       .then(async (res) => {
         const data = (await res.json().catch(() => ({}))) as { publishableKey?: string };
         const key = String(data.publishableKey ?? '').trim();
-        if (!key) return null;
+        if (!key) {
+          // Clear cache so a later attempt can refetch after config recovers
+          // (successful `.then` with null does not hit `.catch`).
+          stripePromise = null;
+          return null;
+        }
         return loadStripe(key);
       })
       .catch(() => {

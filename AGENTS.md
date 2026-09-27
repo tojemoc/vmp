@@ -237,17 +237,25 @@ API_URL=http://localhost:8787 npm run dev --workspace=@vmp/web   # Nuxt dev on p
 
 ### Database setup
 
-**Local:** before the API can serve data, apply all D1 migrations in order (or use ensure):
+**Local:** before the API can serve data, apply all D1 migrations in order:
 
 ```bash
 cd packages/api
 for f in $(ls -1 migrations/*.sql | sort); do
   npx wrangler d1 execute video-subscription-db --local --file="$f"
 done
-# alternatively: bash ./scripts/ensure_d1_required_schema.sh --local
 ```
 
-**Remote (staging/production):** do **not** use `wrangler d1 migrations apply` unless `d1_migrations` is known in sync. Prefer `bash ./scripts/ensure_d1_required_schema.sh --remote` (also run by CD + five-minute Worker cron). If `migrations apply` already failed with `table irl_events already exists`, see `DEPLOYMENT.md` and `scripts/repair_d1_wrangler_migration_history.sh`.
+For an **initialized** local database (base tables already present), repair missing required columns/tables with:
+
+```bash
+cd packages/api
+bash ./scripts/ensure_d1_required_schema.sh --local
+```
+
+Do not use the ensure script as a substitute for the ordered migrations on a fresh empty database — it only `ALTER`s / creates add-on tables and fails if `users` (etc.) are missing.
+
+**Remote (staging/production):** do **not** use `wrangler d1 migrations apply` unless `d1_migrations` is known in sync. Prefer `bash ./scripts/ensure_d1_required_schema.sh --remote` from `packages/api` (also run by CD + five-minute Worker cron). If `migrations apply` already failed with `table irl_events already exists`, see `DEPLOYMENT.md` and `scripts/repair_d1_wrangler_migration_history.sh`.
 
 Seed videos default to `publish_status = 'draft'`. To make them visible on the public homepage:
 
