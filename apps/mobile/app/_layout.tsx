@@ -7,24 +7,29 @@ import {
   ensureOfflinePlaybackServer,
   stopOfflinePlaybackServer,
 } from '../src/offline/playbackServer';
+import { isTvPlatform } from '../src/platform/tv';
 
 export default function RootLayout() {
+  const tv = isTvPlatform();
+
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    // Offline loopback server is phone-only (Sprint 0: no TV downloads).
+    if (Platform.OS === 'web' || tv) return;
     void ensureOfflinePlaybackServer().catch(() => undefined);
     return () => {
       void stopOfflinePlaybackServer();
     };
-  }, []);
+  }, [tv]);
 
   return (
     <SessionProvider>
-      <StatusBar style="auto" />
+      <StatusBar style="auto" hidden={tv} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: '#0f172a' },
           headerTintColor: '#f8fafc',
           contentStyle: { backgroundColor: '#020617' },
+          headerShown: !tv,
         }}
       >
         <Stack.Screen name="index" options={{ title: 'VMP' }} />

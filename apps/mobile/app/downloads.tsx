@@ -7,6 +7,7 @@ import { requireActiveSubscription } from '../src/features';
 import { userFacingRequestError } from '../src/network/errors';
 import { listDownloadRecords, removeOfflineDownload } from '../src/offline/downloadManager';
 import type { StoredDownload } from '../src/offline/types';
+import { isTvPlatform } from '../src/platform/tv';
 
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0 B';
@@ -21,9 +22,10 @@ export default function DownloadsScreen() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tv = isTvPlatform();
 
   const load = useCallback(async () => {
-    if (!session || !canBrowseCatalog) return;
+    if (tv || !session || !canBrowseCatalog) return;
     setLoading(true);
     setError(null);
     try {
@@ -33,11 +35,15 @@ export default function DownloadsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [session, canBrowseCatalog]);
+  }, [session, canBrowseCatalog, tv]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  if (tv) {
+    return <Redirect href="/" />;
+  }
 
   if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
     return (

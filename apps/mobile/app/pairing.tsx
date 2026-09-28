@@ -3,18 +3,10 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { completeDevicePairing, previewDevicePairing } from '../src/api/client';
 import { useSession } from '../src/auth/SessionProvider';
+import { normalizePairingCode } from '../src/auth/tvPairing';
 import { SubscriberLock } from '../src/components/SubscriberLock';
 import { requireActiveSubscription } from '../src/features';
-
-/** Matches server normalizePairingCode (packages/api/src/nativeClients.ts). */
-function normalizePairingCode(raw: string): string | null {
-  const normalized = raw
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
-  if (normalized.length < 6 || normalized.length > 12) return null;
-  return normalized;
-}
+import { isTvPlatform } from '../src/platform/tv';
 
 /** Phone side of Tier 2+ pairing — preview device context, then approve. */
 export default function PairingScreen() {
@@ -37,6 +29,10 @@ export default function PairingScreen() {
     normalizedInput === previewedCode &&
     preview?.status === 'pending' &&
     !busy;
+
+  if (isTvPlatform()) {
+    return <Redirect href="/settings" />;
+  }
 
   if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
     return (
@@ -70,8 +66,14 @@ export default function PairingScreen() {
     setBusy(true);
     setStatus(null);
     const requestedCode = normalized;
+    const accessToken = session?.accessToken;
+    if (!accessToken) {
+      setBusy(false);
+      setStatus('Sign in again to preview a TV.');
+      return;
+    }
     try {
-      const data = await previewDevicePairing(session!.accessToken, requestedCode);
+      const data = await previewDevicePairing(accessToken, requestedCode);
       if (normalizePairingCode(code) !== requestedCode) {
         return;
       }
@@ -104,8 +106,14 @@ export default function PairingScreen() {
 
     setBusy(true);
     setStatus(null);
+    const accessToken = session?.accessToken;
+    if (!accessToken) {
+      setBusy(false);
+      setStatus('Sign in again to approve a TV.');
+      return;
+    }
     try {
-      await completeDevicePairing(session!.accessToken, normalized);
+      await completeDevicePairing(accessToken, normalized);
       setStatus('Device approved. The TV can finish signing in.');
       setCode('');
       clearPreviewState();

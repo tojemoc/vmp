@@ -1,6 +1,6 @@
 import type { OfflineRendition } from '@vmp/shared';
 import { useEventListener } from 'expo';
-import { Link, Redirect, useLocalSearchParams } from 'expo-router';
+import { Link, Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, type VideoSource, VideoView } from 'expo-video';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -18,6 +18,7 @@ import {
   type RecommendationVideo,
 } from '../../src/api/client';
 import { useSession } from '../../src/auth/SessionProvider';
+import { Focusable } from '../../src/components/Focusable';
 import { SubscriberLock } from '../../src/components/SubscriberLock';
 import { apiUrl } from '../../src/config';
 import { requireActiveSubscription } from '../../src/features';
@@ -38,6 +39,7 @@ import {
   subscribeDownloadProgress,
 } from '../../src/offline/downloadManager';
 import type { DownloadProgress, StoredDownload } from '../../src/offline/types';
+import { isTvPlatform } from '../../src/platform/tv';
 
 const DEFAULT_RENDITION: OfflineRendition = '720p';
 
@@ -53,6 +55,7 @@ function toHlsSource(uri: string | null): VideoSource | null {
 export default function WatchScreen() {
   const { videoId } = useLocalSearchParams<{ videoId: string }>();
   const { session, booting, canBrowseCatalog, subscriptionHydrated } = useSession();
+  const tv = isTvPlatform();
   const [playlistUrl, setPlaylistUrl] = useState<string | null>(null);
   const [source, setSource] = useState<'online' | 'offline' | null>(null);
   const [title, setTitle] = useState('');
@@ -67,6 +70,7 @@ export default function WatchScreen() {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [recommendations, setRecommendations] = useState<RecommendationVideo[]>([]);
+  const [playing, setPlaying] = useState(true);
 
   /** Bumps on sign-out / account switch so in-flight handlers discard stale UI updates. */
   const accountEpochRef = useRef(0);
@@ -101,14 +105,14 @@ export default function WatchScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (!id || !accountId) return;
+    if (tv || !id || !accountId) return;
     const userId = accountId;
     return subscribeDownloadProgress(id, (p) => {
       if (p.userId !== userId) return;
       setProgress(p);
       void refreshDownload();
     });
-  }, [id, refreshDownload, accountId]);
+  }, [id, refreshDownload, accountId, tv]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,17 +121,20 @@ export default function WatchScreen() {
       setLoading(true);
       setError(null);
       try {
-        await refreshDownload();
-        const offlineUri = await getOfflinePlaybackUri(id, session.user.id);
-        if (cancelled) return;
-        if (offlineUri) {
-          setPlaylistUrl(offlineUri);
-          setSource('offline');
-          const record = await getDownloadRecord(id, session.user.id);
-          setTitle(record?.videoTitle || id);
-          setDescription('');
-          setHasAccess(true);
-          return;
+        // Offline downloads are a Tier 1 phone feature — skip on TV (Sprint 0 non-goal).
+        if (!tv) {
+          await refreshDownload();
+          const offlineUri = await getOfflinePlaybackUri(id, session.user.id);
+          if (cancelled) return;
+          if (offlineUri) {
+            setPlaylistUrl(offlineUri);
+            setSource('offline');
+            const record = await getDownloadRecord(id, session.user.id);
+            setTitle(record?.videoTitle || id);
+            setDescription('');
+            setHasAccess(true);
+            return;
+          }
         }
 
         const access = await getVideoAccess(id, session.accessToken);
@@ -157,11 +164,15 @@ export default function WatchScreen() {
         }
       } catch (err) {
         if (!cancelled) {
-          const record = await getDownloadRecord(id, session.user.id).catch(() => null);
-          if (record?.status === 'completed') {
-            setError(
-              `${OFFLINE_MODE_MESSAGE} This download could not be prepared for playback — try Remove and download again while online.`,
-            );
+          if (!tv) {
+            const record = await getDownloadRecord(id, session.user.id).catch(() => null);
+            if (record?.status === 'completed') {
+              setError(
+                `${OFFLINE_MODE_MESSAGE} This download could not be prepared for playback — try Remove and download again while online.`,
+              );
+            } else {
+              setError(userFacingRequestError(err, 'Playback failed'));
+            }
           } else {
             setError(userFacingRequestError(err, 'Playback failed'));
           }
@@ -173,7 +184,7 @@ export default function WatchScreen() {
     return () => {
       cancelled = true;
     };
-  }, [session, id, refreshDownload, canBrowseCatalog]);
+  }, [session, id, refreshDownload, canBrowseCatalog, tv]);
 
   const videoSource = useMemo(() => toHlsSource(playlistUrl), [playlistUrl]);
   const player = useVideoPlayer(videoSource, (p) => {
@@ -311,8 +322,11 @@ export default function WatchScreen() {
     : formatDuration(fullDuration);
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{title || 'Watch'}</Text>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={[styles.container, tv && styles.containerTv]}
+    >
+      <Text style={[styles.title, tv && styles.titleTv]}>{title || 'Watch'}</Text>
       <View style={styles.metaRow}>
         {source ? (
           <Text style={styles.badge}>
@@ -329,11 +343,40 @@ export default function WatchScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {playlistUrl ? (
         <VideoView
-          style={styles.video}
+          style={[styles.video, tv && styles.videoTv]}
           player={player}
-          fullscreenOptions={{ enable: true }}
-          allowsPictureInPicture
+          fullscreenOptions={{ enable: !tv }}
+          allowsPictureInPicture={!tv}
+          nativeControls={!tv}
         />
+      ) : null}
+
+      {tv && playlistUrl ? (
+        <View style={styles.tvTransport}>
+          <Focusable
+            preferredFocus
+            style={styles.tvBtn}
+            focusedStyle={styles.tvBtnFocused}
+            onPress={() => {
+              if (playing) {
+                player.pause();
+                setPlaying(false);
+              } else {
+                player.play();
+                setPlaying(true);
+              }
+            }}
+          >
+            <Text style={styles.tvBtnText}>{playing ? 'Pause' : 'Play'}</Text>
+          </Focusable>
+          <Focusable
+            style={styles.tvBtnSecondary}
+            focusedStyle={styles.tvBtnFocused}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.tvBtnTextSecondary}>Back to catalog</Text>
+          </Focusable>
+        </View>
       ) : null}
 
       {shownDescription ? (
@@ -347,48 +390,52 @@ export default function WatchScreen() {
         </View>
       ) : null}
 
-      <View style={styles.downloadPanel}>
-        <Text style={styles.panelTitle}>Offline download</Text>
-        <Text style={styles.hint}>
-          Saves {DEFAULT_RENDITION} HLS to this device via the same authorize/assets APIs as the
-          PWA. Playback uses a local HTTP server (required on iOS).
-        </Text>
-        {status ? (
-          <Text style={styles.muted}>
-            Status: {status}
-            {pct !== null ? ` · ${pct}%` : ''}
+      {!tv ? (
+        <View style={styles.downloadPanel}>
+          <Text style={styles.panelTitle}>Offline download</Text>
+          <Text style={styles.hint}>
+            Saves {DEFAULT_RENDITION} HLS to this device via the same authorize/assets APIs as the
+            PWA. Playback uses a local HTTP server (required on iOS).
           </Text>
-        ) : null}
-        {download?.errorMessage ? <Text style={styles.error}>{download.errorMessage}</Text> : null}
+          {status ? (
+            <Text style={styles.muted}>
+              Status: {status}
+              {pct !== null ? ` · ${pct}%` : ''}
+            </Text>
+          ) : null}
+          {download?.errorMessage ? (
+            <Text style={styles.error}>{download.errorMessage}</Text>
+          ) : null}
 
-        <View style={styles.actions}>
-          {status !== 'completed' && status !== 'downloading' && !active ? (
-            <Pressable
-              style={[styles.primaryBtn, (downloadBusy || !hasAccess) && styles.disabled]}
-              disabled={downloadBusy || !hasAccess}
-              onPress={() => void onDownload()}
-            >
-              <Text style={styles.primaryBtnText}>
-                {status === 'paused' || status === 'failed' ? 'Resume download' : 'Download'}
-              </Text>
-            </Pressable>
-          ) : null}
-          {(status === 'downloading' || active) && (
-            <Pressable style={styles.secondaryBtn} onPress={() => void onPause()}>
-              <Text style={styles.secondaryBtnText}>Pause</Text>
-            </Pressable>
-          )}
-          {download ? (
-            <Pressable
-              style={[styles.secondaryBtn, downloadBusy && styles.disabled]}
-              disabled={downloadBusy}
-              onPress={() => void onRemove()}
-            >
-              <Text style={styles.secondaryBtnText}>Remove</Text>
-            </Pressable>
-          ) : null}
+          <View style={styles.actions}>
+            {status !== 'completed' && status !== 'downloading' && !active ? (
+              <Pressable
+                style={[styles.primaryBtn, (downloadBusy || !hasAccess) && styles.disabled]}
+                disabled={downloadBusy || !hasAccess}
+                onPress={() => void onDownload()}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {status === 'paused' || status === 'failed' ? 'Resume download' : 'Download'}
+                </Text>
+              </Pressable>
+            ) : null}
+            {(status === 'downloading' || active) && (
+              <Pressable style={styles.secondaryBtn} onPress={() => void onPause()}>
+                <Text style={styles.secondaryBtnText}>Pause</Text>
+              </Pressable>
+            )}
+            {download ? (
+              <Pressable
+                style={[styles.secondaryBtn, downloadBusy && styles.disabled]}
+                disabled={downloadBusy}
+                onPress={() => void onRemove()}
+              >
+                <Text style={styles.secondaryBtnText}>Remove</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {recommendations.length > 0 ? (
         <View style={styles.upNext}>
@@ -398,27 +445,43 @@ export default function WatchScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.recList}
           >
-            {recommendations.map((item) => {
+            {recommendations.map((item, index) => {
               const thumb = catalogThumbnailUrl(item.thumbnail_url);
+              const card = (
+                <>
+                  <View style={styles.recThumbWrap}>
+                    {thumb ? (
+                      <Image source={{ uri: thumb }} style={styles.recThumb} />
+                    ) : (
+                      <View style={[styles.recThumb, styles.thumbPlaceholder]} />
+                    )}
+                    <View style={styles.recDuration}>
+                      <Text style={styles.recDurationText}>
+                        {formatDuration(item.full_duration)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.recTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                </>
+              );
+              if (tv) {
+                return (
+                  <Focusable
+                    key={item.id}
+                    preferredFocus={!playlistUrl && index === 0}
+                    style={styles.recCard}
+                    focusedStyle={styles.recCardFocused}
+                    onPress={() => router.push(`/watch/${item.id}`)}
+                  >
+                    {card}
+                  </Focusable>
+                );
+              }
               return (
                 <Link key={item.id} href={`/watch/${item.id}`} asChild>
-                  <Pressable style={styles.recCard}>
-                    <View style={styles.recThumbWrap}>
-                      {thumb ? (
-                        <Image source={{ uri: thumb }} style={styles.recThumb} />
-                      ) : (
-                        <View style={[styles.recThumb, styles.thumbPlaceholder]} />
-                      )}
-                      <View style={styles.recDuration}>
-                        <Text style={styles.recDurationText}>
-                          {formatDuration(item.full_duration)}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.recTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  </Pressable>
+                  <Pressable style={styles.recCard}>{card}</Pressable>
                 </Link>
               );
             })}
@@ -432,8 +495,10 @@ export default function WatchScreen() {
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   container: { padding: 16, gap: 12, paddingBottom: 40 },
+  containerTv: { paddingHorizontal: 48, paddingVertical: 28, gap: 16 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700' },
+  titleTv: { fontSize: 28 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   badge: {
     alignSelf: 'flex-start',
@@ -458,6 +523,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   video: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', borderRadius: 8 },
+  videoTv: { maxHeight: 520, borderRadius: 12 },
+  tvTransport: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+  tvBtn: {
+    backgroundColor: '#38bdf8',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  tvBtnSecondary: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 3,
+    borderColor: '#334155',
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  tvBtnFocused: {
+    borderColor: '#f8fafc',
+    transform: [{ scale: 1.05 }],
+  },
+  tvBtnText: { color: '#0f172a', fontWeight: '700', fontSize: 18 },
+  tvBtnTextSecondary: { color: '#e2e8f0', fontWeight: '600', fontSize: 18 },
   descriptionBlock: { gap: 6 },
   description: { color: '#cbd5e1', fontSize: 14, lineHeight: 20 },
   readMore: { color: '#38bdf8', fontSize: 14, fontWeight: '600' },
@@ -493,7 +586,15 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.5 },
   upNext: { gap: 10, marginTop: 8 },
   recList: { gap: 10 },
-  recCard: { width: 160, gap: 6 },
+  recCard: {
+    width: 160,
+    gap: 6,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: 10,
+    padding: 4,
+  },
+  recCardFocused: { borderColor: '#38bdf8' },
   recThumbWrap: {
     width: 160,
     height: 90,

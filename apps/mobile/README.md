@@ -1,18 +1,19 @@
-# VMP mobile (Tier 1 PoC)
+# VMP mobile (Tier 1 phone + Tier 2 Android TV PoC)
 
-Expo (React Native) phone/tablet client. Plan: [`docs/native-clients-plan.md`](../../docs/native-clients-plan.md).
+Expo (React Native / `react-native-tvos`) client. Plan: [`docs/native-clients-plan.md`](../../docs/native-clients-plan.md). TV sprint: [`docs/plans/tv-tier2-sprint.md`](../../docs/plans/tv-tier2-sprint.md).
 
 ## Status
 
-Scaffold + API client for Phase 0 / Tier 1 PoC:
+Scaffold + API client for Phase 0 / Tier 1 PoC, plus Android TV Sprint 0:
 
 - Magic-link request → deep-link redeem via `POST /api/auth/native/redeem`
 - Native TOTP / 2FA entry (`/auth/2fa`) when redeem returns `requiresTwoFactor` → `POST /api/auth/2fa/verify`
 - Secure session storage (`expo-secure-store`)
 - **Subscriber gate (default on):** catalog / watch / downloads / TV pairing require an active subscription (or staff). Entitlement from `GET /api/account/subscription`. Disable later with `EXPO_PUBLIC_REQUIRE_ACTIVE_SUBSCRIPTION=0` when free/anonymous tiers ship.
 - Catalog with thumbnails + duration / PRO badges; watch chrome with description, access badge, Up next recommendations
-- Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings
-- Device pairing **Approve a TV** under Settings (`preview` + `complete`)
+- Offline download + play (same authorize/assets APIs as the PWA): register device → authorize → fetch HLS into `expo-file-system` → play local master playlist; **Downloads** under home/Settings (**phone only**)
+- Device pairing **Approve a TV** under Settings (`preview` + `complete`) on phone
+- **Android TV (Sprint 0):** pairing-code login (`start` → show code → `poll`), D-pad focus catalog + watch transport, online HLS via `expo-video`. Build with `EXPO_TV=1`
 - Native push **token register API** only — gated by `nativePushEnabled` in `src/features.ts` (`EXPO_PUBLIC_NATIVE_PUSH_ENABLED`, default off)
 
 ### Explicit PoC blockers / gaps
@@ -23,6 +24,7 @@ Scaffold + API client for Phase 0 / Tier 1 PoC:
 | Portrait-only + no background audio | UX polish | Tracked in plan “Open PoC issues”; change before store submission. |
 | Cross-device magic link | Same email opened on wrong device | Checklist **S7**; login copy warns single-use |
 | Unverified TV labels | Phishing at scale (future) | Checklist **S8** |
+| tvOS binary not in CI yet | Apple TV testers | Same RN source; add a tvOS job when a macOS TV SDK runner is ready |
 
 ## Why not an npm workspace member?
 
@@ -34,6 +36,16 @@ Root `package.json` workspaces are `packages/*` only. This app lives under `apps
 cd apps/mobile
 npm ci
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8787 npx expo start
+```
+
+Phone vs TV native projects (same JS source; do not mix without `--clean`):
+
+```bash
+# Phone / tablet Android
+npx expo prebuild --platform android --clean --no-install
+
+# Android TV (leanback launcher)
+EXPO_TV=1 npx expo prebuild --platform android --clean --no-install
 ```
 
 `metro.config.js` remaps TypeScript ESM `.js` import specifiers inside workspace packages (e.g. `@vmp/shared`) to sibling `.ts` sources. Without that, Metro looks for `foo.js.ts` and fails when a runtime import pulls in the shared barrel (see mobile CI / `cmsSystemPages.js`).
@@ -65,11 +77,13 @@ Inputs:
 - `native_push_enabled` — toggles `EXPO_PUBLIC_NATIVE_PUSH_ENABLED`
 - `enable_custom_scheme` — enables claimable `vmp://` **only** when `flavor=development` (staging SideStore PoC). Rejected for release/beta/nightly. Staging web still requires a double-confirm + D1 acknowledgment before Safari opens `vmp://` with the magic-link token. Local machines can also set `EXPO_PUBLIC_ENABLE_VMP_SCHEME=1`.
 - `publish_release` — create GitHub Release + update AltStore source on GitHub Pages (default on; **main branch only** — disable for artifact-only builds from feature branches)
-- `build_android` — also build/upload an Android test APK (default on)
+- `build_android` — also build/upload an Android phone/tablet test APK (default on)
+- `build_android_tv` — also build/upload an Android TV leanback APK with `EXPO_TV=1` (default on)
 
 Outputs (when the corresponding input is enabled):
 
 - When `build_android` is enabled: Android release `.apk` uploaded as the workflow artifact **`mobile-android-apk`** (download from the run’s Artifacts section).
+- When `build_android_tv` is enabled: Android TV release `.apk` uploaded as **`mobile-android-tv-apk`** (sideload onto Google TV / Android TV via `adb install`).
 - When `publish_release` is enabled:
   - Ad-hoc signed iOS `.ipa` on GitHub Releases as `vmp-<version>-ios.ipa`
   - `altstore-source.json` deployed to GitHub Pages (generated from `altstore-source.meta.json`, not committed to git)
@@ -120,13 +134,26 @@ Requires an R2-hosted HLS video (`r2_assets_required` if only CDN). License expi
 
 The home catalog always filters to `publish_status === 'published'` (and due schedules), even when `/api/videos` returns drafts for editor+ accounts.
 
+Offline downloads are **not** available on Android TV (Sprint 0 non-goal).
+
 ## Pairing (Tier 2+)
+
+### Phone — Approve a TV
 
 `apps/mobile/app/pairing.tsx` is reached from **Settings → Approve a TV** (not the home header):
 
 1. Enter the code shown on the TV.
 2. **Preview** → `POST /api/auth/device-pairing/preview` (device name/platform, shown with “Label set by the device”).
 3. **Approve** → `POST /api/auth/device-pairing/complete`.
+
+### TV — show code and poll
+
+On Android TV builds (`Platform.isTV`), `/login` runs pairing-code login instead of magic link:
+
+1. `POST /api/auth/device-pairing/start` with `{ deviceName, devicePlatform: 'android_tv' }`
+2. Display the code (no keyboard)
+3. Poll `POST /api/auth/device-pairing/poll` per plan guidance (local format gate, `expiresAt` / max-attempt bound, non-validating pending UX)
+4. On `ready`, persist `accessToken` / `refreshToken` in SecureStore
 
 ## Native push (when enabled)
 

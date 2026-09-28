@@ -158,6 +158,14 @@ export async function completeTotpLogin(pendingToken: string, code: string): Pro
   }
 }
 
+/** Persist session tokens returned by a successful TV pairing poll (`status: ready`). */
+export async function completePairingLogin(session: NativeSessionResponse): Promise<SessionState> {
+  if (!session.refreshToken || !session.accessToken) {
+    throw new Error('Pairing ready response did not include session tokens');
+  }
+  return persistNativeSession(session);
+}
+
 export async function signOut(): Promise<void> {
   const existing = await loadSession();
   if (existing?.refreshToken) {

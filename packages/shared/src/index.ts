@@ -235,6 +235,16 @@ export interface NativeTwoFactorPendingResponse {
 export type NativeRedeemResponse = NativeSessionResponse | NativeTwoFactorPendingResponse;
 
 /**
+ * TV/device poll response for `POST /api/auth/device-pairing/poll`.
+ * `pending` is also returned for unknown/malformed codes (no validity oracle).
+ * `ready` is one-shot and includes the same session fields as native redeem.
+ */
+export type DevicePairingPollResponse =
+  | { status: 'pending' }
+  | { status: 'expired' }
+  | ({ status: 'ready' } & NativeSessionResponse);
+
+/**
  * Which surface requested the magic-link email. Embedded in the verify URL as
  * `?client=` so `/auth/verify` does not guess from UA / display-mode.
  *

@@ -5,8 +5,11 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "android:tv": "EXPO_TV=1 expo start --android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --clean --no-install",
+    "prebuild:tv": "EXPO_TV=1 expo prebuild --clean --no-install",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ./app ./src",
     "test": "tsx --test test/**/*.test.ts"
@@ -32,12 +35,13 @@
     "expo-video": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "npm:react-native-tvos@0.86-stable",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
+    "@react-native-tvos/config-tv": "^0.1.6",
     "@types/react": "~19.2.2",
     "pod-install": "1.1.0",
     "tsx": "^4.23.13",

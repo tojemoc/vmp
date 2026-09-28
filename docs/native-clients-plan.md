@@ -165,10 +165,11 @@ See also: **[promotion checklist](native-clients-promotion-checklist.md)** (bloc
 
 | Path | Role |
 | --- | --- |
-| `apps/mobile` | Expo Tier 1 app (not an npm workspace member yet — install locally; see app README) |
+| `apps/mobile` | Expo Tier 1 + Android TV Tier 2 Sprint 0 (`react-native-tvos`, `EXPO_TV=1`) — not an npm workspace member yet |
 | `packages/api` | Phase 0 routes + migrations |
 | `packages/shared` | Shared types for native client contracts |
 | `docs/native-clients-plan.md` | This document |
+| `docs/plans/tv-tier2-sprint.md` | TV Sprint 0 (pairing + D-pad) |
 | `docs/native-clients-promotion-checklist.md` | Blocking checklist before workspace promotion / TestFlight |
 
 ## Decision log

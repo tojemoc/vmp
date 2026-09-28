@@ -41,7 +41,12 @@ on:
         default: true
         type: boolean
       build_android:
-        description: Also build and upload an Android test APK artifact
+        description: Also build and upload an Android phone/tablet test APK artifact
+        required: true
+        default: true
+        type: boolean
+      build_android_tv:
+        description: Also build and upload an Android TV (leanback) test APK artifact (EXPO_TV=1)
         required: true
         default: true
         type: boolean
@@ -197,6 +202,104 @@ jobs:
         with:
           name: mobile-android-apk
           path: apps/mobile/dist/*.apk
+          if-no-files-found: error
+
+  build-android-tv:
+    if: ${{ inputs.build_android_tv }}
+    needs: validate-mobile
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Gradle auto-download of NDK 27.1.12297006 can stall silently for hours;
+    # fail the job instead of burning the default 6h runner limit.
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_TV: '1'
+      EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+      EXPO_PUBLIC_FRONTEND_HOST: ${{ inputs.frontend_host }}
+      # Push / custom scheme are phone-oriented; keep TV builds lean and fail-closed.
+      EXPO_PUBLIC_NATIVE_PUSH_ENABLED: '0'
+      EXPO_PUBLIC_ENABLE_VMP_SCHEME: '0'
+      EXPO_PUBLIC_DISABLE_VMP_SCHEME: '1'
+      FRONTEND_HOST: ${{ inputs.frontend_host }}
+      # Expo SDK 57 / RN default; not preinstalled on ubuntu-24.04 (ships 27.3+).
+      ANDROID_NDK_VERSION: 27.1.12297006
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Android NDK
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /usr/local/lib/android/sdk/ndk/${{ env.ANDROID_NDK_VERSION }}
+          key: android-ndk-${{ env.ANDROID_NDK_VERSION }}-${{ runner.os }}
+
+      - name: Install mobile dependencies
+        run: npm ci
+
+      - name: Inject CI frontend host
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'app.json';
+          const host = process.env.FRONTEND_HOST;
+          const app = JSON.parse(fs.readFileSync(path, 'utf8'));
+          app.expo.ios = app.expo.ios || {};
+          app.expo.ios.associatedDomains = [`applinks:${host}`];
+          app.expo.android = app.expo.android || {};
+          app.expo.android.intentFilters = (app.expo.android.intentFilters || []).map((filter) => ({
+            ...filter,
+            data: (filter.data || []).map((entry) =>
+              entry.scheme === 'https' ? { ...entry, host } : entry,
+            ),
+          }));
+          fs.writeFileSync(path, `${JSON.stringify(app, null, 2)}\n`);
+          NODE
+
+      - name: Prebuild Android TV project
+        run: EXPO_TV=1 npx expo prebuild --platform android --clean --no-install
+
+      - name: Verify leanback launcher intent
+        run: |
+          set -euo pipefail
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'LEANBACK_LAUNCHER' "$MANIFEST"; then
+            echo "::error::Android TV prebuild did not add LEANBACK_LAUNCHER to AndroidManifest.xml"
+            cat "$MANIFEST"
+            exit 1
+          fi
+          echo "LEANBACK_LAUNCHER present in AndroidManifest.xml"
+
+      - name: Build Android TV release APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Package Android TV artifact
+        run: |
+          mkdir -p dist-tv
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist-tv/vmp-android-tv-${SHORT_SHA}.apk"
+
+      - name: Upload Android TV APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mobile-android-tv-apk
+          path: apps/mobile/dist-tv/*.apk
           if-no-files-found: error
 
   build-ios:
@@ -387,7 +490,7 @@ jobs:
           if-no-files-found: error
 
   publish-ios-release:
-    # Wait for Android when it ran so Pages can publish nightly.link APK URLs for this run.
+    # Wait for Android phone + TV jobs when they ran so Pages can publish nightly.link APK URLs.
     # Android failure/skip must not block the iOS Release + AltStore Pages publish.
     if: >-
       ${{
@@ -401,10 +504,17 @@ jobs:
           || needs.build-android.result == 'failure'
           || needs.build-android.result == 'cancelled'
         )
+        && (
+          needs.build-android-tv.result == 'success'
+          || needs.build-android-tv.result == 'skipped'
+          || needs.build-android-tv.result == 'failure'
+          || needs.build-android-tv.result == 'cancelled'
+        )
       }}
     needs:
       - build-ios
       - build-android
+      - build-android-tv
     # Serialize publishes for the same release tag so a queued run re-checks after the leader finishes.
     concurrency:
       group: mobile-artifacts-publish-${{ needs.build-ios.outputs.flavor_label }}-v${{ needs.build-ios.outputs.version_name }}-build${{ needs.build-ios.outputs.build_number }}

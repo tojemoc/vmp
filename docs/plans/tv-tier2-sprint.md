@@ -43,6 +43,14 @@ Make tvOS / Android TV builds **usable with a remote**: focus navigation, pairin
 3. User can move focus with the directional pad through ≥5 catalog items and open watch.
 4. Back exits watch to catalog; session survives app backgrounding (refresh token in secure storage).
 
+## Implementation notes (Android TV)
+
+- Same Expo app as Tier 1 (`apps/mobile`) with `react-native: npm:react-native-tvos@0.86-stable` and `@react-native-tvos/config-tv`.
+- Phone builds: unset `EXPO_TV`. Android TV CI / local: `EXPO_TV=1` + `npx expo prebuild --platform android --clean`.
+- Workflow: `.github/workflows/mobile-artifacts.yml` input `build_android_tv` → artifact `mobile-android-tv-apk`.
+- Sideload: `adb install -r vmp-android-tv-*.apk` on a Google TV / Android TV device or emulator.
+
 ## Decision log
 
 - **2026-09:** Track an explicit first TV sprint on the roadmap so Tier 2 is not “someday” after phone polish; voice stays a post-usability enhancement.
+- **2026-09:** Ship Android TV Sprint 0 first (leanback APK + pairing + D-pad catalog/watch); tvOS CI follows when a TV SDK macOS runner is available.

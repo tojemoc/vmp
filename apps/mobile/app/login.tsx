@@ -4,18 +4,19 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { requestMagicLink } from '../src/api/client';
 import { firstSearchParam, safeRedirectPath } from '../src/auth/deepLink';
 import { useSession } from '../src/auth/SessionProvider';
+import { TvPairingLogin } from '../src/components/TvPairingLogin';
+import { isTvPlatform } from '../src/platform/tv';
 
 type Step = 'email' | 'code';
 
 /**
- * Native sign-in: same magic-link email as web, with optional confirmation code.
- * `client=native` + `redirect` are stamped on the request so the email link and
- * OTP verify share provenance with browser/PWA flows.
+ * Native sign-in: phone uses magic-link / OTP; TV uses pairing-code login.
  */
 export default function LoginScreen() {
-  const { session, booting, completeEmailCode } = useSession();
+  const { session, booting, completeEmailCode, setSession } = useSession();
   const params = useLocalSearchParams<{ redirect?: string | string[] }>();
   const redirectTo = safeRedirectPath(firstSearchParam(params.redirect) || '/');
+  const tv = isTvPlatform();
 
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
@@ -33,6 +34,17 @@ export default function LoginScreen() {
 
   if (session) {
     return <Redirect href={redirectTo as '/'} />;
+  }
+
+  if (tv) {
+    return (
+      <TvPairingLogin
+        setSession={setSession}
+        onAuthenticated={() => {
+          router.replace(redirectTo as '/');
+        }}
+      />
+    );
   }
 
   async function onSendCode() {

@@ -1,4 +1,6 @@
 import type {
+  DevicePairingPollResponse,
+  DevicePairingStartResponse,
   NativeRedeemResponse,
   NativeSessionResponse,
   NativeTotpVerifyResponse,
@@ -188,6 +190,28 @@ export async function unregisterNativePushDevice(
     { method: 'DELETE', body: JSON.stringify(payload) },
     accessToken,
   );
+}
+
+/** TV begins pairing — displays code for phone/web approve. */
+export async function startDevicePairing(payload?: {
+  deviceName?: string;
+  devicePlatform?: string;
+}): Promise<DevicePairingStartResponse> {
+  return apiFetch('/api/auth/device-pairing/start', {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+/**
+ * TV polls until approved. Unknown/malformed codes return `{ status: 'pending' }`
+ * (no validity oracle). `ready` is one-shot.
+ */
+export async function pollDevicePairing(pairingCode: string): Promise<DevicePairingPollResponse> {
+  return apiFetch('/api/auth/device-pairing/poll', {
+    method: 'POST',
+    body: JSON.stringify({ pairingCode }),
+  });
 }
 
 export async function previewDevicePairing(accessToken: string, pairingCode: string) {

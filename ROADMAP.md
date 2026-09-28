@@ -130,9 +130,9 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 
 **Plan:** [docs/plans/tv-tier2-sprint.md](docs/plans/tv-tier2-sprint.md)
 
-- [ ] Pairing-code login on TV + D-pad focus catalog/watch (Sprint 0)
+- [x] Pairing-code login on TV + D-pad focus catalog/watch (Sprint 0) — Android TV leanback APK via `EXPO_TV=1` / `react-native-tvos` in `apps/mobile`; CI job `build-android-tv` in `.github/workflows/mobile-artifacts.yml`
 - [ ] Voice control / assistant intents (post–Sprint 0)
-- [ ] Tier 2–4 (Android/tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5)
+- [ ] Tier 2–4 (tvOS → Tizen/webOS → Titan/VIDAA) + decision gate (Tier 5) — Android TV Sprint 0 shipped; tvOS still open
 
 ---
 

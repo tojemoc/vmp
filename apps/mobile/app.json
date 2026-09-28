@@ -3,7 +3,8 @@
     "name": "VMP",
     "slug": "vmp-mobile",
     "version": "0.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
     "scheme": "vmp",
     "userInterfaceStyle": "automatic",
     "plugins": [
@@ -16,7 +17,14 @@
           "supportsPictureInPicture": true
         }
       ],
-      "./plugins/withAndroidLocalhostCleartext.js"
+      "./plugins/withAndroidLocalhostCleartext.js",
+      [
+        "@react-native-tvos/config-tv",
+        {
+          "androidTVBanner": "./assets/tv_icons/banner-400x240.png",
+          "androidTVIcon": "./assets/tv_icons/icon-760x760.png"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
