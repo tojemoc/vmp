@@ -58,10 +58,18 @@ export type TvPairingPollDecision =
   | { action: 'terminal'; reason: TvPairingTerminalReason }
   | { action: 'backoff'; delayMs: number };
 
+/** Remaining ms until a valid `expiresAt`, or `null` when expiry is missing/invalid. */
+function remainingUntilExpiryMs(expiresAt: string | undefined, nowMs?: number): number | null {
+  if (!expiresAt) return null;
+  const expiresMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresMs)) return null;
+  return expiresMs - (nowMs ?? Date.now());
+}
+
 /**
  * Decide the next poll step from an API outcome without revealing code validity.
- * When `expiresAt` is valid, continue delays are clamped so a final poll can run
- * before expiry instead of sleeping past it.
+ * When `expiresAt` is valid, continue/backoff delays are clamped so polling can
+ * still reach the deadline instead of sleeping past it.
  */
 export function decideTvPairingPoll(opts: {
   status?: string;
@@ -72,8 +80,19 @@ export function decideTvPairingPoll(opts: {
   expiresAt?: string;
   nowMs?: number;
 }): TvPairingPollDecision {
+  const remainingMs = remainingUntilExpiryMs(opts.expiresAt, opts.nowMs);
+  const pastDeadline = opts.budgetExhausted || (remainingMs !== null && remainingMs <= 0);
+
   if (opts.httpStatus === 429 || opts.code === 'rate_limited') {
-    return { action: 'backoff', delayMs: Math.max(2000, opts.pollIntervalSeconds * 2000) };
+    // Do not keep backing off after the pairing deadline — same timeout UX.
+    if (pastDeadline) {
+      return { action: 'terminal', reason: 'timeout' };
+    }
+    const baseBackoff = Math.max(2000, opts.pollIntervalSeconds * 2000);
+    return {
+      action: 'backoff',
+      delayMs: remainingMs !== null ? Math.min(baseBackoff, remainingMs) : baseBackoff,
+    };
   }
   if (opts.httpStatus === 409 || opts.code === 'already_used') {
     return { action: 'terminal', reason: 'already_used' };
@@ -84,22 +103,14 @@ export function decideTvPairingPoll(opts: {
   if (opts.status === 'expired') {
     return { action: 'terminal', reason: 'expired' };
   }
-  if (opts.budgetExhausted) {
+  if (pastDeadline) {
     return { action: 'terminal', reason: 'timeout' };
   }
 
   const baseDelay = Math.max(1000, opts.pollIntervalSeconds * 1000);
-  if (opts.expiresAt) {
-    const expiresMs = Date.parse(opts.expiresAt);
-    if (Number.isFinite(expiresMs)) {
-      const remaining = expiresMs - (opts.nowMs ?? Date.now());
-      if (remaining <= 0) {
-        return { action: 'terminal', reason: 'timeout' };
-      }
-      return { action: 'continue', delayMs: Math.min(baseDelay, remaining) };
-    }
-  }
-
   // pending, unknown, or transient — keep waiting with the same UX
-  return { action: 'continue', delayMs: baseDelay };
+  return {
+    action: 'continue',
+    delayMs: remainingMs !== null ? Math.min(baseDelay, remainingMs) : baseDelay,
+  };
 }

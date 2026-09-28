@@ -158,4 +158,41 @@ describe('tvPairing helpers', () => {
       { action: 'terminal', reason: 'timeout' },
     );
   });
+
+  it('decideTvPairingPoll times out rate-limits past deadline and caps backoff', () => {
+    const expires = '2026-01-01T00:05:00.000Z';
+    assert.deepEqual(
+      decideTvPairingPoll({
+        httpStatus: 429,
+        code: 'rate_limited',
+        pollIntervalSeconds: 2,
+        budgetExhausted: true,
+        expiresAt: expires,
+        nowMs: Date.parse(expires) - 10_000,
+      }),
+      { action: 'terminal', reason: 'timeout' },
+    );
+    assert.deepEqual(
+      decideTvPairingPoll({
+        httpStatus: 429,
+        code: 'rate_limited',
+        pollIntervalSeconds: 2,
+        budgetExhausted: false,
+        expiresAt: expires,
+        nowMs: Date.parse(expires),
+      }),
+      { action: 'terminal', reason: 'timeout' },
+    );
+    assert.deepEqual(
+      decideTvPairingPoll({
+        httpStatus: 429,
+        code: 'rate_limited',
+        pollIntervalSeconds: 2,
+        budgetExhausted: false,
+        expiresAt: expires,
+        nowMs: Date.parse(expires) - 1500,
+      }),
+      { action: 'backoff', delayMs: 1500 },
+    );
+  });
 });
