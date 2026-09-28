@@ -65,14 +65,26 @@ export function TvPairingLogin({ onAuthenticated, setSession }: Props) {
             status: poll.status,
             pollIntervalSeconds: interval,
             budgetExhausted: budgetExhausted && poll.status !== 'ready',
+            expiresAt: started.expiresAt,
           });
 
           if (decision.action === 'ready') {
             if (poll.status === 'ready') {
-              const session = await completePairingLogin(poll);
-              if (cancelledRef.current || generation !== generationRef.current) return;
-              setSession(session);
-              onAuthenticated();
+              try {
+                const session = await completePairingLogin(poll);
+                if (cancelledRef.current || generation !== generationRef.current) return;
+                setSession(session);
+                onAuthenticated();
+              } catch (err) {
+                // Redeem already consumed the code — do not keep polling as if transient.
+                if (cancelledRef.current || generation !== generationRef.current) return;
+                setPhase('terminal');
+                setHint(
+                  err instanceof Error
+                    ? err.message
+                    : 'Could not finish sign-in. Start again for a new code.',
+                );
+              }
             }
             return;
           }
@@ -94,6 +106,7 @@ export function TvPairingLogin({ onAuthenticated, setSession }: Props) {
               code: err.code,
               pollIntervalSeconds: interval,
               budgetExhausted,
+              expiresAt: started.expiresAt,
             });
             if (decision.action === 'terminal') {
               setPhase('terminal');
@@ -110,12 +123,18 @@ export function TvPairingLogin({ onAuthenticated, setSession }: Props) {
             }
           }
           // Transient network/5xx — keep waiting without calling start again.
-          await sleep(Math.max(2000, interval * 1000));
-          if (budgetExhausted) {
+          const retryDecision = decideTvPairingPoll({
+            status: 'pending',
+            pollIntervalSeconds: interval,
+            budgetExhausted,
+            expiresAt: started.expiresAt,
+          });
+          if (retryDecision.action !== 'continue') {
             setPhase('terminal');
             setHint('Pairing timed out. Start again for a new code.');
             return;
           }
+          await sleep(retryDecision.delayMs);
         }
       }
     } catch (err) {

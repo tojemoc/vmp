@@ -13,7 +13,12 @@ export function normalizePairingCode(raw: string): string | null {
   return normalized;
 }
 
-/** Max poll attempts from start response timing (ceil of TTL / interval). */
+/**
+ * Soft poll-attempt budget from start timing.
+ * Valid `expiresAt` stays the hard deadline in `pairingBudgetExhausted`; this
+ * only sizes a fallback when expiry is unusable. `floor(ttl/interval) + 1`
+ * keeps a last attempt available near expiry.
+ */
 export function pairingMaxAttempts(
   expiresAt: string,
   startedAtMs: number,
@@ -22,9 +27,14 @@ export function pairingMaxAttempts(
   const expiresMs = Date.parse(expiresAt);
   if (!Number.isFinite(expiresMs) || pollIntervalSeconds <= 0) return 1;
   const ttlMs = Math.max(0, expiresMs - startedAtMs);
-  return Math.max(1, Math.ceil(ttlMs / (pollIntervalSeconds * 1000)));
+  return Math.max(1, Math.floor(ttlMs / (pollIntervalSeconds * 1000)) + 1);
 }
 
+/**
+ * Stop polling when the session TTL has elapsed.
+ * When `expiresAt` is valid it is authoritative — do not time out solely because
+ * `attempt` reached `maxAttempts`. Invalid expiry falls back to maxAttempts.
+ */
 export function pairingBudgetExhausted(opts: {
   expiresAt: string;
   startedAtMs: number;
@@ -34,7 +44,9 @@ export function pairingBudgetExhausted(opts: {
 }): boolean {
   const now = opts.nowMs ?? Date.now();
   const expiresMs = Date.parse(opts.expiresAt);
-  if (Number.isFinite(expiresMs) && now >= expiresMs) return true;
+  if (Number.isFinite(expiresMs)) {
+    return now >= expiresMs;
+  }
   return opts.attempt >= opts.maxAttempts;
 }
 
@@ -48,6 +60,8 @@ export type TvPairingPollDecision =
 
 /**
  * Decide the next poll step from an API outcome without revealing code validity.
+ * When `expiresAt` is valid, continue delays are clamped so a final poll can run
+ * before expiry instead of sleeping past it.
  */
 export function decideTvPairingPoll(opts: {
   status?: string;
@@ -55,6 +69,8 @@ export function decideTvPairingPoll(opts: {
   code?: string;
   pollIntervalSeconds: number;
   budgetExhausted: boolean;
+  expiresAt?: string;
+  nowMs?: number;
 }): TvPairingPollDecision {
   if (opts.httpStatus === 429 || opts.code === 'rate_limited') {
     return { action: 'backoff', delayMs: Math.max(2000, opts.pollIntervalSeconds * 2000) };
@@ -71,9 +87,19 @@ export function decideTvPairingPoll(opts: {
   if (opts.budgetExhausted) {
     return { action: 'terminal', reason: 'timeout' };
   }
+
+  const baseDelay = Math.max(1000, opts.pollIntervalSeconds * 1000);
+  if (opts.expiresAt) {
+    const expiresMs = Date.parse(opts.expiresAt);
+    if (Number.isFinite(expiresMs)) {
+      const remaining = expiresMs - (opts.nowMs ?? Date.now());
+      if (remaining <= 0) {
+        return { action: 'terminal', reason: 'timeout' };
+      }
+      return { action: 'continue', delayMs: Math.min(baseDelay, remaining) };
+    }
+  }
+
   // pending, unknown, or transient — keep waiting with the same UX
-  return {
-    action: 'continue',
-    delayMs: Math.max(1000, opts.pollIntervalSeconds * 1000),
-  };
+  return { action: 'continue', delayMs: baseDelay };
 }

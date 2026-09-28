@@ -15,14 +15,16 @@ describe('tvPairing helpers', () => {
     assert.equal(normalizePairingCode('ABCDEFGHIJKLM'), null);
   });
 
-  it('pairingMaxAttempts covers the TTL window', () => {
+  it('pairingMaxAttempts covers the TTL window with a near-expiry attempt', () => {
     const started = Date.parse('2026-01-01T00:00:00.000Z');
     const expires = '2026-01-01T00:05:00.000Z';
-    assert.equal(pairingMaxAttempts(expires, started, 60), 5);
+    // floor(300/60)+1 = 6 so a poll can still run near expiry
+    assert.equal(pairingMaxAttempts(expires, started, 60), 6);
     assert.equal(pairingMaxAttempts(expires, started, 0), 1);
+    assert.equal(pairingMaxAttempts('not-a-date', started, 60), 1);
   });
 
-  it('pairingBudgetExhausted stops on expiresAt or max attempts', () => {
+  it('pairingBudgetExhausted uses expiresAt when valid; maxAttempts only as invalid-expiry fallback', () => {
     const started = Date.parse('2026-01-01T00:00:00.000Z');
     const expires = '2026-01-01T00:05:00.000Z';
     assert.equal(
@@ -35,15 +37,16 @@ describe('tvPairing helpers', () => {
       }),
       false,
     );
+    // Valid expiresAt: attempt count alone must not terminate.
     assert.equal(
       pairingBudgetExhausted({
         expiresAt: expires,
         startedAtMs: started,
-        attempt: 5,
+        attempt: 99,
         maxAttempts: 5,
         nowMs: started + 60_000,
       }),
-      true,
+      false,
     );
     assert.equal(
       pairingBudgetExhausted({
@@ -54,6 +57,27 @@ describe('tvPairing helpers', () => {
         nowMs: Date.parse(expires),
       }),
       true,
+    );
+    // Invalid expiry falls back to maxAttempts.
+    assert.equal(
+      pairingBudgetExhausted({
+        expiresAt: 'not-a-date',
+        startedAtMs: started,
+        attempt: 5,
+        maxAttempts: 5,
+        nowMs: started,
+      }),
+      true,
+    );
+    assert.equal(
+      pairingBudgetExhausted({
+        expiresAt: 'not-a-date',
+        startedAtMs: started,
+        attempt: 4,
+        maxAttempts: 5,
+        nowMs: started,
+      }),
+      false,
     );
   });
 
@@ -105,6 +129,31 @@ describe('tvPairing helpers', () => {
         status: 'pending',
         pollIntervalSeconds: 2,
         budgetExhausted: true,
+      }),
+      { action: 'terminal', reason: 'timeout' },
+    );
+  });
+
+  it('decideTvPairingPoll clamps continue delay to remaining TTL', () => {
+    const expires = '2026-01-01T00:05:00.000Z';
+    const nowMs = Date.parse(expires) - 1500;
+    assert.deepEqual(
+      decideTvPairingPoll({
+        status: 'pending',
+        pollIntervalSeconds: 5,
+        budgetExhausted: false,
+        expiresAt: expires,
+        nowMs,
+      }),
+      { action: 'continue', delayMs: 1500 },
+    );
+    assert.deepEqual(
+      decideTvPairingPoll({
+        status: 'pending',
+        pollIntervalSeconds: 5,
+        budgetExhausted: false,
+        expiresAt: expires,
+        nowMs: Date.parse(expires),
       }),
       { action: 'terminal', reason: 'timeout' },
     );

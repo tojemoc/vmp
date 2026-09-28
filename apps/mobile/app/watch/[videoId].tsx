@@ -202,6 +202,11 @@ export default function WatchScreen() {
     setError(userFacingRequestError(playerError, 'Playback failed'));
   });
 
+  // Keep the TV Play/Pause label in sync when playback ends or pauses outside the button.
+  useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    setPlaying(isPlaying);
+  });
+
   if (booting || (session && requireActiveSubscription && !subscriptionHydrated)) {
     return (
       <View style={styles.centered}>
@@ -358,12 +363,10 @@ export default function WatchScreen() {
             style={styles.tvBtn}
             focusedStyle={styles.tvBtnFocused}
             onPress={() => {
-              if (playing) {
+              if (player.playing) {
                 player.pause();
-                setPlaying(false);
               } else {
                 player.play();
-                setPlaying(true);
               }
             }}
           >
