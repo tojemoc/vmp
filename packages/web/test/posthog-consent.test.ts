@@ -46,8 +46,7 @@ describe('applyStoredPostHogConsentToClient', () => {
       configurable: true,
       writable: true,
       value: {
-        getItem: (key: string) =>
-          key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null,
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
         setItem: () => {},
       },
     });
@@ -63,8 +62,7 @@ describe('applyStoredPostHogConsentToClient', () => {
       configurable: true,
       writable: true,
       value: {
-        getItem: (key: string) =>
-          key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'denied' : null,
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'denied' : null),
         setItem: () => {},
       },
     });
@@ -106,8 +104,7 @@ describe('canCapturePostHogAnalytics', () => {
       configurable: true,
       writable: true,
       value: {
-        getItem: (key: string) =>
-          key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null,
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'granted' : null),
         setItem: () => {},
       },
     });
@@ -125,8 +122,7 @@ describe('canCapturePostHogAnalytics', () => {
       configurable: true,
       writable: true,
       value: {
-        getItem: (key: string) =>
-          key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'denied' : null,
+        getItem: (key: string) => (key === POSTHOG_ANALYTICS_CONSENT_KEY ? 'denied' : null),
         setItem: () => {},
       },
     });
@@ -157,26 +153,38 @@ describe('canCapturePostHogAnalytics', () => {
     assert.equal(canCapturePostHogAnalytics(), false);
   });
 
-  it('applyPostHogConsentToClient delegates to opt_in/opt_out only', () => {
+  it('applyPostHogConsentToClient toggles opt_in/opt_out and metrics.network', () => {
     let optedIn = false;
     let optedOut = false;
+    const metricConfigs: Array<Record<string, unknown>> = [];
     const ph = {
+      config: {
+        metrics: {
+          serviceName: 'vmp-web',
+          environment: 'staging',
+          network: false,
+        },
+      },
       opt_in_capturing: () => {
         optedIn = true;
       },
       opt_out_capturing: () => {
         optedOut = true;
       },
-      set_config: () => {
-        throw new Error('should not set persistence manually');
+      set_config: (config: Record<string, unknown>) => {
+        metricConfigs.push(config);
+        const metrics = config.metrics as Record<string, unknown> | undefined;
+        if (metrics) ph.config.metrics = { ...ph.config.metrics, ...metrics };
       },
     };
 
     applyPostHogConsentToClient(ph, true);
     assert.equal(optedIn, true);
     assert.equal(optedOut, false);
+    assert.equal((metricConfigs[0]?.metrics as { network?: boolean })?.network, true);
 
     applyPostHogConsentToClient(ph, false);
     assert.equal(optedOut, true);
+    assert.equal((metricConfigs[1]?.metrics as { network?: boolean })?.network, false);
   });
 });

@@ -105,11 +105,12 @@ export default defineNuxtConfig({
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
             // Application metrics (open alpha) — same project token; no extra packages.
-            // Network histograms auto-record fetch/XHR to the API (and other hosts).
+            // Network histograms stay off until analytics consent is granted
+            // (`applyPostHogConsentToClient` toggles metrics.network).
             metrics: {
               serviceName: 'vmp-web',
               environment: buildInfo.deployTier || 'development',
-              network: true,
+              network: false,
             },
             ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
             before_send: posthogBeforeSend,
@@ -117,10 +118,13 @@ export default defineNuxtConfig({
               register: (props: Record<string, unknown>) => void;
               opt_in_capturing?: () => void;
               opt_out_capturing?: () => void;
+              set_config?: (config: Record<string, unknown>) => void;
+              config?: { metrics?: Record<string, unknown> };
             }) => {
               posthog.register({ $environment: buildInfo.deployTier || 'development' });
               // Re-apply after __loaded — composable/plugin sync may have run too early.
               // opt_in_capturing() / opt_out_capturing() also wire cookieless_mode.
+              // Consent grant/deny also enables/disables metrics.network.
               applyStoredPostHogConsentToClient(posthog);
             },
           },

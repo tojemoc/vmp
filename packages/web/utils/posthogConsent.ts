@@ -20,18 +20,14 @@ export function readPostHogAnalyticsConsent(): PostHogConsentValue | null {
   return null;
 }
 
-type PostHogPersistence =
-  | 'memory'
-  | 'localStorage'
-  | 'sessionStorage'
-  | 'localStorage+cookie'
-  | 'cookie';
-
 export type PostHogPersistenceClient = {
   opt_in_capturing?: () => void;
   opt_out_capturing?: () => void;
   is_capturing?: () => boolean;
-  set_config?: (config: { persistence?: PostHogPersistence }) => void;
+  set_config?: (config: Record<string, unknown>) => void;
+  config?: {
+    metrics?: Record<string, unknown>;
+  };
 };
 
 /** True when explicit product-analytics consent allows custom capture calls. */
@@ -39,15 +35,47 @@ export function canCapturePostHogAnalytics(): boolean {
   return hasPostHogAnalyticsConsent();
 }
 
+/** Web PostHog metrics resource defaults (must be re-applied when toggling network). */
+export const VMP_WEB_POSTHOG_METRICS_BASE = {
+  serviceName: 'vmp-web',
+} as const;
+
+/**
+ * Enable/disable automatic fetch/XHR network metrics with analytics consent.
+ * Shallow `set_config({ metrics })` replaces the whole metrics object, so we
+ * always re-send serviceName/environment alongside `network`.
+ */
+export function syncPostHogMetricsNetworkConsent(
+  client: PostHogPersistenceClient,
+  granted: boolean,
+): void {
+  if (typeof client.set_config !== 'function') return;
+  const existing = client.config?.metrics ?? {};
+  const environment =
+    typeof existing.environment === 'string' && existing.environment.trim()
+      ? existing.environment.trim()
+      : undefined;
+  client.set_config({
+    metrics: {
+      ...VMP_WEB_POSTHOG_METRICS_BASE,
+      ...(environment ? { environment } : {}),
+      ...existing,
+      network: granted,
+    },
+  });
+}
+
 /**
  * Apply explicit consent with PostHog cookieless_mode: "on_reject".
  * Grant → opt_in (cookies + identify). Deny → opt_out (cookieless hash counts).
+ * Also toggles metrics.network so request instrumentation stops without consent.
  * PostHog manages persistence; do not set persistence manually.
  */
 export function applyPostHogConsentToClient(
   client: PostHogPersistenceClient,
   granted: boolean,
 ): void {
+  syncPostHogMetricsNetworkConsent(client, granted);
   if (granted) {
     client.opt_in_capturing?.();
     return;

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import {
+  approvedMetricAttributes,
   capturePostHogEvent,
-  lowCardinalityMetricAttributes,
   recordPostHogCount,
 } from '../utils/posthogClient';
 import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
@@ -65,24 +65,37 @@ describe('posthogClient', () => {
     delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
-  it('lowCardinalityMetricAttributes drops UUIDs, tokens, and non-scalars', () => {
+  it('approvedMetricAttributes keep only allowlisted keys and values', () => {
     assert.deepEqual(
-      lowCardinalityMetricAttributes({
+      approvedMetricAttributes({
         plan_type: 'monthly',
         provider: 'stripe',
-        ok: true,
-        n: 2,
-        video_id: '550e8400-e29b-41d4-a716-446655440000',
+        client: 'browser',
+        surface: 'checkout',
+        rendition: '720p',
+        reason: 'verify_error',
+        optedOut: true,
+        video_id: 'v1',
         nested: { a: 1 },
-        empty: '  ',
-        long: 'x'.repeat(80),
       }),
       {
         plan_type: 'monthly',
         provider: 'stripe',
-        ok: true,
-        n: 2,
+        client: 'browser',
+        surface: 'checkout',
+        rendition: '720p',
+        reason: 'verify_error',
+        optedOut: true,
       },
+    );
+    assert.deepEqual(
+      approvedMetricAttributes({
+        plan_type: 'lifetime',
+        provider: 'paypal',
+        surface: 'unknown_surface',
+        rendition: '4k',
+      }),
+      {},
     );
   });
 
@@ -160,6 +173,10 @@ describe('posthogClient', () => {
     );
     assert.deepEqual(metricCounts[0]?.options, {
       attributes: { plan_type: 'monthly', provider: 'stripe' },
+    });
+    // video_id is not an approved metric dimension — only rendition remains.
+    assert.deepEqual(metricCounts[2]?.options, {
+      attributes: { rendition: '720p' },
     });
   });
 
