@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { capturePostHogEvent } from '../utils/posthogClient';
+import {
+  capturePostHogEvent,
+  lowCardinalityMetricAttributes,
+  recordPostHogCount,
+} from '../utils/posthogClient';
 import { canCapturePostHogAnalytics, POSTHOG_ANALYTICS_CONSENT_KEY } from '../utils/posthogConsent';
 
 type PostHogCaptureFn = (event: string, properties?: Record<string, unknown>) => unknown;
@@ -9,11 +13,19 @@ type WindowWithPostHog = {
   posthog?: {
     capture: PostHogCaptureFn;
     is_capturing?: () => boolean;
+    metrics?: {
+      count: (name: string, value?: number, options?: unknown) => void;
+    };
   };
 };
 
 type GlobalWithUseNuxtApp = typeof globalThis & {
-  useNuxtApp?: () => { $posthog?: () => { capture: PostHogCaptureFn } };
+  useNuxtApp?: () => {
+    $posthog?: () => {
+      capture: PostHogCaptureFn;
+      metrics?: { count: (name: string, value?: number, options?: unknown) => void };
+    };
+  };
 };
 
 function setWindow(next: WindowWithPostHog | undefined): void {
@@ -53,6 +65,27 @@ describe('posthogClient', () => {
     delete (globalThis as GlobalWithUseNuxtApp).useNuxtApp;
   });
 
+  it('lowCardinalityMetricAttributes drops UUIDs, tokens, and non-scalars', () => {
+    assert.deepEqual(
+      lowCardinalityMetricAttributes({
+        plan_type: 'monthly',
+        provider: 'stripe',
+        ok: true,
+        n: 2,
+        video_id: '550e8400-e29b-41d4-a716-446655440000',
+        nested: { a: 1 },
+        empty: '  ',
+        long: 'x'.repeat(80),
+      }),
+      {
+        plan_type: 'monthly',
+        provider: 'stripe',
+        ok: true,
+        n: 2,
+      },
+    );
+  });
+
   it('capturePostHogEvent is a no-op without a PostHog client', () => {
     assert.doesNotThrow(() => {
       capturePostHogEvent('magic_link_requested');
@@ -76,10 +109,16 @@ describe('posthogClient', () => {
 
   it('capturePostHogEvent forwards events via getBrowserPostHog after consent', () => {
     const captured: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const metricCounts: Array<{ name: string; value: number; options?: unknown }> = [];
     setWindow({
       posthog: {
         capture: (event, properties) => {
           captured.push({ event, properties: properties ?? {} });
+        },
+        metrics: {
+          count: (name, value, options) => {
+            metricCounts.push({ name, value: value ?? 1, options });
+          },
         },
       },
     });
@@ -108,6 +147,19 @@ describe('posthogClient', () => {
       $environment: 'development',
       plan_type: 'monthly',
       provider: 'stripe',
+    });
+    assert.deepEqual(
+      metricCounts.map((row) => row.name),
+      [
+        'subscription_checkout_started',
+        'subscription_checkout_completed',
+        'offline_download_requested',
+        'billing_portal_opened',
+        'magic_link_requested',
+      ],
+    );
+    assert.deepEqual(metricCounts[0]?.options, {
+      attributes: { plan_type: 'monthly', provider: 'stripe' },
     });
   });
 
@@ -168,6 +220,22 @@ describe('posthogClient', () => {
       assert.deepEqual(captured, [], `expected no capture when consent is ${String(consent)}`);
       assert.equal(canCapturePostHogAnalytics(), false);
     }
+  });
+
+  it('recordPostHogCount is a no-op without consent', () => {
+    const metricCounts: string[] = [];
+    setWindow({
+      posthog: {
+        capture: () => {},
+        metrics: {
+          count: (name) => {
+            metricCounts.push(name);
+          },
+        },
+      },
+    });
+    recordPostHogCount('checkout.completed');
+    assert.deepEqual(metricCounts, []);
   });
 
   it('capturePostHogEvent swallows client capture errors', () => {

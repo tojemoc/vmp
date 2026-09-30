@@ -314,11 +314,15 @@ API_URL — public base URL of this API Worker (e.g. https://vmp-api.tjm.sk). Re
 FRONTEND_URL — public frontend origin for checkout return URLs (also in wrangler.json; CD overrides per tier).
 POSTHOG_PROJECT_TOKEN — public PostHog project token (same value as NUXT_PUBLIC_POSTHOG_KEY on the frontend)
 POSTHOG_HOST          — ingest host; defaults to https://eu.i.posthog.com (also in wrangler.json vars)
+POSTHOG_METRICS_ENABLED — optional opt-out for application metrics (`false` / `0` / `no`); enabled by default when `POSTHOG_PROJECT_TOKEN` is set
+POSTHOG_METRICS_SERVICE — optional `service.name` for metrics (default `vmp-api`, else `DD_SERVICE`)
 ```
 
 Set `POSTHOG_SECRET_API_TOKEN` via `wrangler secret put` (team secret API token from PostHog project settings). The API signs each authenticated session user's `distinct_id` with HMAC-SHA256 and returns `posthogIdentityHash` in auth responses; the web client calls `posthog.setIdentity()` so PostHog Support tickets persist across browsers/devices.
 
 Worker structured logs (`packages/api/src/logger.ts`) ship to PostHog Logs via OTLP when `POSTHOG_PROJECT_TOKEN` is set (opt out with `POSTHOG_LOGS_ENABLED=false`). Pass `X-POSTHOG-DISTINCT-ID` / `X-POSTHOG-SESSION-ID` from the frontend so logs link to persons and session replay.
+
+Worker **application metrics** (`packages/api/src/posthogMetrics.ts`) use the `posthog-node` `metrics` API (`http.server.request.count` / `http.server.request.duration` per fetch) and flush at the end of each `runWithDatadogLogContext` invocation. Opt out with `POSTHOG_METRICS_ENABLED=false`. Enable Metrics in the PostHog project ([Metrics](https://app.posthog.com/metrics) → **Enable metrics**) to view them. Web metrics use `posthog.metrics` (`serviceName: vmp-web`, automatic network histograms) via `@posthog/nuxt` `clientConfig.metrics`.
 
 Frontend PostHog token is **baked at Nuxt build time** (GitHub repo vars → deploy action). Use any of `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, or `NUXT_PUBLIC_POSTHOG_PUBLIC_KEY` (maps to `runtimeConfig.public.posthog.publicKey`). CI coalesces all three from the repo vars.
 

@@ -17,6 +17,10 @@
  *   POSTHOG_HOST=https://eu.i.posthog.com  — optional, default eu.i.posthog.com
  *   POSTHOG_LOGS_ENABLED=false             — optional opt-out (enabled by default when token set)
  *
+ * Optional PostHog application metrics (`posthog-node` metrics API) when configured:
+ *   POSTHOG_METRICS_ENABLED=false          — optional opt-out (enabled by default when token set)
+ *   POSTHOG_METRICS_SERVICE=vmp-api        — optional service.name override
+ *
  * Wrap each Worker entry point (fetch / scheduled / queue) in
  * `runWithDatadogLogContext(env, ctx, fn)` so batched uploads use `ctx.waitUntil`.
  * Call `setWorkerLogTracingContext()` early in fetch handlers to attach PostHog
@@ -24,6 +28,7 @@
  *
  * In Datadog Logs Explorer, search: `source:cloudflare-worker service:vmp-api`
  * In PostHog Logs, filter by service.name = vmp-api.
+ * In PostHog Metrics, filter by service.name = vmp-api.
  */
 
 /// <reference types="node" />
@@ -33,6 +38,7 @@ import {
   isPostHogLogsEnabled,
   type PostHogLogTracingContext,
 } from './posthogLogs.js';
+import { flushPostHogMetrics, isPostHogMetricsEnabled } from './posthogMetrics.js';
 
 type LogLevel = 'info' | 'warn' | 'error';
 
@@ -230,27 +236,35 @@ export function setPostHogFlushHandlerForTests(handler: PostHogFlushHandler | nu
  * `scheduleDatadogFlush` before those tasks complete, or emit logs before the
  * main handler returns.
  */
-/** Schedule log uploads to enabled backends (Datadog and/or PostHog) via waitUntil. */
+/** Schedule log/metrics uploads to enabled backends (Datadog and/or PostHog) via waitUntil. */
 function scheduleWorkerLogFlush(context: WorkerLogContext): void {
-  if (context.buffer.length === 0) return;
-
   const datadogEnabled = isDatadogLogsEnabled(context.env);
   const posthogEnabled = isPostHogLogsEnabled(context.env);
-  if (!datadogEnabled && !posthogEnabled) return;
+  const metricsEnabled = isPostHogMetricsEnabled(context.env);
+  const hasLogs = context.buffer.length > 0;
 
-  const batch = context.buffer.splice(0, context.buffer.length);
+  if ((!datadogEnabled && !posthogEnabled && !metricsEnabled) || (!hasLogs && !metricsEnabled)) {
+    return;
+  }
+
+  const batch = hasLogs ? context.buffer.splice(0, context.buffer.length) : [];
   const tracing = { ...context.posthogTracing };
 
   context.ctx.waitUntil(
     Promise.all([
-      datadogEnabled
+      datadogEnabled && batch.length > 0
         ? datadogFlushHandler(context.env, batch).catch((err) => {
             console.error('[datadog] log upload error:', err);
           })
         : Promise.resolve(),
-      posthogEnabled
+      posthogEnabled && batch.length > 0
         ? posthogFlushHandler(context.env, batch, tracing).catch((err) => {
             console.error('[posthog] log upload error:', err);
+          })
+        : Promise.resolve(),
+      metricsEnabled
+        ? flushPostHogMetrics(context.env).catch((err) => {
+            console.error('[posthog] metrics flush error:', err);
           })
         : Promise.resolve(),
     ]),

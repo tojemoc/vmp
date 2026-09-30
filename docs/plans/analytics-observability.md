@@ -13,6 +13,7 @@ Multiple overlapping tools were introduced over time (Contentsquare, GTM, Umami,
 | Concern | Tool | Integration | Notes |
 |---------|------|-------------|-------|
 | Product analytics (funnels, cohorts, feature usage) | **PostHog** (EU) | `@posthog/nuxt`, `plugins/posthog*.client.ts` | Consent required for full capture; `cookieless_mode: on_reject` for declined visitors |
+| Application metrics (request latency, counters) | **PostHog Metrics** (alpha) | `posthog.metrics` via `@posthog/nuxt` `clientConfig.metrics` (`serviceName: vmp-web`, `network: true`); product events also emit low-cardinality counters via `capturePostHogEvent` | Same project token; no user/session attributes on series |
 | Error monitoring + session replay on errors | **Sentry** | `@sentry/nuxt/module`, `sentry.*.config.ts` | When `NUXT_PUBLIC_SENTRY_DSN` is set, error-linked session replay may be captured (masked text, blocked media; 10% sample on errors) |
 | Optional marketing / legacy tags | **GTM** | `features/gtm/plugin.client.ts` (when `gtm` ∈ `VMP_FEATURES`) | Admin opt-in via D1 (`gtm_enabled`); compile-time allowlist — see [deployment-feature-modules.md](./deployment-feature-modules.md) |
 
@@ -23,6 +24,7 @@ Registry: `packages/web/utils/analytics/`.
 | Concern | Tool | Integration |
 |---------|------|-------------|
 | Structured logs | PostHog Logs (OTLP) | `logger.ts`, `posthogLogs.ts` |
+| Application metrics | PostHog Metrics (alpha) | `posthog-node` `metrics` API via `posthogMetrics.ts` — `http.server.request.count` / `http.server.request.duration` per fetch; flushed in `runWithDatadogLogContext`. Opt out: `POSTHOG_METRICS_ENABLED=false` |
 | Optional log shipping | Datadog | `logger.ts` when `DD_LOGS_ENABLED=true` |
 | Error monitoring | Sentry | `@sentry/cloudflare` |
 | Subscription lifecycle analytics | PostHog server capture | `posthog.ts` from payment webhooks |
@@ -41,9 +43,11 @@ Video segment/view analytics for editors live in D1 (`video_segment_events`, `vi
 
 1. **Strictly necessary** — auth cookies, PWA/offline storage, playback prefs: disclosed, no consent wall.
 2. **PostHog product analytics** — explicit accept/decline banner (`vmp_posthog_analytics_consent`). Decline → cookieless server-side counts only.
-3. **GTM** — only when admin enables; may load additional tags configured in the GTM container (disclosed as optional marketing gateway).
-4. **Sentry** — technical stability monitoring; disclosed under processors.
-5. **Server-side PostHog** from Stripe webhooks — billing operations (legitimate interest); not gated by browser consent.
+3. **PostHog application metrics (web)** — recorded via `posthog.metrics` only when analytics consent is granted (SDK respects opt-out). Series carry no user/session IDs.
+4. **PostHog application metrics (API Worker)** — server-side HTTP request counts/latencies; no browser consent gate (ops telemetry, low-cardinality route/status attributes only).
+5. **GTM** — only when admin enables; may load additional tags configured in the GTM container (disclosed as optional marketing gateway).
+6. **Sentry** — technical stability monitoring; disclosed under processors.
+7. **Server-side PostHog** from Stripe webhooks — billing operations (legitimate interest); not gated by browser consent.
 
 ## Environment separation
 

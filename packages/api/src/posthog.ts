@@ -120,6 +120,14 @@ export function resolvePostHogHost(env: Record<string, unknown> | undefined): st
   return trimmed || DEFAULT_POSTHOG_HOST;
 }
 
+/** Resolve service.name for PostHog metrics / traces resource attributes. */
+export function resolvePostHogServiceName(env: Record<string, unknown> | undefined): string {
+  const explicit = String(env?.POSTHOG_METRICS_SERVICE ?? '').trim();
+  if (explicit) return explicit;
+  const fromDd = String(env?.DD_SERVICE ?? '').trim();
+  return fromDd || 'vmp-api';
+}
+
 /** Create a PostHog Node SDK client configured with project token and host. */
 export function createPostHogClient(env: Record<string, unknown> | undefined): PostHog | null {
   const token = resolvePostHogProjectToken(env);
@@ -128,14 +136,21 @@ export function createPostHogClient(env: Record<string, unknown> | undefined): P
     host: resolvePostHogHost(env),
     flushAt: 1,
     flushInterval: 0,
+    // Application metrics (open alpha). Explicit flush per Worker invocation —
+    // do not rely on the SDK timer alone in short-lived isolates.
+    metrics: {
+      serviceName: resolvePostHogServiceName(env),
+      environment: resolvePostHogEnvironment(env),
+      flushIntervalMs: 60_000,
+    },
   });
 }
 
 /** Get or create a cached PostHog client, reused across Worker isolate invocations. */
-function getSharedPostHogClient(env: Record<string, unknown> | undefined): PostHog | null {
+export function getSharedPostHogClient(env: Record<string, unknown> | undefined): PostHog | null {
   const token = resolvePostHogProjectToken(env);
   if (!token) return null;
-  const key = `${token}|${resolvePostHogHost(env)}`;
+  const key = `${token}|${resolvePostHogHost(env)}|${resolvePostHogServiceName(env)}|${resolvePostHogEnvironment(env)}`;
   if (cachedClient?.key === key) return cachedClient.client;
   const client = createPostHogClient(env);
   if (!client) return null;

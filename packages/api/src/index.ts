@@ -197,6 +197,7 @@ import {
   redactPathForAnalytics,
   resolvePostHogLogTracingContext,
 } from './posthog.js';
+import { recordHttpServerRequestMetric } from './posthogMetrics.js';
 import {
   handleAdminIsicCampaigns,
   handleAdminPromoCampaigns,
@@ -560,6 +561,7 @@ const workerHandler = {
       const corsHeaders = buildCorsHeaders(request, env);
       const _reqStart = Date.now();
 
+      const response = await (async (): Promise<Response> => {
       try {
         if (request.method === 'OPTIONS') {
           return new Response(null, {
@@ -1322,6 +1324,15 @@ const workerHandler = {
           corsHeaders,
         );
       }
+      })();
+
+      recordHttpServerRequestMetric(env, {
+        method: request.method,
+        route: redactPathForAnalytics(url.pathname),
+        status: response.status,
+        durationMs: Date.now() - _reqStart,
+      });
+      return response;
     });
   },
 

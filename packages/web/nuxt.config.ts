@@ -104,6 +104,13 @@ export default defineNuxtConfig({
             capture_pageleave: POSTHOG_CAPTURE_PAGELEAVE,
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
+            // Application metrics (open alpha) — same project token; no extra packages.
+            // Network histograms auto-record fetch/XHR to the API (and other hosts).
+            metrics: {
+              serviceName: 'vmp-web',
+              environment: buildInfo.deployTier || 'development',
+              network: true,
+            },
             ...(posthogTracingHost ? { tracing_headers: [posthogTracingHost] } : {}),
             before_send: posthogBeforeSend,
             loaded: (posthog: {
