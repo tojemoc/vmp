@@ -88,8 +88,23 @@ export function recordPostHogHistogram(
 }
 
 /**
+ * HTTP methods allowed as metric label values. Anything else becomes OTHER so
+ * arbitrary client-supplied method tokens cannot create unbounded series.
+ */
+const HTTP_METRIC_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+/** Normalize a request method for metric attributes (unknown → OTHER). */
+export function normalizeHttpMetricMethod(method: string | undefined): string {
+  const normalized = String(method || '')
+    .trim()
+    .toUpperCase();
+  if (HTTP_METRIC_METHODS.has(normalized)) return normalized;
+  return 'OTHER';
+}
+
+/**
  * HTTP server request metrics — low-cardinality attributes only
- * (method, redacted route, status). Never attach user IDs.
+ * (method, route template, status). Never attach user IDs.
  */
 export function recordHttpServerRequestMetric(
   env: Record<string, unknown> | undefined,
@@ -102,10 +117,7 @@ export function recordHttpServerRequestMetric(
 ): void {
   if (!env || !isPostHogMetricsEnabled(env)) return;
 
-  const method =
-    String(input.method || 'GET')
-      .trim()
-      .toUpperCase() || 'GET';
+  const method = normalizeHttpMetricMethod(input.method);
   const route = String(input.route || '/').trim() || '/';
   const status = Number.isFinite(input.status) ? Math.trunc(input.status) : 0;
   const durationMs = Number.isFinite(input.durationMs) ? Math.max(0, input.durationMs) : 0;

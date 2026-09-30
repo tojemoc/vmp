@@ -8,6 +8,7 @@ import {
 import {
   flushPostHogMetrics,
   isPostHogMetricsEnabled,
+  normalizeHttpMetricMethod,
   recordHttpServerRequestMetric,
   recordPostHogCount,
   recordPostHogGauge,
@@ -20,6 +21,16 @@ describe('PostHog application metrics', () => {
     resetPostHogClientForTests();
   });
 
+  it('normalizeHttpMetricMethod allowlists known methods and maps others to OTHER', () => {
+    assert.equal(normalizeHttpMetricMethod('get'), 'GET');
+    assert.equal(normalizeHttpMetricMethod('POST'), 'POST');
+    assert.equal(normalizeHttpMetricMethod('patch'), 'PATCH');
+    assert.equal(normalizeHttpMetricMethod('OPTIONS'), 'OPTIONS');
+    assert.equal(normalizeHttpMetricMethod('TRACE'), 'OTHER');
+    assert.equal(normalizeHttpMetricMethod('PROPFIND'), 'OTHER');
+    assert.equal(normalizeHttpMetricMethod(''), 'OTHER');
+    assert.equal(normalizeHttpMetricMethod(undefined), 'OTHER');
+  });
   it('isPostHogMetricsEnabled requires project token and allows opt-out', () => {
     assert.equal(isPostHogMetricsEnabled({}), false);
     assert.equal(isPostHogMetricsEnabled({ POSTHOG_PROJECT_TOKEN: 'phc_test' }), true);

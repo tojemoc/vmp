@@ -1355,8 +1355,20 @@ const workerHandler = {
             );
           }
         })();
-      } catch {
-        // Route handler rejected outside the inner try/catch — still record metrics.
+      } catch (err) {
+        // Route handler rejected outside the inner try/catch — still report + record metrics.
+        if (!request.signal.aborted) {
+          capturePostHogException(env, err, {
+            request,
+            ctx,
+            properties: {
+              handler: 'fetch',
+              http_method: request.method,
+              http_path: redactPathForAnalytics(url.pathname),
+              metric_route: metricRoute,
+            },
+          });
+        }
         recordHttpServerRequestMetric(env, {
           method: request.method,
           route: metricRoute,
