@@ -47,6 +47,18 @@ export function isNewsletterSendFinished(row: any) {
 
 /** Brevo classic campaign statuses that mean delivery has been triggered. */
 const BREVO_CAMPAIGN_SENT_STATUSES = new Set(['sent', 'completed']);
+/** Campaign still running — must not create/send again. */
+const BREVO_CAMPAIGN_IN_PROGRESS_STATUSES = new Set([
+  'queued',
+  'in_process',
+  'inProcess',
+  'scheduled',
+  'pending',
+]);
+/** Drop reconcile rows after this many failed drains so they cannot block newer work. */
+const NEWSLETTER_BREVO_RECONCILE_MAX_ATTEMPTS = 10;
+/** Cap per-subscriber Brevo sync calls in one full-reconcile Worker invocation. */
+const NEWSLETTER_FULL_SYNC_MAX_DIRECT = 25;
 
 function correlationFromRequest(request: any) {
   const clientCid = request.headers?.get?.('x-correlation-id')?.trim();
@@ -316,9 +328,16 @@ export async function syncAllEligibleSubscribers(db: any, env: any) {
 
   const eligibleUserIds = (eligibleRows?.results ?? []).map((r: any) => r.id).filter(Boolean);
   let synced = 0;
-  for (const userId of eligibleUserIds) {
-    const success = await syncPayingSubscriberToNewsletter(db, userId, env);
-    if (success) synced += 1;
+  // Bound direct Brevo calls per invocation; enqueue the rest for cron/reconcile drain.
+  for (let i = 0; i < eligibleUserIds.length; i++) {
+    const userId = eligibleUserIds[i];
+    if (i < NEWSLETTER_FULL_SYNC_MAX_DIRECT) {
+      const success = await syncPayingSubscriberToNewsletter(db, userId, env);
+      if (success) synced += 1;
+      else await enqueueNewsletterBrevoReconcile(db, userId);
+    } else {
+      await enqueueNewsletterBrevoReconcile(db, userId);
+    }
   }
 
   const eligibleEmails = new Set<string>();
@@ -405,14 +424,15 @@ export async function removeSubscriberFromNewsletter(
   userId: any,
   env: any,
 ): Promise<boolean> {
-  if (!env.BREVO_API_KEY) return false;
+  // Nothing to reconcile when Brevo or the list is not configured — avoid enqueueing dead work.
+  if (!env.BREVO_API_KEY) return true;
 
   const listIdRaw = await getAdminSetting(db, 'brevo_subscriber_list_id');
   const listId =
     listIdRaw != null && String(listIdRaw).trim() !== ''
       ? Number.parseInt(String(listIdRaw).trim(), 10)
       : NaN;
-  if (!Number.isFinite(listId) || listId <= 0) return false;
+  if (!Number.isFinite(listId) || listId <= 0) return true;
 
   const row = await db.prepare('SELECT email FROM users WHERE id = ? LIMIT 1').bind(userId).first();
   const email = row?.email ? String(row.email).trim().toLowerCase() : '';
@@ -570,7 +590,7 @@ export async function processNewsletterBrevoReconcileQueue(env: any, limit = 50)
   const db = getDb(env);
   const rows = await db
     .prepare(
-      `SELECT user_id FROM newsletter_brevo_reconcile_queue
+      `SELECT user_id, attempts FROM newsletter_brevo_reconcile_queue
        ORDER BY datetime(enqueued_at) ASC
        LIMIT ?`,
     )
@@ -589,28 +609,52 @@ export async function processNewsletterBrevoReconcileQueue(env: any, limit = 50)
           .run();
         processed += 1;
       } else {
-        await db
-          .prepare(
-            `UPDATE newsletter_brevo_reconcile_queue
-             SET attempts = attempts + 1,
-                 last_error = 'reconcile_incomplete'
-             WHERE user_id = ?`,
-          )
-          .bind(userId)
-          .run();
+        const nextAttempts = Number(row?.attempts ?? 0) + 1;
+        if (nextAttempts >= NEWSLETTER_BREVO_RECONCILE_MAX_ATTEMPTS) {
+          await db
+            .prepare('DELETE FROM newsletter_brevo_reconcile_queue WHERE user_id = ?')
+            .bind(userId)
+            .run();
+          newsletterLog('reconcile_queue_item_dropped', {
+            attempts: nextAttempts,
+            reason: 'reconcile_incomplete',
+          });
+        } else {
+          await db
+            .prepare(
+              `UPDATE newsletter_brevo_reconcile_queue
+               SET attempts = ?,
+                   last_error = 'reconcile_incomplete'
+               WHERE user_id = ?`,
+            )
+            .bind(nextAttempts, userId)
+            .run();
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      await db
-        .prepare(
-          `UPDATE newsletter_brevo_reconcile_queue
-           SET attempts = attempts + 1,
-               last_error = ?
-           WHERE user_id = ?`,
-        )
-        .bind(message.slice(0, 500), userId)
-        .run();
-      newsletterLog('reconcile_queue_item_failed', { error: message.slice(0, 200) });
+      const nextAttempts = Number(row?.attempts ?? 0) + 1;
+      if (nextAttempts >= NEWSLETTER_BREVO_RECONCILE_MAX_ATTEMPTS) {
+        await db
+          .prepare('DELETE FROM newsletter_brevo_reconcile_queue WHERE user_id = ?')
+          .bind(userId)
+          .run();
+        newsletterLog('reconcile_queue_item_dropped', {
+          attempts: nextAttempts,
+          error: message.slice(0, 200),
+        });
+      } else {
+        await db
+          .prepare(
+            `UPDATE newsletter_brevo_reconcile_queue
+             SET attempts = ?,
+                 last_error = ?
+             WHERE user_id = ?`,
+          )
+          .bind(nextAttempts, message.slice(0, 500), userId)
+          .run();
+        newsletterLog('reconcile_queue_item_failed', { error: message.slice(0, 200) });
+      }
     }
   }
   return processed;
@@ -672,10 +716,41 @@ async function tryAcquireNewsletterSendClaim(db: any, dedupeKey: any) {
 
 /**
  * Recover abandoned locks using claim_acquired_at (not created_at, which does not move on reclaim).
- * Clears partial state so a new attempt can run send_requested → create → sendNow.
+ * When send_requested is set, only clear the lock — keep campaign_id / send_requested so retries
+ * can resume against the existing Brevo campaign instead of creating a duplicate.
  */
 async function releaseStaleNewsletterSendClaim(db: any, dedupeKey: any) {
   const mod = `+${STALE_CLAIM_MINUTES} minutes`;
+  // Active send request: release lock only.
+  await db
+    .prepare(`
+    UPDATE brevo_newsletter_sends
+    SET in_flight = 0,
+        claim_acquired_at = NULL
+    WHERE dedupe_key = ?
+      AND sent_at IS NULL
+      AND in_flight = 1
+      AND send_requested = 1
+      AND claim_acquired_at IS NOT NULL
+      AND datetime('now') > datetime(claim_acquired_at, ?)
+  `)
+    .bind(dedupeKey, mod)
+    .run();
+  await db
+    .prepare(`
+    UPDATE brevo_newsletter_sends
+    SET in_flight = 0,
+        claim_acquired_at = NULL
+    WHERE dedupe_key = ?
+      AND sent_at IS NULL
+      AND in_flight = 1
+      AND send_requested = 1
+      AND (claim_acquired_at IS NULL OR claim_acquired_at = '')
+      AND datetime('now') > datetime(created_at, ?)
+  `)
+    .bind(dedupeKey, mod)
+    .run();
+  // No active send request: full cleanup of abandoned partial state.
   await db
     .prepare(`
     UPDATE brevo_newsletter_sends
@@ -686,6 +761,7 @@ async function releaseStaleNewsletterSendClaim(db: any, dedupeKey: any) {
     WHERE dedupe_key = ?
       AND sent_at IS NULL
       AND in_flight = 1
+      AND (send_requested IS NULL OR send_requested = 0)
       AND claim_acquired_at IS NOT NULL
       AND datetime('now') > datetime(claim_acquired_at, ?)
   `)
@@ -701,12 +777,9 @@ async function releaseStaleNewsletterSendClaim(db: any, dedupeKey: any) {
     WHERE dedupe_key = ?
       AND sent_at IS NULL
       AND in_flight = 1
+      AND (send_requested IS NULL OR send_requested = 0)
       AND (claim_acquired_at IS NULL OR claim_acquired_at = '')
       AND datetime('now') > datetime(created_at, ?)
-      AND (
-        campaign_id IS NULL
-        OR (campaign_id IS NOT NULL AND (claim_acquired_at IS NULL OR claim_acquired_at = ''))
-      )
   `)
     .bind(dedupeKey, mod)
     .run();
@@ -777,38 +850,88 @@ async function persistCampaignIdForDedupeKey(
   return { ok: false, correlationId };
 }
 
+type BrevoCampaignLookup = 'sent' | 'in_progress' | 'not_sent' | 'unknown';
+
 /**
- * GET /emailCampaigns/:id — returns true if Brevo reports the campaign as sent (read-only, safe to retry).
+ * GET /emailCampaigns/:id — classify campaign state for safe retry decisions.
+ * `unknown` means the lookup was inconclusive (do not resend).
  */
-async function brevoCampaignLooksSent(campaignId: any, env: any) {
+async function lookupBrevoCampaignStatus(campaignId: any, env: any): Promise<BrevoCampaignLookup> {
   const id = Number(campaignId);
-  if (!Number.isFinite(id) || id <= 0) return false;
-  const res = await brevoFetch(`/emailCampaigns/${id}`, { method: 'GET' }, env);
-  if (!res.ok) return false;
-  const data = asRecord(await res.json().catch(() => null));
-  const st = (recordString(data, 'status') || '').toLowerCase();
-  return BREVO_CAMPAIGN_SENT_STATUSES.has(st);
+  if (!Number.isFinite(id) || id <= 0) return 'not_sent';
+  try {
+    const res = await brevoFetch(`/emailCampaigns/${id}`, { method: 'GET' }, env);
+    if (!res.ok) return 'unknown';
+    const data = asRecord(await res.json().catch(() => null));
+    if (!data) return 'unknown';
+    const rawStatus = recordString(data, 'status') || '';
+    const st = rawStatus.toLowerCase();
+    if (!st) return 'unknown';
+    if (BREVO_CAMPAIGN_SENT_STATUSES.has(st)) return 'sent';
+    if (
+      BREVO_CAMPAIGN_IN_PROGRESS_STATUSES.has(st) ||
+      BREVO_CAMPAIGN_IN_PROGRESS_STATUSES.has(rawStatus) ||
+      st.replace(/_/g, '') === 'inprocess'
+    ) {
+      return 'in_progress';
+    }
+    return 'not_sent';
+  } catch {
+    return 'unknown';
+  }
 }
 
 /**
  * If Brevo reports the campaign as sent, persist sent_at (recovery; do not clear campaign_id first).
+ * Returns 'sent' | 'in_progress' | 'unknown' | false (not sent / no campaign).
  */
 async function persistSentAtIfBrevoDelivered(db: any, dedupeKey: any, row: any, env: any) {
-  if (row?.sent_at) return false;
+  if (row?.sent_at) return false as const;
   const cid = row?.campaign_id != null ? Number(row.campaign_id) : null;
   // @ts-expect-error TS(2531): Object is possibly 'null'.
-  if (!Number.isFinite(cid) || cid <= 0) return false;
-  if (!(await brevoCampaignLooksSent(cid, env))) return false;
-  const sentAt = new Date().toISOString();
-  await db
-    .prepare(`
-    UPDATE brevo_newsletter_sends
-    SET sent_at = ?, in_flight = 0, claim_acquired_at = NULL, send_requested = 1
-    WHERE dedupe_key = ? AND sent_at IS NULL
-  `)
-    .bind(sentAt, dedupeKey)
-    .run();
-  return true;
+  if (!Number.isFinite(cid) || cid <= 0) return false as const;
+  const status = await lookupBrevoCampaignStatus(cid, env);
+  if (status === 'sent') {
+    const sentAt = new Date().toISOString();
+    await db
+      .prepare(`
+      UPDATE brevo_newsletter_sends
+      SET sent_at = ?, in_flight = 0, claim_acquired_at = NULL, send_requested = 1
+      WHERE dedupe_key = ? AND sent_at IS NULL
+    `)
+      .bind(sentAt, dedupeKey)
+      .run();
+    return 'sent' as const;
+  }
+  if (status === 'in_progress' || status === 'unknown') return status;
+  return false as const;
+}
+
+function newsletterSendBlockedResponse(
+  status: 'in_progress' | 'unknown',
+  corsHeaders: any,
+  correlationId: any,
+) {
+  if (status === 'in_progress') {
+    newsletterLog('send_conflict_brevo_in_progress', { correlationId });
+    return jsonResponse(
+      {
+        error: 'A newsletter campaign for this dedupe key is already in progress at Brevo.',
+        code: 'newsletter_send_in_progress',
+      },
+      409,
+      corsHeaders,
+    );
+  }
+  newsletterLog('send_brevo_status_unknown', { correlationId });
+  return jsonResponse(
+    {
+      error: 'Could not confirm newsletter campaign status. Retry shortly without resending.',
+      code: 'newsletter_send_status_unknown',
+    },
+    503,
+    corsHeaders,
+  );
 }
 
 function jsonResponse(data: any, status = 200, corsHeaders = {}) {
@@ -1101,21 +1224,27 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
     );
   }
 
-  if (await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env)) {
-    row = await loadSendRow();
-    newsletterLog('send_idempotent_brevo_status', {
-      correlationId,
-      campaignId: Number(row.campaign_id),
-    });
-    return jsonResponse(
-      {
-        ok: true,
+  {
+    const delivered = await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env);
+    if (delivered === 'sent') {
+      row = await loadSendRow();
+      newsletterLog('send_idempotent_brevo_status', {
+        correlationId,
         campaignId: Number(row.campaign_id),
-        idempotent: true,
-      },
-      200,
-      corsHeaders,
-    );
+      });
+      return jsonResponse(
+        {
+          ok: true,
+          campaignId: Number(row.campaign_id),
+          idempotent: true,
+        },
+        200,
+        corsHeaders,
+      );
+    }
+    if (delivered === 'in_progress' || delivered === 'unknown') {
+      return newsletterSendBlockedResponse(delivered, corsHeaders, correlationId);
+    }
   }
 
   await releaseStaleNewsletterSendClaim(db, dedupeKey);
@@ -1137,21 +1266,27 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
     );
   }
 
-  if (await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env)) {
-    row = await loadSendRow();
-    newsletterLog('send_idempotent_brevo_after_stale', {
-      correlationId,
-      campaignId: Number(row.campaign_id),
-    });
-    return jsonResponse(
-      {
-        ok: true,
+  {
+    const delivered = await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env);
+    if (delivered === 'sent') {
+      row = await loadSendRow();
+      newsletterLog('send_idempotent_brevo_after_stale', {
+        correlationId,
         campaignId: Number(row.campaign_id),
-        idempotent: true,
-      },
-      200,
-      corsHeaders,
-    );
+      });
+      return jsonResponse(
+        {
+          ok: true,
+          campaignId: Number(row.campaign_id),
+          idempotent: true,
+        },
+        200,
+        corsHeaders,
+      );
+    }
+    if (delivered === 'in_progress' || delivered === 'unknown') {
+      return newsletterSendBlockedResponse(delivered, corsHeaders, correlationId);
+    }
   }
 
   const inflight = Number(row?.in_flight) === 1;
@@ -1160,7 +1295,8 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
 
   // @ts-expect-error TS(2531): Object is possibly 'null'.
   if (inflight && Number.isFinite(existingCampaignId) && existingCampaignId > 0) {
-    if (sendReq && (await brevoCampaignLooksSent(existingCampaignId, env))) {
+    const campaignStatus = await lookupBrevoCampaignStatus(existingCampaignId, env);
+    if (campaignStatus === 'sent') {
       const sentAt = new Date().toISOString();
       await db
         .prepare(`
@@ -1170,7 +1306,7 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
       `)
         .bind(sentAt, dedupeKey)
         .run();
-      newsletterLog('send_idempotent_campaign_held', {
+      newsletterLog(sendReq ? 'send_idempotent_campaign_held' : 'send_idempotent_legacy_row', {
         correlationId,
         campaignId: existingCampaignId,
       });
@@ -1184,29 +1320,8 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
         corsHeaders,
       );
     }
-    if (!sendReq && (await brevoCampaignLooksSent(existingCampaignId, env))) {
-      const sentAt = new Date().toISOString();
-      await db
-        .prepare(`
-        UPDATE brevo_newsletter_sends
-        SET sent_at = ?, in_flight = 0, claim_acquired_at = NULL, send_requested = 1
-        WHERE dedupe_key = ? AND sent_at IS NULL
-      `)
-        .bind(sentAt, dedupeKey)
-        .run();
-      newsletterLog('send_idempotent_legacy_row', {
-        correlationId,
-        campaignId: existingCampaignId,
-      });
-      return jsonResponse(
-        {
-          ok: true,
-          campaignId: existingCampaignId,
-          idempotent: true,
-        },
-        200,
-        corsHeaders,
-      );
+    if (campaignStatus === 'in_progress' || campaignStatus === 'unknown') {
+      return newsletterSendBlockedResponse(campaignStatus, corsHeaders, correlationId);
     }
     newsletterLog('send_conflict_inflight', { correlationId, dedupeKeyLen: dedupeKey.length });
     return jsonResponse(
@@ -1288,22 +1403,29 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
           corsHeaders,
         );
       }
-      if (await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env)) {
-        row = await loadSendRow();
-        return jsonResponse(
-          {
-            ok: true,
-            campaignId: Number(row.campaign_id),
-            idempotent: true,
-          },
-          200,
-          corsHeaders,
-        );
+      {
+        const delivered = await persistSentAtIfBrevoDelivered(db, dedupeKey, row, env);
+        if (delivered === 'sent') {
+          row = await loadSendRow();
+          return jsonResponse(
+            {
+              ok: true,
+              campaignId: Number(row.campaign_id),
+              idempotent: true,
+            },
+            200,
+            corsHeaders,
+          );
+        }
+        if (delivered === 'in_progress' || delivered === 'unknown') {
+          return newsletterSendBlockedResponse(delivered, corsHeaders, correlationId);
+        }
       }
       const cid = row?.campaign_id != null ? Number(row.campaign_id) : null;
       // @ts-expect-error TS(2531): Object is possibly 'null'.
       if (Number.isFinite(cid) && cid > 0 && Number(row?.send_requested) === 1 && !row?.sent_at) {
-        if (await brevoCampaignLooksSent(cid, env)) {
+        const campaignStatus = await lookupBrevoCampaignStatus(cid, env);
+        if (campaignStatus === 'sent') {
           const sentAt = new Date().toISOString();
           await db
             .prepare(`
@@ -1323,6 +1445,9 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
             200,
             corsHeaders,
           );
+        }
+        if (campaignStatus === 'in_progress' || campaignStatus === 'unknown') {
+          return newsletterSendBlockedResponse(campaignStatus, corsHeaders, correlationId);
         }
       }
       newsletterLog('send_conflict_after_claim', { correlationId, dedupeKeyLen: dedupeKey.length });
