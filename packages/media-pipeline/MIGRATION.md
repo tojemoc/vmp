@@ -83,11 +83,14 @@ VMP_GPU_BACKEND=auto
 # base64url charset only: A–Z a–z 0–9 - _ (Compose embeds this in CALLBACK_URL Basic auth)
 VMP_PACKAGER_SECRET=replace-with-base64url-secret
 PACKAGE_OUTPUT_FOLDER=s3://YOUR_BUCKET/videos
-S3_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
-# Required for encore-packager S3 uploads (R2 or other S3-compatible). Empty keys → packaging fails.
-AWS_ACCESS_KEY_ID=your-r2-access-key-id
-AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
-AWS_REGION=auto
+STORAGE_PROVIDER=b2
+S3_ENDPOINT_URL=https://s3.eu-central-003.backblazeb2.com
+# Required for encore-packager S3 uploads. Empty keys → Compose fails fast / packaging fails.
+AWS_ACCESS_KEY_ID=your-b2-key-id
+AWS_SECRET_ACCESS_KEY=your-b2-application-key
+AWS_REGION=eu-central-003
+# Host supervisor + Docker packager only:
+# PACKAGER_ENCORE_BASE_URL=http://encore-web:8080
 ```
 
 Optional GPU on workers:
@@ -131,6 +134,7 @@ cd packages/media-pipeline/encore
 set -a && . /etc/vmp/env && set +a
 # Or: ln -sf /etc/vmp/env .env   then rely on Compose’s automatic .env load
 docker compose up -d
+npm run encore:doctor --workspace=@vmp/media-pipeline
 docker compose logs -f vmp-supervisor encore-packager
 ```
 

@@ -25,6 +25,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gauge, increment } from './metrics.js';
+import { rewriteEncoreJobUrlForPackager } from './packagerEncoreUrl.js';
 import { enqueuePackagerJob } from './packagingQueue.js';
 import {
   getPackagingJob,
@@ -32,6 +33,7 @@ import {
   markPackagingSuccess,
   registerPackagingJob,
 } from './packagingRegistry.js';
+import { formatDoctorReport, runPipelineDoctor } from './pipelineDoctor.js';
 import {
   isLoopbackHost,
   REBUILD_WEBHOOK_PATHS,
@@ -1449,18 +1451,22 @@ const server = http.createServer(async (req, res) => {
       json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400);
       return;
     }
-    registerPackagingJob({
+    const packagerJobUrl = rewriteEncoreJobUrlForPackager(String(reg.encoreJobUrl));
+    if (packagerJobUrl !== reg.encoreJobUrl) {
+      pushLog(`packaging rewrite encoreJobUrl ${reg.encoreJobUrl} → ${packagerJobUrl}`);
+    }
+    await registerPackagingJob({
       jobId: String(reg.jobId),
-      encoreJobUrl: String(reg.encoreJobUrl),
+      encoreJobUrl: packagerJobUrl,
       videoId: String(reg.videoId),
       stage: reg.stage as 'fast_lane_preview' | 'full_ladder',
       pipelineMode: reg.pipelineMode as 'fast_lane' | 'full_ladder',
     });
     try {
-      await enqueuePackagerJob(String(reg.jobId), String(reg.encoreJobUrl));
+      await enqueuePackagerJob(String(reg.jobId), packagerJobUrl);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      markPackagingFailed(String(reg.jobId), msg);
+      await markPackagingFailed(String(reg.jobId), msg);
       console.error('[supervisor] Failed to enqueue packaging job:', msg);
       json(res, { error: 'Failed to enqueue packaging job' }, 502);
       return;
@@ -1476,7 +1482,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const jobId = decodeURIComponent(packagingStatusMatch[1]);
-    const job = getPackagingJob(jobId);
+    const job = await getPackagingJob(jobId);
     if (!job) {
       json(res, { error: 'Not found' }, 404);
       return;
@@ -1520,11 +1526,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (outcome === 'success') {
-      markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined);
+      await markPackagingSuccess(jobId, payload.outputPath ? String(payload.outputPath) : undefined);
       pushLog(`packager success jobId=${jobId}`);
     } else {
       const errMsg = String(payload.error || payload.message || 'packager failure');
-      markPackagingFailed(jobId, errMsg);
+      await markPackagingFailed(jobId, errMsg);
       pushLog(`packager failure jobId=${jobId}: ${errMsg}`);
     }
     json(res, { ok: true });
@@ -1535,7 +1541,27 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.listen(uiPort, uiHost, () => {
+async function bootSupervisor(): Promise<void> {
+  if (process.env.VMP_SKIP_PIPELINE_DOCTOR !== '1') {
+    pushLog('Running pipeline doctor…');
+    const report = await runPipelineDoctor(process.env);
+    process.stdout.write(`${formatDoctorReport(report)}\n`);
+    if (!report.ok) {
+      console.error('[media-pipeline] Pipeline doctor failed — fix env/deps or set VMP_SKIP_PIPELINE_DOCTOR=1');
+      process.exit(1);
+    }
+  } else {
+    pushLog('Pipeline doctor skipped (VMP_SKIP_PIPELINE_DOCTOR=1)');
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(uiPort, uiHost, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+
   pushLog(
     `Dashboard http://${uiHost}:${uiPort}/  (webhook POST /api/podcast-preview-rebuild or /vmp/api/podcast-preview-rebuild)`,
   );
@@ -1562,6 +1588,11 @@ server.listen(uiPort, uiHost, () => {
       void checkAndApplyPodcastHostUpgrade();
     }, autoUpgradeCheckMs);
   }
+}
+
+void bootSupervisor().catch((err) => {
+  console.error('[media-pipeline] boot failed:', err instanceof Error ? err.message : err);
+  process.exit(1);
 });
 
 const gracefulShutdown = async (signal) => {

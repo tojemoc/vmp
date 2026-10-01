@@ -4,11 +4,11 @@
 # Mount the same host paths the orchestrator uses (INBOX_DIR, TMP_DIR_BASE).
 # Example: ENCORE_MEDIA_ROOT=/media with MEDIA_HOST_ROOT=/mnt on the orchestrator.
 #
-# Secrets: copy encore/.env.example to encore/.env (or set VMP_ENV_FILE).
+# Secrets: copy encore/.env.example to encore/.env (Compose fails fast if required vars missing).
 #
 # Encoding: encore-web polls Redis and runs FFmpeg (poll-disabled defaults to false).
 # Separate encore-worker containers are ONE-SHOT (poll once / drain → exit).
-# Durable horizontal scale: docker-compose.scale.yml (looped worker pools).
+# Durable horizontal scale: docker-compose.scale.yml + `docker compose --scale` (not Swarm deploy.replicas).
 # KEDA / batch one-shots: docker-compose.workers.yml.
 #
 # GPU overrides (optional, CPU-only hosts use base file only):
@@ -28,12 +28,18 @@ services:
     restart: unless-stopped
     ports:
       - "${ENCORE_REDIS_PORT:-127.0.0.1:6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   encore-web:
     image: ghcr.io/svt/encore-web:latest
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     ports:
       - "${ENCORE_HTTP_PORT:-8080}:8080"
     environment:
@@ -52,6 +58,7 @@ services:
       - ./profiles:/profiles:ro
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
       - encore-shared-work:/shared/work
+    # Upstream image has no curl/wget; supervisor pipeline doctor probes /actuator/health on boot.
 
   vmp-supervisor:
     image: ${VMP_SUPERVISOR_IMAGE:-ghcr.io/tojemoc/vmp-media-pipeline:latest}
@@ -60,58 +67,89 @@ services:
       dockerfile: packages/media-pipeline/Dockerfile
     restart: unless-stopped
     depends_on:
-      - redis
-      - encore-web
+      redis:
+        condition: service_healthy
+      encore-web:
+        condition: service_started
     ports:
       - "${VMP_UI_BIND:-127.0.0.1:8788}:8788"
     env_file:
       - path: ${VMP_ENV_FILE:-.env}
-        required: false
+        required: true
     environment:
       VMP_UI_HOST: "0.0.0.0"
       VMP_UI_PORT: "8788"
+      VMP_ASSUME_DOCKER: "1"
       ENCORE_BASE_URL: http://encore-web:8080
+      # Packager fetches Encore job JSON; keep explicit even when supervisor already uses docker DNS.
+      PACKAGER_ENCORE_BASE_URL: ${PACKAGER_ENCORE_BASE_URL:-http://encore-web:8080}
       REDIS_URL: redis://redis:6379
       MEDIA_HOST_ROOT: /media
       ENCORE_MEDIA_ROOT: /media
       INBOX_FAST_LANE_DIR: ${INBOX_FAST_LANE_DIR:-/media/videos/inbox-fast-lane}
       INBOX_FULL_LADDER_DIR: ${INBOX_FULL_LADDER_DIR:-/media/videos/inbox-full-ladder}
       TMP_DIR_BASE: ${TMP_DIR_BASE:-/media/tmp/video_pipeline}
-      PACKAGER_CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp-supervisor:8788/vmp/api}
+      VMP_PACKAGER_SECRET: ${VMP_PACKAGER_SECRET:?Set VMP_PACKAGER_SECRET in encore/.env (base64url)}
+      VMP_WEBHOOK_SECRET: ${VMP_WEBHOOK_SECRET:?Set VMP_WEBHOOK_SECRET in encore/.env}
+      VMP_SUPERVISOR_DASHBOARD_SECRET: ${VMP_SUPERVISOR_DASHBOARD_SECRET:?Set VMP_SUPERVISOR_DASHBOARD_SECRET in encore/.env}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-b2}
+      # Same bucket/creds as packager — supervisor podcast sidecars must not diverge.
+      PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:?Set PACKAGE_OUTPUT_FOLDER=s3://bucket/videos}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-${B2_S3_ENDPOINT:?Set S3_ENDPOINT_URL or B2_S3_ENDPOINT}}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-${B2_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID or B2_ACCESS_KEY_ID}}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-${B2_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY or B2_SECRET_ACCESS_KEY}}
+      AWS_REGION: ${AWS_REGION:-${B2_REGION:-auto}}
+      B2_BUCKET_NAME: ${B2_BUCKET_NAME:-}
+      B2_ACCESS_KEY_ID: ${B2_ACCESS_KEY_ID:-}
+      B2_SECRET_ACCESS_KEY: ${B2_SECRET_ACCESS_KEY:-}
+      B2_S3_ENDPOINT: ${B2_S3_ENDPOINT:-}
+      B2_REGION: ${B2_REGION:-}
     volumes:
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
     stop_grace_period: 45s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:8788/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   encore-packager:
     image: eyevinntechnology/encore-packager:latest
     restart: unless-stopped
     depends_on:
-      - redis
-      - vmp-supervisor
-    deploy:
-      replicas: ${ENCORE_PACKAGER_REPLICAS:-1}
+      redis:
+        condition: service_healthy
+      vmp-supervisor:
+        condition: service_healthy
+    # Scale with: docker compose … up -d --scale encore-packager=N
+    # (Swarm deploy.replicas is ignored by plain `docker compose up`.)
     env_file:
       - path: ${VMP_ENV_FILE:-.env}
-        required: false
+        required: true
     environment:
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE: ${REDIS_QUEUE:-packaging-queue}
       # Eyevinn packager only supports Basic auth (user:pass in URL). Password must
       # match VMP_PACKAGER_SECRET on vmp-supervisor. Use base64url (A–Z a–z 0–9 - _).
       # Override with PACKAGER_CALLBACK_URL if you need a custom host/path.
-      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp:${VMP_PACKAGER_SECRET}@vmp-supervisor:8788/vmp/api}
-      PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:-s3://vmp-videos/videos}
+      CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp:${VMP_PACKAGER_SECRET:?Set VMP_PACKAGER_SECRET in encore/.env}@vmp-supervisor:8788/vmp/api}
+      PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:?Set PACKAGE_OUTPUT_FOLDER=s3://bucket/videos}
       # $$ escapes Compose interpolation so encore-packager sees $EXTERNALID$
       OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$$EXTERNALID$$}
       HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
       # Shaka segment length (seconds). Must match Encore GOP: profiles use g/keyint=60 @ 30fps → 2s.
       PACKAGE_FORMAT_OPTIONS_JSON: ${PACKAGE_FORMAT_OPTIONS_JSON:-'{"segmentDuration":2}'}
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_REGION: ${AWS_REGION:-auto}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-${B2_S3_ENDPOINT:?Set S3_ENDPOINT_URL or B2_S3_ENDPOINT}}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-${B2_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID or B2_ACCESS_KEY_ID}}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-${B2_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY or B2_SECRET_ACCESS_KEY}}
+      AWS_REGION: ${AWS_REGION:-${B2_REGION:-auto}}
     volumes:
       # Same tree as encore-web — packager reads Encore output paths under /media/tmp
       - ${ENCORE_MEDIA_MOUNT:-/mnt}:/media
