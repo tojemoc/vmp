@@ -264,6 +264,11 @@ export const strings: StringsDefinition = {
   videoNotFoundTitle: 'Video sa nenašlo',
   videoNotFoundMessage: 'Toto video mohlo byť odstránené, premenované, alebo je odkaz neplatný.',
   videoNotFoundSuggestions: 'Mohlo by sa vám páčiť',
+  staffDraftPreviewBanner:
+    'Náhľad konceptu — túto URL môžu otvoriť len editori a admini. Po kontrole video zverejnite.',
+  staffArchivedPreviewBanner: 'Náhľad archívu — túto URL môžu otvoriť len editori a admini.',
+  staffUnpublishedPreviewBanner:
+    'Náhľad nezverejneného videa — túto URL môžu otvoriť len editori a admini.',
   playbackUnavailableTitle: 'Toto video je dočasne nedostupné',
   playbackUnavailableMessage:
     'Video sa teraz nepodarilo načítať. Úložisko sa možno obnovuje, alebo súbor ešte nie je na serveroch. Ostatné videá by mali fungovať.',

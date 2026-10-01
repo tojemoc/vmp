@@ -238,7 +238,11 @@ import {
   handleReplicationQueue,
 } from './replication.js';
 import { isLocalVideoProxyUrl } from './requestPublicOrigin.js';
-import { isAdministrativeRole } from './roles.js';
+import {
+  isAdministrativeRole,
+  isContentEditorRole,
+  mayAccessNonPublicVideo,
+} from './roles.js';
 import { maybeBlockDeploymentFeatureRoute } from './routeFeatureGuard.js';
 import { handleGetAccountRss, handleRotateAccountRss } from './rssAccount.js';
 import {
@@ -1653,7 +1657,12 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
   }
 }
 
-/** Public metadata for Open Graph / social previews (no auth, no rate limit). */
+/**
+ * Public metadata for Open Graph / social previews.
+ * Unpublished (draft/archived/scheduled-future) rows stay 404 for everyone except
+ * authenticated content editors (editor/admin/super_admin) so they can open
+ * `/watch/{uuid}` for verification before publish.
+ */
 async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -1668,19 +1677,32 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
       return jsonResponse({ error: 'Invalid video id' }, 400, corsHeaders);
     }
 
+    let authUser: { role?: string } | null = null;
+    try {
+      authUser = await requireAuth(request, env);
+    } catch {
+      authUser = null;
+    }
+
     const db = getDatabaseBinding(env);
     const video = await resolveVideoByIdOrSlug(db, idOrSlug);
-    if (!video || video.publish_status !== 'published') {
+    if (!video) {
       return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
     }
 
-    if (video.scheduled_publish_at) {
+    let isPubliclyLive = video.publish_status === 'published';
+    if (isPubliclyLive && video.scheduled_publish_at) {
       const scheduledAt = parseAdminTimestampToUtcMillis(String(video.scheduled_publish_at));
       if (Number.isFinite(scheduledAt) && scheduledAt > Date.now()) {
-        return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
+        isPubliclyLive = false;
       }
     }
 
+    if (!mayAccessNonPublicVideo(authUser?.role, isPubliclyLive)) {
+      return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
+    }
+
+    const staffPreview = !isPubliclyLive;
     return jsonResponse(
       {
         id: video.id,
@@ -1688,7 +1710,12 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
         title: video.title ?? '',
         description: video.description ?? '',
         thumbnail_url: video.thumbnail_url ?? null,
-        canonicalWatchPath: `/watch/${encodeURIComponent(canonicalWatchToken({ id: video.id, slug: video.slug ?? null }))}`,
+        publish_status: video.publish_status ?? null,
+        staffPreview,
+        // Prefer UUID for staff draft previews so the URL stays stable before a slug exists.
+        canonicalWatchPath: staffPreview
+          ? `/watch/${encodeURIComponent(String(video.id))}`
+          : `/watch/${encodeURIComponent(canonicalWatchToken({ id: video.id, slug: video.slug ?? null }))}`,
       },
       200,
       corsHeaders,
@@ -1839,6 +1866,7 @@ async function handleVideoAccess(
     // Resolve by ID first, then by vanity slug so /watch/<slug> works transparently.
     const video = await resolveVideoByIdOrSlug(db, videoId);
     const hasElevatedRole = isAdministrativeRole(authUser?.role);
+    const canStaffPreview = isContentEditorRole(authUser?.role);
 
     if (!video && !hasElevatedRole) {
       return jsonResponse({ error: 'Video not found', code: 'video_not_found' }, 404, corsHeaders);
@@ -1858,9 +1886,10 @@ async function handleVideoAccess(
           .first()
       : null;
 
-    // Reject unpublished videos for non-staff so drafts/archived videos can't
+    // Reject unpublished videos for non-editors so drafts/archived videos can't
     // receive signed playlist tokens via a slug or ID they happen to know.
-    if (video && video.publish_status !== 'published' && !hasElevatedRole) {
+    // Content editors (editor/admin/super_admin) may preview for verification.
+    if (video && video.publish_status !== 'published' && !canStaffPreview) {
       return jsonResponse({ error: 'Video not found' }, 404, corsHeaders);
     }
 
@@ -2028,6 +2057,8 @@ async function handleVideoAccess(
         fullDuration,
         previewDuration,
         playlistUrl,
+        publishStatus: video?.publish_status ?? null,
+        staffPreview: Boolean(video && video.publish_status !== 'published' && canStaffPreview),
         isLivestream,
         livestreamStatus,
         livestreamProvider: livestream?.provider ?? null,

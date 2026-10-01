@@ -147,6 +147,14 @@ These are open Linear issues without active implementation milestones on the pro
 | [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9) | [#435](https://github.com/tojemoc/vmp/issues/435) | RFC: Backup stack (bunny.net / Backblaze) | Deno Deploy `@vmp/api-node` backup API exists; bunny/Backblaze investigation still open |
 | [TOJ-14](https://linear.app/tojemoc/issue/TOJ-14) | [#441](https://github.com/tojemoc/vmp/issues/441) | Q: Inspired by peer streaming projects | Research only; MoQ livestreams + feature modules are related partial progress |
 
+### Admin draft video preview (`admin-draft-video-preview`)
+
+**Issues:** [#723](https://github.com/tojemoc/vmp/issues/723)  
+**Plan:** [docs/plans/admin-draft-video-preview.md](docs/plans/admin-draft-video-preview.md)
+
+- [ ] Staff (editor / admin / super_admin) can open unpublished videos at `/watch/{uuid}` for verification
+- [ ] Public meta + anonymous/viewer still 404 for drafts; admin UI **Preview** link by UUID
+
 ### Video startup latency (`video-startup-latency`)
 
 **Plan:** [docs/plans/video-startup-latency.md](docs/plans/video-startup-latency.md) · encoding scale: [docs/plans/horizontally-scalable-encoding.md](docs/plans/horizontally-scalable-encoding.md)

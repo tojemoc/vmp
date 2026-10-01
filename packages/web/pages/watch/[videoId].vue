@@ -659,6 +659,26 @@
               {{ videoData.video.title }}
             </h1>
 
+            <div
+              v-if="staffPreviewBanner"
+              class="mb-4 inline-flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 px-3 py-2 text-sm text-amber-900 dark:text-amber-200"
+              role="status"
+            >
+              <svg
+                class="w-4 h-4 shrink-0"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span>{{ staffPreviewBanner }}</span>
+            </div>
+
             <p v-if="playbackResumeHint" class="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {{ playbackResumeHint }}
             </p>
@@ -900,6 +920,8 @@
     description: string;
     thumbnail_url: string | null;
     canonicalWatchPath?: string;
+    publish_status?: string | null;
+    staffPreview?: boolean;
   };
 
   type VideoMetaAsyncValue = {
@@ -911,28 +933,56 @@
 
   const videoIdParam = computed(() => String(route.params.videoId ?? '').trim());
 
-  const { data: videoMetaState, pending: videoMetaPending } = await useAsyncData(
-    () => `video-meta-${videoIdParam.value}`,
-    async () => {
-      if (!videoIdParam.value) return emptyVideoMeta();
-      try {
-        const meta = await $fetch<VideoMetaResponse>(
-          `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
-        );
-        return { meta, notFound: false };
-      } catch (error: any) {
-        const status = error?.statusCode ?? error?.response?.status ?? error?.status;
-        if (status === 404) return { meta: null, notFound: true };
-        return emptyVideoMeta();
-      }
-    },
-    { watch: [videoIdParam] },
-  );
+  // Auth — userId comes from the session. Declared early so meta can send Bearer for draft preview.
+  const { isLoggedIn, isPremium, authHeader, user, ensureSubscriptionHydrated, canEditContent } =
+    useAuth();
+
+  const { data: videoMetaState, pending: videoMetaPending, refresh: refreshVideoMeta } =
+    await useAsyncData(
+      () => `video-meta-${videoIdParam.value}`,
+      async () => {
+        if (!videoIdParam.value) return emptyVideoMeta();
+        try {
+          const meta = await $fetch<VideoMetaResponse>(
+            `${config.public.apiUrl}/api/videos/${encodeURIComponent(videoIdParam.value)}/meta`,
+            { headers: { ...authHeader() } },
+          );
+          return { meta, notFound: false };
+        } catch (error: any) {
+          const status = error?.statusCode ?? error?.response?.status ?? error?.status;
+          if (status === 404) return { meta: null, notFound: true };
+          return emptyVideoMeta();
+        }
+      },
+      { watch: [videoIdParam] },
+    );
 
   const videoMeta = computed(() => videoMetaState.value?.meta ?? null);
   const videoNotFound = computed(() => videoMetaState.value?.notFound === true);
   const accessNotFound = ref(false);
-  const showVideoNotFound = computed(() => videoNotFound.value || accessNotFound.value);
+  /** Set when staff successfully loads an unpublished video after public meta 404'd. */
+  const staffPreviewRecovered = ref(false);
+  const videoData = ref<any>(null);
+  const showVideoNotFound = computed(
+    () => accessNotFound.value || (videoNotFound.value && !staffPreviewRecovered.value),
+  );
+
+  const isStaffPreview = computed(() => {
+    if (videoMeta.value?.staffPreview) return true;
+    if (videoData.value?.video?.staffPreview) return true;
+    const status =
+      videoMeta.value?.publish_status ?? videoData.value?.video?.publishStatus ?? null;
+    return Boolean(status && status !== 'published' && canEditContent.value);
+  });
+
+  const staffPreviewBanner = computed(() => {
+    if (!isStaffPreview.value) return null;
+    const status =
+      videoMeta.value?.publish_status ?? videoData.value?.video?.publishStatus ?? 'draft';
+    if (status === 'archived') return strings.staffArchivedPreviewBanner;
+    if (status === 'draft') return strings.staffDraftPreviewBanner;
+    return strings.staffUnpublishedPreviewBanner;
+  });
 
   function markVideoNotFoundResponse() {
     accessNotFound.value = true;
@@ -962,6 +1012,7 @@
       description: videoMeta.value?.description,
       image: videoMeta.value?.thumbnail_url,
       ogType: 'video.other' as const,
+      noIndex: Boolean(videoMeta.value?.staffPreview || isStaffPreview.value),
     })),
   );
 
@@ -986,11 +1037,9 @@
     return { moq: moqModule, watch: watchModule, signals: signalsModule };
   };
 
-  // ── Auth — userId now comes from the session, not a query param ──────────────
-  //
   // For logged-in users the API looks up their subscription and returns the
-  // correct hasAccess / playlistUrl for their plan.
-  const { isLoggedIn, isPremium, authHeader, user, ensureSubscriptionHydrated } = useAuth();
+  // correct hasAccess / playlistUrl for their plan. Auth bindings are declared
+  // earlier so /meta can send the Bearer token for draft previews.
   const { getOfflineSource, getDownloadRecord } = useOfflineDownloads();
   const { showAds } = useAdPolicy();
   const playingOffline = ref(false);
@@ -1058,7 +1107,6 @@
   const loading = ref(true);
   const isNavigatingToAnotherVideo = ref(false);
   const error = ref<string | null>(null);
-  const videoData = ref<any>(null);
   const recommendations = ref<any[]>([]);
   const showPremiumOverlay = ref(false);
   const buffering = ref(false);
@@ -2015,6 +2063,9 @@
         const retryData = await retryResponse.json();
         ensureCurrent();
         accessNotFound.value = false;
+        if (videoNotFound.value || retryData?.video?.staffPreview) {
+          staffPreviewRecovered.value = true;
+        }
         videoData.value = retryData;
         rateLimited.value = false;
         rateLimitRetryAfter.value = null;
@@ -2038,6 +2089,9 @@
     const data = await videoResponse.json();
     ensureCurrent();
     accessNotFound.value = false;
+    if (videoNotFound.value || data?.video?.staffPreview) {
+      staffPreviewRecovered.value = true;
+    }
     videoData.value = data;
     rateLimited.value = false;
     rateLimitRetryAfter.value = null;
@@ -2165,6 +2219,7 @@
     autoplayPlayError.value = false;
     showPremiumOverlay.value = false;
     rateLimited.value = false;
+    staffPreviewRecovered.value = false;
     clearConcurrentPlaybackBlock();
     currentTime.value = 0;
     playingOffline.value = false;
@@ -2186,7 +2241,18 @@
     await waitForVideoMeta(options.signal);
     ensureCurrent();
 
-    if (videoNotFound.value) {
+    // Public meta 404s for drafts. Content editors still try video-access (and
+    // may refresh meta once the client session Bearer is available).
+    if (videoNotFound.value && canEditContent.value) {
+      try {
+        await refreshVideoMeta();
+      } catch {
+        // ignore — fall through to video-access recovery
+      }
+      ensureCurrent();
+    }
+
+    if (videoNotFound.value && !canEditContent.value) {
       markVideoNotFoundResponse();
       recommendations.value = [];
       await loadBrowseRecommendations(options.signal);

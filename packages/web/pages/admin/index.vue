@@ -784,6 +784,16 @@
                         >
                           Publish
                         </button>
+                        <a
+                          v-if="video.publish_status !== 'published'"
+                          :href="draftPreviewPath(video)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="px-2 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+                          title="Open draft preview by UUID (editors only)"
+                        >
+                          Preview
+                        </a>
                         <button
                           type="button"
                           class="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-50"
@@ -4987,6 +4997,11 @@ Response 429: rate limit exceeded — retry after the Retry-After header value (
   function videoWatchHref(row: { videoId: string; slug: string | null }) {
     const slugOrId = row.slug?.trim() || row.videoId;
     return `/watch/${encodeURIComponent(slugOrId)}`;
+  }
+
+  /** Draft verification opens by UUID so the URL works before a vanity slug exists. */
+  function draftPreviewPath(video: { id: string }) {
+    return `/watch/${encodeURIComponent(String(video.id))}`;
   }
 
   const analyticsSubscriptionTrendRows = computed(() =>
