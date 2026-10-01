@@ -144,8 +144,8 @@ Replace compile-time `VMP_FEATURES` with Cloudflare Flagship (Tier 1), prepare P
 
 ### Flagship infrastructure flags (`infra-flagship-flags`)
 
-- [ ] Phase 0 — Plan + ambiguities (this entry)
-- [ ] Phase A — Flagship binding on API Worker + evaluator wrapper (temporary dual-read with `VMP_FEATURES`)
+- [x] Phase 0 — Plan + locked decisions
+- [x] Phase A — Flagship binding + `infraFlags` evaluator (dual-read with `VMP_FEATURES`); staging flags created
 - [ ] Phase B — Remove all `VMP_FEATURES` reads; web hydrates flags from API/Flagship; deploy scripts cleaned
 - [ ] Phase C — PostHog Nuxt SSR server client ready for `getFeatureFlag` (no product flags yet)
 
