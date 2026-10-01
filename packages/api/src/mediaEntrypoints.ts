@@ -69,7 +69,8 @@ export async function resolveMediaEntrypoint({
   if (bunnyPlaybackUrl && typeof bunnyPlaybackUrl === 'string' && bunnyPlaybackUrl.trim()) {
     return { url: bunnyPlaybackUrl.trim(), mediaFound: true };
   }
-  return { url: candidates[0], mediaFound: false };
+  const fallbackUrl = candidates[0] ?? '';
+  return { url: fallbackUrl, mediaFound: false };
 }
 
 /** URL-only wrapper — preserves existing feed / offline / access callers. */
