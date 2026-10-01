@@ -18,13 +18,13 @@
     "@vmp/payments": "*",
     "@vmp/shared": "*",
     "@vmp/storage": "*",
-    "posthog-node": "^5.52.5"
+    "posthog-node": "^5.54.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260921.1",
-    "@types/node": "^26.6.2",
+    "@cloudflare/workers-types": "^5.20260928.1",
+    "@types/node": "^26.6.3",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "wrangler": "^4.135.0"
+    "wrangler": "^4.143.0"
   }
 }
