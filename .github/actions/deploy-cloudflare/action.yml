@@ -148,9 +148,9 @@ runs:
         FRONTEND_URL: ${{ inputs.frontend-url }}
         EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
       run: |
-        # Owns checkout/webhooks/renewals. Secrets (STRIPE_*, JWT_SECRET, LEGACY_*, …)
-        # must be set on this Worker via `wrangler secret put` in packages/billing —
-        # same values as @vmp/api. First deploy creates `vmp-billing`.
+        # Owns checkout/webhooks/renewals/e-invoicing/promos. Secrets (STRIPE_*,
+        # JWT_SECRET, LEGACY_*, PEPPOL_*, …) must be set via `wrangler secret put`
+        # in packages/billing — same values as @vmp/api. First deploy creates `vmp-billing`.
         EXTRA_ARGS=(
           --var "API_URL:${API_BASE_URL}"
           --var "FRONTEND_URL:${FRONTEND_URL}"

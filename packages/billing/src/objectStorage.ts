@@ -1,21 +1,21 @@
 /**
- * Optional object storage for e-invoice XML. Billing Worker may bind R2 later;
- * without it, invoice row creation still works and XML storage is skipped.
+ * Object storage for e-invoice XML on the billing Worker.
+ * Uses the same R2 bucket binding as `@vmp/api` (`BUCKET` → `vmp-videos`).
  */
+import type { ObjectStorageProvider } from '@vmp/storage/worker';
+import { wrapR2Bucket } from '@vmp/storage/worker';
 
-export type BillingObjectStorage = {
-  putObject: (
-    key: string,
-    body: string | ArrayBuffer | Uint8Array,
-    opts?: { contentType?: string },
-  ) => Promise<void>;
-  getObject: (key: string) => Promise<{ body: ReadableStream | null } | null>;
+export type BillingStorageEnv = {
+  BUCKET?: R2Bucket;
+  STORAGE?: ObjectStorageProvider;
 };
 
-export function hasObjectStorage(_env: unknown): boolean {
-  return false;
+export function getObjectStorage(env: BillingStorageEnv): ObjectStorageProvider | undefined {
+  if (env.STORAGE) return env.STORAGE;
+  if (env.BUCKET) return wrapR2Bucket(env.BUCKET);
+  return undefined;
 }
 
-export function getObjectStorage(_env: unknown): BillingObjectStorage | null {
-  return null;
+export function hasObjectStorage(env: BillingStorageEnv): boolean {
+  return Boolean(getObjectStorage(env));
 }

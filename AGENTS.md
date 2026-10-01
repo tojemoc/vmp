@@ -287,7 +287,7 @@ npm run preview:workers --workspace=@vmp/web   # local Worker preview (after bui
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
 
-Billing lives in `@vmp/billing` (`vmp-billing`). CD deploys it before `@vmp/api`. **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate) on the billing Worker** — e.g. `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`. The API proxies `/api/payments*` via the `BILLING` service binding; entitlement D1 reads stay on the API.
+Billing lives in `@vmp/billing` (`vmp-billing`). CD deploys it before `@vmp/api`. **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate, plus `PEPPOL_AP_API_KEY` for live eFaktura) on the billing Worker** — e.g. `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`. The API proxies payments, pricing, subscription get, e-invoicing, promotions/ISIC, and subscription-transfer via the `BILLING` service binding; entitlement D1 reads stay on the API. Billing binds the same `vmp-videos` R2 bucket for e-invoice XML.
 
 ```text
 JWT_SECRET              — 32+ random chars (API + billing)
@@ -304,7 +304,7 @@ COMGATE_MERCHANT / COMGATE_SECRET — Comgate merchant credentials (billing; see
 COMGATE_API_BASE        — optional; default `https://payments.comgate.cz`
 COMGATE_COUNTRY         — optional; default `CZ` (Comgate hosted gateway country)
 RSS_SECRET              — 32+ random chars used only to sign/tokenize personal account RSS URLs (`/api/feed/:userId/:token` and `/api/account/rss`); not required for the public feed endpoint (`/api/feed/public`)
-PEPPOL_AP_API_KEY       — Peppol Access Point REST API key for live SK eFaktura transmission (stub mode works without it)
+PEPPOL_AP_API_KEY       — Peppol Access Point REST API key for live SK eFaktura transmission (billing; stub mode works without it)
 VMP_API_PIPELINE_SECRET — shared with media-pipeline for `POST /api/admin/videos/:id/pipeline-status` HLS availability callbacks
 REPLICATION_TARGET_URL — full URL to Deno ingest (`/api/internal/replication/ingest` on api-node)
 REPLICATION_TARGET_TOKEN — bearer token for replication ingest (same value as api-node `REPLICATION_INGEST_TOKEN`)

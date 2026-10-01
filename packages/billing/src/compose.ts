@@ -11,6 +11,7 @@ import { capturePostHogEvent } from './posthog.js';
 export type BillingWorkerEnv = {
   video_subscription_db: D1Database;
   DB?: D1Database;
+  BUCKET?: R2Bucket;
   FLAGS?: {
     getBooleanValue(
       flagKey: string,
@@ -25,6 +26,7 @@ export type BillingWorkerEnv = {
   STRIPE_WEBHOOK_SECRET?: string;
   FRONTEND_URL?: string;
   API_URL?: string;
+  R2_BASE_URL?: string;
   GOPAY_CLIENT_ID?: string;
   GOPAY_CLIENT_SECRET?: string;
   GOPAY_GOID?: string;

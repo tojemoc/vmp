@@ -153,7 +153,7 @@ Replace compile-time `VMP_FEATURES` with Cloudflare Flagship (Tier 1), prepare P
 
 - [x] Phase D — Worker-extractable `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko; GoPay/Comgate soft-disable; `qerko` public naming; `legacy_migration` gates Qerko create; PostHog + `psp_source` (no MoR stub) ([#725](https://github.com/tojemoc/vmp/pull/725))
 - [x] Phase E — Product checkout/cancel/get/has via middleware; soft-disable + Flagship gates in product layer ([#725](https://github.com/tojemoc/vmp/pull/725))
-- [x] Phase F — Billing Worker owns payment logic; API proxies via `BILLING` service binding ([#725](https://github.com/tojemoc/vmp/pull/725))
+- [x] Phase F — Billing Worker owns payment/e-invoice/promo/transfer logic; API proxies via `BILLING` service binding ([#725](https://github.com/tojemoc/vmp/pull/725))
 
 ---
 
