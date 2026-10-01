@@ -25,21 +25,35 @@ function resolveClient(config: RuntimeConfigLike): PostHog | null {
   return client;
 }
 
+type WaitUntilFn = (promise: Promise<unknown>) => void;
+
+/** Duck-type waitUntil from H3 / Cloudflare without unsafe H3Event casts. */
+function resolveWaitUntil(event: unknown): WaitUntilFn | undefined {
+  if (!event || typeof event !== 'object') return undefined;
+  const root = event as Record<string, unknown>;
+  if (typeof root.waitUntil === 'function') {
+    return (root.waitUntil as WaitUntilFn).bind(event);
+  }
+  const context = root.context;
+  if (!context || typeof context !== 'object') return undefined;
+  const ctx = context as Record<string, unknown>;
+  if (typeof ctx.waitUntil === 'function') {
+    return (ctx.waitUntil as WaitUntilFn).bind(context);
+  }
+  const cloudflare = ctx.cloudflare;
+  if (!cloudflare || typeof cloudflare !== 'object') return undefined;
+  const cfContext = (cloudflare as Record<string, unknown>).context;
+  if (!cfContext || typeof cfContext !== 'object') return undefined;
+  const waitUntil = (cfContext as Record<string, unknown>).waitUntil;
+  if (typeof waitUntil !== 'function') return undefined;
+  return (waitUntil as WaitUntilFn).bind(cfContext);
+}
+
 /** Flush pending PostHog work via waitUntil when available, else await. */
 async function settlePendingFlush(ph: PostHog): Promise<void> {
   const flush = Promise.resolve(ph.flush()).catch(() => {});
   try {
-    const event = useRequestEvent();
-    const waitUntil =
-      typeof (event as { waitUntil?: (p: Promise<unknown>) => void } | undefined)?.waitUntil ===
-      'function'
-        ? (event as { waitUntil: (p: Promise<unknown>) => void }).waitUntil.bind(event)
-        : typeof (event as { context?: { waitUntil?: (p: Promise<unknown>) => void } } | undefined)
-              ?.context?.waitUntil === 'function'
-          ? (
-              event as { context: { waitUntil: (p: Promise<unknown>) => void } }
-            ).context.waitUntil.bind((event as { context: object }).context)
-          : undefined;
+    const waitUntil = resolveWaitUntil(useRequestEvent());
     if (waitUntil) {
       waitUntil(flush);
       return;
