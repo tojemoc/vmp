@@ -271,9 +271,9 @@ Constraints:
 ### Phase F — Billing Worker extract
 
 1. [x] `@vmp/billing` Worker + `PaymentMiddleware` composition (Stripe-first; Qerko stays on API).
-2. [x] API `BILLING` service binding with in-process fallback when unbound.
-3. [x] CD deploys billing Worker before API.
-4. [ ] Follow-up: re-point webhooks fully onto billing Worker; move Qerko eshop client.
+2. [x] API `BILLING` service binding declared; live path stays **in-process** until `BILLING_USE_SERVICE_BINDING=1` (billing still has stub price resolvers).
+3. [x] CD deploys billing Worker before API (`wrangler deploy` creates `vmp-billing` — no manual dashboard create).
+4. [ ] Follow-up: wire Stripe secrets + admin_settings price lookups on billing; flip `BILLING_USE_SERVICE_BINDING=1`; re-point webhooks; move Qerko eshop client.
 
 ---
 
