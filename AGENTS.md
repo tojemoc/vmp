@@ -288,7 +288,7 @@ npm run preview:workers --workspace=@vmp/web   # local Worker preview (after bui
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
 
-Billing lives in `@vmp/billing`. CD deploys it before `@vmp/api`. Staging Worker name is `vmp-billing` (top-level wrangler env); production is `vmp-billing-prod` (`wrangler deploy --env production`). **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate, plus `PEPPOL_AP_API_KEY` for live eFaktura) on each billing Worker** — staging: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`; production: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY --env production`. The API proxies payments, pricing, subscription get, e-invoicing, promotions/ISIC, and subscription-transfer via the `BILLING` service binding; entitlement D1 reads stay on the API. Billing binds the same `vmp-videos` R2 bucket for e-invoice XML.
+Billing lives in `@vmp/billing`. CD deploys it before `@vmp/api`. Staging Worker name is `vmp-billing` (top-level wrangler env); production is `vmp-billing-prod` (`wrangler deploy --env production`). **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate, plus `PEPPOL_AP_API_KEY` for live eFaktura) on each billing Worker** — staging: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`; production: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY --env production`. The API proxies payments, pricing, subscription get, e-invoicing, promotions/ISIC, and subscription-transfer via the `BILLING` service binding; entitlement D1 reads stay on the API. Billing writes e-invoice XML (`einvoices/{id}/invoice.xml`) into the **same private bucket** as video assets via `createPrivateBucketStorage` — set the same `B2_*` secrets on each billing Worker as on `vmp-api` (local Wrangler may use the shared `BUCKET` R2 binding when B2 is unset). Invoice XML is **not** served via `/api/assets` (not allowlisted); only billing admin/account handlers (API → `BILLING.fetch`) return previews.
 
 ```text
 JWT_SECRET              — 32+ random chars (API + billing)
@@ -309,7 +309,7 @@ PEPPOL_AP_API_KEY       — Peppol Access Point REST API key for live SK eFaktur
 VMP_API_PIPELINE_SECRET — shared with media-pipeline for `POST /api/admin/videos/:id/pipeline-status` HLS availability callbacks
 REPLICATION_TARGET_URL — full URL to Deno ingest (`/api/internal/replication/ingest` on api-node)
 REPLICATION_TARGET_TOKEN — bearer token for replication ingest (same value as api-node `REPLICATION_INGEST_TOKEN`)
-B2_BUCKET_NAME / B2_ACCESS_KEY_ID / B2_SECRET_ACCESS_KEY — private Backblaze B2 origin (production). Optional `B2_S3_ENDPOINT`, `B2_REGION`.
+B2_BUCKET_NAME / B2_ACCESS_KEY_ID / B2_SECRET_ACCESS_KEY — private Backblaze B2 origin (production). Optional `B2_S3_ENDPOINT`, `B2_REGION`. **Set on both `vmp-api` and `vmp-billing`** (same values; billing needs them for e-invoice XML).
 ```
 
 Optional API Worker **vars** (runtime, Cloudflare dashboard / `wrangler.json` / `.dev.vars` — not GitHub Actions):

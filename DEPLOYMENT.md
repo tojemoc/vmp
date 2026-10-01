@@ -30,7 +30,7 @@ Keep domain-specific values as env overrides:
 - `ALLOWED_ORIGINS`
 - `API_URL` (public API origin — also used for `/api/assets/*` absolute URLs)
 
-Object media lives in a **private B2** bucket (Worker secrets `B2_*`). Do not expose a public bucket/CDN URL for video or thumbs. See [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md).
+Object media lives in a **private B2** bucket. Set Worker secrets `B2_*` on **both** `vmp-api` and `vmp-billing` (e-invoice XML uses the same bucket). Do not expose a public bucket/CDN URL for video, thumbs, or invoice XML. See [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md).
 
 Deploy each domain with its own Wrangler environment and secret set.
 

@@ -11,7 +11,14 @@ import { capturePostHogEvent } from './posthog.js';
 export type BillingWorkerEnv = {
   video_subscription_db: D1Database;
   DB?: D1Database;
+  /** Local Wrangler fallback when `B2_*` unset — same `vmp-videos` binding as API. */
   BUCKET?: R2Bucket;
+  /** Private B2 origin (production) — same secrets as `@vmp/api`. */
+  B2_S3_ENDPOINT?: string;
+  B2_BUCKET_NAME?: string;
+  B2_ACCESS_KEY_ID?: string;
+  B2_SECRET_ACCESS_KEY?: string;
+  B2_REGION?: string;
   FLAGS?: {
     getBooleanValue(
       flagKey: string,
@@ -26,7 +33,6 @@ export type BillingWorkerEnv = {
   STRIPE_WEBHOOK_SECRET?: string;
   FRONTEND_URL?: string;
   API_URL?: string;
-  R2_BASE_URL?: string;
   GOPAY_CLIENT_ID?: string;
   GOPAY_CLIENT_SECRET?: string;
   GOPAY_GOID?: string;

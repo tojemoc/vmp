@@ -50,7 +50,8 @@ function bodyToWebStream(body: unknown): ReadableStream | null {
   if (!body) return null;
   if (body instanceof ReadableStream) return body;
   if (typeof Readable !== 'undefined' && body instanceof Readable) {
-    return Readable.toWeb(body) as ReadableStream;
+    // Node Readable.toWeb vs DOM/Workers ReadableStream — cast via unknown.
+    return Readable.toWeb(body) as unknown as ReadableStream;
   }
   if (typeof body === 'string') return new Response(body).body;
   if (body instanceof Uint8Array) return new Response(new Uint8Array(body)).body;
@@ -62,7 +63,8 @@ function toS3PutBody(body: ReadableStream | Buffer | Uint8Array | string) {
     return body;
   }
   if (body instanceof ReadableStream) {
-    return Readable.fromWeb(body as import('stream/web').ReadableStream);
+    // DOM/Workers ReadableStream vs node:stream/web — cast via unknown.
+    return Readable.fromWeb(body as unknown as import('stream/web').ReadableStream);
   }
   throw new Error('Unsupported putObject body type');
 }

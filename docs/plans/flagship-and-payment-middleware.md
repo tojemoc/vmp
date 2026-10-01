@@ -276,7 +276,7 @@ Constraints:
 3. [x] CD deploys billing Worker before API (`wrangler deploy` creates `vmp-billing`).
 4. [x] Real `admin_settings` price resolvers + full provider registry on billing (not stubs).
 5. [x] Billing owns e-invoicing + Peppol/ISDOC delivery + R2 XML storage (`BUCKET` → `vmp-videos`).
-6. [ ] Ops: copy PSP/`JWT_SECRET`/Brevo/`PEPPOL_AP_API_KEY` secrets onto `vmp-billing` (`wrangler secret put` in `packages/billing`).
+6. [ ] Ops: copy PSP/`JWT_SECRET`/Brevo/`PEPPOL_AP_API_KEY` **and** `B2_BUCKET_NAME`/`B2_ACCESS_KEY_ID`/`B2_SECRET_ACCESS_KEY` (optional `B2_S3_ENDPOINT`/`B2_REGION`) onto `vmp-billing` (`wrangler secret put` in `packages/billing`) — same B2 values as `vmp-api` for e-invoice XML.
 7. [ ] Optional later: dedicated billing hostname for webhooks (today API URL still works via proxy).
 
 ---
