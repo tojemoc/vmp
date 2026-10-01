@@ -34,30 +34,48 @@ export function buildEntrypointCandidates(base: any, videoId: any, options: any 
   return candidates;
 }
 
-export async function resolveMediaEntrypointUrl({
-  env,
-  videoId,
-  preferPodcast = false,
-  rssPreview = false,
-  bunnyPlaybackUrl = null,
-}: {
+export type MediaEntrypointResolution = {
+  url: string;
+  /** True when an R2 HEAD succeeded or a configured Bunny playback URL was selected. */
+  mediaFound: boolean;
+};
+
+type ResolveMediaEntrypointArgs = {
   env: { R2_BASE_URL?: string };
   videoId: string;
   preferPodcast?: boolean;
   rssPreview?: boolean;
   /** Bunny Stream HLS manifest on Bunny CDN — used when R2 has no processed artifact. */
   bunnyPlaybackUrl?: string | null;
-}) {
+};
+
+/**
+ * Resolve the best HLS/podcast entrypoint and whether media was actually found.
+ * Callers that only need the URL should use {@link resolveMediaEntrypointUrl}.
+ */
+export async function resolveMediaEntrypoint({
+  env,
+  videoId,
+  preferPodcast = false,
+  rssPreview = false,
+  bunnyPlaybackUrl = null,
+}: ResolveMediaEntrypointArgs): Promise<MediaEntrypointResolution> {
   const base = env.R2_BASE_URL;
   const candidates = buildEntrypointCandidates(base, videoId, { preferPodcast, rssPreview });
   for (const c of candidates) {
-    if (await canLoadEntrypoint(c)) return c;
+    if (await canLoadEntrypoint(c)) return { url: c, mediaFound: true };
   }
   // TODO: Bunny CDN URLs bypass /api/video-proxy — preview manifest truncation does not apply.
   if (bunnyPlaybackUrl && typeof bunnyPlaybackUrl === 'string' && bunnyPlaybackUrl.trim()) {
-    return bunnyPlaybackUrl.trim();
+    return { url: bunnyPlaybackUrl.trim(), mediaFound: true };
   }
-  return candidates[0];
+  return { url: candidates[0], mediaFound: false };
+}
+
+/** URL-only wrapper — preserves existing feed / offline / access callers. */
+export async function resolveMediaEntrypointUrl(args: ResolveMediaEntrypointArgs): Promise<string> {
+  const { url } = await resolveMediaEntrypoint(args);
+  return url;
 }
 
 export function buildProxyPlaylistUrl(

@@ -2063,7 +2063,7 @@
         const retryData = await retryResponse.json();
         ensureCurrent();
         accessNotFound.value = false;
-        if (videoNotFound.value || retryData?.video?.staffPreview) {
+        if (retryData?.video?.staffPreview || retryData?.video?.mediaFound) {
           staffPreviewRecovered.value = true;
         }
         videoData.value = retryData;
@@ -2089,7 +2089,7 @@
     const data = await videoResponse.json();
     ensureCurrent();
     accessNotFound.value = false;
-    if (videoNotFound.value || data?.video?.staffPreview) {
+    if (data?.video?.staffPreview || data?.video?.mediaFound) {
       staffPreviewRecovered.value = true;
     }
     videoData.value = data;

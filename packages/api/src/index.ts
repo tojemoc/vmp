@@ -134,7 +134,7 @@ import {
   buildEntrypointCandidates,
   buildProxyPlaylistUrl,
   getVideoProxyCacheControl,
-  resolveMediaEntrypointUrl,
+  resolveMediaEntrypoint,
   sortMasterPlaylistByBandwidth,
 } from './mediaEntrypoints.js';
 import { resolveMetricHttpRoute } from './metricHttpRoutes.js';
@@ -1956,7 +1956,7 @@ async function handleVideoAccess(
         ? bunnyPlaybackRow.bunny_playback_url.trim()
         : null;
 
-    const resolvedEntrypointUrl = await resolveMediaEntrypointUrl({
+    const { url: resolvedEntrypointUrl, mediaFound } = await resolveMediaEntrypoint({
       env,
       videoId: playbackVideoId,
       bunnyPlaybackUrl: hasPremiumAccess ? bunnyPlaybackUrl : null,
@@ -2059,6 +2059,7 @@ async function handleVideoAccess(
         playlistUrl,
         publishStatus: video?.publish_status ?? null,
         staffPreview: Boolean(video && video.publish_status !== 'published' && canStaffPreview),
+        mediaFound,
         isLivestream,
         livestreamStatus,
         livestreamProvider: livestream?.provider ?? null,

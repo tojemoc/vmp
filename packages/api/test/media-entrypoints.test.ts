@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import {
   buildEntrypointCandidates,
   getVideoProxyCacheControl,
+  resolveMediaEntrypoint,
+  resolveMediaEntrypointUrl,
   sortMasterPlaylistByBandwidth,
 } from '../src/mediaEntrypoints.js';
 import { isImmutableVideoProxyObject, videoProxyObjectCacheKey } from '../src/videoProxyCache.js';
@@ -44,6 +46,59 @@ describe('buildEntrypointCandidates', () => {
         'https://cdn.example.com/videos/vid_123/processed/playlist.m3u8',
       ],
     );
+  });
+});
+
+describe('resolveMediaEntrypoint mediaFound', () => {
+  afterEach(() => {
+    mock.restoreAll();
+  });
+
+  it('sets mediaFound when an R2 HEAD succeeds', async () => {
+    mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/processed/hls/master.m3u8')) {
+        return new Response(null, { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const resolved = await resolveMediaEntrypoint({
+      env: { R2_BASE_URL: 'https://cdn.example.com' },
+      videoId: 'vid_123',
+    });
+    assert.equal(resolved.mediaFound, true);
+    assert.equal(resolved.url, 'https://cdn.example.com/videos/vid_123/processed/hls/master.m3u8');
+  });
+
+  it('sets mediaFound when Bunny fallback is selected', async () => {
+    mock.method(globalThis, 'fetch', async () => new Response(null, { status: 404 }));
+
+    const bunny = 'https://vz.example.com/play_123/playlist.m3u8';
+    const resolved = await resolveMediaEntrypoint({
+      env: { R2_BASE_URL: 'https://cdn.example.com' },
+      videoId: 'vid_123',
+      bunnyPlaybackUrl: bunny,
+    });
+    assert.equal(resolved.mediaFound, true);
+    assert.equal(resolved.url, bunny);
+  });
+
+  it('returns mediaFound false when nothing is found, and URL wrapper still works', async () => {
+    mock.method(globalThis, 'fetch', async () => new Response(null, { status: 404 }));
+
+    const resolved = await resolveMediaEntrypoint({
+      env: { R2_BASE_URL: 'https://cdn.example.com' },
+      videoId: 'vid_123',
+    });
+    assert.equal(resolved.mediaFound, false);
+    assert.equal(resolved.url, 'https://cdn.example.com/videos/vid_123/master.m3u8');
+
+    const urlOnly = await resolveMediaEntrypointUrl({
+      env: { R2_BASE_URL: 'https://cdn.example.com' },
+      videoId: 'vid_123',
+    });
+    assert.equal(urlOnly, resolved.url);
   });
 });
 
