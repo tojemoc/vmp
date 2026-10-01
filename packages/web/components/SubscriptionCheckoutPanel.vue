@@ -370,6 +370,7 @@
 </template>
 
 <script setup lang="ts">
+  import { resolveCheckoutPaymentSurfaces } from '~/utils/checkoutPaymentSurfaces';
   import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
@@ -534,22 +535,21 @@
     return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
   });
 
-  /** Apple / Google Pay above the fold (mount express until detection finishes). */
-  const showWalletSurface = computed(() => {
-    if (!walletDetectionDone.value) return true;
-    return walletAvailable.value;
-  });
+  const paymentSurfaces = computed(() =>
+    resolveCheckoutPaymentSurfaces({
+      walletDetectionDone: walletDetectionDone.value,
+      walletAvailable: walletAvailable.value,
+      stripeCheckoutReady: stripeCheckoutReady.value,
+      moreExpanded: moreExpanded.value,
+      cardMethodSelected: cardMethodSelected.value,
+      hasSecondaryProviders: showSecondaryProviders.value,
+    }),
+  );
 
-  /** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
-  const showCardSurface = computed(() => {
-    if (!walletDetectionDone.value) return false;
-    return moreExpanded.value && cardMethodSelected.value;
-  });
-
-  const showMoreToggle = computed(() => walletDetectionDone.value);
-
-  /** Card option only when Stripe init succeeded (secondary providers stay on showMoreToggle). */
-  const showCardPaymentOption = computed(() => showMoreToggle.value && stripeCheckoutReady.value);
+  const showWalletSurface = computed(() => paymentSurfaces.value.showWalletSurface);
+  const showCardSurface = computed(() => paymentSurfaces.value.showCardSurface);
+  const showMoreToggle = computed(() => paymentSurfaces.value.showMoreToggle);
+  const showCardPaymentOption = computed(() => paymentSurfaces.value.showCardPaymentOption);
 
   const moreToggleClass = computed(() => {
     if (props.embedded) {
@@ -577,8 +577,10 @@
     walletDetectionDone.value = true;
     walletAvailable.value = available;
     if (!available) {
+      // Desktop / no wallet: open card Payment Element immediately — do not force
+      // "More payment methods" → "Pay by card" for the only Stripe path.
       moreExpanded.value = false;
-      cardMethodSelected.value = false;
+      cardMethodSelected.value = true;
     }
   }
 
