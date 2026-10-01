@@ -47,5 +47,24 @@ export async function proxyToBilling(
       },
     );
   }
-  return billing.fetch(request);
+  const upstream = await billing.fetch(request);
+  const headers = new Headers(upstream.headers);
+  for (const name of [
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Credentials',
+    'Access-Control-Expose-Headers',
+    'Access-Control-Allow-Methods',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Max-Age',
+  ]) {
+    headers.delete(name);
+  }
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    headers.set(key, value);
+  }
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
 }

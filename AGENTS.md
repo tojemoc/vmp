@@ -287,7 +287,7 @@ npm run preview:workers --workspace=@vmp/web   # local Worker preview (after bui
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
 
-Billing lives in `@vmp/billing` (`vmp-billing`). CD deploys it before `@vmp/api`. **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate, plus `PEPPOL_AP_API_KEY` for live eFaktura) on the billing Worker** — e.g. `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`. The API proxies payments, pricing, subscription get, e-invoicing, promotions/ISIC, and subscription-transfer via the `BILLING` service binding; entitlement D1 reads stay on the API. Billing binds the same `vmp-videos` R2 bucket for e-invoice XML.
+Billing lives in `@vmp/billing`. CD deploys it before `@vmp/api`. Staging Worker name is `vmp-billing` (top-level wrangler env); production is `vmp-billing-prod` (`wrangler deploy --env production`). **Also put PSP + `JWT_SECRET` (and Brevo if newsletter sync on activate, plus `PEPPOL_AP_API_KEY` for live eFaktura) on each billing Worker** — staging: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY`; production: `cd packages/billing && npx wrangler secret put STRIPE_SECRET_KEY --env production`. The API proxies payments, pricing, subscription get, e-invoicing, promotions/ISIC, and subscription-transfer via the `BILLING` service binding; entitlement D1 reads stay on the API. Billing binds the same `vmp-videos` R2 bucket for e-invoice XML.
 
 ```text
 JWT_SECRET              — 32+ random chars (API + billing)
