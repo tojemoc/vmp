@@ -1,3 +1,5 @@
+import { isPostHogFlagshipCompiled } from '~/utils/posthogFlagshipGate';
+
 /** localStorage key — explicit consent for PostHog product analytics. */
 export const POSTHOG_ANALYTICS_CONSENT_KEY = 'vmp_posthog_analytics_consent';
 
@@ -30,9 +32,9 @@ export type PostHogPersistenceClient = {
   };
 };
 
-/** True when explicit product-analytics consent allows custom capture calls. */
+/** True when Flagship `posthog` is on and explicit product-analytics consent allows capture. */
 export function canCapturePostHogAnalytics(): boolean {
-  return hasPostHogAnalyticsConsent();
+  return isPostHogFlagshipCompiled() && hasPostHogAnalyticsConsent();
 }
 
 /** Web PostHog metrics resource defaults (must be re-applied when toggling network). */
