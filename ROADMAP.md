@@ -136,6 +136,26 @@ First-party video analytics already in admin (`/api/admin/analytics` + Analytics
 
 ---
 
+## Planned — infra flags + payment middleware
+
+**Plan:** [docs/plans/flagship-and-payment-middleware.md](docs/plans/flagship-and-payment-middleware.md)
+
+Replace compile-time `VMP_FEATURES` with Cloudflare Flagship (Tier 1), prepare PostHog SSR for future experiment flags (Tier 2), and introduce a product payment middleware above `@vmp/payments` adapters.
+
+### Flagship infrastructure flags (`infra-flagship-flags`)
+
+- [ ] Phase 0 — Plan + ambiguities (this entry)
+- [ ] Phase A — Flagship binding on API Worker + evaluator wrapper (temporary dual-read with `VMP_FEATURES`)
+- [ ] Phase B — Remove all `VMP_FEATURES` reads; web hydrates flags from API/Flagship; deploy scripts cleaned
+- [ ] Phase C — PostHog Nuxt SSR server client ready for `getFeatureFlag` (no product flags yet)
+
+### Payment middleware (`payment-middleware`)
+
+- [ ] Phase D — `PaymentMiddleware` interface + Stripe/Qerko adapters; GoPay/Comgate/MoR stubs; `legacy_migration` gates Qerko create; PostHog lifecycle + `psp_source`
+- [ ] Phase E — Product layer calls middleware only; audit PSP imports; entitlement helpers
+
+---
+
 ## Backlog (research / QA)
 
 These are open Linear issues without active implementation milestones on the product roadmap above.
