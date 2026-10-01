@@ -2,11 +2,15 @@
  * Loads GTM from public site settings when enabled in Admin → System.
  * Container ID and optional Cloudflare Google Tag Gateway path are runtime-only (D1).
  *
- * Registered from `nuxt.config.ts` only when the `gtm` deployment feature is compiled.
+ * Registered from `nuxt.config.ts` always (A1); Flagship `gtm` gates load at runtime.
  */
 import { getGtmScriptUrl } from '~/utils/gtm';
 
 export default defineNuxtPlugin(async () => {
+  const { hydrate, isCompiled } = useDeploymentFeatures();
+  await hydrate();
+  if (!isCompiled('gtm')) return;
+
   const router = useRouter();
   const { siteSettings, fetchSiteSettings } = useSiteSettings();
 

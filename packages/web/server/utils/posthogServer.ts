@@ -25,6 +25,31 @@ function resolveClient(config: RuntimeConfigLike): PostHog | null {
   return client;
 }
 
+/** Flush pending PostHog work via waitUntil when available, else await. */
+async function settlePendingFlush(ph: PostHog): Promise<void> {
+  const flush = Promise.resolve(ph.flush()).catch(() => {});
+  try {
+    const event = useRequestEvent();
+    const waitUntil =
+      typeof (event as { waitUntil?: (p: Promise<unknown>) => void } | undefined)?.waitUntil ===
+      'function'
+        ? (event as { waitUntil: (p: Promise<unknown>) => void }).waitUntil.bind(event)
+        : typeof (event as { context?: { waitUntil?: (p: Promise<unknown>) => void } } | undefined)
+              ?.context?.waitUntil === 'function'
+          ? (
+              event as { context: { waitUntil: (p: Promise<unknown>) => void } }
+            ).context.waitUntil.bind((event as { context: object }).context)
+          : undefined;
+    if (waitUntil) {
+      waitUntil(flush);
+      return;
+    }
+  } catch {
+    // Outside a request context (tests / startup).
+  }
+  await flush;
+}
+
 /** Evaluate a PostHog feature flag on the server (no browser round-trip). */
 export async function getServerPostHogFeatureFlag(
   flagKey: string,
@@ -34,10 +59,12 @@ export async function getServerPostHogFeatureFlag(
   const config = useRuntimeConfig() as RuntimeConfigLike;
   const ph = resolveClient(config);
   if (!ph || !distinctId.trim()) return undefined;
-  return ph.getFeatureFlag(flagKey, distinctId.trim(), {
+  const value = await ph.getFeatureFlag(flagKey, distinctId.trim(), {
     personProperties: options?.personProperties,
     groups: options?.groups,
   });
+  await settlePendingFlush(ph);
+  return value;
 }
 
 /** Fetch all PostHog feature flags for a distinct id (server-side). */
@@ -48,10 +75,12 @@ export async function getAllServerPostHogFeatureFlags(
   const config = useRuntimeConfig() as RuntimeConfigLike;
   const ph = resolveClient(config);
   if (!ph || !distinctId.trim()) return undefined;
-  return ph.getAllFlags(distinctId.trim(), {
+  const value = await ph.getAllFlags(distinctId.trim(), {
     personProperties: options?.personProperties,
     groups: options?.groups,
   });
+  await settlePendingFlush(ph);
+  return value;
 }
 
 export async function shutdownServerPostHog(): Promise<void> {

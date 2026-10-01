@@ -1,4 +1,5 @@
 import type { PostHogPersistenceClient } from '~/utils/posthogConsent';
+import { isPostHogFlagshipCompiled } from '~/utils/posthogFlagshipGate';
 
 export type PostHogIdentityClient = PostHogPersistenceClient & {
   __loaded?: boolean;
@@ -50,6 +51,7 @@ export function captureBrowserException(
   properties: Record<string, unknown> = {},
 ): void {
   if (!import.meta.client) return;
+  if (!isPostHogFlagshipCompiled()) return;
   try {
     const client = getBrowserPostHog();
     if (!isBrowserPostHogReady(client)) return;

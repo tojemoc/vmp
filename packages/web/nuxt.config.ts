@@ -1,7 +1,6 @@
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
 import { posthogBeforeSend } from './utils/posthogBeforeSend';
-import { applyStoredPostHogConsentToClient } from './utils/posthogConsent';
 import { POSTHOG_CAPTURE_PAGELEAVE, POSTHOG_CAPTURE_PAGEVIEW } from './utils/posthogPageview';
 import { resolvePostHogPublicKeyFromEnv } from './utils/posthogPublicKey';
 import { parseEnvBoolean, parseTracesSampleRate } from './utils/sentryOptions';
@@ -18,7 +17,11 @@ if (posthogPublicKey && !process.env.NUXT_PUBLIC_POSTHOG_PUBLIC_KEY?.trim()) {
 const posthogHost = (process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com').trim();
 const posthogProjectId = (process.env.POSTHOG_PROJECT_ID || '').trim();
 const posthogPersonalApiKey = (process.env.POSTHOG_PERSONAL_API_KEY || '').trim();
-/** A1: always register modular plugins; Flagship gates behaviour at runtime. */
+/**
+ * A1: register modular plugins when the build has credentials / capability;
+ * Flagship (`isCompiled('posthog'|'gtm')`) gates capture and script load at runtime
+ * after `useDeploymentFeatures` hydration — see `features/posthog/*` and `features/gtm`.
+ */
 const posthogEnabled = Boolean(posthogPublicKey);
 const gtmCompiled = true;
 const pwaCompiled = true;
@@ -117,10 +120,9 @@ export default defineNuxtConfig({
               config?: { metrics?: Record<string, unknown> };
             }) => {
               posthog.register({ $environment: buildInfo.deployTier || 'development' });
-              // Re-apply after __loaded — composable/plugin sync may have run too early.
-              // opt_in_capturing() / opt_out_capturing() also wire cookieless_mode.
-              // Consent grant/deny also enables/disables metrics.network.
-              applyStoredPostHogConsentToClient(posthog);
+              // Stay opted out until Flagship `posthog` is confirmed compiled and consent
+              // plugins run (features/posthog/*). Avoids capture before hydration.
+              posthog.opt_out_capturing?.();
             },
           },
           serverConfig: {

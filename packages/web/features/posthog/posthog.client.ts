@@ -3,15 +3,17 @@
  * source maps come from `@posthog/nuxt` (which wraps posthog-js).
  *
  * Never destructure `identify` / `reset` / `setIdentity` off the client — they need `this`.
+ * Flagship `posthog` must be compiled before identity sync runs.
  */
 import { getBrowserPostHog } from '~/utils/posthogBrowserClient';
+import { setPostHogFlagshipCompiled } from '~/utils/posthogFlagshipGate';
 import { syncPostHogIdentity } from '~/utils/posthogIdentity';
 import { isPostHogConfigured } from '~/utils/posthogPublicKey';
 
 export default defineNuxtPlugin({
   name: 'posthog-identify',
   enforce: 'post',
-  setup() {
+  async setup() {
     const config = useRuntimeConfig();
     if (!isPostHogConfigured(config)) {
       if (import.meta.dev) {
@@ -21,6 +23,12 @@ export default defineNuxtPlugin({
       }
       return;
     }
+
+    const { hydrate, isCompiled } = useDeploymentFeatures();
+    await hydrate();
+    const compiled = isCompiled('posthog');
+    setPostHogFlagshipCompiled(compiled);
+    if (!compiled) return;
 
     const { user, initialised } = useAuth();
     const { hasAnalyticsConsent } = usePostHogConsent();
