@@ -97,5 +97,12 @@
       "binding": "FLAGS",
       "app_id": "e1bb7ed4-8309-458f-9f60-cb61f881685a"
     }
+  ],
+  "services": [
+    {
+      "binding": "BILLING",
+      "service": "vmp-billing",
+      "entrypoint": "BillingService"
+    }
   ]
 }

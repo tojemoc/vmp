@@ -1,0 +1,24 @@
+{
+  "name": "vmp-billing",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "8298ebe2fc93e55a92f8bc5727d5f331",
+  "d1_databases": [
+    {
+      "binding": "video_subscription_db",
+      "database_name": "video-subscription-db",
+      "database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
+    }
+  ],
+  "flagship": [
+    {
+      "binding": "FLAGS",
+      "app_id": "e1bb7ed4-8309-458f-9f60-cb61f881685a"
+    }
+  ],
+  "vars": {
+    "FRONTEND_URL": "https://vmp.tjm.sk",
+    "API_URL": "https://vmp-api.tjm.sk"
+  }
+}

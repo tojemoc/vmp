@@ -1,5 +1,25 @@
 export { NotImplementedError } from './errors.js';
 export * from './ids.js';
+export {
+  createPaymentMiddleware,
+  resolveRequestedPspSource,
+  type CancelSubscriptionResult,
+  type CreateSubscriptionParams,
+  type PaymentMiddleware,
+  type PaymentMiddlewareCapture,
+  type PaymentMiddlewareDb,
+  type PaymentMiddlewareDeps,
+  type PaymentMiddlewareFlags,
+  type SubscriptionRecord,
+  type SubscriptionResult,
+} from './middleware.js';
+export {
+  dbProviderToPspSource,
+  isPspSource,
+  normalizePspSource,
+  pspSourceToDbProvider,
+  type PspSource,
+} from './pspSource.js';
 export { createComgateProvider } from './providers/comgate/index.js';
 export { createGoPayProvider } from './providers/gopay/index.js';
 export { createQerkoProvider } from './providers/qerko/index.js';

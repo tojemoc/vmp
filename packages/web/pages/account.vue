@@ -877,7 +877,7 @@
     const sub = subscription.value;
     const name = sub?.legacyProviderName?.trim();
     if (name) return name;
-    if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy');
+    if ((sub?.provider === 'legacy' || sub?.provider === 'qerko')) return strings.paymentProviderLabel('legacy');
     return strings.accountRelinkLegacyProviderFallback;
   });
 
@@ -1079,7 +1079,7 @@
         // subscription is confirmed; pending return still records the visit.
         capturePostHogEvent(
           result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
-          { provider: 'legacy' },
+          { provider: 'qerko' },
         );
         await clearLegacyOrderQuery({ subscribed: '1' });
       } else {

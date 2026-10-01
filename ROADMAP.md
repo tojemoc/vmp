@@ -36,7 +36,7 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 | `analytics-observability` | Canonical analytics stack (#452, #509, #512, #611) | [#642](https://github.com/tojemoc/vmp/pull/642); plan: [analytics-observability.md](docs/plans/analytics-observability.md). PostHog **application metrics** (alpha): API `posthog-node` metrics + web `posthog.metrics` / network histograms. |
 | `step-08` | Brevo newsletter sync (#645 / TOJ-138) | Opt-out model + sync + admin tab shipped [#665](https://github.com/tojemoc/vmp/pull/665); plan: [step-08-brevo-newsletter.md](docs/plans/step-08-brevo-newsletter.md). Staging smoke with live `BREVO_API_KEY` is maintainer ops. |
 | `step-09` | RSS / podcast feed (#644 / TOJ-137) | Personal + public feeds, revocable token, account UI [#653](https://github.com/tojemoc/vmp/pull/653); plan: [step-09-rss-podcast-feed.md](docs/plans/step-09-rss-podcast-feed.md) |
-| `deployment-feature-modules` | Compile-time `VMP_FEATURES` modules | Phases 1–4 shipped ([#652](https://github.com/tojemoc/vmp/pull/652)+); plan: [deployment-feature-modules.md](docs/plans/deployment-feature-modules.md) |
+| `deployment-feature-modules` | Feature modules (Flagship Tier 1) | Phases 1–4 shipped ([#652](https://github.com/tojemoc/vmp/pull/652)+); Flagship migration: [flagship-and-payment-middleware.md](docs/plans/flagship-and-payment-middleware.md) |
 | `payments-gopay-comgate` | GoPay + Comgate providers (#648 / TOJ-141) | Providers + analytics + production code hardening; live merchant smoke is maintainer ops. Plan: [payments-gopay-comgate.md](docs/plans/payments-gopay-comgate.md) |
 
 ---
@@ -145,15 +145,15 @@ Replace compile-time `VMP_FEATURES` with Cloudflare Flagship (Tier 1), prepare P
 ### Flagship infrastructure flags (`infra-flagship-flags`)
 
 - [x] Phase 0 — Plan + locked decisions
-- [x] Phase A — Flagship binding + `infraFlags` evaluator (dual-read with `VMP_FEATURES`); staging flags created
-- [ ] Phase B — Remove all `VMP_FEATURES` reads; web hydrates flags from API/Flagship; deploy scripts cleaned
-- [ ] Phase C — PostHog Nuxt SSR server client ready for `getFeatureFlag` (no product flags yet)
+- [x] Phase A — Flagship binding + `infraFlags` evaluator; staging flags created
+- [x] Phase B — Remove `VMP_FEATURES` reads; web hydrates from `GET /api/deployment-features`; deploy scripts cleaned ([#725](https://github.com/tojemoc/vmp/pull/725))
+- [x] Phase C — PostHog Nuxt SSR `getFeatureFlag` / `getAllFlags` helpers (no product flags yet) ([#725](https://github.com/tojemoc/vmp/pull/725))
 
 ### Payment middleware (`payment-middleware`)
 
-- [ ] Phase D — Worker-extractable `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko; GoPay/Comgate soft-disable; `qerko` public naming; `legacy_migration` gates Qerko create; PostHog + `psp_source` (no MoR stub)
-- [ ] Phase E — Product layer calls middleware only; audit PSP imports; entitlement helpers
-- [ ] Phase F (optional) — Extract billing to a dedicated Worker after Phase D decision gate
+- [x] Phase D — Worker-extractable `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko; GoPay/Comgate soft-disable; `qerko` public naming; `legacy_migration` gates Qerko create; PostHog + `psp_source` (no MoR stub) ([#725](https://github.com/tojemoc/vmp/pull/725))
+- [x] Phase E — Product checkout/cancel/get/has via middleware; soft-disable + Flagship gates in product layer ([#725](https://github.com/tojemoc/vmp/pull/725))
+- [x] Phase F — `@vmp/billing` Worker + API `BILLING` service binding (in-process fallback when unbound) ([#725](https://github.com/tojemoc/vmp/pull/725))
 
 ---
 

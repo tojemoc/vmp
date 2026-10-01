@@ -40,7 +40,11 @@ export function resolvePostHogPublicKeyFromRuntimeConfig(
   return typeof fromRuntime === 'string' ? fromRuntime.trim() : '';
 }
 
-/** True when the `posthog` module is in this deployment's VMP_FEATURES allowlist. */
+/**
+ * Legacy baked-allowlist check. With A1 (always-register modules), runtimeConfig
+ * no longer ships `deploymentFeatures`; defaults to true. Flagship `posthog`
+ * gates product use via `useDeploymentFeatures` / API hydration.
+ */
 export function isPostHogDeploymentFeatureCompiled(config: RuntimeConfigLike): boolean {
   const features = config.public?.deploymentFeatures;
   if (!features) return true;
@@ -48,8 +52,8 @@ export function isPostHogDeploymentFeatureCompiled(config: RuntimeConfigLike): b
 }
 
 /**
- * PostHog is active for this deployment: project token is baked **and** the
- * `posthog` feature module is compiled into the build (`VMP_FEATURES`).
+ * PostHog client/SSR is active when a project token is baked.
+ * Infrastructure on/off is Flagship (`posthog`), not a compile-time allowlist.
  */
 export function isPostHogConfigured(config: RuntimeConfigLike): boolean {
   if (!isPostHogDeploymentFeatureCompiled(config)) return false;

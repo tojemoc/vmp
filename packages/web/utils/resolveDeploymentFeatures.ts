@@ -5,7 +5,6 @@ import {
   type DeploymentFeatureId,
   DEPLOYMENT_FEATURE_IDS,
   type DeploymentFeatureState,
-  parseDeploymentFeaturesEnv,
 } from '@vmp/shared';
 
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -13,6 +12,9 @@ const webRoot = fileURLToPath(new URL('..', import.meta.url));
 /**
  * Modular features ship optional plugin files under `packages/web/features/<id>/`.
  * When files are absent (slim fork / dedicated Worker), the admin toggle is grayed out.
+ *
+ * A1: modules are always registered when present; Flagship gates runtime behaviour
+ * via `useDeploymentFeatures` / `GET /api/deployment-features`.
  */
 export const MODULAR_WEB_FEATURE_PLUGINS: Partial<Record<DeploymentFeatureId, string>> = {
   gtm: 'features/gtm/plugin.client.ts',
@@ -22,10 +24,8 @@ export const MODULAR_WEB_FEATURE_PLUGINS: Partial<Record<DeploymentFeatureId, st
 
 export type WebDeploymentFeatures = Record<DeploymentFeatureId, DeploymentFeatureState>;
 
-export function resolveWebDeploymentFeatures(
-  env: Record<string, string | undefined> = process.env,
-): WebDeploymentFeatures {
-  const requested = parseDeploymentFeaturesEnv(env);
+/** Build-time plugin presence map (not a Flagship allowlist). */
+export function resolveWebDeploymentFeatures(): WebDeploymentFeatures {
   const states = {} as WebDeploymentFeatures;
 
   for (const id of DEPLOYMENT_FEATURE_IDS) {
@@ -34,11 +34,11 @@ export function resolveWebDeploymentFeatures(
       ? fs.existsSync(path.join(webRoot, pluginRel))
       : true;
 
-    const requestedInDeploy = requested.has(id);
+    // A1: always requested at build time when plugin files exist; Flagship is runtime.
     states[id] = {
-      requested: requestedInDeploy,
+      requested: true,
       pluginPresent,
-      compiled: requestedInDeploy && pluginPresent,
+      compiled: pluginPresent,
     };
   }
 

@@ -23,8 +23,8 @@ import { getSetting } from './settingsStore.js';
 const KNOWN_PROVIDER_IDS: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'comgate'];
 const DEFAULT_ENABLED: PaymentProviderId[] = ['stripe'];
 
-/** Public API provider ids exposed to checkout / pricing. */
-export type ApiPaymentProviderId = 'stripe' | 'legacy' | 'gopay' | 'comgate';
+/** Public API provider ids exposed to checkout / pricing (`qerko`, not `legacy`). */
+export type ApiPaymentProviderId = 'stripe' | 'qerko' | 'gopay' | 'comgate';
 
 export function resolveGoPayApiBase(env: any): string {
   const configured = String(env.GOPAY_API_BASE ?? '')
@@ -262,7 +262,7 @@ export async function getPaymentProviders(env: any) {
 }
 
 export function toApiProviderId(id: PaymentProviderId): ApiPaymentProviderId | null {
-  if (id === 'qerko') return 'legacy';
+  if (id === 'qerko') return 'qerko';
   if (id === 'stripe') return 'stripe';
   if (id === 'gopay') return 'gopay';
   if (id === 'comgate') return 'comgate';
@@ -277,7 +277,7 @@ export function toSupportedApiProviderIds(
     .map(toApiProviderId)
     .filter(
       (id): id is ApiPaymentProviderId =>
-        id === 'stripe' || id === 'legacy' || id === 'gopay' || id === 'comgate',
+        id === 'stripe' || id === 'qerko' || id === 'gopay' || id === 'comgate',
     );
 }
 

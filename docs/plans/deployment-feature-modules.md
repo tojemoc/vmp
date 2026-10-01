@@ -19,35 +19,27 @@ GTM is the canonical example: it loads from `features/gtm/plugin.client.ts` when
 
 | Plane | Mechanism | Example |
 |-------|-----------|---------|
-| **1. Compile-time** | `VMP_FEATURES` env at Nuxt/API build | Staging omits `gtm` → no GTM plugin, no admin fields |
+| **1. Infra (Tier 1)** | Cloudflare Flagship booleans (`FLAGS` binding; code default off) | Staging turns off `gtm` → API 404 + admin grayed |
 | **2. Tenant runtime** | D1 `admin_settings`, `/api/admin/system/features` | `gtm_enabled`, `promotions_enabled`, `rss_free_preview_enabled` |
-| **3. Rollout / UX experiments** | PostHog feature flags, Cloudflare Flags (future) | A/B a checkout layout while the `payments` module stays compiled |
+| **3. Rollout / UX experiments** | PostHog SSR/client flags (Tier 2) | A/B a checkout layout while `payments` stays Flagship-on |
 
-Compile-time gates **availability**. Tenant runtime gates **configuration**. Rollout flags gate **behaviour** within an enabled module.
+Flagship gates **availability**. Tenant runtime gates **configuration**. Rollout flags gate **behaviour** within an enabled module.
+
+> **Migration:** Compile-time `VMP_FEATURES` was removed. See [flagship-and-payment-middleware.md](./flagship-and-payment-middleware.md).
 
 Do not use GTM for PostHog or core product analytics — see [analytics-observability.md](./analytics-observability.md).
 
-## `VMP_FEATURES` allowlist
+## Flagship allowlist (replaces `VMP_FEATURES`)
 
-Comma- or space-separated IDs (hyphens normalized to underscores). **Unset = full default** (all catalog IDs) so existing deploys behave unchanged.
+Per-feature boolean flags in the Flagship app (staging: `e1bb7ed4-8309-458f-9f60-cb61f881685a`). Local override: `FLAGSHIP_DEV_OVERRIDE` CSV in `.dev.vars` only.
 
-```bash
-# Staging without marketing tag gateway
-VMP_FEATURES=posthog,sentry,pwa,push,payments,cms,analytics,newsletter,...
-
-# Slim dedicated Worker (illustrative)
-VMP_FEATURES=posthog,payments,cms
-```
-
-Catalog and parser: `packages/shared/src/deploymentFeatures.ts`.
-
-Baked into the web Worker as `runtimeConfig.public.deploymentFeatures` with per-id state:
+Catalog: `packages/shared/src/deploymentFeatures.ts`. Web hydrates `GET /api/deployment-features` into `useDeploymentFeatures` with per-id state:
 
 ```ts
 { requested, pluginPresent, compiled }
 ```
 
-- `requested` — listed in `VMP_FEATURES` (or default allow-all).
+- `requested` — Flagship (or local override) enabled.
 - `pluginPresent` — modular plugin files exist on disk.
 - `compiled` — `requested && pluginPresent`; safe to load routes/plugins.
 
@@ -56,14 +48,13 @@ Baked into the web Worker as `runtimeConfig.public.deploymentFeatures` with per-
 | Style | Location | Omit from slim build |
 |-------|----------|----------------------|
 | **Modular** | `packages/web/features/<id>/` | Delete or exclude folder; admin shows “plugin files missing” |
-| **Integrated** | `nuxt.config`, core pages, API routes | Gate with `VMP_FEATURES` + conditional module registration (code may still bundle until split) |
+| **Integrated** | `nuxt.config`, core pages, API routes | Gate with Flagship + route/admin checks (code may still bundle until split) |
 
-**Phase 1 (shipped in foundation PR):**
+**Phase 1 + Flagship migration:**
 
-- Catalog + parser in `@vmp/shared`
-- Web resolver + `useDeploymentFeatures()` composable
-- **GTM** moved to `packages/web/features/gtm/` and registered only when `gtm` is compiled
-- **PostHog** `@posthog/nuxt` module skipped when `posthog` not in allowlist (still requires project token)
+- Catalog in `@vmp/shared`; runtime via Flagship (`infraFlags`)
+- Web `useDeploymentFeatures()` hydrates from `GET /api/deployment-features`
+- **GTM** / **PWA** / **PostHog** plugins always registered when present (A1); Flagship + token/D1 gate behaviour
 
 ## Feature catalog (target)
 
@@ -125,32 +116,32 @@ Guidelines:
 
 ## Deployment profiles (illustrative)
 
-| Profile | Typical `VMP_FEATURES` |
-|---------|-------------------------|
-| `vmp-full` | *(unset — all)* |
+| Profile | Typical Flagship enable set |
+|---------|------------------------------|
+| `vmp-full` | all catalog booleans `on` |
 | `vmp-staging-no-gtm` | all except `gtm` |
 | `mosaiq-channel` | `posthog,payments,cms,analytics,pwa,push` |
 | `player-only` | `posthog,payments,pwa` |
 
-Store profile names in GitHub Environment vars; CI passes the resolved `VMP_FEATURES` string into the Nuxt build (see `.github/actions/deploy-cloudflare/action.yml`).
+Configure in the Cloudflare Flagship app per environment (not GitHub `VMP_FEATURES`).
 
 ## Implementation phases
 
 ### Phase 1 — Foundation + GTM
 
-- [x] `@vmp/shared` catalog + `parseDeploymentFeaturesEnv`
-- [x] Web resolver + `runtimeConfig.public.deploymentFeatures`
-- [x] GTM modular plugin + conditional `nuxt.config` registration
-- [x] Admin GTM fields hidden when not compiled
-- [x] PostHog module respects `posthog` in allowlist
-- [x] `VMP_FEATURES` wired in deploy action + `.env.example`
+- [x] `@vmp/shared` catalog + allowlist CSV parser
+- [x] Web modular plugins under `features/*`
+- [x] GTM modular plugin
+- [x] Admin GTM fields respect infra flags
+- [x] PostHog module when project token present; Flagship gates product use
+- [x] Superseded: `VMP_FEATURES` → Flagship (see flagship plan)
 
 ### Phase 2 — Admin surfaces + API parity
 
 - [x] `useDeploymentFeatures()` drives admin tab visibility (`legacy_migration`, `pills`, `newsletter`, …)
-- [x] API `VMP_FEATURES` parser + route guards
-- [x] `GET /api/admin/deployment-features`
-- [x] PWA module conditional registration
+- [x] API Flagship route guards
+- [x] `GET /api/admin/deployment-features` + public `GET /api/deployment-features`
+- [x] PWA module always-register (A1)
 
 ### Phase 3 — Tenant toggles alignment
 

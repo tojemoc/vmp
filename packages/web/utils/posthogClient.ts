@@ -18,7 +18,7 @@ type PostHogMetricsApi = {
 /** Explicit allowlist of metric attribute keys and permitted string values. */
 const APPROVED_METRIC_STRING_ATTRIBUTES: Record<string, ReadonlySet<string>> = {
   plan_type: new Set(['monthly', 'yearly', 'club']),
-  provider: new Set(['stripe', 'gopay', 'comgate', 'legacy', 'unknown']),
+  provider: new Set(['stripe', 'gopay', 'comgate', 'qerko', 'legacy', 'unknown']),
   client: new Set(['browser', 'pwa', 'native']),
   surface: new Set([
     'inline_auth',

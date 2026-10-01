@@ -90,6 +90,7 @@ import {
 } from './cmsPages.js';
 import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
 import { handleAdminDeploymentFeatures } from './deploymentFeaturesAdmin.js';
+import { handlePublicDeploymentFeatures } from './deploymentFeaturesPublic.js';
 import {
   handleAccountInvoices,
   handleAdminEInvoiceById,
@@ -848,6 +849,9 @@ const workerHandler = {
               ['GET', 'PATCH'].includes(request.method)
             ) {
               return handleSiteSettings(request, env, corsHeaders);
+            }
+            if (url.pathname === '/api/deployment-features' && request.method === 'GET') {
+              return handlePublicDeploymentFeatures(request, env, corsHeaders);
             }
             if (url.pathname === '/api/admin/deployment-features' && request.method === 'GET') {
               return handleAdminDeploymentFeatures(request, env, corsHeaders);

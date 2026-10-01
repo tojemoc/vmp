@@ -6,22 +6,19 @@ import {
 } from '../utils/resolveDeploymentFeatures';
 
 describe('resolveWebDeploymentFeatures', () => {
-  it('compiles gtm when requested and plugin file exists', () => {
-    const features = resolveWebDeploymentFeatures({ VMP_FEATURES: 'gtm' });
+  it('marks modular plugins compiled when plugin files exist (A1 always-register)', () => {
+    const features = resolveWebDeploymentFeatures();
     assert.equal(features.gtm.requested, true);
     assert.equal(features.gtm.pluginPresent, true);
     assert.equal(features.gtm.compiled, true);
     assert.equal(isWebDeploymentFeatureCompiled(features, 'gtm'), true);
+    assert.equal(features.posthog.compiled, true);
+    assert.equal(features.pwa.compiled, true);
   });
 
-  it('does not compile gtm when omitted from allowlist', () => {
-    const features = resolveWebDeploymentFeatures({ VMP_FEATURES: 'posthog,pwa' });
-    assert.equal(features.gtm.requested, false);
-    assert.equal(features.gtm.compiled, false);
-  });
-
-  it('does not compile posthog when omitted even with a project token env present', () => {
-    const features = resolveWebDeploymentFeatures({ VMP_FEATURES: 'gtm' });
-    assert.equal(features.posthog.compiled, false);
+  it('marks non-modular catalog ids compiled (no plugin path required)', () => {
+    const features = resolveWebDeploymentFeatures();
+    assert.equal(features.payments.pluginPresent, true);
+    assert.equal(features.payments.compiled, true);
   });
 });
