@@ -1505,11 +1505,51 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       );
     }
 
-    // Qerko new checkout requires Flagship legacy_migration (relink may still use legacy routes).
+    // Relink must come from the authenticated user's needs_relink row — never trust body alone.
+    const bodyPurchaseIdRaw = String(body?.purchaseId ?? '').trim();
+    const legacyRelink = await db
+      .prepare(`
+        SELECT purchase_id FROM subscriptions
+        WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
+          AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
+        ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
+        LIMIT 1
+      `)
+      .bind(user.sub)
+      .first();
+    const verifiedRelinkPurchaseId = legacyRelink?.purchase_id
+      ? String(legacyRelink.purchase_id).trim()
+      : '';
+    if (bodyPurchaseIdRaw && verifiedRelinkPurchaseId && bodyPurchaseIdRaw !== verifiedRelinkPurchaseId) {
+      return jsonResponse(
+        {
+          error: 'purchaseId does not match this account pending relink subscription.',
+          code: 'relink_purchase_mismatch',
+        },
+        400,
+        corsHeaders,
+      );
+    }
+    if (bodyPurchaseIdRaw && !verifiedRelinkPurchaseId) {
+      return jsonResponse(
+        {
+          error: 'No pending relink subscription for this account.',
+          code: 'relink_not_pending',
+        },
+        400,
+        corsHeaders,
+      );
+    }
+    // Relink only when the client supplies a purchaseId that matches the DB row.
+    const isVerifiedRelink = Boolean(
+      bodyPurchaseIdRaw && verifiedRelinkPurchaseId && bodyPurchaseIdRaw === verifiedRelinkPurchaseId,
+    );
+    const verifiedPurchaseIdForRelink = isVerifiedRelink ? verifiedRelinkPurchaseId : '';
+
+    // Qerko new checkout requires Flagship legacy_migration (verified relink may still proceed).
     if (providerId === 'qerko') {
       const legacyOn = await isInfraFeatureEnabled(env, 'legacy_migration');
-      const bodyPurchaseId = String(body?.purchaseId ?? '').trim();
-      if (!legacyOn && !bodyPurchaseId) {
+      if (!legacyOn && !isVerifiedRelink) {
         return jsonResponse(
           {
             error: 'Qerko checkout is disabled for this deployment',
@@ -1524,28 +1564,15 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
 
     // GoPay/Comgate soft-disabled above — sandbox-in-production guard is moot until re-enabled.
 
-    if (!provider.capabilities.newSubscriptions) {
-      const legacyRelink = await db
-        .prepare(`
-        SELECT purchase_id FROM subscriptions
-        WHERE user_id = ? AND provider = 'legacy' AND status = 'needs_relink'
-          AND purchase_id IS NOT NULL AND trim(purchase_id) <> ''
-        ORDER BY datetime(COALESCE(updated_at, created_at)) DESC
-        LIMIT 1
-      `)
-        .bind(user.sub)
-        .first();
-      const bodyPurchaseId = String(body?.purchaseId ?? '').trim();
-      if (!legacyRelink && !bodyPurchaseId) {
-        return jsonResponse(
-          {
-            error: 'This payment provider is only available for migrated subscriptions.',
-            code: 'provider_migration_only',
-          },
-          400,
-          corsHeaders,
-        );
-      }
+    if (!provider.capabilities.newSubscriptions && !isVerifiedRelink) {
+      return jsonResponse(
+        {
+          error: 'This payment provider is only available for migrated subscriptions.',
+          code: 'provider_migration_only',
+        },
+        400,
+        corsHeaders,
+      );
     }
 
     // Persist checkout opt-out only when explicitly checked. Never clear an
@@ -1569,7 +1596,6 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       .toUpperCase();
     const einvoicingCheckout =
       einvoicingEnabled && (sellerJurisdiction === 'SK' || sellerJurisdiction === 'CZ');
-    const bodyPurchaseIdForRelink = String(body?.purchaseId ?? '').trim();
     const billing = await getBillingMiddleware(env);
     const created = await billing.createSubscription({
       userId: user.sub,
@@ -1577,10 +1603,10 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
       planType,
       returnPath,
       source: apiProvider,
-      isRelink: Boolean(bodyPurchaseIdForRelink),
+      isRelink: isVerifiedRelink,
       einvoicingCheckout,
       ...(termsOfServiceUrl ? { termsOfServiceUrl } : {}),
-      ...(bodyPurchaseIdForRelink ? { purchaseId: bodyPurchaseIdForRelink } : {}),
+      ...(verifiedPurchaseIdForRelink ? { purchaseId: verifiedPurchaseIdForRelink } : {}),
       ...(promoMeta
         ? {
             promo: {
