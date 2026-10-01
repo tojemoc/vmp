@@ -139,7 +139,6 @@ runs:
 
     - name: Deploy billing Worker (${{ inputs.deploy-tier }})
       shell: bash
-      working-directory: packages/billing
       env:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
@@ -151,8 +150,10 @@ runs:
         # Owns checkout/webhooks/renewals/e-invoicing/promos. Secrets (STRIPE_*,
         # JWT_SECRET, LEGACY_*, PEPPOL_*, …) must be set via `wrangler secret put`
         # in packages/billing — same values as @vmp/api.
-        # Staging → top-level Worker `vmp-billing`; production → `--env production`
-        # (`vmp-billing-prod`). API BILLING service bindings match those names.
+        # Staging → top-level Worker `vmp-billing` (`--env=""`); production →
+        # `--env production` (`vmp-billing-prod`). API BILLING bindings match.
+        # `npm run deploy` builds `@vmp/storage` first (same as @vmp/api) so
+        # `@vmp/storage/worker` resolves during Wrangler bundling.
         EXTRA_ARGS=(
           --var "API_URL:${API_BASE_URL}"
           --var "FRONTEND_URL:${FRONTEND_URL}"
@@ -161,8 +162,10 @@ runs:
         )
         if [ "$DEPLOY_TIER" = "production" ]; then
           EXTRA_ARGS+=(--env production)
+        else
+          EXTRA_ARGS+=(--env="")
         fi
-        npx wrangler deploy "${EXTRA_ARGS[@]}"
+        npm run deploy --workspace=@vmp/billing -- "${EXTRA_ARGS[@]}"
 
     - name: Deploy API (${{ inputs.deploy-tier }})
       shell: bash

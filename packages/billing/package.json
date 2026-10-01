@@ -9,8 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "npm run build --workspace=@vmp/storage && wrangler dev",
+    "deploy": "npm run build --workspace=@vmp/storage && wrangler deploy",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test ./test/*.test.ts"
   },
