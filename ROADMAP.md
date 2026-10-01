@@ -60,7 +60,7 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 **Issues:** [#435](https://github.com/tojemoc/vmp/issues/435) / [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9)  
 **Plan:** [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md)
 
-Production origin is a **private Backblaze B2** bucket; Cloudflare Workers (`@vmp/api` + `@vmp/billing`) are the only public front doors (Bandwidth Alliance). No R2 dual-origin / feature-flag failover. Stack after billing ownership (`flagship-payments-middleware` / #725).
+Production origin is a **private Backblaze B2** bucket; Cloudflare Workers (`@vmp/api` + `@vmp/billing`) are the only public front doors (Bandwidth Alliance). No R2 dual-origin / feature-flag failover. Billing ownership landed in [#725](https://github.com/tojemoc/vmp/pull/725).
 
 - [ ] Shared `createPrivateBucketStorage` + API `/api/assets/*` for thumbs/CMS/pills
 - [ ] Billing e-invoice XML (`einvoices/…`) via same private B2 secrets on `vmp-billing`
