@@ -1,5 +1,5 @@
 import type { DeploymentFeatureId } from './deploymentFeatures.js';
-import { isDeploymentFeatureCompiled } from './deploymentFeatures.js';
+import { type InfraFlagsEnv, isInfraFeatureEnabled } from './infraFlags.js';
 
 type RouteFeatureRule = {
   prefix: string;
@@ -55,11 +55,11 @@ function resolveRouteFeature(pathname: string): DeploymentFeatureId | null {
   return null;
 }
 
-export function maybeBlockDeploymentFeatureRoute(
+export async function maybeBlockDeploymentFeatureRoute(
   request: Request,
-  env: { VMP_FEATURES?: string },
+  env: InfraFlagsEnv,
   corsHeaders: Record<string, string>,
-): Response | null {
+): Promise<Response | null> {
   if (request.method === 'OPTIONS') return null;
 
   const pathname = new URL(request.url).pathname;
@@ -67,7 +67,7 @@ export function maybeBlockDeploymentFeatureRoute(
 
   const featureId = resolveRouteFeature(pathname);
   if (!featureId) return null;
-  if (isDeploymentFeatureCompiled(env, featureId)) return null;
+  if (await isInfraFeatureEnabled(env, featureId)) return null;
 
   return new Response(
     JSON.stringify({

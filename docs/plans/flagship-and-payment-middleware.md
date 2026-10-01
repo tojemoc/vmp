@@ -90,7 +90,7 @@ Local `wrangler dev` evaluates against the **live** Flagship app (no local flag 
 
 - **A3 detail:** public vs admin-only bootstrap endpoint for web flag hydration (Phase B).
 - **A7 data migration:** optional later PR to rename D1 `legacy` → `qerko` (flagged, not scheduled).
-- **A12 — flag shape:** confirm whether the existing dashboard entry named `vmp` is the **application** (likely) or a single **flag key**. The plan expects **one boolean flag per catalog id** (`payments`, `posthog`, `legacy_migration`, …), not a single `vmp` kill switch — unless we deliberately use one JSON flag (see below).
+- **A12 — flag shape:** **Resolved.** `vmp` is the **application name**. Pre-existing flag: `isic-api` (boolean, disabled, left untouched). Catalog ids are **per-feature boolean flags** (created 2026-10-01). Staging allowlist keys have `default_variation=on`; `gtm` disabled/off; `isic-api` unchanged.
 
 ### Flagship staging app (ops)
 
@@ -231,12 +231,12 @@ Constraints:
 
 ### Phase A — Flagship plumbing (API first)
 
-1. Introduce `FlagEvaluator` (`packages/api/src/infraFlags.ts` or similar): Flagship binding → default `false`; temporary fallback to `VMP_FEATURES`; `FLAGSHIP_DEV_OVERRIDE` for local.
-2. Make route guards / manifest evaluation **async** (Flagship API is async).
-3. Unit tests with mock evaluator / mock `FLAGS`.
-4. Binding already points at staging app `e1bb7ed4-8309-458f-9f60-cb61f881685a` (`FLAGS`).
-5. Create/enable per-feature boolean flags (or confirm JSON `vmp` shape — A12) before relying on Flagship in dual-read.
-6. **Do not** remove `VMP_FEATURES` yet.
+1. [x] `packages/api/src/infraFlags.ts` — Flagship binding → default `false`; temporary fallback to `VMP_FEATURES`; `FLAGSHIP_DEV_OVERRIDE` for local.
+2. [x] Route guards / admin manifest evaluation **async**.
+3. [x] Unit tests with mock `FLAGS` binding.
+4. [x] Binding `FLAGS` → app `e1bb7ed4-8309-458f-9f60-cb61f881685a` (+ `account_id` for Wrangler).
+5. [x] Per-feature boolean flags created; staging allowlist `default_variation=on` (except `gtm` / `isic-api`).
+6. [ ] **Do not** remove `VMP_FEATURES` yet (Phase B).
 
 ### Phase B — Replace all `VMP_FEATURES` reads
 

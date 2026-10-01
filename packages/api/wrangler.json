@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "8298ebe2fc93e55a92f8bc5727d5f331",
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
   },

@@ -582,7 +582,11 @@ const workerHandler = {
               });
             }
 
-            const featureBlock = maybeBlockDeploymentFeatureRoute(request, env, corsHeaders);
+            const featureBlock = await maybeBlockDeploymentFeatureRoute(
+              request,
+              env,
+              corsHeaders,
+            );
             if (featureBlock) return featureBlock;
 
             // ── Auth routes ───────────────────────────────────────────────────────────

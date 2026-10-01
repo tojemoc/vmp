@@ -1,8 +1,6 @@
 import { requireRole } from './auth.js';
-import {
-  buildDeploymentFeatureManifest,
-  deploymentFeatureCatalogForAdmin,
-} from './deploymentFeatures.js';
+import { deploymentFeatureCatalogForAdmin } from './deploymentFeatures.js';
+import { buildInfraFeatureManifest, type InfraFlagsEnv } from './infraFlags.js';
 
 function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(data, null, 2), {
@@ -11,10 +9,10 @@ function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, s
   });
 }
 
-/** GET /api/admin/deployment-features — compile-time module manifest for admin UI. */
+/** GET /api/admin/deployment-features — infra flag manifest for admin UI (Flagship / fallback). */
 export async function handleAdminDeploymentFeatures(
   request: Request,
-  env: { VMP_FEATURES?: string },
+  env: InfraFlagsEnv,
   corsHeaders: Record<string, string>,
 ) {
   try {
@@ -29,7 +27,7 @@ export async function handleAdminDeploymentFeatures(
 
   return jsonResponse(
     {
-      features: buildDeploymentFeatureManifest(env),
+      features: await buildInfraFeatureManifest(env),
       catalog: deploymentFeatureCatalogForAdmin(),
     },
     200,

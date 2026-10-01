@@ -15,7 +15,10 @@ function featureEnvKey(env: { VMP_FEATURES?: string }): string {
   return String(env.VMP_FEATURES ?? '').trim();
 }
 
-/** Resolved compile-time allowlist for this Worker isolate (memoized per env string). */
+/**
+ * Resolved `VMP_FEATURES` allowlist (memoized per env string).
+ * Prefer `isInfraFeatureEnabled` from `infraFlags.ts` for request paths — Flagship first.
+ */
 export function getCompiledDeploymentFeatures(env: {
   VMP_FEATURES?: string;
 }): Set<DeploymentFeatureId> {
