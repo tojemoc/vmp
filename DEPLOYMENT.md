@@ -28,7 +28,9 @@ Keep domain-specific values as env overrides:
 
 - `FRONTEND_URL`
 - `ALLOWED_ORIGINS`
-- `R2_BASE_URL`
+- `API_URL` (public API origin — also used for `/api/assets/*` absolute URLs)
+
+Object media lives in a **private B2** bucket (Worker secrets `B2_*`). Do not expose a public bucket/CDN URL for video or thumbs. See [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md).
 
 Deploy each domain with its own Wrangler environment and secret set.
 

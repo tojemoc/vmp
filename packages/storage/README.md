@@ -14,13 +14,15 @@ import type { ObjectStorageProvider } from '@vmp/storage'
 
 | ID | Implementation | When to use |
 |---|---|---|
-| `r2` | `S3CompatibleStorageProvider` (S3 API against R2 endpoint) | Default production/staging |
-| `b2` | Same class, B2 endpoint defaults | Alternate S3-compatible backend |
+| `r2` | `S3CompatibleStorageProvider` (S3 API against R2 endpoint) | Local/dev or one-off ops |
+| `b2` | Same class, B2 endpoint defaults | **Production origin** (private bucket) |
 | `s3-compatible` | Same class, fully custom endpoint | Any other S3 API |
 
-Cloudflare Workers use the native R2 binding via `wrapR2Bucket()` (`@vmp/storage/worker`) — no AWS SDK in the Worker bundle.
+**Production:** set Worker secrets `B2_BUCKET_NAME` / `B2_ACCESS_KEY_ID` / `B2_SECRET_ACCESS_KEY` (optional `B2_S3_ENDPOINT`, `B2_REGION`). The API Worker serves all public reads through `/api/video-proxy` (signed) and `/api/assets` (allowlisted). Do not dual-write to R2.
 
-Node services (`api-node`, `media-pipeline`) use `createStorageProviderFromEnv()` (`@vmp/storage/node`).
+**Local Wrangler:** when B2 secrets are unset, `@vmp/api` uses the native R2 binding via `wrapR2Bucket()` (`@vmp/storage/worker`) as the single provider.
+
+Node services (`api-node`, `media-pipeline`) use `createStorageProviderFromEnv()` (`@vmp/storage/node`) with `STORAGE_PROVIDER=b2` in production.
 
 ## Environment variables
 

@@ -179,7 +179,8 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
 | `PACKAGER_CALLBACK_URL` | `http://vmp:$VMP_PACKAGER_SECRET@vmp-supervisor:8788/vmp/api` | encore-packager callbacks (Basic auth; Eyevinn does not send custom headers) |
 | `PACKAGE_FORMAT_OPTIONS_JSON` | `{"segmentDuration":2}` | Shaka options via encore-packager — **keep `segmentDuration` aligned with encode GOP** (profiles use `g`/`keyint_min` **60** @ 30fps = **2s** IDR; was 180/6s) |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_ENDPOINT_URL` | — | R2 credentials for encore-packager (`PACKAGE_OUTPUT_FOLDER=s3://…`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_ENDPOINT_URL` | — | Private B2 (S3) credentials for encore-packager (`PACKAGE_OUTPUT_FOLDER=s3://…`) |
+| `STORAGE_PROVIDER` / `B2_*` | — | Supervisor sidecar uploads via `@vmp/storage` (`STORAGE_PROVIDER=b2`) |
 
 ### HLS segment duration (startup latency)
 

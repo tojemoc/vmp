@@ -20,6 +20,7 @@ import {
   shouldRejectStalePlaybackWrite,
 } from '@vmp/shared';
 import { requireAuth, requireRole } from './auth.js';
+import { rewriteStoredPublicObjectUrl } from './publicAssets.js';
 
 export {
   getPlaybackEndClearThresholds,
@@ -229,8 +230,7 @@ export async function handleListPlaybackPositions(
       lastUpdatedAt = row.updated_at != null ? String(row.updated_at) : null;
       lastVideoId = row.video_id != null ? String(row.video_id) : null;
       const positionSeconds = Number(row.position_seconds);
-      const durationSeconds =
-        Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
+      const durationSeconds = Number(row.full_duration) > 0 ? Number(row.full_duration) : null;
       if (isNearPlaybackEnd(positionSeconds, durationSeconds)) continue;
 
       if (lookingForExtra) {
@@ -244,7 +244,10 @@ export async function handleListPlaybackPositions(
         videoId: String(row.video_id),
         title: String(row.title ?? ''),
         slug: row.slug ? String(row.slug) : null,
-        thumbnailUrl: row.thumbnail_url ? String(row.thumbnail_url) : null,
+        thumbnailUrl: row.thumbnail_url
+          ? (rewriteStoredPublicObjectUrl(String(row.thumbnail_url), env) ??
+            String(row.thumbnail_url))
+          : null,
         positionSeconds,
         durationSeconds,
         updatedAt: row.updated_at != null ? String(row.updated_at) : null,

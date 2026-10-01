@@ -282,7 +282,8 @@ npm run preview:workers --workspace=@vmp/web   # local Worker preview (after bui
 ### Gotchas
 
 - The wrangler dev console truncates long log lines. Use a wide terminal (or tmux `resize-window -x 500`) to capture full magic-link tokens.
-- Video playback on `/watch/:id` requires actual HLS segments in R2. The seed data has no media files, so the player shows "Media failed to load" — this is expected in a fresh local environment.
+- Video playback on `/watch/:id` requires actual HLS segments in object storage (private B2 in production; local Wrangler R2 binding when `B2_*` unset). The seed data has no media files, so the player shows "Media failed to load" — this is expected in a fresh local environment.
+- Production object storage is **private B2 only** (Bandwidth Alliance): clients never hit the bucket directly. HLS goes through `/api/video-proxy` (signed `vt`); thumbs/CMS/pills through `/api/assets/*`. See [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md).
 - The lockfile is committed (not in `.gitignore`). Do not manually rewrite `package-lock.json`; run `npm install` after any `package.json` version change so `npm ci` succeeds in CI.
 
 ### Required Wrangler secrets (for production — set via `wrangler secret put`)
@@ -308,12 +309,13 @@ PEPPOL_AP_API_KEY       — Peppol Access Point REST API key for live SK eFaktur
 VMP_API_PIPELINE_SECRET — shared with media-pipeline for `POST /api/admin/videos/:id/pipeline-status` HLS availability callbacks
 REPLICATION_TARGET_URL — full URL to Deno ingest (`/api/internal/replication/ingest` on api-node)
 REPLICATION_TARGET_TOKEN — bearer token for replication ingest (same value as api-node `REPLICATION_INGEST_TOKEN`)
+B2_BUCKET_NAME / B2_ACCESS_KEY_ID / B2_SECRET_ACCESS_KEY — private Backblaze B2 origin (production). Optional `B2_S3_ENDPOINT`, `B2_REGION`.
 ```
 
 Optional API Worker **vars** (runtime, Cloudflare dashboard / `wrangler.json` / `.dev.vars` — not GitHub Actions):
 
 ```text
-API_URL — public base URL of this API Worker (e.g. https://vmp-api.tjm.sk). Required for Qerko/legacy and GoPay webhook notifyUrl. Staging/prod CD passes it via `wrangler deploy --var API_URL:…` from `API_URL_STAGING` / `API_URL_PROD`.
+API_URL — public base URL of this API Worker (e.g. https://vmp-api.tjm.sk). Required for Qerko/legacy and GoPay webhook notifyUrl, and for minting `/api/assets/*` absolute URLs. Staging/prod CD passes it via `wrangler deploy --var API_URL:…` from `API_URL_STAGING` / `API_URL_PROD`.
 FRONTEND_URL — public frontend origin for checkout return URLs (also in wrangler.json; CD overrides per tier).
 POSTHOG_PROJECT_TOKEN — public PostHog project token (same value as NUXT_PUBLIC_POSTHOG_KEY on the frontend)
 POSTHOG_HOST          — ingest host; defaults to https://eu.i.posthog.com (also in wrangler.json vars)

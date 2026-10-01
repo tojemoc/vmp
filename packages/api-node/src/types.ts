@@ -13,8 +13,13 @@ export interface CFEnvShape {
   FRONTEND_URL?: string;
   /** Canonical public API base (e.g. https://vmp-backup-api.tjm.sk) for proxy/RSS URLs behind TLS. */
   API_PUBLIC_URL?: string;
+  API_URL?: string;
   ALLOWED_ORIGINS?: string;
-  R2_BASE_URL?: string;
+  B2_BUCKET_NAME?: string;
+  B2_ACCESS_KEY_ID?: string;
+  B2_SECRET_ACCESS_KEY?: string;
+  B2_S3_ENDPOINT?: string;
+  B2_REGION?: string;
   SENDER_EMAIL?: string;
   SENDER_NAME?: string;
   STRIPE_PUBLISHABLE_KEY?: string;

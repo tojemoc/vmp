@@ -12,8 +12,8 @@
  * The original is stored with its actual MIME type and extension (.jpg or .png).
  * The three resized variants are always stored as JPEG regardless of the source format.
  *
- * D1: videos.thumbnail_url is updated to point at the large.jpg variant,
- * e.g. https://<R2_BASE_URL>/thumbnails/{videoId}/large.jpg.
+ * D1: videos.thumbnail_url is updated to point at the large.jpg variant via the
+ * Worker asset proxy, e.g. https://<API>/api/assets/thumbnails/{videoId}/large.jpg.
  *
  * Image resizing uses OffscreenCanvas + createImageBitmap, both available in
  * Cloudflare Workers' Chromium runtime.  If either API is absent the upload
@@ -24,6 +24,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { requireRole } from './auth.js';
 import { getObjectStorage, type StorageEnv } from './objectStorage.js';
+import { buildPublicAssetUrl, type PublicAssetEnv } from './publicAssets.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -46,10 +47,9 @@ interface ThumbUrls {
   [key: string]: string | undefined;
 }
 
-interface Env extends StorageEnv {
+interface Env extends StorageEnv, PublicAssetEnv {
   DB?: D1Database;
   video_subscription_db?: D1Database;
-  R2_BASE_URL?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -189,7 +189,6 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     return jsonResponse({ error: 'File too large. Maximum size is 10 MB.' }, 413, corsHeaders);
   }
 
-  const r2BaseUrl = (env.R2_BASE_URL || '').replace(/\/$/, '');
   // Change the URL on each upload so CDN/browser caches cannot serve stale images.
   const cacheVersion = Date.now().toString();
 
@@ -210,13 +209,21 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
     );
   }
 
-  // Track which R2 keys we write so we can clean them up on any failure.
+  // Track which object keys we write so we can clean them up on any failure.
   const writtenKeys = [];
   const thumbUrls: ThumbUrls = {};
   const storage = getObjectStorage(env);
   if (!storage) {
     return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders);
   }
+
+  const assetUrl = (key: string) => {
+    const url = buildPublicAssetUrl(env, key, { v: cacheVersion });
+    if (!url) {
+      throw new Error('API_URL / API_PUBLIC_URL is required to mint public asset URLs');
+    }
+    return url;
+  };
 
   try {
     // Store the original with its actual MIME type / extension.
@@ -225,7 +232,7 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
       cacheControl: THUMBNAIL_CACHE_CONTROL,
     });
     writtenKeys.push(origKey);
-    thumbUrls.original = `${r2BaseUrl}/${origKey}?v=${cacheVersion}`;
+    thumbUrls.original = assetUrl(origKey);
 
     // Resize to each size variant.
     // When the Canvas API is unavailable the original bytes are stored instead
@@ -246,7 +253,7 @@ export async function handleThumbnailUpload(request: Request, env: Env, corsHead
         cacheControl: THUMBNAIL_CACHE_CONTROL,
       });
       writtenKeys.push(variantKey);
-      thumbUrls[key] = `${r2BaseUrl}/${variantKey}?v=${cacheVersion}`;
+      thumbUrls[key] = assetUrl(variantKey);
     }
 
     // Update D1 to point at the large variant.

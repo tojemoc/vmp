@@ -14,7 +14,6 @@ import {
   buildOfflineManifest,
   computeManifestHash,
   createBucketOfflineR2Reader,
-  createHttpOfflineR2Reader,
   estimateDownloadBytes,
   findMasterRelativePath,
   isOfflineRendition,
@@ -404,10 +403,6 @@ async function resolveAvailableOfflineR2Reader(
     const bucketReader = createBucketOfflineR2Reader(storage, videoId);
     if (await findMasterRelativePath(bucketReader)) return bucketReader;
   }
-  if (env.R2_BASE_URL) {
-    const httpReader = createHttpOfflineR2Reader(env.R2_BASE_URL, videoId);
-    if (await findMasterRelativePath(httpReader)) return httpReader;
-  }
   return null;
 }
 
@@ -520,11 +515,14 @@ export async function handleAuthorizeDownload(
       env,
       videoId: resolvedVideoId,
       bunnyPlaybackUrl: bunnyRow?.bunny_playback_url ?? null,
+      storage: getObjectStorage(env),
     });
     const reason =
-      entrypoint && !String(entrypoint).includes(`/videos/${resolvedVideoId}/`)
-        ? 'Offline download requires R2-hosted HLS assets for this video'
-        : 'No HLS master playlist found in R2 for this video';
+      entrypoint &&
+      (String(entrypoint).startsWith('http://') || String(entrypoint).startsWith('https://')) &&
+      !String(entrypoint).includes(`/videos/${resolvedVideoId}/`)
+        ? 'Offline download requires storage-hosted HLS assets for this video'
+        : 'No HLS master playlist found in object storage for this video';
     return errorResponse(reason, 409, corsHeaders, 'r2_assets_required');
   }
 
@@ -627,7 +625,7 @@ export async function handleDownloadAsset(
   videoIdParam: string,
   assetPath: string,
 ) {
-  if (!env.JWT_SECRET || (!hasObjectStorage(env) && !env.R2_BASE_URL)) {
+  if (!env.JWT_SECRET || !hasObjectStorage(env)) {
     return errorResponse('Offline downloads not configured', 503, corsHeaders);
   }
 
@@ -697,60 +695,30 @@ export async function handleDownloadAsset(
   const objectPath = `videos/${resolvedVideoId}/${normalizedAsset}`;
 
   const storage = getObjectStorage(env);
-  if (storage) {
-    const range = parseRangeHeader(request.headers.get('Range'));
-    const object = await storage.getObject(objectPath, range ? { range } : undefined);
-    if (object) {
-      const headers = new Headers();
-      if (object.contentType) {
-        headers.set('Content-Type', object.contentType);
-      }
-      if (object.range) {
-        headers.set('Content-Length', String(object.range.length));
-        headers.set(
-          'Content-Range',
-          `bytes ${object.range.offset}-${object.range.offset + object.range.length - 1}/${object.size ?? '*'}`,
-        );
-        headers.set('Accept-Ranges', 'bytes');
-      } else if (object.size !== undefined) {
-        headers.set('Content-Length', String(object.size));
-      }
-      headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin'] ?? '*');
-      if (corsHeaders['Access-Control-Allow-Credentials']) {
-        headers.set(
-          'Access-Control-Allow-Credentials',
-          corsHeaders['Access-Control-Allow-Credentials'],
-        );
-      }
-      headers.set('Cache-Control', 'private, no-store');
-
-      return new Response(object.body as ReadableStream, {
-        status: object.range ? 206 : 200,
-        headers,
-      });
-    }
+  if (!storage) {
+    return errorResponse('Object storage not configured', 503, corsHeaders);
   }
 
-  if (!env.R2_BASE_URL) return errorResponse('R2 not configured', 503, corsHeaders);
-
-  const upstreamUrl = `${env.R2_BASE_URL.replace(/\/+$/, '')}/${objectPath}`;
-
-  const upstreamHeaders = new Headers();
-  const rangeHeader = request.headers.get('Range');
-  if (rangeHeader) upstreamHeaders.set('Range', rangeHeader);
-
-  let upstreamRes: Response;
-  try {
-    upstreamRes = await fetch(upstreamUrl, { headers: upstreamHeaders });
-  } catch {
-    return errorResponse('Failed to fetch asset', 502, corsHeaders);
+  const range = parseRangeHeader(request.headers.get('Range'));
+  const object = await storage.getObject(objectPath, range ? { range } : undefined);
+  if (!object) {
+    return errorResponse('Asset not found', 404, corsHeaders);
   }
 
-  if (!upstreamRes.ok) {
-    return errorResponse('Asset not found', upstreamRes.status === 404 ? 404 : 502, corsHeaders);
+  const headers = new Headers();
+  if (object.contentType) {
+    headers.set('Content-Type', object.contentType);
   }
-
-  const headers = new Headers(upstreamRes.headers);
+  if (object.range) {
+    headers.set('Content-Length', String(object.range.length));
+    headers.set(
+      'Content-Range',
+      `bytes ${object.range.offset}-${object.range.offset + object.range.length - 1}/${object.size ?? '*'}`,
+    );
+    headers.set('Accept-Ranges', 'bytes');
+  } else if (object.size !== undefined) {
+    headers.set('Content-Length', String(object.size));
+  }
   headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin'] ?? '*');
   if (corsHeaders['Access-Control-Allow-Credentials']) {
     headers.set(
@@ -760,9 +728,8 @@ export async function handleDownloadAsset(
   }
   headers.set('Cache-Control', 'private, no-store');
 
-  return new Response(upstreamRes.body, {
-    status: upstreamRes.status,
-    statusText: upstreamRes.statusText,
+  return new Response(object.body as ReadableStream, {
+    status: object.range ? 206 : 200,
     headers,
   });
 }

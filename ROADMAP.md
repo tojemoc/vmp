@@ -55,6 +55,17 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 - [x] Admin-editable checkout terms label + trust blurb
 - [x] Native `verify-code` with `client=native` → `refreshToken` (same contract as native redeem)
 
+### Private B2-only object storage (`b2-private-bucket-only`)
+
+**Issues:** [#435](https://github.com/tojemoc/vmp/issues/435) / [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9)  
+**Plan:** [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md)
+
+Production origin is a **private Backblaze B2** bucket; Cloudflare Worker is the only public front door (Bandwidth Alliance). No R2 dual-origin / feature-flag failover.
+
+- [ ] B2-only `createPlaybackStorage` + `/api/assets/*` for thumbs/CMS/pills
+- [ ] Storage-backed media entrypoint/duration (no public object CDN)
+- [ ] Pipeline / Encore / docs point at private B2; maintainer ops cutover
+
 ### Club plan entitlements (`club`)
 
 **Issues:** [#649](https://github.com/tojemoc/vmp/issues/649) / [TOJ-139](https://linear.app/tojemoc/issue/TOJ-139)  

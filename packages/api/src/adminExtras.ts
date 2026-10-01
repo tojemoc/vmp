@@ -8,6 +8,7 @@ import {
 import { requireAuth, requireRole } from './auth.js';
 import { log } from './logger.js';
 import { getObjectStorage } from './objectStorage.js';
+import { buildPublicAssetUrl, withRewrittenThumbnailUrl } from './publicAssets.js';
 import { buildSettingsStatements, getSetting, setSetting, setSettings } from './settingsStore.js';
 import { parseCsvUserRows } from './userImportCsv.js';
 
@@ -843,15 +844,12 @@ export async function handleAdminPillImageUpload(request: any, env: any, corsHea
         : file.type === 'image/gif'
           ? 'gif'
           : 'jpg';
-  const base = String(env.R2_BASE_URL ?? '')
-    .trim()
-    .replace(/\/$/, '');
-  if (!base) {
-    return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders);
-  }
   const key = `pills/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   await storage.putObject(key, bytes, { contentType: file.type });
-  const imageUrl = `${base}/${key}`;
+  const imageUrl = buildPublicAssetUrl(env, key);
+  if (!imageUrl) {
+    return jsonResponse({ error: 'API_URL / API_PUBLIC_URL is not configured' }, 503, corsHeaders);
+  }
   return jsonResponse({ ok: true, imageUrl, key }, 200, corsHeaders);
 }
 
@@ -961,7 +959,7 @@ export async function handleCategoryVideosBySlug(request: any, env: any, corsHea
   return jsonResponse(
     {
       category,
-      videos: rows?.results ?? [],
+      videos: (rows?.results ?? []).map((video: any) => withRewrittenThumbnailUrl(video, env)),
       pagination: {
         page,
         pageSize,

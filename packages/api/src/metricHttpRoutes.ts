@@ -191,6 +191,7 @@ const METRIC_HTTP_ROUTE_TEMPLATES: ReadonlyArray<{ re: RegExp; template: string 
   { re: /^\/api\/feed\/[^/]+\/[^/]+$/, template: '/api/feed/:userId/:token' },
   { re: /^\/api\/video-access\//, template: '/api/video-access/:userId/:videoId' },
   { re: /^\/api\/video-proxy\//, template: '/api/video-proxy/:path' },
+  { re: /^\/api\/assets\//, template: '/api/assets/:path' },
 ];
 
 /**

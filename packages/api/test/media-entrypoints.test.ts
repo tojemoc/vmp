@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it, mock } from 'node:test';
+import { describe, it } from 'node:test';
 import {
+  buildEntrypointCandidateKeys,
   buildEntrypointCandidates,
   getVideoProxyCacheControl,
   resolveMediaEntrypoint,
@@ -8,6 +9,16 @@ import {
   sortMasterPlaylistByBandwidth,
 } from '../src/mediaEntrypoints.js';
 import { isImmutableVideoProxyObject, videoProxyObjectCacheKey } from '../src/videoProxyCache.js';
+
+describe('buildEntrypointCandidateKeys', () => {
+  it('keeps HLS-first order by default', () => {
+    assert.deepEqual(buildEntrypointCandidateKeys('vid_123'), [
+      'videos/vid_123/master.m3u8',
+      'videos/vid_123/processed/hls/master.m3u8',
+      'videos/vid_123/processed/playlist.m3u8',
+    ]);
+  });
+});
 
 describe('buildEntrypointCandidates', () => {
   it('keeps HLS-first order by default', () => {
@@ -50,53 +61,53 @@ describe('buildEntrypointCandidates', () => {
 });
 
 describe('resolveMediaEntrypoint mediaFound', () => {
-  afterEach(() => {
-    mock.restoreAll();
-  });
-
-  it('sets mediaFound when an R2 HEAD succeeds', async () => {
-    mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/processed/hls/master.m3u8')) {
-        return new Response(null, { status: 200 });
-      }
-      return new Response(null, { status: 404 });
-    });
+  it('sets mediaFound when storage HEAD succeeds', async () => {
+    const storage = {
+      id: 'test',
+      headObject: async (key: string) =>
+        key.endsWith('/processed/hls/master.m3u8') ? { key, size: 1, etag: 'e' } : null,
+    } as any;
 
     const resolved = await resolveMediaEntrypoint({
-      env: { R2_BASE_URL: 'https://cdn.example.com' },
       videoId: 'vid_123',
+      storage,
     });
     assert.equal(resolved.mediaFound, true);
-    assert.equal(resolved.url, 'https://cdn.example.com/videos/vid_123/processed/hls/master.m3u8');
+    assert.equal(resolved.url, 'videos/vid_123/processed/hls/master.m3u8');
   });
 
   it('sets mediaFound when Bunny fallback is selected', async () => {
-    mock.method(globalThis, 'fetch', async () => new Response(null, { status: 404 }));
+    const storage = {
+      id: 'test',
+      headObject: async () => null,
+    } as any;
 
     const bunny = 'https://vz.example.com/play_123/playlist.m3u8';
     const resolved = await resolveMediaEntrypoint({
-      env: { R2_BASE_URL: 'https://cdn.example.com' },
       videoId: 'vid_123',
       bunnyPlaybackUrl: bunny,
+      storage,
     });
     assert.equal(resolved.mediaFound, true);
     assert.equal(resolved.url, bunny);
   });
 
   it('returns mediaFound false when nothing is found, and URL wrapper still works', async () => {
-    mock.method(globalThis, 'fetch', async () => new Response(null, { status: 404 }));
+    const storage = {
+      id: 'test',
+      headObject: async () => null,
+    } as any;
 
     const resolved = await resolveMediaEntrypoint({
-      env: { R2_BASE_URL: 'https://cdn.example.com' },
       videoId: 'vid_123',
+      storage,
     });
     assert.equal(resolved.mediaFound, false);
-    assert.equal(resolved.url, 'https://cdn.example.com/videos/vid_123/master.m3u8');
+    assert.equal(resolved.url, 'videos/vid_123/master.m3u8');
 
     const urlOnly = await resolveMediaEntrypointUrl({
-      env: { R2_BASE_URL: 'https://cdn.example.com' },
       videoId: 'vid_123',
+      storage,
     });
     assert.equal(urlOnly, resolved.url);
   });

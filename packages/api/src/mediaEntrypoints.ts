@@ -1,52 +1,64 @@
 /**
- * packages/api/src/mediaEntrypoints.js
- *
- * Shared helpers to resolve which HLS entrypoint exists in R2 and to build
- * proxy URLs that point at /api/video-proxy.
+ * Shared helpers to resolve which HLS/podcast entrypoint exists in object storage
+ * and to build proxy URLs that point at /api/video-proxy.
  */
 
+import type { ObjectStorageProvider } from '@vmp/storage/worker';
 import { getRequestPublicOrigin } from './requestPublicOrigin.js';
 
-export function buildEntrypointCandidates(base: any, videoId: any, options: any = {}) {
+export function buildEntrypointCandidateKeys(videoId: string, options: any = {}) {
   const preferPodcast = options?.preferPodcast === true;
   /** When true, prefer assets that match the current preview window (HLS or podcast_preview.mp3). */
   const rssPreview = options?.rssPreview === true && preferPodcast;
-  const candidates = [];
+  const candidates: string[] = [];
   if (preferPodcast) {
     if (rssPreview) {
       candidates.push(
-        `${base}/videos/${videoId}/podcast_preview.mp3`,
-        `${base}/videos/${videoId}/processed/podcast_preview.mp3`,
+        `videos/${videoId}/podcast_preview.mp3`,
+        `videos/${videoId}/processed/podcast_preview.mp3`,
       );
     } else {
       candidates.push(
-        `${base}/videos/${videoId}/podcast.mp3`,
-        `${base}/videos/${videoId}/processed/podcast.mp3`,
-        `${base}/videos/${videoId}/processed/audio/podcast.mp3`,
+        `videos/${videoId}/podcast.mp3`,
+        `videos/${videoId}/processed/podcast.mp3`,
+        `videos/${videoId}/processed/audio/podcast.mp3`,
       );
     }
   }
   candidates.push(
-    `${base}/videos/${videoId}/master.m3u8`,
-    `${base}/videos/${videoId}/processed/hls/master.m3u8`,
-    `${base}/videos/${videoId}/processed/playlist.m3u8`,
+    `videos/${videoId}/master.m3u8`,
+    `videos/${videoId}/processed/hls/master.m3u8`,
+    `videos/${videoId}/processed/playlist.m3u8`,
   );
   return candidates;
 }
 
+/**
+ * @deprecated Prefer buildEntrypointCandidateKeys. Kept for tests that assert URL shapes.
+ * Joins a legacy public base with relative entrypoint keys.
+ */
+export function buildEntrypointCandidates(base: any, videoId: any, options: any = {}) {
+  const normalizedBase = String(base ?? '').replace(/\/$/, '');
+  return buildEntrypointCandidateKeys(String(videoId), options).map(
+    (key) => `${normalizedBase}/${key}`,
+  );
+}
+
 export type MediaEntrypointResolution = {
+  /** Object key (`videos/{id}/master.m3u8`) or absolute Bunny CDN URL. */
   url: string;
-  /** True when an R2 HEAD succeeded or a configured Bunny playback URL was selected. */
+  /** True when storage HEAD succeeded or a configured Bunny playback URL was selected. */
   mediaFound: boolean;
 };
 
 type ResolveMediaEntrypointArgs = {
-  env: { R2_BASE_URL?: string };
+  env?: { R2_BASE_URL?: string };
   videoId: string;
   preferPodcast?: boolean;
   rssPreview?: boolean;
-  /** Bunny Stream HLS manifest on Bunny CDN — used when R2 has no processed artifact. */
+  /** Bunny Stream HLS manifest on Bunny CDN — used when storage has no processed artifact. */
   bunnyPlaybackUrl?: string | null;
+  storage?: ObjectStorageProvider | null | undefined;
 };
 
 /**
@@ -54,52 +66,64 @@ type ResolveMediaEntrypointArgs = {
  * Callers that only need the URL should use {@link resolveMediaEntrypointUrl}.
  */
 export async function resolveMediaEntrypoint({
-  env,
   videoId,
   preferPodcast = false,
   rssPreview = false,
   bunnyPlaybackUrl = null,
+  storage,
 }: ResolveMediaEntrypointArgs): Promise<MediaEntrypointResolution> {
-  const base = env.R2_BASE_URL;
-  const candidates = buildEntrypointCandidates(base, videoId, { preferPodcast, rssPreview });
-  for (const c of candidates) {
-    if (await canLoadEntrypoint(c)) return { url: c, mediaFound: true };
+  const provider = storage ?? null;
+  if (provider) {
+    const candidates = buildEntrypointCandidateKeys(videoId, { preferPodcast, rssPreview });
+    for (const key of candidates) {
+      try {
+        const head = await provider.headObject(key);
+        if (head) return { url: key, mediaFound: true };
+      } catch {
+        /* try next */
+      }
+    }
   }
+
   // TODO: Bunny CDN URLs bypass /api/video-proxy — preview manifest truncation does not apply.
   if (bunnyPlaybackUrl && typeof bunnyPlaybackUrl === 'string' && bunnyPlaybackUrl.trim()) {
     return { url: bunnyPlaybackUrl.trim(), mediaFound: true };
   }
-  const fallbackUrl = candidates[0] ?? '';
-  return { url: fallbackUrl, mediaFound: false };
+
+  // Fall back to the preferred key so callers can still mint proxy URLs; playback 404s if missing.
+  const fallback =
+    buildEntrypointCandidateKeys(videoId, { preferPodcast, rssPreview })[0] ??
+    `videos/${videoId}/master.m3u8`;
+  return { url: fallback, mediaFound: false };
 }
 
 /** URL-only wrapper — preserves existing feed / offline / access callers. */
-export async function resolveMediaEntrypointUrl(args: ResolveMediaEntrypointArgs): Promise<string> {
+export async function resolveMediaEntrypointUrl(
+  args: ResolveMediaEntrypointArgs,
+): Promise<string> {
   const { url } = await resolveMediaEntrypoint(args);
   return url;
 }
 
 export function buildProxyPlaylistUrl(
   request: any,
-  playlistUrl: any,
+  playlistUrlOrKey: any,
   previewUntilSeconds: any,
   env?: { API_PUBLIC_URL?: string },
 ) {
   const origin = getRequestPublicOrigin(request, env);
-  const upstream = new URL(playlistUrl);
-  const u = new URL(`${origin}/api/video-proxy${upstream.pathname}`);
+  const raw = String(playlistUrlOrKey ?? '');
+  let pathname: string;
+  if (/^https?:\/\//i.test(raw)) {
+    pathname = new URL(raw).pathname;
+  } else {
+    pathname = `/${raw.replace(/^\/+/, '')}`;
+  }
+  const u = new URL(`${origin}/api/video-proxy${pathname}`);
   if (typeof previewUntilSeconds === 'number' && previewUntilSeconds >= 0) {
     u.searchParams.set('previewUntil', String(Math.floor(previewUntilSeconds)));
   }
   return u.toString();
-}
-
-async function canLoadEntrypoint(url: any) {
-  try {
-    return (await fetch(url, { method: 'HEAD' })).ok;
-  } catch {
-    return false;
-  }
 }
 
 /** Cache-Control for /api/video-proxy responses based on object path + manifest type. */

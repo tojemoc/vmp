@@ -10,7 +10,9 @@
 
 import { applySessionBookmark, getDb, getReadSession } from './d1Session.js';
 import { buildProxyPlaylistUrl, resolveMediaEntrypointUrl } from './mediaEntrypoints.js';
+import { getObjectStorage } from './objectStorage.js';
 import { needsPodcastPreviewMp3 } from './podcastPreview.js';
+import { rewriteStoredPublicObjectUrl } from './publicAssets.js';
 import { getRequestPublicOrigin } from './requestPublicOrigin.js';
 import { isAdministrativeRole } from './roles.js';
 import { computeRssTokenHex, normalizeRssTokenVersion } from './rssToken.js';
@@ -182,13 +184,17 @@ async function rssFeedVersionFingerprint(rows: any[]): Promise<string> {
   return sha256HexOfString(parts.join('|'));
 }
 
-/** Extract the pathname from a URL and convert it to lowercase. */
+/** Extract the pathname from a URL/key and convert it to lowercase. */
 function entrypointPathnameLower(entrypointUrl: unknown): string {
-  try {
-    return new URL(String(entrypointUrl ?? '')).pathname.toLowerCase();
-  } catch {
-    return '';
+  const raw = String(entrypointUrl ?? '');
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      return new URL(raw).pathname.toLowerCase();
+    } catch {
+      return '';
+    }
   }
+  return `/${raw.replace(/^\/+/, '')}`.toLowerCase();
 }
 
 /** Fetch the measured duration from a preview .meta.json file, with a 1200ms timeout. */
@@ -243,6 +249,7 @@ async function buildRssEnclosureForVideo({
     videoId,
     preferPodcast: true,
     rssPreview: usePreviewMp3,
+    storage: getObjectStorage(env),
   });
 
   const pathLower = entrypointPathnameLower(entrypointUrl);
@@ -275,11 +282,27 @@ async function buildRssEnclosureForVideo({
   let itunesDurationStr: string;
   const previewDuration = Number(v.preview_duration ?? 0) || 0;
   const mediaDuration = fullDuration > 0 ? fullDuration : previewDuration;
-  const previewMetaDuration = isMp3
-    ? await fetchPreviewMetaDurationSeconds(
-        String(entrypointUrl).replace(/\.mp3(\?.*)?$/i, '.meta.json'),
-      )
-    : null;
+  const storage = getObjectStorage(env);
+  let previewMetaDuration: number | null = null;
+  if (isMp3) {
+    const metaKey = String(entrypointUrl).replace(/\.mp3(\?.*)?$/i, '.meta.json');
+    if (storage && !/^https?:\/\//i.test(metaKey)) {
+      try {
+        const metaObj = await storage.getObject(metaKey);
+        if (metaObj?.body) {
+          const data: any = await new Response(metaObj.body as ReadableStream)
+            .json()
+            .catch(() => null);
+          const value = Number(data?.measuredDurationSeconds);
+          if (Number.isFinite(value) && value > 0) previewMetaDuration = Math.round(value);
+        }
+      } catch {
+        /* ignore */
+      }
+    } else if (/^https?:\/\//i.test(metaKey)) {
+      previewMetaDuration = await fetchPreviewMetaDurationSeconds(metaKey);
+    }
+  }
   const effectivePreviewCap =
     previewMetaDuration && hasPreviewCap
       ? Math.min(previewUntilSeconds, previewMetaDuration)
@@ -301,16 +324,36 @@ async function buildRssEnclosureForVideo({
   } else {
     itunesDurationStr = secondsToItunesDuration(mediaDuration);
   }
-  const enclosureType = inferEnclosureContentType(entrypointUrl);
+  const enclosureType = inferEnclosureContentType(
+    /^https?:\/\//i.test(String(entrypointUrl))
+      ? entrypointUrl
+      : `https://storage.local/${String(entrypointUrl).replace(/^\/+/, '')}`,
+  );
   let enclosureLength = 0;
   try {
-    const headUrl =
-      enclosureType === 'application/vnd.apple.mpegurl' ? enclosureUrl : entrypointUrl;
-    if (typeof headUrl === 'string' && headUrl) {
+    if (enclosureType === 'application/vnd.apple.mpegurl') {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1200);
       try {
-        const head = await fetch(headUrl, { method: 'HEAD', signal: controller.signal });
+        const head = await fetch(enclosureUrl, { method: 'HEAD', signal: controller.signal });
+        if (head.ok) {
+          const contentLength = Number(head.headers.get('content-length') || 0);
+          if (Number.isFinite(contentLength) && contentLength > 0) enclosureLength = contentLength;
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } else if (storage && !/^https?:\/\//i.test(String(entrypointUrl))) {
+      const head = await storage.headObject(String(entrypointUrl));
+      if (head?.size != null && head.size > 0) enclosureLength = head.size;
+    } else if (/^https?:\/\//i.test(String(entrypointUrl))) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+      try {
+        const head = await fetch(String(entrypointUrl), {
+          method: 'HEAD',
+          signal: controller.signal,
+        });
         if (head.ok) {
           const contentLength = Number(head.headers.get('content-length') || 0);
           if (Number.isFinite(contentLength) && contentLength > 0) enclosureLength = contentLength;
@@ -342,7 +385,7 @@ async function buildRssEnclosureForVideo({
     enclosureUrl,
     enclosureType,
     enclosureLength,
-    imageUrl: buildSquareCoverImageUrl(v.thumbnail_url),
+    imageUrl: buildSquareCoverImageUrl(rewriteStoredPublicObjectUrl(v.thumbnail_url, env)),
     itunesDuration: itunesDurationStr,
   };
 }

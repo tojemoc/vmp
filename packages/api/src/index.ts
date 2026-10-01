@@ -114,13 +114,19 @@ import { isBillingProxyPath, proxyToBilling } from './billingProxy.js';
 import { normalizeLivestreamStatus } from './livestreams.js';
 import { log, runWithDatadogLogContext, setWorkerLogTracingContext } from './logger.js';
 import {
-  buildEntrypointCandidates,
+  buildEntrypointCandidateKeys,
   buildProxyPlaylistUrl,
   getVideoProxyCacheControl,
   resolveMediaEntrypoint,
   sortMasterPlaylistByBandwidth,
 } from './mediaEntrypoints.js';
 import { resolveMetricHttpRoute } from './metricHttpRoutes.js';
+import {
+  buildPublicAssetUrl,
+  handlePublicAsset,
+  rewriteStoredPublicObjectUrl,
+  withRewrittenThumbnailUrl,
+} from './publicAssets.js';
 import {
   handleDevicePairingComplete,
   handleDevicePairingPoll,
@@ -661,6 +667,9 @@ const workerHandler = {
             }
             if (url.pathname.startsWith('/api/video-proxy/')) {
               return handleVideoProxy(request, env, corsHeaders, ctx, _reqStart);
+            }
+            if (url.pathname.startsWith('/api/assets/')) {
+              return handlePublicAsset(request, env, corsHeaders);
             }
             {
               const pipelineStatusMatch = url.pathname.match(
@@ -1456,8 +1465,10 @@ async function handleVideosList(request: any, env: any, corsHeaders: any) {
 
     // Best-effort duration hydration for legacy rows where full_duration=0.
     // Cached in KV so this stays cheap for repeated list loads.
-    const results = dedupeVideoListRows(videos.results || []);
-    if (env.R2_BASE_URL) {
+    const results = dedupeVideoListRows(videos.results || []).map((v: any) =>
+      withRewrittenThumbnailUrl(v, env),
+    );
+    if (getObjectStorage(env)) {
       await Promise.all(
         results.map(async (v: any) => {
           if (!v || typeof v.id !== 'string') return;
@@ -1533,7 +1544,7 @@ async function handleVideoPublicMeta(request: any, env: any, corsHeaders: any) {
         slug: video.slug ?? null,
         title: video.title ?? '',
         description: video.description ?? '',
-        thumbnail_url: video.thumbnail_url ?? null,
+        thumbnail_url: rewriteStoredPublicObjectUrl(video.thumbnail_url, env),
         publish_status: video.publish_status ?? null,
         staffPreview,
         // Prefer UUID for staff draft previews so the URL stays stable before a slug exists.
@@ -1784,6 +1795,7 @@ async function handleVideoAccess(
       env,
       videoId: playbackVideoId,
       bunnyPlaybackUrl: hasPremiumAccess ? bunnyPlaybackUrl : null,
+      storage: getObjectStorage(env),
     });
 
     const isBunnyCdnPlayback = Boolean(
@@ -1798,12 +1810,12 @@ async function handleVideoAccess(
           env,
         );
     // Unify duration logic with the frontend: if D1 has 0/unknown duration,
-    // attempt to resolve from the HLS playlist stored in R2.
+    // attempt to resolve from the HLS playlist in object storage.
     let fullDuration = video?.full_duration ?? previewDuration;
     // Avoid racing the video-processor duration sync while a video is still in the
     // "uploaded" (not yet processed) state.
     const isProcessingInFlight = Boolean(video && video.status && video.status !== 'processed');
-    if ((!fullDuration || fullDuration === 0) && env.R2_BASE_URL && !isProcessingInFlight) {
+    if ((!fullDuration || fullDuration === 0) && getObjectStorage(env) && !isProcessingInFlight) {
       const resolved = await resolveVideoDurationSeconds(resolvedVideoId, env);
       if (resolved && resolved > 0) {
         fullDuration = resolved;
@@ -2128,14 +2140,6 @@ async function handleVideoProxy(
           corsHeaders,
         );
       }
-    } else if (env.R2_BASE_URL) {
-      const upstreamUrl = new URL(`${env.R2_BASE_URL}/${objectPath}`);
-      const upstreamHeaders = new Headers();
-      if (rangeHeader && !isManifest) upstreamHeaders.set('Range', rangeHeader);
-      upstreamResponse = await fetch(upstreamUrl, {
-        method: request.method,
-        headers: upstreamHeaders,
-      });
     } else {
       return jsonResponse({ error: 'Object storage not configured' }, 503, corsHeaders);
     }
@@ -2702,12 +2706,14 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
       }),
     );
 
+    const withThumbs = annotated.map((video: any) => withRewrittenThumbnailUrl(video, env));
+
     // Best-effort duration hydration for legacy rows where full_duration=0.
-    if (env.R2_BASE_URL) {
+    if (getObjectStorage(env)) {
       const durationById = new Map<string, number>();
       const uniqueIds = [
         ...new Set(
-          annotated
+          withThumbs
             .filter(
               (video: any) =>
                 video &&
@@ -2723,14 +2729,14 @@ async function handleAdminVideosList(request: any, env: any, corsHeaders: any) {
           if (resolved && resolved > 0) durationById.set(id, resolved);
         }),
       );
-      for (const video of annotated) {
+      for (const video of withThumbs) {
         if (!video || typeof video.id !== 'string') continue;
         const resolved = durationById.get(video.id);
         if (resolved) video.full_duration = resolved;
       }
     }
 
-    return jsonResponse({ videos: annotated }, 200, corsHeaders);
+    return jsonResponse({ videos: withThumbs }, 200, corsHeaders);
   } catch (error) {
     console.error('Error:', error);
     return jsonResponse(
@@ -3830,11 +3836,16 @@ async function handleVideoSwap(request: any, env: any, corsHeaders: any) {
     // Upgrade the thumbnail URL on the newly promoted row only if large.jpg was
     // actually written; the initial value set in the batch was oldVideo.thumbnail_url.
     const largeCopyOk = copyResults[1]?.status === 'fulfilled' && copyResults[1].value === true;
-    if (env.R2_BASE_URL && largeCopyOk) {
-      await db
-        .prepare(`UPDATE videos SET thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-        .bind(`${env.R2_BASE_URL}/thumbnails/${draftId}/large.jpg`, draftId)
-        .run();
+    if (largeCopyOk) {
+      const thumbUrl = buildPublicAssetUrl(env, `thumbnails/${draftId}/large.jpg`);
+      if (thumbUrl) {
+        await db
+          .prepare(
+            `UPDATE videos SET thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          )
+          .bind(thumbUrl, draftId)
+          .run();
+      }
     }
   }
 
@@ -4091,7 +4102,8 @@ async function hasProcessedPlaybackArtifact(storage: ObjectStorageProvider, vide
 
 async function resolveVideoDurationSeconds(videoId: any, env: any) {
   if (!videoId) return null;
-  if (!env.R2_BASE_URL) return null;
+  const storage = getObjectStorage(env);
+  if (!storage) return null;
 
   const kv = env.RATE_LIMIT_KV;
   const cacheKey = kv ? `duration:${videoId}` : null;
@@ -4110,10 +4122,10 @@ async function resolveVideoDurationSeconds(videoId: any, env: any) {
     }
   }
 
-  const candidates = buildEntrypointCandidates(env.R2_BASE_URL, videoId);
+  const candidates = buildEntrypointCandidateKeys(videoId);
   let lastResult = null;
-  for (const entrypoint of candidates) {
-    const result = await resolvePlaylistDurationFromUrl(entrypoint, 0);
+  for (const key of candidates) {
+    const result = await resolvePlaylistDurationFromStorage(storage, key, 0);
     lastResult = result;
 
     if (result.kind === 'ok' && result.duration && result.duration > 0) {
@@ -4149,36 +4161,17 @@ async function resolveVideoDurationSeconds(videoId: any, env: any) {
   return null;
 }
 
-async function resolvePlaylistDurationFromUrl(url: any, depth = 0) {
-  if (!url || depth > 2) return { duration: null, kind: 'not_found' };
-  // Declared outside `try` so `finally` can clear the timer (try-block `let` is not in scope in `finally`).
-  const timeoutMs = 5000;
-  let controller: any = null;
-  let timeoutId = null;
-  let signal;
+async function resolvePlaylistDurationFromStorage(
+  storage: ObjectStorageProvider,
+  objectKey: string,
+  depth = 0,
+) {
+  if (!objectKey || depth > 2) return { duration: null, kind: 'not_found' };
   try {
-    // Avoid indefinite hangs on upstream fetch (network stalls, origin issues).
-    // Prefer AbortSignal.timeout when available; otherwise use AbortController.
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-      signal = AbortSignal.timeout(timeoutMs);
-    } else if (typeof AbortController !== 'undefined') {
-      controller = new AbortController();
-      signal = controller.signal;
-      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    }
+    const object = await storage.getObject(objectKey);
+    if (!object) return { duration: null, kind: 'not_found' };
 
-    const res = await fetch(url, signal ? { signal } : undefined);
-
-    // Distinguish between not-found (404) and transient errors
-    if (!res.ok) {
-      if (res.status === 404) {
-        return { duration: null, kind: 'not_found' };
-      }
-      // Other HTTP errors (5xx, 403, etc.) are transient
-      return { duration: null, kind: 'transient' };
-    }
-
-    const text = await res.text();
+    const text = await new Response(object.body as ReadableStream).text();
     const lines = text
       .split('\n')
       .map((l) => l.trim())
@@ -4198,19 +4191,21 @@ async function resolvePlaylistDurationFromUrl(url: any, depth = 0) {
       return { duration: null, kind: 'not_found' };
     }
 
-    // Master playlist: follow first variant
+    // Master playlist: follow first variant (relative to parent key directory)
     const idx = lines.findIndex((l) => l.startsWith('#EXT-X-STREAM-INF'));
     if (idx >= 0 && lines[idx + 1]) {
       const variantPath = lines[idx + 1];
       if (!variantPath) return { duration: null, kind: 'not_found' };
-      const nextUrl = new URL(variantPath, url).toString();
-      return resolvePlaylistDurationFromUrl(nextUrl, depth + 1);
+      const parentDir = objectKey.includes('/')
+        ? objectKey.slice(0, objectKey.lastIndexOf('/') + 1)
+        : '';
+      const nextKey = variantPath.startsWith('/')
+        ? variantPath.replace(/^\/+/, '')
+        : `${parentDir}${variantPath}`.replace(/\/+/g, '/');
+      return resolvePlaylistDurationFromStorage(storage, nextKey, depth + 1);
     }
-  } catch (error) {
-    // Network errors, timeouts, and aborts are transient
+  } catch {
     return { duration: null, kind: 'transient' };
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
   }
   return { duration: null, kind: 'not_found' };
 }
@@ -4818,35 +4813,36 @@ async function getAvgSegmentDuration(videoId: any, env: any) {
   const cached = await env.RATE_LIMIT_KV.get(`manifest:${videoId}`, 'json');
   if (cached?.avg && typeof cached.avg === 'number') return cached.avg;
 
-  // Try to fetch one of the known playlist paths from R2
-  const base = env.R2_BASE_URL;
-  const candidates = [
-    `${base}/videos/${videoId}/master.m3u8`,
-    `${base}/videos/${videoId}/processed/hls/master.m3u8`,
-    `${base}/videos/${videoId}/processed/playlist.m3u8`,
-  ];
+  // Read known playlist paths from private object storage
+  const storage = getObjectStorage(env);
+  if (!storage) return null;
+  const candidates = buildEntrypointCandidateKeys(videoId);
 
   let manifest = null;
-  for (const url of candidates) {
+  for (const key of candidates) {
     try {
-      const res = await fetch(url);
-      if (res.ok) {
-        const text = await res.text();
-        // For master playlists, follow the first variant
-        if (text.includes('#EXT-X-STREAM-INF')) {
-          const lines = text.split('\n');
-          const varLine = lines.find((l) => !l.startsWith('#') && l.trim().endsWith('.m3u8'));
-          if (varLine) {
-            const trimmedLine = varLine.trim();
-            const varUrl = new URL(trimmedLine, url).toString();
-            const varRes = await fetch(varUrl);
-            if (varRes.ok) manifest = await varRes.text();
+      const object = await storage.getObject(key);
+      if (!object) continue;
+      const text = await new Response(object.body as ReadableStream).text();
+      // For master playlists, follow the first variant
+      if (text.includes('#EXT-X-STREAM-INF')) {
+        const lines = text.split('\n');
+        const varLine = lines.find((l) => !l.startsWith('#') && l.trim().endsWith('.m3u8'));
+        if (varLine) {
+          const trimmedLine = varLine.trim();
+          const parentDir = key.includes('/') ? key.slice(0, key.lastIndexOf('/') + 1) : '';
+          const variantKey = trimmedLine.startsWith('/')
+            ? trimmedLine.replace(/^\/+/, '')
+            : `${parentDir}${trimmedLine}`.replace(/\/+/g, '/');
+          const varObj = await storage.getObject(variantKey);
+          if (varObj) {
+            manifest = await new Response(varObj.body as ReadableStream).text();
           }
-        } else {
-          manifest = text;
         }
-        break;
+      } else {
+        manifest = text;
       }
+      if (manifest) break;
     } catch {
       /* try next */
     }
