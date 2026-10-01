@@ -28,7 +28,10 @@
     "FRONTEND_URL": "https://vmp.tjm.sk",
     "API_URL": "https://vmp-api.tjm.sk",
     "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
-    "POSTHOG_HOST": "https://eu.i.posthog.com"
+    "POSTHOG_HOST": "https://eu.i.posthog.com",
+    "SENDER_EMAIL": "vmp@tjm.sk",
+    "SENDER_NAME": "VMP",
+    "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds"
   },
   "triggers": {
     "crons": ["*/5 * * * *"]
@@ -66,7 +69,10 @@
         "FRONTEND_URL": "https://vmp.tjm.sk",
         "API_URL": "https://vmp-api.tjm.sk",
         "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
-        "POSTHOG_HOST": "https://eu.i.posthog.com"
+        "POSTHOG_HOST": "https://eu.i.posthog.com",
+        "SENDER_EMAIL": "vmp@tjm.sk",
+        "SENDER_NAME": "VMP",
+        "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds"
       },
       "triggers": {
         "crons": ["*/5 * * * *"]
