@@ -6,7 +6,7 @@ Roadmap IDs: `infra-flagship-flags`, `payment-middleware`
 
 1. Replace the `VMP_FEATURES` env-var allowlist with **Cloudflare Flagship** boolean flags (Tier 1 infrastructure toggles).
 2. Ensure **PostHog** server-side SDK setup on Nuxt SSR is ready for future product/experiment flags (Tier 2) — **do not create PostHog flags yet**.
-3. Introduce a **product payment middleware** above the existing `@vmp/payments` provider adapters so the rest of the product never imports PSP clients directly.
+3. Introduce a **product payment middleware** above the existing `@vmp/payments` provider adapters so the rest of the product never imports PSP clients directly — structured so billing can later move to a **dedicated Worker**.
 
 This plan is the contract for a multi-PR rollout. Do not ship everything in one PR.
 
@@ -70,130 +70,82 @@ Local `wrangler dev` evaluates against the **live** Flagship app (no local flag 
 
 ---
 
-## Ambiguities (resolve before / during Phase A–C)
+## Locked decisions
 
-These block or reshape implementation. Preferred defaults are noted where the success criteria imply one.
+| ID | Decision |
+|----|----------|
+| **A1** | Runtime Flagship gates; always register web modules; no-op when flag off. Slim tree-shaking is a later optional profile, not `VMP_FEATURES`. |
+| **A2** | **One Flagship app for staging** now; add a prod app later if needed. Create app + enable current allowlist **before** Phase B cutover. Agent environments lack `CLOUDFLARE_API_TOKEN` — maintainer runs `wrangler flagship apps create`. |
+| **A3** | Flagship on **API only**; web hydrates via deployment-features / bootstrap endpoint. |
+| **A4** | Keep `gtm` as a Flagship infra flag. |
+| **A5** | `FlagEvaluator` + mock for tests; optional `FLAGSHIP_DEV_OVERRIDE` in `.dev.vars` only (not named `VMP_FEATURES`). |
+| **A6** | **Soft-disable** GoPay/Comgate: keep provider code; middleware will not route new subscriptions unless `isConfigured()` **and** explicitly enabled later. No hard always-throw stub. |
+| **A7** | **Public / middleware naming is `qerko`** (not `legacy`). Stop exposing `legacy` as an API provider id. D1 may keep storing `legacy` via existing `providerIdToDbProvider` mapping until a **flagged** data migration renames rows — **no silent schema/data migration in Phase D**. |
+| **A8** | Stripe.js in web is an allowed exception (Elements). |
+| **A9** | Middleware is product API; checkout may return `clientSecret` / `checkoutUrl`; prefer `userId` from auth. |
+| **A10** | **Defer MoR / country routing.** Prefer validating a **dedicated billing Worker** extractability path first (see below). New subs default to Stripe until that design lands. |
+| **A11** | Add PostHog SSR flag helpers in Phase C; no product flags yet. |
 
-### A1. Compile-time vs runtime (critical)
+### Still open (non-blocking)
 
-`VMP_FEATURES` today can **omit Nuxt modules from the build** (`@posthog/nuxt`, `@vite-pwa/nuxt`, GTM plugin). Flagship is **runtime-only** and unavailable during `nuxt build`.
+- **A3 detail:** public vs admin-only bootstrap endpoint for web flag hydration (Phase B).
+- **A7 data migration:** optional later PR to rename D1 `legacy` → `qerko` (flagged, not scheduled).
+- **Flagship app_id:** maintainer creates staging app (commands below).
 
-**Options:**
+### Flagship app creation (ops)
 
-| Option | Behaviour |
-|--------|-----------|
-| **A1-a (recommended)** | Flagship becomes the **runtime** gate for API routes + admin UI + entitlement of modules. Keep an optional slim-build allowlist later if dedicated Workers still need tree-shaking; stop reading `VMP_FEATURES`. Always register modular plugins/modules that have secrets/config, but **no-op** when Flagship flag is off (or when binding missing → default false). |
-| **A1-b** | Dual system: Flagship for API; keep a build-time env for Nuxt module registration under a new name. Violates “`VMP_FEATURES` is no longer read anywhere” if we keep the same name. |
-| **A1-c** | Always bundle everything; Flagship only gates API + SSR-fetched flag bootstrapping for admin UI. Accept larger web Worker. |
-
-**Decision needed:** Confirm A1-a (or choose another). Bundle-size regression for slim Mosaiq profiles is the main risk.
-
-### A2. Default OFF vs staging continuity (critical)
-
-Success criteria: Flagship flags **default OFF**; currently enabled features must be **explicitly enabled in the Flagship dashboard**.
-
-Cutover without a pre-enabled Flagship app turns **staging/production dark** (no payments, PWA, CMS, …).
-
-**Required ops before code cutover:**
-
-1. Create Flagship app(s) for API (+ web if bound).
-2. Create boolean flags for every catalog ID; set default variation `off`.
-3. Enable the current staging/prod allowlist **before** merging the PR that removes `VMP_FEATURES`.
-4. Document `FLAGSHIP_APP_ID` (or hardcode app id in wrangler per env).
-
-**Decision needed:** Who creates the Flagship app and supplies `app_id`? Staging and production — one app or two?
-
-### A3. Web Worker Flagship access
-
-Admin UI and composables currently read **baked** `runtimeConfig.public.deploymentFeatures`. After Flagship:
-
-| Option | Notes |
-|--------|-------|
-| **A3-a** | Bind Flagship on **web** Worker (`wrangler.workers.toml`) and evaluate in Nitro SSR / server routes; expose `GET /api/...` or Nitro handler that hydrates client. |
-| **A3-b** | Bind Flagship only on **API**; web calls existing `GET /api/admin/deployment-features` (or a public bootstrap endpoint) which evaluates Flagship. |
-| **A3-c** | OpenFeature HTTP SDK from Nuxt (token risk / latency); not preferred. |
-
-**Recommended:** A3-b for fewer wrangler secrets/apps, reusing the admin manifest endpoint (extend for non-admin bootstrap if public pages need flags). Cloudflare docs warn against Flagship **client** provider with API tokens in the browser.
-
-### A4. `gtm` and catalog parity
-
-User list omits `gtm`; catalog includes it. Treat `gtm` as a Flagship flag with the same name for parity, or drop it from the catalog?
-
-**Recommended:** Keep `gtm` as a Flagship infra flag (same as today).
-
-### A5. Local / CI without Flagship credentials
-
-Flagship local eval hits the live app. Tests today parse env strings synchronously.
-
-**Recommended:** Introduce `FlagEvaluator` interface with:
-
-- `FlagshipEvaluator` (`env.FLAGS.getBooleanValue(key, false)`)
-- `StaticEvaluator` / `AllowAllEvaluator` for unit tests
-- Optional `FLAGSHIP_DEV_OVERRIDE=payments,posthog,…` **only in `.dev.vars`** for offline agents — **not** production, and not named `VMP_FEATURES`
-
-Confirm whether a local override env is acceptable (success criteria ban reading `VMP_FEATURES`, not all override mechanisms).
-
-### A6. GoPay / Comgate: stub vs keep implementation
-
-User asks for adapters that **throw `NotImplementedError`** and “do not delete the code.” Code today is full HTTP providers.
-
-**Recommended:** Keep implementations behind `isConfigured()`; product middleware refuses to **route new checkouts** to GoPay/Comgate until a future flag/keys exist; adapter methods throw `NotImplementedError` from the **middleware router** when selected for new subs, while leaving provider source in place. Alternatively wrap providers so `createCheckoutSession` / `createSubscription` throw unless `isConfigured()` — already mostly true without keys.
-
-**Decision needed:** Soft-disable (keys + admin enable remain) vs hard stub that always throws even with keys present.
-
-### A7. `billing_source` vs existing `provider`
-
-User interface uses `PspSource = 'stripe' | 'qerko' | 'gopay' | 'comgate' | 'mor'`. DB has `provider` with `legacy` for Qerko.
-
-**Options:**
-
-| Option | Migration? |
-|--------|------------|
-| **A7-a (recommended)** | Middleware maps `legacy` ↔ `qerko` at the boundary; no schema migration. Document `billing_source` as the **API-facing** name. |
-| **A7-b** | Add `billing_source` column + backfill — **flag first** per “do not introduce schema migration without flagging.” |
-
-### A8. Frontend `@stripe/stripe-js`
-
-Success criteria: “No PSP SDK imported outside the middleware/adapters.” Stripe Elements **must** run in the browser.
-
-**Recommended:** Treat “middleware” as server-side product API; allow a thin `packages/web` Stripe Elements adapter that only talks to `/api/payments/*`. Document as exception. Do not move Elements into `@vmp/payments` (DOM / Nuxt free).
-
-### A9. Product middleware method shapes vs checkout reality
-
-Requested:
-
-```ts
-hasSubscription(email: string): Promise<{ active: boolean; source: PspSource }>
-createSubscription(params): Promise<SubscriptionResult>
-cancelSubscription(email: string, source: PspSource): Promise<void>
-getSubscription(email: string): Promise<SubscriptionRecord | null>
+```bash
+cd packages/api
+npx wrangler flagship apps create vmp-api-staging --binding FLAGS --update-config
+# Create boolean flags (Wrangler default: off) for each DEPLOYMENT_FEATURE_IDS entry
+# Enable the staging allowlist before Phase B merge
 ```
 
-Today checkout is **async** (Stripe client_secret / redirect URL); identity is **userId** from JWT, not email alone; cancel often uses `subscriptionId`.
+---
 
-**Recommended:** Middleware methods are the product API; `createSubscription` may return `{ type: 'checkout', clientSecret | checkoutUrl }` (rename internally if needed). Prefer resolving subscriber by **authenticated userId**, with email as lookup helper for PSP customer search. Keep webhook / portal / refund on adapters, not necessarily on the thin product interface.
+## Billing Worker extractability (near-term design focus; replaces MoR stub)
 
-### A10. Country → MoR routing stub
+### Why this matters more than MoR now
 
-Implement `selectPspForNewSubscription({ billingCountry, existingSource })` that:
+MoR / country routing only pays off once tax policy and a second live PSP (or MoR vendor) exist. Meanwhile payment risk already spans adapters, API composition, webhooks, renewal cron, and secrets on the same Worker as auth/CMS/media proxy.
 
-- if `existingSource === 'qerko'` → Qerko (manage only; create gated by `legacy_migration`)
-- else if country in tax-handled set → Stripe (Comgate later)
-- else → throw `NotImplementedError('mor')`
+A **slim, independently auditable billing Worker** is the stronger near-term bet: smaller audit surface, isolated PSP secrets, independent deploy/rollback, and a natural home for `PaymentMiddleware`.
 
-**Decision needed:** Which countries are in the “tax handled” set for the stub? (Empty set + always Stripe until configured is safest.)
+### Recommended shape
 
-### A11. PostHog SSR flag evaluation library
+```text
+Web ──▶ API Worker (auth, catalog, entitlements, CMS, …)
+              │ service binding / internal auth
+              ▼
+        Billing Worker
+              │ owns: checkout, cancel, portal, webhooks, renewals
+              │ owns: PSP secrets + PaymentMiddleware + adapters
+              ▼
+           PSPs + D1 (subscription writes)
+```
 
-`posthog-node` supports `getFeatureFlag` / `getAllFlags`. Nuxt SSR needs a **singleton or per-request** client with `waitUntil` flush — today only exception capture instantiates a client.
+**Entitlements stay on the API Worker** initially by **reading shared D1** (`subscriptions` status/plan). Billing Worker is the **writer** and the only process that talks to PSPs. That avoids RPC on every `video-access` while concentrating audit risk on the write/PSP path.
 
-**Recommended:** Add `packages/web/server/utils/posthogServer.ts` (or similar) that:
+### Phase D design constraints (prove extractability without extracting yet)
 
-- Lazily constructs `PostHog` from runtimeConfig public key
-- Exposes `getFeatureFlag` / `getAllFlags` for future use
-- Does **not** register any flags or call sites beyond a smoke test / health helper
+1. `PaymentMiddleware` lives in `@vmp/payments` with injected deps (`db`, `flags`, `capturePostHog`) — **zero** imports from `packages/api` or Nuxt.
+2. API composition root only wires env → middleware; HTTP handlers stay thin.
+3. Webhook + cron paths call the same middleware entrypoints as HTTP handlers.
+4. Qerko **create** gated by Flagship `legacy_migration` inside middleware.
+5. Public provider id is **`qerko`**; DB `legacy` mapping stays in `@vmp/payments` `ids.ts`.
 
-API Worker already has a client — optionally add the same flag helpers there for symmetry.
+### What we will not do yet
+
+- Stub MoR country routing (`selectPspForNewSubscription` returns `'stripe'` for new subs, or is omitted until needed).
+- Spin up the billing Worker in Phase D — Phase D proves the boundary; **Phase F** extracts the Worker + service binding if the decision gate passes.
+
+### Decision gate (after Phase D)
+
+- Is the audit boundary clean enough that a separate Worker is worth the ops cost?
+- Are webhook URLs / portal return URLs easy to re-point?
+- Does shared-D1-read for entitlements satisfy compliance, or must reads move too?
+
+If yes → Phase F. If no → keep middleware co-located; introduce MoR only when a vendor/policy exists.
 
 ---
 
@@ -204,29 +156,25 @@ API Worker already has a client — optionally add the same flag helpers there f
                     │ Cloudflare Flagship │
                     │  (infra booleans)   │
                     └──────────┬──────────┘
-                               │ env.FLAGS
+                               │ env.FLAGS (API Worker)
                                ▼
-┌──────────────┐      ┌────────────────────┐      ┌─────────────┐
-│  Nuxt web    │─────▶│  @vmp/api Worker   │─────▶│ PostHog     │
-│  (SSR/UI)    │ REST │  route guards +    │      │ (events +   │
-│              │◀─────│  payment middleware│      │  future FF) │
-└──────────────┘      └─────────┬──────────┘      └─────────────┘
-                                │
-                                ▼
-                      ┌─────────────────────┐
-                      │ PaymentMiddleware   │  ← product-only API
-                      │ (Nuxt-free)         │
-                      └─────────┬───────────┘
-                                │ billing_source / provider
-              ┌─────────────────┼─────────────────┐
-              ▼                 ▼                 ▼
-         StripeAdapter    QerkoAdapter      GoPay/Comgate/MoR
-         (live)           (legacy_migration) (stub / NotImplemented)
+Web --> API Worker (auth, catalog, entitlements, thin payment HTTP)
+              |
+              |  Phase D: in-process call
+              |  Phase F: service binding to billing Worker
+              v
+        PaymentMiddleware (@vmp/payments) -- Nuxt-free, Worker-extractable
+              |
+              +--> StripeAdapter (live)
+              +--> QerkoAdapter (legacy_migration gate)
+              +--> GoPay/Comgate (soft-disabled)
+              |
+              +--> PostHog lifecycle events (psp_source)
 ```
 
 ### Flag catalog (Tier 1 — Flagship keys = existing IDs)
 
-`posthog`, `pwa`, `push`, `payments`, `cms`, `analytics`, `newsletter`, `einvoicing`, `legacy_migration`, `rss_podcast`, `rss_podcast_preview_mp3`, `pills`, `deno_replication`, and **`gtm`** (see A4).
+`gtm`, `posthog`, `pwa`, `push`, `payments`, `cms`, `analytics`, `newsletter`, `einvoicing`, `legacy_migration`, `rss_podcast`, `rss_podcast_preview_mp3`, `pills`, `deno_replication`.
 
 Code default: `getBooleanValue(id, false)` always.
 
@@ -240,94 +188,95 @@ export interface PaymentMiddleware {
   getSubscription(email: string): Promise<SubscriptionRecord | null>;
   createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult>;
   cancelSubscription(email: string, source: PspSource): Promise<void>;
-  /** Stub for future tax/MoR routing — see A10 */
-  selectPspForNewSubscription(input: {
-    billingCountry?: string | null;
-    existingSource?: PspSource | null;
-  }): PspSource;
 }
 ```
 
 Constraints:
 
-- Lives in `@vmp/payments` (or `packages/payments/src/middleware/`) — **no Nuxt imports**
-- Composition root in `packages/api/src/paymentProviders.ts` (or new `billingMiddleware.ts`) injects D1 + Flag evaluator + PostHog capture
+- Lives in `@vmp/payments` — **no Nuxt imports**, no `@vmp/api` imports
+- Composition root injects D1 + Flag evaluator + PostHog capture
 - Qerko `create*` throws if Flagship `legacy_migration` is false
-- Stripe is default for new subscriptions
-- Lifecycle events: `subscription_created` / `subscription_cancelled` / `subscription_renewed` / `subscription_checked` (align names with existing `subscription_activated` etc. — prefer **extend** existing event names rather than rename analytics)
+- Stripe is the default PSP for all new subscriptions
+- GoPay/Comgate: soft-disable (configured + future enable path); do not delete provider code
+- Lifecycle events keep existing names where possible (`subscription_activated`, etc.) and always include `psp_source: PspSource`
+- `mor` remains in the type union as a reserved source; no MoR adapter until Phase F+ policy
 
 ---
 
 ## Phased delivery (one PR per phase)
 
-### Phase 0 — Plan + roadmap (this PR)
+### Phase 0 — Plan + roadmap
 
-- [x] This document
-- [ ] `ROADMAP.md` entries
-- [ ] Ambiguities A1–A11 listed for maintainer
+- [x] This document + locked decisions
+- [x] `ROADMAP.md` / `AGENTS.md` entries
+- [x] Billing-Worker extractability analysis (A10 pivot)
 
 ### Phase A — Flagship plumbing (API first)
 
-1. Add `flagship` binding to `packages/api/wrangler.json` (app_id from env / placeholder).
-2. Introduce `packages/api/src/flagshipFlags.ts` (or shared) wrapping `env.FLAGS` with default `false`.
-3. Parallel-read period: evaluate Flagship **if binding present**, else fall back to `VMP_FEATURES` parser (temporary). Document cutover checklist.
-4. Unit tests with mock `FLAGS` binding.
-5. **Do not** remove `VMP_FEATURES` yet.
-
-*Depends on:* Flagship app_id (A2).
+1. Introduce `FlagEvaluator` (`packages/api/src/infraFlags.ts` or similar): Flagship binding → default `false`; temporary fallback to `VMP_FEATURES`; `FLAGSHIP_DEV_OVERRIDE` for local.
+2. Make route guards / manifest evaluation **async** (Flagship API is async).
+3. Unit tests with mock evaluator / mock `FLAGS`.
+4. Document ops steps for `wrangler flagship apps create vmp-api-staging`.
+5. Add `flagship` binding to `wrangler.json` **once** `app_id` exists (or leave commented with placeholder until ops).
+6. **Do not** remove `VMP_FEATURES` yet.
 
 ### Phase B — Replace all `VMP_FEATURES` reads
 
-1. API `routeFeatureGuard` + admin manifest → Flagship only.
-2. Web: stop baking allowlist from env; hydrate from API manifest / SSR Flagship (A3).
+1. API route guard + admin manifest → Flagship only (fallback removed).
+2. Web: stop baking allowlist from env; hydrate from API (A1 + A3).
 3. Remove deploy `--var VMP_FEATURES`, GitHub var docs, `.env.example` entries.
-4. Update tests, `packages/features/README.md`, deprecate compile-time sections in [deployment-feature-modules.md](./deployment-feature-modules.md).
-5. Success: `rg VMP_FEATURES` only hits historical docs / changelog if any.
+4. Update tests + feature-module docs.
 
-*Ops gate:* All production/staging flags enabled in Flagship before merge.
+*Ops gate:* Staging Flagship flags enabled to match today’s allowlist before merge.
 
 ### Phase C — PostHog SSR flag readiness
 
 1. Shared Nuxt server PostHog client with `getFeatureFlag` / `getAllFlags` helpers.
 2. Document known SSR issues (consent, no `before_send` on module serverConfig, 5xx-only exception plugin).
-3. Optional: API Worker `getFeatureFlag` helper for future use.
-4. **No** PostHog flags created; **no** product call sites.
+3. **No** PostHog flags created; **no** product call sites.
 
-### Phase D — Payment middleware skeleton
+### Phase D — Payment middleware (Worker-extractable, in-process)
 
-1. Add types + `PaymentMiddleware` + `NotImplementedError` MoR/country router stub in `@vmp/payments`.
-2. Implement Stripe + Qerko adapters behind middleware (wrap existing providers).
-3. GoPay/Comgate: stub path at middleware (A6).
-4. Wire API composition root; migrate `paymentProcessor` checkout/cancel/get paths incrementally.
-5. Emit PostHog lifecycle events with `psp_source` from middleware (all providers that fire).
-6. Gate Qerko create with Flagship `legacy_migration`.
-7. **No** subscriber migration; **no** price changes; **flag** any schema change (A7).
+1. `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko adapters.
+2. GoPay/Comgate soft-disabled at middleware router.
+3. Wire API composition root; migrate checkout/cancel/get paths incrementally.
+4. PostHog lifecycle events with `psp_source` (`qerko` naming on the wire).
+5. Gate Qerko create with Flagship `legacy_migration`.
+6. **No** MoR stub; **no** subscriber row migration; **no** price changes.
 
 ### Phase E — Product layer cleanup
 
-1. Ensure entitlement checks (`hasAccess`, etc.) go through middleware `hasSubscription` / shared entitlement helper where appropriate.
-2. Audit: no Stripe/Qerko/GoPay/Comgate imports outside adapters (+ documented Stripe.js web exception).
-3. Shrink direct `stripeClient.ts` usage into Stripe adapter.
+1. Entitlement helpers prefer shared subscription read helpers (still D1 on API).
+2. Audit: no PSP imports outside adapters (+ Stripe.js web exception).
+3. Fold remaining `stripeClient.ts` usage into Stripe adapter.
+
+### Phase F — Optional billing Worker extract (decision gate)
+
+1. New Worker package binding `@vmp/payments` middleware + PSP secrets.
+2. API → billing via service binding for checkout/cancel/portal/webhooks.
+3. D1 subscription **writes** only from billing; **reads** remain on API initially.
+4. Re-point webhook URLs; smoke Stripe + Qerko manage paths.
 
 ---
 
 ## Explicit non-goals
 
-- Activating GoPay or Comgate in production
+- Activating GoPay or Comgate for new subscribers without an explicit later decision
 - Creating PostHog feature flags or experiments
 - Changing prices or billing amounts
-- Migrating existing subscriber rows
-- Silent D1 schema changes (must be flagged — A7)
+- Migrating existing subscriber rows (including `legacy` → `qerko` in D1) without a dedicated flagged PR
+- MoR / country tax routing stubs before billing-Worker decision
 - Pushing to `main` / skipping CodeRabbit PR review
 
 ## Testing strategy (per phase)
 
 | Phase | Automated | Manual / ops |
 |-------|-----------|--------------|
-| A | Mock Flagship binding unit tests; existing route guard tests updated | Confirm Flagship app evaluates in `wrangler dev` |
-| B | Shared/API/web deployment-feature tests rewritten for evaluator | Staging smoke: payments, admin tabs, PWA after cutover |
-| C | Unit test PostHog server helper with mocked `posthog-node` | N/A for flags |
-| D–E | Payments package tests + API payment tests; PostHog event assertions with `psp_source` | Stripe checkout smoke; Qerko create blocked when flag off |
+| A | Mock Flagship / evaluator unit tests; async route guard tests | Maintainer creates Flagship app; `wrangler dev` eval |
+| B | Shared/API/web feature tests rewritten for evaluator | Staging smoke after flags enabled |
+| C | Unit test PostHog server helper with mocked `posthog-node` | — |
+| D–E | Payments + API tests; PostHog `psp_source` assertions | Stripe checkout; Qerko create blocked when flag off |
+| F | Contract tests across service binding | Staging webhook + checkout smoke on billing Worker |
 
 ## Success criteria (checklist)
 
@@ -335,7 +284,9 @@ Constraints:
 - [ ] Infra toggles evaluated via Flagship with code default `false`
 - [ ] `legacy_migration` gates Qerko **new** subscription creation
 - [ ] Product layer calls payment middleware, not PSP SDKs (Stripe.js web exception documented)
-- [ ] GoPay/Comgate cannot be accidentally activated for new subs without keys + explicit future work
+- [ ] Public PSP naming uses `qerko` (not `legacy`)
+- [ ] GoPay/Comgate soft-disabled for accidental new-sub activation
+- [ ] `@vmp/payments` middleware free of Nuxt/API imports (extract-ready)
 - [ ] PostHog SSR can evaluate flags (helper present); no product flags created yet
 - [ ] Existing behaviour preserved when Flagship mirrors today’s allowlist
 

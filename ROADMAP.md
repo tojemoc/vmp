@@ -151,8 +151,9 @@ Replace compile-time `VMP_FEATURES` with Cloudflare Flagship (Tier 1), prepare P
 
 ### Payment middleware (`payment-middleware`)
 
-- [ ] Phase D — `PaymentMiddleware` interface + Stripe/Qerko adapters; GoPay/Comgate/MoR stubs; `legacy_migration` gates Qerko create; PostHog lifecycle + `psp_source`
+- [ ] Phase D — Worker-extractable `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko; GoPay/Comgate soft-disable; `qerko` public naming; `legacy_migration` gates Qerko create; PostHog + `psp_source` (no MoR stub)
 - [ ] Phase E — Product layer calls middleware only; audit PSP imports; entitlement helpers
+- [ ] Phase F (optional) — Extract billing to a dedicated Worker after Phase D decision gate
 
 ---
 
