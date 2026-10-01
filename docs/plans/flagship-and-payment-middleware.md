@@ -75,7 +75,7 @@ Local `wrangler dev` evaluates against the **live** Flagship app (no local flag 
 | ID | Decision |
 |----|----------|
 | **A1** | Runtime Flagship gates; always register web modules; no-op when flag off. Slim tree-shaking is a later optional profile, not `VMP_FEATURES`. |
-| **A2** | **One Flagship app for staging** now; add a prod app later if needed. Create app + enable current allowlist **before** Phase B cutover. Agent environments lack `CLOUDFLARE_API_TOKEN` — maintainer runs `wrangler flagship apps create`. |
+| **A2** | **One Flagship app for staging** — app id `e1bb7ed4-8309-458f-9f60-cb61f881685a` (dashboard name likely `vmp`). Wired as `FLAGS` in `packages/api/wrangler.json`. Add a prod app later if needed. Enable per-feature flags **before** Phase B cutover. |
 | **A3** | Flagship on **API only**; web hydrates via deployment-features / bootstrap endpoint. |
 | **A4** | Keep `gtm` as a Flagship infra flag. |
 | **A5** | `FlagEvaluator` + mock for tests; optional `FLAGSHIP_DEV_OVERRIDE` in `.dev.vars` only (not named `VMP_FEATURES`). |
@@ -90,17 +90,35 @@ Local `wrangler dev` evaluates against the **live** Flagship app (no local flag 
 
 - **A3 detail:** public vs admin-only bootstrap endpoint for web flag hydration (Phase B).
 - **A7 data migration:** optional later PR to rename D1 `legacy` → `qerko` (flagged, not scheduled).
-- **Flagship app_id:** maintainer creates staging app (commands below).
+- **A12 — flag shape:** confirm whether the existing dashboard entry named `vmp` is the **application** (likely) or a single **flag key**. The plan expects **one boolean flag per catalog id** (`payments`, `posthog`, `legacy_migration`, …), not a single `vmp` kill switch — unless we deliberately use one JSON flag (see below).
 
-### Flagship app creation (ops)
+### Flagship staging app (ops)
+
+| Field | Value |
+|-------|--------|
+| Account | `8298ebe2fc93e55a92f8bc5727d5f331` |
+| App ID | `e1bb7ed4-8309-458f-9f60-cb61f881685a` |
+| Dashboard | [Flagship app overview](https://dash.cloudflare.com/8298ebe2fc93e55a92f8bc5727d5f331/flagship/applications/e1bb7ed4-8309-458f-9f60-cb61f881685a/overview) |
+| Worker binding | `FLAGS` in `packages/api/wrangler.json` |
+
+**Preferred flag model (matches original success criteria — identical names):**
 
 ```bash
-cd packages/api
-npx wrangler flagship apps create vmp-api-staging --binding FLAGS --update-config
-# Create boolean flags (Wrangler default: off) for each DEPLOYMENT_FEATURE_IDS entry
-# Enable the staging allowlist before Phase B merge
+APP_ID=e1bb7ed4-8309-458f-9f60-cb61f881685a
+for key in gtm posthog analytics cms pwa push pills newsletter einvoicing \
+  legacy_migration rss_podcast rss_podcast_preview_mp3 payments deno_replication; do
+  npx wrangler flagship flags create "$APP_ID" "$key"   # boolean, default off
+done
+# Then enable the keys that staging currently runs (mirror today's VMP_FEATURES)
+npx wrangler flagship flags enable "$APP_ID" posthog pwa push payments cms \
+  analytics newsletter einvoicing legacy_migration rss_podcast \
+  rss_podcast_preview_mp3 pills deno_replication
+# omit gtm if staging should stay GTM-off
 ```
 
+**Alternative:** one JSON flag key `vmp` whose value is `{ "payments": true, "posthog": true, … }`. Code would `getObjectValue('vmp', {})` and look up each id. Slightly fewer dashboard clicks, but diverges from “flag names identical to existing strings” and makes kill-switches coarser. Prefer per-id booleans unless you already populated a JSON `vmp` flag with that shape.
+
+Agent shells still need `CLOUDFLARE_API_TOKEN` (`flagship:read` / `flagship:write`) to list/create flags via Wrangler.
 ---
 
 ## Billing Worker extractability (near-term design focus; replaces MoR stub)
@@ -216,8 +234,8 @@ Constraints:
 1. Introduce `FlagEvaluator` (`packages/api/src/infraFlags.ts` or similar): Flagship binding → default `false`; temporary fallback to `VMP_FEATURES`; `FLAGSHIP_DEV_OVERRIDE` for local.
 2. Make route guards / manifest evaluation **async** (Flagship API is async).
 3. Unit tests with mock evaluator / mock `FLAGS`.
-4. Document ops steps for `wrangler flagship apps create vmp-api-staging`.
-5. Add `flagship` binding to `wrangler.json` **once** `app_id` exists (or leave commented with placeholder until ops).
+4. Binding already points at staging app `e1bb7ed4-8309-458f-9f60-cb61f881685a` (`FLAGS`).
+5. Create/enable per-feature boolean flags (or confirm JSON `vmp` shape — A12) before relying on Flagship in dual-read.
 6. **Do not** remove `VMP_FEATURES` yet.
 
 ### Phase B — Replace all `VMP_FEATURES` reads
