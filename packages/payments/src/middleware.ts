@@ -174,6 +174,24 @@ export function createPaymentMiddleware(deps: PaymentMiddlewareDeps): PaymentMid
     return { active: true, source: dbProviderToPspSource(String(row.provider ?? 'stripe')) };
   }
 
+  /** Billing-existence guard: blocks create when an open billable sub already exists. */
+  async function hasBlockingSubscription(userId: string): Promise<boolean> {
+    const row = await deps.db
+      .prepare(
+        `
+          SELECT id
+          FROM subscriptions
+          WHERE user_id = ?
+            AND status IN ('active', 'trialing', 'past_due')
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+      )
+      .bind(userId)
+      .first();
+    return Boolean(row);
+  }
+
   async function getSubscription(userId: string) {
     const row = await deps.db
       .prepare(
@@ -183,7 +201,14 @@ export function createPaymentMiddleware(deps: PaymentMiddlewareDeps): PaymentMid
                  cancel_at_period_end, created_at, updated_at
           FROM subscriptions
           WHERE user_id = ?
-          ORDER BY created_at DESC
+          ORDER BY
+            CASE status
+              WHEN 'active' THEN 0
+              WHEN 'trialing' THEN 1
+              WHEN 'past_due' THEN 2
+              ELSE 3
+            END ASC,
+            created_at DESC
           LIMIT 1
         `,
       )
@@ -268,8 +293,7 @@ export function createPaymentMiddleware(deps: PaymentMiddlewareDeps): PaymentMid
       };
     }
 
-    const existing = await hasSubscription(params.userId);
-    if (existing.active && !params.isRelink) {
+    if (!params.isRelink && (await hasBlockingSubscription(params.userId))) {
       return {
         type: 'error',
         code: 'subscription_exists',

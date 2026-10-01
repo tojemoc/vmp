@@ -11,8 +11,14 @@ import { generateToken, hashToken, requireAuth } from './auth.js';
 import { deleteBrevoContactByEmail } from './brevo.js';
 import { getObjectStorage } from './objectStorage.js';
 
+type CancelSubscriptionImmediatelyResult =
+  | { ok: true; cancelled: number }
+  | { ok: false; code: string; message: string };
+
 type BillingCancelBinding = {
-  cancelSubscriptionImmediately: (userId: string) => Promise<{ cancelled: number }>;
+  cancelSubscriptionImmediately: (
+    userId: string,
+  ) => Promise<CancelSubscriptionImmediatelyResult>;
 };
 
 const DELETION_TOKEN_TTL_SEC = 15 * 60;
@@ -358,7 +364,12 @@ async function cancelSubscriptionForUser(env: { BILLING?: BillingCancelBinding }
       code: 'billing_not_bound',
     });
   }
-  await billing.cancelSubscriptionImmediately(userId);
+  const result = await billing.cancelSubscriptionImmediately(userId);
+  if (result && result.ok === false) {
+    throw Object.assign(new Error(result.message || 'Immediate cancellation unsupported'), {
+      code: result.code || 'immediate_cancel_unsupported',
+    });
+  }
 }
 
 async function inventoryR2Objects(db: any, jobId: string, userId: string): Promise<void> {

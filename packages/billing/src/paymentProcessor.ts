@@ -1610,7 +1610,7 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
     ).trim();
     await persistCheckoutConsent(db, {
       userId: user.sub,
-      provider: apiProvider,
+      provider: providerIdToDbProvider(providerId),
       providerSessionId,
       checkoutSessionId: null,
       ...(consentOverride

@@ -258,9 +258,15 @@ export class BillingService extends WorkerEntrypoint<BillingWorkerEnv> {
 
   /**
    * Account-deletion path: immediately cancel all active PSP subscriptions for a user
-   * and mark D1 rows cancelled. Throws if a provider cannot cancel immediately.
+   * and mark D1 rows cancelled. Returns a structured result so unsupported cancellation
+   * survives the service-binding RPC boundary (Error `.code` may not).
    */
-  async cancelSubscriptionImmediately(userId: string): Promise<{ cancelled: number }> {
+  async cancelSubscriptionImmediately(
+    userId: string,
+  ): Promise<
+    | { ok: true; cancelled: number }
+    | { ok: false; code: 'immediate_cancel_unsupported'; message: string }
+  > {
     const db = this.env.video_subscription_db || this.env.DB;
     if (!db) throw new Error('D1 binding not found');
     const subs = await db
@@ -275,7 +281,7 @@ export class BillingService extends WorkerEntrypoint<BillingWorkerEnv> {
       .bind(userId)
       .all();
     const rows = subs?.results ?? [];
-    if (!rows.length) return { cancelled: 0 };
+    if (!rows.length) return { ok: true, cancelled: 0 };
 
     const { providers } = await getPaymentProviders(this.env);
     let cancelled = 0;
@@ -289,13 +295,13 @@ export class BillingService extends WorkerEntrypoint<BillingWorkerEnv> {
         String(row.provider_subscription_id || '').trim() ||
         String(row.stripe_subscription_id || '').trim();
       if (!provider || !subId || provider.capabilities.immediateCancellation !== true) {
-        throw Object.assign(
-          new Error(
+        return {
+          ok: false,
+          code: 'immediate_cancel_unsupported',
+          message:
             `Provider ${providerId} does not support immediate cancellation` +
-              (!subId ? ' (missing provider subscription id)' : ''),
-          ),
-          { code: 'immediate_cancel_unsupported' },
-        );
+            (!subId ? ' (missing provider subscription id)' : ''),
+        };
       }
       await provider.cancelSubscriptionImmediately(subId);
       await db
@@ -310,7 +316,7 @@ export class BillingService extends WorkerEntrypoint<BillingWorkerEnv> {
         .run();
       cancelled += 1;
     }
-    return { cancelled };
+    return { ok: true, cancelled };
   }
 
   async selectPspForNewSubscription(input: {
