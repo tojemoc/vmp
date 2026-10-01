@@ -1,57 +1,267 @@
 /**
- * vmp-billing — extractable PaymentMiddleware Worker (Phase F).
+ * vmp-billing — slim auditable billing Worker.
  *
- * Exposes WorkerEntrypoint methods mirroring PaymentMiddleware for service-binding RPC
- * from @vmp/api. HTTP fetch is a health/ready probe; webhooks may be re-pointed here later.
+ * Owns checkout, cancel, portal, pricing, payment admin, webhooks, Comgate renewals,
+ * Qerko/legacy payment routes, and legacy-migration payment probes.
+ *
+ * API Worker proxies these paths via service binding `BILLING.fetch(request)`.
  */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type {
   CancelSubscriptionResult,
   CreateSubscriptionParams,
+  PaymentProviderId,
   PspSource,
   SubscriptionRecord,
   SubscriptionResult,
 } from '@vmp/payments';
 import { createBillingMiddleware, type BillingWorkerEnv } from './compose.js';
+import {
+  handleAdminLegacyMigrationRelinkCandidates,
+  handleAdminLegacyMigrationSendRelinkEmail,
+  handleAdminLegacyMigrationStats,
+  handleAdminLegacyMigrationValidateBatch,
+} from './legacyMigration.js';
+import {
+  handleAdminLegacyPaymentSettings,
+  handleLegacyCheckout,
+  handleLegacyComplete,
+  handleLegacyOrderStatus,
+  handleLegacyWebhook,
+} from './legacyPayments.js';
+import { getPaymentProviders } from './paymentProviders.js';
+import {
+  handleAdminPaymentPlans,
+  handleAdminPaymentSettings,
+  handleCancelSubscription,
+  handleCheckout,
+  handleComgateWebhook,
+  handleGetPricing,
+  handleGetStripeConfig,
+  handleGetSubscription,
+  handleGoPayWebhook,
+  handlePortal,
+  handleSessionStatus,
+  handleWebhook,
+  runComgateRenewalJobs,
+} from './payments.js';
+
+function corsHeadersFor(request: Request, env: BillingWorkerEnv): Record<string, string> {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = String((env as { ALLOWED_ORIGINS?: string }).ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const allowOrigin =
+    origin && (allowed.includes(origin) || allowed.includes('*')) ? origin : allowed[0] || '*';
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers':
+      'Authorization, Content-Type, X-Posthog-Distinct-Id, X-Posthog-Session-Id, X-Posthog-Window-Id',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  };
+}
+
+async function routeBillingRequest(
+  request: Request,
+  env: BillingWorkerEnv,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const cors = corsHeadersFor(request, env);
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: cors });
+  }
+
+  if (path === '/api/health' || path === '/health') {
+    return Response.json({ service: 'vmp-billing', ok: true }, { headers: cors });
+  }
+
+  if (path === '/api/account/pricing' && request.method === 'GET') {
+    return handleGetPricing(request, env, cors);
+  }
+  if (path === '/api/account/subscription' && request.method === 'GET') {
+    return handleGetSubscription(request, env, cors);
+  }
+  if (path === '/api/payments/stripe-config' && request.method === 'GET') {
+    return handleGetStripeConfig(request, env, cors);
+  }
+  if (path === '/api/payments/checkout' && request.method === 'POST') {
+    return handleCheckout(request, env, cors);
+  }
+  if (path === '/api/payments/session-status' && request.method === 'GET') {
+    return handleSessionStatus(request, env, cors);
+  }
+  if (
+    (path === '/api/payments/webhook' || path === '/api/payments/webhook/stripe') &&
+    request.method === 'POST'
+  ) {
+    return handleWebhook(request, env, cors, 'stripe', ctx);
+  }
+  if (path === '/api/payments/webhook/gopay' && request.method === 'GET') {
+    return handleGoPayWebhook(request, env, cors);
+  }
+  if (path === '/api/payments/webhook/comgate' && request.method === 'POST') {
+    return handleComgateWebhook(request, env, cors);
+  }
+  if (path === '/api/payments/webhook/legacy' && request.method === 'POST') {
+    return handleLegacyWebhook(request, env, cors, ctx);
+  }
+  if (path === '/api/payments/legacy/checkout' && request.method === 'POST') {
+    return handleLegacyCheckout(request, env, cors);
+  }
+  if (path === '/api/payments/legacy/complete' && request.method === 'POST') {
+    return handleLegacyComplete(request, env, cors);
+  }
+  if (path === '/api/payments/legacy/order-status' && request.method === 'GET') {
+    return handleLegacyOrderStatus(request, env, cors);
+  }
+  if (path === '/api/payments/portal' && request.method === 'POST') {
+    return handlePortal(request, env, cors);
+  }
+  if (path === '/api/payments/cancel' && request.method === 'POST') {
+    return handleCancelSubscription(request, env, cors);
+  }
+  if (
+    path === '/api/admin/payments/settings' &&
+    (request.method === 'GET' || request.method === 'PATCH')
+  ) {
+    return handleAdminPaymentSettings(request, env, cors);
+  }
+  if (
+    path === '/api/admin/payments/plans' &&
+    (request.method === 'GET' || request.method === 'PUT' || request.method === 'PATCH')
+  ) {
+    return handleAdminPaymentPlans(request, env, cors);
+  }
+  if (path === '/api/admin/payments/legacy' && request.method === 'GET') {
+    return handleAdminLegacyPaymentSettings(request, env, cors);
+  }
+  if (path === '/api/admin/legacy-migration/stats' && request.method === 'GET') {
+    return handleAdminLegacyMigrationStats(request, env, cors);
+  }
+  if (path === '/api/admin/legacy-migration/validate-batch' && request.method === 'POST') {
+    return handleAdminLegacyMigrationValidateBatch(request, env, cors);
+  }
+  if (path === '/api/admin/legacy-migration/relink-candidates' && request.method === 'GET') {
+    return handleAdminLegacyMigrationRelinkCandidates(request, env, cors);
+  }
+  if (path === '/api/admin/legacy-migration/send-relink-email' && request.method === 'POST') {
+    return handleAdminLegacyMigrationSendRelinkEmail(request, env, cors);
+  }
+
+  return Response.json(
+    { error: 'Not found', service: 'vmp-billing' },
+    { status: 404, headers: cors },
+  );
+}
 
 export class BillingService extends WorkerEntrypoint<BillingWorkerEnv> {
-  private middleware() {
-    return createBillingMiddleware(this.env);
+  async fetch(request: Request): Promise<Response> {
+    return routeBillingRequest(request, this.env, this.ctx);
   }
 
   async hasSubscription(userId: string): Promise<{ active: boolean; source: PspSource | null }> {
-    return this.middleware().hasSubscription(userId);
+    return (await createBillingMiddleware(this.env)).hasSubscription(userId);
   }
 
   async getSubscription(userId: string): Promise<SubscriptionRecord | null> {
-    return this.middleware().getSubscription(userId);
+    return (await createBillingMiddleware(this.env)).getSubscription(userId);
   }
 
   async createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult> {
-    return this.middleware().createSubscription(params);
+    return (await createBillingMiddleware(this.env)).createSubscription(params);
   }
 
   async cancelSubscription(
     userId: string,
     source: PspSource,
   ): Promise<CancelSubscriptionResult> {
-    return this.middleware().cancelSubscription(userId, source);
+    return (await createBillingMiddleware(this.env)).cancelSubscription(userId, source);
   }
 
-  selectPspForNewSubscription(input: {
+  /**
+   * Account-deletion path: immediately cancel all active PSP subscriptions for a user
+   * and mark D1 rows cancelled. Throws if a provider cannot cancel immediately.
+   */
+  async cancelSubscriptionImmediately(userId: string): Promise<{ cancelled: number }> {
+    const db = this.env.video_subscription_db || this.env.DB;
+    if (!db) throw new Error('D1 binding not found');
+    const subs = await db
+      .prepare(
+        `
+        SELECT id, provider, provider_subscription_id, stripe_subscription_id, status
+        FROM subscriptions
+        WHERE user_id = ?
+          AND status IN ('active', 'trialing', 'past_due')
+      `,
+      )
+      .bind(userId)
+      .all();
+    const rows = subs?.results ?? [];
+    if (!rows.length) return { cancelled: 0 };
+
+    const { providers } = await getPaymentProviders(this.env);
+    let cancelled = 0;
+    for (const row of rows) {
+      const rawProvider = String(row.provider || 'stripe').trim() || 'stripe';
+      const providerId = (
+        rawProvider === 'legacy' ? 'qerko' : rawProvider
+      ) as PaymentProviderId;
+      const provider = providers.get(providerId);
+      const subId =
+        String(row.provider_subscription_id || '').trim() ||
+        String(row.stripe_subscription_id || '').trim();
+      if (!provider || !subId || provider.capabilities.immediateCancellation !== true) {
+        throw Object.assign(
+          new Error(
+            `Provider ${providerId} does not support immediate cancellation` +
+              (!subId ? ' (missing provider subscription id)' : ''),
+          ),
+          { code: 'immediate_cancel_unsupported' },
+        );
+      }
+      await provider.cancelSubscriptionImmediately(subId);
+      await db
+        .prepare(
+          `
+          UPDATE subscriptions
+          SET status = 'cancelled', cancel_at_period_end = 0, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        )
+        .bind(row.id)
+        .run();
+      cancelled += 1;
+    }
+    return { cancelled };
+  }
+
+  async selectPspForNewSubscription(input: {
     billingCountry?: string | null;
     existingSource?: PspSource | null;
-  }): PspSource {
-    return this.middleware().selectPspForNewSubscription(input);
+  }): Promise<PspSource> {
+    return (await createBillingMiddleware(this.env)).selectPspForNewSubscription(input);
   }
 }
 
 export default {
-  async fetch(): Promise<Response> {
-    return Response.json({
-      service: 'vmp-billing',
-      ok: true,
-      note: 'Use BillingService service binding for PaymentMiddleware RPC',
-    });
+  async fetch(
+    request: Request,
+    env: BillingWorkerEnv,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    return routeBillingRequest(request, env, ctx);
+  },
+
+  async scheduled(event: ScheduledEvent, env: BillingWorkerEnv, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      runComgateRenewalJobs(env).catch((err) => {
+        console.error('billing Comgate renewal failed:', err);
+      }),
+    );
   },
 };

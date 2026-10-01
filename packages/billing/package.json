@@ -3,20 +3,27 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Slim billing Worker — PaymentMiddleware + PSP secrets (extractable from @vmp/api)",
+  "description": "Slim auditable billing Worker — PaymentMiddleware, PSPs, webhooks, renewals",
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test ./test/*.test.ts"
   },
   "dependencies": {
     "@vmp/payments": "*",
-    "@vmp/shared": "*"
+    "@vmp/shared": "*",
+    "@vmp/storage": "*",
+    "posthog-node": "^5.52.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260921.1",
     "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "wrangler": "^4.135.0"
   }

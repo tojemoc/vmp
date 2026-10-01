@@ -19,6 +19,17 @@
   ],
   "vars": {
     "FRONTEND_URL": "https://vmp.tjm.sk",
-    "API_URL": "https://vmp-api.tjm.sk"
+    "API_URL": "https://vmp-api.tjm.sk",
+    "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+    "POSTHOG_HOST": "https://eu.i.posthog.com"
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
   }
 }

@@ -270,10 +270,12 @@ Constraints:
 
 ### Phase F — Billing Worker extract
 
-1. [x] `@vmp/billing` Worker + `PaymentMiddleware` composition (Stripe-first; Qerko stays on API).
-2. [x] API `BILLING` service binding declared; live path stays **in-process** until `BILLING_USE_SERVICE_BINDING=1` (billing still has stub price resolvers).
-3. [x] CD deploys billing Worker before API (`wrangler deploy` creates `vmp-billing` — no manual dashboard create).
-4. [ ] Follow-up: wire Stripe secrets + admin_settings price lookups on billing; flip `BILLING_USE_SERVICE_BINDING=1`; re-point webhooks; move Qerko eshop client.
+1. [x] `@vmp/billing` owns payment HTTP + Comgate cron + Qerko/legacy payment + migration probes.
+2. [x] API proxies `/api/payments*`, pricing, subscription get, admin payments, legacy-migration via `BILLING.fetch`.
+3. [x] CD deploys billing Worker before API (`wrangler deploy` creates `vmp-billing`).
+4. [x] Real `admin_settings` price resolvers + full provider registry on billing (not stubs).
+5. [ ] Ops: copy PSP/`JWT_SECRET`/Brevo secrets onto `vmp-billing` (`wrangler secret put` in `packages/billing`).
+6. [ ] Optional later: dedicated billing hostname for webhooks (today API URL still works via proxy).
 
 ---
 

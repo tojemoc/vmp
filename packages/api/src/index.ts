@@ -116,19 +116,7 @@ import {
   handleListAccountIrlEvents,
 } from './irlEvents.js';
 import { isPrivateHost } from './is-private-host.js';
-import {
-  handleAdminLegacyMigrationRelinkCandidates,
-  handleAdminLegacyMigrationSendRelinkEmail,
-  handleAdminLegacyMigrationStats,
-  handleAdminLegacyMigrationValidateBatch,
-} from './legacyMigration.js';
-import {
-  handleAdminLegacyPaymentSettings,
-  handleLegacyCheckout,
-  handleLegacyComplete,
-  handleLegacyOrderStatus,
-  handleLegacyWebhook,
-} from './legacyPayments.js';
+import { isBillingProxyPath, proxyToBilling } from './billingProxy.js';
 import { normalizeLivestreamStatus } from './livestreams.js';
 import { log, runWithDatadogLogContext, setWorkerLogTracingContext } from './logger.js';
 import {
@@ -162,21 +150,6 @@ import {
   handleRevokeDownload,
   handleRevokeOfflineDevice,
 } from './offlineDownloads.js';
-import {
-  handleAdminPaymentPlans,
-  handleAdminPaymentSettings,
-  handleCancelSubscription,
-  handleCheckout,
-  handleComgateWebhook,
-  handleGetPricing,
-  handleGetStripeConfig,
-  handleGetSubscription,
-  handleGoPayWebhook,
-  handlePortal,
-  handleSessionStatus,
-  handleWebhook,
-  runComgateRenewalJobs,
-} from './payments.js';
 import { handleVideoPipelineStatus } from './pipelineStatus.js';
 import {
   handleAdminClearPlaybackPositions,
@@ -590,6 +563,11 @@ const workerHandler = {
             );
             if (featureBlock) return featureBlock;
 
+            // Billing Worker owns payment HTTP (service binding).
+            if (isBillingProxyPath(url.pathname)) {
+              return proxyToBilling(request, env, corsHeaders);
+            }
+
             // ── Auth routes ───────────────────────────────────────────────────────────
             if (url.pathname === '/api/auth/magic-link' && request.method === 'POST') {
               return handleRequestMagicLink(request, env, corsHeaders);
@@ -803,7 +781,7 @@ const workerHandler = {
               url.pathname === '/api/admin/payments/settings' &&
               ['GET', 'PATCH'].includes(request.method)
             ) {
-              return handleAdminPaymentSettings(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (
               url.pathname === '/api/admin/einvoicing/settings' &&
@@ -927,7 +905,7 @@ const workerHandler = {
               url.pathname === '/api/admin/payments/plans' &&
               ['GET', 'PATCH'].includes(request.method)
             ) {
-              return handleAdminPaymentPlans(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (
               url.pathname === '/api/admin/rss/podcast-rebuild-webhook' &&
@@ -1096,64 +1074,64 @@ const workerHandler = {
               return handleCategoryVideosBySlug(request, env, corsHeaders);
             }
             if (url.pathname === '/api/account/pricing' && request.method === 'GET') {
-              return handleGetPricing(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/stripe-config' && request.method === 'GET') {
-              return handleGetStripeConfig(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/checkout' && request.method === 'POST') {
-              return handleCheckout(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/session-status' && request.method === 'GET') {
-              return handleSessionStatus(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/webhook' && request.method === 'POST') {
-              return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/webhook/stripe' && request.method === 'POST') {
-              return handleWebhook(request, env, corsHeaders, 'stripe', ctx);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/webhook/gopay' && request.method === 'GET') {
-              return handleGoPayWebhook(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/webhook/comgate' && request.method === 'POST') {
-              return handleComgateWebhook(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/webhook/legacy' && request.method === 'POST') {
-              return handleLegacyWebhook(request, env, corsHeaders, ctx);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/legacy/checkout' && request.method === 'POST') {
-              return handleLegacyCheckout(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/legacy/complete' && request.method === 'POST') {
-              return handleLegacyComplete(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/legacy/order-status' && request.method === 'GET') {
-              return handleLegacyOrderStatus(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/admin/payments/legacy' && request.method === 'GET') {
-              return handleAdminLegacyPaymentSettings(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/admin/legacy-migration/stats' && request.method === 'GET') {
-              return handleAdminLegacyMigrationStats(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (
               url.pathname === '/api/admin/legacy-migration/validate-batch' &&
               request.method === 'POST'
             ) {
-              return handleAdminLegacyMigrationValidateBatch(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (
               url.pathname === '/api/admin/legacy-migration/relink-candidates' &&
               request.method === 'GET'
             ) {
-              return handleAdminLegacyMigrationRelinkCandidates(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (
               url.pathname === '/api/admin/legacy-migration/send-relink-email' &&
               request.method === 'POST'
             ) {
-              return handleAdminLegacyMigrationSendRelinkEmail(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             // ── Offline downloads (M1/M2) ─────────────────────────────────────────────
             if (url.pathname === '/api/offline/devices/register' && request.method === 'POST') {
@@ -1215,7 +1193,7 @@ const workerHandler = {
             }
 
             if (url.pathname === '/api/account/subscription' && request.method === 'GET') {
-              return handleGetSubscription(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/account/promotions/validate' && request.method === 'POST') {
               return handlePromoValidate(request, env, corsHeaders);
@@ -1302,10 +1280,10 @@ const workerHandler = {
               return handleAccountTransferSubscription(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/portal' && request.method === 'POST') {
-              return handlePortal(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             if (url.pathname === '/api/payments/cancel' && request.method === 'POST') {
-              return handleCancelSubscription(request, env, corsHeaders);
+              return proxyToBilling(request, env, corsHeaders);
             }
             // ── Push notification routes ──────────────────────────────────────────────
             if (url.pathname === '/api/push/vapid-public-key' && request.method === 'GET') {
@@ -1414,11 +1392,7 @@ const workerHandler = {
         } catch (err) {
           console.error('D1 required schema ensure failed:', err);
         }
-        try {
-          await runComgateRenewalJobs(env);
-        } catch (err) {
-          console.error('Comgate renewal sweep failed:', err);
-        }
+        // Comgate renewals run on @vmp/billing scheduled handler.
         try {
           await runScheduledPublishJobs(env);
           await syncScheduledPublishHint(env);

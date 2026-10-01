@@ -146,8 +146,17 @@ runs:
         DEPLOY_TIER: ${{ inputs.deploy-tier }}
         API_BASE_URL: ${{ inputs.api-base-url }}
         FRONTEND_URL: ${{ inputs.frontend-url }}
+        EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
       run: |
-        EXTRA_ARGS=(--var "API_URL:${API_BASE_URL}" --var "FRONTEND_URL:${FRONTEND_URL}")
+        # Owns checkout/webhooks/renewals. Secrets (STRIPE_*, JWT_SECRET, LEGACY_*, …)
+        # must be set on this Worker via `wrangler secret put` in packages/billing —
+        # same values as @vmp/api. First deploy creates `vmp-billing`.
+        EXTRA_ARGS=(
+          --var "API_URL:${API_BASE_URL}"
+          --var "FRONTEND_URL:${FRONTEND_URL}"
+          --var "ALLOWED_ORIGINS:${EXPECTED_ALLOWED_ORIGINS}"
+          --var "SENTRY_ENVIRONMENT:${DEPLOY_TIER}"
+        )
         npx wrangler deploy "${EXTRA_ARGS[@]}"
 
     - name: Deploy API (${{ inputs.deploy-tier }})

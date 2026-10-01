@@ -2,6 +2,7 @@ export {
   handleAdminLegacyPaymentSettings,
   handleLegacyCheckout,
   handleLegacyComplete,
+  handleLegacyOrderStatus,
   handleLegacyWebhook,
   startLegacyCheckout,
 } from './legacyPayments.js';

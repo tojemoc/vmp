@@ -1,0 +1,1549 @@
+/**
+ * E-invoicing orchestration (Slovakia eFaktura / Czechia ISDOC).
+ *
+ * Routing, D1 ledger, Peppol UBL + ISDOC XML generation, admin settings.
+ * Transmission uses `einvoiceDelivery.ts` (Peppol AP stub / ISDOC email stub).
+ * Live Peppol requires Worker secret `PEPPOL_AP_API_KEY` + AP URL settings.
+ *
+ * Stripe Checkout must collect customer tax IDs and billing address so
+ * `extractBuyerFromStripeInvoice` can classify B2B (see `@vmp/payments`
+ * Stripe `tax_id_collection` + `billing_address_collection`).
+ */
+
+import { requireAuth, requireRole } from './auth.js';
+import { deliverIsdocInvoice, transmitPeppolUbl } from './einvoiceDelivery.js';
+import { getObjectStorage } from './objectStorage.js';
+import { getSetting, setSettings } from './settingsStore.js';
+import type { NormalizedInvoiceBuyer, NormalizedInvoiceData, PaymentProviderId } from '@vmp/payments';
+import { normalizeStripeInvoice } from '@vmp/payments';
+
+export type SellerJurisdiction = 'SK' | 'CZ';
+export type InvoiceFormat = 'peppol_ubl' | 'isdoc' | 'pdf_archive' | 'none';
+export type InvoiceRouting =
+  | 'peppol_ap'
+  | 'isdoc_delivery'
+  | 'email_pdf'
+  | 'deferred'
+  | 'not_required';
+export type InvoiceStatus =
+  | 'draft'
+  | 'queued'
+  | 'stub_sent'
+  | 'sent'
+  | 'delivered'
+  | 'failed'
+  | 'not_required';
+
+export interface BuyerProfile {
+  country: string | null;
+  vatId: string | null;
+  name: string | null;
+  email: string | null;
+  address: {
+    line1?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null;
+  peppolEndpointId?: string | null;
+  peppolSchemeId?: string | null;
+  isBusiness: boolean;
+}
+
+export interface SellerProfile {
+  legalName: string;
+  vatId: string;
+  companyId: string;
+  addressLine1: string;
+  addressCity: string;
+  addressPostalCode: string;
+  addressCountry: string;
+  jurisdiction: SellerJurisdiction;
+  peppolParticipantId: string;
+  peppolSchemeId: string;
+}
+
+export interface RoutingContext {
+  now: Date;
+  skVoluntaryEnabled: boolean;
+  einvoicingEnabled: boolean;
+  isdocEnabled: boolean;
+  b2cMode: 'pdf_archive' | 'none';
+  skVoluntaryFrom: Date;
+}
+
+export interface RoutingDecision {
+  format: InvoiceFormat;
+  routing: InvoiceRouting;
+  mandateApplies: boolean;
+  reason: string;
+}
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  netAmountCents: number;
+  vatRatePercent: number | null;
+}
+
+export interface InvoiceDraftInput {
+  userId: string;
+  stripeInvoiceId: string | null;
+  stripePaymentIntentId: string | null;
+  stripeSubscriptionId: string | null;
+  planType: string | null;
+  issueDate: string;
+  currency: string;
+  netAmountCents: number;
+  taxAmountCents: number;
+  grossAmountCents: number;
+  vatRatePercent: number | null;
+  buyer: BuyerProfile;
+  seller: SellerProfile;
+  lineItems: InvoiceLineItem[];
+  idempotencyKey: string;
+}
+
+const SK_MANDATORY_DATE = new Date('2027-01-01T00:00:00.000Z');
+export const SK_VOLUNTARY_FROM_DATE = new Date('2026-05-15T00:00:00.000Z');
+const EU_COUNTRY_CODES = new Set([
+  'AT',
+  'BE',
+  'BG',
+  'HR',
+  'CY',
+  'CZ',
+  'DK',
+  'EE',
+  'FI',
+  'FR',
+  'DE',
+  'GR',
+  'HU',
+  'IE',
+  'IT',
+  'LV',
+  'LT',
+  'LU',
+  'MT',
+  'NL',
+  'PL',
+  'PT',
+  'RO',
+  'SK',
+  'SI',
+  'ES',
+  'SE',
+]);
+
+const PEPPOL_CUSTOMIZATION_ID =
+  'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0';
+const PEPPOL_PROFILE_ID = 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0';
+
+function getDb(env: any) {
+  const db = env.DB || env.video_subscription_db;
+  if (!db) throw new Error('D1 binding not found');
+  return db;
+}
+
+function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+  });
+}
+
+function normalizeCountryCode(value: unknown): string | null {
+  const raw = String(value ?? '')
+    .trim()
+    .toUpperCase();
+  if (!raw) return null;
+  if (raw.length === 2) return raw;
+  return null;
+}
+
+function hasBusinessVatId(vatId: string | null | undefined): boolean {
+  const normalized = String(vatId ?? '').trim();
+  return normalized.length >= 4;
+}
+
+export function isEuCountry(country: string | null | undefined): boolean {
+  const code = normalizeCountryCode(country);
+  return code ? EU_COUNTRY_CODES.has(code) : false;
+}
+
+export function isSkDomesticB2B(
+  buyer: Pick<BuyerProfile, 'country' | 'vatId' | 'isBusiness'>,
+  seller: Pick<SellerProfile, 'jurisdiction'>,
+): boolean {
+  if (seller.jurisdiction !== 'SK') return false;
+  const country = normalizeCountryCode(buyer.country);
+  return country === 'SK' && buyer.isBusiness && hasBusinessVatId(buyer.vatId);
+}
+
+export function isCzDomesticB2B(
+  buyer: Pick<BuyerProfile, 'country' | 'vatId' | 'isBusiness'>,
+  seller: Pick<SellerProfile, 'jurisdiction'>,
+): boolean {
+  if (seller.jurisdiction !== 'CZ') return false;
+  const country = normalizeCountryCode(buyer.country);
+  return country === 'CZ' && buyer.isBusiness && hasBusinessVatId(buyer.vatId);
+}
+
+/**
+ * Decide invoice format and routing from buyer/seller profiles and legal timelines.
+ */
+export function resolveInvoiceRouting(
+  buyer: BuyerProfile,
+  seller: SellerProfile,
+  context: RoutingContext,
+): RoutingDecision {
+  if (!context.einvoicingEnabled) {
+    return {
+      format: 'none',
+      routing: 'not_required',
+      mandateApplies: false,
+      reason: 'E-invoicing disabled in admin settings.',
+    };
+  }
+
+  const buyerCountry = normalizeCountryCode(buyer.country);
+  const isB2C = !buyer.isBusiness || !hasBusinessVatId(buyer.vatId);
+
+  if (isB2C) {
+    if (context.b2cMode === 'none') {
+      return {
+        format: 'none',
+        routing: 'not_required',
+        mandateApplies: false,
+        reason: 'B2C — einvoicing_b2c_mode=none; no structured invoice or PDF archive.',
+      };
+    }
+    return {
+      format: 'pdf_archive',
+      routing: 'email_pdf',
+      mandateApplies: false,
+      reason: 'B2C — structured e-invoice not mandated in SK/CZ; archive PDF for accounting.',
+    };
+  }
+
+  if (isSkDomesticB2B(buyer, seller)) {
+    const mandatory = context.now >= SK_MANDATORY_DATE;
+    const voluntary =
+      context.skVoluntaryEnabled &&
+      context.now >= context.skVoluntaryFrom &&
+      context.now < SK_MANDATORY_DATE;
+    if (mandatory || voluntary) {
+      return {
+        format: 'peppol_ubl',
+        routing: 'peppol_ap',
+        mandateApplies: mandatory,
+        reason: mandatory
+          ? 'SK domestic B2B — Law 385/2025 mandatory Peppol EN 16931 (UBL 2.1) from 2027-01-01.'
+          : 'SK domestic B2B — voluntary Peppol phase before 2027-01-01.',
+      };
+    }
+    return {
+      format: 'pdf_archive',
+      routing: 'deferred',
+      mandateApplies: false,
+      reason:
+        'SK domestic B2B before mandatory date; enable einvoicing_sk_voluntary_enabled to route via Peppol.',
+    };
+  }
+
+  if (isCzDomesticB2B(buyer, seller)) {
+    if (context.isdocEnabled) {
+      return {
+        format: 'isdoc',
+        routing: 'isdoc_delivery',
+        mandateApplies: false,
+        reason:
+          'CZ domestic B2B — ISDOC/EN 16931 voluntary (buyer consent); no B2B mandate until EU ViDA (~2030).',
+      };
+    }
+    return {
+      format: 'pdf_archive',
+      routing: 'deferred',
+      mandateApplies: false,
+      reason:
+        'CZ domestic B2B — ISDOC disabled; deferred PDF archive until structured path is enabled.',
+    };
+  }
+
+  if (isEuCountry(buyerCountry)) {
+    return {
+      format: 'peppol_ubl',
+      routing: 'deferred',
+      mandateApplies: false,
+      reason:
+        'EU cross-border B2B — Peppol EN 16931 recommended; SK cross-border mandate from 2030 (ViDA).',
+    };
+  }
+
+  return {
+    format: 'pdf_archive',
+    routing: 'email_pdf',
+    mandateApplies: false,
+    reason: 'Non-EU buyer — structured EU e-invoice not required; PDF archive only.',
+  };
+}
+
+export function formatInvoiceNumber(
+  prefix: string,
+  jurisdiction: string,
+  year: number,
+  sequence: number,
+): string {
+  const safePrefix =
+    String(prefix || 'VMP')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '') || 'VMP';
+  const safeJurisdiction =
+    String(jurisdiction || 'XX')
+      .trim()
+      .toUpperCase()
+      .slice(0, 2) || 'XX';
+  return `${safePrefix}-${safeJurisdiction}-${year}-${String(sequence).padStart(6, '0')}`;
+}
+
+export function escapeXml(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function normalizeVatRatePercent(rate: number | null | undefined): number {
+  if (rate == null || !Number.isFinite(rate)) return 0;
+  return Math.round(rate * 100) / 100;
+}
+
+export function hasMixedVatRates(lineItems: InvoiceLineItem[]): boolean {
+  const rates = new Set(lineItems.map((line) => normalizeVatRatePercent(line.vatRatePercent)));
+  return rates.size > 1;
+}
+
+export function buildPeppolUblSkeleton(input: {
+  invoiceNumber: string;
+  issueDate: string;
+  currency: string;
+  seller: SellerProfile;
+  buyer: BuyerProfile;
+  lineItems: InvoiceLineItem[];
+  netAmountCents: number;
+  taxAmountCents: number;
+  grossAmountCents: number;
+  vatRatePercent: number | null;
+}): string {
+  if (hasMixedVatRates(input.lineItems)) {
+    throw new Error('mixed_vat_rates');
+  }
+
+  const taxCategory = (input.vatRatePercent ?? 0) > 0 ? 'S' : 'Z';
+  const taxPercent = input.vatRatePercent ?? 0;
+  const lines = input.lineItems
+    .map((line, index) => {
+      const quantity = Math.max(Number(line.quantity) || 1, 1);
+      const lineNet = (line.netAmountCents / 100).toFixed(2);
+      const unitPrice = (line.netAmountCents / quantity / 100).toFixed(2);
+      const lineTaxCategory = (line.vatRatePercent ?? 0) > 0 ? 'S' : 'Z';
+      return `
+  <cac:InvoiceLine>
+    <cbc:ID>${index + 1}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">${quantity}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="${escapeXml(input.currency)}">${lineNet}</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>${escapeXml(line.description)}</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${lineTaxCategory}</cbc:ID>
+        <cbc:Percent>${line.vatRatePercent ?? 0}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="${escapeXml(input.currency)}">${unitPrice}</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>`;
+    })
+    .join('');
+
+  const net = (input.netAmountCents / 100).toFixed(2);
+  const tax = (input.taxAmountCents / 100).toFixed(2);
+  const gross = (input.grossAmountCents / 100).toFixed(2);
+  const buyerEndpoint =
+    input.buyer.peppolEndpointId || input.buyer.vatId || input.buyer.email || 'unknown';
+  const buyerScheme = input.buyer.peppolSchemeId || '9935';
+  const sellerEndpoint =
+    input.seller.peppolParticipantId || input.seller.vatId || input.seller.companyId;
+  const sellerScheme = input.seller.peppolSchemeId || '9935';
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+  xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>${PEPPOL_CUSTOMIZATION_ID}</cbc:CustomizationID>
+  <cbc:ProfileID>${PEPPOL_PROFILE_ID}</cbc:ProfileID>
+  <cbc:ID>${escapeXml(input.invoiceNumber)}</cbc:ID>
+  <cbc:IssueDate>${escapeXml(input.issueDate)}</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>${escapeXml(input.currency)}</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>${escapeXml(input.buyer.email || input.invoiceNumber)}</cbc:BuyerReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="${escapeXml(sellerScheme)}">${escapeXml(sellerEndpoint)}</cbc:EndpointID>
+      <cac:PartyName><cbc:Name>${escapeXml(input.seller.legalName)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXml(input.seller.addressLine1)}</cbc:StreetName>
+        <cbc:CityName>${escapeXml(input.seller.addressCity)}</cbc:CityName>
+        <cbc:PostalZone>${escapeXml(input.seller.addressPostalCode)}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>${escapeXml(input.seller.addressCountry)}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${escapeXml(input.seller.vatId)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(input.seller.legalName)}</cbc:RegistrationName>
+        <cbc:CompanyID>${escapeXml(input.seller.companyId)}</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID schemeID="${escapeXml(buyerScheme)}">${escapeXml(buyerEndpoint)}</cbc:EndpointID>
+      <cac:PartyName><cbc:Name>${escapeXml(input.buyer.name || input.buyer.email || 'Customer')}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXml(input.buyer.address?.line1 || '')}</cbc:StreetName>
+        <cbc:CityName>${escapeXml(input.buyer.address?.city || '')}</cbc:CityName>
+        <cbc:PostalZone>${escapeXml(input.buyer.address?.postalCode || '')}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>${escapeXml(buyerCountryCode(input.buyer) || '')}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      ${
+        input.buyer.vatId
+          ? `<cac:PartyTaxScheme>
+        <cbc:CompanyID>${escapeXml(input.buyer.vatId)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>`
+          : ''
+      }
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXml(input.buyer.name || input.buyer.email || 'Customer')}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="${escapeXml(input.currency)}">${tax}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="${escapeXml(input.currency)}">${net}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(input.currency)}">${tax}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>${taxCategory}</cbc:ID>
+        <cbc:Percent>${taxPercent}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="${escapeXml(input.currency)}">${net}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="${escapeXml(input.currency)}">${net}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="${escapeXml(input.currency)}">${gross}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="${escapeXml(input.currency)}">${gross}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>${lines}
+</Invoice>`;
+}
+
+function buyerCountryCode(buyer: BuyerProfile): string | null {
+  return normalizeCountryCode(buyer.address?.country || buyer.country);
+}
+
+/** Strip SK/CZ country prefix from VAT ID to get national company id (IČO / IČ DPH base). */
+export function nationalCompanyIdFromVat(
+  vatId: string | null | undefined,
+  country: string | null | undefined,
+): string {
+  const raw = String(vatId ?? '').trim();
+  if (!raw) return '';
+  const code = normalizeCountryCode(country);
+  if (code && raw.toUpperCase().startsWith(code)) {
+    return raw.slice(code.length).trim();
+  }
+  return raw;
+}
+
+function countryDisplayName(code: string | null): string {
+  if (code === 'CZ') return 'Česká republika';
+  if (code === 'SK') return 'Slovensko';
+  return code || '';
+}
+
+function splitStreetAndBuilding(line1: string | null | undefined): {
+  streetName: string;
+  buildingNumber: string;
+} {
+  const raw = String(line1 ?? '').trim();
+  if (!raw) return { streetName: 'n/a', buildingNumber: 'n/a' };
+  const match = raw.match(/^(.*\D)\s+(\d[\w/-]*)$/);
+  if (match?.[1] != null && match[2] != null) {
+    return { streetName: match[1].trim() || raw, buildingNumber: match[2] };
+  }
+  return { streetName: raw, buildingNumber: 'n/a' };
+}
+
+function amountFromCents(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+/**
+ * Build an ISDOC 6.0.2 tax invoice skeleton (CZ domestic B2B).
+ * Not a full XSD-validated export — enough structured XML to archive and
+ * hand off to email/portal delivery once live transport exists.
+ */
+export function buildIsdocSkeleton(input: {
+  invoiceId: string;
+  invoiceNumber: string;
+  issueDate: string;
+  currency: string;
+  seller: SellerProfile;
+  buyer: BuyerProfile;
+  lineItems: InvoiceLineItem[];
+  netAmountCents: number;
+  taxAmountCents: number;
+  grossAmountCents: number;
+  vatRatePercent: number | null;
+  electronicConsentReference: string;
+}): string {
+  if (hasMixedVatRates(input.lineItems)) {
+    throw new Error('mixed_vat_rates');
+  }
+
+  const vatApplicable = (input.vatRatePercent ?? 0) > 0 || input.taxAmountCents > 0;
+  const taxPercent = input.vatRatePercent ?? 0;
+  const currency = escapeXml(String(input.currency || 'CZK').toUpperCase());
+  const sellerCountry =
+    normalizeCountryCode(input.seller.addressCountry) || input.seller.jurisdiction;
+  const buyerCountry = buyerCountryCode(input.buyer) || 'CZ';
+  const sellerIco =
+    String(input.seller.companyId || '').trim() ||
+    nationalCompanyIdFromVat(input.seller.vatId, sellerCountry);
+  const buyerIco = nationalCompanyIdFromVat(input.buyer.vatId, buyerCountry);
+  const sellerStreet = splitStreetAndBuilding(input.seller.addressLine1);
+  const buyerStreet = splitStreetAndBuilding(input.buyer.address?.line1);
+  const buyerName = escapeXml(input.buyer.name || input.buyer.email || 'Customer');
+  const consentRef = escapeXml(
+    String(input.electronicConsentReference || 'VMP-CZ-B2B-ELECTRONIC-CONSENT').trim(),
+  );
+
+  const lines = input.lineItems
+    .map((line, index) => {
+      const quantity = Math.max(Number(line.quantity) || 1, 1);
+      const lineNetCents = line.netAmountCents;
+      const lineTaxCents =
+        line.vatRatePercent != null && line.vatRatePercent > 0
+          ? Math.round((lineNetCents * line.vatRatePercent) / 100)
+          : 0;
+      const lineGrossCents = lineNetCents + lineTaxCents;
+      const unitNet = amountFromCents(Math.round(lineNetCents / quantity));
+      const unitGross = amountFromCents(Math.round(lineGrossCents / quantity));
+      return `
+    <InvoiceLine>
+      <ID>${index + 1}</ID>
+      <InvoicedQuantity unitCode="C62">${quantity}</InvoicedQuantity>
+      <LineExtensionAmount>${amountFromCents(lineNetCents)}</LineExtensionAmount>
+      <LineExtensionAmountTaxInclusive>${amountFromCents(lineGrossCents)}</LineExtensionAmountTaxInclusive>
+      <LineExtensionTaxAmount>${amountFromCents(lineTaxCents)}</LineExtensionTaxAmount>
+      <UnitPrice>${unitNet}</UnitPrice>
+      <UnitPriceTaxInclusive>${unitGross}</UnitPriceTaxInclusive>
+      <ClassifiedTaxCategory>
+        <Percent>${line.vatRatePercent ?? 0}</Percent>
+        <VATCalculationMethod>0</VATCalculationMethod>
+        <VATApplicable>${(line.vatRatePercent ?? 0) > 0 ? 'true' : 'false'}</VATApplicable>
+      </ClassifiedTaxCategory>
+      <Item>
+        <Description>${escapeXml(line.description)}</Description>
+      </Item>
+    </InvoiceLine>`;
+    })
+    .join('');
+
+  const net = amountFromCents(input.netAmountCents);
+  const tax = amountFromCents(input.taxAmountCents);
+  const gross = amountFromCents(input.grossAmountCents);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.2">
+  <DocumentType>1</DocumentType>
+  <ID>${escapeXml(input.invoiceNumber)}</ID>
+  <UUID>${escapeXml(input.invoiceId)}</UUID>
+  <IssueDate>${escapeXml(input.issueDate)}</IssueDate>
+  <TaxPointDate>${escapeXml(input.issueDate)}</TaxPointDate>
+  <VATApplicable>${vatApplicable ? 'true' : 'false'}</VATApplicable>
+  <ElectronicPossibilityAgreementReference>${consentRef}</ElectronicPossibilityAgreementReference>
+  <Note>VMP subscription invoice (ISDOC skeleton)</Note>
+  <LocalCurrencyCode>${currency}</LocalCurrencyCode>
+  <CurrRate>1</CurrRate>
+  <RefCurrRate>1</RefCurrRate>
+  <AccountingSupplierParty>
+    <Party>
+      <PartyIdentification>
+        <ID>${escapeXml(sellerIco || input.seller.vatId || 'unknown')}</ID>
+      </PartyIdentification>
+      <PartyName>
+        <Name>${escapeXml(input.seller.legalName)}</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>${escapeXml(sellerStreet.streetName)}</StreetName>
+        <BuildingNumber>${escapeXml(sellerStreet.buildingNumber)}</BuildingNumber>
+        <CityName>${escapeXml(input.seller.addressCity || '')}</CityName>
+        <PostalZone>${escapeXml(input.seller.addressPostalCode || '')}</PostalZone>
+        <Country>
+          <IdentificationCode>${escapeXml(sellerCountry || 'CZ')}</IdentificationCode>
+          <Name>${escapeXml(countryDisplayName(sellerCountry))}</Name>
+        </Country>
+      </PostalAddress>
+      ${
+        input.seller.vatId
+          ? `<PartyTaxScheme>
+        <CompanyID>${escapeXml(input.seller.vatId)}</CompanyID>
+        <TaxScheme>VAT</TaxScheme>
+      </PartyTaxScheme>`
+          : ''
+      }
+    </Party>
+  </AccountingSupplierParty>
+  <AccountingCustomerParty>
+    <Party>
+      <PartyIdentification>
+        <ID>${escapeXml(buyerIco || input.buyer.vatId || 'unknown')}</ID>
+      </PartyIdentification>
+      <PartyName>
+        <Name>${buyerName}</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>${escapeXml(buyerStreet.streetName)}</StreetName>
+        <BuildingNumber>${escapeXml(buyerStreet.buildingNumber)}</BuildingNumber>
+        <CityName>${escapeXml(input.buyer.address?.city || '')}</CityName>
+        <PostalZone>${escapeXml(input.buyer.address?.postalCode || '')}</PostalZone>
+        <Country>
+          <IdentificationCode>${escapeXml(buyerCountry)}</IdentificationCode>
+          <Name>${escapeXml(countryDisplayName(buyerCountry))}</Name>
+        </Country>
+      </PostalAddress>
+      ${
+        input.buyer.vatId
+          ? `<PartyTaxScheme>
+        <CompanyID>${escapeXml(input.buyer.vatId)}</CompanyID>
+        <TaxScheme>VAT</TaxScheme>
+      </PartyTaxScheme>`
+          : ''
+      }
+      ${
+        input.buyer.email
+          ? `<Contact>
+        <ElectronicMail>${escapeXml(input.buyer.email)}</ElectronicMail>
+      </Contact>`
+          : ''
+      }
+    </Party>
+  </AccountingCustomerParty>
+  <InvoiceLines>${lines}
+  </InvoiceLines>
+  <TaxTotal>
+    <TaxSubTotal>
+      <TaxableAmount>${net}</TaxableAmount>
+      <TaxAmount>${tax}</TaxAmount>
+      <TaxInclusiveAmount>${gross}</TaxInclusiveAmount>
+      <AlreadyClaimedTaxableAmount>0</AlreadyClaimedTaxableAmount>
+      <AlreadyClaimedTaxAmount>0</AlreadyClaimedTaxAmount>
+      <AlreadyClaimedTaxInclusiveAmount>0</AlreadyClaimedTaxInclusiveAmount>
+      <DifferenceTaxableAmount>${net}</DifferenceTaxableAmount>
+      <DifferenceTaxAmount>${tax}</DifferenceTaxAmount>
+      <DifferenceTaxInclusiveAmount>${gross}</DifferenceTaxInclusiveAmount>
+      <TaxCategory>
+        <Percent>${taxPercent}</Percent>
+        <VATApplicable>${vatApplicable ? 'true' : 'false'}</VATApplicable>
+      </TaxCategory>
+    </TaxSubTotal>
+    <TaxAmount>${tax}</TaxAmount>
+  </TaxTotal>
+  <LegalMonetaryTotal>
+    <TaxExclusiveAmount>${net}</TaxExclusiveAmount>
+    <TaxInclusiveAmount>${gross}</TaxInclusiveAmount>
+    <AlreadyClaimedTaxExclusiveAmount>0</AlreadyClaimedTaxExclusiveAmount>
+    <AlreadyClaimedTaxInclusiveAmount>0</AlreadyClaimedTaxInclusiveAmount>
+    <DifferenceTaxExclusiveAmount>${net}</DifferenceTaxExclusiveAmount>
+    <DifferenceTaxInclusiveAmount>${gross}</DifferenceTaxInclusiveAmount>
+    <PayableRoundingAmount>0</PayableRoundingAmount>
+    <PaidDepositsAmount>0</PaidDepositsAmount>
+    <PayableAmount>${gross}</PayableAmount>
+  </LegalMonetaryTotal>
+</Invoice>`;
+}
+
+async function loadSellerProfile(env: any): Promise<SellerProfile> {
+  const keys = [
+    'seller_legal_name',
+    'seller_vat_id',
+    'seller_company_id',
+    'seller_address_line1',
+    'seller_address_city',
+    'seller_address_postal_code',
+    'seller_address_country',
+    'seller_jurisdiction',
+    'seller_peppol_participant_id',
+    'seller_peppol_scheme_id',
+  ] as const;
+  const values = await Promise.all(keys.map((key) => getSetting(env, key)));
+  const jurisdiction =
+    String(values[7] ?? 'SK')
+      .trim()
+      .toUpperCase() === 'CZ'
+      ? 'CZ'
+      : 'SK';
+  return {
+    legalName: String(values[0] ?? ''),
+    vatId: String(values[1] ?? ''),
+    companyId: String(values[2] ?? ''),
+    addressLine1: String(values[3] ?? ''),
+    addressCity: String(values[4] ?? ''),
+    addressPostalCode: String(values[5] ?? ''),
+    addressCountry: normalizeCountryCode(values[6]) || jurisdiction,
+    jurisdiction,
+    peppolParticipantId: String(values[8] ?? ''),
+    peppolSchemeId: String(values[9] ?? '9935'),
+  };
+}
+
+async function nextInvoiceSequence(db: any, jurisdiction: string, year: number): Promise<number> {
+  const row = await db
+    .prepare(`
+    INSERT INTO einvoicing_sequences (jurisdiction, year, last_number, updated_at)
+    VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT(jurisdiction, year) DO UPDATE SET
+      last_number = last_number + 1,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING last_number
+  `)
+    .bind(jurisdiction, year)
+    .first();
+  const sequence = Number(row?.last_number);
+  if (!Number.isFinite(sequence) || sequence < 1) {
+    throw new Error('Failed to allocate invoice sequence');
+  }
+  return sequence;
+}
+
+function centsFromStripeAmount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+function isoDateFromUnixSeconds(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return new Date().toISOString().slice(0, 10);
+  return new Date(n * 1000).toISOString().slice(0, 10);
+}
+
+function deriveVatRatePercent(netCents: number, taxCents: number): number | null {
+  if (netCents <= 0 || taxCents <= 0) return taxCents > 0 ? null : 0;
+  const rate = (taxCents / netCents) * 100;
+  return Math.round(rate * 100) / 100;
+}
+
+export function extractBuyerFromStripeInvoice(
+  stripeInvoice: any,
+  fallbackEmail?: string | null,
+): BuyerProfile {
+  const customerAddress =
+    stripeInvoice?.customer_address && typeof stripeInvoice.customer_address === 'object'
+      ? stripeInvoice.customer_address
+      : null;
+  const taxIds = Array.isArray(stripeInvoice?.customer_tax_ids)
+    ? stripeInvoice.customer_tax_ids
+    : [];
+  const primaryTax = taxIds.find((entry: any) => entry?.value);
+  const vatId =
+    typeof primaryTax?.value === 'string'
+      ? primaryTax.value
+      : typeof stripeInvoice?.customer_tax_id === 'string'
+        ? stripeInvoice.customer_tax_id
+        : null;
+  const country = normalizeCountryCode(
+    customerAddress?.country || stripeInvoice?.customer_shipping?.address?.country,
+  );
+  const name =
+    String(stripeInvoice?.customer_name || stripeInvoice?.customer_shipping?.name || '').trim() ||
+    null;
+  const email = String(stripeInvoice?.customer_email || fallbackEmail || '').trim() || null;
+  const taxExempt = String(
+    stripeInvoice?.customer_tax_exempt ?? stripeInvoice?.tax_exempt ?? '',
+  )
+    .trim()
+    .toLowerCase();
+  const isBusiness = hasBusinessVatId(vatId) || taxExempt === 'reverse';
+
+  return {
+    country,
+    vatId,
+    name,
+    email,
+    address: customerAddress
+      ? {
+          line1: customerAddress.line1 ?? null,
+          city: customerAddress.city ?? null,
+          postalCode: customerAddress.postal_code ?? null,
+          country: normalizeCountryCode(customerAddress.country),
+        }
+      : null,
+    peppolEndpointId: vatId,
+    peppolSchemeId: country === 'SK' || country === 'CZ' ? '9935' : null,
+    isBusiness,
+  };
+}
+
+export function buildLineItemsFromStripeInvoice(
+  stripeInvoice: any,
+  planType: string | null,
+): InvoiceLineItem[] {
+  const lines = Array.isArray(stripeInvoice?.lines?.data) ? stripeInvoice.lines.data : [];
+  if (lines.length === 0) {
+    const net = centsFromStripeAmount(
+      stripeInvoice?.subtotal ?? stripeInvoice?.total_excluding_tax,
+    );
+    const tax = centsFromStripeAmount(stripeInvoice?.tax ?? 0);
+    return [
+      {
+        description: planType ? `VMP subscription (${planType})` : 'VMP subscription',
+        quantity: 1,
+        netAmountCents: net,
+        vatRatePercent: deriveVatRatePercent(net, tax),
+      },
+    ];
+  }
+
+  return lines.map((line: any) => {
+    const net = centsFromStripeAmount(line?.amount_excluding_tax ?? line?.amount);
+    const taxAmounts = Array.isArray(line?.tax_amounts) ? line.tax_amounts : [];
+    const tax = taxAmounts.reduce(
+      (sum: number, entry: any) => sum + centsFromStripeAmount(entry?.amount),
+      0,
+    );
+    const description = String(
+      line?.description || line?.price?.nickname || 'VMP subscription',
+    ).trim();
+    return {
+      description,
+      quantity: Number(line?.quantity ?? 1) || 1,
+      netAmountCents: net,
+      vatRatePercent: deriveVatRatePercent(net, tax),
+    };
+  });
+}
+
+export function buyerFromNormalizedInvoice(buyer: NormalizedInvoiceBuyer): BuyerProfile {
+  return {
+    country: buyer.country,
+    vatId: buyer.vatId,
+    name: buyer.name,
+    email: buyer.email,
+    address: buyer.address
+      ? {
+          line1: buyer.address.line1 ?? null,
+          city: buyer.address.city ?? null,
+          postalCode: buyer.address.postalCode ?? null,
+          country: buyer.address.country ?? null,
+        }
+      : null,
+    peppolEndpointId: buyer.peppolEndpointId ?? buyer.vatId,
+    peppolSchemeId: buyer.peppolSchemeId ?? null,
+    isBusiness: buyer.isBusiness,
+  };
+}
+
+export async function createInvoiceFromPayment(
+  env: any,
+  params: {
+    userId: string;
+    providerId: PaymentProviderId;
+    invoice: NormalizedInvoiceData;
+    planType?: string | null;
+    userEmail?: string | null;
+  },
+): Promise<{
+  created: boolean;
+  invoiceId: string | null;
+  status: InvoiceStatus | null;
+  reason?: string;
+}> {
+  const db = getDb(env);
+  const invoice = params.invoice;
+  const providerInvoiceId = String(invoice.providerInvoiceId ?? '').trim();
+  if (!providerInvoiceId) {
+    return { created: false, invoiceId: null, status: null, reason: 'missing_provider_invoice_id' };
+  }
+
+  const idempotencyKey = `${params.providerId}:${providerInvoiceId}`;
+  const existing = await db
+    .prepare('SELECT id, status FROM einvoices WHERE idempotency_key = ? LIMIT 1')
+    .bind(idempotencyKey)
+    .first();
+  if (existing?.id) {
+    return {
+      created: false,
+      invoiceId: String(existing.id),
+      status: String(existing.status) as InvoiceStatus,
+    };
+  }
+
+  const enabled =
+    String(await getSetting(env, 'einvoicing_enabled', { defaultValue: '0' })) === '1';
+  if (!enabled) {
+    return {
+      created: false,
+      invoiceId: null,
+      status: 'not_required',
+      reason: 'E-invoicing disabled in admin settings.',
+    };
+  }
+
+  const skVoluntaryEnabled =
+    String(await getSetting(env, 'einvoicing_sk_voluntary_enabled', { defaultValue: '0' })) === '1';
+  const isdocEnabled =
+    String(await getSetting(env, 'einvoicing_isdoc_enabled', { defaultValue: '1' })) !== '0';
+  const b2cModeRaw = String(
+    await getSetting(env, 'einvoicing_b2c_mode', { defaultValue: 'pdf_archive' }),
+  );
+  const b2cMode = b2cModeRaw === 'none' ? 'none' : 'pdf_archive';
+  const seller = await loadSellerProfile(env);
+  const buyer = buyerFromNormalizedInvoice({
+    ...invoice.buyer,
+    email: invoice.buyer.email || params.userEmail || null,
+  });
+  const routing = resolveInvoiceRouting(buyer, seller, {
+    now: new Date(),
+    skVoluntaryEnabled,
+    einvoicingEnabled: enabled,
+    isdocEnabled,
+    b2cMode,
+    skVoluntaryFrom: SK_VOLUNTARY_FROM_DATE,
+  });
+
+  if (routing.routing === 'not_required' || routing.format === 'none') {
+    return { created: false, invoiceId: null, status: 'not_required', reason: routing.reason };
+  }
+
+  const issueDate = invoice.issueDate;
+  const year = Number(issueDate.slice(0, 4));
+  const prefix = String(
+    await getSetting(env, 'einvoicing_invoice_prefix', { defaultValue: 'VMP' }),
+  );
+  const sequence = await nextInvoiceSequence(db, seller.jurisdiction, year);
+  const invoiceNumber = formatInvoiceNumber(prefix, seller.jurisdiction, year, sequence);
+  const netAmountCents = invoice.netAmountCents;
+  const taxAmountCents = invoice.taxAmountCents;
+  const grossAmountCents = invoice.grossAmountCents;
+  const currency = invoice.currency;
+  const lineItems: InvoiceLineItem[] = invoice.lineItems.map((line) => ({
+    description: line.description,
+    quantity: line.quantity,
+    netAmountCents: line.netAmountCents,
+    vatRatePercent: line.vatRatePercent,
+  }));
+  const vatRatePercent = deriveVatRatePercent(netAmountCents, taxAmountCents);
+  const invoiceId = crypto.randomUUID();
+
+  const stripeInvoiceId = params.providerId === 'stripe' ? providerInvoiceId : null;
+  const stripePaymentIntentId =
+    params.providerId === 'stripe' ? (invoice.providerPaymentId ?? null) : null;
+  const stripeSubscriptionId =
+    params.providerId === 'stripe' ? (invoice.providerSubscriptionId ?? null) : null;
+
+  let xmlPayload: string | null = null;
+  let xmlR2Key: string | null = null;
+  let invoiceErrorMessage: string | null = null;
+  if (routing.format === 'peppol_ubl' || routing.format === 'isdoc') {
+    if (hasMixedVatRates(lineItems)) {
+      invoiceErrorMessage = `Mixed VAT rates are not supported for ${
+        routing.format === 'isdoc' ? 'ISDOC' : 'Peppol UBL'
+      } invoices.`;
+    } else {
+      try {
+        if (routing.format === 'peppol_ubl') {
+          xmlPayload = buildPeppolUblSkeleton({
+            invoiceNumber,
+            issueDate,
+            currency,
+            seller,
+            buyer,
+            lineItems,
+            netAmountCents,
+            taxAmountCents,
+            grossAmountCents,
+            vatRatePercent,
+          });
+        } else {
+          const consentRef = String(
+            (await getSetting(env, 'einvoicing_cz_electronic_consent_ref', {
+              defaultValue: 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+            })) ?? 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+          );
+          xmlPayload = buildIsdocSkeleton({
+            invoiceId,
+            invoiceNumber,
+            issueDate,
+            currency,
+            seller,
+            buyer,
+            lineItems,
+            netAmountCents,
+            taxAmountCents,
+            grossAmountCents,
+            vatRatePercent,
+            electronicConsentReference: consentRef,
+          });
+        }
+        xmlR2Key = `einvoices/${invoiceId}/invoice.xml`;
+        const storage = getObjectStorage(env);
+        if (!storage) {
+          invoiceErrorMessage = 'Object storage not configured for invoice XML.';
+          xmlR2Key = null;
+          xmlPayload = null;
+        } else if (xmlPayload) {
+          await storage.putObject(xmlR2Key, xmlPayload, { contentType: 'application/xml' });
+        }
+      } catch (err) {
+        invoiceErrorMessage = err instanceof Error ? err.message : String(err);
+        xmlPayload = null;
+        xmlR2Key = null;
+      }
+    }
+  }
+
+  let initialStatus: InvoiceStatus = invoiceErrorMessage
+    ? 'failed'
+    : seller.legalName && seller.vatId
+      ? routing.routing === 'peppol_ap' || routing.routing === 'isdoc_delivery'
+        ? 'queued'
+        : 'draft'
+      : 'draft';
+
+  let peppolMessageId: string | null = null;
+  let peppolTransmissionId: string | null = null;
+
+  if (!invoiceErrorMessage && xmlPayload && initialStatus === 'queued') {
+    const delivery =
+      routing.routing === 'peppol_ap'
+        ? await transmitPeppolUbl(env, {
+            invoiceId,
+            invoiceNumber,
+            xml: xmlPayload,
+            sellerParticipantId: seller.peppolParticipantId || seller.vatId,
+            sellerSchemeId: seller.peppolSchemeId || '9935',
+            buyerEndpointId: buyer.peppolEndpointId || buyer.vatId || '',
+            buyerSchemeId: buyer.peppolSchemeId || '9935',
+          })
+        : await deliverIsdocInvoice(env, {
+            invoiceId,
+            invoiceNumber,
+            xml: xmlPayload,
+            buyerEmail: buyer.email,
+            buyerName: buyer.name,
+          });
+
+    if (delivery.ok) {
+      initialStatus = delivery.status;
+      peppolTransmissionId = delivery.transmissionId;
+      peppolMessageId = delivery.messageId ?? null;
+    } else if (delivery.status === 'failed') {
+      initialStatus = 'failed';
+      invoiceErrorMessage = `${delivery.code}: ${delivery.detail}`;
+    } else {
+      // Stay queued when live transport is not configured.
+      invoiceErrorMessage = null;
+    }
+  }
+
+  await db
+    .prepare(`
+    INSERT INTO einvoices (
+      id, invoice_number, user_id, stripe_invoice_id, stripe_payment_intent_id, stripe_subscription_id,
+      plan_type, issue_date, currency, net_amount_cents, tax_amount_cents, gross_amount_cents, vat_rate_percent,
+      buyer_country, buyer_vat_id, buyer_name, buyer_email, buyer_address_json,
+      buyer_peppol_endpoint_id, buyer_peppol_scheme_id,
+      seller_jurisdiction, format, routing, status, mandate_applies,
+      xml_payload_r2_key, peppol_message_id, peppol_transmission_id,
+      idempotency_key, error_message, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+  `)
+    .bind(
+      invoiceId,
+      invoiceNumber,
+      params.userId,
+      stripeInvoiceId,
+      stripePaymentIntentId,
+      stripeSubscriptionId,
+      params.planType ?? null,
+      issueDate,
+      currency,
+      netAmountCents,
+      taxAmountCents,
+      grossAmountCents,
+      vatRatePercent,
+      buyer.country,
+      buyer.vatId,
+      buyer.name,
+      buyer.email,
+      buyer.address ? JSON.stringify(buyer.address) : null,
+      buyer.peppolEndpointId ?? null,
+      buyer.peppolSchemeId ?? null,
+      seller.jurisdiction,
+      routing.format,
+      routing.routing,
+      initialStatus,
+      routing.mandateApplies ? 1 : 0,
+      xmlR2Key,
+      peppolMessageId,
+      peppolTransmissionId,
+      idempotencyKey,
+      invoiceErrorMessage,
+    )
+    .run();
+
+  return { created: true, invoiceId, status: initialStatus, reason: routing.reason };
+}
+
+export async function createInvoiceFromStripe(
+  env: any,
+  params: {
+    userId: string;
+    stripeInvoice: any;
+    planType?: string | null;
+    userEmail?: string | null;
+  },
+): Promise<{
+  created: boolean;
+  invoiceId: string | null;
+  status: InvoiceStatus | null;
+  reason?: string;
+}> {
+  const invoice = normalizeStripeInvoice(params.stripeInvoice ?? {}, {
+    planType: params.planType ?? null,
+    fallbackEmail: params.userEmail ?? null,
+  });
+  if (!invoice) {
+    return { created: false, invoiceId: null, status: null, reason: 'missing_stripe_invoice_id' };
+  }
+  return createInvoiceFromPayment(env, {
+    userId: params.userId,
+    providerId: 'stripe',
+    invoice,
+    planType: params.planType ?? null,
+    userEmail: params.userEmail ?? null,
+  });
+}
+
+export async function handlePaymentInvoicePaid(
+  env: any,
+  db: any,
+  userId: string,
+  event: {
+    providerId: PaymentProviderId;
+    invoice?: NormalizedInvoiceData;
+    planType?: string | null;
+    raw?: unknown;
+  },
+) {
+  let invoice = event.invoice;
+  if (!invoice && event.providerId === 'stripe') {
+    const raw = event.raw;
+    const stripeInvoice =
+      raw && typeof raw === 'object' && 'data' in raw
+        ? ((raw as { data?: { object?: Record<string, unknown> } }).data?.object ?? {})
+        : {};
+    invoice =
+      normalizeStripeInvoice(stripeInvoice, { planType: event.planType ?? null }) ?? undefined;
+  }
+  if (!invoice) return;
+
+  const user = await db
+    .prepare('SELECT email FROM users WHERE id = ? LIMIT 1')
+    .bind(userId)
+    .first();
+  const sub = await db
+    .prepare(
+      'SELECT plan_type FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+    )
+    .bind(userId)
+    .first();
+  await createInvoiceFromPayment(env, {
+    userId,
+    providerId: event.providerId,
+    invoice,
+    planType: event.planType ?? (sub?.plan_type ? String(sub.plan_type) : null),
+    userEmail: user?.email ? String(user.email) : null,
+  });
+}
+
+/** @deprecated Use handlePaymentInvoicePaid — kept for direct Stripe webhook callers. */
+export async function handleStripeInvoicePaid(
+  env: any,
+  db: any,
+  stripeInvoice: any,
+  userId: string,
+) {
+  await handlePaymentInvoicePaid(env, db, userId, {
+    providerId: 'stripe',
+    raw: { data: { object: stripeInvoice } },
+  });
+}
+
+const ADMIN_SETTING_KEYS = [
+  'einvoicing_enabled',
+  'einvoicing_sk_voluntary_enabled',
+  'einvoicing_isdoc_enabled',
+  'einvoicing_b2c_mode',
+  'einvoicing_invoice_prefix',
+  'einvoicing_delivery_mode',
+  'einvoicing_cz_electronic_consent_ref',
+  'einvoicing_isdoc_delivery_method',
+  'seller_legal_name',
+  'seller_vat_id',
+  'seller_company_id',
+  'seller_address_line1',
+  'seller_address_city',
+  'seller_address_postal_code',
+  'seller_address_country',
+  'seller_jurisdiction',
+  'seller_peppol_participant_id',
+  'seller_peppol_scheme_id',
+  'peppol_access_point_provider',
+  'peppol_access_point_api_url',
+  'peppol_access_point_sender_id',
+] as const;
+
+export async function handleAdminEInvoicingSettings(request: any, env: any, corsHeaders: any) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin');
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  if (request.method === 'GET') {
+    const values = await Promise.all(ADMIN_SETTING_KEYS.map((key) => getSetting(env, key)));
+    const byKey = Object.fromEntries(
+      ADMIN_SETTING_KEYS.map((key, index) => [key, values[index] ?? '']),
+    );
+    return jsonResponse(
+      {
+        enabled: byKey.einvoicing_enabled === '1',
+        skVoluntaryEnabled: byKey.einvoicing_sk_voluntary_enabled === '1',
+        isdocEnabled: byKey.einvoicing_isdoc_enabled === '1',
+        b2cMode: byKey.einvoicing_b2c_mode || 'pdf_archive',
+        invoicePrefix: byKey.einvoicing_invoice_prefix || 'VMP',
+        deliveryMode: byKey.einvoicing_delivery_mode === 'live' ? 'live' : 'stub',
+        czElectronicConsentRef:
+          byKey.einvoicing_cz_electronic_consent_ref || 'VMP-CZ-B2B-ELECTRONIC-CONSENT',
+        isdocDeliveryMethod: byKey.einvoicing_isdoc_delivery_method || 'email_stub',
+        seller: {
+          legalName: byKey.seller_legal_name,
+          vatId: byKey.seller_vat_id,
+          companyId: byKey.seller_company_id,
+          addressLine1: byKey.seller_address_line1,
+          addressCity: byKey.seller_address_city,
+          addressPostalCode: byKey.seller_address_postal_code,
+          addressCountry: byKey.seller_address_country,
+          jurisdiction: byKey.seller_jurisdiction === 'CZ' ? 'CZ' : 'SK',
+          peppolParticipantId: byKey.seller_peppol_participant_id,
+          peppolSchemeId: byKey.seller_peppol_scheme_id || '9935',
+        },
+        peppol: {
+          accessPointProvider: byKey.peppol_access_point_provider,
+          accessPointApiUrl: byKey.peppol_access_point_api_url,
+          accessPointSenderId: byKey.peppol_access_point_sender_id,
+          apiKeyConfigured: Boolean(String(env?.PEPPOL_AP_API_KEY ?? '').trim()),
+        },
+        stripeTaxIdCollection: {
+          checkoutEnabledWhenEinvoicingOn: true,
+          billingAddressCollection: 'auto',
+          notes:
+            'When einvoicing_enabled is on and seller_jurisdiction is SK or CZ, Stripe Checkout adds optional tax ID collection and billing address (auto). Disabled for all other deployments so B2C checkout is unchanged.',
+        },
+        legalTimeline: {
+          skMandatoryB2bDate: '2027-01-01',
+          skVoluntaryFrom: SK_VOLUNTARY_FROM_DATE.toISOString().slice(0, 10),
+          czB2bMandate: 'none_announced',
+          euCrossBorderViDA: '2030-07-01',
+        },
+      },
+      200,
+      corsHeaders,
+    );
+  }
+
+  if (request.method !== 'PATCH') {
+    return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, corsHeaders);
+  }
+
+  const updates: [string, string][] = [];
+  if ('enabled' in body) updates.push(['einvoicing_enabled', body.enabled ? '1' : '0']);
+  if ('skVoluntaryEnabled' in body)
+    updates.push(['einvoicing_sk_voluntary_enabled', body.skVoluntaryEnabled ? '1' : '0']);
+  if ('isdocEnabled' in body)
+    updates.push(['einvoicing_isdoc_enabled', body.isdocEnabled ? '1' : '0']);
+  if ('b2cMode' in body) {
+    const mode = String(body.b2cMode ?? '').trim();
+    if (!['pdf_archive', 'none'].includes(mode)) {
+      return jsonResponse({ error: 'b2cMode must be pdf_archive or none' }, 400, corsHeaders);
+    }
+    updates.push(['einvoicing_b2c_mode', mode]);
+  }
+  if ('invoicePrefix' in body) {
+    updates.push([
+      'einvoicing_invoice_prefix',
+      String(body.invoicePrefix ?? 'VMP')
+        .trim()
+        .slice(0, 16),
+    ]);
+  }
+  if ('deliveryMode' in body) {
+    const mode = String(body.deliveryMode ?? '')
+      .trim()
+      .toLowerCase();
+    if (!['stub', 'live'].includes(mode)) {
+      return jsonResponse({ error: 'deliveryMode must be stub or live' }, 400, corsHeaders);
+    }
+    updates.push(['einvoicing_delivery_mode', mode]);
+  }
+  if ('czElectronicConsentRef' in body) {
+    updates.push([
+      'einvoicing_cz_electronic_consent_ref',
+      String(body.czElectronicConsentRef ?? '')
+        .trim()
+        .slice(0, 256),
+    ]);
+  }
+  if ('isdocDeliveryMethod' in body) {
+    const method = String(body.isdocDeliveryMethod ?? '')
+      .trim()
+      .toLowerCase();
+    if (!['email_stub', 'email_live'].includes(method)) {
+      return jsonResponse(
+        { error: 'isdocDeliveryMethod must be email_stub or email_live' },
+        400,
+        corsHeaders,
+      );
+    }
+    updates.push(['einvoicing_isdoc_delivery_method', method]);
+  }
+
+  const seller = body.seller;
+  if (seller && typeof seller === 'object') {
+    if ('legalName' in seller)
+      updates.push(['seller_legal_name', String(seller.legalName ?? '').trim()]);
+    if ('vatId' in seller) updates.push(['seller_vat_id', String(seller.vatId ?? '').trim()]);
+    if ('companyId' in seller)
+      updates.push(['seller_company_id', String(seller.companyId ?? '').trim()]);
+    if ('addressLine1' in seller)
+      updates.push(['seller_address_line1', String(seller.addressLine1 ?? '').trim()]);
+    if ('addressCity' in seller)
+      updates.push(['seller_address_city', String(seller.addressCity ?? '').trim()]);
+    if ('addressPostalCode' in seller)
+      updates.push(['seller_address_postal_code', String(seller.addressPostalCode ?? '').trim()]);
+    if ('addressCountry' in seller)
+      updates.push([
+        'seller_address_country',
+        String(seller.addressCountry ?? '')
+          .trim()
+          .toUpperCase()
+          .slice(0, 2),
+      ]);
+    if ('jurisdiction' in seller) {
+      const jurisdiction = String(seller.jurisdiction ?? 'SK')
+        .trim()
+        .toUpperCase();
+      updates.push(['seller_jurisdiction', jurisdiction === 'CZ' ? 'CZ' : 'SK']);
+    }
+    if ('peppolParticipantId' in seller)
+      updates.push([
+        'seller_peppol_participant_id',
+        String(seller.peppolParticipantId ?? '').trim(),
+      ]);
+    if ('peppolSchemeId' in seller)
+      updates.push(['seller_peppol_scheme_id', String(seller.peppolSchemeId ?? '9935').trim()]);
+  }
+
+  const peppol = body.peppol;
+  if (peppol && typeof peppol === 'object') {
+    if ('accessPointProvider' in peppol)
+      updates.push([
+        'peppol_access_point_provider',
+        String(peppol.accessPointProvider ?? '').trim(),
+      ]);
+    if ('accessPointApiUrl' in peppol)
+      updates.push(['peppol_access_point_api_url', String(peppol.accessPointApiUrl ?? '').trim()]);
+    if ('accessPointSenderId' in peppol)
+      updates.push([
+        'peppol_access_point_sender_id',
+        String(peppol.accessPointSenderId ?? '').trim(),
+      ]);
+  }
+
+  if (!updates.length) {
+    return jsonResponse({ error: 'No supported fields to update' }, 400, corsHeaders);
+  }
+
+  await setSettings(env, updates);
+  return jsonResponse({ ok: true }, 200, corsHeaders);
+}
+
+function mapInvoiceRow(row: any) {
+  return {
+    id: row.id,
+    invoiceNumber: row.invoice_number,
+    userId: row.user_id,
+    stripeInvoiceId: row.stripe_invoice_id,
+    planType: row.plan_type,
+    issueDate: row.issue_date,
+    currency: row.currency,
+    netAmountCents: row.net_amount_cents,
+    taxAmountCents: row.tax_amount_cents,
+    grossAmountCents: row.gross_amount_cents,
+    vatRatePercent: row.vat_rate_percent,
+    buyerCountry: row.buyer_country,
+    buyerVatId: row.buyer_vat_id,
+    buyerName: row.buyer_name,
+    buyerEmail: row.buyer_email,
+    sellerJurisdiction: row.seller_jurisdiction,
+    format: row.format,
+    routing: row.routing,
+    status: row.status,
+    mandateApplies: Boolean(row.mandate_applies),
+    xmlPayloadR2Key: row.xml_payload_r2_key,
+    peppolMessageId: row.peppol_message_id,
+    peppolTransmissionId: row.peppol_transmission_id,
+    errorMessage: row.error_message,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function handleAdminEInvoices(request: any, env: any, corsHeaders: any) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin');
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const db = getDb(env);
+  const url = new URL(request.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 50), 1), 200);
+  const status = String(url.searchParams.get('status') ?? '').trim();
+
+  const query = `
+    SELECT * FROM einvoices
+    ${status ? 'WHERE status = ?' : ''}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `;
+  const result = status
+    ? await db.prepare(query).bind(status, limit).all()
+    : await db.prepare(query).bind(limit).all();
+
+  return jsonResponse(
+    {
+      invoices: (result?.results ?? []).map(mapInvoiceRow),
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+export async function handleAdminEInvoiceById(
+  request: any,
+  env: any,
+  corsHeaders: any,
+  invoiceId: string,
+) {
+  try {
+    await requireRole(request, env, 'admin', 'super_admin');
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const db = getDb(env);
+  const row = await db
+    .prepare('SELECT * FROM einvoices WHERE id = ? LIMIT 1')
+    .bind(invoiceId)
+    .first();
+  if (!row) return jsonResponse({ error: 'Invoice not found' }, 404, corsHeaders);
+
+  let xmlPreview: string | null = null;
+  const storage = getObjectStorage(env);
+  if (row.xml_payload_r2_key && storage) {
+    const object = await storage.getObject(String(row.xml_payload_r2_key));
+    if (object) xmlPreview = await new Response(object.body as ReadableStream).text();
+  }
+
+  return jsonResponse(
+    {
+      invoice: mapInvoiceRow(row),
+      xmlPreview,
+    },
+    200,
+    corsHeaders,
+  );
+}
+
+export async function handleAccountInvoices(request: any, env: any, corsHeaders: any) {
+  let user;
+  try {
+    user = await requireAuth(request, env);
+  } catch {
+    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  }
+
+  const db = getDb(env);
+  const result = await db
+    .prepare(`
+    SELECT id, invoice_number, issue_date, currency, gross_amount_cents, status, format, created_at
+    FROM einvoices
+    WHERE user_id = ?
+    ORDER BY created_at DESC
+    LIMIT 50
+  `)
+    .bind(user.sub)
+    .all();
+
+  return jsonResponse(
+    {
+      invoices: (result?.results ?? []).map((row: any) => ({
+        id: row.id,
+        invoiceNumber: row.invoice_number,
+        issueDate: row.issue_date,
+        currency: row.currency,
+        grossAmountCents: row.gross_amount_cents,
+        status: row.status,
+        format: row.format,
+        createdAt: row.created_at,
+      })),
+    },
+    200,
+    corsHeaders,
+  );
+}

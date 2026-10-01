@@ -478,7 +478,18 @@ describe('processAccountDeletionJob without Brevo', () => {
       // After cleanup batch, user may still remain if fake didn't catch DELETE — force from job path.
     };
 
-    await processAccountDeletionJob({ DB: db, JWT_SECRET }, 'job1');
+    await processAccountDeletionJob(
+      {
+        DB: db,
+        JWT_SECRET,
+        BILLING: {
+          async cancelSubscriptionImmediately() {
+            return { cancelled: 0 };
+          },
+        },
+      },
+      'job1',
+    );
     const job = db.jobs.get('job1');
     assert.ok(job);
     assert.equal(Number(job.subscription_cancelled), 1);
