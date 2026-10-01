@@ -38,5 +38,45 @@
       "enabled": true,
       "invocation_logs": true
     }
+  },
+  "env": {
+    "production": {
+      "name": "vmp-billing-prod",
+      "d1_databases": [
+        {
+          "binding": "video_subscription_db",
+          "database_name": "video-subscription-db",
+          "database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "vmp-videos"
+        }
+      ],
+      "flagship": [
+        {
+          "binding": "FLAGS",
+          "app_id": "e1bb7ed4-8309-458f-9f60-cb61f881685a"
+        }
+      ],
+      "vars": {
+        "R2_BASE_URL": "https://vmp-videos.tjm.sk",
+        "FRONTEND_URL": "https://vmp.tjm.sk",
+        "API_URL": "https://vmp-api.tjm.sk",
+        "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+        "POSTHOG_HOST": "https://eu.i.posthog.com"
+      },
+      "triggers": {
+        "crons": ["*/5 * * * *"]
+      },
+      "observability": {
+        "logs": {
+          "enabled": true,
+          "invocation_logs": true
+        }
+      }
+    }
   }
 }

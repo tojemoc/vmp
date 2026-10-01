@@ -150,13 +150,18 @@ runs:
       run: |
         # Owns checkout/webhooks/renewals/e-invoicing/promos. Secrets (STRIPE_*,
         # JWT_SECRET, LEGACY_*, PEPPOL_*, …) must be set via `wrangler secret put`
-        # in packages/billing — same values as @vmp/api. First deploy creates `vmp-billing`.
+        # in packages/billing — same values as @vmp/api.
+        # Staging → top-level Worker `vmp-billing`; production → `--env production`
+        # (`vmp-billing-prod`). API BILLING service bindings match those names.
         EXTRA_ARGS=(
           --var "API_URL:${API_BASE_URL}"
           --var "FRONTEND_URL:${FRONTEND_URL}"
           --var "ALLOWED_ORIGINS:${EXPECTED_ALLOWED_ORIGINS}"
           --var "SENTRY_ENVIRONMENT:${DEPLOY_TIER}"
         )
+        if [ "$DEPLOY_TIER" = "production" ]; then
+          EXTRA_ARGS+=(--env production)
+        fi
         npx wrangler deploy "${EXTRA_ARGS[@]}"
 
     - name: Deploy API (${{ inputs.deploy-tier }})
@@ -186,6 +191,8 @@ runs:
           EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:1")
         else
           EXTRA_ARGS+=(--var "ALLOW_INSECURE_NATIVE_VMP_SCHEME:0")
+          # Production uses wrangler env.production so BILLING → vmp-billing-prod.
+          EXTRA_ARGS+=(--env production)
         fi
         npm run deploy --workspace=@vmp/api -- "${EXTRA_ARGS[@]}"
 

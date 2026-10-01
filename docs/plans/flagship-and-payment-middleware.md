@@ -119,6 +119,7 @@ npx wrangler flagship flags enable "$APP_ID" posthog pwa push payments cms \
 **Alternative:** one JSON flag key `vmp` whose value is `{ "payments": true, "posthog": true, … }`. Code would `getObjectValue('vmp', {})` and look up each id. Slightly fewer dashboard clicks, but diverges from “flag names identical to existing strings” and makes kill-switches coarser. Prefer per-id booleans unless you already populated a JSON `vmp` flag with that shape.
 
 Agent shells still need `CLOUDFLARE_API_TOKEN` (`flagship:read` / `flagship:write`) to list/create flags via Wrangler.
+
 ---
 
 ## Billing Worker extractability (near-term design focus; replaces MoR stub)
