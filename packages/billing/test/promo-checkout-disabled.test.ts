@@ -70,13 +70,3 @@ describe('resolvePromoCodeForCheckout promotions gate', () => {
     assert.equal(result.reason, 'promotions_disabled');
   });
 });
-
-describe('generateOtpCode', () => {
-  it('returns a zero-padded 6-digit string', async () => {
-    const { generateOtpCode } = await import('../src/auth.js');
-    for (let i = 0; i < 20; i++) {
-      const code = generateOtpCode();
-      assert.match(code, /^\d{6}$/);
-    }
-  });
-});

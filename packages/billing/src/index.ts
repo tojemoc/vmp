@@ -2,7 +2,8 @@
  * vmp-billing — slim auditable billing Worker.
  *
  * Owns checkout, cancel, portal, pricing, payment admin, webhooks, Comgate renewals,
- * Qerko/legacy payment routes, and legacy-migration payment probes.
+ * Qerko/legacy payment routes, legacy-migration probes, e-invoicing, promotions/ISIC,
+ * and subscription transfer.
  *
  * API Worker proxies these paths via service binding `BILLING.fetch(request)`.
  */
@@ -16,6 +17,12 @@ import type {
   SubscriptionResult,
 } from '@vmp/payments';
 import { createBillingMiddleware, type BillingWorkerEnv } from './compose.js';
+import {
+  handleAccountInvoices,
+  handleAdminEInvoiceById,
+  handleAdminEInvoices,
+  handleAdminEInvoicingSettings,
+} from './eInvoicing.js';
 import {
   handleAdminLegacyMigrationRelinkCandidates,
   handleAdminLegacyMigrationSendRelinkEmail,
@@ -45,6 +52,18 @@ import {
   handleWebhook,
   runComgateRenewalJobs,
 } from './payments.js';
+import {
+  handleAdminIsicCampaigns,
+  handleAdminPromoCampaigns,
+  handleAdminPromoCodes,
+  handleIsicCampaignPublic,
+  handleIsicValidate,
+  handlePromoValidate,
+} from './promotions.js';
+import {
+  handleAccountTransferSubscription,
+  handleAdminTransferSubscription,
+} from './subscriptionTransfer.js';
 
 function corsHeadersFor(request: Request, env: BillingWorkerEnv): Record<string, string> {
   const origin = request.headers.get('Origin') || '';
@@ -151,6 +170,60 @@ async function routeBillingRequest(
   }
   if (path === '/api/admin/legacy-migration/send-relink-email' && request.method === 'POST') {
     return handleAdminLegacyMigrationSendRelinkEmail(request, env, cors);
+  }
+
+  if (
+    path === '/api/admin/einvoicing/settings' &&
+    (request.method === 'GET' || request.method === 'PATCH')
+  ) {
+    return handleAdminEInvoicingSettings(request, env, cors);
+  }
+  if (path === '/api/admin/einvoicing/invoices' && request.method === 'GET') {
+    return handleAdminEInvoices(request, env, cors);
+  }
+  {
+    const eInvoiceById = path.match(/^\/api\/admin\/einvoicing\/invoices\/([^/]+)$/);
+    if (eInvoiceById?.[1] && request.method === 'GET') {
+      return handleAdminEInvoiceById(request, env, cors, eInvoiceById[1]);
+    }
+  }
+  if (path === '/api/account/invoices' && request.method === 'GET') {
+    return handleAccountInvoices(request, env, cors);
+  }
+
+  if (
+    path === '/api/admin/promotions/campaigns' &&
+    (request.method === 'GET' || request.method === 'POST' || request.method === 'PATCH')
+  ) {
+    return handleAdminPromoCampaigns(request, env, cors);
+  }
+  if (
+    path === '/api/admin/promotions/codes' &&
+    (request.method === 'GET' || request.method === 'POST' || request.method === 'PATCH')
+  ) {
+    return handleAdminPromoCodes(request, env, cors);
+  }
+  if (
+    path === '/api/admin/isic/campaigns' &&
+    (request.method === 'GET' || request.method === 'POST' || request.method === 'PATCH')
+  ) {
+    return handleAdminIsicCampaigns(request, env, cors);
+  }
+  if (path === '/api/account/promotions/validate' && request.method === 'POST') {
+    return handlePromoValidate(request, env, cors);
+  }
+  if (path === '/api/account/isic/validate' && request.method === 'POST') {
+    return handleIsicValidate(request, env, cors);
+  }
+  if (path === '/api/account/isic/campaigns' && request.method === 'GET') {
+    return handleIsicCampaignPublic(request, env, cors);
+  }
+
+  if (path === '/api/account/transfer-subscription' && request.method === 'POST') {
+    return handleAccountTransferSubscription(request, env, cors);
+  }
+  if (path === '/api/admin/users/transfer-subscription' && request.method === 'POST') {
+    return handleAdminTransferSubscription(request, env, cors);
   }
 
   return Response.json(

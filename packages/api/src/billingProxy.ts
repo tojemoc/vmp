@@ -7,8 +7,16 @@ const BILLING_PATH_PREFIXES = [
   '/api/payments',
   '/api/account/pricing',
   '/api/account/subscription',
+  '/api/account/invoices',
+  '/api/account/promotions',
+  '/api/account/isic',
+  '/api/account/transfer-subscription',
   '/api/admin/payments',
   '/api/admin/legacy-migration',
+  '/api/admin/einvoicing',
+  '/api/admin/promotions',
+  '/api/admin/isic',
+  '/api/admin/users/transfer-subscription',
 ] as const;
 
 export function isBillingProxyPath(pathname: string): boolean {

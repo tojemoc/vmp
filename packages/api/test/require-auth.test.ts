@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { createAccessToken, requireAuth } from '../src/auth.js';
+import { createAccessToken, generateOtpCode, requireAuth } from '../src/auth.js';
 import { resetD1OptionalColumnCache } from '../src/d1OptionalColumn.js';
 
 const JWT_SECRET = 'test-secret-at-least-thirty-two-characters-long';
@@ -106,5 +106,14 @@ describe('requireAuth account existence', () => {
   it('rejects when the Authorization header is missing', async () => {
     const env = { DB: fakeDb(new Map([['user-1', {}]])), JWT_SECRET };
     await assert.rejects(requireAuth(requestWithToken(), env), /Missing Bearer token/);
+  });
+});
+
+describe('generateOtpCode', () => {
+  it('returns a zero-padded 6-digit string', () => {
+    for (let i = 0; i < 20; i++) {
+      const code = generateOtpCode();
+      assert.match(code, /^\d{6}$/);
+    }
   });
 });
