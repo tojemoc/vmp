@@ -258,7 +258,8 @@ export const strings: StringsDefinition = {
   videoNotFoundTitle: 'Video not found',
   videoNotFoundMessage: 'This video may have been removed, renamed, or the link is incorrect.',
   videoNotFoundSuggestions: 'You might like these instead',
-  staffDraftPreviewBanner: 'Draft preview — only editors and admins can open this URL. Publish when ready.',
+  staffDraftPreviewBanner:
+    'Draft preview — only editors and admins can open this URL. Publish when ready.',
   staffArchivedPreviewBanner: 'Archived preview — only editors and admins can open this URL.',
   staffUnpublishedPreviewBanner: 'Unpublished preview — only editors and admins can open this URL.',
   playbackUnavailableTitle: 'This video is temporarily unavailable',
