@@ -239,6 +239,9 @@ export type StringsDefinition = {
   videoNotFoundTitle: string;
   videoNotFoundMessage: string;
   videoNotFoundSuggestions: string;
+  staffDraftPreviewBanner: string;
+  staffArchivedPreviewBanner: string;
+  staffUnpublishedPreviewBanner: string;
   playbackUnavailableTitle: string;
   playbackUnavailableMessage: string;
   playbackUnavailableSuggestions: string;
