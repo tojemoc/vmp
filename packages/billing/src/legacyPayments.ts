@@ -315,9 +315,13 @@ export async function handleLegacyCheckout(
   env: any,
   corsHeaders: Record<string, string>,
 ) {
-  let user;
+  let user: { sub: string; email: string };
   try {
-    user = await requireAuth(request, env);
+    const payload = await requireAuth(request, env);
+    user = {
+      sub: String(payload.sub),
+      email: String(payload.email ?? ''),
+    };
   } catch {
     return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
   }

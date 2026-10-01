@@ -10,7 +10,10 @@ import { ACCOUNT_DELETION_CONFIRM_PHRASE } from '@vmp/shared';
 import { generateToken, hashToken, requireAuth } from './auth.js';
 import { deleteBrevoContactByEmail } from './brevo.js';
 import { getObjectStorage } from './objectStorage.js';
-import { getPaymentProviders } from './paymentProviders.js';
+
+type BillingCancelBinding = {
+  cancelSubscriptionImmediately: (userId: string) => Promise<{ cancelled: number }>;
+};
 
 const DELETION_TOKEN_TTL_SEC = 15 * 60;
 const CONFIRM_PHRASE = ACCOUNT_DELETION_CONFIRM_PHRASE;
@@ -144,14 +147,14 @@ export async function handleAccountDeleteRequest(request: any, env: any, corsHea
 }
 
 async function providerSupportsImmediateCancel(
-  env: any,
+  env: { BILLING?: BillingCancelBinding },
   providerId: string | null | undefined,
 ): Promise<boolean> {
   if (!providerId) return true; // no external sub to cancel
-  const { providers } = await getPaymentProviders(env);
-  const provider = providers.get(providerId as any);
-  if (!provider) return false;
-  return provider.capabilities.immediateCancellation === true;
+  // Billing Worker owns PSP capability matrix; Qerko/legacy cannot immediate-cancel.
+  const id = String(providerId).trim().toLowerCase();
+  if (id === 'legacy' || id === 'qerko') return false;
+  return id === 'stripe' || id === 'gopay' || id === 'comgate';
 }
 
 /**
@@ -348,46 +351,14 @@ async function markJob(
     .run();
 }
 
-async function cancelSubscriptionForUser(env: any, userId: string): Promise<void> {
-  const db = getDb(env);
-  const subs = await db
-    .prepare(
-      `SELECT id, provider, provider_subscription_id, stripe_subscription_id, status
-       FROM subscriptions
-       WHERE user_id = ?
-         AND status IN ('active', 'trialing', 'past_due')`,
-    )
-    .bind(userId)
-    .all();
-
-  const rows = subs?.results ?? [];
-  if (!rows.length) return;
-
-  const { providers } = await getPaymentProviders(env);
-  for (const row of rows) {
-    const providerId = String(row.provider || 'stripe').trim() || 'stripe';
-    const provider = providers.get(providerId as any);
-    const subId =
-      String(row.provider_subscription_id || '').trim() ||
-      String(row.stripe_subscription_id || '').trim();
-    if (!provider || !subId || provider.capabilities.immediateCancellation !== true) {
-      const err = new Error(
-        `Provider ${providerId} does not support immediate cancellation` +
-          (!subId ? ' (missing provider subscription id)' : ''),
-      );
-      Object.assign(err, { code: 'immediate_cancel_unsupported' });
-      throw err;
-    }
-    await provider.cancelSubscriptionImmediately(subId);
-    await db
-      .prepare(
-        `UPDATE subscriptions
-         SET status = 'cancelled', cancel_at_period_end = 0, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-      )
-      .bind(row.id)
-      .run();
+async function cancelSubscriptionForUser(env: { BILLING?: BillingCancelBinding }, userId: string): Promise<void> {
+  const billing = env.BILLING;
+  if (!billing || typeof billing.cancelSubscriptionImmediately !== 'function') {
+    throw Object.assign(new Error('Billing service unavailable'), {
+      code: 'billing_not_bound',
+    });
   }
+  await billing.cancelSubscriptionImmediately(userId);
 }
 
 async function inventoryR2Objects(db: any, jobId: string, userId: string): Promise<void> {

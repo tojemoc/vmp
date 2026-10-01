@@ -1,28 +1,30 @@
 /**
- * Billing Worker composition — no Nuxt / @vmp/api imports.
- * Qerko (legacy eshop) is not composed here; it remains on the API Worker until
- * the eshop client is moved. Stripe is the default PSP for new subscriptions.
+ * Billing Worker composition — real provider registry + PaymentMiddleware.
+ * No Nuxt / @vmp/api imports.
  */
-import {
-  createEnabledProviders,
-  createPaymentMiddleware,
-  getRunnableProviderIds,
-  type PaymentMiddleware,
-  type PaymentProviderId,
-  type PaymentsConfig,
-  type PlanType,
-} from '@vmp/payments';
+import { createPaymentMiddleware, type PaymentMiddleware } from '@vmp/payments';
+import type { DeploymentFeatureId } from '@vmp/shared';
+import { isInfraFeatureEnabled } from './infraFlags.js';
+import { getPaymentProviderOrder, getPaymentProviders } from './paymentProviders.js';
+import { capturePostHogEvent } from './posthog.js';
 
 export type BillingWorkerEnv = {
   video_subscription_db: D1Database;
+  DB?: D1Database;
   FLAGS?: {
-    getBooleanValue(flagKey: string, defaultValue: boolean): Promise<boolean>;
+    getBooleanValue(
+      flagKey: string,
+      defaultValue: boolean,
+      context?: Record<string, unknown>,
+    ): Promise<boolean>;
   };
   FLAGSHIP_DEV_OVERRIDE?: string;
+  JWT_SECRET?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_PUBLISHABLE_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   FRONTEND_URL?: string;
+  API_URL?: string;
   GOPAY_CLIENT_ID?: string;
   GOPAY_CLIENT_SECRET?: string;
   GOPAY_GOID?: string;
@@ -31,71 +33,40 @@ export type BillingWorkerEnv = {
   COMGATE_SECRET?: string;
   COMGATE_API_BASE?: string;
   COMGATE_COUNTRY?: string;
-  API_URL?: string;
+  LEGACY_ESHOP_API_URL?: string;
+  LEGACY_ESHOP_SANDBOX_API_URL?: string;
+  LEGACY_ESHOP_MERCHANT_ID?: string;
+  LEGACY_ESHOP_API_KEY?: string;
+  LEGACY_ESHOP_WEBHOOK_SECRET?: string;
+  BREVO_API_KEY?: string;
+  SENDER_EMAIL?: string;
+  SENDER_NAME?: string;
+  POSTHOG_PROJECT_TOKEN?: string;
+  POSTHOG_HOST?: string;
+  PEPPOL_AP_API_KEY?: string;
 };
 
-async function stubPriceId(_plan: PlanType): Promise<string | null> {
-  return null;
-}
-
-async function stubAmount(_plan: PlanType): Promise<number | null> {
-  return null;
-}
-
-function buildConfig(env: BillingWorkerEnv): PaymentsConfig {
-  return {
-    stripe: {
-      secretKey: env.STRIPE_SECRET_KEY,
-      publishableKey: env.STRIPE_PUBLISHABLE_KEY,
-      webhookSecret: env.STRIPE_WEBHOOK_SECRET,
-      frontendUrl: env.FRONTEND_URL,
-      priceIdForPlan: stubPriceId,
-    },
-    gopay: {
-      clientId: env.GOPAY_CLIENT_ID,
-      clientSecret: env.GOPAY_CLIENT_SECRET,
-      goId: env.GOPAY_GOID,
-      apiBase: env.GOPAY_API_BASE,
-      frontendUrl: env.FRONTEND_URL,
-      notificationUrl: env.API_URL
-        ? `${String(env.API_URL).replace(/\/$/, '')}/api/payments/webhook/gopay`
-        : undefined,
-      amountMajorForPlan: stubAmount,
-      currency: async () => 'EUR',
-    },
-    comgate: {
-      merchant: env.COMGATE_MERCHANT,
-      secret: env.COMGATE_SECRET,
-      apiBase: env.COMGATE_API_BASE,
-      frontendUrl: env.FRONTEND_URL,
-      country: env.COMGATE_COUNTRY,
-      amountMajorForPlan: stubAmount,
-      currency: async () => 'EUR',
-    },
-  };
-}
-
-export function createBillingMiddleware(env: BillingWorkerEnv): PaymentMiddleware {
-  const enabled: PaymentProviderId[] = ['stripe', 'gopay', 'comgate'];
-  const providers = createEnabledProviders(enabled, buildConfig(env));
-  const runnable = getRunnableProviderIds(providers);
+export async function createBillingMiddleware(env: BillingWorkerEnv): Promise<PaymentMiddleware> {
+  const { providers, runnable } = await getPaymentProviders(env);
+  const providerOrder = await getPaymentProviderOrder(env);
+  const orderedRunnable = [
+    ...providerOrder.filter((p) => runnable.includes(p)),
+    ...runnable.filter((p) => !providerOrder.includes(p)),
+  ];
 
   return createPaymentMiddleware({
-    db: env.video_subscription_db,
+    db: env.video_subscription_db || (env.DB as D1Database),
     providers,
-    runnableOrder: runnable.includes('stripe') ? ['stripe', ...runnable.filter((p) => p !== 'stripe')] : runnable,
+    runnableOrder: orderedRunnable,
     allowRedirectPspNewSubs: false,
     flags: {
-      async getBoolean(id) {
-        if (env.FLAGS) {
-          try {
-            return await env.FLAGS.getBooleanValue(id, false);
-          } catch {
-            return false;
-          }
-        }
-        return false;
-      },
+      getBoolean: (id) => isInfraFeatureEnabled(env, id as DeploymentFeatureId),
     },
+    capturePostHog: (input) =>
+      capturePostHogEvent(env, {
+        distinctId: input.distinctId,
+        event: input.event,
+        ...(input.properties ? { properties: input.properties } : {}),
+      }),
   });
 }

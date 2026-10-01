@@ -10,10 +10,10 @@ import {
 const KNOWN: PaymentProviderId[] = ['stripe', 'qerko', 'gopay', 'comgate'];
 
 describe('resolvePublicEnabledProviders', () => {
-  it('keeps stripe/legacy when they are configured and runnable', () => {
+  it('keeps stripe/qerko when they are configured and runnable', () => {
     assert.deepEqual(resolvePublicEnabledProviders(['stripe', 'qerko'], ['stripe', 'qerko']), [
       'stripe',
-      'legacy',
+      'qerko',
     ]);
   });
 
@@ -39,7 +39,7 @@ describe('resolvePublicEnabledProviders', () => {
     assert.equal(toApiProviderId('gopay'), 'gopay');
     assert.equal(toApiProviderId('comgate'), 'comgate');
     assert.equal(toApiProviderId('stripe'), 'stripe');
-    assert.equal(toApiProviderId('qerko'), 'legacy');
+    assert.equal(toApiProviderId('qerko'), 'qerko');
   });
 
   it('excludes configured-but-not-runnable providers from public pricing', () => {
