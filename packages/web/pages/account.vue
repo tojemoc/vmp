@@ -178,7 +178,11 @@
               </p>
               <p v-if="subscription.provider" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {{ strings.providerLabel }}:
-                {{ strings.paymentProviderLabel(subscription.provider) }}
+                {{
+                  isLegacyOrQerkoProvider(subscription.provider)
+                    ? strings.paymentProviderLabel('legacy')
+                    : strings.paymentProviderLabel(subscription.provider)
+                }}
               </p>
             </div>
             <span
@@ -848,6 +852,11 @@
     () => isLoggedIn.value && !hasActiveSubscription.value,
   );
 
+  /** D1 stores Qerko as `legacy`; API/PSP source may surface as `qerko`. */
+  function isLegacyOrQerkoProvider(provider: string | null | undefined): boolean {
+    return provider === 'legacy' || provider === 'qerko';
+  }
+
   const legacyManageUrl = computed(() => {
     const sub = subscription.value;
     const url = sub?.legacyManageUrl;
@@ -856,7 +865,7 @@
 
   const showLegacyManageButton = computed(() => {
     const sub = subscription.value;
-    if (!sub || sub.provider !== 'legacy') return false;
+    if (!sub || !isLegacyOrQerkoProvider(sub.provider)) return false;
     if (sub.showLegacyManageButton === false) return false;
     return (
       Boolean(legacyManageUrl.value) &&
@@ -877,7 +886,7 @@
     const sub = subscription.value;
     const name = sub?.legacyProviderName?.trim();
     if (name) return name;
-    if ((sub?.provider === 'legacy' || sub?.provider === 'qerko')) return strings.paymentProviderLabel('legacy');
+    if (isLegacyOrQerkoProvider(sub?.provider)) return strings.paymentProviderLabel('legacy');
     return strings.accountRelinkLegacyProviderFallback;
   });
 
@@ -894,7 +903,7 @@
     const sub = subscription.value;
     if (!sub) return false;
     return (
-      sub.provider === 'legacy' &&
+      isLegacyOrQerkoProvider(sub.provider) &&
       (sub.status === 'needs_relink' || sub.status === 'cancelled' || sub.status === 'past_due')
     );
   });
@@ -1143,7 +1152,7 @@
   });
 
   watch(subscription, (sub) => {
-    if (sub && sub.provider !== 'legacy') {
+    if (sub && !isLegacyOrQerkoProvider(sub.provider)) {
       relinkBannerDismissed.value = true;
     }
   });

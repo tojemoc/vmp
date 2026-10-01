@@ -484,7 +484,7 @@ describe('processAccountDeletionJob without Brevo', () => {
         JWT_SECRET,
         BILLING: {
           async cancelSubscriptionImmediately() {
-            return { cancelled: 0 };
+            return { ok: true as const, cancelled: 0 };
           },
         },
       },

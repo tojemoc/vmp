@@ -5,7 +5,9 @@ import type { PaymentProvider } from '../src/types.js';
 
 function mockDb(rows: Record<string, unknown>[] = []) {
   return {
-    prepare(_query: string) {
+    lastQuery: '' as string,
+    prepare(query: string) {
+      this.lastQuery = query;
       return {
         bind(..._args: unknown[]) {
           return {
@@ -146,5 +148,60 @@ describe('PaymentMiddleware', () => {
       assert.equal(result.source, 'stripe');
       assert.equal(result.session.clientSecret, 'cs_test');
     }
+  });
+
+  it('blocks createSubscription when a past_due subscription exists', async () => {
+    const db = mockDb([
+      {
+        id: 'sub_past',
+        provider: 'stripe',
+        status: 'past_due',
+      },
+    ]);
+    const mw = createPaymentMiddleware({
+      db,
+      providers: new Map([['stripe', stripeProvider()]]),
+      runnableOrder: ['stripe'],
+      flags: { getBoolean: async () => true },
+    });
+    const result = await mw.createSubscription({
+      userId: 'u1',
+      email: 'a@b.c',
+      planType: 'monthly',
+      returnPath: '/account',
+    });
+    assert.equal(result.type, 'error');
+    if (result.type === 'error') assert.equal(result.code, 'subscription_exists');
+    assert.match(db.lastQuery, /past_due/);
+  });
+
+  it('getSubscription prefers active/trialing/past_due over other statuses', async () => {
+    const db = mockDb([
+      {
+        id: 'sub_active',
+        user_id: 'u1',
+        plan_type: 'monthly',
+        status: 'active',
+        provider: 'stripe',
+        provider_subscription_id: 'sub_1',
+        provider_customer_id: 'cus_1',
+        stripe_customer_id: 'cus_1',
+        current_period_end: null,
+        cancel_at_period_end: 0,
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01',
+      },
+    ]);
+    const mw = createPaymentMiddleware({
+      db,
+      providers: new Map([['stripe', stripeProvider()]]),
+      runnableOrder: ['stripe'],
+      flags: { getBoolean: async () => true },
+    });
+    const record = await mw.getSubscription('u1');
+    assert.ok(record);
+    assert.equal(record.status, 'active');
+    assert.match(db.lastQuery, /CASE status/);
+    assert.match(db.lastQuery, /WHEN 'past_due' THEN 2/);
   });
 });
