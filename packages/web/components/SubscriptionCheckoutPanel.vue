@@ -479,6 +479,14 @@
 
   const stripeCheckoutMounted = computed(() => true);
 
+  function isQerkoProvider(provider: PaymentProvider): boolean {
+    return provider === 'qerko' || provider === 'legacy';
+  }
+
+  function hasQerkoEnabled(): boolean {
+    return enabledProviders.value.some(isQerkoProvider);
+  }
+
   const stripePlanPrice = computed(() => {
     const value = stripePrices.value[selectedPlan.value];
     return Number.isFinite(value) && value > 0 ? Number(value) : null;
@@ -488,7 +496,7 @@
     () => enabledProviders.value.includes('stripe') && stripePlanPrice.value != null,
   );
 
-  const showLegacyCheckout = computed(() => enabledProviders.value.includes('legacy'));
+  const showLegacyCheckout = computed(() => hasQerkoEnabled());
 
   const gopayPlanPrice = computed(() => {
     const value = gopayPrices.value[selectedPlan.value];
@@ -647,7 +655,7 @@
     if (providers.includes('stripe') && hasConfiguredProviderPrice(stripePrices.value[plan])) {
       return true;
     }
-    if (providers.includes('legacy') && hasConfiguredProviderPrice(legacyPrices.value[plan])) {
+    if (hasQerkoEnabled() && hasConfiguredProviderPrice(legacyPrices.value[plan])) {
       return true;
     }
     if (providers.includes('gopay') && hasConfiguredProviderPrice(gopayPrices.value[plan])) {
@@ -684,10 +692,15 @@
   /** True when the given provider can sell this plan at a configured price. */
   function isPlanAvailableForProvider(plan: PlanType, provider: PaymentProvider): boolean {
     if (!allowedPlans.value.includes(plan)) return false;
-    if (!enabledProviders.value.includes(provider)) return false;
+    const providerEnabled =
+      isQerkoProvider(provider)
+        ? hasQerkoEnabled()
+        : enabledProviders.value.includes(provider);
+    if (!providerEnabled) return false;
     switch (provider) {
       case 'stripe':
         return hasConfiguredProviderPrice(stripePrices.value[plan]);
+      case 'qerko':
       case 'legacy':
         return hasConfiguredProviderPrice(legacyPrices.value[plan]);
       case 'gopay':
@@ -805,7 +818,12 @@
       const data = await res.json();
       const providers = Array.isArray(data.enabledProviders)
         ? data.enabledProviders.filter(
-            (p: string) => p === 'stripe' || p === 'legacy' || p === 'gopay' || p === 'comgate',
+            (p: string) =>
+              p === 'stripe' ||
+              p === 'qerko' ||
+              p === 'legacy' ||
+              p === 'gopay' ||
+              p === 'comgate',
           )
         : [];
       // Match API: do not invent Stripe when only unsupported providers remain.
@@ -829,7 +847,9 @@
       };
 
       const stripeRaw = data?.pricesByProvider?.stripe ?? {};
-      const legacyRaw = data?.pricesByProvider?.legacy ?? {};
+      // Public wire name is qerko; pricing payload may still key as legacy.
+      const legacyRaw =
+        data?.pricesByProvider?.qerko ?? data?.pricesByProvider?.legacy ?? {};
       const gopayRaw = data?.pricesByProvider?.gopay ?? {};
       const comgateRaw = data?.pricesByProvider?.comgate ?? {};
       gopayCurrency.value = String(data.gopayCurrency ?? 'CZK').toUpperCase() || 'CZK';
@@ -865,15 +885,15 @@
           ? 'gopay'
           : providers.includes('comgate')
             ? 'comgate'
-            : providers.includes('legacy')
-              ? 'legacy'
+            : providers.some((p: string) => p === 'qerko' || p === 'legacy')
+              ? 'qerko'
               : 'stripe';
       const primaryRaw =
         primaryProvider === 'gopay'
           ? gopayRaw
           : primaryProvider === 'comgate'
             ? comgateRaw
-            : primaryProvider === 'legacy'
+            : primaryProvider === 'qerko'
               ? legacyRaw
               : stripeRaw;
       prices.value = {
