@@ -72,11 +72,30 @@ export function buildPublicAssetUrl(
   return url.toString();
 }
 
+/** Origins we may rewrite from: legacy public CDN + this API's asset proxy. */
+function collectTrustedPublicAssetOrigins(env: PublicAssetEnv): Set<string> {
+  const origins = new Set<string>();
+  for (const raw of [env.R2_BASE_URL, env.API_PUBLIC_URL, env.API_URL]) {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if (!trimmed) continue;
+    try {
+      origins.add(new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).origin);
+    } catch {
+      /* ignore invalid */
+    }
+  }
+  return origins;
+}
+
 /**
  * Extract an allowlisted object key from a stored absolute/relative URL.
- * Supports legacy public R2 CDN URLs and current /api/assets/ URLs.
+ * Absolute URLs must match `R2_BASE_URL` / `API_PUBLIC_URL` / `API_URL` hosts;
+ * unrecognized hosts return null so callers leave externally hosted URLs unchanged.
  */
-export function extractPublicAssetKey(storedUrl: string): string | null {
+export function extractPublicAssetKey(
+  storedUrl: string,
+  env: PublicAssetEnv = {},
+): string | null {
   const raw = storedUrl.trim();
   if (!raw) return null;
 
@@ -85,7 +104,11 @@ export function extractPublicAssetKey(storedUrl: string): string | null {
     if (raw.startsWith('/')) {
       pathname = raw.split('?')[0] ?? raw;
     } else {
-      pathname = new URL(raw).pathname;
+      const parsed = new URL(raw);
+      if (!collectTrustedPublicAssetOrigins(env).has(parsed.origin)) {
+        return null;
+      }
+      pathname = parsed.pathname;
     }
   } catch {
     return null;
@@ -110,7 +133,7 @@ export function rewriteStoredPublicObjectUrl(
   const trimmed = String(storedUrl).trim();
   if (!trimmed) return null;
 
-  const key = extractPublicAssetKey(trimmed);
+  const key = extractPublicAssetKey(trimmed, env);
   if (!key) return trimmed;
 
   let cacheBuster: string | undefined;
