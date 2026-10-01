@@ -1,10 +1,13 @@
 /**
- * Deployment feature modules — compile-time allowlist for optional product surfaces.
+ * Deployment / infrastructure feature catalog.
  *
- * Three control planes (see docs/plans/deployment-feature-modules.md):
- * 1. Deploy compile-time (`VMP_FEATURES`) — what code is baked into this Worker build.
- * 2. Tenant runtime (`admin_settings` / `/api/admin/system/features`) — per-site on/off.
- * 3. Rollout (`PostHog` / Cloudflare flags) — gradual UX experiments within compiled features.
+ * Control planes (see docs/plans/flagship-and-payment-middleware.md):
+ * 1. Tier 1 infra — Cloudflare Flagship booleans (API `FLAGS` binding; code default off).
+ * 2. Tenant runtime — `admin_settings` / `/api/admin/system/features`.
+ * 3. Tier 2 rollout — PostHog SSR/client flags within an enabled module.
+ *
+ * Web modules are always registered (A1); Flagship gates behaviour at runtime via
+ * `GET /api/deployment-features` hydration.
  */
 
 export const DEPLOYMENT_FEATURE_IDS = [
@@ -26,7 +29,7 @@ export const DEPLOYMENT_FEATURE_IDS = [
 
 export type DeploymentFeatureId = (typeof DEPLOYMENT_FEATURE_IDS)[number];
 
-/** Parent → optional child features (child only meaningful when parent is compiled + enabled). */
+/** Parent → optional child features (child only meaningful when parent is enabled). */
 export const DEPLOYMENT_FEATURE_PARENTS: Partial<
   Record<DeploymentFeatureId, DeploymentFeatureId>
 > = {
@@ -108,15 +111,15 @@ export const DEPLOYMENT_FEATURE_CATALOG: DeploymentFeatureCatalogEntry[] = [
   },
 ];
 
-/** Full VMP instance — default when `VMP_FEATURES` is unset. */
+/** Full catalog — used by local `FLAGSHIP_DEV_OVERRIDE` when unset means “all on”. */
 export const DEFAULT_DEPLOYMENT_FEATURES: DeploymentFeatureId[] = [...DEPLOYMENT_FEATURE_IDS];
 
 export type DeploymentFeatureState = {
-  /** Listed in `VMP_FEATURES` (or default allow-all). */
+  /** Enabled in Flagship (or local override allowlist). */
   requested: boolean;
   /** Optional module files exist on disk (modular features only; otherwise always true). */
   pluginPresent: boolean;
-  /** `requested && pluginPresent` — this deployment may load the feature. */
+  /** `requested && pluginPresent` — this deployment may use the feature. */
   compiled: boolean;
 };
 
@@ -131,18 +134,14 @@ function normalizeFeatureToken(raw: string): string {
 }
 
 /**
- * Parse `VMP_FEATURES` (comma/space-separated allowlist).
- * When unset or empty, returns the full default set.
+ * Parse a comma/space-separated feature allowlist CSV.
+ * Empty / unset → empty set (fail closed). Used by `FLAGSHIP_DEV_OVERRIDE`.
  */
-export function parseDeploymentFeaturesEnv(
-  env: Record<string, string | undefined> = {},
-): Set<DeploymentFeatureId> {
-  const raw = env.VMP_FEATURES?.trim();
-  if (!raw) {
-    return new Set(DEFAULT_DEPLOYMENT_FEATURES);
-  }
+export function parseFeatureAllowlistCsv(raw: string | undefined | null): Set<DeploymentFeatureId> {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return new Set();
 
-  const tokens = raw
+  const tokens = trimmed
     .split(/[,\s]+/)
     .map(normalizeFeatureToken)
     .filter(Boolean);
@@ -153,9 +152,22 @@ export function parseDeploymentFeaturesEnv(
       selected.add(token);
     }
   }
-
-  // Always keep child features out unless explicitly listed; parent inclusion does not imply child.
   return selected;
+}
+
+/**
+ * @deprecated Prefer `parseFeatureAllowlistCsv`. Kept for transitional call sites.
+ * When `env.FLAGSHIP_DEV_OVERRIDE` or `env.allowlist` is set, parses that CSV.
+ * Legacy key `VMP_FEATURES` is ignored (fail closed → empty).
+ */
+export function parseDeploymentFeaturesEnv(
+  env: Record<string, string | undefined> = {},
+): Set<DeploymentFeatureId> {
+  const raw = env.FLAGSHIP_DEV_OVERRIDE ?? env.allowlist;
+  if (raw?.trim()) return parseFeatureAllowlistCsv(raw);
+  // Empty allowlist — callers that previously treated unset as “all features”
+  // must pass DEFAULT_DEPLOYMENT_FEATURES explicitly if they need that behaviour.
+  return new Set();
 }
 
 export function deploymentFeatureCatalogEntry(

@@ -35,6 +35,7 @@ export {
   deploymentFeatureCatalogEntry,
   isDeploymentFeatureId,
   parseDeploymentFeaturesEnv,
+  parseFeatureAllowlistCsv,
 } from './deploymentFeatures.js';
 export {
   compareVideosNewestFirst,

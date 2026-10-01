@@ -60,14 +60,14 @@
 
   const showRelinkFlow = computed(() => {
     const sub = subscription.value;
-    return sub?.provider === 'legacy' && sub.status === 'needs_relink';
+    return (sub?.provider === 'legacy' || sub?.provider === 'qerko') && sub.status === 'needs_relink';
   });
 
   const legacyProviderDisplayName = computed(() => {
     const sub = subscription.value;
     const name = sub?.legacyProviderName?.trim();
     if (name) return name;
-    if (sub?.provider === 'legacy') return strings.paymentProviderLabel('legacy');
+    if ((sub?.provider === 'legacy' || sub?.provider === 'qerko')) return strings.paymentProviderLabel('legacy');
     return strings.accountRelinkLegacyProviderFallback;
   });
 

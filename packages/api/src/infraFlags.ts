@@ -1,9 +1,8 @@
 /**
- * Tier-1 infrastructure feature flags.
+ * Tier-1 infrastructure feature flags via Cloudflare Flagship.
  *
- * Phase A: prefer Cloudflare Flagship (`env.FLAGS`) with code default `false`.
- * Temporary fallback: `VMP_FEATURES` env allowlist (removed in Phase B).
- * Local override: `FLAGSHIP_DEV_OVERRIDE` (same CSV syntax as VMP_FEATURES; .dev.vars only).
+ * Code default is OFF (`getBooleanValue(id, false)`).
+ * Local override: `FLAGSHIP_DEV_OVERRIDE` CSV (`.dev.vars` only — never staging/prod).
  *
  * @see docs/plans/flagship-and-payment-middleware.md
  */
@@ -11,9 +10,8 @@ import {
   type DeploymentFeatureId,
   type DeploymentFeatureState,
   DEPLOYMENT_FEATURE_IDS,
-  parseDeploymentFeaturesEnv,
+  parseFeatureAllowlistCsv,
 } from '@vmp/shared';
-import { getCompiledDeploymentFeatures } from './deploymentFeatures.js';
 
 /** Minimal Flagship binding surface used by this Worker. */
 export type FlagshipBinding = {
@@ -26,7 +24,6 @@ export type FlagshipBinding = {
 
 export type InfraFlagsEnv = {
   FLAGS?: FlagshipBinding;
-  VMP_FEATURES?: string;
   /** Local/dev CSV allowlist — never set in staging/prod deploy. */
   FLAGSHIP_DEV_OVERRIDE?: string;
 };
@@ -34,12 +31,12 @@ export type InfraFlagsEnv = {
 function parseOverrideAllowlist(raw: string | undefined): Set<DeploymentFeatureId> | null {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return null;
-  return parseDeploymentFeaturesEnv({ VMP_FEATURES: trimmed });
+  return parseFeatureAllowlistCsv(trimmed);
 }
 
 /**
  * Resolve whether an infrastructure feature is enabled for this deployment.
- * Safe default is OFF when Flagship is bound (missing/failed eval → false).
+ * Unbound / failed Flagship evaluation → false.
  */
 export async function isInfraFeatureEnabled(
   env: InfraFlagsEnv,
@@ -56,11 +53,10 @@ export async function isInfraFeatureEnabled(
     }
   }
 
-  // Temporary Phase A fallback until VMP_FEATURES is removed (Phase B).
-  return getCompiledDeploymentFeatures(env).has(id);
+  return false;
 }
 
-/** Build admin/UI manifest from the active evaluator (Flagship or fallback). */
+/** Build admin/UI manifest from Flagship (or local override). */
 export async function buildInfraFeatureManifest(
   env: InfraFlagsEnv,
 ): Promise<Record<DeploymentFeatureId, DeploymentFeatureState>> {

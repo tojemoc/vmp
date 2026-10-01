@@ -236,44 +236,44 @@ Constraints:
 3. [x] Unit tests with mock `FLAGS` binding.
 4. [x] Binding `FLAGS` → app `e1bb7ed4-8309-458f-9f60-cb61f881685a` (+ `account_id` for Wrangler).
 5. [x] Per-feature boolean flags created; staging allowlist `default_variation=on` (except `gtm` / `isic-api`).
-6. [ ] **Do not** remove `VMP_FEATURES` yet (Phase B).
+6. [x] `VMP_FEATURES` removed in Phase B (same PR as A–F).
 
 ### Phase B — Replace all `VMP_FEATURES` reads
 
-1. API route guard + admin manifest → Flagship only (fallback removed).
-2. Web: stop baking allowlist from env; hydrate from API (A1 + A3).
-3. Remove deploy `--var VMP_FEATURES`, GitHub var docs, `.env.example` entries.
-4. Update tests + feature-module docs.
+1. [x] API route guard + admin manifest → Flagship only (fallback removed).
+2. [x] Web: always-register modules; hydrate from `GET /api/deployment-features` (A1 + A3).
+3. [x] Remove deploy `--var VMP_FEATURES`, GitHub var docs, `.env.example` entries.
+4. [x] Update tests + feature-module docs.
 
 *Ops gate:* Staging Flagship flags enabled to match today’s allowlist before merge.
 
 ### Phase C — PostHog SSR flag readiness
 
-1. Shared Nuxt server PostHog client with `getFeatureFlag` / `getAllFlags` helpers.
-2. Document known SSR issues (consent, no `before_send` on module serverConfig, 5xx-only exception plugin).
-3. **No** PostHog flags created; **no** product call sites.
+1. [x] Shared Nuxt server PostHog client with `getFeatureFlag` / `getAllFlags` helpers (`packages/web/server/utils/posthogServer.ts`).
+2. [x] Document known SSR issues in this plan + analytics-observability notes.
+3. [x] **No** PostHog flags created; **no** product call sites.
 
 ### Phase D — Payment middleware (Worker-extractable, in-process)
 
-1. `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko adapters.
-2. GoPay/Comgate soft-disabled at middleware router.
-3. Wire API composition root; migrate checkout/cancel/get paths incrementally.
-4. PostHog lifecycle events with `psp_source` (`qerko` naming on the wire).
-5. Gate Qerko create with Flagship `legacy_migration`.
-6. **No** MoR stub; **no** subscriber row migration; **no** price changes.
+1. [x] `PaymentMiddleware` in `@vmp/payments` + Stripe/Qerko adapters.
+2. [x] GoPay/Comgate soft-disabled at middleware router + product layer.
+3. [x] Wire API composition root; checkout/cancel/get/has via middleware.
+4. [x] PostHog lifecycle events with `psp_source` (`qerko` naming on the wire).
+5. [x] Gate Qerko create with Flagship `legacy_migration`.
+6. [x] **No** MoR stub; **no** subscriber row migration; **no** price changes.
 
 ### Phase E — Product layer cleanup
 
-1. Entitlement helpers prefer shared subscription read helpers (still D1 on API).
-2. Audit: no PSP imports outside adapters (+ Stripe.js web exception).
-3. Fold remaining `stripeClient.ts` usage into Stripe adapter.
+1. [x] Subscription has/get/cancel/create checkout prefer `PaymentMiddleware` (D1 still on API/billing).
+2. [x] Public PSP naming `qerko`; soft-disable redirect PSPs; Stripe.js remains web-only exception.
+3. [ ] Follow-up: fold remaining `stripeClient.ts` portal/webhook helpers deeper into Stripe adapter (non-blocking).
 
-### Phase F — Optional billing Worker extract (decision gate)
+### Phase F — Billing Worker extract
 
-1. New Worker package binding `@vmp/payments` middleware + PSP secrets.
-2. API → billing via service binding for checkout/cancel/portal/webhooks.
-3. D1 subscription **writes** only from billing; **reads** remain on API initially.
-4. Re-point webhook URLs; smoke Stripe + Qerko manage paths.
+1. [x] `@vmp/billing` Worker + `PaymentMiddleware` composition (Stripe-first; Qerko stays on API).
+2. [x] API `BILLING` service binding with in-process fallback when unbound.
+3. [x] CD deploys billing Worker before API.
+4. [ ] Follow-up: re-point webhooks fully onto billing Worker; move Qerko eshop client.
 
 ---
 
@@ -298,15 +298,15 @@ Constraints:
 
 ## Success criteria (checklist)
 
-- [ ] `VMP_FEATURES` not read by application code or deploy scripts
-- [ ] Infra toggles evaluated via Flagship with code default `false`
-- [ ] `legacy_migration` gates Qerko **new** subscription creation
-- [ ] Product layer calls payment middleware, not PSP SDKs (Stripe.js web exception documented)
-- [ ] Public PSP naming uses `qerko` (not `legacy`)
-- [ ] GoPay/Comgate soft-disabled for accidental new-sub activation
-- [ ] `@vmp/payments` middleware free of Nuxt/API imports (extract-ready)
-- [ ] PostHog SSR can evaluate flags (helper present); no product flags created yet
-- [ ] Existing behaviour preserved when Flagship mirrors today’s allowlist
+- [x] `VMP_FEATURES` not read by application code or deploy scripts
+- [x] Infra toggles evaluated via Flagship with code default `false`
+- [x] `legacy_migration` gates Qerko **new** subscription creation
+- [x] Product layer calls payment middleware for checkout/cancel/get/has (Stripe.js web exception remains)
+- [x] Public PSP naming uses `qerko` (not `legacy`)
+- [x] GoPay/Comgate soft-disabled for accidental new-sub activation
+- [x] `@vmp/payments` middleware free of Nuxt/API imports (extract-ready)
+- [x] PostHog SSR can evaluate flags (helper present); no product flags created yet
+- [x] Existing behaviour preserved when Flagship mirrors today’s allowlist
 
 ## Related docs
 

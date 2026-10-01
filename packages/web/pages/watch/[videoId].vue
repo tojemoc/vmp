@@ -1795,7 +1795,7 @@
       if (result.ok || result.pending) {
         capturePostHogEvent(
           result.ok ? 'subscription_checkout_completed' : 'subscription_checkout_return_visited',
-          { provider: 'legacy' },
+          { provider: 'qerko' },
         );
         showPremiumOverlay.value = false;
         await loadVideoForRoute(videoId.value);

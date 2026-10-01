@@ -63,7 +63,12 @@ export async function maybeBlockDeploymentFeatureRoute(
   if (request.method === 'OPTIONS') return null;
 
   const pathname = new URL(request.url).pathname;
-  if (pathname === '/api/admin/deployment-features') return null;
+  if (
+    pathname === '/api/admin/deployment-features' ||
+    pathname === '/api/deployment-features'
+  ) {
+    return null;
+  }
 
   const featureId = resolveRouteFeature(pathname);
   if (!featureId) return null;

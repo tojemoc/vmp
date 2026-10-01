@@ -401,7 +401,7 @@
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
-  type PaymentProvider = 'stripe' | 'legacy' | 'gopay' | 'comgate';
+  type PaymentProvider = 'stripe' | 'qerko' | 'legacy' | 'gopay' | 'comgate';
 
   interface Prices {
     monthly: number;

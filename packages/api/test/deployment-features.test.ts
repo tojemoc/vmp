@@ -1,34 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  buildDeploymentFeatureManifest,
-  isDeploymentFeatureCompiled,
-} from '../src/deploymentFeatures.js';
-import {
   buildInfraFeatureManifest,
   createStaticFlagshipBinding,
   isInfraFeatureEnabled,
 } from '../src/infraFlags.js';
 import { maybeBlockDeploymentFeatureRoute } from '../src/routeFeatureGuard.js';
-
-describe('deploymentFeatures (API) — VMP_FEATURES fallback', () => {
-  it('defaults to all features when VMP_FEATURES unset', () => {
-    assert.equal(isDeploymentFeatureCompiled({}, 'gtm'), true);
-    assert.equal(isDeploymentFeatureCompiled({}, 'payments'), true);
-  });
-
-  it('honors allowlist', () => {
-    const env = { VMP_FEATURES: 'posthog,payments' };
-    assert.equal(isDeploymentFeatureCompiled(env, 'payments'), true);
-    assert.equal(isDeploymentFeatureCompiled(env, 'gtm'), false);
-  });
-
-  it('buildDeploymentFeatureManifest marks compiled flags', () => {
-    const manifest = buildDeploymentFeatureManifest({ VMP_FEATURES: 'pills' });
-    assert.equal(manifest.pills.compiled, true);
-    assert.equal(manifest.newsletter.compiled, false);
-  });
-});
 
 describe('infraFlags (Flagship)', () => {
   it('uses Flagship binding with code default false', async () => {
@@ -48,10 +25,9 @@ describe('infraFlags (Flagship)', () => {
     assert.equal(await isInfraFeatureEnabled(env, 'payments'), false);
   });
 
-  it('falls back to VMP_FEATURES when FLAGS unbound', async () => {
-    const env = { VMP_FEATURES: 'cms' };
-    assert.equal(await isInfraFeatureEnabled(env, 'cms'), true);
-    assert.equal(await isInfraFeatureEnabled(env, 'payments'), false);
+  it('fails closed when FLAGS unbound', async () => {
+    assert.equal(await isInfraFeatureEnabled({}, 'cms'), false);
+    assert.equal(await isInfraFeatureEnabled({}, 'payments'), false);
   });
 
   it('buildInfraFeatureManifest uses evaluator', async () => {
@@ -83,28 +59,23 @@ describe('routeFeatureGuard', () => {
     assert.equal(res, null);
   });
 
-  it('never blocks deployment-features introspection route', async () => {
-    const res = await maybeBlockDeploymentFeatureRoute(
-      new Request('https://example.com/api/admin/deployment-features', { method: 'GET' }),
-      { FLAGS: createStaticFlagshipBinding(['payments']) },
-      {},
-    );
-    assert.equal(res, null);
+  it('never blocks deployment-features routes', async () => {
+    for (const path of ['/api/admin/deployment-features', '/api/deployment-features']) {
+      const res = await maybeBlockDeploymentFeatureRoute(
+        new Request(`https://example.com${path}`, { method: 'GET' }),
+        { FLAGS: createStaticFlagshipBinding(['payments']) },
+        {},
+      );
+      assert.equal(res, null);
+    }
   });
 
-  it('falls back to VMP_FEATURES when FLAGS unbound', async () => {
+  it('fails closed when FLAGS unbound', async () => {
     const blocked = await maybeBlockDeploymentFeatureRoute(
       new Request('https://example.com/api/pills', { method: 'GET' }),
-      { VMP_FEATURES: 'payments' },
+      {},
       {},
     );
     assert.equal(blocked?.status, 404);
-
-    const allowed = await maybeBlockDeploymentFeatureRoute(
-      new Request('https://example.com/api/pills', { method: 'GET' }),
-      { VMP_FEATURES: 'pills' },
-      {},
-    );
-    assert.equal(allowed, null);
   });
 });

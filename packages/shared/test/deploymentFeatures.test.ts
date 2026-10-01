@@ -3,20 +3,18 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_DEPLOYMENT_FEATURES,
   DEPLOYMENT_FEATURE_IDS,
+  parseFeatureAllowlistCsv,
   parseDeploymentFeaturesEnv,
 } from '../src/deploymentFeatures.js';
 
 describe('deploymentFeatures', () => {
-  it('defaults to all features when VMP_FEATURES is unset', () => {
-    const features = parseDeploymentFeaturesEnv({});
-    assert.equal(features.size, DEPLOYMENT_FEATURE_IDS.length);
-    for (const id of DEFAULT_DEPLOYMENT_FEATURES) {
-      assert.equal(features.has(id), true, id);
-    }
+  it('parseFeatureAllowlistCsv returns empty for unset (fail closed)', () => {
+    assert.equal(parseFeatureAllowlistCsv(undefined).size, 0);
+    assert.equal(parseFeatureAllowlistCsv('').size, 0);
   });
 
-  it('parses comma-separated allowlist', () => {
-    const features = parseDeploymentFeaturesEnv({ VMP_FEATURES: 'gtm, posthog, pwa' });
+  it('parseFeatureAllowlistCsv parses comma-separated allowlist', () => {
+    const features = parseFeatureAllowlistCsv('gtm, posthog, pwa');
     assert.equal(features.has('gtm'), true);
     assert.equal(features.has('posthog'), true);
     assert.equal(features.has('pwa'), true);
@@ -24,14 +22,26 @@ describe('deploymentFeatures', () => {
   });
 
   it('normalizes hyphenated tokens', () => {
-    const features = parseDeploymentFeaturesEnv({ VMP_FEATURES: 'legacy-migration,rss-podcast' });
+    const features = parseFeatureAllowlistCsv('legacy-migration,rss-podcast');
     assert.equal(features.has('legacy_migration'), true);
     assert.equal(features.has('rss_podcast'), true);
   });
 
   it('ignores unknown tokens', () => {
-    const features = parseDeploymentFeaturesEnv({ VMP_FEATURES: 'gtm,unknown-feature' });
+    const features = parseFeatureAllowlistCsv('gtm,unknown-feature');
     assert.equal(features.size, 1);
     assert.equal(features.has('gtm'), true);
+  });
+
+  it('parseDeploymentFeaturesEnv reads FLAGSHIP_DEV_OVERRIDE only', () => {
+    assert.equal(parseDeploymentFeaturesEnv({}).size, 0);
+    assert.equal(parseDeploymentFeaturesEnv({ VMP_FEATURES: 'gtm,posthog' }).size, 0);
+    const fromOverride = parseDeploymentFeaturesEnv({ FLAGSHIP_DEV_OVERRIDE: 'cms,pills' });
+    assert.equal(fromOverride.has('cms'), true);
+    assert.equal(fromOverride.has('pills'), true);
+  });
+
+  it('DEFAULT_DEPLOYMENT_FEATURES covers the catalog', () => {
+    assert.equal(DEFAULT_DEPLOYMENT_FEATURES.length, DEPLOYMENT_FEATURE_IDS.length);
   });
 });

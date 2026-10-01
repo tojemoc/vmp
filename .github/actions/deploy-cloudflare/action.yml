@@ -62,12 +62,6 @@ inputs:
     required: false
     default: ''
     description: Optional PostHog personal API key for source-map upload (server-only).
-  vmp-features:
-    required: false
-    default: ''
-    description: >
-      Optional comma-separated deployment feature allowlist (VMP_FEATURES). Unset keeps all
-      features compiled. Example for staging without GTM: omit gtm from the list.
   sentry-auth-token:
     required: false
     default: ''
@@ -140,28 +134,34 @@ runs:
         MOBILE_ANDROID_SHA256_CERT_FINGERPRINTS: ${{ inputs.mobile-android-cert-fingerprints }}
         MOBILE_APPLE_APP_IDS: ${{ inputs.mobile-apple-app-ids }}
         MOBILE_ANDROID_PACKAGE: ${{ inputs.mobile-android-package }}
-        VMP_FEATURES: ${{ inputs.vmp-features }}
         NODE_ENV: production
       run: npm run build
+
+    - name: Deploy billing Worker (${{ inputs.deploy-tier }})
+      shell: bash
+      working-directory: packages/billing
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        DEPLOY_TIER: ${{ inputs.deploy-tier }}
+        API_BASE_URL: ${{ inputs.api-base-url }}
+        FRONTEND_URL: ${{ inputs.frontend-url }}
+      run: |
+        EXTRA_ARGS=(--var "API_URL:${API_BASE_URL}" --var "FRONTEND_URL:${FRONTEND_URL}")
+        npx wrangler deploy "${EXTRA_ARGS[@]}"
 
     - name: Deploy API (${{ inputs.deploy-tier }})
       shell: bash
       env:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
-        VMP_FEATURES: ${{ inputs.vmp-features }}
         DEPLOY_TIER: ${{ inputs.deploy-tier }}
         API_BASE_URL: ${{ inputs.api-base-url }}
         FRONTEND_URL: ${{ inputs.frontend-url }}
         EXPECTED_ALLOWED_ORIGINS: ${{ inputs.expected-allowed-origins }}
       run: |
         EXTRA_ARGS=()
-        # Wrangler --var uses KEY:VALUE (colon). KEY=VALUE is treated as a var *named*
-        # "KEY=VALUE" with an empty string — that is what polluted the staging Worker
-        # dashboard after #687 / earlier VMP_FEATURES deploys.
-        if [ -n "$VMP_FEATURES" ]; then
-          EXTRA_ARGS+=(--var "VMP_FEATURES:${VMP_FEATURES}")
-        fi
+        # Flagship (FLAGS binding) replaces VMP_FEATURES Worker var.
         # Tier label for PostHog / Sentry / SideStore escape-hatch gate (must be exact
         # "staging" for ALLOW_INSECURE_NATIVE_VMP_SCHEME to take effect). Pass via --var
         # so each deploy keeps the dashboard in sync; do not rely on wrangler.json alone
