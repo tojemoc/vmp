@@ -1,4 +1,8 @@
-export { createStorageProvider, createStorageProviderFromEnv } from './factory.js';
+export {
+  bucketNameFromS3Uri,
+  createStorageProvider,
+  createStorageProviderFromEnv,
+} from './factory.js';
 export { asR2Bucket, ObjectStorageR2BucketBridge } from './r2-bucket-bridge.js';
 export { RcloneProvider, type RcloneProviderOptions } from './rclone-provider.js';
 export { S3CompatibleStorageProvider } from './s3-compatible.js';
