@@ -181,6 +181,21 @@ These are open Linear issues without active implementation milestones on the pro
 | [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9) | [#435](https://github.com/tojemoc/vmp/issues/435) | RFC: Backup stack (bunny.net / Backblaze) | Deno Deploy `@vmp/api-node` backup API exists; bunny/Backblaze investigation still open |
 | [TOJ-14](https://linear.app/tojemoc/issue/TOJ-14) | [#441](https://github.com/tojemoc/vmp/issues/441) | Q: Inspired by peer streaming projects | Research only; MoQ livestreams + feature modules are related partial progress |
 
+### Mosaiq multi-tenant platform (`mosaiq-multi-tenant`)
+
+**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · infra handoff: [docs/plans/vmp-infra-handoff-mosaiq-domains.md](docs/plans/vmp-infra-handoff-mosaiq-domains.md)
+
+Design the pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), and eventual `{channel}.mosaiq.video` Start-tier channels. Private Terraform stays in `vmp-infra` (not per signup). Retire `*.tjm.sk` in favour of Mosaiq / Molten Marshmallows domains.
+
+- [x] Architecture + domain map + phased plan (docs)
+- [ ] **`mosaiq-domain-cutover`** — First prod/staging on CF account `5b594173…` (`app` / `api` / staging hosts); point CD vars; leave `*.tjm.sk`
+- [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
+- [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
+- [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
+- [ ] **`mosaiq-self-serve-channels`** — Deferred: instant `{slug}.mosaiq.video` channels + revenue-share (D1+KV only; no TF in signup)
+- [ ] **`worker-split-video-proxy`** — Option A: extract media Worker; API still fronts `/api/video-proxy` via service binding
+- [ ] **`video-proxy-direct-edge`** — Deferred Option B: clients hit media Worker / SaaS media host directly
+
 ### Admin draft video preview (`admin-draft-video-preview`)
 
 **Issues:** [#723](https://github.com/tojemoc/vmp/issues/723)  
@@ -214,9 +229,19 @@ Validated ~7s click-to-play (6s R2/CMAF segments via Worker proxy) vs ~3s on the
 
 ---
 
-## Adding new work
+### Mosaiq multi-tenant platform (`mosaiq-multi-tenant`)
 
-1. Add a row or checkbox section with a stable **ID** (`kebab-case`).
-2. Add `docs/plans/<id>.md` if the work needs more than a few bullets.
-3. Link both ways (plan ↔ roadmap).
-4. Implement via PR; check off here when merged.
+**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · infra handoff: [docs/plans/vmp-infra-handoff-mosaiq-domains.md](docs/plans/vmp-infra-handoff-mosaiq-domains.md)
+
+Design the pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), and eventual `{channel}.mosaiq.video` Start-tier channels. Private Terraform stays in `vmp-infra` (not per signup). Retire `*.tjm.sk` in favour of Mosaiq / Molten Marshmallows domains.
+
+- [x] Architecture + domain map + phased plan (docs)
+- [ ] **`mosaiq-domain-cutover`** — First prod/staging on CF account `5b594173…` (`app` / `api` / staging hosts); point CD vars; leave `*.tjm.sk`
+- [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
+- [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
+- [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
+- [ ] **`mosaiq-self-serve-channels`** — Deferred: instant `{slug}.mosaiq.video` channels + revenue-share (D1+KV only; no TF in signup)
+- [ ] **`worker-split-video-proxy`** — Option A: extract media Worker; API still fronts `/api/video-proxy` via service binding
+- [ ] **`video-proxy-direct-edge`** — Deferred Option B: clients hit media Worker / SaaS media host directly
+
+### Admin draft video preview (`admin-draft-video-preview`)

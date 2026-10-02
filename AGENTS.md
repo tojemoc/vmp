@@ -177,8 +177,11 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
 | Steps 8–10 (Brevo, RSS, account deletion) | [docs/plans/README.md](docs/plans/README.md) |
 | Club entitlements (concurrent playback, IRL, ad-free) | [docs/plans/club-plan-entitlements.md](docs/plans/club-plan-entitlements.md) |
 | Flagship infra flags + payment middleware | [docs/plans/flagship-and-payment-middleware.md](docs/plans/flagship-and-payment-middleware.md) |
+| Mosaiq multi-tenant + domain cutover | [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) |
 | Native / TV clients | [docs/native-clients-plan.md](docs/native-clients-plan.md) |
 | Offline downloads (shipped) | [docs/archive/offline-downloads-roadmap.md](docs/archive/offline-downloads-roadmap.md) |
+
+**Mosaiq / domains:** Platform DNS and private Terraform live in the private `vmp-infra` repo (not this monorepo). App code must resolve **Host → `tenant_id`** and must not assume a single `FRONTEND_URL` forever. Staging/prod are moving off `*.tjm.sk` onto `*.mosaiq.video` / `*.moltenmarshmallo.ws` — see the Mosaiq plan and [vmp-infra handoff](docs/plans/vmp-infra-handoff-mosaiq-domains.md).
 
 Agents: follow [Roadmap workflow](#roadmap-workflow-agents) before implementing any backlog item.
 
