@@ -480,6 +480,8 @@ export const strings: StringsDefinition = {
   checkoutPerYear: 'per year',
   checkoutMostPopular: 'Most popular',
   checkoutPricesLoadFailed: 'Could not load pricing. Please refresh the page.',
+  checkoutPricingNotConfigured:
+    'Checkout is temporarily unavailable. Payment options or prices are not configured on this deployment.',
   checkoutRedirecting: 'Redirecting to checkout…',
   checkoutPayWithBank: (price: string) => `Bank transfer · ${price}`,
   checkoutPayWithQerko: 'Pay with',

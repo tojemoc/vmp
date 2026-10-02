@@ -7,7 +7,7 @@
  *   brevo_subscriber_list_id, brevo_campaign_sender_email, brevo_campaign_sender_name
  */
 
-import { requireRole } from './auth.js';
+import { authFailureResponse, requireRole } from './auth.js';
 import { readNewsletterPreference } from './newsletterPreference.js';
 
 const BREVO_BASE = 'https://api.brevo.com/v3';
@@ -950,8 +950,8 @@ function jsonResponse(data: any, status = 200, corsHeaders = {}) {
 export async function handleAdminNewsletterSettings(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const db = getDb(env);
@@ -1126,8 +1126,8 @@ export async function handleAdminNewsletterSend(request: any, env: any, corsHead
   let correlationId = correlationFromRequest(request);
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   if (request.method !== 'POST') {
@@ -1658,8 +1658,8 @@ export async function handleAdminNewsletterCampaigns(request: any, env: any, cor
   const correlationId = correlationFromRequest(request) || crypto.randomUUID();
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'GET')
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -1694,8 +1694,8 @@ export async function handleAdminNewsletterTemplates(request: any, env: any, cor
   const correlationId = correlationFromRequest(request) || crypto.randomUUID();
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const db = getDb(env);
   if (request.method === 'GET') {
@@ -1745,8 +1745,8 @@ export async function handleAdminNewsletterTemplateById(
   const correlationId = correlationFromRequest(request) || crypto.randomUUID();
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const id = typeof templateId === 'string' ? templateId.trim() : '';
   if (!id) {
@@ -1850,8 +1850,8 @@ export async function handleAdminNewsletterSync(request: any, env: any, corsHead
   const correlationId = correlationFromRequest(request) || crypto.randomUUID();
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'POST')
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -1917,8 +1917,8 @@ export async function handleAdminNewsletterDrafts(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const db = getDb(env);
@@ -2047,8 +2047,8 @@ export async function handleAdminNewsletterSchedule(request: any, env: any, cors
   const correlationId = correlationFromRequest(request) || crypto.randomUUID();
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'POST')
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);

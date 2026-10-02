@@ -33,7 +33,7 @@
  * - 200 with gateway links → token accepted (not proof of successful charge).
  */
 
-import { requireRole } from './auth.js';
+import { authFailureResponse, requireRole } from './auth.js';
 import {
   getLegacyApiBase,
   getLegacySandboxApiBase,
@@ -524,8 +524,8 @@ export async function handleAdminLegacyMigrationStats(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -546,8 +546,8 @@ export async function handleAdminLegacyMigrationValidateBatch(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -584,8 +584,8 @@ export async function handleAdminLegacyMigrationRelinkCandidates(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
@@ -657,8 +657,8 @@ export async function handleAdminLegacyMigrationSendRelinkEmail(
   let actor;
   try {
     actor = await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);

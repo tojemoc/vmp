@@ -4,6 +4,7 @@
  */
 
 const BILLING_PATH_PREFIXES = [
+  '/api/billing/ready',
   '/api/payments',
   '/api/account/pricing',
   '/api/account/subscription',

@@ -2,7 +2,7 @@
  * Legacy eshop billing — checkout, webhooks, and purchase ID linking for imported users.
  */
 
-import { requireAuth, requireRole } from './auth.js';
+import { authFailureResponse, requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
 import {
   customerSafeLegacyNotConfiguredResponse,
@@ -322,8 +322,8 @@ export async function handleLegacyCheckout(
       sub: String(payload.sub),
       email: String(payload.email ?? ''),
     };
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const body = (await request.json().catch(() => ({}))) as LegacyCheckoutRequestBody;
   return startLegacyCheckout(env, user, body, corsHeaders);
@@ -363,8 +363,8 @@ export async function handleLegacyComplete(
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const body = (await request.json().catch(() => null)) as LegacyCompleteRequestBody | null;
@@ -441,8 +441,8 @@ export async function handleLegacyOrderStatus(
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const url = new URL(request.url);
@@ -590,8 +590,8 @@ export async function handleAdminLegacyPaymentSettings(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   if (request.method === 'GET') {

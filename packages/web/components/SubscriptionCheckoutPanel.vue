@@ -110,7 +110,11 @@
     </div>
 
     <div v-if="priceError" class="text-red-400 text-sm mb-6">
-      {{ strings.checkoutPricesLoadFailed }}
+      {{
+        priceErrorReason === 'not_configured'
+          ? strings.checkoutPricingNotConfigured
+          : strings.checkoutPricesLoadFailed
+      }}
     </div>
 
     <div v-if="checkoutError" class="text-red-400 text-sm mb-3">
@@ -370,6 +374,7 @@
 </template>
 
 <script setup lang="ts">
+  import { resolveCheckoutPaymentSurfaces } from '~/utils/checkoutPaymentSurfaces';
   import { capturePostHogEvent } from '~/utils/posthogClient';
   import strings from '~/utils/strings';
 
@@ -424,6 +429,8 @@
   const allowedPlans = ref<PlanType[]>(['monthly', 'yearly', 'club']);
   const loadingPrices = ref(false);
   const priceError = ref(false);
+  /** Distinguishes HTTP/network failure from pricing_not_configured / empty providers. */
+  const priceErrorReason = ref<'load' | 'not_configured' | null>(null);
   const selectedPlan = ref<PlanType>('monthly');
   const legacyCheckoutStarting = ref(false);
   const gopayCheckoutStarting = ref(false);
@@ -534,22 +541,21 @@
     return 'border-gray-600 bg-gray-800 text-white dark:text-white hover:border-gray-500';
   });
 
-  /** Apple / Google Pay above the fold (mount express until detection finishes). */
-  const showWalletSurface = computed(() => {
-    if (!walletDetectionDone.value) return true;
-    return walletAvailable.value;
-  });
+  const paymentSurfaces = computed(() =>
+    resolveCheckoutPaymentSurfaces({
+      walletDetectionDone: walletDetectionDone.value,
+      walletAvailable: walletAvailable.value,
+      stripeCheckoutReady: stripeCheckoutReady.value,
+      moreExpanded: moreExpanded.value,
+      cardMethodSelected: cardMethodSelected.value,
+      hasSecondaryProviders: showSecondaryProviders.value,
+    }),
+  );
 
-  /** Card / PayPal / SEPA — only after user expands More and chooses Pay by card. */
-  const showCardSurface = computed(() => {
-    if (!walletDetectionDone.value) return false;
-    return moreExpanded.value && cardMethodSelected.value;
-  });
-
-  const showMoreToggle = computed(() => walletDetectionDone.value);
-
-  /** Card option only when Stripe init succeeded (secondary providers stay on showMoreToggle). */
-  const showCardPaymentOption = computed(() => showMoreToggle.value && stripeCheckoutReady.value);
+  const showWalletSurface = computed(() => paymentSurfaces.value.showWalletSurface);
+  const showCardSurface = computed(() => paymentSurfaces.value.showCardSurface);
+  const showMoreToggle = computed(() => paymentSurfaces.value.showMoreToggle);
+  const showCardPaymentOption = computed(() => paymentSurfaces.value.showCardPaymentOption);
 
   const moreToggleClass = computed(() => {
     if (props.embedded) {
@@ -577,8 +583,10 @@
     walletDetectionDone.value = true;
     walletAvailable.value = available;
     if (!available) {
+      // Desktop / no wallet: open card Payment Element immediately — do not force
+      // "More payment methods" → "Pay by card" for the only Stripe path.
       moreExpanded.value = false;
-      cardMethodSelected.value = false;
+      cardMethodSelected.value = true;
     }
   }
 
@@ -804,10 +812,12 @@
   async function loadPrices() {
     loadingPrices.value = true;
     priceError.value = false;
+    priceErrorReason.value = null;
     try {
       const res = await fetch(`${apiUrl}/api/account/pricing`);
       if (!res.ok) {
         priceError.value = true;
+        priceErrorReason.value = 'load';
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
@@ -928,6 +938,7 @@
         data.pricing_not_configured === true
       ) {
         priceError.value = true;
+        priceErrorReason.value = 'not_configured';
         pendingLegacyCheckoutIntent.value = false;
         pendingGoPayCheckoutIntent.value = false;
         pendingComgateCheckoutIntent.value = false;
@@ -938,6 +949,7 @@
       }
     } catch {
       priceError.value = true;
+      priceErrorReason.value = 'load';
       pendingLegacyCheckoutIntent.value = false;
       pendingGoPayCheckoutIntent.value = false;
       pendingComgateCheckoutIntent.value = false;
