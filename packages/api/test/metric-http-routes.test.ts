@@ -19,6 +19,7 @@ describe('resolveMetricHttpRoute', () => {
       resolveMetricHttpRoute('/api/video-proxy/videos/x/master.m3u8'),
       '/api/video-proxy/:path',
     );
+    assert.equal(resolveMetricHttpRoute('/api/assets/thumbnails/x/large.jpg'), '/api/assets/:path');
     assert.equal(resolveMetricHttpRoute('/api/feed/user1/secrettoken'), '/api/feed/:userId/:token');
     assert.equal(
       resolveMetricHttpRoute('/api/pages/cms-page-personal-data/publish'),

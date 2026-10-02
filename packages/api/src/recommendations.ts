@@ -3,6 +3,7 @@
  */
 
 import { getDb } from './d1Session.js';
+import { rewriteStoredPublicObjectUrl } from './publicAssets.js';
 import { getSetting } from './settingsStore.js';
 
 type RecommendationVideo = {
@@ -205,7 +206,10 @@ export async function handleVideoRecommendations(
       (list.results ?? []).map((row: Record<string, unknown>) => mapRecommendationVideoRow(row)),
       String((current as any).id),
       settings,
-    );
+    ).map((video) => ({
+      ...video,
+      thumbnail_url: rewriteStoredPublicObjectUrl(video.thumbnail_url, env),
+    }));
 
     return jsonResponse({ videos: ranked.slice(0, limit) }, 200, corsHeaders);
   } catch (err) {

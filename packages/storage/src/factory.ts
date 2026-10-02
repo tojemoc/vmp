@@ -64,30 +64,69 @@ export function createStorageProvider(config: StorageProviderConfig): ObjectStor
   });
 }
 
+/** Parse `s3://bucket/prefix` → bucket name (encore-packager PACKAGE_OUTPUT_FOLDER). */
+export function bucketNameFromS3Uri(uri: string | undefined): string | undefined {
+  const raw = typeof uri === 'string' ? uri.trim() : '';
+  if (!raw) return undefined;
+  const match = /^s3:\/\/([^/?#]+)/i.exec(raw);
+  const name = match?.[1]?.trim();
+  return name || undefined;
+}
+
+function resolveBucketName(env: NodeJS.ProcessEnv): string {
+  return (
+    env.S3_BUCKET_NAME?.trim() ||
+    env.B2_BUCKET_NAME?.trim() ||
+    env.R2_BUCKET_NAME?.trim() ||
+    env.STORAGE_BUCKET?.trim() ||
+    bucketNameFromS3Uri(env.PACKAGE_OUTPUT_FOLDER) ||
+    'vmp-videos'
+  );
+}
+
+/** Prefer explicit provider endpoints; accept packager's `S3_ENDPOINT_URL` alias. */
+function resolveS3Endpoint(env: NodeJS.ProcessEnv, type: string): string | undefined {
+  if (type === 'b2') {
+    return (
+      env.B2_S3_ENDPOINT?.trim() ||
+      env.B2_ENDPOINT?.trim() ||
+      env.S3_ENDPOINT?.trim() ||
+      env.S3_ENDPOINT_URL?.trim() ||
+      undefined
+    );
+  }
+  return (
+    env.S3_ENDPOINT?.trim() ||
+    env.S3_ENDPOINT_URL?.trim() ||
+    env.R2_ENDPOINT?.trim() ||
+    undefined
+  );
+}
+
 export function createStorageProviderFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): ObjectStorageProvider {
   const type = (env.STORAGE_PROVIDER ?? 'r2').trim().toLowerCase();
-  const bucket = env.S3_BUCKET_NAME ?? env.R2_BUCKET_NAME ?? env.STORAGE_BUCKET ?? 'vmp-videos';
+  const bucket = resolveBucketName(env);
 
   if (type === 'b2') {
-    const endpoint = env.B2_ENDPOINT ?? env.S3_ENDPOINT;
+    const endpoint = resolveS3Endpoint(env, 'b2');
+    const accessKeyId = env.B2_ACCESS_KEY_ID ?? env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = env.B2_SECRET_ACCESS_KEY ?? env.AWS_SECRET_ACCESS_KEY;
     return createStorageProvider({
       type: 'b2',
       bucket,
       ...(env.B2_REGION !== undefined ? { region: env.B2_REGION } : {}),
       ...(endpoint !== undefined ? { endpoint } : {}),
-      ...(env.B2_ACCESS_KEY_ID !== undefined ? { accessKeyId: env.B2_ACCESS_KEY_ID } : {}),
-      ...(env.B2_SECRET_ACCESS_KEY !== undefined
-        ? { secretAccessKey: env.B2_SECRET_ACCESS_KEY }
-        : {}),
-      ...(env.S3_FORCE_PATH_STYLE === '1' ? { forcePathStyle: true } : {}),
+      ...(accessKeyId !== undefined ? { accessKeyId } : {}),
+      ...(secretAccessKey !== undefined ? { secretAccessKey } : {}),
+      forcePathStyle: env.S3_FORCE_PATH_STYLE === '0' ? false : true,
     });
   }
 
   if (type === 's3-compatible') {
     const region = env.AWS_REGION;
-    const endpoint = env.S3_ENDPOINT;
+    const endpoint = resolveS3Endpoint(env, 's3-compatible');
     return createStorageProvider({
       type: 's3-compatible',
       id: env.STORAGE_PROVIDER_ID ?? 's3-compatible',
@@ -103,7 +142,7 @@ export function createStorageProviderFromEnv(
   }
 
   const region = env.AWS_REGION ?? 'auto';
-  const endpoint = env.S3_ENDPOINT ?? env.R2_ENDPOINT;
+  const endpoint = resolveS3Endpoint(env, 'r2');
   const accessKeyId = env.R2_ACCESS_KEY_ID ?? env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = env.R2_SECRET_ACCESS_KEY ?? env.AWS_SECRET_ACCESS_KEY;
   return createStorageProvider({

@@ -4,12 +4,13 @@ import { requireAuth, requireRole } from './auth.js';
 import { parseCmsBlocks } from './cmsBlockValidation.js';
 import { CmsPagesRepository } from './cmsPagesRepository.js';
 import { getObjectStorage, type StorageEnv } from './objectStorage.js';
+import { getPublicAssetsBaseUrl, type PublicAssetEnv } from './publicAssets.js';
 
-type Env = StorageEnv & {
-  DB?: CmsPagesRepository extends { db: infer D } ? D : unknown;
-  video_subscription_db?: unknown;
-  R2_BASE_URL?: string;
-};
+type Env = StorageEnv &
+  PublicAssetEnv & {
+    DB?: CmsPagesRepository extends { db: infer D } ? D : unknown;
+    video_subscription_db?: unknown;
+  };
 
 function getDb(env: Env) {
   return (env.DB || env.video_subscription_db) as ConstructorParameters<
@@ -346,10 +347,10 @@ export async function handleCmsMediaUpload(
           ? 'gif'
           : 'jpg';
 
-  const base = String(env.R2_BASE_URL ?? '')
-    .trim()
-    .replace(/\/$/, '');
-  if (!base) return jsonResponse({ error: 'R2_BASE_URL is not configured' }, 503, corsHeaders);
+  const base = getPublicAssetsBaseUrl(env);
+  if (!base) {
+    return jsonResponse({ error: 'API_URL / API_PUBLIC_URL is not configured' }, 503, corsHeaders);
+  }
 
   const key = `cms/${Date.now()}-${crypto.randomUUID()}.${ext}`;
   await storage.putObject(key, new Uint8Array(bytes), { contentType: file.type });
@@ -395,7 +396,7 @@ export async function handleCmsMediaById(
 ) {
   if (request.method !== 'GET')
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
-  const base = String(env.R2_BASE_URL ?? '').trim();
+  const base = getPublicAssetsBaseUrl(env) ?? '';
   const media = await repo(env).getMediaById(id, base);
   if (!media) return jsonResponse({ error: 'Media not found' }, 404, corsHeaders);
   return jsonResponse({ media }, 200, corsHeaders);
@@ -416,7 +417,7 @@ export async function handleCmsMediaBatch(
     .map((id) => id.trim())
     .filter(Boolean)
     .slice(0, 50);
-  const base = String(env.R2_BASE_URL ?? '').trim();
+  const base = getPublicAssetsBaseUrl(env) ?? '';
   const media = await repo(env).getMediaByIds(ids, base);
   return jsonResponse({ media }, 200, corsHeaders);
 }

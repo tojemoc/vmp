@@ -5,7 +5,7 @@ VMP media VM orchestration around **[SVT Encore](https://svt.github.io/encore/)*
 This package replaces the former `@vmp/podcast-host` custom ffmpeg/VAAPI encoder. Encore handles **video transcoding**; VMP still owns:
 
 1. **Watchfolder intake** (`pipeline_watch.ts`) — inbox → stable file detection → video ID assignment
-2. **encore-packager** — Shaka-based fMP4 HLS ladder + R2 upload (`master.m3u8`, per-rendition playlists, shared audio)
+2. **encore-packager** — Shaka-based fMP4 HLS ladder + object-storage upload (`master.m3u8`, per-rendition playlists, shared audio)
 4. **Podcast MP3** — full `podcast.mp3` + preview jobs (`render_podcast_preview_mp3.ts`)
 5. **Worker callbacks** — HMAC-signed `POST /api/admin/videos/:id/pipeline-status`
 6. **Preview rebuild webhook** — supervisor accepts API-signed `podcast_preview_rebuild` events
@@ -22,14 +22,14 @@ Two ingest watchfolders let you A/B **fast-lane** (720p publishable first, then 
          │ enqueue packaging (Redis)                  │ FFmpeg (+ GPU profiles when available)
          ▼                                             ▼
 ┌─────────────────┐     S3 upload              shared /media volume
-│ encore-packager │ ─────────────────────────► Cloudflare R2
+│ encore-packager │ ─────────────────────────► private B2 (or S3)
 │ (scale workers) │
 └────────┬────────┘
          ▼
    @vmp/api Worker  ◄── pipeline-status callback (HMAC)
 ```
 
-Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to R2. Scale Encore workers and packager replicas independently (e.g. 3 encode + 3 package).
+Encore transcodes → supervisor enqueues [Eyevinn encore-packager](https://github.com/Eyevinn/encore-packager) → packager runs Shaka and uploads HLS to private object storage. Scale Encore workers and packager replicas independently via Compose `--scale` (e.g. 3 encode + 3 package).
 
 Encore does **not** package HLS — that matches [SVT’s design](https://svt.github.io/encore/).
 
@@ -39,7 +39,7 @@ Encore does **not** package HLS — that matches [SVT’s design](https://svt.gi
 - [Encore deployment](#encore-deployment)
 - [Run supervisor (systemd)](#run-supervisor-systemd)
 - [Environment](#environment)
-- [R2 object layout (unchanged)](#r2-object-layout-unchanged)
+- [Object storage layout](#object-storage-layout)
 - [Migration from podcast-host](#migration-from-podcast-host)
 - [Related documentation](#related-documentation)
 
@@ -51,16 +51,19 @@ From a git checkout of this monorepo:
 cd /path/to/vmp
 npm install
 npm run build --workspace=@vmp/media-pipeline
+cp packages/media-pipeline/encore/.env.example packages/media-pipeline/encore/.env
+# Fill secrets + PACKAGE_OUTPUT_FOLDER + S3_ENDPOINT_URL + AWS_* (B2 keys)
 ```
 
-Start Encore (Redis + web; encodes on `encore-web` by default):
+Start Encore (Redis + web; encodes on `encore-web` by default). Compose **fails fast** if required secrets are missing:
 
 ```bash
 npm run encore:up --workspace=@vmp/media-pipeline
+npm run encore:doctor --workspace=@vmp/media-pipeline
 # or: docker compose -f packages/media-pipeline/encore/docker-compose.yml up -d
 ```
 
-**Horizontal scale** (API-only web + durable worker pools + packager replicas):
+**Horizontal scale** (API-only web + durable worker pools + packager replicas via `--scale`):
 
 ```bash
 ENCORE_WORKER_HIGH_REPLICAS=3 ENCORE_WORKER_LOW_REPLICAS=2 ENCORE_PACKAGER_REPLICAS=3 \
@@ -68,6 +71,8 @@ ENCORE_WORKER_HIGH_REPLICAS=3 ENCORE_WORKER_LOW_REPLICAS=2 ENCORE_PACKAGER_REPLI
 ```
 
 Configure `/etc/vmp/env` (see [Environment](#environment)), then install the systemd unit from [systemd/README.md](systemd/README.md).
+
+Reliability contracts (single-node and scale share these): [docs/plans/media-pipeline-reliability.md](../../docs/plans/media-pipeline-reliability.md).
 
 ## Encore deployment
 
@@ -78,7 +83,7 @@ Bundled Compose stack: [`encore/docker-compose.yml`](encore/docker-compose.yml)
 | `redis` | `redis:8.6-alpine` | Job queue (Encore + packager) |
 | `encore-web` | `ghcr.io/svt/encore-web:latest` | REST API + optional job poller / FFmpeg encode (`POST /encoreJobs`, Swagger UI) |
 | `vmp-supervisor` | `ghcr.io/tojemoc/vmp-media-pipeline:latest` | Watchfolder orchestrator, dashboard, webhooks, packaging queue API |
-| `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + R2 upload (scale via `ENCORE_PACKAGER_REPLICAS`) |
+| `encore-packager` | `eyevinntechnology/encore-packager:latest` | Shaka HLS + S3/B2 upload (`docker compose --scale encore-packager=N`) |
 
 ### Scaling encoding horizontally
 
@@ -95,10 +100,10 @@ With `concurrency: 2`, VMP maps Encore job priorities so fast-lane 720p (`priori
 Optional **intra-job** parallelism: set `ENCORE_SEGMENT_LENGTH_SECONDS` (e.g. `120`) so large encodes split across workers via Encore segmented encode (`shared-work-dir` is already mounted).
 
 ```bash
-# Example: 3 high + 2 low encode workers, 3 packagers, VAAPI
+# Example: 3 high + 2 low encode workers, 3 packagers
+# Plain Compose ignores Swarm deploy.replicas — npm run encore:up:scale passes --scale.
 ENCORE_WORKER_HIGH_REPLICAS=3 ENCORE_WORKER_LOW_REPLICAS=2 ENCORE_PACKAGER_REPLICAS=3 \
-  docker compose -f encore/docker-compose.yml -f encore/docker-compose.scale.yml \
-  -f encore/docker-compose.scale.vaapi.yml up -d
+  npm run encore:up:scale --workspace=@vmp/media-pipeline
 ```
 
 Default single-VM compose still encodes on `encore-web` (no worker overlay).
@@ -179,7 +184,11 @@ When the supervisor listens on a public interface (`VMP_UI_HOST=0.0.0.0`), set `
 | `VMP_SUPERVISOR_URL` | `http://127.0.0.1:8788` | Packaging enqueue/status API |
 | `PACKAGER_CALLBACK_URL` | `http://vmp:$VMP_PACKAGER_SECRET@vmp-supervisor:8788/vmp/api` | encore-packager callbacks (Basic auth; Eyevinn does not send custom headers) |
 | `PACKAGE_FORMAT_OPTIONS_JSON` | `{"segmentDuration":2}` | Shaka options via encore-packager — **keep `segmentDuration` aligned with encode GOP** (profiles use `g`/`keyint_min` **60** @ 30fps = **2s** IDR; was 180/6s) |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_ENDPOINT_URL` | — | R2 credentials for encore-packager (`PACKAGE_OUTPUT_FOLDER=s3://…`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_ENDPOINT_URL` | — | Private B2 (S3) credentials for encore-packager (`PACKAGE_OUTPUT_FOLDER=s3://…`) |
+| `S3_BUCKET_NAME` / `B2_*` | — | Supervisor `@vmp/storage` bucket + creds (`STORAGE_PROVIDER=b2`; aliases accepted) |
+| `STORAGE_PROVIDER` | `b2` (Compose) | Supervisor object-storage provider |
+| `PACKAGER_ENCORE_BASE_URL` | `http://encore-web:8080` (Compose) | Rewrite Encore job URLs for packager when host uses loopback |
+| `VMP_PACKAGER_SECRET` | required | Base64url secret; must match Basic auth password in packager `CALLBACK_URL` |
 
 ### HLS segment duration (startup latency)
 
@@ -188,7 +197,7 @@ New encodes target **2s** CMAF segments (was 6s after PR #162). Two knobs must s
 1. Encore profiles under `encore/profiles/` — `g` / `keyint_min: 60` at `r: 30`
 2. `PACKAGE_FORMAT_OPTIONS_JSON` on `encore-packager` — `segmentDuration: 2`
 
-Already-published VOD in R2 stays at whatever segment length it was packaged with until re-encoded. Shorter segments cut first-byte media size (~⅓ of a 6s segment) at the cost of more requests per minute of playback.
+Already-published VOD stays at whatever segment length it was packaged with until re-encoded. Shorter segments cut first-byte media size (~⅓ of a 6s segment) at the cost of more requests per minute of playback.
 
 Drop a file in **fast-lane** inbox to stagger publish; drop in **full-ladder** for one-shot encoding. TTP logs include `pipelineMode` on every milestone for A/B analysis.
 
@@ -217,7 +226,7 @@ Unchanged — structured `VMP_TTP` lines on stdout. Summarize with:
 node packages/media-pipeline/scripts/ttp-report.mjs /var/log/vmp-ttp.jsonl
 ```
 
-## R2 object layout (unchanged)
+## Object storage layout
 
 Under `videos/{videoId}/`:
 
@@ -247,4 +256,5 @@ Summary:
 | [systemd/README.md](systemd/README.md) | `vmp-supervisor` install |
 | [datadog/README.md](datadog/README.md) | Agent templates |
 | [AGENTS.md](../../AGENTS.md) | Monorepo secrets (`VMP_API_PIPELINE_SECRET`) |
+| [media-pipeline-reliability.md](../../docs/plans/media-pipeline-reliability.md) | Fail-fast env, Redis registry, scale contracts |
 | [SVT Encore docs](https://svt.github.io/encore/) | Upstream transcoder |

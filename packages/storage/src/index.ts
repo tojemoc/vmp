@@ -10,6 +10,11 @@ export {
 } from './objectOffloadJob.js';
 export { AgeBasedOffloadPolicy, type OffloadPolicy } from './offloadPolicy.js';
 export {
+  createPrivateBucketStorage,
+  isB2Configured,
+  type PrivateBucketEnv,
+} from './privateBucket.js';
+export {
   PrimaryWithFailoverCache,
   type PrimaryWithFailoverCacheOptions,
 } from './primary-with-failover-cache.js';

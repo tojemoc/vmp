@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
-import { asR2Bucket, createStorageProviderFromEnv } from '@vmp/storage/node';
+import {
+  asR2Bucket,
+  bucketNameFromS3Uri,
+  createStorageProviderFromEnv,
+} from '@vmp/storage/node';
 import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js';
 import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js';
 import { PostgresKVAdapter } from './bindings/kv.js';
@@ -35,7 +39,14 @@ export async function buildEnv(): Promise<CFEnvShape> {
   const kv = new PostgresKVAdapter(db);
 
   let bucketBinding: ReturnType<typeof asR2Bucket> | undefined;
-  if (process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME || process.env.STORAGE_BUCKET) {
+  const hasObjectStorageBucket = Boolean(
+    process.env.S3_BUCKET_NAME?.trim() ||
+      process.env.B2_BUCKET_NAME?.trim() ||
+      process.env.R2_BUCKET_NAME?.trim() ||
+      process.env.STORAGE_BUCKET?.trim() ||
+      bucketNameFromS3Uri(process.env.PACKAGE_OUTPUT_FOLDER),
+  );
+  if (hasObjectStorageBucket) {
     const storage = createStorageProviderFromEnv();
     bucketBinding = asR2Bucket(storage);
   }
@@ -53,9 +64,14 @@ export async function buildEnv(): Promise<CFEnvShape> {
     RSS_SECRET: process.env.RSS_SECRET,
     TOTP_ENCRYPTION_KEY: process.env.TOTP_ENCRYPTION_KEY,
     FRONTEND_URL: process.env.FRONTEND_URL,
-    API_PUBLIC_URL: process.env.API_PUBLIC_URL,
+    API_PUBLIC_URL: process.env.API_PUBLIC_URL ?? process.env.API_URL,
+    API_URL: process.env.API_URL,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
-    R2_BASE_URL: process.env.R2_BASE_URL,
+    B2_BUCKET_NAME: process.env.B2_BUCKET_NAME,
+    B2_ACCESS_KEY_ID: process.env.B2_ACCESS_KEY_ID,
+    B2_SECRET_ACCESS_KEY: process.env.B2_SECRET_ACCESS_KEY,
+    B2_S3_ENDPOINT: process.env.B2_S3_ENDPOINT ?? process.env.B2_ENDPOINT,
+    B2_REGION: process.env.B2_REGION,
     SENDER_EMAIL: process.env.SENDER_EMAIL,
     SENDER_NAME: process.env.SENDER_NAME,
     STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,

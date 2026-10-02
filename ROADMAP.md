@@ -55,6 +55,18 @@ Living checklist for humans and coding agents. **Architecture, auth, and runtime
 - [x] Admin-editable checkout terms label + trust blurb
 - [x] Native `verify-code` with `client=native` → `refreshToken` (same contract as native redeem)
 
+### Private B2-only object storage (`b2-private-bucket-only`)
+
+**Issues:** [#435](https://github.com/tojemoc/vmp/issues/435) / [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9)  
+**Plan:** [docs/plans/b2-private-bucket-only.md](docs/plans/b2-private-bucket-only.md)
+
+Production origin is a **private Backblaze B2** bucket; Cloudflare Workers (`@vmp/api` + `@vmp/billing`) are the only public front doors (Bandwidth Alliance). No R2 dual-origin / feature-flag failover. Billing ownership landed in [#725](https://github.com/tojemoc/vmp/pull/725).
+
+- [ ] Shared `createPrivateBucketStorage` + API `/api/assets/*` for thumbs/CMS/pills
+- [ ] Billing e-invoice XML (`einvoices/…`) via same private B2 secrets on `vmp-billing`
+- [ ] Storage-backed media entrypoint/duration (no public object CDN)
+- [ ] Pipeline / Encore / docs point at private B2; maintainer ops cutover
+
 ### Club plan entitlements (`club`)
 
 **Issues:** [#649](https://github.com/tojemoc/vmp/issues/649) / [TOJ-139](https://linear.app/tojemoc/issue/TOJ-139)  
@@ -177,6 +189,17 @@ These are open Linear issues without active implementation milestones on the pro
 - [ ] Staff (editor / admin / super_admin) can open unpublished videos at `/watch/{uuid}` for verification
 - [ ] Public meta + anonymous/viewer still 404 for drafts; admin UI **Preview** link by UUID
 
+### Media pipeline reliability + scale (`media-pipeline-reliability`)
+
+**Issues:** [#727](https://github.com/tojemoc/vmp/pull/727)  
+**Plan:** [docs/plans/media-pipeline-reliability.md](docs/plans/media-pipeline-reliability.md) · encoding scale: [docs/plans/horizontally-scalable-encoding.md](docs/plans/horizontally-scalable-encoding.md)
+
+Make inbox → Encore → encore-packager → private object storage → API callback reliable on one node, then scale with the same contracts.
+
+- [ ] Fail-fast Compose (`${VAR:?}`), pipeline doctor, Redis packaging registry, packager Encore URL rewrite, storage env aliases
+- [ ] Horizontal scale via Compose `--scale` (not Swarm `deploy.replicas`) — `encore:up:scale`
+- [ ] Maintainer single-node smoke: drop file in inbox → `master.m3u8` + `pipeline-status` callback
+
 ### Video startup latency (`video-startup-latency`)
 
 **Plan:** [docs/plans/video-startup-latency.md](docs/plans/video-startup-latency.md) · encoding scale: [docs/plans/horizontally-scalable-encoding.md](docs/plans/horizontally-scalable-encoding.md)
@@ -185,7 +208,7 @@ Validated ~7s click-to-play (6s R2/CMAF segments via Worker proxy) vs ~3s on the
 
 - [ ] Path-keyed Workers Cache for immutable segments + ascending-bandwidth master rewrite + watch waterfall + above-fold prefetch (this PR)
 - [ ] **2s segment duration** for new encodes (Encore GOP 60 + packager `segmentDuration: 2`; re-package existing catalog separately)
-- [ ] **Horizontally scalable encoding** (Compose `docker-compose.scale.yml` high/low worker pools + packager replicas; optional segmented encode)
+- [ ] **Horizontally scalable encoding** (Compose `--scale` high/low worker pools + packager; optional segmented encode) — depends on `media-pipeline-reliability`
 - [ ] Optional CDN (Bunny or R2 custom domain) once cacheable URL model allows
 - [ ] PostHog `video_startup_ms` instrumentation
 

@@ -1,4 +1,6 @@
 # VMP (Video Monetization Platform)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftojemoc%2Fvmp.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Ftojemoc%2Fvmp?ref=badge_shield)
+
 
 Subscription-gated HLS video streaming: Cloudflare Worker API + Nuxt 4 web app, with optional Deno backup API and a media VM for transcoding.
 
@@ -140,3 +142,7 @@ Transcoding runs on a **media VM** via [`@vmp/media-pipeline`](packages/media-pi
 3. HMAC callback to `POST /api/admin/videos/:id/pipeline-status`
 
 There is **no** AWS Elemental MediaConvert admin upload/transcode UI in this repo anymore. The historical `media_convert_jobs` D1 table remains: playback and offline-download code may still read completed **Bunny Stream** rows (`provider = 'bunnystream'`, `bunny_playback_url`) as an alternate HLS entrypoint. Do not drop that table without a migration that replaces those reads.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftojemoc%2Fvmp.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Ftojemoc%2Fvmp?ref=badge_large)
