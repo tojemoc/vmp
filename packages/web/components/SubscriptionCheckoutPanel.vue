@@ -123,7 +123,7 @@
 
     <!-- Inline sign-in: email → confirmation code → optional TOTP (shared client+redirect stamp) -->
     <InlineAuthForm
-      v-if="!isLoggedIn"
+      v-if="!showSignedIn"
       class="mb-4"
       :redirect-path="checkoutAuthRedirect"
       :embedded="embedded"
@@ -216,7 +216,7 @@
       </div>
     </div>
 
-    <div v-if="!loadingPrices && !priceError && isLoggedIn" class="mb-4 text-left">
+    <div v-if="!loadingPrices && !priceError && showSignedIn" class="mb-4 text-left">
       <StripeEmbeddedCheckout
         v-if="stripeCheckoutMounted && showStripeCheckout"
         :plan-type="selectedPlan"
@@ -403,6 +403,8 @@
   const apiUrl = config.public.apiUrl as string;
   const route = useRoute();
   const { isLoggedIn, authHeader } = useAuth();
+  const hydrated = useHydrated();
+  const showSignedIn = computed(() => hydrated.value && isLoggedIn.value);
   const { startLoginFlow } = useLoginFlow();
 
   type PlanType = 'monthly' | 'yearly' | 'club';
