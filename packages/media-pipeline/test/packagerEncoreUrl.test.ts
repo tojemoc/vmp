@@ -9,6 +9,7 @@ describe('packagerEncoreUrl', () => {
   it('detects loopback Encore URLs', () => {
     assert.equal(isLoopbackEncoreUrl('http://127.0.0.1:8080/encoreJobs/1'), true);
     assert.equal(isLoopbackEncoreUrl('http://localhost:8080/encoreJobs/1'), true);
+    assert.equal(isLoopbackEncoreUrl('http://[::1]:8080/encoreJobs/1'), true);
     assert.equal(isLoopbackEncoreUrl('http://encore-web:8080/encoreJobs/1'), false);
   });
 
@@ -20,11 +21,26 @@ describe('packagerEncoreUrl', () => {
     assert.equal(out, 'http://encore-web:8080/encoreJobs/abc');
   });
 
+  it('rewrites IPv6 loopback [::1] to encore-web', () => {
+    const out = rewriteEncoreJobUrlForPackager('http://[::1]:8080/encoreJobs/abc', {});
+    assert.equal(out, 'http://encore-web:8080/encoreJobs/abc');
+  });
+
   it('honors PACKAGER_ENCORE_BASE_URL', () => {
     const out = rewriteEncoreJobUrlForPackager('http://127.0.0.1:8080/encoreJobs/abc', {
       PACKAGER_ENCORE_BASE_URL: 'http://host.docker.internal:8080',
     });
     assert.equal(out, 'http://host.docker.internal:8080/encoreJobs/abc');
+  });
+
+  it('throws controlled error for malformed PACKAGER_ENCORE_BASE_URL', () => {
+    assert.throws(
+      () =>
+        rewriteEncoreJobUrlForPackager('http://127.0.0.1:8080/encoreJobs/abc', {
+          PACKAGER_ENCORE_BASE_URL: 'http://[bad',
+        }),
+      /Invalid PACKAGER_ENCORE_BASE_URL/,
+    );
   });
 
   it('leaves docker-DNS URLs unchanged without override', () => {

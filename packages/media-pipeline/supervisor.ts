@@ -1451,7 +1451,15 @@ const server = http.createServer(async (req, res) => {
       json(res, { error: `Invalid pipelineMode: ${reg.pipelineMode}` }, 400);
       return;
     }
-    const packagerJobUrl = rewriteEncoreJobUrlForPackager(String(reg.encoreJobUrl));
+    let packagerJobUrl: string;
+    try {
+      packagerJobUrl = rewriteEncoreJobUrlForPackager(String(reg.encoreJobUrl));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[supervisor] Invalid packager Encore URL rewrite:', msg);
+      json(res, { error: msg }, 500);
+      return;
+    }
     if (packagerJobUrl !== reg.encoreJobUrl) {
       pushLog(`packaging rewrite encoreJobUrl ${reg.encoreJobUrl} → ${packagerJobUrl}`);
     }

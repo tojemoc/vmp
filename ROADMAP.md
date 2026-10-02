@@ -190,6 +190,7 @@ These are open Linear issues without active implementation milestones on the pro
 
 ### Media pipeline reliability + scale (`media-pipeline-reliability`)
 
+**Issues:** [#727](https://github.com/tojemoc/vmp/pull/727)  
 **Plan:** [docs/plans/media-pipeline-reliability.md](docs/plans/media-pipeline-reliability.md) · encoding scale: [docs/plans/horizontally-scalable-encoding.md](docs/plans/horizontally-scalable-encoding.md)
 
 Make inbox → Encore → encore-packager → private object storage → API callback reliable on one node, then scale with the same contracts.

@@ -3,7 +3,8 @@
  * Host supervisors often use http://127.0.0.1:8080 — rewrite those for Docker DNS.
  */
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
+/** URL.hostname returns IPv6 literals in brackets (e.g. `[::1]`). */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
@@ -43,7 +44,12 @@ export function rewriteEncoreJobUrlForPackager(
 
   const explicit = (env.PACKAGER_ENCORE_BASE_URL || '').trim();
   if (explicit) {
-    const base = new URL(trimTrailingSlash(explicit.includes('://') ? explicit : `http://${explicit}`));
+    let base: URL;
+    try {
+      base = new URL(trimTrailingSlash(explicit.includes('://') ? explicit : `http://${explicit}`));
+    } catch {
+      throw new Error(`Invalid PACKAGER_ENCORE_BASE_URL: ${explicit}`);
+    }
     parsed.protocol = base.protocol;
     parsed.host = base.host;
     return parsed.toString();

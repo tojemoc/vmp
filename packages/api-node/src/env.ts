@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
-import { asR2Bucket, createStorageProviderFromEnv } from '@vmp/storage/node';
+import {
+  asR2Bucket,
+  bucketNameFromS3Uri,
+  createStorageProviderFromEnv,
+} from '@vmp/storage/node';
 import { PostgresD1Adapter, resolveDatabaseUrl } from './bindings/db.js';
 import { InMemoryDurableObjectNamespace } from './bindings/durableObject.js';
 import { PostgresKVAdapter } from './bindings/kv.js';
@@ -35,7 +39,14 @@ export async function buildEnv(): Promise<CFEnvShape> {
   const kv = new PostgresKVAdapter(db);
 
   let bucketBinding: ReturnType<typeof asR2Bucket> | undefined;
-  if (process.env.S3_BUCKET_NAME || process.env.R2_BUCKET_NAME || process.env.STORAGE_BUCKET) {
+  const hasObjectStorageBucket = Boolean(
+    process.env.S3_BUCKET_NAME?.trim() ||
+      process.env.B2_BUCKET_NAME?.trim() ||
+      process.env.R2_BUCKET_NAME?.trim() ||
+      process.env.STORAGE_BUCKET?.trim() ||
+      bucketNameFromS3Uri(process.env.PACKAGE_OUTPUT_FOLDER),
+  );
+  if (hasObjectStorageBucket) {
     const storage = createStorageProviderFromEnv();
     bucketBinding = asR2Bucket(storage);
   }

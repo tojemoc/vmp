@@ -27,6 +27,22 @@ function finding(id: string, severity: DoctorSeverity, message: string): DoctorF
   return { id, severity, message };
 }
 
+/** Mask userinfo in Redis/connection URLs for doctor findings. */
+export function redactUrlCredentials(urlString: string): string {
+  const raw = String(urlString ?? '').trim();
+  if (!raw) return '[empty-url]';
+  try {
+    const u = new URL(raw);
+    if (u.username || u.password) {
+      u.username = u.username ? '***' : '';
+      u.password = u.password ? '***' : '';
+    }
+    return u.toString();
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
 function isBase64UrlSecret(value: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(value);
 }
@@ -53,7 +69,7 @@ async function checkRedis(redisUrl: string): Promise<DoctorFinding> {
     if (pong !== 'PONG') {
       return finding('redis', 'fatal', `Redis ping returned unexpected value: ${String(pong)}`);
     }
-    return finding('redis', 'ok', `Redis OK (${redisUrl})`);
+    return finding('redis', 'ok', `Redis OK (${redactUrlCredentials(redisUrl)})`);
   } catch (err) {
     try {
       await client.quit();
@@ -63,7 +79,7 @@ async function checkRedis(redisUrl: string): Promise<DoctorFinding> {
     return finding(
       'redis',
       'fatal',
-      `Redis unreachable at ${redisUrl}: ${err instanceof Error ? err.message : String(err)}`,
+      `Redis unreachable at ${redactUrlCredentials(redisUrl)}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }
@@ -193,7 +209,25 @@ export async function runPipelineDoctor(
 
   const encoreBase = (env.ENCORE_BASE_URL || 'http://127.0.0.1:8080').trim();
   findings.push(finding('encore.url', 'ok', `ENCORE_BASE_URL=${encoreBase}`));
-  if (isLoopbackEncoreUrl(encoreBase) && !env.PACKAGER_ENCORE_BASE_URL?.trim()) {
+  const packagerEncoreBase = env.PACKAGER_ENCORE_BASE_URL?.trim() || '';
+  if (packagerEncoreBase) {
+    try {
+      new URL(
+        packagerEncoreBase.includes('://') ? packagerEncoreBase : `http://${packagerEncoreBase}`,
+      );
+      findings.push(
+        finding('encore.packager_url', 'ok', `PACKAGER_ENCORE_BASE_URL=${packagerEncoreBase}`),
+      );
+    } catch {
+      findings.push(
+        finding(
+          'encore.packager_url',
+          'fatal',
+          `Invalid PACKAGER_ENCORE_BASE_URL: ${packagerEncoreBase}`,
+        ),
+      );
+    }
+  } else if (isLoopbackEncoreUrl(encoreBase)) {
     let dockerish = env.VMP_ASSUME_DOCKER === '1' || env.VMP_UI_HOST === '0.0.0.0';
     if (!dockerish) {
       try {

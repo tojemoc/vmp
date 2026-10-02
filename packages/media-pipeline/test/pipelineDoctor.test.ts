@@ -1,8 +1,48 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { formatDoctorReport, runPipelineDoctor } from '../pipelineDoctor.js';
+import {
+  formatDoctorReport,
+  redactUrlCredentials,
+  runPipelineDoctor,
+} from '../pipelineDoctor.js';
+
+describe('redactUrlCredentials', () => {
+  it('masks userinfo and falls back for invalid URLs', () => {
+    assert.equal(
+      redactUrlCredentials('redis://user:s3cret@127.0.0.1:6379/0'),
+      'redis://***:***@127.0.0.1:6379/0',
+    );
+    assert.equal(redactUrlCredentials('redis://127.0.0.1:6379'), 'redis://127.0.0.1:6379');
+    assert.equal(redactUrlCredentials('not a url'), '[invalid-url]');
+    assert.equal(redactUrlCredentials(''), '[empty-url]');
+  });
+});
 
 describe('pipelineDoctor', () => {
+  it('fails fatally when PACKAGER_ENCORE_BASE_URL is malformed', async () => {
+    const report = await runPipelineDoctor({
+      VMP_PACKAGER_SECRET: 'valid-secret_ABC',
+      VMP_REQUIRE_WEBHOOK_SECRET: '0',
+      VMP_UI_HOST: '127.0.0.1',
+      VMP_PIPELINE_DOCTOR_SKIP_LIVE: '1',
+      PACKAGER_ENCORE_BASE_URL: 'http://[bad',
+      INBOX_FAST_LANE_DIR: '/tmp/vmp-doctor-fast-bad-url',
+      INBOX_FULL_LADDER_DIR: '/tmp/vmp-doctor-full-bad-url',
+      TMP_DIR_BASE: '/tmp/vmp-doctor-tmp-bad-url',
+      STORAGE_PROVIDER: 'b2',
+      PACKAGE_OUTPUT_FOLDER: 's3://bucket/videos',
+      S3_ENDPOINT_URL: 'https://s3.example.com',
+      AWS_ACCESS_KEY_ID: 'k',
+      AWS_SECRET_ACCESS_KEY: 's',
+    });
+    assert.equal(report.ok, false);
+    assert.ok(
+      report.findings.some(
+        (f) => f.id === 'encore.packager_url' && f.severity === 'fatal' && /Invalid/.test(f.message),
+      ),
+    );
+  });
+
   it('fails fatally when packager secret missing or invalid charset', async () => {
     const report = await runPipelineDoctor({
       VMP_REQUIRE_WEBHOOK_SECRET: '0',
