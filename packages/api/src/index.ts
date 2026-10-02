@@ -8,6 +8,7 @@
 
 import type { DurableObjectState, ExecutionContext } from '@cloudflare/workers-types';
 import * as Sentry from '@sentry/cloudflare';
+import type { CloudflareOptions } from '@sentry/cloudflare';
 import {
   canonicalWatchToken,
   compareVideosNewestFirst,
@@ -294,11 +295,6 @@ function deriveEffectiveLivestreamStatus(
   return livestreamStatus;
 }
 
-function getErrorField(error: unknown, key: string): unknown {
-  if (typeof error !== 'object' || error === null) return undefined;
-  return (error as Record<string, unknown>)[key];
-}
-
 interface SegmentRateLimitBody {
   mode?: string;
   key?: string;
@@ -444,30 +440,34 @@ function redactSentryRecord(record: Record<string, unknown>): Record<string, unk
   return redacted;
 }
 
-function buildSentryOptions(env: Record<string, unknown>) {
+function buildSentryOptions(env: Record<string, unknown>): CloudflareOptions {
   const dsn = typeof env.SENTRY_DSN === 'string' ? env.SENTRY_DSN.trim() : '';
   if (!dsn) {
     return { enabled: false };
   }
 
   const enableLogs = parseSentryEnvBoolean(env.SENTRY_ENABLE_LOGS);
-  const options: Record<string, unknown> = {
+  // `enableLogs` is accepted at runtime by the Cloudflare SDK but is not yet on
+  // CloudflareOptions in @sentry/cloudflare@11; cast keeps the public env toggle.
+  const options = {
     dsn,
     tracesSampleRate: parseSentryTracesSampleRate(env.SENTRY_TRACES_SAMPLE_RATE),
     enableLogs,
     environment: typeof env.SENTRY_ENVIRONMENT === 'string' ? env.SENTRY_ENVIRONMENT : undefined,
-  };
+  } as CloudflareOptions;
 
   if (enableLogs) {
-    options.beforeSend = (event: { request?: { headers?: Record<string, string> } }) => {
+    options.beforeSend = (event) => {
       if (event.request?.headers) {
-        event.request.headers = redactSentryRecord(event.request.headers) as Record<string, string>;
+        event.request.headers = redactSentryRecord(
+          event.request.headers as Record<string, unknown>,
+        ) as Record<string, string>;
       }
       return event;
     };
-    options.beforeSendLog = (log: { attributes?: Record<string, unknown> }) => {
+    options.beforeSendLog = (log) => {
       if (log.attributes) {
-        log.attributes = redactSentryRecord(log.attributes);
+        log.attributes = redactSentryRecord(log.attributes as Record<string, unknown>);
       }
       return log;
     };
@@ -2617,12 +2617,11 @@ async function handleAdminCategories(request: any, env: any, corsHeaders: any) {
 
     return jsonResponse({ error: 'Method not allowed' }, 405, corsHeaders);
   } catch (err) {
-    const codeField = getErrorField(err, 'code');
     console.error('handleVideoCategories error:', err);
     return jsonResponse(
       {
         error: getPublicErrorMessage('Internal Server Error'),
-        code: typeof codeField === 'string' ? codeField : 'internal_error',
+        code: 'internal_error',
       },
       500,
       corsHeaders,
@@ -3960,21 +3959,18 @@ async function handleAdminPushTest(request: any, env: any, corsHeaders: any) {
       corsHeaders,
     );
   } catch (error) {
-    const code = getErrorField(error, 'code');
-    const status = getErrorField(error, 'status');
-    const statusClass = getErrorField(error, 'statusClass');
-    const responseSnippet = getErrorField(error, 'responseSnippet');
+    console.error('handleAdminPushTest failed:', error);
     return jsonResponse(
       {
         ok: false,
         endpointHost,
         subscriptionCreatedAt: subscription.created_at || null,
         error: getPublicErrorMessage('Push test failed'),
-        code: typeof code === 'string' ? code : 'push_failed',
+        code: 'push_failed',
         delivery: {
-          status: typeof status === 'number' ? status : null,
-          statusClass: typeof statusClass === 'string' ? statusClass : null,
-          responseSnippet: typeof responseSnippet === 'string' ? responseSnippet : null,
+          status: null,
+          statusClass: null,
+          responseSnippet: null,
         },
       },
       502,

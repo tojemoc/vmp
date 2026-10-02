@@ -17,7 +17,8 @@ if (baseOptions) {
         blockAllMedia: true,
       }),
     ],
-    sendDefaultPii: true,
+    // Sentry JS SDK 11 replaced sendDefaultPii with dataCollection; the v11 default
+    // matches our previous sendDefaultPii: true behavior.
     debug: false,
   });
 }

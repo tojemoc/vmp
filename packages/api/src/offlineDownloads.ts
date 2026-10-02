@@ -534,8 +534,16 @@ export async function handleAuthorizeDownload(
       rendition,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to build download manifest';
-    return errorResponse(message, 409, corsHeaders, 'manifest_unavailable');
+    console.error(
+      '[offline] buildOfflineManifest failed:',
+      err instanceof Error ? err.message : 'Failed to build download manifest',
+    );
+    return errorResponse(
+      'Failed to build download manifest',
+      409,
+      corsHeaders,
+      'manifest_unavailable',
+    );
   }
 
   const manifestHash = await sha256HexFromString(computeManifestHash(manifest.files));
