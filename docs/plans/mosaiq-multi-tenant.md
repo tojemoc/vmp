@@ -225,4 +225,5 @@ Still one logical tenant until Phase 2; optional shim `tenant_id = 'default'`.
 Handoffs:
 
 - Phase 1a (domains / shells) — [vmp-infra-handoff-mosaiq-domains.md](./vmp-infra-handoff-mosaiq-domains.md) (**applied**)
-- Phase 1b (data plane / billing / bindings) — [vmp-infra-handoff-mosaiq-data-plane.md](./vmp-infra-handoff-mosaiq-data-plane.md)
+- Phase 1b (data plane / billing / bindings) — [vmp-infra-handoff-mosaiq-data-plane.md](./vmp-infra-handoff-mosaiq-data-plane.md) (**applied**; ids via `app_handoff`)
+- Phase 1c — app cutover in this repo (blocked on pasting `terraform output -json app_handoff`)

@@ -1,7 +1,9 @@
 # Handoff prompt — vmp-infra Phase 1b (CF data plane)
 
-Phase 1a (DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, redirects) is **already applied**.  
-Copy everything below the line to the agent working in **`vmp-infra`**.
+**Status:** Applied. Canonical app-facing doc: vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`.  
+**App next (1c):** paste `terraform output -json app_handoff` (D1 + KV ids) into wrangler / GHA.
+
+Original ask kept below for audit.
 
 ---
 
