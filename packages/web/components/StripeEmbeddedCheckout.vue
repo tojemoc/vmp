@@ -382,12 +382,17 @@
     sessionKey = nextKey;
 
     try {
-      const stripe = await getStripeJs(apiUrl);
-      if (!stripe || generation !== teardownGeneration) {
-        if (generation === teardownGeneration) {
-          initError.value = strings.checkoutStripeSdkUnavailable;
-          finishWalletDetection(false);
-        }
+      // Stripe.js (often prefetched) and Checkout Session creation are independent —
+      // run in parallel so the billing Worker hop does not serialize behind SDK load.
+      const [stripe, clientSecret] = await Promise.all([
+        getStripeJs(apiUrl),
+        createCheckoutSession(),
+      ]);
+      if (generation !== teardownGeneration || sessionKey !== nextKey) return;
+
+      if (!stripe) {
+        initError.value = strings.checkoutStripeSdkUnavailable;
+        finishWalletDetection(false);
         return;
       }
 
@@ -399,9 +404,6 @@
       if (typeof initCheckout !== 'function') {
         throw new Error(strings.checkoutStripeSdkUnavailable);
       }
-
-      const clientSecret = await createCheckoutSession();
-      if (generation !== teardownGeneration || sessionKey !== nextKey) return;
 
       checkoutInstance = initCheckout.call(stripe, { clientSecret });
       const loadActionsResult = await checkoutInstance.loadActions();

@@ -1,4 +1,4 @@
-import { requireAuth, requireRole } from './auth.js';
+import { authFailureResponse, requireAuth, requireRole } from './auth.js';
 
 function getDb(env: any) {
   const db = env.DB || env.video_subscription_db;
@@ -187,8 +187,8 @@ export async function handleAccountTransferSubscription(request: any, env: any, 
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const body = await request.json().catch(() => null);
@@ -220,15 +220,15 @@ export async function handleAccountTransferSubscription(request: any, env: any, 
 export async function handleAdminTransferSubscription(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   let actor;
   try {
     actor = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const body = await request.json().catch(() => null);

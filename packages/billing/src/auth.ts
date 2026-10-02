@@ -9,6 +9,48 @@ export const ROLES = ['super_admin', 'admin', 'editor', 'analyst', 'moderator', 
 
 const ROLES_REQUIRING_2FA = ['editor', 'analyst', 'moderator', 'admin', 'super_admin'];
 
+/** Thrown when billing cannot verify JWTs (missing secret) vs a bad/expired user token. */
+export class BillingAuthConfigError extends Error {
+  readonly code = 'billing_auth_misconfigured' as const;
+  readonly status = 503;
+  constructor(message = 'JWT_SECRET not configured') {
+    super(message);
+    this.name = 'BillingAuthConfigError';
+  }
+}
+
+export function isBillingAuthConfigError(err: unknown): err is BillingAuthConfigError {
+  return (
+    err instanceof BillingAuthConfigError ||
+    (err instanceof Error &&
+      (err as { code?: string }).code === 'billing_auth_misconfigured') ||
+    (err instanceof Error && err.message === 'JWT_SECRET not configured')
+  );
+}
+
+/** Map requireAuth/requireRole failures to HTTP responses (503 when secrets missing). */
+export function authFailureResponse(
+  err: unknown,
+  corsHeaders: Record<string, string> = {},
+): Response {
+  if (isBillingAuthConfigError(err)) {
+    return new Response(
+      JSON.stringify({
+        error: 'Billing auth not configured',
+        code: 'billing_auth_misconfigured',
+      }),
+      {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      },
+    );
+  }
+  return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    status: 401,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+  });
+}
+
 function base64urlDecode(str: string): ArrayBuffer {
   const padded = str.replace(/-/g, '+').replace(/_/g, '/');
   const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
@@ -50,7 +92,8 @@ export async function requireAuth(request: Request, env: { JWT_SECRET?: string; 
   const header = request.headers.get('Authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Missing Bearer token');
   const secret = String(env.JWT_SECRET || '');
-  if (!secret) throw new Error('JWT_SECRET not configured');
+  // Treat whitespace-only as unset; keep original for HMAC (matches API Worker).
+  if (!secret.trim()) throw new BillingAuthConfigError();
   const token = header.slice(7);
   const payload = await verifyJwt(token, secret);
   if (payload.pending) throw new Error('2FA verification required');

@@ -64,6 +64,7 @@ import {
   handleAccountTransferSubscription,
   handleAdminTransferSubscription,
 } from './subscriptionTransfer.js';
+import { getBillingReadiness } from './readiness.js';
 
 function corsHeadersFor(request: Request, env: BillingWorkerEnv): Record<string, string> {
   const origin = request.headers.get('Origin') || '';
@@ -96,7 +97,16 @@ async function routeBillingRequest(
   }
 
   if (path === '/api/health' || path === '/health') {
-    return Response.json({ service: 'vmp-billing', ok: true }, { headers: cors });
+    const readiness = getBillingReadiness(env as unknown as Record<string, unknown>);
+    // Liveness always 200; use /api/billing/ready for deploy gates (503 when secrets missing).
+    return Response.json(readiness, { headers: cors });
+  }
+  if (path === '/api/billing/ready') {
+    const readiness = getBillingReadiness(env as unknown as Record<string, unknown>);
+    return Response.json(readiness, {
+      status: readiness.ready ? 200 : 503,
+      headers: cors,
+    });
   }
 
   if (path === '/api/account/pricing' && request.method === 'GET') {

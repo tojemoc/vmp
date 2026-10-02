@@ -228,6 +228,12 @@ runs:
       run: |
         curl -fsS "$API_BASE_URL/api/health" | node -e 'const fs=require("node:fs");const body=JSON.parse(fs.readFileSync(0,"utf8"));if(body.status!=="healthy"){console.error("Unexpected /api/health payload",body);process.exit(1)}'
 
+    - name: Smoke check billing readiness (${{ inputs.deploy-tier }})
+      shell: bash
+      env:
+        API_BASE_URL: ${{ inputs.api-base-url }}
+      run: bash .github/scripts/smoke-billing-ready.sh "$API_BASE_URL"
+
     - name: Smoke check API CORS origin (${{ inputs.deploy-tier }})
       shell: bash
       env:

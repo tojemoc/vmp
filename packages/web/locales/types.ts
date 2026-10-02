@@ -405,6 +405,8 @@ export type StringsDefinition = {
   checkoutPerYear: string;
   checkoutMostPopular: string;
   checkoutPricesLoadFailed: string;
+  /** Shown when pricing loaded but no PSP is runnable (e.g. billing secrets missing). */
+  checkoutPricingNotConfigured: string;
   checkoutRedirecting: string;
   checkoutPayWithBank: (price: string) => string;
   /** Prefix before the Qerko wordmark on the green bank-pay button. */

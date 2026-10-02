@@ -2,7 +2,7 @@
  * Provider-agnostic payments orchestration (Stripe + optional legacy).
  */
 
-import { requireAuth, requireRole } from './auth.js';
+import { authFailureResponse, requireAuth, requireRole } from './auth.js';
 import { syncNewsletterForSubscription } from './brevo.js';
 import {
   linkCheckoutConsentSubscription,
@@ -904,6 +904,8 @@ export async function handleGetPricing(request: any, env: any, corsHeaders: any)
       legacyConfigured: isLegacyCheckoutConfigured(env),
       gopayConfigured: isGoPayConfigured(env),
       comgateConfigured: isComgateConfigured(env),
+      // True when STRIPE_SECRET_KEY is present on the billing Worker (runnable Stripe).
+      stripeConfigured: Boolean(String(env.STRIPE_SECRET_KEY ?? '').trim()),
       ...(pricingNotConfigured || enabledProviders.length === 0
         ? { pricing_not_configured: true }
         : {}),
@@ -937,8 +939,8 @@ function parseOptionalPositiveNumber(input: unknown) {
 export async function handleAdminPaymentSettings(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   if (request.method === 'GET') {
@@ -1152,8 +1154,8 @@ function slugifyPlanLabel(label: string): string {
 export async function handleAdminPaymentPlans(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   if (request.method === 'GET') {
@@ -1302,8 +1304,8 @@ export async function handleSessionStatus(request: any, env: any, corsHeaders: a
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const url = new URL(request.url);
@@ -1373,8 +1375,8 @@ export async function handleCheckout(request: any, env: any, corsHeaders: any) {
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const body = await request.json().catch(() => null);
@@ -2623,8 +2625,8 @@ export async function handleGetSubscription(request: any, env: any, corsHeaders:
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   try {
@@ -2709,8 +2711,8 @@ export async function handlePortal(request: any, env: any, corsHeaders: any) {
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   try {
@@ -2803,8 +2805,8 @@ export async function handleCancelSubscription(request: any, env: any, corsHeade
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   try {

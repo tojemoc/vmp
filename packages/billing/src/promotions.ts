@@ -1,4 +1,4 @@
-import { requireAuth, requireRole } from './auth.js';
+import { authFailureResponse, requireAuth, requireRole } from './auth.js';
 import { getSetting, setSettings } from './settingsStore.js';
 
 type RewardType = 'free_month' | 'free_year' | 'discount_percent';
@@ -320,8 +320,8 @@ export async function applyPromoRedemption(
 export async function handleAdminPromoCampaigns(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const db = getDb(env);
 
@@ -400,8 +400,8 @@ export async function handleAdminPromoCampaigns(request: any, env: any, corsHead
 export async function handleAdminPromoCodes(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const db = getDb(env);
 
@@ -587,8 +587,8 @@ export async function handlePromoValidate(request: any, env: any, corsHeaders: a
   }
   try {
     await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const body = await request.json().catch(() => null);
   if (!(await isPromotionsEnabled(env))) {
@@ -653,8 +653,8 @@ function normalizePopupBehavior(raw: any): PopupBehavior {
 export async function handleAdminIsicCampaigns(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
   const db = getDb(env);
   if (request.method === 'GET') {

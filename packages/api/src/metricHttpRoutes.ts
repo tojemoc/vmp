@@ -19,6 +19,7 @@ const METRIC_HTTP_STATIC_ROUTES = new Set<string>([
   '/api/account/playback-positions',
   '/api/account/playback-sessions',
   '/api/account/pricing',
+  '/api/billing/ready',
   '/api/account/promotions/validate',
   '/api/account/rss',
   '/api/account/rss/rotate',

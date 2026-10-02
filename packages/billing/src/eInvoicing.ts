@@ -10,7 +10,7 @@
  * Stripe `tax_id_collection` + `billing_address_collection`).
  */
 
-import { requireAuth, requireRole } from './auth.js';
+import { authFailureResponse, requireAuth, requireRole } from './auth.js';
 import { deliverIsdocInvoice, transmitPeppolUbl } from './einvoiceDelivery.js';
 import { getObjectStorage } from './objectStorage.js';
 import { getSetting, setSettings } from './settingsStore.js';
@@ -1235,8 +1235,8 @@ const ADMIN_SETTING_KEYS = [
 export async function handleAdminEInvoicingSettings(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   if (request.method === 'GET') {
@@ -1446,8 +1446,8 @@ function mapInvoiceRow(row: any) {
 export async function handleAdminEInvoices(request: any, env: any, corsHeaders: any) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const db = getDb(env);
@@ -1482,8 +1482,8 @@ export async function handleAdminEInvoiceById(
 ) {
   try {
     await requireRole(request, env, 'admin', 'super_admin');
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const db = getDb(env);
@@ -1514,8 +1514,8 @@ export async function handleAccountInvoices(request: any, env: any, corsHeaders:
   let user;
   try {
     user = await requireAuth(request, env);
-  } catch {
-    return jsonResponse({ error: 'Unauthorized' }, 401, corsHeaders);
+  } catch (err) {
+    return authFailureResponse(err, corsHeaders);
   }
 
   const db = getDb(env);

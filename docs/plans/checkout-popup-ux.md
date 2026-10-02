@@ -70,6 +70,8 @@ Also:
 - Promo block only if `promotionsEnabled`; collapsed behind “Have a promo code?” until expanded.
 - Prefer Stripe; tuck legacy/GoPay/Comgate under secondary actions.
 - Use `checkoutCopy` overrides when non-empty.
+- When Apple Pay / Google Pay are unavailable, show the Stripe Payment Element immediately (do not require “More payment methods” → “Pay by card”). Keep that two-step path only when Express wallets are present.
+- Overlap Stripe.js load with `POST /api/payments/checkout` so the billing Worker hop is not serialized behind SDK fetch.
 
 ## Tests
 
