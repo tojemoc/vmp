@@ -20,7 +20,7 @@
         </NuxtLink>
 
         <div class="flex items-center gap-2 sm:gap-4">
-          <div v-if="!isLoggedIn" class="relative" ref="loginDropdownRef">
+          <div v-if="!showSignedIn" class="relative" ref="loginDropdownRef">
             <button
               type="button"
               class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
@@ -67,7 +67,7 @@
             </Transition>
           </div>
 
-          <div v-if="isLoggedIn" class="relative" ref="dropdownRef">
+          <div v-if="showSignedIn" class="relative" ref="dropdownRef">
             <button
               class="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors bg-white dark:bg-gray-900"
               :title="strings.accountMenu"
@@ -179,6 +179,8 @@
   import strings from '~/utils/strings';
 
   const { user, isLoggedIn, canEditContent, logout } = useAuth();
+  const hydrated = useHydrated();
+  const showSignedIn = computed(() => hydrated.value && isLoggedIn.value);
   const { siteSettings } = useSiteSettings();
   const {
     isSupported: pushSupported,
