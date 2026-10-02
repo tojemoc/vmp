@@ -29,7 +29,7 @@
     "@moq/watch": "^0.5.4",
     "@nuxtjs/color-mode": "^4.0.0",
     "@posthog/nuxt": "^1.7.91",
-    "@sentry/nuxt": "^10.75.0",
+    "@sentry/nuxt": "^11.0.0",
     "@stripe/stripe-js": "^9.16.0",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-link": "^3.31.3",
