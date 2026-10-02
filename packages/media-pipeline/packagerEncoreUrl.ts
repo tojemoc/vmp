@@ -48,7 +48,7 @@ export function rewriteEncoreJobUrlForPackager(
     try {
       base = new URL(trimTrailingSlash(explicit.includes('://') ? explicit : `http://${explicit}`));
     } catch {
-      throw new Error(`Invalid PACKAGER_ENCORE_BASE_URL: ${explicit}`);
+      throw new Error('Invalid PACKAGER_ENCORE_BASE_URL');
     }
     parsed.protocol = base.protocol;
     parsed.host = base.host;

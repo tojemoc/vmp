@@ -43,6 +43,22 @@ describe('packagerEncoreUrl', () => {
     );
   });
 
+  it('does not echo PACKAGER_ENCORE_BASE_URL value in parse errors', () => {
+    const secret = 'http://user:super-secret@host:8080';
+    assert.throws(
+      () =>
+        rewriteEncoreJobUrlForPackager('http://127.0.0.1:8080/encoreJobs/abc', {
+          PACKAGER_ENCORE_BASE_URL: `${secret}[bad`,
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.equal(err.message, 'Invalid PACKAGER_ENCORE_BASE_URL');
+        assert.doesNotMatch(err.message, /super-secret/);
+        return true;
+      },
+    );
+  });
+
   it('leaves docker-DNS URLs unchanged without override', () => {
     const url = 'http://encore-web:8080/encoreJobs/abc';
     assert.equal(rewriteEncoreJobUrlForPackager(url, {}), url);

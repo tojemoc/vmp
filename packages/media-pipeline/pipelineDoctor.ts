@@ -216,14 +216,18 @@ export async function runPipelineDoctor(
         packagerEncoreBase.includes('://') ? packagerEncoreBase : `http://${packagerEncoreBase}`,
       );
       findings.push(
-        finding('encore.packager_url', 'ok', `PACKAGER_ENCORE_BASE_URL=${packagerEncoreBase}`),
+        finding(
+          'encore.packager_url',
+          'ok',
+          `PACKAGER_ENCORE_BASE_URL=${redactUrlCredentials(packagerEncoreBase)}`,
+        ),
       );
     } catch {
       findings.push(
         finding(
           'encore.packager_url',
           'fatal',
-          `Invalid PACKAGER_ENCORE_BASE_URL: ${packagerEncoreBase}`,
+          `Invalid PACKAGER_ENCORE_BASE_URL (${redactUrlCredentials(packagerEncoreBase)})`,
         ),
       );
     }
