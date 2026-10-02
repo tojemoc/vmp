@@ -25,7 +25,7 @@ describe('pipelineDoctor', () => {
       VMP_REQUIRE_WEBHOOK_SECRET: '0',
       VMP_UI_HOST: '127.0.0.1',
       VMP_PIPELINE_DOCTOR_SKIP_LIVE: '1',
-      PACKAGER_ENCORE_BASE_URL: 'http://[bad',
+      PACKAGER_ENCORE_BASE_URL: 'http://user:super-secret@[bad',
       INBOX_FAST_LANE_DIR: '/tmp/vmp-doctor-fast-bad-url',
       INBOX_FULL_LADDER_DIR: '/tmp/vmp-doctor-full-bad-url',
       TMP_DIR_BASE: '/tmp/vmp-doctor-tmp-bad-url',
@@ -36,11 +36,32 @@ describe('pipelineDoctor', () => {
       AWS_SECRET_ACCESS_KEY: 's',
     });
     assert.equal(report.ok, false);
-    assert.ok(
-      report.findings.some(
-        (f) => f.id === 'encore.packager_url' && f.severity === 'fatal' && /Invalid/.test(f.message),
-      ),
-    );
+    const packagerUrl = report.findings.find((f) => f.id === 'encore.packager_url');
+    assert.equal(packagerUrl?.severity, 'fatal');
+    assert.equal(packagerUrl?.message, 'Invalid PACKAGER_ENCORE_BASE_URL');
+    assert.doesNotMatch(packagerUrl?.message ?? '', /super-secret/);
+  });
+
+  it('redacts credentials in valid PACKAGER_ENCORE_BASE_URL findings', async () => {
+    const report = await runPipelineDoctor({
+      VMP_PACKAGER_SECRET: 'valid-secret_ABC',
+      VMP_REQUIRE_WEBHOOK_SECRET: '0',
+      VMP_UI_HOST: '127.0.0.1',
+      VMP_PIPELINE_DOCTOR_SKIP_LIVE: '1',
+      PACKAGER_ENCORE_BASE_URL: 'user:super-secret@encore-web:8080',
+      INBOX_FAST_LANE_DIR: '/tmp/vmp-doctor-fast-ok-url',
+      INBOX_FULL_LADDER_DIR: '/tmp/vmp-doctor-full-ok-url',
+      TMP_DIR_BASE: '/tmp/vmp-doctor-tmp-ok-url',
+      STORAGE_PROVIDER: 'b2',
+      PACKAGE_OUTPUT_FOLDER: 's3://bucket/videos',
+      S3_ENDPOINT_URL: 'https://s3.example.com',
+      AWS_ACCESS_KEY_ID: 'k',
+      AWS_SECRET_ACCESS_KEY: 's',
+    });
+    const packagerUrl = report.findings.find((f) => f.id === 'encore.packager_url');
+    assert.equal(packagerUrl?.severity, 'ok');
+    assert.match(packagerUrl?.message ?? '', /PACKAGER_ENCORE_BASE_URL=http:\/\/\*\*\*:\*\*\*@encore-web:8080\/?/);
+    assert.doesNotMatch(packagerUrl?.message ?? '', /super-secret/);
   });
 
   it('fails fatally when packager secret missing or invalid charset', async () => {

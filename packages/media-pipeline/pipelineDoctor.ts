@@ -211,25 +211,20 @@ export async function runPipelineDoctor(
   findings.push(finding('encore.url', 'ok', `ENCORE_BASE_URL=${encoreBase}`));
   const packagerEncoreBase = env.PACKAGER_ENCORE_BASE_URL?.trim() || '';
   if (packagerEncoreBase) {
+    const normalizedPackagerEncoreBase = packagerEncoreBase.includes('://')
+      ? packagerEncoreBase
+      : `http://${packagerEncoreBase}`;
     try {
-      new URL(
-        packagerEncoreBase.includes('://') ? packagerEncoreBase : `http://${packagerEncoreBase}`,
-      );
+      new URL(normalizedPackagerEncoreBase);
       findings.push(
         finding(
           'encore.packager_url',
           'ok',
-          `PACKAGER_ENCORE_BASE_URL=${redactUrlCredentials(packagerEncoreBase)}`,
+          `PACKAGER_ENCORE_BASE_URL=${redactUrlCredentials(normalizedPackagerEncoreBase)}`,
         ),
       );
     } catch {
-      findings.push(
-        finding(
-          'encore.packager_url',
-          'fatal',
-          `Invalid PACKAGER_ENCORE_BASE_URL (${redactUrlCredentials(packagerEncoreBase)})`,
-        ),
-      );
+      findings.push(finding('encore.packager_url', 'fatal', 'Invalid PACKAGER_ENCORE_BASE_URL'));
     }
   } else if (isLoopbackEncoreUrl(encoreBase)) {
     let dockerish = env.VMP_ASSUME_DOCKER === '1' || env.VMP_UI_HOST === '0.0.0.0';
