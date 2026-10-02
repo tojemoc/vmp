@@ -626,8 +626,11 @@ export async function handleAdminReplicationPush(
     }
     return jsonResponse(result, 200, corsHeaders);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Replication push failed';
-    return jsonResponse({ error: message }, 500, corsHeaders);
+    console.error(
+      '[replication] push failed:',
+      err instanceof Error ? err.message : 'Replication push failed',
+    );
+    return jsonResponse({ error: 'Replication push failed' }, 500, corsHeaders);
   }
 }
 
@@ -659,9 +662,13 @@ export async function handleAdminReplicationSettings(
         await postReplicationEventsToTarget(env, []);
         targetProbe = { ok: true };
       } catch (err) {
+        console.error(
+          '[replication] target probe failed:',
+          err instanceof Error ? err.message : 'Replication target probe failed',
+        );
         targetProbe = {
           ok: false,
-          error: err instanceof Error ? err.message : 'Replication target probe failed',
+          error: 'Replication target probe failed',
         };
       }
     }

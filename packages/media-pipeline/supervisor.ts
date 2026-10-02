@@ -1457,7 +1457,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[supervisor] Invalid packager Encore URL rewrite:', msg);
-      json(res, { error: msg }, 500);
+      json(res, { error: 'Invalid packager Encore URL' }, 500);
       return;
     }
     if (packagerJobUrl !== reg.encoreJobUrl) {

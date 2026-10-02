@@ -1742,7 +1742,13 @@ export async function handleAdminNewsletterSync(request: any, env: any, corsHead
     const isConfigError = message.includes('not configured') || message.includes('invalid');
     const status = isConfigError ? 422 : 500;
     return jsonResponse(
-      { ok: false, error: message || 'sync_failed', code: 'newsletter_sync_failed' },
+      {
+        ok: false,
+        error: isConfigError
+          ? 'Newsletter sync is not configured'
+          : 'Newsletter sync failed',
+        code: 'newsletter_sync_failed',
+      },
       status,
       corsHeaders,
     );
