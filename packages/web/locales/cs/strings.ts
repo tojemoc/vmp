@@ -489,7 +489,7 @@ export const strings: StringsDefinition = {
   checkoutMostPopular: 'Nejoblíbenější',
   checkoutPricesLoadFailed: 'Nepodařilo se načíst ceny. Obnovte prosím stránku.',
   checkoutPricingNotConfigured:
-    'Platba je dočasně nedostupná. Poskytovatelé plateb nejsou na tomto nasazení nakonfigurováni.',
+    'Platba je dočasně nedostupná. Platební možnosti nebo ceny nejsou na tomto nasazení nakonfigurovány.',
   checkoutRedirecting: 'Přesměrovává se na platbu…',
   checkoutPayWithBank: (price: string) => `Bankovní převod · ${price}`,
   checkoutPayWithQerko: 'Zaplatit přes',

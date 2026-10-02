@@ -7,20 +7,26 @@ export type BillingSecretName =
   | 'JWT_SECRET'
   | 'STRIPE_SECRET_KEY'
   | 'STRIPE_WEBHOOK_SECRET'
+  | 'STRIPE_PUBLISHABLE_KEY'
   | 'BREVO_API_KEY'
   | 'PEPPOL_AP_API_KEY';
 
-/** Secrets required for authenticated billing routes + Stripe checkout. */
+/**
+ * Required for authenticated billing routes + Stripe checkout.
+ * `STRIPE_PUBLISHABLE_KEY` is usually a wrangler var (not `secret put`) but is
+ * still required for Embedded Checkout / stripe-config.
+ */
 export const REQUIRED_BILLING_SECRETS: readonly BillingSecretName[] = [
   'JWT_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PUBLISHABLE_KEY',
 ] as const;
 
 export type BillingReadiness = {
   service: 'vmp-billing';
   ok: true;
-  /** True when JWT + Stripe secret + Stripe webhook secret are all set. */
+  /** True when JWT + Stripe secret/webhook/publishable keys are all set. */
   ready: boolean;
   secrets: Record<BillingSecretName, boolean>;
   providers: {
@@ -39,6 +45,7 @@ export function getBillingReadiness(env: Record<string, unknown>): BillingReadin
     JWT_SECRET: secretPresent(env, 'JWT_SECRET'),
     STRIPE_SECRET_KEY: secretPresent(env, 'STRIPE_SECRET_KEY'),
     STRIPE_WEBHOOK_SECRET: secretPresent(env, 'STRIPE_WEBHOOK_SECRET'),
+    STRIPE_PUBLISHABLE_KEY: secretPresent(env, 'STRIPE_PUBLISHABLE_KEY'),
     BREVO_API_KEY: secretPresent(env, 'BREVO_API_KEY'),
     PEPPOL_AP_API_KEY: secretPresent(env, 'PEPPOL_AP_API_KEY'),
   };
@@ -50,7 +57,7 @@ export function getBillingReadiness(env: Record<string, unknown>): BillingReadin
     secrets,
     providers: {
       stripeSecretConfigured: secrets.STRIPE_SECRET_KEY,
-      stripePublishableConfigured: Boolean(String(env.STRIPE_PUBLISHABLE_KEY ?? '').trim()),
+      stripePublishableConfigured: secrets.STRIPE_PUBLISHABLE_KEY,
     },
     missingRequired,
   };

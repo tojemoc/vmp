@@ -39,8 +39,19 @@ if (body?.service !== "vmp-billing" || body?.ready !== true) {
   console.error("Billing readiness payload invalid", body);
   process.exit(1);
 }
-if (!body.secrets?.JWT_SECRET || !body.secrets?.STRIPE_SECRET_KEY || !body.secrets?.STRIPE_WEBHOOK_SECRET) {
-  console.error("Required billing secrets missing", body.missingRequired, body.secrets);
+if (
+  !body.secrets?.JWT_SECRET ||
+  !body.secrets?.STRIPE_SECRET_KEY ||
+  !body.secrets?.STRIPE_WEBHOOK_SECRET ||
+  !body.secrets?.STRIPE_PUBLISHABLE_KEY ||
+  body.providers?.stripePublishableConfigured !== true
+) {
+  console.error(
+    "Required billing secrets missing",
+    body.missingRequired,
+    body.secrets,
+    body.providers,
+  );
   process.exit(1);
 }
 console.log("Billing readiness OK");

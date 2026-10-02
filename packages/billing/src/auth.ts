@@ -92,7 +92,8 @@ export async function requireAuth(request: Request, env: { JWT_SECRET?: string; 
   const header = request.headers.get('Authorization') || '';
   if (!header.startsWith('Bearer ')) throw new Error('Missing Bearer token');
   const secret = String(env.JWT_SECRET || '');
-  if (!secret) throw new BillingAuthConfigError();
+  // Treat whitespace-only as unset; keep original for HMAC (matches API Worker).
+  if (!secret.trim()) throw new BillingAuthConfigError();
   const token = header.slice(7);
   const payload = await verifyJwt(token, secret);
   if (payload.pending) throw new Error('2FA verification required');

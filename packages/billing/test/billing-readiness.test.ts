@@ -9,19 +9,31 @@ import { getBillingReadiness } from '../src/readiness.js';
 
 describe('getBillingReadiness', () => {
   it('reports ready=false when required secrets are missing', () => {
-    const readiness = getBillingReadiness({
-      STRIPE_PUBLISHABLE_KEY: 'pk_test_x',
-    });
+    const readiness = getBillingReadiness({});
     assert.equal(readiness.service, 'vmp-billing');
     assert.equal(readiness.ok, true);
     assert.equal(readiness.ready, false);
     assert.deepEqual(readiness.missingRequired.sort(), [
       'JWT_SECRET',
+      'STRIPE_PUBLISHABLE_KEY',
       'STRIPE_SECRET_KEY',
       'STRIPE_WEBHOOK_SECRET',
     ]);
     assert.equal(readiness.providers.stripeSecretConfigured, false);
-    assert.equal(readiness.providers.stripePublishableConfigured, true);
+    assert.equal(readiness.providers.stripePublishableConfigured, false);
+  });
+
+  it('treats whitespace-only publishable key as missing', () => {
+    const readiness = getBillingReadiness({
+      JWT_SECRET: 'x'.repeat(32),
+      STRIPE_SECRET_KEY: 'sk_test_x',
+      STRIPE_WEBHOOK_SECRET: 'whsec_x',
+      STRIPE_PUBLISHABLE_KEY: '   ',
+    });
+    assert.equal(readiness.ready, false);
+    assert.equal(readiness.secrets.STRIPE_PUBLISHABLE_KEY, false);
+    assert.equal(readiness.providers.stripePublishableConfigured, false);
+    assert.ok(readiness.missingRequired.includes('STRIPE_PUBLISHABLE_KEY'));
   });
 
   it('reports ready=true when JWT + Stripe secrets are set', () => {
@@ -35,7 +47,9 @@ describe('getBillingReadiness', () => {
     assert.deepEqual(readiness.missingRequired, []);
     assert.equal(readiness.secrets.JWT_SECRET, true);
     assert.equal(readiness.secrets.STRIPE_SECRET_KEY, true);
+    assert.equal(readiness.secrets.STRIPE_PUBLISHABLE_KEY, true);
     assert.equal(readiness.providers.stripeSecretConfigured, true);
+    assert.equal(readiness.providers.stripePublishableConfigured, true);
   });
 });
 
