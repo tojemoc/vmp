@@ -183,12 +183,14 @@ These are open Linear issues without active implementation milestones on the pro
 
 ### Mosaiq multi-tenant platform (`mosaiq-multi-tenant`)
 
-**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · infra handoff: [docs/plans/vmp-infra-handoff-mosaiq-domains.md](docs/plans/vmp-infra-handoff-mosaiq-domains.md)
+**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · handoffs: [1a domains](docs/plans/vmp-infra-handoff-mosaiq-domains.md) (applied) · [1b data plane](docs/plans/vmp-infra-handoff-mosaiq-data-plane.md)
 
-Design the pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), and eventual `{channel}.mosaiq.video` Start-tier channels. Private Terraform stays in `vmp-infra` (not per signup). Retire `*.tjm.sk` in favour of Mosaiq / Molten Marshmallows domains.
+Pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), eventual `{channel}.mosaiq.video` Start channels. **`vmp-infra` Terraform owns CF resources** (DNS + Workers/D1/KV/queues/bindings); not a PR per signup. Retire `*.tjm.sk`.
 
 - [x] Architecture + domain map + phased plan (docs)
-- [ ] **`mosaiq-domain-cutover`** — First prod/staging on CF account `5b594173…` (`app` / `api` / staging hosts); point CD vars; leave `*.tjm.sk`
+- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied)
+- [ ] **`mosaiq-domain-cutover` 1b** — vmp-infra: D1, `RATE_LIMIT_KV`, queues, billing Workers + `BILLING` binding, R2 or B2-only, TF ignore Worker content
+- [ ] **`mosaiq-domain-cutover` 1c** — App: wrangler account/ids, GHA URL vars, first deploy + secrets + migrations; leave `*.tjm.sk`
 - [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
 - [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
 - [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
@@ -229,19 +231,9 @@ Validated ~7s click-to-play (6s R2/CMAF segments via Worker proxy) vs ~3s on the
 
 ---
 
-### Mosaiq multi-tenant platform (`mosaiq-multi-tenant`)
+## Adding new work
 
-**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · infra handoff: [docs/plans/vmp-infra-handoff-mosaiq-domains.md](docs/plans/vmp-infra-handoff-mosaiq-domains.md)
-
-Design the pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), and eventual `{channel}.mosaiq.video` Start-tier channels. Private Terraform stays in `vmp-infra` (not per signup). Retire `*.tjm.sk` in favour of Mosaiq / Molten Marshmallows domains.
-
-- [x] Architecture + domain map + phased plan (docs)
-- [ ] **`mosaiq-domain-cutover`** — First prod/staging on CF account `5b594173…` (`app` / `api` / staging hosts); point CD vars; leave `*.tjm.sk`
-- [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
-- [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
-- [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
-- [ ] **`mosaiq-self-serve-channels`** — Deferred: instant `{slug}.mosaiq.video` channels + revenue-share (D1+KV only; no TF in signup)
-- [ ] **`worker-split-video-proxy`** — Option A: extract media Worker; API still fronts `/api/video-proxy` via service binding
-- [ ] **`video-proxy-direct-edge`** — Deferred Option B: clients hit media Worker / SaaS media host directly
-
-### Admin draft video preview (`admin-draft-video-preview`)
+1. Add a row or checkbox section with a stable **ID** (`kebab-case`).
+2. Add `docs/plans/<id>.md` if the work needs more than a few bullets.
+3. Link both ways (plan ↔ roadmap).
+4. Implement via PR; check off here when merged.

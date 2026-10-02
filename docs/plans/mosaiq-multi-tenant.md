@@ -11,7 +11,7 @@ Make **this** monorepo (`tojemoc/vmp`, later possibly `moltenmarshmallows/mosaiq
 3. Attach **many custom domains** (Cloudflare for SaaS) without a Terraform apply per signup.
 4. Keep **Start-tier channels** on `*.mosaiq.video` as data (D1 + KV), not infra PRs.
 
-Private secrets / dual-NS / Looking Glass stay in **`vmp-infra`**. That repo is **not** on the hot path for every signup; it bootstraps zones, fallback origins, Worker names, and CF for SaaS once.
+**`vmp-infra` Terraform** owns Cloudflare **platform resources** for Mosaiq: DNS/dual-NS, Worker scripts (shells) + custom domains/routes, D1, KV, Queues, R2 bucket declarations, service bindings, CF for SaaS, Looking Glass. Application **code** and **secrets** still ship from this repo’s CD (`wrangler deploy` / `wrangler secret`). That split is **not** on the hot path for every Start-tier signup—channel rows are D1+KV only.
 
 ## Non-goals (this phase)
 
@@ -55,9 +55,26 @@ Cloudflare account for Mosaiq platform: **`5b594173256386996fe1e03fd5cea3f8`**. 
 
 - **Per-tenant customization is data**, not a Worker fork: Host → registry → shared code.
 - **Bindings are fixed at deploy time**: Start + Pro share pooled Workers + **shared D1 with `tenant_id`**. Only Enterprise (and maybe Mid) get W4P / own bindings.
-- **vmp-infra** owns: zones, dual NS, CF for SaaS *zone/fallback once*, Worker route hostnames for the **platform** shells, secrets bootstrap. It does **not** own a PR per channel signup.
+- **Terraform owns the Cloudflare account shape** for Mosaiq (see [ownership](#vmp-infra--app-ownership)). App CD only uploads Worker **content** and secrets against IDs Terraform outputs.
 - **Control plane** (Looking Glass) stays off the playback path. GitOps for infra; runtime registry for tenants.
 - **Video-proxy Option A** (API fronts `/api/video-proxy` via service binding) is the next Worker split; **Option B** (direct media host) is roadmap after multi-tenant Host routing is real.
+
+## vmp-infra ↔ app ownership
+
+| Concern | Owner | Notes |
+|---------|--------|------|
+| Zones, dual NS, product DNS, `.ws` redirects | **Terraform** | Applied (Phase 1a) |
+| CF for SaaS fallback + CNAME target + custom hostnames registry | **Terraform** | Applied; no TF per Start signup |
+| Worker **names** + custom domains / routes | **Terraform** | Placeholder scripts OK; `lifecycle ignore_changes` on `content` after first app deploy |
+| D1 database(s), KV (`TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`), Queues, R2 bucket | **Terraform** | Phase 1b — required before live app |
+| Service bindings (`API→BILLING`, later `API→VIDEO_PROXY`) | **Terraform** | Bindings declared in TF; entrypoints match app code |
+| Plain-text Worker `vars` (API_URL, FRONTEND_URL, ALLOWED_ORIGINS, …) | **Terraform** and/or CD `--var` | Prefer TF outputs → GHA; avoid drift |
+| Worker **script content** (TS/Nuxt build) | **App CD** (`wrangler deploy`) | Overwrites placeholder |
+| Secrets (`JWT_SECRET`, Stripe, B2, …) | **App CD** / `wrangler secret` (or TF + secret store) | Never in git |
+| D1 SQL migrations | **App CD** / ensure scripts | Against TF-created D1 id |
+| Per-channel Start signup | **App / Looking Glass API** | D1 + KV only |
+
+Phase 1a (DNS + Worker shells + `TENANT_REGISTRY_KV` + SaaS) is **applied**. Phase 1b must finish the data plane in Terraform before app cutover.
 
 ## Tenant model
 
@@ -133,13 +150,15 @@ Until same-origin exists, document a single prod host for the first deploy and i
 
 Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
-### Phase 1 — Domain cutover / first Mosaiq prod (`mosaiq-domain-cutover`)
+### Phase 1 — Domain + data-plane cutover (`mosaiq-domain-cutover`)
 
-- Deploy existing **single-tenant** app to CF account `5b594173…` on `app.mosaiq.video` + API host.
-- Point GitHub Actions vars (`API_URL_*`, `FRONTEND_URL_*`, `ALLOWED_ORIGINS`) at Mosaiq hosts.
-- Stop treating `*.tjm.sk` as staging/prod (decommission after smoke).
-- Landing (`mosaiq.video`) and corporate (`moltenmarshmallows.com`) can be minimal placeholders.
-- Still one logical tenant; code may hardcode `tenant_id = 'default'` via a shim so later migrations are boring.
+**1a — Applied (vmp-infra):** product hostnames, pooled Worker shells (`vmp-api`, `vmp-api-staging`, `vmp-web-worker-prod`, `vmp-web-worker-dev`), `TENANT_REGISTRY_KV`, CF for SaaS (`sites` / `customers`), `.ws` redirects, Looking Glass CNAME, marketing/corporate placeholders.
+
+**1b — Terraform still needed (vmp-infra):** billing Worker shells + `BILLING` service binding; shared D1; `RATE_LIMIT_KV`; queues (`vmp-replication-events`, `vmp-push-delivery`); R2 bucket (or document B2-only with no R2); plain vars; optional Flagship binding; `ignore_changes` on Worker content; export all ids in `app_handoff`.
+
+**1c — App repo:** point wrangler `account_id` + binding ids at Mosaiq outputs; GHA vars from handoff; first `wrangler deploy` over placeholders; secrets; D1 migrations; smoke `app`/`api`; leave `*.tjm.sk`.
+
+Still one logical tenant until Phase 2; optional shim `tenant_id = 'default'`.
 
 ### Phase 2 — Tenant substrate (`mosaiq-multi-tenant`)
 
@@ -194,8 +213,11 @@ Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
 ## vmp-infra boundary
 
-**Does:** dual NS, zone records for platform shells, CF for SaaS fallback hostname, Worker route attachments for `app`/`api`/`sites`, secrets references, Looking Glass, GitOps `tenants/*.json` for **ops-managed** tenants.
+**Does:** full Mosaiq Cloudflare **account resource graph** (DNS, Workers shells/domains, D1, KV, Queues, R2, service bindings, CF for SaaS, Looking Glass DNS), plus GitOps `tenants/*.json` for **ops-managed** tenants.
 
-**Does not:** run on every Start-tier signup; hold application business logic; sit in the HLS path.
+**Does not:** per Start-tier signup PRs; application business logic; HLS request path; (usually) Worker bundle contents after bootstrap.
 
-Handoff prompt for the infra agent: [vmp-infra-handoff-mosaiq-domains.md](./vmp-infra-handoff-mosaiq-domains.md).
+Handoffs:
+
+- Phase 1a (domains / shells) — [vmp-infra-handoff-mosaiq-domains.md](./vmp-infra-handoff-mosaiq-domains.md) (**applied**)
+- Phase 1b (data plane / billing / bindings) — [vmp-infra-handoff-mosaiq-data-plane.md](./vmp-infra-handoff-mosaiq-data-plane.md)

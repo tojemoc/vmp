@@ -181,7 +181,7 @@ All prices, limits, and plan names are configurable via `admin_settings` in D1. 
 | Native / TV clients | [docs/native-clients-plan.md](docs/native-clients-plan.md) |
 | Offline downloads (shipped) | [docs/archive/offline-downloads-roadmap.md](docs/archive/offline-downloads-roadmap.md) |
 
-**Mosaiq / domains:** Platform DNS and private Terraform live in the private `vmp-infra` repo (not this monorepo). App code must resolve **Host → `tenant_id`** and must not assume a single `FRONTEND_URL` forever. Staging/prod are moving off `*.tjm.sk` onto `*.mosaiq.video` / `*.moltenmarshmallo.ws` — see the Mosaiq plan and [vmp-infra handoff](docs/plans/vmp-infra-handoff-mosaiq-domains.md).
+**Mosaiq / domains:** Platform DNS **and** Cloudflare Workers/D1/KV/queues/bindings are owned by Terraform in private `vmp-infra`. App CD uploads Worker **content** + secrets against TF-exported ids. Host → `tenant_id` lives in app code. Staging/prod move off `*.tjm.sk` onto `*.mosaiq.video` / `*.moltenmarshmallo.ws` — see [mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) and [data-plane handoff](docs/plans/vmp-infra-handoff-mosaiq-data-plane.md).
 
 Agents: follow [Roadmap workflow](#roadmap-workflow-agents) before implementing any backlog item.
 

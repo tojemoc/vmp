@@ -1,6 +1,9 @@
-# Handoff prompt — vmp-infra (Mosaiq domains & pooled Workers)
+# Handoff prompt — vmp-infra Phase 1a (Mosaiq domains & pooled Worker shells)
 
-Copy everything below the line to the agent working in **`vmp-infra`**.
+**Status:** Applied (DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, redirects).  
+**Next:** [vmp-infra-handoff-mosaiq-data-plane.md](./vmp-infra-handoff-mosaiq-data-plane.md) (D1, billing, queues, bindings).
+
+Historical prompt kept for audit. Original body below.
 
 ---
 
@@ -10,7 +13,7 @@ You are editing the private **`vmp-infra`** repo (Terraform, `tenants/*.json`, L
 
 App-side design (read-only reference once merged): `docs/plans/mosaiq-multi-tenant.md` in the vmp repo.
 
-**Boundary reminder:** `vmp-infra` holds private Terraform / dual-NS / Looking Glass / ops-managed tenant GitOps. It must **not** become a required PR for every Start-tier channel signup. Wildcard / CF for SaaS is configured once; runtime tenant rows live in app D1 + KV.
+**Boundary reminder:** `vmp-infra` Terraform owns Cloudflare platform resources (DNS **and** Workers/D1/KV/…); it must **not** become a required PR for every Start-tier channel signup. Wildcard / CF for SaaS is configured once; runtime tenant rows live in app D1 + KV.
 
 ## Cloudflare account
 
