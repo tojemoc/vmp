@@ -65,9 +65,10 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, inject, onBeforeUnmount, onMounted, type Ref, ref } from 'vue';
   import { showsPremiumPreviewHint } from '@vmp/shared';
+  import { computed, inject, onBeforeUnmount, onMounted, type Ref, ref } from 'vue';
   import { useThumbnail } from '~/composables/useThumbnail';
+  import { formatRelativeUploadTime } from '~/utils/relativeUploadTime';
   import strings from '~/utils/strings';
 
   interface Video {
@@ -152,7 +153,10 @@
       : '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw',
   );
   const isHorizontal = computed(() => props.layout === 'horizontal');
-  const now = ref(Date.now());
+  // Start from the server's clock (shared through the payload) so the first client
+  // render matches SSR — "/" is prerendered at build time — then move to the real time.
+  const renderNow = useState('video-card-render-now', () => Date.now());
+  const now = ref(renderNow.value);
   let nowInterval: ReturnType<typeof setInterval> | undefined;
 
   const linkClass = computed(() =>
@@ -166,32 +170,12 @@
       ? 'text-xl md:text-3xl leading-tight'
       : 'text-base leading-snug';
   });
-  const relativeUploadTime = computed(() => {
-    const sourceDate = props.video.upload_date;
-    if (!sourceDate) return '';
-    const uploadedAt = new Date(sourceDate).getTime();
-    if (Number.isNaN(uploadedAt)) return '';
-    const diffMs = now.value - uploadedAt;
-    if (diffMs < 0) return '';
-
-    const minutes = Math.floor(diffMs / 60_000);
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-
-    const days = Math.floor(hours / 24);
-    if (days < 30) return `${days}d ago`;
-
-    const months = Math.floor(days / 30);
-    if (months < 12) return `${months}mo ago`;
-
-    const years = Math.floor(months / 12);
-    return `${years}y ago`;
-  });
+  const relativeUploadTime = computed(() =>
+    formatRelativeUploadTime(props.video.upload_date, now.value),
+  );
 
   onMounted(() => {
+    now.value = Date.now();
     nowInterval = setInterval(() => {
       now.value = Date.now();
     }, 30_000);
