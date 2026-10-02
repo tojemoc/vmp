@@ -74,7 +74,7 @@ Cloudflare account for Mosaiq platform: **`5b594173256386996fe1e03fd5cea3f8`**. 
 | D1 migrations; queue consumers; DO migration tags | **App CD** | First deploy registers consumers/DOs |
 | Per-channel Start signup | **App / Looking Glass** | D1 + KV only |
 
-Phases **1a + 1b applied**. **1c** needs `terraform output -json app_handoff` pasted into wrangler + GHA.
+Phases **1a applied**; **1b apply failed** (import + token fix required — [fix-1b-apply handoff](./vmp-infra-handoff-fix-1b-apply.md)). **1c** blocked on green apply + `app_handoff`.
 
 ## Tenant model
 
@@ -154,16 +154,13 @@ Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
 **1a — Applied (vmp-infra):** product hostnames, pooled Worker shells (`vmp-api`, `vmp-api-staging`, `vmp-web-worker-prod`, `vmp-web-worker-dev`), `TENANT_REGISTRY_KV`, CF for SaaS (`sites` / `customers`), `.ws` redirects, Looking Glass CNAME, marketing/corporate placeholders.
 
-**1b — Applied (vmp-infra):** `vmp-billing` / `vmp-billing-prod` + `BILLING` binding; shared D1 `video-subscription-db`; `RATE_LIMIT_KV`; queues; R2 `vmp-videos` (default); plain vars; Worker content `ignore_changes`. App must still set `entrypoint = "BillingService"` in wrangler. Canonical copy lives in vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`; run `terraform output -json app_handoff` for ids.
+**1b — In progress / apply failed (vmp-infra):** Plan includes billing + D1 + KV + queues + R2 + bindings, but CI apply exited 1. Partial success: D1 `video-subscription-db` id `1d62f88d-35b6-479b-85ba-234b7cefd3fd`, `RATE_LIMIT_KV` `24a5bb09a557407eb8a90c491ab08966`, queues `vmp-push-delivery` / `vmp-replication-events`. Failures: R2 auth (10000), many DNS/KV/route “already exists” (1a orphans not in state), ruleset “not authorized”. Do **not** treat `app_handoff` as ready until apply is green.
 
-**1c — App repo (next):**
+**1c — App repo (blocked on green 1b):**
 
-1. Paste `app_handoff` JSON (needs `d1.database_id`, both KV ids).
-2. Flip wrangler `account_id` → `5b594173…`; staging API Worker name → `vmp-api-staging`; bind D1/KV/R2/queues/`TENANT_REGISTRY_KV`; keep `BILLING` + entrypoint.
-3. Set GHA vars (`FRONTEND_URL_*`, `API_URL_*`, `ALLOWED_ORIGINS`, `CLOUDFLARE_ACCOUNT_ID`) per handoff §9.
-4. Put secrets; run migrations; `wrangler deploy` api + billing + web; smoke staging then prod; leave `*.tjm.sk`.
-
-Still one logical tenant until Phase 2; optional shim `tenant_id = 'default'`.
+1. Paste successful `terraform output -json app_handoff`.
+2. Flip wrangler `account_id` → `5b594173…`; staging API → `vmp-api-staging`; wire bindings; `BILLING` + entrypoint.
+3. GHA vars per handoff §9; secrets; migrate; deploy; leave `*.tjm.sk`.
 
 ### Phase 2 — Tenant substrate (`mosaiq-multi-tenant`)
 

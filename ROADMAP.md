@@ -188,9 +188,9 @@ These are open Linear issues without active implementation milestones on the pro
 Pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), eventual `{channel}.mosaiq.video` Start channels. **`vmp-infra` Terraform owns CF resources** (DNS + Workers/D1/KV/queues/bindings); not a PR per signup. Retire `*.tjm.sk`.
 
 - [x] Architecture + domain map + phased plan (docs)
-- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied)
-- [x] **`mosaiq-domain-cutover` 1b** — vmp-infra: D1, `RATE_LIMIT_KV`, queues, billing Workers + `BILLING` binding, R2, TF ignore Worker content (applied; ids via `terraform output -json app_handoff`)
-- [ ] **`mosaiq-domain-cutover` 1c** — App: wrangler account/ids from `app_handoff`, GHA URL vars, first deploy + secrets + migrations; leave `*.tjm.sk`
+- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied earlier; state/import issues on re-apply)
+- [ ] **`mosaiq-domain-cutover` 1b** — vmp-infra apply **failed** (R2 token 10000; DNS/KV/routes “already exists” not in state; ruleset unauthorized). Partial creates: D1 `1d62f88d-…`, `RATE_LIMIT_KV` `24a5bb09…`, queues. Fix: import orphans + widen API token + re-apply
+- [ ] **`mosaiq-domain-cutover` 1c** — App: blocked until successful `app_handoff` JSON after green apply
 - [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
 - [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
 - [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
