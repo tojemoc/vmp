@@ -18,6 +18,34 @@ describe('redactUrlCredentials', () => {
   });
 });
 
+describe('pipelineDoctor URL redaction', () => {
+  it('redacts ENCORE_BASE_URL and S3 endpoint credentials in findings', async () => {
+    const report = await runPipelineDoctor({
+      VMP_PACKAGER_SECRET: 'valid-secret_ABC',
+      VMP_REQUIRE_WEBHOOK_SECRET: '0',
+      VMP_UI_HOST: '127.0.0.1',
+      VMP_PIPELINE_DOCTOR_SKIP_LIVE: '1',
+      ENCORE_BASE_URL: 'http://user:encore-secret@127.0.0.1:8080',
+      INBOX_FAST_LANE_DIR: '/tmp/vmp-doctor-fast-redact',
+      INBOX_FULL_LADDER_DIR: '/tmp/vmp-doctor-full-redact',
+      TMP_DIR_BASE: '/tmp/vmp-doctor-tmp-redact',
+      STORAGE_PROVIDER: 'b2',
+      PACKAGE_OUTPUT_FOLDER: 's3://bucket/videos',
+      S3_ENDPOINT_URL: 'https://key:endpoint-secret@s3.example.com',
+      AWS_ACCESS_KEY_ID: 'k',
+      AWS_SECRET_ACCESS_KEY: 's',
+    });
+    const encoreUrl = report.findings.find((f) => f.id === 'encore.url');
+    const endpoint = report.findings.find((f) => f.id === 'storage.endpoint');
+    assert.equal(encoreUrl?.severity, 'ok');
+    assert.match(encoreUrl?.message ?? '', /ENCORE_BASE_URL=http:\/\/\*\*\*:\*\*\*@127\.0\.0\.1:8080\/?/);
+    assert.doesNotMatch(encoreUrl?.message ?? '', /encore-secret/);
+    assert.equal(endpoint?.severity, 'ok');
+    assert.match(endpoint?.message ?? '', /S3 endpoint https:\/\/\*\*\*:\*\*\*@s3\.example\.com\/?/);
+    assert.doesNotMatch(endpoint?.message ?? '', /endpoint-secret/);
+  });
+});
+
 describe('pipelineDoctor', () => {
   it('fails fatally when PACKAGER_ENCORE_BASE_URL is malformed', async () => {
     const report = await runPipelineDoctor({

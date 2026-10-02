@@ -135,7 +135,9 @@ async function checkStorageConfigured(env: NodeJS.ProcessEnv): Promise<DoctorFin
         ),
       );
     } else {
-      out.push(finding('storage.endpoint', 'ok', `S3 endpoint ${endpoint}`));
+      out.push(
+        finding('storage.endpoint', 'ok', `S3 endpoint ${redactUrlCredentials(endpoint)}`),
+      );
     }
   } else if (!hasAws && !hasB2) {
     out.push(
@@ -208,7 +210,9 @@ export async function runPipelineDoctor(
   }
 
   const encoreBase = (env.ENCORE_BASE_URL || 'http://127.0.0.1:8080').trim();
-  findings.push(finding('encore.url', 'ok', `ENCORE_BASE_URL=${encoreBase}`));
+  findings.push(
+    finding('encore.url', 'ok', `ENCORE_BASE_URL=${redactUrlCredentials(encoreBase)}`),
+  );
   const packagerEncoreBase = env.PACKAGER_ENCORE_BASE_URL?.trim() || '';
   if (packagerEncoreBase) {
     const normalizedPackagerEncoreBase = packagerEncoreBase.includes('://')
