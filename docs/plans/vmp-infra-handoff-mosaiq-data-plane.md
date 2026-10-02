@@ -1,7 +1,7 @@
 # Handoff prompt — vmp-infra Phase 1b (CF data plane)
 
-**Status:** Applied. Canonical app-facing doc: vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`.  
-**App next (1c):** paste `terraform output -json app_handoff` (D1 + KV ids) into wrangler / GHA.
+**Status:** Phase 1b apply **failed**. Canonical app-facing doc: vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`.\
+**App next (1c):** Cutover remains **blocked** until apply succeeds and `terraform output -json app_handoff` returns real ids. Next: follow the [Phase 1b recovery plan](./vmp-infra-handoff-fix-1b-apply.md) to import orphans, fix token permissions, and re-apply.
 
 Original ask kept below for audit.
 
