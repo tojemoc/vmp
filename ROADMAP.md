@@ -189,8 +189,8 @@ Pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), eventual 
 
 - [x] Architecture + domain map + phased plan (docs)
 - [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied)
-- [ ] **`mosaiq-domain-cutover` 1b** — vmp-infra: D1, `RATE_LIMIT_KV`, queues, billing Workers + `BILLING` binding, R2 or B2-only, TF ignore Worker content
-- [ ] **`mosaiq-domain-cutover` 1c** — App: wrangler account/ids, GHA URL vars, first deploy + secrets + migrations; leave `*.tjm.sk`
+- [x] **`mosaiq-domain-cutover` 1b** — vmp-infra: D1, `RATE_LIMIT_KV`, queues, billing Workers + `BILLING` binding, R2, TF ignore Worker content (applied; ids via `terraform output -json app_handoff`)
+- [ ] **`mosaiq-domain-cutover` 1c** — App: wrangler account/ids from `app_handoff`, GHA URL vars, first deploy + secrets + migrations; leave `*.tjm.sk`
 - [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
 - [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
 - [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass

@@ -65,16 +65,16 @@ Cloudflare account for Mosaiq platform: **`5b594173256386996fe1e03fd5cea3f8`**. 
 |---------|--------|------|
 | Zones, dual NS, product DNS, `.ws` redirects | **Terraform** | Applied (Phase 1a) |
 | CF for SaaS fallback + CNAME target + custom hostnames registry | **Terraform** | Applied; no TF per Start signup |
-| Worker **names** + custom domains / routes | **Terraform** | Placeholder scripts OK; `lifecycle ignore_changes` on `content` after first app deploy |
-| D1 database(s), KV (`TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`), Queues, R2 bucket | **Terraform** | Phase 1b — required before live app |
-| Service bindings (`API→BILLING`, later `API→VIDEO_PROXY`) | **Terraform** | Bindings declared in TF; entrypoints match app code |
-| Plain-text Worker `vars` (API_URL, FRONTEND_URL, ALLOWED_ORIGINS, …) | **Terraform** and/or CD `--var` | Prefer TF outputs → GHA; avoid drift |
-| Worker **script content** (TS/Nuxt build) | **App CD** (`wrangler deploy`) | Overwrites placeholder |
-| Secrets (`JWT_SECRET`, Stripe, B2, …) | **App CD** / `wrangler secret` (or TF + secret store) | Never in git |
-| D1 SQL migrations | **App CD** / ensure scripts | Against TF-created D1 id |
-| Per-channel Start signup | **App / Looking Glass API** | D1 + KV only |
+| Worker **names** + custom domains / routes | **Terraform** | Placeholder scripts; `lifecycle ignore_changes` on `content` |
+| D1, KV (`TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`), Queues, R2 | **Terraform** | Phase 1b **applied** (ids in `app_handoff`) |
+| Service bindings (`API→BILLING`, later `VIDEO_PROXY`) | **Terraform** + app wrangler | TF sets binding; **`entrypoint = BillingService` only in app wrangler** (provider gap) |
+| Plain-text Worker `vars` | **Terraform** and/or CD `--var` | Prefer TF → GHA |
+| Worker **script content** | **App CD** | Safe with ignore_changes |
+| Secrets | **App CD** / `wrangler secret` | Never in git |
+| D1 migrations; queue consumers; DO migration tags | **App CD** | First deploy registers consumers/DOs |
+| Per-channel Start signup | **App / Looking Glass** | D1 + KV only |
 
-Phase 1a (DNS + Worker shells + `TENANT_REGISTRY_KV` + SaaS) is **applied**. Phase 1b must finish the data plane in Terraform before app cutover.
+Phases **1a + 1b applied**. **1c** needs `terraform output -json app_handoff` pasted into wrangler + GHA.
 
 ## Tenant model
 
@@ -154,9 +154,14 @@ Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
 **1a — Applied (vmp-infra):** product hostnames, pooled Worker shells (`vmp-api`, `vmp-api-staging`, `vmp-web-worker-prod`, `vmp-web-worker-dev`), `TENANT_REGISTRY_KV`, CF for SaaS (`sites` / `customers`), `.ws` redirects, Looking Glass CNAME, marketing/corporate placeholders.
 
-**1b — Terraform still needed (vmp-infra):** billing Worker shells + `BILLING` service binding; shared D1; `RATE_LIMIT_KV`; queues (`vmp-replication-events`, `vmp-push-delivery`); R2 bucket (or document B2-only with no R2); plain vars; optional Flagship binding; `ignore_changes` on Worker content; export all ids in `app_handoff`.
+**1b — Applied (vmp-infra):** `vmp-billing` / `vmp-billing-prod` + `BILLING` binding; shared D1 `video-subscription-db`; `RATE_LIMIT_KV`; queues; R2 `vmp-videos` (default); plain vars; Worker content `ignore_changes`. App must still set `entrypoint = "BillingService"` in wrangler. Canonical copy lives in vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`; run `terraform output -json app_handoff` for ids.
 
-**1c — App repo:** point wrangler `account_id` + binding ids at Mosaiq outputs; GHA vars from handoff; first `wrangler deploy` over placeholders; secrets; D1 migrations; smoke `app`/`api`; leave `*.tjm.sk`.
+**1c — App repo (next):**
+
+1. Paste `app_handoff` JSON (needs `d1.database_id`, both KV ids).
+2. Flip wrangler `account_id` → `5b594173…`; staging API Worker name → `vmp-api-staging`; bind D1/KV/R2/queues/`TENANT_REGISTRY_KV`; keep `BILLING` + entrypoint.
+3. Set GHA vars (`FRONTEND_URL_*`, `API_URL_*`, `ALLOWED_ORIGINS`, `CLOUDFLARE_ACCOUNT_ID`) per handoff §9.
+4. Put secrets; run migrations; `wrangler deploy` api + billing + web; smoke staging then prod; leave `*.tjm.sk`.
 
 Still one logical tenant until Phase 2; optional shim `tenant_id = 'default'`.
 
