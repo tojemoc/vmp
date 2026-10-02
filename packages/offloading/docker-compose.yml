@@ -1,6 +1,6 @@
 services:
   garage:
-    image: dxflrs/garage:v1.3.0
+    image: dxflrs/garage:v1.3.1
     container_name: vmp-garage
     restart: unless-stopped
     command: server
