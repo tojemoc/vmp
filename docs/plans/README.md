@@ -17,6 +17,10 @@ Each backlog item links a **GitHub tracking issue** in `ROADMAP.md`. PRs should 
 | [mobile-cms-parity.md](mobile-cms-parity.md) | Native — thumbnails/watch → CMS blocks + articles | [#647](https://github.com/tojemoc/vmp/issues/647) |
 | [tv-tier2-sprint.md](tv-tier2-sprint.md) | Native — TV Sprint 0 (D-pad + pairing) | [#647](https://github.com/tojemoc/vmp/issues/647) |
 | [admin-draft-video-preview.md](admin-draft-video-preview.md) | Admin draft video preview by UUID — in progress | [#723](https://github.com/tojemoc/vmp/issues/723) |
+| [mosaiq-multi-tenant.md](mosaiq-multi-tenant.md) | Mosaiq multi-tenant + domains (`mosaiq-multi-tenant`) — design | open issue TBD |
+| [vmp-infra-handoff-mosaiq-domains.md](vmp-infra-handoff-mosaiq-domains.md) | vmp-infra Phase 1a handoff (DNS / shells) — **applied** | — |
+| [vmp-infra-handoff-mosaiq-data-plane.md](vmp-infra-handoff-mosaiq-data-plane.md) | vmp-infra Phase 1b handoff (D1 / billing / queues / bindings) | — |
+| [vmp-infra-handoff-fix-1b-apply.md](vmp-infra-handoff-fix-1b-apply.md) | Fix failed 1b apply (import orphans + token perms) | — |
 
 Other long-running designs outside this folder:
 

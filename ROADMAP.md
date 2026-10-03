@@ -181,6 +181,23 @@ These are open Linear issues without active implementation milestones on the pro
 | [TOJ-9](https://linear.app/tojemoc/issue/TOJ-9) | [#435](https://github.com/tojemoc/vmp/issues/435) | RFC: Backup stack (bunny.net / Backblaze) | Deno Deploy `@vmp/api-node` backup API exists; bunny/Backblaze investigation still open |
 | [TOJ-14](https://linear.app/tojemoc/issue/TOJ-14) | [#441](https://github.com/tojemoc/vmp/issues/441) | Q: Inspired by peer streaming projects | Research only; MoQ livestreams + feature modules are related partial progress |
 
+### Mosaiq multi-tenant platform (`mosaiq-multi-tenant`)
+
+**Plan:** [docs/plans/mosaiq-multi-tenant.md](docs/plans/mosaiq-multi-tenant.md) · handoffs: [1a domains](docs/plans/vmp-infra-handoff-mosaiq-domains.md) (applied) · [1b data plane](docs/plans/vmp-infra-handoff-mosaiq-data-plane.md)
+
+Pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), eventual `{channel}.mosaiq.video` Start channels. **`vmp-infra` Terraform owns CF resources** (DNS + Workers/D1/KV/queues/bindings); not a PR per signup. Retire `*.tjm.sk`.
+
+- [x] Architecture + domain map + phased plan (docs)
+- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied earlier; state/import issues on re-apply)
+- [ ] **`mosaiq-domain-cutover` 1b** — vmp-infra apply **failed** (R2 token 10000; DNS/KV/routes “already exists” not in state; ruleset unauthorized). Partial creates: D1 `1d62f88d-…`, `RATE_LIMIT_KV` `24a5bb09…`, queues. Fix: import orphans + widen API token + re-apply
+- [ ] **`mosaiq-domain-cutover` 1c** — App: blocked until successful `app_handoff` JSON after green apply
+- [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
+- [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)
+- [ ] **`mosaiq-platform-sites`** — Marketing `mosaiq.video`, corporate `moltenmarshmallows.com`, `platform.mosaiq.video` → Looking Glass
+- [ ] **`mosaiq-self-serve-channels`** — Deferred: instant `{slug}.mosaiq.video` channels + revenue-share (D1+KV only; no TF in signup)
+- [ ] **`worker-split-video-proxy`** — Option A: extract media Worker; API still fronts `/api/video-proxy` via service binding
+- [ ] **`video-proxy-direct-edge`** — Deferred Option B: clients hit media Worker / SaaS media host directly
+
 ### Admin draft video preview (`admin-draft-video-preview`)
 
 **Issues:** [#723](https://github.com/tojemoc/vmp/issues/723)  
