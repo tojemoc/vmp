@@ -20,6 +20,6 @@
     "appPermissions": {
       "entitlements": ["com.apple.developer.associated-domains"],
       "privacy": {}
-    },
+    }
   }
 }
