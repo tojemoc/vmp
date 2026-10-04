@@ -16,7 +16,7 @@
   },
   "overrides": {
     "react-native-reanimated": "4.7.1",
-    "react-native-worklets": "0.10.4",
+    "react-native-worklets": "0.13.0",
     "decode-uri-component": ">=0.5.0",
     "uuid": ">=11.1.1"
   },
