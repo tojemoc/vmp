@@ -34,7 +34,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-video": "~57.0.2",
     "react": "19.3.0",
-    "react-dom": "19.2.3",
+    "react-dom": "19.3.0",
     "react-native": "npm:react-native-tvos@0.86-stable",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0"
