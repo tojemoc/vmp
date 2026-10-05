@@ -24,7 +24,7 @@
 
 services:
   redis:
-    image: redis:8.6-alpine
+    image: redis:8.10-alpine
     restart: unless-stopped
     ports:
       - "${ENCORE_REDIS_PORT:-127.0.0.1:6379}:6379"
