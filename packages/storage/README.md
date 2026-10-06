@@ -20,7 +20,7 @@ import type { ObjectStorageProvider } from '@vmp/storage'
 
 **Production:** set Worker secrets `B2_BUCKET_NAME` / `B2_ACCESS_KEY_ID` / `B2_SECRET_ACCESS_KEY` (optional `B2_S3_ENDPOINT`, `B2_REGION`). The API Worker serves all public reads through `/api/video-proxy` (signed) and `/api/assets` (allowlisted). Do not dual-write to R2.
 
-**Local Wrangler:** when B2 secrets are unset, `@vmp/api` uses the native R2 binding via `wrapR2Bucket()` (`@vmp/storage/worker`) as the single provider.
+**Local Wrangler:** set `B2_*` values in `.dev.vars` (a dev B2 bucket works — the S3 API is identical). The committed wrangler configs bind no R2 `BUCKET`; `wrapR2Bucket()` (`@vmp/storage/worker`) remains available only to local configs or tests that inject a binding.
 
 Node services (`api-node`, `media-pipeline`) use `createStorageProviderFromEnv()` (`@vmp/storage/node`) with `STORAGE_PROVIDER=b2` in production.
 

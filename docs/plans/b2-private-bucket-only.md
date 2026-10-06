@@ -9,7 +9,7 @@ Do **not**:
 - Keep R2 as a live failover / dual-write “feature flag”
 - Split thumbs on R2 vs video on B2
 
-Local Wrangler may still use the R2 binding as the **single** `ObjectStorageProvider` when B2 credentials are unset (dev convenience only).
+Deployed Wrangler configs bind **no** R2 bucket — storage resolves to B2 via `B2_*` secrets or nothing (no silent R2 fallback). Local development sets `B2_*` in `.dev.vars`; the `BUCKET` code fallback stays for local-only configs / tests.
 
 ## Architecture
 

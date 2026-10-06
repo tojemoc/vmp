@@ -1,8 +1,9 @@
 /**
  * Single-origin private bucket for Workers (API + billing).
  *
- * Production: Backblaze B2 via `B2_*` secrets.
- * Local Wrangler: R2 `BUCKET` binding when B2 is unset.
+ * Production: Backblaze B2 via `B2_*` secrets (deployed Wrangler configs carry
+ * no R2 binding — a deploy without B2 secrets has no storage provider).
+ * `BUCKET` fallback stays for local-only configs / tests that inject a binding.
  * Never dual-origin failover — clients never fetch a public bucket URL.
  */
 import type { R2Bucket } from '@cloudflare/workers-types';

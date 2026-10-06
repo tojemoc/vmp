@@ -20,7 +20,7 @@ Copy per environment:
 - `.env.staging`
 - `.env.production`
 
-For local API development, mirror required values into `packages/api/.dev.vars` (never commit secrets).
+For local API development, mirror required values into `packages/api/.dev.vars` (never commit secrets). Committed wrangler configs bind no R2 `BUCKET` — set `B2_*` in `.dev.vars` (a dev B2 bucket) for local storage.
 
 ## Multi-domain setup
 
