@@ -23,7 +23,7 @@
     "@smithy/fetch-http-handler": "^5.8.0",
     "@vmp/storage": "file:../storage",
     "postgres": "^3.4.7",
-    "posthog-node": "5.52.5"
+    "posthog-node": "5.55.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260921.1",
