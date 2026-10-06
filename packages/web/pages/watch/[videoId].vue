@@ -2515,7 +2515,7 @@
       const { Signal } = signals;
 
       const connection = track(
-        new moq.Connection.Reload({
+        new moq.Connection({
           url: new URL(moqEndpoint),
           enabled: true,
         }),
@@ -2526,59 +2526,22 @@
       const muted = new Signal(false);
       // Match <moq-watch> default: wait for (re)announcement before subscribing.
       const reload = new Signal(true);
-      const videoEnabled = new Signal(true);
-      const audioEnabled = new Signal(true);
 
-      const broadcast = track(
-        new watch.Broadcast({
-          connection: connection.established,
-          enabled: true,
+      // Player wires broadcast, sync, decoders, renderer and emitter together
+      // (including audio enabled following paused/muted state).
+      const player = track(
+        new watch.Player({
+          origin: connection.origin,
+          probe: connection.probe,
           name: moq.Path.from(moqBroadcast),
-          reload,
-        }),
-      );
-
-      const videoSource = track(
-        new watch.Video.Source({
-          broadcast,
-          supported: watch.Video.Decoder.supported,
-        }),
-      );
-      const audioSource = track(
-        new watch.Audio.Source({
-          broadcast,
-          supported: watch.Audio.Decoder.supported,
-        }),
-      );
-      const sync = track(
-        new watch.Sync({
-          latency: 'real-time',
-          connection: connection.established,
-          video: videoSource.out.jitter,
-          audio: audioSource.out.jitter,
-        }),
-      );
-      const videoDecoder = track(
-        new watch.Video.Decoder(videoSource, sync, { enabled: videoEnabled }),
-      );
-      const audioDecoder = track(
-        new watch.Audio.Decoder(audioSource, sync, { enabled: audioEnabled }),
-      );
-      const emitter = track(new watch.Audio.Emitter(audioDecoder, { volume, muted, paused }));
-      const renderer = track(
-        new watch.Video.Renderer(videoDecoder, {
+          enabled: true,
+          announced: reload,
           canvas,
+          paused,
+          volume,
+          muted,
           visible: 'always',
-        }),
-      );
-
-      // Mirror <moq-watch>: audio Decoder.enabled follows Emitter.out.enabled
-      // (false while paused/muted path); keep video downloading so the canvas
-      // retains the last frame while paused.
-      track(
-        new signals.Effect((effect) => {
-          audioEnabled.set(effect.get(emitter.out.enabled));
-          videoEnabled.set(true);
+          delay: 'auto',
         }),
       );
 
@@ -2588,8 +2551,7 @@
         muted,
         reload,
         resetSync: () => {
-          sync.reset();
-          audioDecoder.reset();
+          player.reset();
         },
       });
       partialRuntime.controlsAttached = true;
