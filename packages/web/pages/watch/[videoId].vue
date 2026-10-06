@@ -2515,7 +2515,7 @@
       const { Signal } = signals;
 
       const connection = track(
-        new moq.Connection.Reload({
+        new moq.Connection({
           url: new URL(moqEndpoint),
           enabled: true,
         }),
@@ -2531,10 +2531,10 @@
 
       const broadcast = track(
         new watch.Broadcast({
-          connection: connection.established,
+          origin: connection.origin,
           enabled: true,
           name: moq.Path.from(moqBroadcast),
-          reload,
+          announced: reload,
         }),
       );
 
@@ -2542,6 +2542,7 @@
         new watch.Video.Source({
           broadcast,
           supported: watch.Video.Decoder.supported,
+          probe: connection.probe,
         }),
       );
       const audioSource = track(
@@ -2552,21 +2553,22 @@
       );
       const sync = track(
         new watch.Sync({
-          latency: 'real-time',
-          connection: connection.established,
-          video: videoSource.out.jitter,
-          audio: audioSource.out.jitter,
+          delay: 'auto',
+          probe: connection.probe,
         }),
       );
       const videoDecoder = track(
-        new watch.Video.Decoder(videoSource, sync, { enabled: videoEnabled }),
+        new watch.Video.Decoder({ source: videoSource, sync, enabled: videoEnabled }),
       );
       const audioDecoder = track(
-        new watch.Audio.Decoder(audioSource, sync, { enabled: audioEnabled }),
+        new watch.Audio.Decoder({ source: audioSource, sync, enabled: audioEnabled }),
       );
-      const emitter = track(new watch.Audio.Emitter(audioDecoder, { volume, muted, paused }));
+      const emitter = track(
+        new watch.Audio.Emitter({ source: audioDecoder, volume, muted, paused }),
+      );
       const renderer = track(
-        new watch.Video.Renderer(videoDecoder, {
+        new watch.Video.Renderer({
+          decoder: videoDecoder,
           canvas,
           visible: 'always',
         }),
