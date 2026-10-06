@@ -61,10 +61,22 @@ Mirror current app wrangler:
 
 Bind producers as `vmp_replication_events` / `vmp_push_delivery`.
 
-### R2
+### Storage — B2-only (no R2)
 
-- Bucket e.g. `vmp-videos` (or `mosaiq-videos`) bound as `BUCKET` on API + billing, **or**
-- Explicitly document **B2-only** (no R2) if Mosaiq prod will not use R2 — then omit bucket but keep storage secrets on Workers via secret pipeline.
+Production storage is **one private Backblaze B2 bucket** — no R2 (owner decision,
+see `docs/plans/b2-private-bucket-only.md`).
+
+- Terraform creates **no** R2 bucket and no `BUCKET` R2 binding (`manage_r2` stays
+  permanently `false`).
+- Workers read/write the shared private B2 bucket through the S3 API using
+  `wrangler secret` values set by app CD — never Terraform:
+  - **Required on `vmp-api`, `vmp-api-staging`, `vmp-billing`, `vmp-billing-prod`:**
+    `B2_BUCKET_NAME`, `B2_ACCESS_KEY_ID`, `B2_SECRET_ACCESS_KEY`
+  - **Optional:** `B2_S3_ENDPOINT`, `B2_REGION`
+- The R2 `BUCKET` binding still present in app `wrangler.json` is a **local Wrangler
+  development convenience only** (`packages/api/src/playbackStorage.ts` and
+  `packages/billing/src/objectStorage.ts` fall back to it when `B2_*` is unset).
+  It is not a production option — do not provision it.
 
 ### Plain vars (staging vs prod)
 
@@ -97,7 +109,7 @@ Update `docs/MOSAIQ_APP_HANDOFF.md` / `terraform output -json app_handoff` with:
 2. D1 `database_id` + name.
 3. KV ids: `TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`.
 4. Queue names.
-5. R2 bucket name **or** “B2-only, no R2”.
+5. Confirmation storage is **B2-only** — no R2 bucket; required `B2_*` secret names on API + billing Workers.
 6. Confirmation `BILLING` service binding exists on both API Workers.
 7. Confirmation Worker script `content` is ignored after apply (so CD is safe).
 8. Any token permission gaps (D1 Edit, Queues, Workers Scripts, KV, Account Settings).
