@@ -66,7 +66,7 @@ Cloudflare account for Mosaiq platform: **`5b594173256386996fe1e03fd5cea3f8`**. 
 | Zones, dual NS, product DNS, `.ws` redirects | **Terraform** | Applied (Phase 1a) |
 | CF for SaaS fallback + CNAME target + custom hostnames registry | **Terraform** | Applied; no TF per Start signup |
 | Worker **names** + custom domains / routes | **Terraform** | Placeholder scripts; `lifecycle ignore_changes` on `content` |
-| D1, KV (`TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`), Queues, R2 | **Terraform** | Phase 1b apply **failed** — partial D1/`RATE_LIMIT_KV`/queues; import + token fix |
+| D1, KV (`TENANT_REGISTRY_KV`, `RATE_LIMIT_KV`), Queues | **Terraform** | Phase 1b **applied** — `app_handoff` returned real ids (storage is B2-only, no R2) |
 | Service bindings (`API→BILLING`, later `VIDEO_PROXY`) | **Terraform** + app wrangler | TF sets binding; **`entrypoint = BillingService` only in app wrangler** (provider gap) |
 | Plain-text Worker `vars` | **Terraform** and/or CD `--var` | Prefer TF → GHA |
 | Worker **script content** | **App CD** | Safe with ignore_changes |
@@ -74,7 +74,7 @@ Cloudflare account for Mosaiq platform: **`5b594173256386996fe1e03fd5cea3f8`**. 
 | D1 migrations; queue consumers; DO migration tags | **App CD** | First deploy registers consumers/DOs |
 | Per-channel Start signup | **App / Looking Glass** | D1 + KV only |
 
-Phases **1a applied**; **1b apply failed** (import + token fix required — [fix-1b-apply handoff](./vmp-infra-handoff-fix-1b-apply.md)). **1c** blocked on green apply + `app_handoff`.
+Phases **1a and 1b applied** (1b recovered via import orphans + token widening — [fix-1b-apply handoff](./vmp-infra-handoff-fix-1b-apply.md)). **1c** unblocked: `app_handoff` received, app mirroring ids.
 
 ## Tenant model
 
@@ -154,9 +154,9 @@ Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
 **1a — Applied (vmp-infra):** product hostnames, pooled Worker shells (`vmp-api`, `vmp-api-staging`, `vmp-web-worker-prod`, `vmp-web-worker-dev`), `TENANT_REGISTRY_KV`, CF for SaaS (`sites` / `customers`), `.ws` redirects, Looking Glass CNAME, marketing/corporate placeholders.
 
-**1b — In progress / apply failed (vmp-infra):** Plan includes billing + D1 + KV + queues + R2 + bindings, but CI apply exited 1. Partial success: D1 `video-subscription-db` id `1d62f88d-35b6-479b-85ba-234b7cefd3fd`, `RATE_LIMIT_KV` `24a5bb09a557407eb8a90c491ab08966`, queues `vmp-push-delivery` / `vmp-replication-events`. Failures: R2 auth (10000), many DNS/KV/route “already exists” (1a orphans not in state), ruleset “not authorized”. Do **not** treat `app_handoff` as ready until apply is green.
+**1b — Applied (vmp-infra):** billing + D1 + KV + queues + bindings live after the import-orphan + token-widening recovery; `app_handoff` returned real ids (D1 `1d62f88d-…`, `RATE_LIMIT_KV` `24a5bb09…`, `TENANT_REGISTRY_KV` `bbc3358a…`, queues, billing Workers + `BILLING` service bindings). Storage stayed B2-only (no R2).
 
-**1c — App repo (blocked on green 1b):**
+**1c — App repo (unblocked; in progress on PR #757):**
 
 1. Paste successful `terraform output -json app_handoff`.
 2. Flip wrangler `account_id` → `5b594173…`; staging API → `vmp-api-staging`; wire bindings; `BILLING` + entrypoint.
@@ -224,4 +224,4 @@ Handoffs:
 - Phase 1a — [vmp-infra-handoff-mosaiq-domains.md](./vmp-infra-handoff-mosaiq-domains.md)
 - Phase 1b design — [vmp-infra-handoff-mosaiq-data-plane.md](./vmp-infra-handoff-mosaiq-data-plane.md)
 - **Phase 1b apply fix (current)** — [vmp-infra-handoff-fix-1b-apply.md](./vmp-infra-handoff-fix-1b-apply.md)
-- Phase 1c — app cutover (blocked)
+- Phase 1c — app cutover (in progress — wrangler mirror on PR #757)

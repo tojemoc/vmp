@@ -1,7 +1,7 @@
 # Handoff prompt — vmp-infra Phase 1b (CF data plane)
 
-**Status:** Phase 1b apply **failed**. Canonical app-facing doc: vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`.\
-**App next (1c):** Cutover remains **blocked** until apply succeeds and `terraform output -json app_handoff` returns real ids. Next: follow the [Phase 1b recovery plan](./vmp-infra-handoff-fix-1b-apply.md) to import orphans, fix token permissions, and re-apply.
+**Status:** Phase 1b **applied** — `app_handoff` returned real ids (D1 `1d62f88d-…`, both KV namespaces, queues, billing Workers + `BILLING` bindings). Canonical app-facing doc: vmp-infra `docs/MOSAIQ_APP_HANDOFF.md`.\
+**App next (1c):** Unblocked. Mirror the `app_handoff` ids in app wrangler configs, set GHA secrets/vars, deploy, then smoke `app.mosaiq.video` / `api.mosaiq.video`. The [Phase 1b recovery plan](./vmp-infra-handoff-fix-1b-apply.md) stays as the audit trail for the earlier failed apply.
 
 Original ask kept below for audit.
 
