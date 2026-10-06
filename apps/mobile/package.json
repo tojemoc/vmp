@@ -37,7 +37,7 @@
     "react-dom": "19.3.0",
     "react-native": "npm:react-native-tvos@0.86-stable",
     "react-native-safe-area-context": "~5.10.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.28.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
