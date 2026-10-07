@@ -155,7 +155,7 @@ jobs:
       # Persist Expo's required side-by-side NDK under $ANDROID_HOME/ndk so
       # Gradle does not re-download >1 GB on every run (runner ships 27.3+, not 27.1).
       - name: Cache Android NDK
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/lib/android/sdk/ndk/${{ env.ANDROID_NDK_VERSION }}
           key: android-ndk-${{ env.ANDROID_NDK_VERSION }}-${{ runner.os }}
@@ -242,7 +242,7 @@ jobs:
           java-version: '17'
 
       - name: Cache Android NDK
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/lib/android/sdk/ndk/${{ env.ANDROID_NDK_VERSION }}
           key: android-ndk-${{ env.ANDROID_NDK_VERSION }}-${{ runner.os }}
