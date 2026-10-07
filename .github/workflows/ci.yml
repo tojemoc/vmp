@@ -37,7 +37,7 @@ jobs:
     outputs:
       api-node: ${{ steps.detect.outputs.api-node }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -63,7 +63,7 @@ jobs:
   typecheck:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -97,7 +97,7 @@ jobs:
         if: needs.changes.outputs.api-node != 'true'
         run: echo "No api-node-related files changed; skipping verify:api-node."
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: needs.changes.outputs.api-node == 'true'
         with:
           persist-credentials: false
