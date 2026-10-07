@@ -47,7 +47,7 @@ Add / verify:
 
 ### C. Re-apply
 
-- `terraform plan` should show remaining creates: billing Workers, API/web scripts+bindings, Worker custom domains, R2 (after token fix), SaaS custom hostname, ruleset (after token fix) — **not** recreate of imported DNS.
+- `terraform plan` should show remaining creates: billing Workers, API/web scripts+bindings, Worker custom domains, SaaS custom hostname, ruleset (after token fix) — **not** recreate of imported DNS, and **no R2 bucket** (storage is B2-only; `manage_r2=false`).
 - Green apply → publish `terraform output -json app_handoff` (and update `docs/MOSAIQ_APP_HANDOFF.md` with concrete D1/KV ids).
 
 ## Deliverables back to app (`tojemoc/vmp`)

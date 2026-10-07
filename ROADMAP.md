@@ -188,8 +188,8 @@ These are open Linear issues without active implementation milestones on the pro
 Pooled app for **Host → `tenant_id`**, custom domains (CF for SaaS), eventual `{channel}.mosaiq.video` Start channels. **`vmp-infra` Terraform owns CF resources** (DNS + Workers/D1/KV/queues/bindings); not a PR per signup. Retire `*.tjm.sk`.
 
 - [x] Architecture + domain map + phased plan (docs)
-- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied earlier; state/import issues on re-apply)
-- [x] **`mosaiq-domain-cutover` 1b** — vmp-infra apply **green** after import-orphan recovery + token widening (D1, both KV namespaces, queues, billing Workers + `BILLING` bindings; storage stays B2-only)
+- [x] **`mosaiq-domain-cutover` 1a** — vmp-infra: product DNS, Worker shells, `TENANT_REGISTRY_KV`, CF for SaaS, `.ws` redirects (applied earlier; state/import issues on re-apply) — [vmp-infra#21](https://github.com/tojemoc/vmp-infra/pull/21)
+- [x] **`mosaiq-domain-cutover` 1b** — vmp-infra apply **green** after import-orphan recovery + token widening (D1, both KV namespaces, queues, billing Workers + `BILLING` bindings; storage stays B2-only) — [vmp-infra#23](https://github.com/tojemoc/vmp-infra/pull/23), [#24](https://github.com/tojemoc/vmp-infra/pull/24), [#25](https://github.com/tojemoc/vmp-infra/pull/25)
 - [ ] **`mosaiq-domain-cutover` 1c** — App: `app_handoff` received; mirroring account/binding ids in wrangler configs (PR #757), then GHA secrets/vars + first deploy
 - [ ] **`mosaiq-multi-tenant`** — D1 `tenants` + `tenant_id`, KV Host registry, tenant-aware CORS / magic links / queries
 - [ ] **`mosaiq-custom-hostnames`** — CF for SaaS custom domains on pooled Workers (no TF per domain)

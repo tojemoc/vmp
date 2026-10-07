@@ -207,6 +207,24 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
       run: |
+        # Production gate: env.production.d1_databases points at the D1 database
+        # created by vmp-infra Terraform (see docs/plans/mosaiq-multi-tenant.md
+        # Phase 1c). wrangler deploy never applies SQL migrations, and
+        # ensure_d1_required_schema.sh only ALTERs/extends an existing canonical
+        # schema — so block production until the base schema is applied manually
+        # (migrations/0001_canonical_schema.sql via `d1 execute --file`) and
+        # production data is migrated. Staging keeps the warning-only path.
+        if [ "${{ inputs.deploy-tier }}" = "production" ]; then
+          USERS_TABLE=$(npx wrangler d1 execute video-subscription-db --remote \
+            --command "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name='users';" --json 2>/dev/null \
+            | node -e 'const fs=require("fs");const i=fs.readFileSync(0,"utf8").trim();try{const p=JSON.parse(i);process.stdout.write(String(p?.[0]?.results?.[0]?.n ?? ""))}catch{process.stdout.write("")}' || true)
+          if [ -z "$USERS_TABLE" ]; then
+            echo "::warning::Could not query production D1 for the canonical schema (the deploy token may lack Account → D1 → Edit). Continuing; the schema ensure below will warn too."
+          elif [ "$USERS_TABLE" = "0" ]; then
+            echo "::error::Production D1 video-subscription-db has no users table. Apply the canonical schema (packages/api: npx wrangler d1 execute video-subscription-db --remote --file=./migrations/0001_canonical_schema.sql) and migrate production data before the first production deploy — wrangler deploy does not run SQL migrations."
+            exit 1
+          fi
+        fi
         if bash ./scripts/ensure_d1_required_schema.sh --remote; then
           echo "Remote D1 schema ensure succeeded via wrangler."
         else

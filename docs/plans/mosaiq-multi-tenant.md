@@ -11,7 +11,7 @@ Make **this** monorepo (`tojemoc/vmp`, later possibly `moltenmarshmallows/mosaiq
 3. Attach **many custom domains** (Cloudflare for SaaS) without a Terraform apply per signup.
 4. Keep **Start-tier channels** on `*.mosaiq.video` as data (D1 + KV), not infra PRs.
 
-**`vmp-infra` Terraform** owns Cloudflare **platform resources** for Mosaiq: DNS/dual-NS, Worker scripts (shells) + custom domains/routes, D1, KV, Queues, R2 bucket declarations, service bindings, CF for SaaS, Looking Glass. Application **code** and **secrets** still ship from this repo’s CD (`wrangler deploy` / `wrangler secret`). That split is **not** on the hot path for every Start-tier signup—channel rows are D1+KV only.
+**`vmp-infra` Terraform** owns Cloudflare **platform resources** for Mosaiq: DNS/dual-NS, Worker scripts (shells) + custom domains/routes, D1, KV, Queues, service bindings, CF for SaaS, Looking Glass. Storage is B2-only — no R2 in the Terraform graph. Application **code** and **secrets** still ship from this repo’s CD (`wrangler deploy` / `wrangler secret`). That split is **not** on the hot path for every Start-tier signup—channel rows are D1+KV only.
 
 ## Non-goals (this phase)
 
@@ -215,7 +215,7 @@ Roadmap + contracts + infra handoff. No runtime multi-tenant yet.
 
 ## vmp-infra boundary
 
-**Does:** full Mosaiq Cloudflare **account resource graph** (DNS, Workers shells/domains, D1, KV, Queues, R2, service bindings, CF for SaaS, Looking Glass DNS), plus GitOps `tenants/*.json` for **ops-managed** tenants.
+**Does:** full Mosaiq Cloudflare **account resource graph** (DNS, Workers shells/domains, D1, KV, Queues, service bindings, CF for SaaS, Looking Glass DNS — storage is B2-only, no R2), plus GitOps `tenants/*.json` for **ops-managed** tenants.
 
 **Does not:** per Start-tier signup PRs; application business logic; HLS request path; (usually) Worker bundle contents after bootstrap.
 
