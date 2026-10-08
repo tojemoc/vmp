@@ -3,18 +3,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
-  "account_id": "8298ebe2fc93e55a92f8bc5727d5f331",
+  "account_id": "5b594173256386996fe1e03fd5cea3f8",
   "d1_databases": [
     {
       "binding": "video_subscription_db",
       "database_name": "video-subscription-db",
-      "database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "vmp-videos"
+      "database_id": "1d62f88d-35b6-479b-85ba-234b7cefd3fd"
     }
   ],
   "flagship": [
@@ -24,12 +18,12 @@
     }
   ],
   "vars": {
-    "FRONTEND_URL": "https://vmp.tjm.sk",
-    "API_URL": "https://vmp-api.tjm.sk",
-    "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+    "FRONTEND_URL": "https://staging.app.mosaiq.video",
+    "API_URL": "https://staging.api.mosaiq.video",
+    "ALLOWED_ORIGINS": "https://app.mosaiq.video,https://staging.app.mosaiq.video,https://www.mosaiq.video,https://mosaiq.video,http://localhost:3000",
     "POSTHOG_HOST": "https://eu.i.posthog.com",
-    "SENDER_EMAIL": "vmp@tjm.sk",
-    "SENDER_NAME": "VMP",
+    "SENDER_EMAIL": "noreply@mosaiq.video",
+    "SENDER_NAME": "Mosaiq",
     "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds"
   },
   "triggers": {
@@ -48,13 +42,7 @@
         {
           "binding": "video_subscription_db",
           "database_name": "video-subscription-db",
-          "database_id": "e4e14e46-fcf2-4eb4-9eda-accf732c44f8"
-        }
-      ],
-      "r2_buckets": [
-        {
-          "binding": "BUCKET",
-          "bucket_name": "vmp-videos"
+          "database_id": "1d62f88d-35b6-479b-85ba-234b7cefd3fd"
         }
       ],
       "flagship": [
@@ -65,12 +53,12 @@
       ],
       "vars": {
         "R2_BASE_URL": "https://vmp-videos.tjm.sk",
-        "FRONTEND_URL": "https://vmp.tjm.sk",
-        "API_URL": "https://vmp-api.tjm.sk",
-        "ALLOWED_ORIGINS": "https://vmp.tjm.sk,http://localhost:3000",
+        "FRONTEND_URL": "https://app.mosaiq.video",
+        "API_URL": "https://api.mosaiq.video",
+        "ALLOWED_ORIGINS": "https://app.mosaiq.video,https://staging.app.mosaiq.video,https://www.mosaiq.video,https://mosaiq.video",
         "POSTHOG_HOST": "https://eu.i.posthog.com",
-        "SENDER_EMAIL": "vmp@tjm.sk",
-        "SENDER_NAME": "VMP",
+        "SENDER_EMAIL": "noreply@mosaiq.video",
+        "SENDER_NAME": "Mosaiq",
         "STRIPE_PUBLISHABLE_KEY": "pk_test_51RdewjRPCqIWzqvdZ2NnLW1fib03Ql8OAYeGToQiuX0s0mODyl40swBO0WTdA9M3ZwL6HpMdqf0Ei8Twem72k1Xe00Pv948Qds"
       },
       "triggers": {
