@@ -141,11 +141,14 @@ services:
       # Override with PACKAGER_CALLBACK_URL if you need a custom host/path.
       CALLBACK_URL: ${PACKAGER_CALLBACK_URL:-http://vmp:${VMP_PACKAGER_SECRET:?Set VMP_PACKAGER_SECRET in encore/.env}@vmp-supervisor:8788/vmp/api}
       PACKAGE_OUTPUT_FOLDER: ${PACKAGE_OUTPUT_FOLDER:?Set PACKAGE_OUTPUT_FOLDER=s3://bucket/videos}
-      # $$ escapes Compose interpolation so encore-packager sees $EXTERNALID$
-      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-$$EXTERNALID$$}
+      # $$ escapes Compose interpolation so encore-packager sees $EXTERNALID$.
+      # Leading "/" is required: the packager concatenates this template onto
+      # PACKAGE_OUTPUT_FOLDER, so without it the output key becomes videos<UUID>
+      # instead of videos/<UUID>.
+      OUTPUT_SUBFOLDER_TEMPLATE: ${OUTPUT_SUBFOLDER_TEMPLATE:-/$$EXTERNALID$$}
       HLS_MANIFEST_NAME_TEMPLATE: ${HLS_MANIFEST_NAME_TEMPLATE:-master.m3u8}
       # Shaka segment length (seconds). Must match Encore GOP: profiles use g/keyint=60 @ 30fps → 2s.
-      PACKAGE_FORMAT_OPTIONS_JSON: ${PACKAGE_FORMAT_OPTIONS_JSON:-'{"segmentDuration":2}'}
+      PACKAGE_FORMAT_OPTIONS_JSON: ${PACKAGE_FORMAT_OPTIONS_JSON:-{"segmentDuration":2}}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-${B2_S3_ENDPOINT:?Set S3_ENDPOINT_URL or B2_S3_ENDPOINT}}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-${B2_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID or B2_ACCESS_KEY_ID}}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-${B2_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY or B2_SECRET_ACCESS_KEY}}
