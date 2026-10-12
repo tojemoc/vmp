@@ -73,7 +73,7 @@ jobs:
           node-version: lts/*
           cache: npm
 
-      - uses: nrwl/nx-set-shas@v4
+      - uses: nrwl/nx-set-shas@v5
 
       - name: Install dependencies (npm ci with npm install fallback)
         run: |
