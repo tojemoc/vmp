@@ -43,7 +43,7 @@
     "@biomejs/biome": "^2.5.7",
     "@react-native-tvos/config-tv": "^0.1.6",
     "@types/react": "~19.3.0",
-    "pod-install": "1.1.0",
+    "pod-install": "1.2.1",
     "tsx": "^4.23.13",
     "typescript": "~7.0.0"
   }
