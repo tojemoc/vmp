@@ -576,6 +576,10 @@ export const strings: StringsDefinition = {
   // ── Misc ───────────────────────────────────────────────────────────────────
   backToHomepage: '← Back to homepage',
   error: 'Error',
+  errorPageNotFoundTitle: 'Page not found',
+  errorPageNotFoundDescription: 'The page you are looking for does not exist or has been moved.',
+  errorPageGenericTitle: 'Something went wrong',
+  errorPageGenericDescription: 'This page could not be loaded right now. Please try again later.',
   errorPageNotFound: 'This page does not exist.',
   errorPageUnavailable: 'Something went wrong. Please try again later.',
 
