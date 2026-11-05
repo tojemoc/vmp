@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { strings as csStrings } from '../locales/cs/strings';
+import { strings as enStrings } from '../locales/en/strings';
+import { strings as skStrings } from '../locales/sk/strings';
+import { errorPageCopy } from '../utils/errorPageCopy';
 import { initialHydratedState } from '../utils/hydrationGate';
 import { formatRelativeUploadTime, parseApiTimestamp } from '../utils/relativeUploadTime';
 
@@ -60,5 +64,47 @@ describe('relative upload time', () => {
     assert.equal(formatRelativeUploadTime(null, now), '');
     assert.equal(formatRelativeUploadTime('not a date', now), '');
     assert.equal(formatRelativeUploadTime('2026-10-03 12:00:00', now), '');
+  });
+});
+
+// Unrouted URLs such as /rss and /sitemap.xml reach the 404 thrown by pages/[slug].vue
+// and render error.vue. The server renders it, the client hydrates it from the payload,
+// so the copy must come only from values both sides share: the status code and catalog.
+describe('error page copy', () => {
+  it('uses the not-found copy for 404', () => {
+    assert.deepEqual(errorPageCopy(404, enStrings), {
+      statusCode: 404,
+      title: enStrings.errorPageNotFoundTitle,
+      description: enStrings.errorPageNotFoundDescription,
+    });
+  });
+
+  it('reads the status code the payload serializes as a string the same way', () => {
+    assert.deepEqual(errorPageCopy('404', enStrings), errorPageCopy(404, enStrings));
+    assert.deepEqual(errorPageCopy('503', enStrings), errorPageCopy(503, enStrings));
+  });
+
+  it('uses the generic copy for other errors', () => {
+    assert.deepEqual(errorPageCopy(503, enStrings), {
+      statusCode: 503,
+      title: enStrings.errorPageGenericTitle,
+      description: enStrings.errorPageGenericDescription,
+    });
+  });
+
+  it('falls back to 500 for missing or invalid status codes', () => {
+    assert.equal(errorPageCopy(undefined, enStrings).statusCode, 500);
+    assert.equal(errorPageCopy('not a status', enStrings).statusCode, 500);
+    assert.equal(errorPageCopy(200, enStrings).statusCode, 500);
+  });
+
+  it('has copy in every locale', () => {
+    for (const catalog of [enStrings, skStrings, csStrings]) {
+      for (const code of [404, 500]) {
+        const copy = errorPageCopy(code, catalog);
+        assert.ok(copy.title.trim());
+        assert.ok(copy.description.trim());
+      }
+    }
   });
 });
