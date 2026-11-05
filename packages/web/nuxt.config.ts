@@ -46,6 +46,7 @@ export default defineNuxtConfig({
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
   plugins: [
+    '~/plugins/auth-url-credentials.client.ts',
     ...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : []),
     ...(pwaCompiled
       ? ([

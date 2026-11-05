@@ -1,13 +1,14 @@
 /**
- * Query params on `/auth/verify` that carry a redeemable credential: the single-use
- * magic-link `token` and the short-lived PWA `handoff` code. Telemetry must never see them.
+ * Query params that carry a redeemable credential: the single-use magic-link `token`,
+ * short-lived PWA `handoff` code, and push-login `pwa_auth_handoff` code.
+ * Telemetry must never see them.
  *
  * Fed to posthog-js `custom_personal_data_properties` (masks `$current_url` & co.) — a plain
  * array, because `@posthog/nuxt` ships `clientConfig` as JSON and drops functions such as
- * `before_send`. Browser logs read `location.href` unmasked, so the verify page also hides
- * these params from the address bar once it has read them.
+ * `before_send`. Browser logs read `location.href` unmasked, so a client plugin strips these
+ * params before telemetry initializes; the credentials remain available in the router query.
  */
-export const AUTH_URL_CREDENTIAL_PARAMS = ['token', 'handoff'] as const;
+export const AUTH_URL_CREDENTIAL_PARAMS = ['token', 'handoff', 'pwa_auth_handoff'] as const;
 
 /** `href` without credential params; relative input stays relative. */
 export function stripAuthUrlCredentials(href: string): string {
@@ -32,7 +33,10 @@ export function hideAuthUrlCredentialsFromAddressBar(): void {
   const stripped = stripAuthUrlCredentials(current);
   if (stripped === current) return;
   try {
-    window.history.replaceState(window.history.state, '', stripped);
+    const state = window.history.state;
+    const sanitizedState =
+      state && typeof state === 'object' ? { ...state, current: stripped } : state;
+    window.history.replaceState(sanitizedState, '', stripped);
   } catch {
     // Never let URL hygiene break sign-in.
   }
