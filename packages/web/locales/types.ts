@@ -500,6 +500,10 @@ export type StringsDefinition = {
   pwaPushDeliverFailed: string;
   backToHomepage: string;
   error: string;
+  errorPageNotFoundTitle: string;
+  errorPageNotFoundDescription: string;
+  errorPageGenericTitle: string;
+  errorPageGenericDescription: string;
   admin: {
     title: string;
     subtitle: string;

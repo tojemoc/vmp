@@ -153,13 +153,15 @@
       .map((block) => block.imageId),
   );
 
-  const imageUrls = ref<Record<string, string>>({});
+  // Resolve on the server and reuse the payload during hydration, so the client does
+  // not fetch the URLs again and render image sources the server did not send.
+  const { data: imageUrlData } = await useAsyncData(
+    computed(() => `cms-image-urls-${slug.value}`),
+    () => fetchCmsMediaUrls(apiUrl, imageIds.value),
+    { default: () => ({}), watch: [imageIds] },
+  );
 
-  async function loadImageUrls() {
-    imageUrls.value = await fetchCmsMediaUrls(apiUrl, imageIds.value);
-  }
-
-  await loadImageUrls();
+  const imageUrls = computed<Record<string, string>>(() => imageUrlData.value ?? {});
 
   usePageSeo(
     computed(() => ({

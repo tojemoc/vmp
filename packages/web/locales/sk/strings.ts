@@ -586,6 +586,10 @@ export const strings: StringsDefinition = {
   // ── Misc ───────────────────────────────────────────────────────────────────
   backToHomepage: '← Späť na domovskú stránku',
   error: 'Chyba',
+  errorPageNotFoundTitle: 'Stránka sa nenašla',
+  errorPageNotFoundDescription: 'Stránka, ktorú hľadáte, neexistuje alebo bola presunutá.',
+  errorPageGenericTitle: 'Niečo sa pokazilo',
+  errorPageGenericDescription: 'Túto stránku sa teraz nepodarilo načítať. Skúste to prosím neskôr.',
 
   admin: {
     title: 'Admin konzola',
