@@ -190,9 +190,11 @@
             :disabled="!insecureSchemeAckChecked || insecureSchemeWorking"
             @click="confirmInsecureNativeSchemeAndOpen"
           >
-            {{ insecureSchemeWorking
+            {{
+              insecureSchemeWorking
                 ? strings.authVerifyNativeIosInsecureWorking
-                : strings.authVerifyNativeIosInsecureConfirm }}
+                : strings.authVerifyNativeIosInsecureConfirm
+            }}
           </button>
           <button
             type="button"
@@ -268,6 +270,10 @@
     normalizeMagicLinkClient,
   } from '@vmp/shared';
   import { navigateTo, useRoute, useRuntimeConfig } from '#app';
+  import {
+    hideAuthUrlCredentialsFromAddressBar,
+    withMagicLinkToken,
+  } from '~/utils/authUrlCredentials';
   import { resolveDeployTier } from '~/utils/buildInfo';
   import {
     isNativeAppFallbackQuery,
@@ -421,6 +427,12 @@
   const magicTokenForFlow = ref<string | null>(null);
   const didAutoOpenNative = ref(false);
 
+  /** Current page URL with the in-memory token restored (the address bar has it stripped). */
+  function magicLinkPageUrl(): string {
+    const token = magicTokenForFlow.value;
+    return token ? withMagicLinkToken(window.location.href, token) : window.location.href;
+  }
+
   function captureAuthEvent(event: string, properties: Record<string, unknown> = {}) {
     capturePostHogEvent(event, {
       client: magicLinkClient(),
@@ -522,7 +534,7 @@
   function openInstalledNativeApp() {
     if (import.meta.server) return;
     captureAuthEvent('magic_link_handoff_attempted', { platform: 'android', method: 'intent' });
-    openAndroidNativeApp(window.location.href, mobileAndroidPackage());
+    openAndroidNativeApp(magicLinkPageUrl(), mobileAndroidPackage());
   }
 
   async function continueNativeAppInBrowser() {
@@ -532,7 +544,7 @@
     // Stay on this page with native_fallback so a reload does not auto-bounce again.
     if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
       state.value = 'verifying';
-      const next = new URL(window.location.href);
+      const next = new URL(magicLinkPageUrl());
       next.searchParams.set('native_fallback', '1');
       await navigateTo(
         { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
@@ -550,7 +562,7 @@
     captureAuthEvent('magic_link_handoff_browser_fallback', { platform: 'ios' });
     state.value = 'verifying';
     if (import.meta.client && !isNativeAppFallbackQuery(route.query.native_fallback)) {
-      const next = new URL(window.location.href);
+      const next = new URL(magicLinkPageUrl());
       next.searchParams.set('native_fallback', '1');
       await navigateTo(
         { path: next.pathname, query: Object.fromEntries(next.searchParams.entries()) },
@@ -611,7 +623,7 @@
             : strings.authVerifyNativeIosInsecureFailed;
         return;
       }
-      if (!openIosInsecureNativeScheme(window.location.href)) {
+      if (!openIosInsecureNativeScheme(magicLinkPageUrl())) {
         errorMessage.value = strings.authVerifyNativeIosInsecureFailed;
         captureAuthEvent('magic_link_handoff_attempted', {
           platform: 'ios',
@@ -736,6 +748,8 @@
       const handoff = firstQueryString(route.query.handoff) || undefined;
       const token = firstQueryString(route.query.token) || undefined;
       const pwaDone = firstQueryString(route.query.pwa_done);
+      // Credentials live in memory from here on — keep them out of telemetry URLs.
+      hideAuthUrlCredentialsFromAddressBar();
 
       if (pwaDone === '1') {
         state.value = 'pwa_2fa_done';

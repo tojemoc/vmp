@@ -1,3 +1,4 @@
+import { AUTH_URL_CREDENTIAL_PARAMS } from './utils/authUrlCredentials';
 import { readBuildInfoDefaults } from './utils/buildInfoSource';
 import { loadMonorepoRootEnv } from './utils/loadMonorepoRootEnv';
 import { posthogBeforeSend } from './utils/posthogBeforeSend';
@@ -45,6 +46,7 @@ export default defineNuxtConfig({
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
   plugins: [
+    '~/plugins/auth-url-credentials.client.ts',
     ...(gtmCompiled ? (['~/features/gtm/plugin.client.ts'] as const) : []),
     ...(pwaCompiled
       ? ([
@@ -102,6 +104,10 @@ export default defineNuxtConfig({
             capture_pageleave: POSTHOG_CAPTURE_PAGELEAVE,
             capture_exceptions: true,
             opt_out_capturing_by_default: true,
+            // Masks magic-link credentials in `$current_url` & co. Must be data, not a
+            // `before_send` function — see `utils/authUrlCredentials.ts`.
+            mask_personal_data_properties: true,
+            custom_personal_data_properties: [...AUTH_URL_CREDENTIAL_PARAMS],
             // Application metrics (open alpha) — same project token; no extra packages.
             // Network histograms stay off until analytics consent is granted
             // (`applyPostHogConsentToClient` toggles metrics.network).
