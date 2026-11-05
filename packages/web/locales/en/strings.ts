@@ -576,6 +576,8 @@ export const strings: StringsDefinition = {
   // ── Misc ───────────────────────────────────────────────────────────────────
   backToHomepage: '← Back to homepage',
   error: 'Error',
+  errorPageNotFound: 'This page does not exist.',
+  errorPageUnavailable: 'Something went wrong. Please try again later.',
 
   admin: {
     title: 'Admin Console',
