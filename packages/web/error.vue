@@ -24,12 +24,12 @@
   // the CMS catch-all. Markup depends only on the serialized status code and the
   // deployment locale, never on auth, clocks, or the error message.
   const props = defineProps<{ error: NuxtError }>();
-  const { strings } = useStrings();
+  const { strings, htmlLang } = useStrings();
 
   const statusCode = computed(() => props.error?.statusCode ?? 500);
   const title = computed(() => strings.value[errorPageTitleKey(statusCode.value)]);
 
-  useHead({ title });
+  useHead({ title, htmlAttrs: { lang: htmlLang } });
 
   function goHome() {
     void clearError({ redirect: '/' });
