@@ -504,6 +504,8 @@ export type StringsDefinition = {
   errorPageNotFoundDescription: string;
   errorPageGenericTitle: string;
   errorPageGenericDescription: string;
+  errorPageNotFound: string;
+  errorPageUnavailable: string;
   admin: {
     title: string;
     subtitle: string;

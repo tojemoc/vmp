@@ -588,6 +588,8 @@ export const strings: StringsDefinition = {
   errorPageNotFoundDescription: 'Stránka, kterou hledáte, neexistuje nebo byla přesunuta.',
   errorPageGenericTitle: 'Něco se pokazilo',
   errorPageGenericDescription: 'Tuto stránku se teď nepodařilo načíst. Zkuste to prosím později.',
+  errorPageNotFound: 'Tato stránka neexistuje.',
+  errorPageUnavailable: 'Něco se pokazilo. Zkuste to prosím později.',
 
   admin: {
     title: 'Admin konzole',

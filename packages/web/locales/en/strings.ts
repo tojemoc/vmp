@@ -580,6 +580,8 @@ export const strings: StringsDefinition = {
   errorPageNotFoundDescription: 'The page you are looking for does not exist or has been moved.',
   errorPageGenericTitle: 'Something went wrong',
   errorPageGenericDescription: 'This page could not be loaded right now. Please try again later.',
+  errorPageNotFound: 'This page does not exist.',
+  errorPageUnavailable: 'Something went wrong. Please try again later.',
 
   admin: {
     title: 'Admin Console',
